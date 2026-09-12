@@ -35,6 +35,7 @@ vi.mock("../../src/commands/providers.js", async (importActual) => {
 });
 
 const remoteCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+let readOnly = true;
 
 class RunnerTransport implements McpTransport {
   readonly kind = "stdio" as const;
@@ -70,7 +71,7 @@ class RunnerTransport implements McpTransport {
                 required: ["id"],
                 additionalProperties: false,
               },
-              annotations: { readOnlyHint: true },
+              annotations: { readOnlyHint: readOnly },
             },
           ],
         },
@@ -119,6 +120,7 @@ let runtime: McpRuntime;
 beforeEach(async () => {
   streamMock.mockReset();
   remoteCalls.length = 0;
+  readOnly = true;
   previousCwd = process.cwd();
   root = mkdtempSync(join(tmpdir(), "clai-mcp-runner-"));
   workspace = join(root, "project");
@@ -163,7 +165,111 @@ async function run(events: AgentEvent[], toolCalling: ToolCallingMode) {
 }
 
 describe("agent MCP integration", () => {
-  it("appends deterministic MCP definitions and dispatches native tool calls", async () => {
+  const reply = (text = "Finished checking documentation."): CompletionResult => ({
+    text,
+    provider: "openai",
+    model: "gpt-4o-mini",
+    finishReason: "stop",
+  });
+  const toolReply = (name: string, args: Record<string, unknown>): CompletionResult => ({
+    ...reply(""),
+    toolCalls: [{ id: `call-${name}`, name, args }],
+    finishReason: "tool_calls",
+  });
+
+  it("discovers required schemas and calls an MCP tool after enabling it mid-turn", async () => {
+    runtime.selectOff();
+    const requests: CompletionRequest[] = [];
+    streamMock.mockImplementation((request: CompletionRequest) => {
+      requests.push({ ...request, messages: structuredClone(request.messages), tools: structuredClone(request.tools) });
+      if (requests.length === 1) return toolReply("mcp.enable", { server: "docs" });
+      if (requests.length === 2) {
+        expect(request.messages.at(-1)?.content).toContain("mcp.tools");
+        return toolReply("mcp.tools", { server: "docs" });
+      }
+      if (requests.length === 3) {
+        expect(request.messages.at(-1)?.content).toContain('"required":["id"]');
+        return toolReply("mcp.call", { name: "mcp.docs.lookup", arguments: { id: "one" } });
+      }
+      return reply();
+    });
+
+    await runAgentTurn("Look up documentation record one", {
+      mcp: runtime,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      maxSteps: 5,
+      toolCalling: "native",
+      autoConfirm: true,
+    });
+
+    expect(requests).toHaveLength(4);
+    expect(remoteCalls).toEqual([{ name: "lookup", args: { id: "one" } }]);
+    for (const request of requests.slice(1)) {
+      expect(request.tools).toEqual(requests[0]?.tools);
+      expect(request.messages[0]).toEqual(requests[0]?.messages[0]);
+    }
+  });
+
+  it.each([
+    { name: "fs.delete", arguments: { path: "never-delete" } },
+    { name: "mcp.enable", arguments: { server: "all" } },
+    { name: "mcp.call", arguments: { name: "fs.delete", arguments: {} } },
+    { name: "mcp.missing.lookup", arguments: {} },
+    { name: "mcp.docs.lookup", arguments: "{}" },
+    { name: "mcp.docs.lookup", arguments: [] },
+    { name: "mcp.docs.lookup" },
+  ])("rejects invalid MCP wrapper arguments without dispatch: %j", async (args) => {
+    streamMock.mockResolvedValueOnce(toolReply("mcp.call", args)).mockResolvedValue(reply());
+    const events: AgentEvent[] = [];
+    await run(events, "native");
+    expect(remoteCalls).toEqual([]);
+    expect(events.some((event) => event.type === "tool-result" && !event.ok &&
+      event.summary.includes("mcp.call requires an active MCP tool"))).toBe(true);
+  });
+
+  it("rejects inactive MCP wrapper targets", async () => {
+    runtime.selectOff();
+    streamMock.mockResolvedValueOnce(toolReply("mcp.call", {
+      name: "mcp.docs.lookup", arguments: { id: "one" },
+    })).mockResolvedValue(reply());
+    const events: AgentEvent[] = [];
+    await run(events, "native");
+    expect(remoteCalls).toEqual([]);
+    expect(events.some((event) => event.type === "tool-result" && !event.ok)).toBe(true);
+  });
+
+  it.each([true, false])("enforces ask-mode read-only targets (readOnly=%s)", async (isReadOnly) => {
+    readOnly = isReadOnly;
+    await runtime.reconnect("docs");
+    expect(runtime.getTool("mcp.docs.lookup")?.readOnly).toBe(isReadOnly);
+    const requests: CompletionRequest[] = [];
+    streamMock.mockImplementation((request: CompletionRequest) => {
+      requests.push({ ...request, messages: structuredClone(request.messages), tools: structuredClone(request.tools) });
+      return requests.length === 1
+        ? toolReply("mcp.call", { name: "mcp_docs_lookup", arguments: { id: "one" } })
+        : reply();
+    });
+    const events: AgentEvent[] = [];
+    await runAgentTurn("Look up documentation record one", {
+      mcp: runtime,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      mode: "ask",
+      maxSteps: 3,
+      toolCalling: "native",
+      autoConfirm: true,
+      onEvent: (event) => events.push(event),
+    });
+    expect(requests[0]?.tools?.some((tool) => tool.name === "mcp.call")).toBe(true);
+    expect(remoteCalls).toEqual(isReadOnly ? [{ name: "lookup", args: { id: "one" } }] : []);
+    if (!isReadOnly) {
+      expect(events.some((event) => event.type === "tool-result" && !event.ok &&
+        event.summary.includes("Ask mode permits only active read-only MCP tools"))).toBe(true);
+    }
+  });
+
+  it("keeps native MCP schemas stable and dispatches calls through the wrapper", async () => {
     const requests: CompletionRequest[] = [];
     streamMock.mockImplementation(
       async (
@@ -179,8 +285,8 @@ describe("agent MCP integration", () => {
             toolCalls: [
               {
                 id: "call-mcp-native",
-                name: "mcp.docs.lookup",
-                args: { id: "one" },
+                name: "mcp.call",
+                args: { name: "mcp.docs.lookup", arguments: { id: "one" } },
               },
             ],
             finishReason: "tool_calls",
@@ -200,11 +306,8 @@ describe("agent MCP integration", () => {
     const outcome = await run(events, "native");
 
     expect(outcome.answer).toContain("record one found");
-    expect(requests[0]?.tools?.at(-1)).toMatchObject({
-      name: "mcp.docs.lookup",
-      wireName: "mcp_docs_lookup",
-      readOnly: true,
-    });
+    expect(requests[0]?.tools?.some((tool) => tool.name === "mcp.call")).toBe(true);
+    expect(requests[0]?.tools?.some((tool) => tool.name === "mcp.docs.lookup")).toBe(false);
     expect(
       requests[0]?.messages.some(
         (message) =>
@@ -219,7 +322,7 @@ describe("agent MCP integration", () => {
     ).toBe(true);
   });
 
-  it("does not discover or expose MCP tools while selection is off", async () => {
+  it("reports MCP-off state without discovering or exposing remote tools", async () => {
     runtime.selectOff();
     const ensureReady = vi.spyOn(runtime, "ensureReady");
     let request: CompletionRequest | undefined;
@@ -251,9 +354,9 @@ describe("agent MCP integration", () => {
     expect(
       request?.messages.some(
         (message) =>
-          message.role === "system" && message.content.includes("MCP TOOL CONTEXT"),
+          message.role === "system" && message.content.includes("Selection: off"),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("dispatches canonical MCP calls parsed from fenced text protocol", async () => {

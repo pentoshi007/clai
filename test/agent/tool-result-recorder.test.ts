@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createToolResultRecorder } from "../../src/agent/turn/tool-result-recorder.js";
+import { toGeminiToolContents } from "../../src/llm/adapters/gemini-tools.js";
 import type { ChatMessage } from "../../src/types.js";
 
 const baseRecord = {
@@ -55,6 +56,58 @@ describe("createToolResultRecorder", () => {
         content: "Tool fs.read result (exit=0, ok=true):\nbody",
       },
     ]);
+  });
+
+  it("preserves the native wrapper name for correlated MCP results", () => {
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "mcp-call-1",
+            name: "mcp.call",
+            args: {
+              name: "mcp.docs.lookup",
+              arguments: { id: "one" },
+            },
+          },
+        ],
+      },
+    ];
+    const recorder = createToolResultRecorder({
+      messages,
+      useNativeToolHistory: true,
+      deferredPostToolMessages: [],
+      seenHashes: new Map(),
+      remindedAt: new Set(),
+      writeNotice: () => undefined,
+    });
+
+    recorder.record({
+      ...baseRecord,
+      id: "mcp-call-1",
+      call: { name: "mcp.docs.lookup", args: { id: "one" } },
+      contextOutput: "record one",
+    });
+
+    expect(messages[1]).toMatchObject({
+      role: "tool",
+      toolCallId: "mcp-call-1",
+      name: "mcp.call",
+      content: "Tool mcp.docs.lookup result (exit=0, ok=true):\nrecord one",
+    });
+    const contents = toGeminiToolContents(messages);
+    const response = contents[1]!.parts[0] as {
+      functionResponse: {
+        name: string;
+        id?: string;
+      };
+    };
+    expect(response.functionResponse).toMatchObject({
+      name: "mcp_call",
+      id: "mcp-call-1",
+    });
   });
 
   it("attaches one plan-mode reminder and emits its notice at the milestone", () => {

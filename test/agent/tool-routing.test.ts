@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ToolDefinition } from "../../src/types.js";
 import { availableToolNames } from "../../src/tools/registry.js";
 import { RUNNER_META_TOOL_NAMES } from "../../src/tools/definitions.js";
 import {
@@ -7,54 +6,41 @@ import {
   type ToolRoutingInput,
 } from "../../src/agent/turn/tool-routing.js";
 
-const mcpDefinition: ToolDefinition = {
-  name: "mcp.docs.search",
-  description: "search docs",
-  parameters: { type: "object", properties: {} },
-};
-
 const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
   createToolRouting({
     mode: "agent",
     mcpPresent: false,
-    mcpToolNames: [],
-    mcpToolDefinitions: [],
-    skillsAvailable: false,
     toolCalling: "auto",
     useCompactSystemPrompt: () => false,
     ...overrides,
   });
 
 describe("tool routing", () => {
-  it("keeps the tool list prompt-independent so the cache prefix stays stable", () => {
+  it("keeps the tool list independent of skill availability so the cache prefix stays stable", () => {
     const names = routing().routeToolNames("nvidia", "test-model");
     if (availableToolNames().includes("image.ocr")) {
       expect(names).toContain("image.ocr");
     }
-    expect(names).not.toContain("skill.load");
-    expect(names).not.toContain("skill.list");
+    expect(names).toContain("skill.load");
+    expect(names).toContain("skill.list");
 
-    const gatedOn = routing({
-      skillsAvailable: true,
-    }).routeToolNames("nvidia", "test-model");
-    expect(gatedOn).toContain("skill.load");
-    expect(gatedOn).toContain("skill.list");
+    const withSkills = routing().routeToolNames("nvidia", "test-model");
+    expect(withSkills).toContain("skill.load");
+    expect(withSkills).toContain("skill.list");
     if (availableToolNames().includes("image.ocr")) {
-      expect(gatedOn).toContain("image.ocr");
+      expect(withSkills).toContain("image.ocr");
     }
   });
 
-  it("appends mcp tool names and agent tools only when a runtime exists", () => {
-    const withoutRuntime = routing({
-      mcpToolNames: ["mcp.docs.search"],
-    }).routeToolNames("nvidia", "test-model");
-    expect(withoutRuntime).toContain("mcp.docs.search");
+  it("adds the stable MCP wrapper and controls only when a runtime exists", () => {
+    const withoutRuntime = routing().routeToolNames("nvidia", "test-model");
+    expect(withoutRuntime).not.toContain("mcp.call");
     expect(withoutRuntime).not.toContain("mcp.list");
 
     const withRuntime = routing({
       mcpPresent: true,
-      mcpToolNames: ["mcp.docs.search"],
     }).routeToolNames("nvidia", "test-model");
+    expect(withRuntime).toContain("mcp.call");
     expect(withRuntime).toContain("mcp.list");
   });
 
@@ -76,23 +62,30 @@ describe("tool routing", () => {
     ).toBeUndefined();
   });
 
-  it("allows routed names plus runner meta tools and includes mcp definitions", () => {
+  it("allows routed names plus runner meta tools and includes the MCP wrapper", () => {
     const defs = routing({
       mcpPresent: true,
-      mcpToolNames: ["mcp.docs.search"],
-      mcpToolDefinitions: [mcpDefinition],
     }).selectToolDefs(true, false, "nvidia", "test-model");
 
     expect(defs).toBeDefined();
     const names = defs!.map((definition) => definition.name);
-    expect(names).toContain("mcp.docs.search");
+    expect(names).toContain("mcp.call");
     for (const name of names) {
       const routed = routing({
         mcpPresent: true,
-        mcpToolNames: ["mcp.docs.search"],
       }).routeToolNames("nvidia", "test-model");
       expect(routed.includes(name) || RUNNER_META_TOOL_NAMES.has(name)).toBe(true);
     }
+  });
+
+  it("retains the MCP wrapper in compact native tool sets", () => {
+    const defs = routing({ mcpPresent: true }).selectToolDefs(
+      true,
+      true,
+      "nvidia",
+      "test-model",
+    );
+    expect(defs?.some((definition) => definition.name === "mcp.call")).toBe(true);
   });
 
   it("selects the compact constitution only when compact prompts are enabled", () => {
