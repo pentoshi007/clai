@@ -19,7 +19,6 @@ export interface ToolRoutingInput {
   readonly mcpPresent: boolean;
   readonly mcpToolNames: readonly string[];
   readonly mcpToolDefinitions: readonly ToolDefinition[];
-  readonly skillsAvailable: boolean;
   readonly toolCalling: ToolCallingMode | undefined;
   readonly useCompactSystemPrompt: () => boolean;
 }
@@ -44,15 +43,11 @@ export interface ToolRouting {
 }
 
 const nameAllowed = (
-  input: ToolRoutingInput,
   name: string,
   provider: ProviderId,
   model: string,
 ): boolean => {
   if (name === "image.view") return modelSupportsVision(provider, model);
-  if (name === "skill.load" || name === "skill.list") {
-    return input.skillsAvailable;
-  }
   return true;
 };
 
@@ -62,7 +57,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
       ...availableToolNames(),
       ...input.mcpToolNames,
       ...(input.mcpPresent ? mcpAgentToolNames(input.mode === "ask") : []),
-    ].filter((name) => nameAllowed(input, name, provider, model));
+    ].filter((name) => nameAllowed(name, provider, model));
 
   const resolveNativeTools = (
     provider: ProviderId,
