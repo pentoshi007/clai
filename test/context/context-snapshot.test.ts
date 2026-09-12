@@ -180,7 +180,7 @@ describe("ContextSnapshotV1", () => {
     expect(snapshot.reasoning).toEqual({ kind: "reported", outputTokens: 0 });
   });
 
-  it("preserves provider-reported context through manual and automatic compaction", () => {
+  it("uses reported after-tokens for manual and automatic compaction", () => {
     const current = recordContextUsageSnapshot(
       target,
       undefined,
@@ -205,8 +205,16 @@ describe("ContextSnapshotV1", () => {
       () => 3,
     );
 
-    expect(manual).toBe(current);
-    expect(automatic).toBe(current);
+    expect(manual).toMatchObject({
+      contextTokens: 320,
+      precision: "estimate",
+      scope: "message-history",
+    });
+    expect(automatic).toMatchObject({
+      contextTokens: 320,
+      precision: "estimate",
+      scope: "assembled-request",
+    });
   });
 
   it("persists V1 additively, honors a live limit on restore, and migrates old records", () => {

@@ -45,6 +45,19 @@ describe("fsEdit", () => {
     const result = await fsEdit(file, "NOTFOUND", "replacement");
     expect(result.ok).toBe(false);
     expect(result.output).toContain("No matches");
+    expect(result.output).toContain("copy oldText exactly");
+  });
+
+  it("rejects an empty oldText without scanning or mutating", async () => {
+    const dir = makeTempDir("fsedit");
+    dirs.push(dir);
+    const file = join(dir, "test.txt");
+    writeFileSync(file, "hello world\n");
+
+    const result = await fsEdit(file, "", "replacement");
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("non-empty oldText");
+    expect(readFileSync(file, "utf8")).toBe("hello world\n");
   });
 
   it("fails when count mismatches expected", async () => {

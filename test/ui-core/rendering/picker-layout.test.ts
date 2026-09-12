@@ -65,6 +65,18 @@ describe("wrapped picker options", () => {
     expect(layoutPickerOptions(options, 20, true)[0]!.lines).not.toBe(first[0]!.lines);
   });
 
+  it("keeps one separator between padded options without boundary gaps", () => {
+    const items = layoutPickerOptions([
+      { value: "first", label: "First", description: "First detail" },
+      { value: "second", label: "Second", description: "Second detail" },
+    ], 40, true, 1);
+    expect(items[0]!.lines.some((line) => line.padding)).toBe(false);
+    expect(items[1]!.lines[0]!.padding).toBe(true);
+    expect(items[1]!.lines.at(-1)!.padding).toBeFalsy();
+    expect(items[0]!.height).toBe(2);
+    expect(items[1]!.height).toBe(3);
+  });
+
   it("does not jump to the bottom of an option taller than the viewport", () => {
     const items = layoutPickerOptions([{ value: "long", label: "word ".repeat(60) }], 20, false);
     expect(pickerScrollTop(items, 0, 3, 0)).toBe(0);

@@ -69,6 +69,38 @@ export function clampArgsDisplay(raw: string | undefined): string | undefined {
   return kept.join("\n");
 }
 
+export interface FsReadArgsPresentation {
+  readonly path: string;
+  readonly options: string | undefined;
+}
+
+function optionsFromFsReadJson(raw: string): FsReadArgsPresentation | undefined {
+  if (!raw.startsWith("{")) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.path !== "string") return undefined;
+    const options = Object.entries(parsed)
+      .filter(([key, value]) => key !== "path" && value !== undefined)
+      .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
+      .join(" · ");
+    return { path: parsed.path, options: options || undefined };
+  } catch {
+    return undefined;
+  }
+}
+
+export function presentFsReadArgs(raw: string | undefined): FsReadArgsPresentation {
+  const value = (raw ?? "").trim();
+  if (!value) return { path: "", options: undefined };
+  const json = optionsFromFsReadJson(value);
+  if (json) return json;
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length > 1) return { path: lines[0]!, options: lines.slice(1).join(" · ") };
+  const legacy = /^(.*?)\s{2}lines\s+(.+)$/.exec(lines[0]!);
+  if (legacy) return { path: legacy[1]!, options: `lines=${legacy[2]}` };
+  return { path: lines[0]!, options: undefined };
+}
+
 export function presentTool(item: ToolItem): ToolPresentation {
   const fileDiff =
     isFileMutationTool(item.name) ||
@@ -162,8 +194,8 @@ export interface OutputPresentation {
   readonly truncatedNotice: string | undefined;
 }
 
-const COLLAPSED_HEAD_LINES = 4;
-const COLLAPSED_TAIL_LINES = 4;
+export const TOOL_PREVIEW_HEAD_LINES = 3;
+export const TOOL_PREVIEW_TAIL_LINES = 3;
 const EXPANDED_SAFE_CHARS = 400_000;
 const EXPANDED_SAFE_LINES = 4_000;
 const SAMPLE_CHARS = 4_000;
@@ -234,7 +266,7 @@ export function evidencePreviewLines(
   if (toolName === "web.search") {
     const out: string[] = [];
     for (const line of cleaned) {
-      if (out.length >= 8) break;
+      if (out.length >= 6) break;
       const t = line.trim();
       if (!t) continue;
       if (
@@ -250,7 +282,7 @@ export function evidencePreviewLines(
         out.push(line);
       }
     }
-    return out.length >= 2 ? out.slice(0, 8) : undefined;
+    return out.length >= 2 ? out.slice(0, 6) : undefined;
   }
   if (toolName === "web.fetch" || toolName === "http.fetch") {
     const out: string[] = [];
@@ -295,11 +327,11 @@ export function presentOutput(
           : 0;
       return { lines: cleaned, hiddenAboveCount: hidden, truncatedNotice };
     }
-    const head = cleaned.slice(0, COLLAPSED_HEAD_LINES);
-    const visibleTail = cleaned.slice(-COLLAPSED_TAIL_LINES);
+    const head = cleaned.slice(0, TOOL_PREVIEW_HEAD_LINES);
+    const visibleTail = cleaned.slice(-TOOL_PREVIEW_TAIL_LINES);
     const hiddenAboveCount = Math.max(
       0,
-      cleaned.length - COLLAPSED_HEAD_LINES - COLLAPSED_TAIL_LINES,
+      cleaned.length - TOOL_PREVIEW_HEAD_LINES - TOOL_PREVIEW_TAIL_LINES,
     );
     return {
       lines: [...head, `··· ${hiddenAboveCount} lines more · open pager ···`, ...visibleTail],
@@ -310,8 +342,8 @@ export function presentOutput(
 
   const source = sampleEnds(tail, SAMPLE_CHARS);
   const cleaned = cleanToolOutputLines(source);
-  const headCount = COLLAPSED_HEAD_LINES;
-  const tailCount = COLLAPSED_TAIL_LINES;
+  const headCount = TOOL_PREVIEW_HEAD_LINES;
+  const tailCount = TOOL_PREVIEW_TAIL_LINES;
   const budget = headCount + tailCount;
 
   let lines: string[];

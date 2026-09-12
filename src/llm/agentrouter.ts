@@ -14,8 +14,15 @@ import {
   ProviderError,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { bareModelId } from "./model-families.js";
 
 const baseUrl = "https://agentrouter.org/v1";
+
+const RESPONSES_NATIVE_MODEL = /(?:^|[-./])(?:gpt-5|gpt-6|o[1-4])(?![a-z])/;
+
+export function responsesFirstForModel(model: string): boolean {
+  return RESPONSES_NATIVE_MODEL.test(bareModelId(model));
+}
 
 export const AUTHORIZED_USER_AGENTS: readonly string[] = [
   "claude-cli/1.0.119 (external, cli)",
@@ -146,7 +153,7 @@ export const agentrouterProvider: LlmProvider = {
           },
           async () => {
             const payload = await openAiCompatibleComplete({
-      responsesFirst: true,
+      responsesFirst: responsesFirstForModel(model),
               provider: "AgentRouter",
               providerId: "agentrouter",
               baseUrl,
@@ -203,7 +210,7 @@ export const agentrouterProvider: LlmProvider = {
           },
           async () => {
             const payload = await openAiCompatibleStream({
-      responsesFirst: true,
+      responsesFirst: responsesFirstForModel(model),
               provider: "AgentRouter",
               providerId: "agentrouter",
               baseUrl,

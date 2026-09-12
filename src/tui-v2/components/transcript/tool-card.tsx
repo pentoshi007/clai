@@ -15,7 +15,13 @@ import {
   presentBatchSection,
   type BatchSection,
 } from "../../../ui-core/rendering/batch-sections.js";
-import { presentOutput, presentTool } from "../../../ui-core/rendering/tool-presenter.js";
+import {
+  presentFsReadArgs,
+  presentOutput,
+  presentTool,
+  TOOL_PREVIEW_HEAD_LINES,
+  TOOL_PREVIEW_TAIL_LINES,
+} from "../../../ui-core/rendering/tool-presenter.js";
 import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
 import { clipDiffCardText } from "../../../ui-core/rendering/file-diff-view.js";
 import {
@@ -212,6 +218,8 @@ export function ToolCard(props: {
   } = props;
   const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
     presentTool(item);
+  const isFsRead = item.name === "fs.read";
+  const fsReadArgs = isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (item.status !== "running" && item.status !== "queued") return;
@@ -238,6 +246,7 @@ export function ToolCard(props: {
   const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
   const formatMdRead =
+    !isFsRead &&
     !isBatch &&
     !isBatchLive &&
     !isFileDiff &&
@@ -252,18 +261,24 @@ export function ToolCard(props: {
     if (!formatMdRead || !tail.trim()) return null;
     const clean = extractFsReadFileBody(tail);
     if (!clean.trim()) return null;
-    const budget = expanded ? 60 : 10;
-    return renderStyledMarkdownLines(clean, {
+    const rendered = renderStyledMarkdownLines(clean, {
       width: Math.max(24, termWidth - 12),
       defaultFg: theme.toolOutput,
       stripOuterIndent: true,
       theme,
       colorMode,
-    }).slice(0, budget);
+    });
+    if (expanded) return rendered.slice(0, 60);
+    const previewRows = TOOL_PREVIEW_HEAD_LINES + TOOL_PREVIEW_TAIL_LINES;
+    if (rendered.length <= previewRows) return rendered;
+    return [
+      ...rendered.slice(0, TOOL_PREVIEW_HEAD_LINES),
+      ...rendered.slice(-TOOL_PREVIEW_TAIL_LINES),
+    ];
   }, [formatMdRead, tail, expanded, termWidth, theme, colorMode]);
 
   const { lines, hiddenAboveCount, truncatedNotice } =
-    isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead
+    isFsRead || isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead
       ? {
           lines: [] as string[],
           hiddenAboveCount: 0,
@@ -285,6 +300,7 @@ export function ToolCard(props: {
   const hasWriteManyBody =
     isWriteMany && Boolean(fileChanges && fileChanges.length > 0);
   const hasBody =
+    isFsRead ||
     isBatch ||
     isBatchLive ||
     (isFileDiff && !isWriteMany) ||
@@ -295,6 +311,7 @@ export function ToolCard(props: {
     Boolean(item.artifactPath);
 
   const canToggleOutput =
+    !isFsRead &&
     !isFileDiff &&
     !isBatch &&
     !isBatchLive &&
@@ -304,7 +321,7 @@ export function ToolCard(props: {
       (formatMdRead && (mdPreview?.length ?? 0) > 0));
 
   const openFull = (): void => {
-    if (expanded) return;
+    if (!isFsRead && expanded) return;
     if (item.status === "running" && !hasBody) return;
     void openToolOutputPager(services, item);
   };
@@ -334,7 +351,9 @@ export function ToolCard(props: {
   };
 
   let footerHint: string | undefined;
-  if (isWriteMany && item.status !== "running") {
+  if (isFsRead) {
+    footerHint = "click to open pager";
+  } else if (isWriteMany && item.status !== "running") {
     const n = fileChanges?.length ?? 0;
     footerHint =
       n > 0
@@ -390,7 +409,13 @@ export function ToolCard(props: {
         paddingRight: 1,
         paddingTop: 0,
         paddingBottom: 0,
-      }}
+       }}
+       {...(isFsRead
+         ? {
+             onMouseDown: openFullClick.onMouseDown,
+             onMouseUp: openFullClick.onMouseUp,
+           }
+         : {})}
     >
       {}
       <box
@@ -413,8 +438,12 @@ export function ToolCard(props: {
             flexShrink: 1,
             minWidth: 0,
           }}
-          onMouseDown={openFullClick.onMouseDown}
-          onMouseUp={openFullClick.onMouseUp}
+           {...(!isFsRead
+             ? {
+                 onMouseDown: openFullClick.onMouseDown,
+                 onMouseUp: openFullClick.onMouseUp,
+               }
+             : {})}
         >
           <text
             selectable
@@ -457,6 +486,11 @@ export function ToolCard(props: {
         <text content=" " selectable={false} style={{ flexShrink: 0 }} />
         <text
           selectable={false}
+          content="("
+          style={{ fg: statusBadgeBg, attributes: TextAttributes.BOLD, flexShrink: 0 }}
+        />
+        <text
+          selectable={false}
           content={` ${statusLabel} `}
           style={{
             fg: theme.white,
@@ -464,6 +498,11 @@ export function ToolCard(props: {
             attributes: TextAttributes.BOLD,
             flexShrink: 0,
           }}
+        />
+        <text
+          selectable={false}
+          content=")"
+          style={{ fg: statusBadgeBg, attributes: TextAttributes.BOLD, flexShrink: 0 }}
         />
         {isFileDiff ? (
           <>
@@ -509,7 +548,22 @@ export function ToolCard(props: {
         ) : null}
       </box>
 
-      {argsDisplay && argsLabel ? (
+      {isFsRead ? (
+        <box style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
+          {fsReadArgs?.options ? (
+            <box style={{ flexDirection: "row", width: "100%" }}>
+              <text selectable style={{ fg: theme.muted }}>options: </text>
+              <text selectable style={{ fg: theme.inputBorder }}>{fsReadArgs.options}</text>
+            </box>
+          ) : null}
+          {fsReadArgs?.path ? (
+            <box style={{ flexDirection: "row", width: "100%" }}>
+              <text selectable style={{ fg: theme.muted }}>file: </text>
+              <LinkableText text={fsReadArgs.path} theme={theme} fg={theme.inputBorder} selectable />
+            </box>
+          ) : null}
+        </box>
+      ) : argsDisplay && argsLabel ? (
         <box
           style={{
             flexDirection: "row",
@@ -632,7 +686,7 @@ export function ToolCard(props: {
       ) : null}
 
       {}
-      {item.artifactPath && !isFileDiff && !isMutation ? (
+      {item.artifactPath && !isFsRead && !isFileDiff && !isMutation ? (
         <box
           style={{
             flexDirection: "row",

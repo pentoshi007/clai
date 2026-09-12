@@ -38,6 +38,7 @@ describe("compatible provider revisions through the agent runner", () => {
     ["custom:chat", "agent"],
   ] as const)("%s in %s mode keeps sent history across revisions separated by four-minute pauses", async (id, mode) => {
     const providerId = id.startsWith("agentrouter") ? "agentrouter" : id;
+    const model = id === "agentrouter-responses" ? "gpt-5.1" : "claude-opus-4-6";
     const cwd = process.cwd();
     const root = mkdtempSync(join(tmpdir(), "clai-cache-revision-"));
     mkdirSync(join(root, ".clai"));
@@ -95,7 +96,7 @@ describe("compatible provider revisions through the agent runner", () => {
           ? `Revise the TCP explanation, revision ${turn}. Return the revised prose without using tools.`
           : `Explain TCP revision ${turn}`;
         const result = await runAgentTurn(prompt, {
-          session, history, provider: providerId as ProviderId, model: "claude-opus-4-6",
+          session, history, provider: providerId as ProviderId, model,
           mode, maxSteps: 2, toolCalling: "native",
           onMessages: (messages) => { history = messages; },
         });

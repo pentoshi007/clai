@@ -38,9 +38,44 @@ const assertPickerTitle = (title: string, width: number): void => {
   const row = setup.captureSpans().lines[heading.y]!;
   const text = row.spans.map((span) => span.text).join("");
   assert.equal(text.slice(heading.x, heading.x + width), centerChromeRow(title, width));
-  const background = RGBA.fromHex(themeFor(services.capabilities.themeHint).chipIndigo);
-  const cells = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg));
-  assert.ok(cells.slice(heading.x, heading.x + width).every((color) => color.equals(background)));
+  const theme = themeFor(services.capabilities.themeHint);
+  const foregrounds = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.fg));
+  const backgrounds = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg));
+  assert.ok(foregrounds.slice(heading.x, heading.x + width).every((color) => color.equals(RGBA.fromHex(theme.white))));
+  assert.ok(backgrounds.slice(heading.x, heading.x + width).every((color) => !color.equals(RGBA.fromHex(theme.aquaLight))));
+};
+const assertPickerFocusContrast = (label: string): void => {
+  const theme = themeFor(services.capabilities.themeHint);
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes(label));
+  assert.ok(span);
+  assert.ok(span.bg.equals(RGBA.fromHex(theme.chipTeal)));
+  assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
+};
+const pickerRowText = (row: number): string => setup.captureSpans().lines[row]!.spans
+  .map((span) => span.text).join("").replace(/│/g, "").trim();
+const assertCompletionHeaderStyle = (): void => {
+  const theme = themeFor(services.capabilities.themeHint);
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes("commands ·"));
+  assert.ok(span);
+  assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
+  assert.ok(!span.bg.equals(RGBA.fromHex(theme.aquaLight)));
+};
+const assertFocusedCompletionContrast = (): void => {
+  const theme = themeFor(services.capabilities.themeHint);
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes("❯"));
+  assert.ok(span);
+  assert.ok(span.bg.equals(RGBA.fromHex(theme.chipTeal)));
+  assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
+};
+const assertPickerFilterSpacing = (): void => {
+  const lines = setup.captureSpans().lines;
+  const filterRow = lines.findIndex((line) => line.spans.some((span) => span.text.includes("type to filter")));
+  assert.ok(filterRow > 0);
+  assert.notEqual(pickerRowText(filterRow - 1), "");
+  assert.notEqual(pickerRowText(filterRow + 1), "");
 };
 const pickerScrollBox = (): ScrollBoxRenderable => {
   const box = setup.renderer.root.findDescendantById("picker-options");
@@ -150,6 +185,24 @@ try {
     evidence.push(setup.captureCharFrame());
     await settle(() => services.overlay.close());
   }
+  await settle(() => services.overlay.openPicker({
+    title: "Picker spacing",
+    twoLine: true,
+    options: [
+      { value: "first", label: "First option", description: "First description" },
+      { value: "second", label: "Second option", description: "Second description" },
+    ],
+  }, () => services.overlay.close()));
+  assertPickerFocusContrast("First option");
+  assertPickerFocusContrast("First description");
+  assertPickerFilterSpacing();
+  const spacingRows = setup.captureCharFrame().split("\n");
+  const firstDescription = spacingRows.findIndex((row) => row.includes("First description"));
+  const secondOption = spacingRows.findIndex((row) => row.includes("Second option"));
+  assert.notEqual(pickerRowText(firstDescription + 1), "");
+  assert.equal(secondOption, firstDescription + 1);
+  evidence.push(setup.captureCharFrame());
+  await settle(() => services.overlay.close());
   const largeOptions = Array.from({ length: 10000 }, (_, index) => ({
     value: String(index), label: `Option ${index}`, description: `Description ${index}\nFull details ${index}`,
   }));
@@ -194,6 +247,8 @@ try {
   await settle(() => setup.resize(120, 40));
   const slashMenu = await settle(() => setup.mockInput.pressKey("/"));
   assert.equal(services.overlay.getState().kind, "none");
+  assertCompletionHeaderStyle();
+  assertFocusedCompletionContrast();
   assert.match(slashMenu, /commands ·/);
   const slashRows = slashMenu.split("\n");
   const menuTop = slashRows.findIndex((line) => line.includes("commands ·"));

@@ -160,6 +160,14 @@ export async function fsEdit(
       exitCode: 1,
     };
   }
+  if (oldText.length === 0) {
+    return {
+      ok: false,
+      output:
+        "fs.edit requires a non-empty oldText copied from current file evidence. Read or search the file before retrying.",
+      exitCode: 1,
+    };
+  }
   const content = await readFile(resolved, "utf8");
   const expected = expectedReplacements ?? 1;
 
@@ -220,7 +228,7 @@ export async function fsEdit(
   if (count === 0) {
     return {
       ok: false,
-      output: `No matches found for the search text in ${resolved}. The text to replace was not found.`,
+      output: `No matches found for the search text in ${resolved}. The text to replace was not found. Re-read or search the current file and copy oldText exactly before retrying; do not repeat the same oldText.`,
       exitCode: 1,
     };
   }
