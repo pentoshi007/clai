@@ -20,6 +20,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   orcarouter: "openai",
   "merge-gateway": "openai",
   explabs: "openai",
+  vercel: "openai",
   anthropic: "anthropic",
   "aws-mantle": "openai",
   gemini: "gemini",

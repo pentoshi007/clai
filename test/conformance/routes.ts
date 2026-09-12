@@ -187,4 +187,12 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     auth: { baseUrl: "http://127.0.0.1:11434" },
     urlContains: "/api/chat",
   },
+  {
+    id: "vercel",
+    provider: "vercel",
+    family: "meta_responses",
+    model: "openai/gpt-5.4-mini",
+    auth: { apiKey: "gateway-conformance-key" },
+    urlContains: "/responses",
+  },
 ];

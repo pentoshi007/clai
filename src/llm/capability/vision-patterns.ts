@@ -181,6 +181,17 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /vision/i,
     /vl$/i,
   ],
+  vercel: [
+    /gpt-4o/i,
+    /gpt-4\.1/i,
+    /gpt-5/i,
+    /gpt-6/i,
+    /claude-(?:opus|sonnet|haiku)/i,
+    /gemini-/i,
+    /llama-4/i,
+    /vision/i,
+    /vl$/i,
+  ],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
@@ -202,4 +213,5 @@ export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   orcarouter: "openai/gpt-4o-mini",
   "merge-gateway": "openai/gpt-5.2",
   explabs: "claude-fable-5.1",
+  vercel: "openai/gpt-4o",
 };

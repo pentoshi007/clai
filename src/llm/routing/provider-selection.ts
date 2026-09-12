@@ -28,6 +28,7 @@ import { orcarouterProvider } from "../orcarouter.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 import { qwenCloudProvider } from "../qwen-cloud.js";
 import { tokenrouterProvider } from "../tokenrouter.js";
+import { vercelProvider } from "../vercel.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -50,6 +51,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   orcarouter: orcarouterProvider,
   "merge-gateway": mergeGatewayProvider,
   explabs: explabsProvider,
+  vercel: vercelProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -73,6 +75,7 @@ const fallbackOrder: ProviderId[] = [
   "orcarouter",
   "merge-gateway",
   "explabs",
+  "vercel",
 ];
 
 function allFallbackIds(): ProviderId[] {

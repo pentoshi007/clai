@@ -172,6 +172,7 @@ const REPLAY_DIALECT_BY_WIRE: Record<
   "anthropic-messages": "anthropic-messages",
   "gemini-generate-content": "gemini-generate-content",
   "meta-responses": "meta-responses",
+  responses: "openai-compatible",
   "ollama-chat": "ollama-chat",
 };
 

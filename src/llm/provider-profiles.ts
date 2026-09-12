@@ -32,6 +32,7 @@ import {
 
 const NATIVE_WIRE_API: Partial<Record<ProviderId, WireApi>> = {
   anthropic: "anthropic-messages",
+  vercel: "responses",
   gemini: "gemini-generate-content",
   meta: "meta-responses",
   ollama: "ollama-chat",

@@ -100,6 +100,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Merge Gateway keys start with mg_ (create one at https://gateway.merge.dev)";
   if (provider === "explabs")
     return "Experiential Labs keys start with xpl_ (mint one at https://platform.experientiallabs.ai/settings/api-keys)";
+  if (provider === "vercel")
+    return "Vercel AI Gateway keys are issued by Vercel (AI_GATEWAY_API_KEY)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 
