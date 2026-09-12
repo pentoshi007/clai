@@ -241,6 +241,7 @@ export class SessionController implements Disposable {
         void this.persistNow().catch(() => undefined);
       },
       enabled: () => !this.deps.noHistory && !getConfig().privateMode,
+      transcript: deps.getTranscriptSnapshot,
     });
     if (deps.jobs) {
       this.responder = new SessionResponder({
