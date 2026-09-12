@@ -74,6 +74,44 @@ describe("buildFeedBlocks", () => {
     expect(toolElapsed(ctx, item!)).toBeDefined();
   });
 
+  it("keeps fs.read cards compact while showing options and the file", () => {
+    const source = transcriptItems(turn.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    );
+    expect(source).toBeDefined();
+    const item = {
+      ...source!,
+      name: "fs.read",
+      argsDisplay: "src/app.ts\noffset=12 · limit=8 · lines=12–19",
+    };
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
+    const text = buildToolLines(ctx, item).map(stripAnsi).join("\n");
+    expect(text).toContain("options: offset=12");
+    expect(text).toContain("file: src/app.ts");
+    expect(text).toContain("Ctrl+O to expand");
+    expect(text).not.toContain("PASS src/routes/users.test.ts");
+  });
+
+  it("shows three head and tail lines in collapsed tool output", () => {
+    const previewTurn = scriptedTurn();
+    const source = transcriptItems(previewTurn.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    );
+    expect(source).toBeDefined();
+    previewTurn.spool.replace(
+      source!.toolCallId,
+      Array.from({ length: 10 }, (_, index) => `preview line ${index + 1}`).join("\n"),
+    );
+    const ctx = blockContextFor(previewTurn.state, feedView(previewTurn, { columns: 80 }));
+    const text = buildToolLines(ctx, source!).map(stripAnsi).join("\n");
+    expect(text).toContain("preview line 1");
+    expect(text).toContain("preview line 3");
+    expect(text).toContain("preview line 8");
+    expect(text).toContain("preview line 10");
+    expect(text).not.toContain("preview line 4");
+    expect(text).toContain("+4 lines");
+  });
+
   it("keeps diff hunks visible while tool output is minimized", () => {
     const state = { ...turn.state, expandOutputGlobal: false, expandFileDiffsGlobal: true };
     const diff = buildFeedBlocks(state, feedView(turn, { columns: 96 })).find(

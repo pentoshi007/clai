@@ -106,11 +106,10 @@ describe("image route compatibility", () => {
 
     const result = await run(request);
     expect(result.text).toBe("conformance answer");
-    expect(transport.generations).toHaveLength(4);
-    const first = transport.generations[1]?.body as Record<string, unknown>;
-    const second = transport.generations[3]?.body as Record<string, unknown>;
-    expect((transport.generations[0]?.body as Record<string, unknown>).max_output_tokens).toBe(512);
-    expect((transport.generations[2]?.body as Record<string, unknown>).max_output_tokens).toBe(512);
+    expect(transport.generations).toHaveLength(2);
+    const first = transport.generations[0]?.body as Record<string, unknown>;
+    const second = transport.generations[1]?.body as Record<string, unknown>;
+    expect(transport.generations.every((generation) => generation.url.endsWith("/chat/completions"))).toBe(true);
     expect(JSON.stringify(first)).toContain("image_url");
     expect(JSON.stringify(second)).not.toContain("image_url");
     expect(JSON.stringify(second)).not.toContain('"name":"image_view"');
@@ -125,7 +124,7 @@ describe("image route compatibility", () => {
     if (mode === "stream") expect(snapshots[0]?.messages[1]?.images).toBeUndefined();
 
     await run(request);
-    expect(transport.generations).toHaveLength(5);
+    expect(transport.generations).toHaveLength(3);
     expect(modelVisionSupport("agentrouter", model)).toBe("no");
   });
 

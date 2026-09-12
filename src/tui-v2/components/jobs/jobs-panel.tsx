@@ -32,20 +32,20 @@ function statusView(job: BackgroundJob, theme: Theme): { text: string; fg: strin
   if (job.status === "running") {
     const heartbeatAge = job.heartbeatAt ? Date.now() - new Date(job.heartbeatAt).getTime() : undefined;
     return heartbeatAge !== undefined && heartbeatAge > 120_000
-      ? { text: "running (quiet)", fg: theme.foreground }
-      : { text: "running", fg: theme.foreground };
+      ? { text: "running (quiet)", fg: theme.muted }
+      : { text: "running", fg: theme.activity };
   }
   if (job.status === "exited") {
-    return { text: `exited (${job.exitCode ?? "?"})`, fg: job.exitCode ? theme.accent : theme.muted };
+    return { text: `exited (${job.exitCode ?? "?"})`, fg: job.exitCode ? theme.diffDel : theme.success };
   }
   if (job.status === "failed") {
-    return { text: `failed (${job.exitCode ?? "?"})`, fg: theme.accent };
+    return { text: `failed (${job.exitCode ?? "?"})`, fg: theme.diffDel };
   }
   if (job.status === "killed") {
     const detail = [job.signal, job.exitCode].filter((value) => value !== undefined).join("/") || "?";
-    return { text: `killed (${detail})`, fg: theme.accent };
+    return { text: `killed (${detail})`, fg: theme.diffDel };
   }
-  return { text: job.status, fg: theme.accent };
+  return { text: job.status, fg: theme.activity };
 }
 
 function jobPhase(
@@ -253,7 +253,7 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
             .filter(Boolean)
             .join(" ");
           const marker = focused ? "❯ " : "  ";
-          const headline = `${marker}${phase.glyph} ${status.text} · ${phase.label}  ·  ${formatJobElapsed(job, now)}`;
+          const headline = `${marker}${phase.glyph} ${status.text}${notification ? ` · ${phase.label}` : ""}  ·  ${formatJobElapsed(job, now)}`;
           const meta = `    ${kindTag} · ${linkage}`;
           const command = job.name ? `${job.name}: ${job.command}` : job.command;
           return (
@@ -266,7 +266,7 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
                 content={headline}
                 wrapMode="none"
                 style={{
-                  fg: focused ? theme.accent : status.fg,
+                  fg: status.fg,
                   height: 1,
                   width: "100%",
                   ...(focused ? { attributes: TextAttributes.BOLD } : {}),

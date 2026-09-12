@@ -185,14 +185,6 @@ export function compactedContextSnapshot(
   scope: Extract<ContextSnapshotScope, "message-history" | "assembled-request">,
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 {
-  if (
-    current?.precision === "provider-exact" &&
-    measuredOnTargetRoute(target, current)
-  ) {
-    return sameLimit(current.limit, limitFor(target))
-      ? current
-      : withContextSnapshotLimit(current, limitFor(target));
-  }
   const contextTokens =
     typeof afterTokens === "number" && Number.isFinite(afterTokens) && afterTokens > 0
       ? Math.floor(afterTokens)

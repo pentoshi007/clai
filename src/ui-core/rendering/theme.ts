@@ -19,6 +19,7 @@ export interface Theme {
   readonly magenta: string;
   readonly cyan: string;
   readonly aqua: string;
+  readonly aquaLight: string;
   readonly white: string;
   readonly response: string;
   readonly activity: string;
@@ -70,6 +71,7 @@ const DARK_THEME: Theme = {
   magenta: "#FF55FF",
   cyan: "#67E8F9",
   aqua: "#2EEBFF",
+  aquaLight: "#67E8F9",
   white: "#FFFFFF",
   response: "#4ADE80",
   activity: "#FACC15",
@@ -121,6 +123,7 @@ const LIGHT_THEME: Theme = {
   magenta: "#D946EF",
   cyan: "#0891b2",
   aqua: "#0891B2",
+  aquaLight: "#22D3EE",
   white: "#FFFFFF",
   response: "#15803d",
   activity: "#a16207",

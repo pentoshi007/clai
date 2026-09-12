@@ -31,16 +31,51 @@ const settle = async (action: () => unknown = () => undefined, waitMs = 80): Pro
   return setup.captureCharFrame();
 };
 const evidence: string[] = [];
-const assertPickerTitle = (title: string, width: number, history = false): void => {
+const assertPickerTitle = (title: string, width: number): void => {
   const heading = setup.renderer.root.findDescendantById("picker-title");
   assert.ok(heading);
   assert.equal(heading.width, width);
   const row = setup.captureSpans().lines[heading.y]!;
   const text = row.spans.map((span) => span.text).join("");
   assert.equal(text.slice(heading.x, heading.x + width), centerChromeRow(title, width));
-  const background = RGBA.fromHex(themeFor(services.capabilities.themeHint)[history ? "chipIndigo" : "magenta"]);
-  const cells = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg));
-  assert.ok(cells.slice(heading.x, heading.x + width).every((color) => color.equals(background)));
+  const theme = themeFor(services.capabilities.themeHint);
+  const foregrounds = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.fg));
+  const backgrounds = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg));
+  assert.ok(foregrounds.slice(heading.x, heading.x + width).every((color) => color.equals(RGBA.fromHex(theme.white))));
+  assert.ok(backgrounds.slice(heading.x, heading.x + width).every((color) => !color.equals(RGBA.fromHex(theme.aquaLight))));
+};
+const assertPickerFocusContrast = (label: string): void => {
+  const theme = themeFor(services.capabilities.themeHint);
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes(label));
+  assert.ok(span);
+  assert.ok(span.bg.equals(RGBA.fromHex(theme.chipTeal)));
+  assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
+};
+const pickerRowText = (row: number): string => setup.captureSpans().lines[row]!.spans
+  .map((span) => span.text).join("").replace(/│/g, "").trim();
+const assertCompletionHeaderStyle = (): void => {
+  const theme = themeFor(services.capabilities.themeHint);
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes("commands ·"));
+  assert.ok(span);
+  assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
+  assert.ok(!span.bg.equals(RGBA.fromHex(theme.aquaLight)));
+};
+const assertFocusedCompletionContrast = (): void => {
+  const theme = themeFor(services.capabilities.themeHint);
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes("❯"));
+  assert.ok(span);
+  assert.ok(span.bg.equals(RGBA.fromHex(theme.chipTeal)));
+  assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
+};
+const assertPickerFilterSpacing = (): void => {
+  const lines = setup.captureSpans().lines;
+  const filterRow = lines.findIndex((line) => line.spans.some((span) => span.text.includes("type to filter")));
+  assert.ok(filterRow > 0);
+  assert.notEqual(pickerRowText(filterRow - 1), "");
+  assert.notEqual(pickerRowText(filterRow + 1), "");
 };
 const pickerScrollBox = (): ScrollBoxRenderable => {
   const box = setup.renderer.root.findDescendantById("picker-options");
@@ -127,16 +162,47 @@ try {
     assert.equal(services.overlay.getState().kind, "none");
   }
   await settle(() => setup.resize(120, 40));
+  await settle(() => services.overlay.openPager("Searchable", "alpha line\nbeta line\ngamma line", undefined, undefined, "plain"));
+  assert.equal(services.focus.activeContext(), "pager");
+  const searchBarFrame = await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
+  assert.match(searchBarFrame, /\^R/, "ctrl+r must open the pager search bar while the pager overlay is active");
+  assert.equal(services.focus.activeContext(), "pager", "transcript search must not steal ctrl+r from the pager");
+  for (const char of "beta") await settle(() => setup.mockInput.pressKey(char), 5);
+  const afterSubmit = await settle(() => setup.mockInput.pressEnter());
+  assert.doesNotMatch(afterSubmit, / \^R /, "submitting the query closes the pager search bar");
+  await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
+  const afterEscape = await settle(() => setup.mockInput.pressEscape());
+  assert.doesNotMatch(afterEscape, / \^R /, "escape closes the pager search bar");
+  await settle(() => setup.mockInput.pressEscape());
+  assert.equal(services.overlay.getState().kind, "none");
   for (const title of ["History", "Models · openai · live", "Providers", "Reasoning effort"]) {
     await settle(() => services.overlay.openPicker({
       title,
       historyStyle: title === "History",
       options: [{ value: "one", label: "First option" }],
     }, () => services.overlay.close()));
-    assertPickerTitle(title, overlaySize(120, 40).width - 2, title === "History");
+    assertPickerTitle(title, overlaySize(120, 40).width - 2);
     evidence.push(setup.captureCharFrame());
     await settle(() => services.overlay.close());
   }
+  await settle(() => services.overlay.openPicker({
+    title: "Picker spacing",
+    twoLine: true,
+    options: [
+      { value: "first", label: "First option", description: "First description" },
+      { value: "second", label: "Second option", description: "Second description" },
+    ],
+  }, () => services.overlay.close()));
+  assertPickerFocusContrast("First option");
+  assertPickerFocusContrast("First description");
+  assertPickerFilterSpacing();
+  const spacingRows = setup.captureCharFrame().split("\n");
+  const firstDescription = spacingRows.findIndex((row) => row.includes("First description"));
+  const secondOption = spacingRows.findIndex((row) => row.includes("Second option"));
+  assert.notEqual(pickerRowText(firstDescription + 1), "");
+  assert.equal(secondOption, firstDescription + 1);
+  evidence.push(setup.captureCharFrame());
+  await settle(() => services.overlay.close());
   const largeOptions = Array.from({ length: 10000 }, (_, index) => ({
     value: String(index), label: `Option ${index}`, description: `Description ${index}\nFull details ${index}`,
   }));
@@ -181,6 +247,8 @@ try {
   await settle(() => setup.resize(120, 40));
   const slashMenu = await settle(() => setup.mockInput.pressKey("/"));
   assert.equal(services.overlay.getState().kind, "none");
+  assertCompletionHeaderStyle();
+  assertFocusedCompletionContrast();
   assert.match(slashMenu, /commands ·/);
   const slashRows = slashMenu.split("\n");
   const menuTop = slashRows.findIndex((line) => line.includes("commands ·"));

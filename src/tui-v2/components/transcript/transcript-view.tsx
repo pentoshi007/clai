@@ -684,7 +684,11 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       return;
     }
 
-    if (searchActive) {
+    const overlayActive =
+      services.focus.hasOverlay() &&
+      services.focus.activeContext() !== "transcript-search";
+
+    if (searchActive && !overlayActive) {
       if (chord === "escape") {
         key.preventDefault();
         clearSearch();
@@ -707,7 +711,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       }
     }
 
-    if (chord === "ctrl+r") {
+    if (chord === "ctrl+r" && !overlayActive) {
       key.preventDefault();
       openSearch();
       return;

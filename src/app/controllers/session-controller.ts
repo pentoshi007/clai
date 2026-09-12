@@ -165,6 +165,7 @@ export class SessionController implements Disposable {
   private readonly persistence: SessionPersistenceQueue;
   private static readonly AUTOSAVE_MIN_MS = 15_000;
   private contextSnapshot: ContextSnapshotV1 | undefined;
+  private preserveCompactionEstimate = false;
   private lastContextCompactionId: string | undefined;
   private readonly contextLimits = new SessionContextLimits();
   private readonly usageLedger = new SessionUsageLedger();
@@ -363,6 +364,9 @@ export class SessionController implements Disposable {
         () => this.contextTimestamp(),
       ),
     );
+    if (usage.exact && usage.promptTokensKnown !== false) {
+      this.preserveCompactionEstimate = false;
+    }
     this.notifyState();
   }
 
@@ -386,11 +390,16 @@ export class SessionController implements Disposable {
         () => this.contextTimestamp(),
       ),
     );
+    this.preserveCompactionEstimate =
+      typeof afterTokens === "number" &&
+      Number.isFinite(afterTokens) &&
+      afterTokens > 0;
     if (compactionId) this.lastContextCompactionId = compactionId;
     this.notifyState();
   }
 
   noteContextEstimate(estimatedTokens: number, promptUsageMissing = false): void {
+    if (this.preserveCompactionEstimate) return;
     const next = estimatedContextSnapshot(
       this.usageTarget,
       this.contextSnapshot,
@@ -427,6 +436,7 @@ export class SessionController implements Disposable {
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
     this.lastMainRequestSnapshot = undefined;
+    this.preserveCompactionEstimate = false;
     this.setContextSnapshot(this.resolveContextSnapshot());
     clearTextOnlyModels();
     void prefetchProviderCatalog(provider);
@@ -443,6 +453,7 @@ export class SessionController implements Disposable {
   setModel(model: string | undefined): void {
     this.model = model;
     this.lastMainRequestSnapshot = undefined;
+    this.preserveCompactionEstimate = false;
     this.setContextSnapshot(this.resolveContextSnapshot());
     clearTextOnlyModels();
     publishRouteReasoningVocabulary(this.provider, model);
@@ -479,6 +490,7 @@ export class SessionController implements Disposable {
     this.sessionTitle = options.title;
     this.namer.restore(options.title);
     this.lastContextCompactionId = undefined;
+    this.preserveCompactionEstimate = false;
     const restored = restoredContextSnapshot(
       this.usageTarget,
       options.contextUsage,

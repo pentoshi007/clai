@@ -43,6 +43,13 @@ describe("prompt rendering", () => {
     expect(prompt).toContain("sysinfo");
   });
 
+  it("agent prompt requires exact fs.edit evidence before retrying", () => {
+    const prompt = renderAgentSystemPrompt("fs.read, fs.search, fs.edit");
+    expect(prompt).toContain("both the exact current oldText and intended newText");
+    expect(prompt).toContain("never reconstruct it from memory or a stale preview");
+    expect(prompt).toContain("do not repeat the same oldText");
+  });
+
   it("agent prompt has no unresolved template variables", () => {
     const prompt = renderAgentSystemPrompt("shell.exec");
     expect(prompt).not.toContain("{{os}}");

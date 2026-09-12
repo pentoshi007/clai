@@ -304,6 +304,7 @@ function ripgrepArgs(input: {
   const args = [
     "--line-number",
     "--no-heading",
+    "--with-filename",
     "--color",
     "never",
     "--max-count",
@@ -333,7 +334,7 @@ function grepArgs(input: {
   readonly literal: boolean;
   readonly options: FsSearchOptions;
 }): string[] {
-  const args = ["-R", "-n", "-I", "-m", String(input.maxPerFile)];
+  const args = ["-R", "-n", "-H", "-I", "-m", String(input.maxPerFile)];
   args.push(input.literal ? "-F" : "-E");
   if (input.options.caseInsensitive) args.push("-i");
   if (input.options.filesOnly) args.push("-l");

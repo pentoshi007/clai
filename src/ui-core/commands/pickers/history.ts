@@ -62,22 +62,26 @@ export async function handleHistory(services: AppServices, invocation?: CommandI
       value: "__current__",
       label: currentTitle?.trim() || "Current session",
       description: currentMessages.length
-        ? `id ${currentId}  ·  now  ·  ${liveVisualCount} items  ·  ${currentMessages.length} model msgs  ·  this window`
-        : `id ${currentId}  ·  now  ·  empty session  ·  this window`,
+        ? `now  ·  ${liveVisualCount} items  ·  ${currentMessages.length} model msgs  ·  this window  ·  id ${currentId}`
+        : `now  ·  empty session  ·  this window  ·  id ${currentId}`,
       active: true,
+      icon: "●",
+      tone: "success",
     },
     ...runtimeOnly.map((runtime) => ({
       value: runtime.sessionId,
       label: runtime.title?.trim() || "Live session",
       description: [
-        `id ${runtime.sessionId}`,
         runtime.busy ? "agent running" : "live",
         runtime.attached ? "attached elsewhere" : "detached",
         shortCwd(runtime.cwd) ? `in ${shortCwd(runtime.cwd)}` : "",
+        `id ${runtime.sessionId}`,
       ]
         .filter(Boolean)
         .join("  ·  "),
       active: false,
+      icon: runtime.busy ? "⟳" : "◆",
+      tone: runtime.busy ? ("warn" as const) : ("accent" as const),
     })),
     ...otherSessions.map((session) => {
       const runtime = runtimeById.get(session.id);
@@ -85,17 +89,16 @@ export async function handleHistory(services: AppServices, invocation?: CommandI
       const date = session.updatedAt ?? session.createdAt;
       const title = (session.name && session.name.trim()) || "Untitled chat";
       const meta = [
-        `id ${session.id}`,
         runtime
           ? runtime.busy
             ? "agent running"
             : runtime.attached
               ? "live · attached elsewhere"
               : "live · detached"
-          : relativeTime(date) || "some time ago",
-        date.slice(0, 16).replace("T", " "),
+          : relativeTime(date) || date.slice(0, 16).replace("T", " ") || "some time ago",
         `${count} item${count === 1 ? "" : "s"}`,
         shortCwd(session.cwd) ? `in ${shortCwd(session.cwd)}` : "",
+        `id ${session.id}`,
       ]
         .filter(Boolean)
         .join("  ·  ");
@@ -104,6 +107,8 @@ export async function handleHistory(services: AppServices, invocation?: CommandI
         label: title,
         description: meta,
         active: false,
+        icon: runtime ? (runtime.busy ? "⟳" : "◆") : "○",
+        tone: runtime ? (runtime.busy ? ("warn" as const) : ("accent" as const)) : ("muted" as const),
       };
     }),
   ];
