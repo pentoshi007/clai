@@ -4,6 +4,7 @@ import { stripSupersededElidedArgs } from "../../message-slim.js";
 
 export type ToolNameCanonicalizer = {
   canonicalizeToolName(name: string): string;
+  getTool?(name: string): { canonicalName: string; wireName: string } | undefined;
 };
 
 export const canonicalizeTurnCall = (
@@ -11,18 +12,20 @@ export const canonicalizeTurnCall = (
   mcpRuntime?: ToolNameCanonicalizer | undefined,
 ): ToolCall => {
   const normalized = normalizeToolCall(rawCall);
-  const mcpCall = unwrapMcpCall(normalized);
-  const canonicalMcpName = mcpRuntime?.canonicalizeToolName(mcpCall.name);
+  if (normalized.name === "mcp.call") return unwrapMcpCall(normalized, mcpRuntime);
+  const canonicalMcpName = mcpRuntime?.canonicalizeToolName(normalized.name);
   const named =
-    canonicalMcpName && canonicalMcpName !== mcpCall.name
-      ? { ...mcpCall, name: canonicalMcpName }
-      : mcpCall;
+    canonicalMcpName && canonicalMcpName !== normalized.name
+      ? { ...normalized, name: canonicalMcpName }
+      : normalized;
   const args = stripSupersededElidedArgs(named.args);
   return args === named.args ? named : { ...named, args };
 };
 
-const unwrapMcpCall = (call: ToolCall): ToolCall => {
-  if (call.name !== "mcp.call") return call;
+const unwrapMcpCall = (
+  call: ToolCall,
+  mcpRuntime?: ToolNameCanonicalizer,
+): ToolCall => {
   const name = call.args.name;
   const arguments_ = call.args.arguments;
   if (
@@ -33,5 +36,11 @@ const unwrapMcpCall = (call: ToolCall): ToolCall => {
   ) {
     return call;
   }
-  return { ...call, name, args: arguments_ as Record<string, unknown> };
+  const tool = mcpRuntime?.getTool?.(name);
+  if (!tool || (tool.canonicalName !== name && tool.wireName !== name)) return call;
+  return {
+    ...call,
+    name: tool.canonicalName,
+    args: stripSupersededElidedArgs(arguments_ as Record<string, unknown>),
+  };
 };

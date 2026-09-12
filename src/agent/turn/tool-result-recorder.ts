@@ -46,6 +46,20 @@ const deferredImageMessage = (
   };
 };
 
+const nativeHistoryToolName = (
+  messages: readonly ChatMessage[],
+  toolCallId: string,
+  fallback: string,
+): string => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const call = messages[index]?.toolCalls?.find(
+      (candidate) => candidate.id === toolCallId,
+    );
+    if (call) return call.name;
+  }
+  return fallback;
+};
+
 export const createToolResultRecorder = (ports: ToolResultRecorderPorts) => ({
   record: (record: ToolResultRecord): void => {
     const deduped = dedupeToolContextOutput({
@@ -76,7 +90,7 @@ export const createToolResultRecorder = (ports: ToolResultRecorderPorts) => ({
         ports.messages,
         record.id,
         toolContent,
-        record.call.name,
+        nativeHistoryToolName(ports.messages, record.id, record.call.name),
         record.result.ok,
       );
     } else {

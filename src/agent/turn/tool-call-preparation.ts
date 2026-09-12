@@ -24,6 +24,13 @@ export const invalidToolCall = (
       (raw ? `Partial: ${raw}` : "");
     return { reason, result: { ok: false, output: reason, exitCode: 1 } };
   }
+  if (call.name === "mcp.call") {
+    const reason =
+      "mcp.call requires an active MCP tool's exact dotted or wire name and an arguments object. " +
+      "Built-in tools, MCP controls, and inactive or unknown targets cannot be called through mcp.call. " +
+      "Use mcp.tools to inspect schemas and mcp.enable to select a server.";
+    return { reason, result: { ok: false, output: reason, exitCode: 1 } };
+  }
   const elidedStub = findElidedStubArg(call.args);
   if (!elidedStub) return undefined;
   const reason = elidedStubReuseMessage(elidedStub.key);

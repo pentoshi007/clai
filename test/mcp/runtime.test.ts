@@ -269,7 +269,7 @@ describe("McpRuntime calls and guidance", () => {
     const runtime = makeRuntime();
     await runtime.refresh();
 
-    expect(runtime.promptContext({ nativeTools: true })).toBeUndefined();
+    expect(runtime.promptContext({ nativeTools: true })).toContain("Selection: off");
     runtime.selectAll();
     const native = runtime.promptContext({ nativeTools: true });
     expect(native).toContain("Live servers: 2/2");
