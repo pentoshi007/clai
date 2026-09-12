@@ -6,8 +6,8 @@ import { redactSecrets } from "../llm/provider.js";
 import { sanitizeDisplayText } from "../ui-core/rendering/sanitize-display.js";
 import { getHistoryDir } from "./paths.js";
 
-export const SUBAGENT_LIMITS = Object.freeze({ records: 24, events: 96, chars: 128_000, report: 24_000, title: 120, prompt: 12_000, context: 24_000 });
-const MAX_FILE_BYTES = 1_048_576;
+export const SUBAGENT_LIMITS = Object.freeze({ records: 24, events: 96, chars: 128_000, report: 4 * 1024 * 1024, title: 120, prompt: 12_000, context: 24_000 });
+const MAX_FILE_BYTES = 6 * (SUBAGENT_LIMITS.report + SUBAGENT_LIMITS.chars) + 65_536;
 const FILE_NAME = /^[a-f0-9]{64}\.json$/;
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 
@@ -29,6 +29,8 @@ export function isValidSubagentParentId(value: unknown): value is string {
 
 export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
   const clean = (value: string, maximum: number): string => sanitizeSubagentText(value).slice(0, maximum);
+  const report = run.report === undefined ? undefined : sanitizeSubagentText(run.report);
+  if (report !== undefined && Buffer.byteLength(report) > SUBAGENT_LIMITS.report) throw new Error("Subagent report exceeds the storage safety limit");
   const base = {
     id: run.id, parentSessionId: run.parentSessionId, attempt: run.attempt,
     status: run.status, createdAt: run.createdAt, updatedAt: run.updatedAt,
@@ -43,10 +45,10 @@ export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
     cwd: clean(run.cwd, 4096),
     provider: clean(run.provider, 128) as SubagentRun["provider"],
     model: clean(run.model, 256),
-    report: run.report === undefined ? undefined : clean(run.report, SUBAGENT_LIMITS.report),
+    report,
     error: run.error === undefined ? undefined : clean(run.error, 4096),
   };
-  let remaining = SUBAGENT_LIMITS.chars - [base.title, base.prompt, base.context, base.followup?.prompt, base.followup?.context, base.cwd, base.provider, base.model, base.report, base.error, base.id, base.parentSessionId].reduce<number>((sum, value) => sum + (value?.length ?? 0), 0);
+  let remaining = SUBAGENT_LIMITS.chars - [base.title, base.prompt, base.context, base.followup?.prompt, base.followup?.context, base.cwd, base.provider, base.model, base.error, base.id, base.parentSessionId].reduce<number>((sum, value) => sum + (value?.length ?? 0), 0);
   const events: SubagentEvent[] = [];
   for (const event of run.events.slice(-SUBAGENT_LIMITS.events).reverse()) {
     if (remaining <= 0) break;
@@ -75,7 +77,7 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
     && bounded(run.title, SUBAGENT_LIMITS.title) && !!run.title.trim() && bounded(run.prompt, SUBAGENT_LIMITS.prompt) && !!run.prompt.trim()
     && (run.context === undefined || bounded(run.context, SUBAGENT_LIMITS.context))
     && bounded(run.cwd, 4096) && !!run.cwd.trim() && bounded(run.provider, 128) && !!run.provider.trim() && bounded(run.model, 256) && !!run.model.trim()
-    && (run.report === undefined || bounded(run.report, SUBAGENT_LIMITS.report))
+    && (run.report === undefined || (bounded(run.report, SUBAGENT_LIMITS.report) && Buffer.byteLength(run.report) <= SUBAGENT_LIMITS.report))
     && (run.error === undefined || bounded(run.error, 4096))
     && Array.isArray(run.events) && run.events.length <= SUBAGENT_LIMITS.events
     && run.events.every((event) => event && ["assistant", "tool", "notice"].includes(event.kind)
@@ -128,7 +130,7 @@ export class FileSubagentStore implements SubagentStore {
     const result: string[] = [];
     const handle = opendirSync(directory);
     try {
-      for (let scanned = 0; scanned < 256; scanned++) {
+      while (true) {
         const entry = handle.readSync();
         if (!entry) break;
         if (entry.isFile() && FILE_NAME.test(entry.name)) result.push(entry.name);
@@ -167,10 +169,13 @@ export class FileSubagentStore implements SubagentStore {
     if (!directory) return [];
     const runs: SubagentRun[] = [];
     for (const name of this.files(directory)) {
-      const run = restoreSubagentRun(this.read(directory, name, parentSessionId), parentSessionId);
+      const run = this.read(directory, name, parentSessionId);
       if (run) runs.push(run);
     }
-    return runs.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, SUBAGENT_LIMITS.records);
+    let settled = 0;
+    return runs.sort((a, b) => b.updatedAt - a.updatedAt)
+      .filter((run) => run.status === "running" || run.status === "stopping" || settled++ < SUBAGENT_LIMITS.records)
+      .flatMap((run) => restoreSubagentRun(run, parentSessionId) ?? []);
   }
 
   save(run: SubagentRun): void {
@@ -184,6 +189,7 @@ export class FileSubagentStore implements SubagentStore {
     } finally {
       rmSync(temporary, { force: true });
     }
+    if (run.status === "running" || run.status === "stopping") return;
     const names = this.files(directory);
     if (names.length <= SUBAGENT_LIMITS.records) return;
     const files = names.map((name) => {
@@ -191,7 +197,7 @@ export class FileSubagentStore implements SubagentStore {
       return { name, active: record?.status === "running" || record?.status === "stopping", updatedAt: record?.updatedAt ?? -Infinity, createdAt: record?.createdAt ?? -Infinity, id: record?.id ?? "" };
     });
     files.sort((a, b) => Number(b.active) - Number(a.active) || Number(b.name === `${hash(run.id)}.json`) - Number(a.name === `${hash(run.id)}.json`) || b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || b.id.localeCompare(a.id));
-    for (const file of files.slice(SUBAGENT_LIMITS.records)) rmSync(join(directory, file.name), { force: true });
+    for (const file of files.filter((file) => !file.active).slice(SUBAGENT_LIMITS.records)) rmSync(join(directory, file.name), { force: true });
   }
 
   remove(parentSessionId: string): void {

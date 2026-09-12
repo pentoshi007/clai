@@ -43,22 +43,21 @@ describe("SubagentManager", () => {
     expect(() => new SubagentManager(id)).toThrow("Invalid parent session ID");
   });
 
-  it("is off by default and synchronously reserves three slots", async () => {
+  it("is off by default and does not impose a fixed concurrency cap", async () => {
     const { manager, work } = controlled();
     expect(manager.enabled).toBe(false);
     expect(() => manager.start(assignment)).toThrow(/disabled/);
     manager.setEnabled(true);
-    const runs = Array.from({ length: 3 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
-    expect(new Set(runs.map((run) => run.id)).size).toBe(3);
-    expect(() => manager.start(assignment)).toThrow(/three/);
+    const runs = Array.from({ length: 8 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
+    expect(new Set(runs.map((run) => run.id)).size).toBe(8);
     await tick();
-    expect(work).toHaveLength(3);
+    expect(work).toHaveLength(8);
     work[0]!.resolve("A report");
     expect((await manager.wait(runs[0]!.id)).status).toBe("completed");
     expect(manager.start(assignment).status).toBe("running");
   });
 
-  it("keeps aborting workers' slots and ignores late events and reports", async () => {
+  it("keeps aborting assignments reserved and ignores late events and reports", async () => {
     const { manager, work } = controlled();
     manager.setEnabled(true);
     const runs = Array.from({ length: 3 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
@@ -66,7 +65,7 @@ describe("SubagentManager", () => {
     manager.setEnabled(false);
     expect(work.every(({ input }) => input.signal.aborted)).toBe(true);
     manager.setEnabled(true);
-    expect(() => manager.start(assignment)).toThrow(/three/);
+    expect(() => manager.start({ ...assignment, prompt: "Task 0" })).toThrow(/Duplicate/);
     work[0]!.input.emit({ kind: "assistant", text: "late secret" });
     work[0]!.resolve("Late completion");
     const stopped = await manager.wait(runs[0]!.id);
@@ -85,7 +84,7 @@ describe("SubagentManager", () => {
     expect(work).toHaveLength(0);
   });
 
-  it.each(["dispose", "purge"] as const)("preserves the cross-manager cap after %s until workers actually settle", async (operation) => {
+  it.each(["dispose", "purge"] as const)("preserves duplicate protection after %s until workers actually settle", async (operation) => {
     const previous = controlled(undefined, "previous-session");
     previous.manager.setEnabled(true);
     for (let index = 0; index < 3; index++) previous.manager.start({ ...assignment, prompt: `Previous task ${index}` });
@@ -95,15 +94,15 @@ describe("SubagentManager", () => {
 
     const next = controlled(undefined, "next-session");
     next.manager.setEnabled(true);
-    expect(() => next.manager.start(assignment)).toThrow(/three/);
+    expect(() => next.manager.start({ ...assignment, prompt: "Previous task 0" })).toThrow(/Duplicate/);
     expect(next.manager.list()).toEqual([]);
     previous.work[0]!.resolve("Late completion");
     await tick();
-    expect(next.manager.start(assignment).status).toBe("running");
-    expect(() => next.manager.start({ ...assignment, prompt: "Another task" })).toThrow(/three/);
+    expect(next.manager.start({ ...assignment, prompt: "Previous task 0" }).status).toBe("running");
+    expect(() => next.manager.start({ ...assignment, prompt: "Previous task 1" })).toThrow(/Duplicate/);
     previous.work[1]!.reject(new Error("Late failure"));
     await tick();
-    expect(next.manager.start({ ...assignment, prompt: "Another task" }).status).toBe("running");
+    expect(next.manager.start({ ...assignment, prompt: "Previous task 1" }).status).toBe("running");
   });
 
   it("rejects duplicate live assignments regardless of title, including across managers and restarts", async () => {
@@ -342,15 +341,14 @@ describe("SubagentManager", () => {
     expect(work).toHaveLength(1);
   });
 
-  it("bounds private checkpoints without replacing the last usable checkpoint", async () => {
+  it("retains provider-sized private checkpoints without a separate execution budget", async () => {
     const { manager, work } = controlled();
     manager.setEnabled(true);
     const run = manager.start(assignment);
     await tick();
-    const checkpoint: SubagentCheckpoint = { messages: [] };
+    const checkpoint: SubagentCheckpoint = { messages: [{ role: "user", content: "x".repeat(1_048_576) }] };
     work[0]!.input.saveCheckpoint!(checkpoint);
-    expect(() => work[0]!.input.saveCheckpoint!({ ...checkpoint, messages: [{ role: "user", content: "x".repeat(1_048_576) }] })).toThrow("checkpoint budget");
-    work[0]!.reject(new Error("Checkpoint budget reached"));
+    work[0]!.reject(new Error("Provider disconnected"));
     await manager.wait(run.id);
     manager.restart(run.id);
     await tick();
@@ -401,7 +399,79 @@ describe("SubagentManager", () => {
     await disposed;
   });
 
-  it("rejects new starts at retention capacity without dropping any history", async () => {
+  it("waits without a polling deadline and wakes for any terminal child", async () => {
+    vi.useFakeTimers();
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const first = manager.start(assignment);
+    const second = manager.start({ ...assignment, prompt: "Independent task" });
+    await tick();
+    const delivered = vi.fn();
+    const waiting = manager.waitAny().then(delivered);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(delivered).not.toHaveBeenCalled();
+    work[1]!.reject(new Error("Provider unavailable"));
+    await waiting;
+    expect(delivered).toHaveBeenCalledWith(expect.objectContaining({ id: second.id, status: "error", error: "Provider unavailable" }));
+    expect(manager.get(first.id)?.status).toBe("running");
+    expect(manager.pendingResults()).toHaveLength(1);
+    expect((await manager.waitAny())?.id).toBe(second.id);
+    manager.acknowledgeResult(second.id, second.attempt);
+    const next = manager.waitAny();
+    work[0]!.resolve("Completed findings");
+    expect(await next).toMatchObject({ id: first.id, report: "Completed findings" });
+  });
+
+  it("keeps terminal deliveries immutable and acknowledges the exact attempt", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve("First result");
+    await manager.wait(run.id);
+    manager.restart(run.id, { prompt: "Follow up" });
+    await tick();
+    work[1]!.resolve("Second result");
+    await manager.wait(run.id);
+    expect(manager.pendingResults().map((result) => [result.attempt, result.report])).toEqual([[1, "First result"], [2, "Second result"]]);
+    manager.acknowledgeResult(run.id, 1);
+    expect(manager.pendingResults()).toEqual([expect.objectContaining({ attempt: 2, report: "Second result" })]);
+    manager.acknowledgeResult(run.id, 1);
+    expect(manager.pendingResults()).toHaveLength(1);
+    manager.purge();
+    expect(manager.pendingResults()).toEqual([]);
+    expect(await manager.waitAny()).toBeUndefined();
+  });
+
+  it("cancels an any-child join without cancelling its workers", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    manager.start(assignment);
+    await tick();
+    const controller = new AbortController();
+    const waiting = manager.waitAny(undefined, undefined, controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    expect(work[0]!.input.signal.aborted).toBe(false);
+    expect(manager.pendingResults()).toEqual([]);
+  });
+
+  it("wakes on a stopped child only after its operation settles", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    const delivered = vi.fn();
+    const waiting = manager.waitAny([run.id]).then(delivered);
+    manager.stop(run.id);
+    await tick();
+    expect(delivered).not.toHaveBeenCalled();
+    work[0]!.resolve("Late result");
+    await waiting;
+    expect(delivered).toHaveBeenCalledWith(expect.objectContaining({ status: "stopped", report: undefined }));
+  });
+
+  it("does not turn disk retention into an assignment limit or drop live session history", async () => {
     const { manager, work } = controlled();
     manager.setEnabled(true);
     const active = manager.start(assignment);
@@ -414,12 +484,12 @@ describe("SubagentManager", () => {
     expect(manager.list()).toHaveLength(24);
     expect(manager.get(active.id)?.status).toBe("running");
     const retained = manager.list();
-    expect(() => manager.start({ ...assignment, prompt: "New task" })).toThrow(/retention limit/);
-    expect(manager.list()).toEqual(retained);
+    expect(manager.start({ ...assignment, prompt: "New task" }).status).toBe("running");
+    expect(manager.list().slice(0, 24)).toEqual(retained);
     expect(manager.restart(retained.at(-1)!.id).attempt).toBe(2);
   });
 
-  it("merges assistant deltas before redaction, strips controls, and bounds all text", async () => {
+  it("merges assistant deltas before redaction and bounds activity without truncating reports", async () => {
     const { manager, work } = controlled();
     manager.setEnabled(true);
     const run = manager.start({ ...assignment, title: "\x1b[31mTitle\x1b[0m", context: "api_key=privatevalue" });
@@ -435,8 +505,8 @@ describe("SubagentManager", () => {
     work[0]!.resolve("\x1b]52;c;evil\x07sk-private " + "r".repeat(50_000));
     const result = await manager.wait(run.id);
     expect(result.events.length).toBeLessThanOrEqual(96);
-    expect(result.report!.length).toBeLessThanOrEqual(24_000);
-    const chars = [result.title, result.prompt, result.context, result.report, result.error, result.cwd, result.provider, result.model, result.id, result.parentSessionId, ...result.events.map((event) => event.text)].reduce<number>((sum, text) => sum + (text?.length ?? 0), 0);
+    expect(result.report).toBe("sk-•••••• " + "r".repeat(50_000));
+    const chars = [result.title, result.prompt, result.context, result.error, result.cwd, result.provider, result.model, result.id, result.parentSessionId, ...result.events.map((event) => event.text)].reduce<number>((sum, text) => sum + (text?.length ?? 0), 0);
     expect(chars).toBeLessThanOrEqual(128_000);
     expect(JSON.stringify(result)).not.toContain("private");
     expect(Object.isFrozen(result)).toBe(true);
@@ -598,7 +668,7 @@ describe("SubagentManager", () => {
     expect(() => manager.restart("foreign")).toThrow(/Unknown/);
     await expect(manager.wait("foreign")).rejects.toThrow(/Unknown/);
     const run = manager.start(assignment);
-    for (const timeout of [-1, 30_001, Infinity, NaN]) await expect(manager.wait(run.id, timeout)).rejects.toThrow(/timeout/);
+    for (const timeout of [-1, 0.5, 2_147_483_648, Infinity, NaN]) await expect(manager.wait(run.id, timeout)).rejects.toThrow(/timeout/);
     expect((await manager.wait(run.id, 0)).status).toBe("running");
   });
 
@@ -616,7 +686,7 @@ describe("SubagentManager", () => {
     expect((await manager.wait(manager.start(assignment).id)).status).toBe("completed");
   });
 
-  it("purges without late resurrection or freeing unsettled worker slots", async () => {
+  it("purges without late resurrection or allowing duplicate unsettled work", async () => {
     const save = vi.fn();
     const remove = vi.fn();
     const { manager, work } = controlled({ load: () => [], save, remove });
@@ -629,7 +699,7 @@ describe("SubagentManager", () => {
     await removed;
     expect(manager.list()).toEqual([]);
     expect(remove).toHaveBeenCalledWith("parent");
-    expect(() => manager.start(assignment)).toThrow(/three/);
+    expect(() => manager.start({ ...assignment, prompt: "Task 0" })).toThrow(/Duplicate/);
     const saves = save.mock.calls.length;
     work[0]!.resolve("Late");
     await tick();

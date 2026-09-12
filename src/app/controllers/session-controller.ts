@@ -36,6 +36,7 @@ import {
 import { createSessionPolicy, type SessionPolicy } from "../../agent/session-policy.js";
 import { SubagentManager } from "../../agent/subagents/manager.js";
 import { createSubagentStore } from "../../store/subagents.js";
+import { SessionSubagents } from "./session-subagents.js";
 import { previousTurnSignal } from "./turn-continuation.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import { buildTurnRequest } from "./session-turn-request.js";
@@ -140,6 +141,8 @@ export class SessionController implements Disposable {
   private readonly turn: TurnController;
   private policy: SessionPolicy;
   private subagentsValue: SubagentManager;
+  private readonly subagentDelivery: SessionSubagents;
+  private unsettledTurns = 0;
   private readonly disposables = new CompositeDisposable();
   private readonly turnEndListeners = new Set<TurnEndListener>();
   private readonly stateListeners = new Set<SessionStateListener>();
@@ -213,6 +216,17 @@ export class SessionController implements Disposable {
       notice: (text) => this.notice("warn", text),
       enqueue: (prompt, label) => this.prompts.enqueuePriority(prompt, label),
     });
+    this.subagentDelivery = new SessionSubagents({
+      sessionId: () => this.sessionIdValue,
+      isBusy: () => this.turn.running || this.compactingFlag || this.unsettledTurns > 0,
+      hasQueuedWork: () => this.prompts.hasPending(),
+      continueQueue: () => this.prompts.continue(),
+      runTurn: (prompt) => this.runTurn(prompt, {
+        displayPrompt: null,
+        materializeHistoryImages: false,
+      }),
+    });
+    this.subagentDelivery.bind(this.subagentsValue);
     this.namer = new SessionNamer({
       complete:
         deps.titleCompleter ??
@@ -233,7 +247,7 @@ export class SessionController implements Disposable {
         jobs: deps.jobs,
         persistence: deps.persistence,
         sessionId: () => this.sessionIdValue,
-        isBusy: () => this.turn.running || this.compactingFlag,
+        isBusy: () => this.turn.running || this.compactingFlag || this.unsettledTurns > 0,
         hasQueuedWork: () => this.prompts.hasPending(),
         continueQueue: () => this.prompts.continue(),
         runTurn: (prompt, onStarted) =>
@@ -543,6 +557,17 @@ export class SessionController implements Disposable {
     return this.subagentsValue;
   }
 
+  setOrchestrationEnabled(enabled: boolean): void {
+    if (!enabled) this.subagentDelivery.deactivate();
+    this.subagentsValue.setEnabled(enabled);
+    if (enabled) this.subagentDelivery.activate();
+  }
+
+  restartSubagent(id: string): void {
+    this.subagentsValue.restart(id);
+    this.subagentDelivery.activate();
+  }
+
   private createSubagents(): SubagentManager {
     return new SubagentManager(this.sessionIdValue, {
       ...(this.deps.noHistory ? {} : { store: createSubagentStore() }),
@@ -550,9 +575,11 @@ export class SessionController implements Disposable {
   }
 
   private replaceSubagents(): void {
+    this.subagentDelivery.deactivate();
     this.subagentsValue.dispose();
     this.subagentsValue = this.createSubagents();
     this.policy.subagents = this.subagentsValue;
+    this.subagentDelivery.bind(this.subagentsValue);
   }
 
   reset(options: { mintNewId?: boolean } = {}): void {
@@ -678,6 +705,7 @@ export class SessionController implements Disposable {
       }
       this.notifyState();
       this.responder?.scheduleWake();
+      this.subagentDelivery.scheduleWake();
     }
   }
 
@@ -747,6 +775,7 @@ export class SessionController implements Disposable {
 
   async cancelAll(): Promise<ToolResult> {
     this.responder?.invalidateWake();
+    this.subagentDelivery.deactivate();
     this.prompts.preservePendingPriority();
     this.turn.abort();
     this.compactAbort?.abort();
@@ -800,6 +829,7 @@ export class SessionController implements Disposable {
 
   abort(reason?: string): void {
     this.responder?.deactivate();
+    this.subagentDelivery.deactivate();
     this.turn.abort(reason);
     this.compactAbort?.abort();
   }
@@ -824,6 +854,7 @@ export class SessionController implements Disposable {
   async submit(prompt: string, opts?: TurnDisplayOptions): Promise<TurnResult> {
     this.namer.noteUserPrompt(opts?.displayPrompt !== null);
     this.responder?.activate();
+    this.subagentDelivery.activate();
     this.loopRecovery.clear();
     return this.prompts.submit(prompt, opts);
   }
@@ -869,36 +900,37 @@ export class SessionController implements Disposable {
     const request = built.request;
     const turnGeneration = this.lifecycleGeneration;
     this.activeTurnGeneration = turnGeneration;
-    const pending = this.turn.run(request, {
-      confirm: this.deps.confirm,
-      requestSecret: this.deps.requestSecret,
-      session: this.policy,
-      onMessages: (messages) => {
-        if (turnGeneration !== this.lifecycleGeneration) return;
-        this.history = pathBackedMessages(messages);
-        this.notifyState();
-        this.scheduleAutosave();
-      },
-      onSuccessfulRequest: (snapshot) => {
-        if (turnGeneration !== this.lifecycleGeneration) return;
-        this.lastMainRequestSnapshot = snapshot;
-      },
-      onStarted: opts?.onStarted,
-    });
-    this.notifyState();
-    const result = await pending;
-    if (this.activeTurnGeneration === turnGeneration) {
-      this.activeTurnGeneration = undefined;
-    }
-    this.notifyState();
-    this.responder?.scheduleWake();
-    const sameGeneration = turnGeneration === this.lifecycleGeneration;
-    if (sameGeneration) {
-      this.lastTurnResult = result;
-      this.restoredPreviousTurn = undefined;
-      this.loopRecovery.handle(result);
-    }
+    this.unsettledTurns += 1;
     try {
+      const pending = this.turn.run(request, {
+        confirm: this.deps.confirm,
+        requestSecret: this.deps.requestSecret,
+        session: this.policy,
+        onMessages: (messages) => {
+          if (turnGeneration !== this.lifecycleGeneration) return;
+          this.history = pathBackedMessages(messages);
+          this.notifyState();
+          this.scheduleAutosave();
+        },
+        onSuccessfulRequest: (snapshot) => {
+          if (turnGeneration !== this.lifecycleGeneration) return;
+          this.lastMainRequestSnapshot = snapshot;
+        },
+        onStarted: opts?.onStarted,
+      });
+      this.notifyState();
+      const result = await pending;
+      if (this.activeTurnGeneration === turnGeneration) {
+        this.activeTurnGeneration = undefined;
+      }
+      this.notifyState();
+      this.responder?.scheduleWake();
+      const sameGeneration = turnGeneration === this.lifecycleGeneration;
+      if (sameGeneration) {
+        this.lastTurnResult = result;
+        this.restoredPreviousTurn = undefined;
+        this.loopRecovery.handle(result);
+      }
       if (
         sameGeneration &&
         (result.status === "completed" ||
@@ -912,7 +944,9 @@ export class SessionController implements Disposable {
       if (sameGeneration) this.prompts.settle(result);
       return result;
     } finally {
+      this.unsettledTurns -= 1;
       this.responder?.scheduleWake();
+      this.subagentDelivery.scheduleWake();
     }
   }
 
@@ -943,10 +977,12 @@ export class SessionController implements Disposable {
     this.compactingFlag = false;
     this.activeCompactions.clear();
     this.responder?.invalidateWake();
+    this.subagentDelivery.deactivate();
   }
 
   dispose(): void {
     this.beginLifecycleGeneration();
+    this.subagentDelivery.dispose();
     this.subagentsValue.dispose();
     this.fenceInteractiveOwner(this.sessionIdValue);
     this.turnEndListeners.clear();

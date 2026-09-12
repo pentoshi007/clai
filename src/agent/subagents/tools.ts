@@ -11,7 +11,7 @@ export function isSubagentTool(name: string): boolean {
 
 export function orchestrationContext(enabled: boolean): string {
   return `ORCHESTRATION: ${enabled ? "ON" : "OFF"}. ${enabled
-    ? "Read-only subagents are available for independent research; at most three may run. Delegate only useful independent work. Continue non-overlapping parent work, then join at its dependency; wait if nothing useful remains rather than busywork or polling. Inspect reports and stopped/error tails before restarting. Reuse settled children for continuation or follow-up questions with subagent.restart; supply optional prompt/context for the new request."
+    ? "Read-only subagents are available for independent research. Delegate only useful independent work and leave the assigned investigation to its child. Continue necessary non-overlapping parent work; do not re-read delegated surfaces while their owner is still investigating. Terminal results are delivered automatically at safe model boundaries. When no necessary independent work remains, use subagent.wait without a timeout to suspend until a result, error or stop arrives; omit id to join whichever child settles first. Do not poll or manufacture work to stay busy. Do not cancel healthy children because they are slow, to free slots, or because you duplicated their assignment. Inspect delivered evidence and verify decisive claims after the child finishes. Reuse settled children with subagent.restart for scoped follow-ups."
     : "Subagent tools are disabled. Only the user can enable them with /orchestration on."}`;
 }
 
@@ -20,6 +20,12 @@ function summary(run: SubagentRun) {
     id: run.id, title: run.title, status: run.status, attempt: run.attempt,
     updatedAt: run.updatedAt, reportAvailable: Boolean(run.report), error: run.error, recovery: run.recovery,
   };
+}
+
+export function subagentResult(run: SubagentRun, offset = 0, length = 24_000) {
+  const report = run.report?.slice(offset, offset + length);
+  const nextOffset = report !== undefined && offset + report.length < run.report!.length ? offset + report.length : undefined;
+  return { ...summary(run), report, reportOffset: offset, reportLength: run.report?.length, nextOffset };
 }
 
 function text(value: unknown, name: string, max: number): string {
@@ -57,10 +63,21 @@ export async function runSubagentTool(
         break;
       }
       case "subagent.list": value = manager.list().map(summary); break;
+      case "subagent.wait": {
+        const timeout = args.timeoutMs === undefined ? undefined : integer(args.timeoutMs, 0, 2_147_483_647);
+        const run = args.id === undefined
+          ? await manager.waitAny(undefined, timeout, signal)
+          : await manager.wait(text(args.id, "id", 128), timeout, signal);
+        signal.throwIfAborted();
+        value = run ? subagentResult(run) : { status: "idle", message: "No active children or undelivered results." };
+        if (run && run.status !== "running" && run.status !== "stopping") manager.acknowledgeResult(run.id, run.attempt);
+        break;
+      }
       default: {
         const id = text(args.id, "id", 128);
-        const run = manager.get(id);
-        if (!run) throw new Error("Unknown child ID in this session.");
+        const attempt = call.name === "subagent.read" && args.attempt !== undefined ? integer(args.attempt, 1, Number.MAX_SAFE_INTEGER) : undefined;
+        const run = manager.get(id, attempt);
+        if (!run) throw new Error("Unknown child ID or attempt in this session.");
         if (call.name === "subagent.stop") {
           manager.stop(id);
           value = summary(manager.get(id)!);
@@ -68,13 +85,15 @@ export async function runSubagentTool(
           const prompt = args.prompt === undefined ? undefined : text(args.prompt, "prompt", 12000);
           const details = args.context === undefined ? undefined : text(args.context, "context", 24000);
           value = summary(prompt === undefined && details === undefined ? manager.restart(id) : manager.restart(id, { prompt, context: details }));
-        } else if (call.name === "subagent.wait") {
-          value = summary(await manager.wait(id, integer(args.timeoutMs, 30000, 30000), signal));
         } else if (call.name === "subagent.read") {
           if (args.view !== undefined && args.view !== "tail" && args.view !== "report") throw new Error("view must be tail or report.");
           const limit = integer(args.limit, 3, 20);
           if (args.view === "report") {
-            value = { ...summary(run), report: run.report ?? "No report available. Inspect status and recent events." };
+            const offset = args.offset ?? 0;
+            if (typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0 || offset > (run.report?.length ?? 0)) throw new Error("offset must be a valid character position in the report.");
+            const page = subagentResult(run, offset, integer(args.length, 24_000, 24_000));
+            value = { ...page, report: page.report ?? "No report available. Inspect status and recent events." };
+            manager.acknowledgeResult(run.id, run.attempt);
           } else {
             let remaining = 12000;
             const events = run.events.slice(-limit).reverse().map((event) => {
