@@ -45,7 +45,7 @@ describe("production session subagent lifecycle", () => {
     const { session, seen } = setup(parentSessionId);
     const manager = session.subagents;
     expect(manager.get("restored-child")?.report).toBe("Saved evidence");
-    expect(manager.enabled).toBe(false);
+    expect(manager.enabled).toBe(true);
     session.setOrchestrationEnabled(true);
     await new Promise<void>((resolve) => setImmediate(resolve));
     await session.submit("Explain the saved evidence");
@@ -63,7 +63,7 @@ describe("production session subagent lifecycle", () => {
     const restored = session.subagents;
     expect(restored).not.toBe(previous);
     expect(previous.enabled).toBe(false);
-    expect(restored.enabled).toBe(false);
+    expect(restored.enabled).toBe(true);
     expect(restored.parentSessionId).toBe("subagent-session-after-restore");
     session.setOrchestrationEnabled(true);
     await session.submit("Continue this restored session");
@@ -72,6 +72,6 @@ describe("production session subagent lifecycle", () => {
     session.reset();
     expect(session.subagents).not.toBe(restored);
     expect(restored.enabled).toBe(false);
-    expect(session.subagents.enabled).toBe(false);
+    expect(session.subagents.enabled).toBe(true);
   });
 });
