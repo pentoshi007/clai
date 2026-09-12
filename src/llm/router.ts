@@ -46,6 +46,8 @@ import {
 } from "./routing/provider-selection.js";
 import { requestForRoute } from "./routing/attempt-request.js";
 import { makeKeyEmitter, runWithKeyRotation } from "./routing/key-rotation.js";
+import { cacheAffinityKey } from "./cache-affinity.js";
+import { currentSessionAffinity, withSessionAffinity } from "./session-affinity.js";
 export { providers } from "./routing/provider-selection.js";
 export { buildFallbackChain, getProvider, providerAuth };
 export {
@@ -84,6 +86,17 @@ function resolveOperationLedger(
     turnOperationPolicy(),
     options.attemptUsage ?? new OperationUsageRecorder(),
   );
+}
+
+function withRequestAffinity<T>(request: CompletionRequest, run: () => T): T {
+  if (request.purpose !== "auxiliary") return run();
+  const affinity = currentSessionAffinity() ??
+    cacheAffinityKey(
+      request.provider ?? getConfig().defaultProvider,
+      request.model ?? "",
+      request.messages,
+    );
+  return withSessionAffinity(`${affinity}:auxiliary`, run);
 }
 
 async function completeWithProviderOperation(
@@ -224,10 +237,8 @@ export async function completeWithProvider(
 ): Promise<CompletionResult> {
   const ledger = resolveOperationLedger(options);
   try {
-    const result = await completeWithProviderOperation(
-      request,
-      options,
-      ledger,
+    const result = await withRequestAffinity(request, () =>
+      completeWithProviderOperation(request, options, ledger),
     );
     ledger.settle("completed");
     return { ...result, operationUsage: ledger.snapshot() };
@@ -393,11 +404,8 @@ export async function streamWithProvider(
       : (onStatusOrOptions ?? {});
   const ledger = resolveOperationLedger(options);
   try {
-    const result = await streamWithProviderOperation(
-      request,
-      onToken,
-      options,
-      ledger,
+    const result = await withRequestAffinity(request, () =>
+      streamWithProviderOperation(request, onToken, options, ledger),
     );
     ledger.settle("completed");
     return { ...result, operationUsage: ledger.snapshot() };
