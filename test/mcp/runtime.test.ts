@@ -265,23 +265,23 @@ describe("McpRuntime calls and guidance", () => {
     await runtime.closeAll();
   });
 
-  it("renders native and fenced-tool context from only live selected tools", async () => {
+  it("renders stable-wrapper context from only live selected tools", async () => {
     const runtime = makeRuntime();
     await runtime.refresh();
 
-    expect(runtime.promptContext({ nativeTools: true })).toBeUndefined();
+    expect(runtime.promptContext({ nativeTools: true })).toContain("Selection: off");
     runtime.selectAll();
     const native = runtime.promptContext({ nativeTools: true });
     expect(native).toContain("Live servers: 2/2");
     expect(native).toContain("Active tools: 2");
-    expect(native).toContain("attached to this request as native functions");
+    expect(native).toContain("through mcp.call");
     expect(native).toContain("stronger direct result than a generic substitute");
     expect(native).toContain("untrusted data");
     expect(native).toContain("normal confirmation policy");
     expect(native).toContain("never invent unavailable MCP names");
-    expect(native).not.toContain("args={");
-    expect(native).not.toContain("mcp_alpha_lookup");
-    expect(native).not.toContain("mcp.beta.change");
+    expect(native).toContain("args={");
+    expect(native).toContain("mcp.alpha.lookup");
+    expect(native).toContain("mcp.beta.change");
 
     runtime.selectServer("alpha");
     const text = runtime.promptContext({ nativeTools: false });
@@ -291,14 +291,14 @@ describe("McpRuntime calls and guidance", () => {
     await runtime.closeAll();
   });
 
-  it("keeps native MCP context bounded while the tool payload carries the schemas", async () => {
+  it("includes MCP schemas in the dynamic context for the stable wrapper", async () => {
     const runtime = makeRuntime();
     await runtime.refresh();
     runtime.selectAll();
 
     const native = runtime.promptContext({ nativeTools: true }) ?? "";
-    const text = runtime.promptContext({ nativeTools: false }) ?? "";
-    expect(native.length).toBeLessThan(text.length);
+    expect(native).toContain("mcp.alpha.lookup");
+    expect(native).toContain("args={");
 
     const definitions = runtime.toolDefinitions();
     const lookup = definitions.find(
