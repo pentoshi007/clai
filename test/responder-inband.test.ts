@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../src/agent/events.js";
 import type { CompletionRequest, CompletionResult } from "../src/types.js";
+import { runAgentTurn } from "../src/agent/runner.js";
+import { createSessionPolicy } from "../src/agent/session-policy.js";
 
 const streamMock = vi.hoisted(() => vi.fn());
 const jobsHarness = vi.hoisted(() => {
@@ -276,10 +278,6 @@ describe("ordinary-turn responder delivery", () => {
       },
     );
 
-    const [{ runAgentTurn }, { createSessionPolicy }] = await Promise.all([
-      import("../src/agent/runner.js"),
-      import("../src/agent/session-policy.js"),
-    ]);
     let history = [] as Array<{ role: string; content: string }>;
     const outcome = await runAgentTurn("continue autonomous work", {
       provider: "openai",

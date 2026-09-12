@@ -9,7 +9,7 @@ import { classifyToolCall, isPentestToolCall } from "../../../safety/classifier.
 import { auditLog } from "../../../store/logs.js";
 import { loadPlan, mutatePlan } from "../../../store/plan.js";
 import { isScopeActive, loadScopeForSession } from "../../../store/scope.js";
-import { MCP_AGENT_TOOL_NAMES } from "../../../tools/definitions.js";
+import { MCP_CONTROL_TOOL_NAMES } from "../../../tools/definitions.js";
 import { jobManager } from "../../../tools/jobs.js";
 import { runToolCall } from "../../../tools/registry.js";
 import { canonicalizeTurnCall } from "../loop/canonicalize-turn-call.js";
@@ -122,6 +122,21 @@ export const runSingleTool = async (
     return { ok: result.ok, call, result, contextOutput: result.output };
   }
 
+  if (
+    deps.options.mode === "ask" &&
+    isCanonicalToolName(call.name) &&
+    !MCP_CONTROL_TOOL_NAMES.has(call.name) &&
+    deps.mcpRuntime?.getTool(call.name)?.readOnly !== true
+  ) {
+    const result = {
+      ok: false,
+      output: `Ask mode permits only active read-only MCP tools. ${call.name} did not run. Switch to agent mode for mutations.`,
+      exitCode: 1,
+    };
+    emitVisibleSyntheticReceipt(result, result.output);
+    return { ok: false, call, result, contextOutput: result.output };
+  }
+
   if (call.name === "image.ocr" && !deps.imageOcrEnabled) {
     deps.writeNotice(
       "info",
@@ -208,7 +223,7 @@ export const runSingleTool = async (
     return { ok: true, call, result, contextOutput: output };
   }
 
-  if (deps.mcpRuntime && MCP_AGENT_TOOL_NAMES.has(call.name)) {
+  if (deps.mcpRuntime && MCP_CONTROL_TOOL_NAMES.has(call.name)) {
     return deps.executeMcpAgentCall(deps.mcpRuntime, call, toolEventId);
   }
 
