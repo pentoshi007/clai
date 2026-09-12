@@ -1,6 +1,7 @@
 import type { AgentEvent } from "../../events.js";
 import type {
   ChatMessage,
+  Mode,
   ProviderId,
   ToolCall,
   ToolResult,
@@ -26,6 +27,7 @@ import type { createMcpAgentToolExecutor } from "../mcp-agent-tools.js";
 export type TurnWriters = ReturnType<typeof createTurnEventEmitter>;
 
 export interface SingleToolOptions {
+  readonly mode?: Mode | undefined;
   readonly autoConfirm?: boolean | undefined;
   readonly requestSecret?:
     | ((request: {

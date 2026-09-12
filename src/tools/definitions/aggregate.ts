@@ -287,7 +287,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "mcp.tools",
-    "List the tools exposed by connected MCP servers, with each tool's dotted name and whether it is read-only. Optionally filter to one server. Read-only.",
+    "List connected MCP tools with their dotted names, argument schemas, and read-only status. Optionally filter to one server. Read-only.",
     {
       type: "object",
       properties: {
@@ -299,6 +299,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
     { readOnly: true, askMode: true },
+  ),
+  def(
+    "mcp.call",
+    "Call one active MCP tool using its exact dotted name and an arguments object matching MCP TOOL CONTEXT or mcp.tools. Ask mode permits only read-only targets. Normal confirmation policy applies to mutations.",
+    {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Exact dotted MCP tool name from MCP TOOL CONTEXT.",
+        },
+        arguments: {
+          type: "object",
+          description: "Arguments for that MCP tool, matching its listed schema.",
+          additionalProperties: true,
+        },
+      },
+      required: ["name", "arguments"],
+      additionalProperties: false,
+    },
+    { mutates: true, askMode: true },
   ),
   def(
     "mcp.enable",
