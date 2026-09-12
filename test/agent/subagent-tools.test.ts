@@ -34,8 +34,21 @@ function data(output: string): Record<string, any> {
   return JSON.parse(output.slice(output.indexOf("\n") + 1));
 }
 
+it.each(["subagent.read", "subagent.list"])("keeps %s available for recovery while delegation is disabled", async (name) => {
+  const { context, signal } = fixture(false);
+  const result = await runSubagentTool({ name, args: { id: run.id, view: "report" } }, context, signal);
+  expect(result.ok).toBe(true);
+});
+
+it("reports a missing stored summary without substituting interrupted activity", async () => {
+  const { context, signal } = fixture();
+  const result = await runSubagentTool({ name: "subagent.read", args: { id: run.id, view: "summary" } }, context, signal);
+  expect(data(result.output).report).toBe("No stored summary is recoverable.");
+  expect(result.output).not.toContain("message 4");
+});
+
 describe("parent subagent tool boundary", () => {
-  it.each(SUBAGENT_TOOL_NAMES)("rejects %s when orchestration is disabled", async (name) => {
+  it.each(SUBAGENT_TOOL_NAMES.filter((name) => name !== "subagent.read" && name !== "subagent.list"))("rejects %s when orchestration is disabled", async (name) => {
     const { manager, context, signal } = fixture(false);
     const result = await runSubagentTool({ name, args: { id: run.id, title: run.title, prompt: run.prompt } }, context, signal);
     expect(result.ok).toBe(false);
