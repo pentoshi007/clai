@@ -19,28 +19,25 @@ const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
     mcpPresent: false,
     mcpToolNames: [],
     mcpToolDefinitions: [],
-    skillsAvailable: false,
     toolCalling: "auto",
     useCompactSystemPrompt: () => false,
     ...overrides,
   });
 
 describe("tool routing", () => {
-  it("keeps the tool list prompt-independent so the cache prefix stays stable", () => {
+  it("keeps the tool list independent of skill availability so the cache prefix stays stable", () => {
     const names = routing().routeToolNames("nvidia", "test-model");
     if (availableToolNames().includes("image.ocr")) {
       expect(names).toContain("image.ocr");
     }
-    expect(names).not.toContain("skill.load");
-    expect(names).not.toContain("skill.list");
+    expect(names).toContain("skill.load");
+    expect(names).toContain("skill.list");
 
-    const gatedOn = routing({
-      skillsAvailable: true,
-    }).routeToolNames("nvidia", "test-model");
-    expect(gatedOn).toContain("skill.load");
-    expect(gatedOn).toContain("skill.list");
+    const withSkills = routing().routeToolNames("nvidia", "test-model");
+    expect(withSkills).toContain("skill.load");
+    expect(withSkills).toContain("skill.list");
     if (availableToolNames().includes("image.ocr")) {
-      expect(gatedOn).toContain("image.ocr");
+      expect(withSkills).toContain("image.ocr");
     }
   });
 
