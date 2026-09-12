@@ -162,9 +162,20 @@ export function pickerView(input: PickerViewInput): PickerView {
     items.forEach((item, index) => {
       if (item.top + item.height <= top || item.top >= top + capacity) return;
       const active = index === cursor;
+      const option = filtered[index];
       item.lines.forEach((line, offset) => {
         if (item.top + offset < top || item.top + offset >= top + capacity) return;
         const marker = width >= 3 ? active && offset === 0 ? `${ink.glyphs.promptMark} ` : "  " : "";
+        const tail = !twoLine && !line.description && option?.description && line.text.endsWith(option.description)
+          ? option.description
+          : undefined;
+        if (tail) {
+          const head = line.text.slice(0, line.text.length - tail.length);
+          body.push(
+            `${marker}${ink.style(head, { fg: active ? "accent" : "foreground", bold: active })}${ink.style(tail, { fg: "muted", bold: active })}`,
+          );
+          return;
+        }
         body.push(ink.style(`${marker}${line.text}`, {
           fg: line.description ? "muted" : active ? "accent" : "foreground",
           bold: active,

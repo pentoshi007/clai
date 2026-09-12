@@ -147,7 +147,6 @@ async function openSetPicker(services: AppServices): Promise<void> {
       const row: PickerOption = {
         value: `llm:${status.provider}`,
         label: `${status.provider} ${keyLabel}${status.active ? " (active)" : ""}`,
-        description: status.model,
       };
       if (!status.endpoints) return [row];
       const urlCount = status.endpoints.length;
@@ -208,7 +207,6 @@ async function openUnsetPicker(services: AppServices): Promise<void> {
       const row: PickerOption = {
         value: `llm:${status.provider}`,
         label: `${status.provider} ${keyLabel}${status.active ? " (active)" : ""}`,
-        description: status.model,
       };
       if (!status.endpoints || status.endpoints.length === 0) return [row];
       return [

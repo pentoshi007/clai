@@ -212,17 +212,20 @@ describe("small production-format capability preflight", () => {
     expect(calls.every((url) => url.endsWith("/responses"))).toBe(true);
   });
 
-  it("times out a stalled JSON probe body and leaves the route retryable", async () => {
-    vi.useFakeTimers();
-    const cancel = vi.fn();
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream({ cancel }), { headers: { "content-type": "application/json" } })));
-    const result = openAiCompatibleComplete(options);
-    const assertion = expect(result).rejects.toThrow(/preflight timed out/);
-    await vi.advanceTimersByTimeAsync(30_001);
-    await assertion;
-    expect(cancel).toHaveBeenCalled();
-    vi.stubGlobal("fetch", vi.fn(async () => reply("responses", false, "REAL", "visible")));
-    expect((await openAiCompatibleComplete(options)).text).toBe("REAL");
+  it("falls back to chat when the probe times out instead of failing the request", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown, init: RequestInit) => {
+      calls += 1;
+      const wire = String(url).endsWith("/responses") ? "responses" : "chat";
+      if (wire === "responses" && !String(init.body).includes("PRIVATE HISTORY")) {
+        throw new DOMException("Capability preflight timed out", "TimeoutError");
+      }
+      return reply(wire, false, String(init.body).includes("PRIVATE HISTORY") ? "REAL" : "PROBE", wire === "chat" ? "visible" : "");
+    }));
+    const result = await openAiCompatibleComplete(options);
+    expect(result.api).toBe("chat-completions");
+    expect(result.text).toBe("REAL");
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 });
 

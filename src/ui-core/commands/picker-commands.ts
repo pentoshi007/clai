@@ -313,6 +313,33 @@ const ADD_CUSTOM_PROVIDER = "__add_custom_provider__";
 
 const REMOVE_CUSTOM_PROVIDER = "__remove_custom_provider__";
 
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  free: "https://opencode.ai/zen/v1, https://api.kilo.ai/api/gateway",
+  gemini: "https://generativelanguage.googleapis.com/v1beta",
+  openrouter: "https://openrouter.ai/api/v1",
+  openai: "https://api.openai.com/v1",
+  anthropic: "https://api.anthropic.com/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
+  agentrouter: "https://agentrouter.org/v1",
+  "aws-mantle": "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1",
+  bynara: "https://router.bynara.id/v1",
+  "qwen-cloud": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  lightning: "https://lightning.ai/api/v1",
+  tokenrouter: "https://api.tokenrouter.com/v1",
+  meta: "https://api.meta.ai/v1",
+  fireworks: "https://api.fireworks.ai/inference/v1",
+  hetzner: "https://inference.hetzner.com/api/v1",
+  orcarouter: "https://api.orcarouter.ai/v1",
+  "merge-gateway": "https://api-gateway.merge.dev/v1/openai",
+  explabs: "https://api.experientiallabs.ai/v1",
+};
+
+function providerBaseUrl(provider: ProviderId): string | undefined {
+  if (provider === "ollama") return getConfig().ollamaHost || "http://localhost:11434";
+  if (provider === "modal") return getActiveProviderEndpoint("modal") || "not set";
+  return getActiveProviderEndpoint(provider) || PROVIDER_BASE_URLS[provider];
+}
+
 export function handleProvider(services: AppServices, invocation: CommandInvocation): void {
   if (invocation.args) {
     try {
@@ -341,16 +368,19 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
             },
           ]
         : []),
-      ...providerIds.map((value) => ({
-        value,
-        label: value,
-        description: getProviderModel(value),
-        active: value === current,
-      })),
+      ...providerIds.map((value) => {
+        const baseUrl = providerBaseUrl(value);
+        return {
+          value,
+          label: value,
+          ...(baseUrl ? { description: `(${baseUrl})` } : {}),
+          active: value === current,
+        };
+      }),
       ...custom.map((def) => ({
         value: def.id,
         label: def.id,
-        description: getProviderModel(def.id as ProviderId),
+        description: `(${def.baseUrl})`,
         active: def.id === current,
       })),
     ];

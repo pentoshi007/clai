@@ -95,11 +95,13 @@ describe("/provider search is scoped to provider names", () => {
     expect(matched[0]?.value).toBe("bynara");
   });
 
-  it("shows the configured model as the row description without matching it", async () => {
+  it("shows the base url in parens as the row description without matching it", async () => {
     const services = makeServices();
     const picker = await openProviderPicker(services);
     const bynara = picker.options.find((option) => option.value === "bynara");
-    expect(bynara?.description).toBeTruthy();
+    expect(bynara?.description).toBe("(https://router.bynara.id/v1)");
+    const openai = picker.options.find((option) => option.value === "openai");
+    expect(openai?.description).toBe("(https://api.openai.com/v1)");
     const matched = filterPickerOptions([...picker.options], bynara!.description!, {
       searchDescription: picker.searchDescription ?? true,
     });
