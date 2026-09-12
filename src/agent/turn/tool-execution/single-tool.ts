@@ -9,7 +9,7 @@ import { classifyToolCall, isPentestToolCall } from "../../../safety/classifier.
 import { auditLog } from "../../../store/logs.js";
 import { loadPlan, mutatePlan } from "../../../store/plan.js";
 import { isScopeActive, loadScopeForSession } from "../../../store/scope.js";
-import { MCP_AGENT_TOOL_NAMES } from "../../../tools/definitions.js";
+import { MCP_CONTROL_TOOL_NAMES } from "../../../tools/definitions.js";
 import { jobManager } from "../../../tools/jobs.js";
 import { runToolCall } from "../../../tools/registry.js";
 import { canonicalizeTurnCall } from "../loop/canonicalize-turn-call.js";
@@ -208,7 +208,7 @@ export const runSingleTool = async (
     return { ok: true, call, result, contextOutput: output };
   }
 
-  if (deps.mcpRuntime && MCP_AGENT_TOOL_NAMES.has(call.name)) {
+  if (deps.mcpRuntime && MCP_CONTROL_TOOL_NAMES.has(call.name)) {
     return deps.executeMcpAgentCall(deps.mcpRuntime, call, toolEventId);
   }
 

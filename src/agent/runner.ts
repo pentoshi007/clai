@@ -308,14 +308,7 @@ export async function runAgentTurn(
       await mcpRuntime.ensureReady();
     }
     if (mcpRuntime && mcpMentioned) mcpRuntime.applyMentionSelection(prompt);
-    const mcpToolDefinitions =
-      mcpRuntime?.toolDefinitions({
-        ...(agentMode === "ask" ? { askMode: true } : {}),
-      }) ?? [];
     mcpLease = mcpRuntime?.beginTurn();
-    const mcpToolNames = mcpToolDefinitions.map(
-      (definition) => definition.name,
-    );
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;
     const projectContext = await loadProjectContext();
@@ -342,8 +335,6 @@ export async function runAgentTurn(
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
-      mcpToolNames,
-      mcpToolDefinitions,
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
     });

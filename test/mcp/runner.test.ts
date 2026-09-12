@@ -163,7 +163,7 @@ async function run(events: AgentEvent[], toolCalling: ToolCallingMode) {
 }
 
 describe("agent MCP integration", () => {
-  it("appends deterministic MCP definitions and dispatches native tool calls", async () => {
+  it("keeps native MCP schemas stable and dispatches calls through the wrapper", async () => {
     const requests: CompletionRequest[] = [];
     streamMock.mockImplementation(
       async (
@@ -179,8 +179,8 @@ describe("agent MCP integration", () => {
             toolCalls: [
               {
                 id: "call-mcp-native",
-                name: "mcp.docs.lookup",
-                args: { id: "one" },
+                name: "mcp.call",
+                args: { name: "mcp.docs.lookup", arguments: { id: "one" } },
               },
             ],
             finishReason: "tool_calls",
@@ -200,11 +200,8 @@ describe("agent MCP integration", () => {
     const outcome = await run(events, "native");
 
     expect(outcome.answer).toContain("record one found");
-    expect(requests[0]?.tools?.at(-1)).toMatchObject({
-      name: "mcp.docs.lookup",
-      wireName: "mcp_docs_lookup",
-      readOnly: true,
-    });
+    expect(requests[0]?.tools?.some((tool) => tool.name === "mcp.call")).toBe(true);
+    expect(requests[0]?.tools?.some((tool) => tool.name === "mcp.docs.lookup")).toBe(false);
     expect(
       requests[0]?.messages.some(
         (message) =>

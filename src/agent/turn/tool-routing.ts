@@ -17,8 +17,6 @@ import { getReliabilityPolicy } from "../reliability-policy.js";
 export interface ToolRoutingInput {
   readonly mode: Mode;
   readonly mcpPresent: boolean;
-  readonly mcpToolNames: readonly string[];
-  readonly mcpToolDefinitions: readonly ToolDefinition[];
   readonly toolCalling: ToolCallingMode | undefined;
   readonly useCompactSystemPrompt: () => boolean;
 }
@@ -55,7 +53,6 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
   const routeToolNames = (provider: ProviderId, model: string): string[] =>
     [
       ...availableToolNames(),
-      ...input.mcpToolNames,
       ...(input.mcpPresent ? mcpAgentToolNames(input.mode === "ask") : []),
     ].filter((name) => nameAllowed(name, provider, model));
 
@@ -76,7 +73,6 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     if (!native) return undefined;
     const base = [
       ...(compact ? getCompactToolDefinitions() : getToolDefinitions()),
-      ...input.mcpToolDefinitions,
     ];
     const allow = new Set([
       ...routeToolNames(provider, model),
