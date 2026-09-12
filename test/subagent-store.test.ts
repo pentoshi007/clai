@@ -15,7 +15,7 @@ function fixture() {
   return { root, store: new FileSubagentStore(root), directory: (parent = "parent") => join(root, "subagents", hash(parent)) };
 }
 function run(overrides: Partial<SubagentRun> = {}): SubagentRun {
-  return { id: "child", parentSessionId: "parent", title: "Research", prompt: "Read code", cwd: "/tmp", provider: "openai", model: "test", attempt: 1, status: "completed", createdAt: 1, updatedAt: 2, events: [], report: "Findings", ...overrides };
+  return { id: "child", parentSessionId: "parent", title: "Research", prompt: "Read code", cwd: "/tmp", provider: "openai", model: "test", attempt: 1, status: "completed", createdAt: 1, updatedAt: 2, events: [], report: "Findings", resultAcknowledged: true, ...overrides };
 }
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -77,7 +77,7 @@ describe("FileSubagentStore", () => {
     const file = (id: string) => join(directory(), `${hash(id)}.json`);
     writeFileSync(file("corrupt"), "{");
     writeFileSync(file("oversized"), "");
-    truncateSync(file("oversized"), 6 * (SUBAGENT_LIMITS.report + SUBAGENT_LIMITS.chars) + 65_537);
+    truncateSync(file("oversized"), 6 * (2 * SUBAGENT_LIMITS.report + SUBAGENT_LIMITS.chars) + 65_537);
     writeFileSync(file("foreign"), JSON.stringify(run({ id: "foreign", parentSessionId: "elsewhere" })));
     writeFileSync(file("mismatch"), JSON.stringify(run({ id: "different" })));
     writeFileSync(file("invalid"), JSON.stringify(run({ id: "invalid", events: [{ kind: "tool", text: "x", timestamp: 1, sequence: -1 }] })));
@@ -247,7 +247,7 @@ describe("FileSubagentStore", () => {
     try {
       expect(manager.list()).toHaveLength(30);
       expect(manager.list().every((child) => child.status === "stopped")).toBe(true);
-      expect(manager.pendingResults()).toEqual([]);
+      expect(manager.pendingResults()).toHaveLength(30);
     } finally {
       manager.dispose();
     }

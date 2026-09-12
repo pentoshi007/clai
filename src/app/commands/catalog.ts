@@ -10,9 +10,8 @@ export const slashCommands: SlashCommand[] = [
   { command: "/ask", description: "switch to ask mode" },
   { command: "/agent", description: "switch to agent mode" },
   {
-    command: "/orchestration",
-    usage: "[on|off|status]",
-    description: "open orchestration options or set on/off/status (default off)",
+    command: "/orchestrator",
+    description: "inspect delegated agents",
   },
   {
     command: "/agents",

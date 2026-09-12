@@ -1,6 +1,6 @@
 import { stripThinking } from "../ui/thinking.js";
 
-const MAX_TITLE_CHARS = 64;
+export const MAX_TITLE_CHARS = 96;
 
 export function sanitizeTitle(raw: string): string | undefined {
   let title = stripThinking(raw).visible;
@@ -19,7 +19,9 @@ export function sanitizeTitle(raw: string): string | undefined {
   title = title.replace(/[.,;:!?]+$/, "");
   title = title.replace(/\s+/g, " ").trim();
   if (!title) return undefined;
-  return title.length > MAX_TITLE_CHARS
-    ? `${title.slice(0, MAX_TITLE_CHARS).trimEnd()}…`
-    : title;
+  const characters = Array.from(title);
+  if (characters.length <= MAX_TITLE_CHARS) return title;
+  const clipped = characters.slice(0, MAX_TITLE_CHARS - 1).join("");
+  const boundary = clipped.lastIndexOf(" ");
+  return `${(boundary > MAX_TITLE_CHARS / 2 ? clipped.slice(0, boundary) : clipped).trimEnd()}…`;
 }

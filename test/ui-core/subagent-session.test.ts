@@ -83,18 +83,17 @@ describe("session-owned orchestration", () => {
     expect((await session.cancelAll()).output).not.toContain("Requested stop");
   });
 
-  it("injects the same default-off manager into turn policy and keeps no-history memory-only", async () => {
+  it("injects the same default-on manager into turn policy and keeps no-history memory-only", async () => {
     const { factory } = stubStore();
     const { session, requests } = fixture(true);
-    expect(session.subagents.enabled).toBe(false);
-    session.subagents.setEnabled(true);
+    expect(session.subagents.enabled).toBe(true);
     await session.submit("inspect the project");
     expect(requests).toHaveLength(1);
     expect(requests[0]!.session?.subagents).toBe(session.subagents);
     expect(factory).not.toHaveBeenCalled();
   });
 
-  it("reloads records by parent ID while defaulting restored orchestration off", () => {
+  it("reloads records by parent ID while defaulting restored orchestration on", () => {
     const { store, factory } = stubStore();
     const { session } = fixture(false);
     const previous = session.subagents;
@@ -106,31 +105,31 @@ describe("session-owned orchestration", () => {
     expect(() => previous.setEnabled(true)).toThrow("disposed");
     expect(session.subagents).not.toBe(previous);
     expect(session.subagents.parentSessionId).toBe("restored-parent");
-    expect(session.subagents.enabled).toBe(false);
+    expect(session.subagents.enabled).toBe(true);
     expect(store.load).toHaveBeenLastCalledWith("restored-parent");
     expect(factory).toHaveBeenCalledTimes(2);
   });
 
-  it.each([false, true])("replaces and disables managers on reset (mintNewId=%s)", (mintNewId) => {
+  it.each([false, true])("replaces managers on reset and disables the previous one (mintNewId=%s)", (mintNewId) => {
     const { session } = fixture(true);
     const previous = session.subagents;
     previous.setEnabled(true);
     session.reset({ mintNewId });
     expect(session.subagents).not.toBe(previous);
-    expect(session.subagents.enabled).toBe(false);
+    expect(session.subagents.enabled).toBe(true);
     expect(previous.enabled).toBe(false);
     expect(session.subagents.parentSessionId).toBe(session.sessionId);
     expect(session.sessionId === previous.parentSessionId).toBe(!mintNewId);
     expect(() => previous.setEnabled(true)).toThrow("disposed");
   });
 
-  it("disposes its manager on shutdown and restores without an explicit ID default-off", () => {
+  it("disposes its manager on shutdown and restores without an explicit ID default-on", () => {
     const { session } = fixture(true);
     const previous = session.subagents;
     previous.setEnabled(true);
     session.loadHistory([]);
     expect(session.subagents).not.toBe(previous);
-    expect(session.subagents.enabled).toBe(false);
+    expect(session.subagents.enabled).toBe(true);
     const manager = session.subagents;
     manager.setEnabled(true);
     session.dispose();

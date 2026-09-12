@@ -101,7 +101,7 @@ try {
     const picker = await settle(() => services.commands.dispatch({ name: "orchastrator" }));
     const size = overlaySize(width!, height!);
     if (width! >= 24) {
-      assert.match(picker, /Status/);
+      assert.match(picker, /Main agent/);
       const overlay = services.overlay.getState();
       assert.equal(overlay.kind, "picker");
       if (overlay.kind === "picker") assertPickerTitle(overlay.request.title, size.width - 2);
@@ -110,15 +110,13 @@ try {
       assert.equal(picker.split("\n")[border]!.indexOf("╭"), size.marginX, picker);
       assert.equal(picker.split("\n").filter((row) => row.includes("│")).length, size.height - 2, picker);
     }
-    assert.equal(services.session.subagents.enabled, false);
-    await settle(() => setup.mockInput.pressEnter());
-    assert.equal(services.session.subagents.enabled, false);
-    assert.equal(services.overlay.getState().kind, "none");
-    await settle(() => services.commands.dispatch({ name: "orchestrator" }));
-    await settle(() => setup.mockInput.pressArrow("down"));
+    assert.equal(services.session.subagents.enabled, true);
     await settle(() => setup.mockInput.pressEnter());
     assert.equal(services.session.subagents.enabled, true);
-    await settle(() => services.commands.dispatch({ name: "orchestrator", args: "off" }));
+    assert.equal(services.overlay.getState().kind, "none");
+    await settle(() => services.commands.dispatch({ name: "orchestrator" }));
+    await settle(() => setup.mockInput.pressEnter());
+    assert.equal(services.session.subagents.enabled, true);
     await settle(() => services.toast.clear());
 
     let selected = "";
@@ -255,7 +253,7 @@ try {
   const menuBottom = slashRows.findIndex((line, index) => index > menuTop && line.includes("╰"));
   assert.ok(menuTop > 1 && menuBottom > menuTop && menuBottom - menuTop < 20, slashMenu);
   if (process.env.CLAI_OVERLAY_EVIDENCE) await writeFile(process.env.CLAI_OVERLAY_EVIDENCE, evidence.join("\n\n"));
-  console.log("Native expanded overlays passed: geometry, wrapping, scrolling, hints, and orchestration opt-in");
+  console.log("Native expanded overlays passed: geometry, wrapping, scrolling, hints, and default-on agent inspection");
 } finally {
   await act(async () => { services.dispose(); setup.renderer.destroy(); });
   await setup.renderer.idle();

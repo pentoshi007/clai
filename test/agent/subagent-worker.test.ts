@@ -446,10 +446,12 @@ describe("isolated read-only subagent worker", () => {
 
   it("continues an evidence-backed partial report until the assignment is complete", async () => {
     const partial = REPORT.replace("Status: complete", "Status: partial");
+    const saveSummary = vi.fn();
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(partial))
       .mockResolvedValueOnce(completion("", [call("fs.read", { path: "src/example.ts" })]))
       .mockResolvedValueOnce(completion());
-    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    await expect(runReadOnlySubagent({ ...input, saveSummary })).resolves.toBe(REPORT);
+    expect(saveSummary).toHaveBeenCalledExactlyOnceWith(partial);
     expect(streamWithProvider).toHaveBeenCalledTimes(3);
     expect(vi.mocked(streamWithProvider).mock.calls[1]![0].messages.at(-1)!.content).toContain("not finished");
     expect(runToolCall).toHaveBeenCalledOnce();
@@ -691,6 +693,16 @@ describe("isolated read-only subagent worker", () => {
     expect(vi.mocked(streamWithProvider).mock.calls[2]![0].messages).toEqual(previous.messages);
     expect(JSON.stringify(previous.messages)).not.toContain("unfinished provider response");
     expect(runToolCall).toHaveBeenCalledOnce();
+  });
+
+  it("resumes from stored summary metadata when activity history is unavailable", async () => {
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent({ ...input, run: { ...input.run, attempt: 2, events: [],
+      lastKnownSummary: { attempt: 1, status: "completed", report: REPORT } } });
+    const messages = vi.mocked(streamWithProvider).mock.calls[0]![0].messages;
+    expect(messages[2]!.content).toContain("Stored summary from attempt 1 (completed)");
+    expect(messages[2]!.content).toContain("src/example.ts:1");
+    expect(runToolCall).not.toHaveBeenCalled();
   });
 
   it("retains available untrusted history within the provider context when an exact checkpoint is unavailable", async () => {

@@ -43,11 +43,9 @@ describe("SubagentManager", () => {
     expect(() => new SubagentManager(id)).toThrow("Invalid parent session ID");
   });
 
-  it("is off by default and does not impose a fixed concurrency cap", async () => {
+  it("is on by default and does not impose a fixed concurrency cap", async () => {
     const { manager, work } = controlled();
-    expect(manager.enabled).toBe(false);
-    expect(() => manager.start(assignment)).toThrow(/disabled/);
-    manager.setEnabled(true);
+    expect(manager.enabled).toBe(true);
     const runs = Array.from({ length: 8 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
     expect(new Set(runs.map((run) => run.id)).size).toBe(8);
     await tick();
@@ -733,7 +731,7 @@ describe("SubagentManager", () => {
     const worker = vi.fn(async () => "Unexpected");
     const restored = new SubagentManager("parent", { worker, store: { load: () => saved, save: () => undefined, remove: () => undefined } });
     managers.push(restored);
-    expect(restored.enabled).toBe(false);
+    expect(restored.enabled).toBe(true);
     expect(restored.get(run.id)?.status).toBe("stopped");
     expect(restored.get("foreign")).toBeUndefined();
     restored.setEnabled(true);
