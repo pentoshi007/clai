@@ -133,6 +133,67 @@ describe("SubagentInbox", () => {
     expect(manager.get(run.id, 1)?.report).toBe("First report");
   });
 
+  it("delivers concurrent distinct children once in reverse settlement order and preserves that order on retry", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    const prefix = structuredClone(messages);
+    const first = start();
+    const second = start();
+    const third = start();
+    await tick();
+
+    work[2]!.resolve("Third report");
+    work[1]!.resolve("Second report");
+    work[0]!.resolve("First report");
+    await Promise.all([manager.wait(first.id), manager.wait(second.id), manager.wait(third.id)]);
+
+    const deliveries = inbox.prepare({ maxRequestTokens: 10_000, estimateTokens });
+    expect(messages.slice(0, 2)).toEqual(prefix);
+    expect(deliveries.map(({ id, attempt }) => ({ id, attempt }))).toEqual([
+      { id: third.id, attempt: 1 },
+      { id: second.id, attempt: 1 },
+      { id: first.id, attempt: 1 },
+    ]);
+    expect(messages.slice(2).map((message) => JSON.parse(message.content.split("\n").at(-1)!))).toEqual([
+      expect.objectContaining({ id: third.id, attempt: 1, report: "Third report" }),
+      expect.objectContaining({ id: second.id, attempt: 1, report: "Second report" }),
+      expect.objectContaining({ id: first.id, attempt: 1, report: "First report" }),
+    ]);
+    expect(inbox.prepare({ maxRequestTokens: 10_000, estimateTokens })).toEqual(deliveries);
+    expect(messages).toHaveLength(5);
+    inbox.acknowledge(deliveries);
+    expect(manager.pendingResults()).toEqual([]);
+  });
+
+  it("queues a result that settles during a request for the next request without rewriting its prefix", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    const prefix = structuredClone(messages);
+    const first = start();
+    const second = start();
+    await tick();
+
+    work[0]!.resolve("First report");
+    await manager.wait(first.id);
+    const firstRequestDeliveries = inbox.prepare({ maxRequestTokens: 10_000, estimateTokens });
+    const firstRequestMessages = structuredClone(messages);
+
+    work[1]!.resolve("Second report");
+    await manager.wait(second.id);
+    expect(messages).toEqual(firstRequestMessages);
+    expect(messages.slice(0, 2)).toEqual(prefix);
+    expect(manager.pendingResults().map(({ id, attempt }) => ({ id, attempt }))).toEqual([
+      { id: first.id, attempt: 1 },
+      { id: second.id, attempt: 1 },
+    ]);
+
+    inbox.acknowledge(firstRequestDeliveries);
+    const nextRequestDeliveries = inbox.prepare({ maxRequestTokens: 10_000, estimateTokens });
+    expect(nextRequestDeliveries.map(({ id, attempt }) => ({ id, attempt }))).toEqual([
+      { id: second.id, attempt: 1 },
+    ]);
+    expect(messages.slice(0, 2)).toEqual(prefix);
+    expect(messages).toHaveLength(4);
+  });
+
   it("ignores disabled or foreign-session managers", async () => {
     const { manager, messages, inbox, start } = setup();
     start();
