@@ -174,9 +174,8 @@ export function SecretModal(props: SecretModalProps): ReactNode {
         <text style={{ fg: ACCENT, attributes: TextAttributes.BOLD }}>
           {revealed ? "value › " : "password › "}
         </text>
-        <text style={{ fg: theme.foreground }}>
-          {mask.length > 0 ? mask : "█"}
-        </text>
+        <text style={{ fg: theme.foreground }}>{mask}</text>
+        <text style={{ fg: ACCENT, attributes: TextAttributes.BOLD }}>▎</text>
         <text style={{ fg: theme.muted, attributes: TextAttributes.DIM }}>
           {mask.length > 0
             ? revealed

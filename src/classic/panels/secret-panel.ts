@@ -82,9 +82,9 @@ function secretBody(input: SecretViewInput): readonly string[] {
   const field = sealStyle(
     `${ink.fg("inputBorder", ink.glyphs.promptMark)} ${clipToWidth(
       value,
-      Math.max(1, width - 2),
+      Math.max(1, width - 3),
       ink.glyphs.ellipsis,
-    )}`,
+    )}${ink.fg("inputBorder", ink.glyphs.caret)}`,
   );
   return [...prompt, field];
 }
