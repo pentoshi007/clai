@@ -577,7 +577,7 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
-| `/orchestrator` · `/orchestration` | Inspect delegated agents (delegation is enabled by default) |
+| `/orchestrator [on\|off\|status]` · `/orchestration` | Show delegation status and turn subagents on/off |
 | `/agents [id\|stop id\|restart id]` | Pick a subagent to inspect live output, or stop/restart its assignment |
 | `/compact` · `/context` | Compact history now · show context size |
 | `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle (`/clear` deletes the current session outright) |
@@ -589,10 +589,12 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/update` · `/help` · `/shortcuts` · `/exit` | Housekeeping |
 
 Orchestration is enabled in new and restored sessions. `/orchestrator`,
-`/orchestration`, and `/orchastrator` open the agent inspector directly, without
-a status or toggle picker. Explicit `/orchestrator off` stops active children and
-disables delegation for this session; `/orchestrator on` enables it again.
-See [picker and pager controls](docs/ui-overlays.md).
+`/orchestration`, and `/orchastrator` show the current status and open a picker
+whose two options turn delegation **On** or **Off**; the active row is marked
+`· current`. `/orchestrator status` prints the status without changing it, and
+`/orchestrator on` / `/orchestrator off` set it directly. Turning it off stops
+active children and blocks new starts and restarts for this session; turning it
+back on re-enables delegation. `/agents` opens the separate live inspector.
 `/agents` opens the same live inspector in Classic and
 OpenTUI: select a child, press `Esc` to return to the picker, then select another
 child or **Main agent**. Inspecting output never interrupts the main turn. The
@@ -622,8 +624,7 @@ boundaries or wake an idle parent. When no independent work remains,
 receive whichever child completes, fails, or stops first. Healthy work should not
 be cancelled for slowness or because the parent repeated it. Reports are retained
 whole and paged with `subagent.read`; use the returned attempt and `nextOffset`
-to continue reading. Activity reads default to three recent events. See
-[orchestration architecture and recovery](docs/subagent-orchestration.md).
+to continue reading. Activity reads default to three recent events.
 
 ---
 

@@ -101,20 +101,25 @@ try {
     const picker = await settle(() => services.commands.dispatch({ name: "orchastrator" }));
     const size = overlaySize(width!, height!);
     if (width! >= 24) {
-      assert.match(picker, /Main agent/);
+      assert.match(picker, /Orchestration/);
       const overlay = services.overlay.getState();
       assert.equal(overlay.kind, "picker");
-      if (overlay.kind === "picker") assertPickerTitle(overlay.request.title, size.width - 2);
+      if (overlay.kind === "picker") {
+        assertPickerTitle(overlay.request.title, size.width - 2);
+        assert.deepEqual(overlay.request.options.map((option) => option.value), ["on", "off"]);
+      }
       const border = picker.split("\n").findIndex((row) => row.includes("╭"));
       assert.equal(border, size.marginY, picker);
       assert.equal(picker.split("\n")[border]!.indexOf("╭"), size.marginX, picker);
       assert.equal(picker.split("\n").filter((row) => row.includes("│")).length, size.height - 2, picker);
     }
     assert.equal(services.session.subagents.enabled, true);
+    await settle(() => setup.mockInput.pressArrow("down"));
     await settle(() => setup.mockInput.pressEnter());
-    assert.equal(services.session.subagents.enabled, true);
+    assert.equal(services.session.subagents.enabled, false);
     assert.equal(services.overlay.getState().kind, "none");
     await settle(() => services.commands.dispatch({ name: "orchestrator" }));
+    await settle(() => setup.mockInput.pressArrow("up"));
     await settle(() => setup.mockInput.pressEnter());
     assert.equal(services.session.subagents.enabled, true);
     await settle(() => services.toast.clear());
