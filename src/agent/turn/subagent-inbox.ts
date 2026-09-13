@@ -17,6 +17,8 @@ export class SubagentInboxCapacityError extends Error {
 }
 
 export class SubagentInbox {
+  private launchCheckpointIssued = false;
+
   constructor(
     private readonly manager: SubagentManager | undefined,
     private readonly sessionId: string,
@@ -81,7 +83,17 @@ export class SubagentInbox {
     signal?.throwIfAborted();
     if (!this.available) return false;
     if (this.manager!.pendingResults().length) return true;
-    if (!this.manager!.list().some((run) => run.status === "running" || run.status === "stopping")) return false;
+    const active = this.manager!.list().filter((run) => run.status === "running" || run.status === "stopping");
+    if (!active.length) return false;
+    if (active.length === 1 && !this.launchCheckpointIssued && onWaiting) {
+      this.launchCheckpointIssued = true;
+      this.messages.push({
+        role: "user",
+        internal: true,
+        content: "Parallel delegation checkpoint: one context gatherer is active. Before waiting for it or finalizing, launch every other independent context assignment now with subagent.start_many or consecutive subagent.start calls. If no sibling assignment exists, continue; the next final boundary will wait for this child.",
+      });
+      return true;
+    }
     onWaiting?.();
     await this.manager!.waitAny(undefined, undefined, signal);
     signal?.throwIfAborted();

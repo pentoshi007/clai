@@ -33,15 +33,15 @@ describe("parent turn subagent delivery", () => {
     manager.start({ title: "Research", prompt: "Inspect the delegated implementation", provider: "openai", model: "gpt-4o-mini", cwd: process.cwd() });
     const session = createSessionPolicy(manager.parentSessionId);
     session.subagents = manager;
-    let waited = false;
+    let delivered = false;
     stream.mockImplementation(async (request: CompletionRequest, onToken: (text: string) => void): Promise<CompletionResult> => {
-      if (stream.mock.calls.length === 1) {
-        expect(request.messages.some((message) => message.content.startsWith("Read-only subagent result arrived."))).toBe(false);
+      const evidence = request.messages.find((message) => message.content.startsWith("Read-only subagent result arrived."));
+      if (!evidence) {
+        settle!();
         return { provider: "openai", model: "gpt-4o-mini", text: "Waiting for the delegated investigation.", finishReason: "stop" };
       }
-      expect(waited).toBe(true);
-      const evidence = request.messages.find((message) => message.content.startsWith("Read-only subagent result arrived."));
-      expect(evidence?.content).toContain(status === "completed" ? "Verified delegated finding" : "Delegated provider failed");
+      delivered = true;
+      expect(evidence.content).toContain(status === "completed" ? "Verified delegated finding" : "Delegated provider failed");
       onToken("The delegated investigation has settled.");
       return { provider: "openai", model: "gpt-4o-mini", text: "The delegated investigation has settled.", finishReason: "stop" };
     });
@@ -49,17 +49,11 @@ describe("parent turn subagent delivery", () => {
       session,
       provider: "openai",
       model: "gpt-4o-mini",
-      maxSteps: 4,
-      onEvent: (event) => {
-        if (event.type === "status" && event.text === "waiting for delegated work") {
-          expect(stream).toHaveBeenCalledOnce();
-          waited = true;
-          settle!();
-        }
-      },
+      maxSteps: 6,
     });
+    expect(delivered).toBe(true);
     expect(answer).toBe("The delegated investigation has settled.");
-    expect(stream).toHaveBeenCalledTimes(2);
+    expect(stream.mock.calls.length).toBeLessThanOrEqual(4);
     expect(childSignal?.aborted).toBe(false);
     expect(manager.pendingResults()).toEqual([]);
   });

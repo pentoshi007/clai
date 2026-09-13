@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { displayReasoningEfforts, resetReasoningKnowledge } from "../../src/llm/capabilities.js";
 import { openAiCompatibleComplete, openAiCompatibleStream } from "../../src/llm/http.js";
 import { resetResponsesWireStatesForTesting } from "../../src/llm/wire/responses-first.js";
 import { selectResponsesWire, type ResponsesSelection } from "../../src/llm/wire/responses-preflight.js";
@@ -18,6 +19,7 @@ const options = {
   maxTokens: 8192,
   headers: { "x-custom-route": "preferred", "user-agent": "test-agent" },
   responsesFirst: true,
+  discoverCapabilities: false,
 };
 
 function json(body: unknown, status = 200): Response {
@@ -52,9 +54,13 @@ function reply(wire: "responses" | "chat", streaming: boolean, text: string, rea
   ]) : json({ choices: [{ message, finish_reason: "stop" }], usage });
 }
 
-beforeEach(() => resetResponsesWireStatesForTesting());
+beforeEach(() => {
+  resetResponsesWireStatesForTesting();
+  resetReasoningKnowledge();
+});
 afterEach(() => {
   resetResponsesWireStatesForTesting();
+  resetReasoningKnowledge();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -195,6 +201,32 @@ describe("small production-format capability preflight", () => {
     expect(recorder.snapshot().attempts).toHaveLength(1);
     expect(recorder.snapshot().aggregate.usage?.promptTokens).toBe(115_000);
     expect(result.usage?.promptTokens).toBe(115_000);
+  });
+
+  it("discovers the supported Qwen effort ladder on both candidate APIs", async () => {
+    const calls: { wire: string; effort: string | undefined; real: boolean }[] = [];
+    const request = {
+      ...options,
+      model: "qwen3.8-max",
+      reasoning: { enabled: true, effort: "medium" as const },
+      discoverCapabilities: true,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const wire = String(url).endsWith("/responses") ? "responses" : "chat";
+      const effort = wire === "responses" ? body.reasoning?.effort : body.reasoning_effort;
+      const real = String(init.body).includes("PRIVATE HISTORY");
+      calls.push({ wire, effort, real });
+      if (effort === "minimal" || effort === "high" || effort === "xhigh") {
+        return json({ error: { message: "reasoning_effort must be one of low, medium" } }, 400);
+      }
+      return reply(wire, false, real ? "REAL" : "PROBE", "visible");
+    }));
+    expect((await openAiCompatibleComplete(request)).api).toBe("responses");
+    expect(displayReasoningEfforts("agentrouter", "qwen3.8-max")).toEqual(["minimal", "low", "medium", "max"]);
+    expect(new Set(calls.map(({ wire }) => wire))).toEqual(new Set(["responses", "chat"]));
+    expect(calls.filter(({ real }) => real)).toHaveLength(1);
+    expect(calls.find(({ real }) => real)?.effort).toBe("medium");
   });
 
   it.each([401, 403, 429, 500, 503])("does not cache transient/auth failure HTTP %s as unsupported", async (status) => {

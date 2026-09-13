@@ -113,6 +113,9 @@ const OPAQUE_PARAMETER_REJECTION_RE =
 const NON_EFFORT_REJECTION_RE =
   /model is not supported|model is unavailable|model not found|no such model|unknown model|rate limit|quota|insufficient|authentication|authorization|permission/i;
 
+const GENERIC_SERVER_ERROR_BODY_RE =
+  /^(?:internal server error|bad gateway|service unavailable|gateway timeout|error)\.?$/i;
+
 function isOpaqueParameterRejection(
   error: unknown,
   effort: ReasoningEffort | undefined,
@@ -120,12 +123,16 @@ function isOpaqueParameterRejection(
   if (!effort || UNIVERSAL_EFFORTS.has(effort)) return false;
   if (!(error instanceof ProviderError)) return false;
   const status = error.status ?? 0;
+  const haystack = `${error.message}\n${error.body ?? ""}`;
   const parameterRejected =
     (status === 400 || status === 422) &&
-    OPAQUE_PARAMETER_REJECTION_RE.test(`${error.message}\n${error.body ?? ""}`);
-  const upstreamCrashed = status >= 500 && status <= 504;
-  if (!parameterRejected && !upstreamCrashed) return false;
-  return !NON_EFFORT_REJECTION_RE.test(`${error.message}\n${error.body ?? ""}`);
+    OPAQUE_PARAMETER_REJECTION_RE.test(haystack);
+  const opaqueGatewayCrash =
+    status >= 500 &&
+    status <= 504 &&
+    GENERIC_SERVER_ERROR_BODY_RE.test((error.body ?? "").trim());
+  if (!parameterRejected && !opaqueGatewayCrash) return false;
+  return !NON_EFFORT_REJECTION_RE.test(haystack);
 }
 
 export function shouldContinueEffortLadder(error: unknown): boolean {
@@ -142,9 +149,7 @@ export function effortCandidatesFor(
 ): readonly ReasoningEffort[] {
   const learned = learnedRouteEfforts(providerId, model);
   if (learned?.length) {
-    const usable = learned.filter(
-      (effort) => effort !== requested && effort !== "none",
-    );
+    const usable = learned.filter((effort) => effort !== requested);
     const corrected = nearestAcceptedEffort(requested, usable);
     const scaledLearned = EFFORT_SCALE.find((effort) => effort === corrected);
     return scaledLearned ? [scaledLearned] : [];
@@ -152,6 +157,11 @@ export function effortCandidatesFor(
   const declared = resolveBuiltInProfile({ provider: providerId, model })
     .reasoning.acceptedEfforts;
   if (requested === "none") {
+    if (declared.length === 0) {
+      return EFFORT_SCALE.filter(
+        (effort) => effort !== "none" && effort !== "minimal",
+      );
+    }
     const enabled = EFFORT_SCALE.filter(
       (effort) => effort !== "none" && declared.includes(effort),
     );

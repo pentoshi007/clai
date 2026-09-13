@@ -8,10 +8,6 @@ import {
 } from "../../outcomes.js";
 import { analyzeTask } from "../../task-analyzer.js";
 import { isPlanTerminal } from "../../../store/plan.js";
-import {
-  computeMaxIterations,
-  computeStepBudget,
-} from "../../step-budget.js";
 
 const CONTINUE_INTENT =
   /^(?:continue|resume|proceed|keep\s+going|finish|next)\b/i;
@@ -49,16 +45,9 @@ export const openTurnBudget = async (input: {
   });
   input.restoreCompletedOperations(outcomeState.completedOperations ?? []);
   await saveOutcomeState(outcomeState);
-  const stepBudget = computeStepBudget({
-    analysis,
-    maxSteps: input.maxSteps,
-    buildLike: input.buildLike,
-    pentestLike: input.pentestLike,
-    hasHistory: (input.history?.length ?? 0) > 0,
-  });
   return {
     analysis,
-    maxIterations: Math.max(210, computeMaxIterations(stepBudget)),
+    maxIterations: Number.POSITIVE_INFINITY,
     outcomeState,
   };
 };

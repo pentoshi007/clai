@@ -27,6 +27,7 @@ export const buildStreamRequest = (
 ): CompletionRequest => ({
   provider: input.provider,
   model: input.model,
+  purpose: "turn",
   allowModelFallback: input.allowModelFallback,
   preferModelFallback: input.preferModelFallback,
   messages: input.messages,

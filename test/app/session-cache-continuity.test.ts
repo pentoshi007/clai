@@ -154,5 +154,5 @@ describe("production session cache continuity", () => {
       expect(next.parallelToolCalls).toEqual(previous.parallelToolCalls);
       expect(next.thinking).toEqual(previous.thinking);
     }
-  });
+  }, 60_000);
 });

@@ -83,15 +83,43 @@ export class SubagentManager {
     if ([...inFlight.values()].includes(fingerprint(assignment))) throw new Error("Duplicate active subagent assignment");
   }
 
-  start(value: SubagentAssignment): SubagentRun {
-    this.assertAvailable();
-    const assignment = this.assignment(value);
-    this.assertUnique(assignment);
+  private activeCount(): number {
+    return [...this.children.values()].filter((child) => child.controller !== undefined).length;
+  }
+
+  private assertCapacity(additional: number): void {
+    if (this.activeCount() + additional > 3) throw new Error("At most three subagents may run concurrently");
+  }
+
+  private startAssigned(assignment: SubagentAssignment): SubagentRun {
     const now = Date.now();
     const child: Child = { assignment, run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, updatedAt: now, events: [] } };
     this.children.set(child.run.id, child);
     this.launch(child);
     return this.snapshot(child.run);
+  }
+
+  start(value: SubagentAssignment): SubagentRun {
+    this.assertAvailable();
+    const assignment = this.assignment(value);
+    this.assertUnique(assignment);
+    this.assertCapacity(1);
+    return this.startAssigned(assignment);
+  }
+
+  startMany(values: readonly SubagentAssignment[]): readonly SubagentRun[] {
+    this.assertAvailable();
+    if (values.length < 2 || values.length > 3) throw new Error("Start between two and three subagents at once");
+    const assignments = values.map((value) => this.assignment(value));
+    const fingerprints = new Set<string>();
+    for (const assignment of assignments) {
+      const key = fingerprint(assignment);
+      if (fingerprints.has(key)) throw new Error("Duplicate assignments in one subagent batch");
+      this.assertUnique(assignment);
+      fingerprints.add(key);
+    }
+    this.assertCapacity(assignments.length);
+    return Object.freeze(assignments.map((assignment) => this.startAssigned(assignment)));
   }
 
   private snapshot(run: SubagentRun): SubagentRun {
@@ -146,6 +174,7 @@ export class SubagentManager {
     if (child.controller) throw new Error("Wait for the previous attempt to stop before restarting");
     const followup = this.followup(value);
     this.assertUnique(child.assignment);
+    this.assertCapacity(1);
     const previous = child.run;
     this.settledAttempts.set(`${previous.id}:${previous.attempt}`, this.snapshot(previous));
     const summary = `Attempt ${previous.attempt}: ${previous.status}\n${previous.report ?? previous.error ?? "No report"}`;

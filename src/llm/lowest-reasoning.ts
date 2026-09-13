@@ -4,7 +4,11 @@ import type {
   ReasoningPreference,
 } from "../types.js";
 import { EFFORT_SCALE } from "./reasoning-controls.js";
-import { learnedRouteEfforts } from "./capabilities.js";
+import {
+  displayReasoningEfforts,
+  learnedRouteEfforts,
+} from "./capabilities.js";
+import { routeDisableAccepted } from "./wire/effort-discovery.js";
 import { resolveBuiltInProfile } from "./provider-profiles.js";
 
 export function lowestReasoningPreference(
@@ -13,19 +17,30 @@ export function lowestReasoningPreference(
 ): ReasoningPreference {
   const { reasoning } = resolveBuiltInProfile({ provider, model });
   const learned = learnedRouteEfforts(provider, model);
-  if (
-    reasoning.control.status === "unsupported" ||
-    (reasoning.generation !== "mandatory" &&
-      reasoning.disable === "supported" &&
-      (!learned?.length || learned.includes("none")))
-  ) {
+  const declared = displayReasoningEfforts(provider, model);
+  let accepted = reasoning.acceptedEfforts;
+  if (declared?.length) accepted = declared;
+  if (learned?.length) accepted = learned;
+  const disableByOmission =
+    reasoning.disableForm === undefined ||
+    reasoning.disableForm === "omit-control";
+  const disableAllowed =
+    reasoning.generation !== "mandatory" &&
+    reasoning.disable === "supported" &&
+    (disableByOmission ||
+      accepted.length === 0 ||
+      accepted.includes("none") ||
+      routeDisableAccepted(provider, model));
+  if (reasoning.control.status === "unsupported" || disableAllowed) {
     return { enabled: false, effort: "none" };
   }
-  const effort = EFFORT_SCALE.find(
-    (candidate) =>
-      (candidate !== "none" || reasoning.generation !== "mandatory") &&
-      reasoning.acceptedEfforts.includes(candidate),
-  ) ?? (reasoning.generation === "mandatory" ? "minimal" : "none");
+  const selectable =
+    reasoning.generation === "mandatory"
+      ? accepted.filter((effort) => effort !== "none")
+      : accepted;
+  const least = EFFORT_SCALE.find((effort) => selectable.includes(effort));
+  const effort =
+    least ?? (reasoning.generation === "mandatory" ? "minimal" : "none");
   return { enabled: effort !== "none", effort };
 }
 

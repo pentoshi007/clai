@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
+
+setEffortDiscoveryEnabledForTesting(false);
 import { agentrouterProvider } from "../../src/llm/agentrouter.js";
 import type { LlmProvider } from "../../src/llm/provider.js";
 import {

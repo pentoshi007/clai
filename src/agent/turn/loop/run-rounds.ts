@@ -664,6 +664,7 @@ export const runTurnRounds = async (
 
       const isParallelSafe = (c: ToolCall): boolean => {
         if (deps.mcpRuntime?.isParallelSafe(c.name)) return true;
+        if (c.name === "subagent.start" || c.name === "subagent.start_many") return true;
         if (
           c.name === "tool.batch" ||
           c.name === "tool.check" ||

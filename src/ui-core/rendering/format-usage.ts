@@ -88,6 +88,13 @@ function plural(value: number, singular: string): string {
 
 function telemetry(route: SessionUsageRoute): string | undefined {
   const parts: string[] = [];
+  if (
+    route.cachedPromptTokens !== undefined &&
+    route.cacheBasePromptTokens !== undefined &&
+    route.cacheBasePromptTokens !== route.promptTokens
+  ) {
+    parts.push(`cache measured input ${count(route.cacheBasePromptTokens)}`);
+  }
   if (route.cacheCreationTokens !== undefined) {
     parts.push(`cache write ${count(route.cacheCreationTokens)}`);
   }

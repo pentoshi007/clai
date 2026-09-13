@@ -200,7 +200,7 @@ describe("runtime responder listening lease", () => {
       manager,
       "abort",
       ctx.jobs.getResponderLeaseId("abort"),
-      "setTimeout(() => process.exit(0), 180)",
+      "setTimeout(() => process.exit(0), 1200)",
     );
     const id = started.backgroundJob?.id;
     expect(id).toBeTruthy();

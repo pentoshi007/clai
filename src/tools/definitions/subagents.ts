@@ -9,19 +9,29 @@ const identified = {
 };
 
 export const SUBAGENT_TOOL_NAMES = [
-  "subagent.start", "subagent.list", "subagent.read",
+  "subagent.start", "subagent.start_many", "subagent.list", "subagent.read",
   "subagent.wait", "subagent.stop", "subagent.restart",
 ] as const;
 
+const startAssignment = {
+  type: "object" as const,
+  properties: {
+    title: { type: "string", minLength: 1, maxLength: 120 },
+    prompt: { type: "string", minLength: 1, maxLength: 12000, description: "Focused assignment brief: target deliverable, relevant surfaces and non-goals, appropriate depth/technicality, and expected evidence." },
+    context: { type: "string", maxLength: 24000, description: "Only task-relevant facts and constraints already gathered; never send the whole conversation or parent system/project/skill boilerplate." },
+  },
+  required: ["title", "prompt"],
+  additionalProperties: false,
+};
+
 export const TOOL_DEFINITIONS_SUBAGENTS = [
-  def("subagent.start", "Start one useful independent read-only research assignment when delegation saves work. Brief the child with its target deliverable, relevant surfaces and non-goals, appropriate depth/technicality, and expected evidence; this guides relevance, not a fixed procedure or completion gate. Send only task-relevant facts and constraints, never the whole conversation or parent system/project/skill boilerplate. Leave the delegated investigation to the child; continue only necessary non-overlapping work. Results arrive automatically. If no independent work remains, suspend with subagent.wait instead of repeating the child's reads or polling. Requires user-enabled /orchestration. Call directly, never inside tool.batch. Children cannot edit, run shell commands, or delegate.", {
+  def("subagent.start", "Start one independent read-only context-gathering assignment. Consider it when the request holds two or more independent threads such as different issues, features, or file areas with no shared dependency; single-thread work stays with you. Brief the child with its target deliverable, relevant surfaces and non-goals, appropriate depth and technicality, and expected evidence; this guides relevance, not a fixed procedure or completion gate. Name delegated surfaces in context and avoid reading them while the child runs. Send only task-relevant facts and constraints, never the whole conversation or parent system and project boilerplate. Results arrive at safe boundaries and through subagent.wait and subagent.read. Requires ORCHESTRATION: ON in request context (on by default). Call directly, never inside tool.batch. Children gather comprehensive evidence-backed summaries only and never modify project files or delegate; shell use is read-only search and inspection only.", startAssignment, { readOnly: true }),
+  def("subagent.start_many", "Start two or three independent read-only context-gathering assignments concurrently. Use this single top-level call whenever multiple assignments are independent; do not wait for one sibling before starting another. Every assignment must have a distinct scope and the parent owns verification of all reports. Requires ORCHESTRATION: ON in request context. Call directly, never inside tool.batch.", {
     type: "object",
     properties: {
-      title: { type: "string", minLength: 1, maxLength: 120 },
-      prompt: { type: "string", minLength: 1, maxLength: 12000, description: "Focused assignment brief: target deliverable, relevant surfaces and non-goals, appropriate depth/technicality, and expected evidence." },
-      context: { type: "string", maxLength: 24000, description: "Only task-relevant facts and constraints already gathered; never send the whole conversation or parent system/project/skill boilerplate." },
+      assignments: { type: "array", minItems: 2, maxItems: 3, items: startAssignment },
     },
-    required: ["title", "prompt"],
+    required: ["assignments"],
     additionalProperties: false,
   }, { readOnly: true }),
   def("subagent.list", "List child IDs, status, attempts, recovery mode, report availability, and lastKnownSummaryAttempt without loading transcripts. Partial is terminal but not successful completion. Available even when delegation is disabled; call directly.", emptyObject, { readOnly: true }),

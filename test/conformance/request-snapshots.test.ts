@@ -4,6 +4,9 @@ import { providers } from "../../src/llm/router.js";
 import { resetReasoningKnowledge } from "../../src/llm/capabilities.js";
 import { CONFORMANCE_ROUTES } from "./routes.js";
 import { installFakeTransport } from "./fake-transport.js";
+import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
+
+setEffortDiscoveryEnabledForTesting(false);
 import {
   redactHeaders,
   redactUrl,
@@ -33,7 +36,8 @@ describe("serialized request snapshots", () => {
         await provider.complete(requestForCase(route, requestCase), route.auth);
 
         const scenarioGenerations = transport.generations.filter((generation) =>
-          generation.url.includes(route.urlContains),
+          generation.url.includes(route.urlContains) &&
+          !generation.headers["x-clai-session"]?.startsWith("preflight-"),
         );
         expect(scenarioGenerations).toHaveLength(1);
         const sent = scenarioGenerations[0]!;
