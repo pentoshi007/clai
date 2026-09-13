@@ -77,14 +77,14 @@ async function flush(): Promise<void> {
 }
 
 describe("shared orchestration commands", () => {
-  it("lists /orchestrator without a status or toggle requirement", () => {
+  it("lists /orchestrator with the toggle usage and description", () => {
     const command = buildDefaultCommandRegistry().get("orchestrator");
     expect(command?.name).toBe("orchestrator");
-    expect(command?.description).toBe("inspect delegated agents");
-    expect(command?.usage).toBeUndefined();
+    expect(command?.description).toBe("show delegation status or turn subagents on/off");
+    expect(command?.usage).toBe("[on|off|status]");
   });
 
-  it.each(["orchestration", "orchestrator", "orchastrator"])("/%s opens agents directly without a status or toggle picker", async (command) => {
+  it.each(["orchestration", "orchestrator", "orchastrator"])("/%s opens a status picker whose selection toggles delegation", async (command) => {
     const f = fixture();
     await f.dispatch(`/${command}`);
     expect(f.manager.enabled).toBe(true);
@@ -92,17 +92,23 @@ describe("shared orchestration commands", () => {
     const state = f.overlay.getState();
     expect(state.kind).toBe("picker");
     if (state.kind !== "picker") throw new Error("expected picker");
-    expect(state.request.title).toBe("Agents");
-    expect(state.request.options.map((option) => option.value)).toEqual(["main"]);
+    expect(state.request.title).toBe("Orchestration · on");
+    expect(state.request.options.map((option) => option.value)).toEqual(["on", "off"]);
     expect(state.request.options.every((option) => option.description)).toBe(true);
-    f.press("enter");
-    expect(f.manager.enabled).toBe(true);
+    expect(state.request.options.find((option) => option.value === "on")?.active).toBe(true);
+    f.overlay.selectPicker("off");
     expect(f.overlay.getState().kind).toBe("none");
-    expect(f.notice).not.toHaveBeenCalled();
-    expect(f.setOrchestrationEnabled).not.toHaveBeenCalled();
-    await f.dispatch(`/${command} off`);
     expect(f.manager.enabled).toBe(false);
     expect(f.setOrchestrationEnabled).toHaveBeenLastCalledWith(false);
+    expect(f.notice).toHaveBeenLastCalledWith("info", expect.stringContaining("Orchestration off"));
+    await f.dispatch(`/${command}`);
+    const reopened = f.overlay.getState();
+    if (reopened.kind !== "picker") throw new Error("expected picker");
+    expect(reopened.request.title).toBe("Orchestration · off");
+    expect(reopened.request.options.find((option) => option.value === "off")?.active).toBe(true);
+    f.overlay.selectPicker("on");
+    expect(f.manager.enabled).toBe(true);
+    expect(f.setOrchestrationEnabled).toHaveBeenLastCalledWith(true);
   });
 
   it("does not change delegation after dismissal or through a stale session picker", async () => {
@@ -112,16 +118,17 @@ describe("shared orchestration commands", () => {
     expect(f.manager.enabled).toBe(true);
     await f.dispatch("/orchestrator");
     f.replaceSession();
-    f.overlay.selectPicker("main");
+    f.overlay.selectPicker("off");
     expect(f.manager.enabled).toBe(false);
     expect(f.setOrchestrationEnabled).not.toHaveBeenCalled();
   });
 
-  it("rejects status and invalid arguments, and retains explicit disable and restart controls", async () => {
+  it("reports status without mutating, rejects invalid arguments, and gates restart", async () => {
     const f = fixture();
     await f.dispatch("/orchestration status");
     expect(f.manager.enabled).toBe(true);
-    expect(f.notice).toHaveBeenLastCalledWith("warn", expect.stringContaining("usage:"));
+    expect(f.notice).toHaveBeenLastCalledWith("info", expect.stringContaining("Orchestration on"));
+    expect(f.setOrchestrationEnabled).not.toHaveBeenCalled();
     await f.dispatch("/orchestration invalid");
     expect(f.notice).toHaveBeenLastCalledWith("warn", expect.stringContaining("usage:"));
     await f.dispatch("/orchestration on");

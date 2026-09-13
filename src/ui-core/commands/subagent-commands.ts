@@ -16,20 +16,72 @@ const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOptionTon
   error: { icon: "✗", tone: "error" },
 };
 
+type OrchestrationManager = AppServices["session"]["subagents"];
+
+const ORCHESTRATION_EFFECT = {
+  on: "the main agent may delegate independent read-only research; /agents inspects live output",
+  off: "subagent tools are disabled; active children stop and new starts or restarts are blocked",
+} as const;
+
+const orchestrationNotice = (enabled: boolean): string =>
+  `Orchestration ${enabled ? "on" : "off"} · ${ORCHESTRATION_EFFECT[enabled ? "on" : "off"]}`;
+
+const orchestrationOptions = (enabled: boolean): PickerOption[] => [
+  {
+    value: "on",
+    label: "On",
+    icon: "●",
+    tone: "success",
+    active: enabled,
+    description: "let the main agent delegate independent read-only research",
+  },
+  {
+    value: "off",
+    label: "Off",
+    icon: "○",
+    tone: "muted",
+    active: !enabled,
+    description: "stop active children and block new starts and restarts",
+  },
+];
+
+function applyOrchestration(
+  services: AppServices,
+  manager: OrchestrationManager,
+  enabled: boolean,
+): void {
+  if (services.session.subagents !== manager) return;
+  services.session.setOrchestrationEnabled(enabled);
+  services.session.notice("info", orchestrationNotice(enabled));
+}
+
 export function handleOrchestration(services: AppServices, invocation: CommandInvocation): void {
+  const manager = services.session.subagents;
   const action = invocation.args.trim().toLowerCase();
-  if (action === "") {
-    handleAgents(services, invocation);
+  if (action === "on" || action === "off") {
+    applyOrchestration(services, manager, action === "on");
     return;
   }
-  if (action !== "on" && action !== "off") {
-    services.session.notice("warn", "usage: /orchestrator [on|off]");
+  if (action === "status") {
+    services.session.notice("info", orchestrationNotice(manager.enabled));
     return;
   }
-  services.session.setOrchestrationEnabled(action === "on");
-  services.session.notice("info", action === "on"
-    ? "Delegation enabled. /orchestrator inspects agents."
-    : "Delegation disabled. Active children are stopping.");
+  if (action !== "") {
+    services.session.notice("warn", "usage: /orchestrator [on|off|status]");
+    return;
+  }
+  services.overlay.openPicker(
+    {
+      title: `Orchestration · ${manager.enabled ? "on" : "off"}`,
+      twoLine: true,
+      searchDescription: true,
+      options: orchestrationOptions(manager.enabled),
+    },
+    (value) => {
+      services.overlay.close();
+      applyOrchestration(services, manager, value === "on");
+    },
+  );
 }
 
 export function handleAgents(services: AppServices, invocation: CommandInvocation): void {
@@ -42,7 +94,7 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
     }
     try {
       if (args[0] === "restart" && !manager.enabled) {
-        services.session.notice("warn", "Orchestration is off. Use /orchestration on before restarting an agent.");
+        services.session.notice("warn", "Orchestration is off. Use /orchestrator on before restarting an agent.");
         return;
       }
       if (!manager.get(args[1]!)) throw new Error(`Unknown subagent: ${args[1]}`);

@@ -505,13 +505,22 @@ describe("classic command parity (W12)", () => {
     }
   });
 
-  spec(["orchestrator"], "/orchestrator opens the inspector with delegation enabled", async () => {
+  spec(["orchestrator"], "/orchestrator shows status and toggles delegation from its picker", async () => {
     const { services } = open();
     await run(services, "orchestration");
     expect(services.session.subagents.enabled).toBe(true);
-    expect(services.overlay.getState().kind).toBe("picker");
-    services.overlay.selectPicker("main");
+    const opened = services.overlay.getState();
+    expect(opened.kind).toBe("picker");
+    if (opened.kind === "picker") {
+      expect(opened.request.title).toBe("Orchestration · on");
+      expect(opened.request.options.map((option) => option.value)).toEqual(["on", "off"]);
+    }
+    services.overlay.selectPicker("off");
     expect(services.overlay.getState().kind).toBe("none");
+    expect(services.session.subagents.enabled).toBe(false);
+    await run(services, "orchestration", "status");
+    expect(noticed(services, "Orchestration off")).toBe(true);
+    expect(services.session.subagents.enabled).toBe(false);
     await run(services, "orchestration", "on");
     expect(services.session.subagents.enabled).toBe(true);
     await run(services, "orchestration", "off");
