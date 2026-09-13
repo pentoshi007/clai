@@ -71,7 +71,10 @@ it("retains exact AgentRouter wire prefixes across the former rolling limit and 
   ];
   await dispatch(followUp);
 
-  const requests = transport.generations.filter(({ url }) => url.endsWith("/chat/completions"));
+  const requests = transport.generations.filter(({ url, body }) =>
+    url.endsWith("/chat/completions") &&
+    JSON.stringify((body as { messages?: unknown[] }).messages ?? []).includes("Build the project."),
+  );
   expect(requests).toHaveLength(3);
   const bodies = requests.map(({ body }) => body as { messages: unknown[]; tools: unknown });
   expect(bodies[1]!.messages.slice(0, bodies[0]!.messages.length)).toEqual(bodies[0]!.messages);

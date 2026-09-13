@@ -1,10 +1,12 @@
 import type {
   ChatMessage,
+  CompletionRequestPurpose,
   NativeToolCall,
   ToolCallStreamDelta,
   ProviderId,
   ReasoningArtifact,
   ReasoningArtifactReplayObserver,
+  ReasoningEffort,
   ReasoningPreference,
   TokenUsage,
   ToolChoice,
@@ -12,7 +14,7 @@ import type {
 } from "../../types.js";
 import { learnModelEmitsReasoning } from "../capabilities.js";
 import { ProviderError } from "../http.js";
-import { generationFetch } from "../operation-usage.js";
+import { generationFetch, withUnrecordedTransport } from "../operation-usage.js";
 import type { StreamTerminalProof } from "../provider-profile.js";
 import { visibleReasoningDetailText } from "../reasoning-artifacts.js";
 import { inBandBadRequestStatus } from "../reasoning-errors.js";
@@ -48,7 +50,40 @@ import {
 } from "./reasoning-artifacts.js";
 import { ReasoningStyle } from "./reasoning-payload.js";
 import { readJson } from "./response-errors.js";
+import { currentRequestPurpose } from "../request-purpose.js";
 import { openAiCompatibleStreamViaResponses } from "./responses-first.js";
+import {
+  applyDiscoveredReasoning,
+  discoveryRouteFor,
+  discoverRouteEfforts,
+  DISCOVERY_MESSAGES,
+  effortProbePreference,
+  type EffortSender,
+} from "./effort-discovery.js";
+
+type StreamWireOptions = Parameters<typeof openAiCompatibleStream>[0];
+
+function streamEffortSender(options: StreamWireOptions): EffortSender {
+  return (preference) =>
+    withUnrecordedTransport(
+      () =>
+        openAiCompatibleStream({
+          ...options,
+          responsesFirst: false,
+          discoverCapabilities: false,
+          messages: DISCOVERY_MESSAGES,
+          tools: undefined,
+          toolChoice: undefined,
+          maxTokens: 512,
+          reasoning: preference,
+          reasoningEffortProbe: effortProbePreference(preference),
+          onToken: () => {},
+          onToolCallDelta: undefined,
+          onStreamEvent: undefined,
+        }),
+      512,
+    );
+}
 import {
   createSseFrameAssembler,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
@@ -58,7 +93,7 @@ import {
   THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS,
 } from "./stream-framing.js";
 
-export async function openAiCompatibleStream(options: {
+export async function openAiCompatibleStream(request: {
   provider: string;
   providerId: ProviderId;
   baseUrl: string;
@@ -71,6 +106,8 @@ export async function openAiCompatibleStream(options: {
   signal?: AbortSignal | undefined;
   onToken: (token: string) => void;
   reasoning?: ReasoningPreference | undefined;
+  reasoningEffortProbe?: ReasoningEffort | undefined;
+  discoverCapabilities?: boolean | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
@@ -87,17 +124,22 @@ export async function openAiCompatibleStream(options: {
 
   initialIdleTimeoutMs?: number | undefined;
   outputIdleTimeoutMs?: number | undefined;
+  purpose?: CompletionRequestPurpose | undefined;
   responsesFirst?: boolean | undefined;
 }): Promise<OpenAiCompatibleResult> {
-  const viaResponses = options.responsesFirst
-    ? await openAiCompatibleStreamViaResponses(options, {
-        onToken: options.onToken,
-        ...(options.onToolCallDelta
-          ? { onToolCallDelta: options.onToolCallDelta }
+  const responsesOptions = {
+    ...request,
+    purpose: request.purpose ?? currentRequestPurpose(),
+  };
+  const viaResponses = request.responsesFirst
+    ? await openAiCompatibleStreamViaResponses(responsesOptions, {
+        onToken: request.onToken,
+        ...(request.onToolCallDelta
+          ? { onToolCallDelta: request.onToolCallDelta }
           : {}),
-        ...(options.onStreamEvent ? { onStreamEvent: options.onStreamEvent } : {}),
+        ...(request.onStreamEvent ? { onStreamEvent: request.onStreamEvent } : {}),
       }, (probe) => openAiCompatibleStream({
-        ...options,
+        ...request,
         ...probe,
         responsesFirst: false,
         onToken: () => {},
@@ -106,6 +148,12 @@ export async function openAiCompatibleStream(options: {
       }))
     : undefined;
   if (viaResponses) return { ...viaResponses, api: "responses" };
+  await discoverRouteEfforts(
+    discoveryRouteFor(responsesOptions),
+    [streamEffortSender(responsesOptions)],
+    request.signal,
+  );
+  const options = applyDiscoveredReasoning(responsesOptions);
   const reasoningOn = Boolean(options.reasoning?.enabled);
   const idleTimeoutMs =
     options.idleTimeoutMs ??
@@ -186,6 +234,7 @@ export async function openAiCompatibleStream(options: {
   });
   const requestBody = chatCompletionsBodyFromPlan(plan, {
     reasoningStyle: options.reasoningStyle,
+    reasoningEffortProbe: options.reasoningEffortProbe,
     includeStreamUsage: options.includeStreamUsage,
     reasoningArtifactReplayObserver: options.reasoningArtifactReplayObserver,
     ...(options.forceReasoningReplay ? { forceReasoningReplay: true } : {}),

@@ -22,14 +22,14 @@ export function isReasoningUnsupportedError(error: unknown): boolean {
   const hay = `${message}\n${body}`.toLowerCase();
 
   const mentionsReasoningKnob =
-    /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning_content|\breasoning\b|\bthinking\b/.test(
+    /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning_content|思考|推理|\breasoning\b|\bthinking\b/.test(
       hay,
     );
   if (!mentionsReasoningKnob) return false;
 
   if (status === 400 || status === 422) return true;
 
-  return /not support|unsupported|unknown|unrecognized|not a valid|not allowed|unexpected keyword|does not accept|extra fields not permitted|additional propert|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field)/.test(
+  return /not support|unsupported|unknown|unrecognized|not a valid|not allowed|unexpected keyword|does not accept|extra fields not permitted|additional propert|不支持|不允许|无效|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field)/.test(
     hay,
   );
 }
@@ -60,12 +60,12 @@ export function reasoningRejectionAdvice(
   const hay = `${message}\n${body}`.toLowerCase();
 
   const mandatory =
-    /always\s+(?:engages?\s+in|uses?|performs?)\s+(?:thinking|reasoning)|(?:thinking|reasoning)\s+cannot\s+be\s+disabled|cannot\s+be\s+disabled|can(?:no|')t\s+be\s+(?:disabled|turned\s+off)/.test(
+    /always\s+(?:engages?\s+in|uses?|performs?)\s+(?:thinking|reasoning)|(?:thinking|reasoning)\s+cannot\s+be\s+disabled|cannot\s+be\s+disabled|can(?:no|')t\s+be\s+(?:disabled|turned\s+off)|(?:始终|一直|总是).{0,8}(?:思考|推理)|(?:无法|不能|不支持|不允许).{0,6}(?:关闭|禁用|停止)/.test(
       hay,
     );
 
   const clause =
-    /(?:please\s+use|must\s+be\s+one\s+of|must\s+be|one\s+of|supported\s+values?(?:\s+are)?|valid\s+values?(?:\s+are)?|allowed\s+values?(?:\s+are)?|use)\s*:?\s*([^.;\n}]{0,120})/.exec(
+    /(?:请使用|请尝试|只能使用|必须使用|可选值|支持的值|有效值|allowed values|please\s+use|must\s+be\s+one\s+of|must\s+be|one\s+of|supported\s+values?(?:\s+are)?|valid\s+values?(?:\s+are)?|allowed\s+values?(?:\s+are)?|use)\s*:?\s*([^.;\n}。！？]{0,120})/.exec(
       hay,
     );
   const acceptedEfforts = clause

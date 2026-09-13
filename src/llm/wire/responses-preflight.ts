@@ -76,7 +76,31 @@ function selectionKey(options: ResponsesFirstOptions, streaming: boolean): strin
     toolChoice: options.toolChoice,
     parallelToolCalls: options.parallelToolCalls,
     includeStreamUsage: options.includeStreamUsage,
+    discoverCapabilities: options.discoverCapabilities !== false,
   })).digest("hex");
+}
+
+function sessionSelectionKey(options: ResponsesFirstOptions, session: string): string {
+  return `${session}:${createHash("sha256").update(JSON.stringify({
+    provider: options.providerId,
+    endpoint: options.baseUrl.replace(/\/+$/, ""),
+    model: options.model,
+  })).digest("hex")}`;
+}
+
+function cachedSelection(
+  options: ResponsesFirstOptions,
+  streaming: boolean,
+): ResponsesSelection | undefined {
+  const key = selectionKey(options, streaming);
+  const session = currentSessionAffinity();
+  const sessionKey = session ? sessionSelectionKey(options, session) : undefined;
+  const pinned = sessionKey ? sessionSelections.get(sessionKey) : undefined;
+  if (pinned) return pinned;
+  const cached = selections.get(key);
+  if (!cached || cached.expiresAt <= Date.now()) return undefined;
+  if (sessionKey) remember(sessionSelections, sessionKey, cached.value);
+  return cached.value;
 }
 
 function waitForSelection(pending: PendingSelection, signal?: AbortSignal): Promise<ResponsesSelection> {
@@ -107,14 +131,9 @@ export async function selectResponsesWire(
   options.signal?.throwIfAborted();
   const key = selectionKey(options, streaming);
   const session = currentSessionAffinity();
-  const sessionKey = session ? `${session}:${key}` : undefined;
-  const pinned = sessionKey ? sessionSelections.get(sessionKey) : undefined;
-  if (pinned) return pinned;
-  const cached = selections.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
-    if (sessionKey) remember(sessionSelections, sessionKey, cached.value);
-    return cached.value;
-  }
+  const sessionKey = session ? sessionSelectionKey(options, session) : undefined;
+  const cached = cachedSelection(options, streaming);
+  if (cached) return cached;
   let pending = pendingSelections.get(key);
   if (!pending || pending.controller.signal.aborted) {
     const controller = new AbortController();

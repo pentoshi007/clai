@@ -273,6 +273,23 @@ describe("formatSessionUsage markdown", () => {
     expect(body).not.toContain("0.0%");
   });
 
+  it("shows the cache-rate denominator when some requests omit cache telemetry", () => {
+    const ledger = new SessionUsageLedger();
+    ledger.record(
+      usage({ promptTokens: 120_195, completionTokens: 300, totalTokens: 120_495, cachedPromptTokens: 118_272 }),
+      "bynara",
+      "qwen3.8-flash-free",
+    );
+    ledger.record(
+      usage({ promptTokens: 119_538, completionTokens: 347, totalTokens: 119_885 }),
+      "bynara",
+      "qwen3.8-flash-free",
+    );
+    const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1" });
+    expect(body).toContain("| `bynara / qwen3.8-flash-free` | — | 2 | 239,733 | 647 | 240,380 | 118,272 | 98.4% |");
+    expect(body).toContain("cache measured input 120,195");
+  });
+
   it("lists provider-specific telemetry only when it exists", () => {
     const bare = new SessionUsageLedger();
     bare.record(usage(), "ollama", "llama3.1:8b");

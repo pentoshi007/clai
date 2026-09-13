@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
+
+setEffortDiscoveryEnabledForTesting(false);
 
 import type { CompletionRequest, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
@@ -357,9 +360,9 @@ describe("in-place route adaptation admissions", () => {
     const first = transport.generations[0]!.body as Record<string, unknown>;
     const second = transport.generations[1]!.body as Record<string, unknown>;
     expect(first.chat_template_kwargs).toEqual({ thinking: true });
-    // "high" has no lower fallback in the simplified ladder, so the second
-    // admission strips reasoning entirely.
-    expect(second.chat_template_kwargs).toBeUndefined();
+    // Every enabled effort shares one wire key on a knob-only route, so the
+    // ladder's next distinct rung is the explicit disable form.
+    expect(second.chat_template_kwargs).toEqual({ thinking: false });
   });
 
   it("spends a second admission on an image-input rejection", async () => {

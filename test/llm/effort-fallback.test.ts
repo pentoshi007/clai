@@ -16,23 +16,36 @@ function effortError(status: number, body: string): Error & { status: number; bo
 }
 
 describe("fallbackEffortsFor", () => {
-  it("descends nearest-first from max", () => {
-    expect(fallbackEffortsFor("max")).toEqual(["xhigh", "high"]);
+  it("descends the full ladder from max", () => {
+    expect(fallbackEffortsFor("max")).toEqual([
+      "xhigh",
+      "high",
+      "medium",
+      "low",
+      "minimal",
+      "none",
+    ]);
   });
 
   it("descends from xhigh", () => {
-    expect(fallbackEffortsFor("xhigh")).toEqual(["high"]);
+    expect(fallbackEffortsFor("xhigh")).toEqual([
+      "high",
+      "medium",
+      "low",
+      "minimal",
+      "none",
+    ]);
   });
 
-  it("strips immediately for the classic low/medium/high set", () => {
-    expect(fallbackEffortsFor("high")).toEqual([]);
-    expect(fallbackEffortsFor("medium")).toEqual([]);
-    expect(fallbackEffortsFor("low")).toEqual([]);
+  it("keeps descending below the classic low/medium/high set", () => {
+    expect(fallbackEffortsFor("high")).toEqual(["medium", "low", "minimal", "none"]);
+    expect(fallbackEffortsFor("medium")).toEqual(["low", "minimal", "none"]);
+    expect(fallbackEffortsFor("low")).toEqual(["minimal", "none"]);
   });
 
-  it("strips immediately for none/minimal", () => {
+  it("can only fall back to disable from minimal", () => {
+    expect(fallbackEffortsFor("minimal")).toEqual(["none"]);
     expect(fallbackEffortsFor("none")).toEqual([]);
-    expect(fallbackEffortsFor("minimal")).toEqual([]);
   });
 
   it("never includes the requested effort itself", () => {
@@ -48,16 +61,30 @@ describe("effortCandidates", () => {
       "max",
       "xhigh",
       "high",
+      "medium",
+      "low",
+      "minimal",
+      "none",
     ]);
   });
 
-  it("defaults to medium with no fallback when no thinking is supplied", () => {
-    expect(effortCandidates(undefined)).toEqual(["medium"]);
+  it("defaults to medium then descends when no thinking is supplied", () => {
+    expect(effortCandidates(undefined)).toEqual([
+      "medium",
+      "low",
+      "minimal",
+      "none",
+    ]);
   });
 
   it("deduplicates", () => {
     const thinking: ReasoningPreference = { enabled: true, effort: "medium" };
-    expect(effortCandidates(thinking)).toEqual(["medium"]);
+    expect(effortCandidates(thinking)).toEqual([
+      "medium",
+      "low",
+      "minimal",
+      "none",
+    ]);
   });
 });
 
@@ -159,6 +186,14 @@ describe("withEffortFallback", () => {
         },
       ),
     ).rejects.toThrow("reasoning effort not supported");
-    expect(attempts).toEqual(["max", "xhigh", "high"]);
+    expect(attempts).toEqual([
+      "max",
+      "xhigh",
+      "high",
+      "medium",
+      "low",
+      "minimal",
+      "none",
+    ]);
   });
 });

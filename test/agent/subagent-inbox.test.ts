@@ -89,6 +89,25 @@ describe("SubagentInbox", () => {
     expect(manager.pendingResults()).toHaveLength(1);
   });
 
+  it("nudges the parent to launch siblings before waiting on a lone gatherer", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    start();
+    await tick();
+    const onWaiting = vi.fn();
+    expect(await inbox.beforeFinal(undefined, onWaiting)).toBe(true);
+    expect(onWaiting).not.toHaveBeenCalled();
+    expect(messages.at(-1)?.content).toContain("launch every other independent context assignment");
+
+    let finished = false;
+    const waiting = inbox.beforeFinal(undefined, onWaiting).then((result) => { finished = true; return result; });
+    await tick();
+    expect(finished).toBe(false);
+    expect(onWaiting).toHaveBeenCalledOnce();
+    work[0]!.resolve("Evidence");
+    expect(await waiting).toBe(true);
+    expect(manager.pendingResults()).toHaveLength(1);
+  });
+
   it.each(["completed", "error", "stopped"] as const)("joins %s without polling or cancelling healthy children", async (status) => {
     const { manager, work, inbox, start } = setup();
     const first = start();

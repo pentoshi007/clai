@@ -163,6 +163,23 @@ describe("candidate selection", () => {
   it("keeps the ladder ordered from the request downward for unknown routes", () => {
     const candidates = effortCandidatesFor("ollama", "llama3.1:8b", "max");
     expect(candidates[0]).not.toBe("max");
-    expect(candidates).toEqual(["xhigh", "high"]);
+    expect(candidates).toEqual([
+      "xhigh",
+      "high",
+      "medium",
+      "low",
+      "minimal",
+      "none",
+    ]);
+  });
+
+  it("climbs the reverse subagent ladder from none for unknown routes", () => {
+    expect(effortCandidatesFor("agentrouter", "glm-5.3", "none")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
   });
 });

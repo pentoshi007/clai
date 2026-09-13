@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompletionRequest, CompletionResult, ToolChoice } from "../../src/types.js";
+import type { CompletionRequest, CompletionResult, ProviderId, ToolChoice } from "../../src/types.js";
 import type { LlmProvider } from "../../src/llm/provider.js";
 import { freeProvider } from "../../src/llm/free.js";
 import { ProviderError, buildChatBody } from "../../src/llm/http.js";
 import {
   isReasoningUnsupported,
+  registerModelReasoningEfforts,
   registerWireRejectionEfforts,
   resetReasoningKnowledge,
 } from "../../src/llm/capabilities.js";
@@ -105,7 +106,7 @@ describe.each(["complete", "stream"] as const)("%s provider option compatibility
   });
 
   it("adapts rejected none effort to the lowest accepted value without changing parent preferences", async () => {
-    const input = { ...request, model: "gpt-5.5", thinking: { enabled: true, effort: "high" as const } };
+    const input = { ...request, model: "glm-5.3", thinking: { enabled: true, effort: "high" as const } };
     const originalThinking = getConfig().thinking;
     const attempt = vi.fn(async (candidate: CompletionRequest) => {
       if (candidate.thinking?.effort === "none") {
@@ -122,6 +123,15 @@ describe.each(["complete", "stream"] as const)("%s provider option compatibility
     expect(isReasoningUnsupported("free", input.model)).toBe(false);
     await run(mode, fakeProvider(attempt), input);
     expect(attempt.mock.calls[2]![0].thinking).toEqual({ enabled: true, effort: "high" });
+  });
+
+  it("goes straight to the least declared effort when the vocabulary excludes none", async () => {
+    const input = { ...request, model: "gpt-5.5", thinking: { enabled: true, effort: "high" as const } };
+    const attempt = vi.fn(async () => result);
+    await run(mode, fakeProvider(attempt), withLowestReasoning(input, "free", input.model));
+    expect(attempt).toHaveBeenCalledTimes(1);
+    expect(attempt.mock.calls[0]![0].thinking).toEqual({ enabled: true, effort: "minimal" });
+    expect(input.thinking).toEqual({ enabled: true, effort: "high" });
   });
 
   it("tries increasing supported efforts when none is rejected without a value list", async () => {
@@ -171,6 +181,19 @@ describe("lowest reasoning requests", () => {
     expect(lowestReasoningPreference("free", "kimi-k3")).toEqual({ enabled: true, effort: "low" });
     registerWireRejectionEfforts("free", "kimi-k3", ["medium"]);
     expect(lowestReasoningPreference("free", "kimi-k3")).toEqual({ enabled: true, effort: "medium" });
+  });
+
+  it("prefers none on undeclared vocabularies and lands on the least learned effort", () => {
+    expect(lowestReasoningPreference("agentrouter", "glm-5.3")).toEqual({ enabled: false, effort: "none" });
+    registerWireRejectionEfforts("agentrouter", "glm-5.3", ["low", "high", "max"]);
+    expect(lowestReasoningPreference("agentrouter", "glm-5.3")).toEqual({ enabled: true, effort: "low" });
+    registerModelReasoningEfforts("agentrouter", "glm-5.4-air", ["medium", "high"]);
+    expect(lowestReasoningPreference("agentrouter", "glm-5.4-air")).toEqual({ enabled: true, effort: "medium" });
+  });
+
+  it("uses learned efforts for custom providers without a built-in profile", () => {
+    registerWireRejectionEfforts("custom-gateway" as ProviderId, "mystery-reasoner", ["low", "medium"]);
+    expect(lowestReasoningPreference("custom-gateway" as ProviderId, "mystery-reasoner")).toEqual({ enabled: true, effort: "low" });
   });
 
   it("does not retry after visible stream output", async () => {

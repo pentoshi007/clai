@@ -22,7 +22,7 @@ const run: SubagentRun = {
 
 function fixture(enabled = true) {
   const manager = {
-    enabled, start: vi.fn(() => run), list: vi.fn(() => [run]), get: vi.fn(() => run),
+    enabled, start: vi.fn(() => run), startMany: vi.fn(() => [run, run]), list: vi.fn(() => [run]), get: vi.fn(() => run),
     stop: vi.fn(), restart: vi.fn(() => run), wait: vi.fn(async () => run),
     waitAny: vi.fn<() => Promise<SubagentRun | undefined>>(async () => run), acknowledgeResult: vi.fn(),
   };
@@ -61,6 +61,19 @@ describe("parent subagent tool boundary", () => {
     const result = await runSubagentTool({ name: "subagent.start", args: { title: run.title, prompt: run.prompt, cwd: "/", model: "other" } }, context, signal);
     expect(result.ok).toBe(true);
     expect(manager.start).toHaveBeenCalledWith({ title: run.title, prompt: run.prompt, context: undefined, cwd: process.cwd(), provider: "openai", model: "gpt-4.1" });
+  });
+
+  it("starts independent assignments through one concurrent batch", async () => {
+    const { manager, context, signal } = fixture();
+    const result = await runSubagentTool({ name: "subagent.start_many", args: { assignments: [
+      { title: "Routes", prompt: "Inspect routes" },
+      { title: "Storage", prompt: "Inspect storage", context: "Focus on persistence" },
+    ] } }, context, signal);
+    expect(result.ok).toBe(true);
+    expect(manager.startMany).toHaveBeenCalledWith([
+      { title: "Routes", prompt: "Inspect routes", context: undefined, cwd: process.cwd(), provider: "openai", model: "gpt-4.1" },
+      { title: "Storage", prompt: "Inspect storage", context: "Focus on persistence", cwd: process.cwd(), provider: "openai", model: "gpt-4.1" },
+    ]);
   });
 
   it("defaults to three recent conversation events and reads reports separately", async () => {

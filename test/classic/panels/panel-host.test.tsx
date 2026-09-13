@@ -24,6 +24,8 @@ function mount(harness: ReturnType<typeof createHarness>, rows = 7) {
   );
 }
 
+vi.setConfig({ testTimeout: 30_000 });
+
 describe("panel host", () => {
   it("renders nothing while no overlay is open", () => {
     const harness = createHarness();

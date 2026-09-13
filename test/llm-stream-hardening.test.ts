@@ -39,6 +39,7 @@ const baseOptions = {
   apiKey: "k",
   model: "gpt-4o-mini",
   messages: [{ role: "user" as const, content: "hi" }],
+  discoverCapabilities: false,
 };
 
 describe("openAiCompatibleStream error frames", () => {

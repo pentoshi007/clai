@@ -10,19 +10,21 @@ import {
 
 
 export const EFFORT_LADDER: readonly ReasoningEffort[] = [
+  "max",
   "xhigh",
   "high",
+  "medium",
+  "low",
+  "minimal",
+  "none",
 ];
 
 export function fallbackEffortsFor(
   requested: ReasoningEffort,
 ): ReasoningEffort[] {
   const normalized = requested.toLowerCase();
-  const nearest: Record<string, ReasoningEffort[]> = {
-    max: ["xhigh", "high"],
-    xhigh: ["high"],
-  };
-  return nearest[normalized] ?? [];
+  const index = EFFORT_LADDER.findIndex((effort) => effort === normalized);
+  return index < 0 ? [] : [...EFFORT_LADDER.slice(index + 1)];
 }
 
 export function effortCandidates(
@@ -57,11 +59,11 @@ export function isEffortRejectedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const hay = `${message}\n${body}`.toLowerCase();
   if (
-    !/reasoning_effort|\beffort\b|chat_template_kwargs|\bthinking\b/.test(hay)
+    !/reasoning_effort|\beffort\b|chat_template_kwargs|思考|推理|\bthinking\b/.test(hay)
   ) {
     return false;
   }
-  return /must be one of|invalid|unsupported|not support|unknown|unrecognized|not a valid|not allowed|expected one of/.test(
+  return /must be one of|invalid|unsupported|not support|unknown|unrecognized|not a valid|not allowed|expected one of|不支持|不允许|无效|无法/.test(
     hay,
   );
 }

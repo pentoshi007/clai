@@ -42,6 +42,7 @@ import {
   sleep,
 } from "./error-classification.js";
 import { authForSlot } from "./provider-selection.js";
+import { withRequestPurpose } from "../request-purpose.js";
 
 function failureReason(error: unknown): string {
   if (isRateLimited(error)) return "rate limited";
@@ -165,32 +166,31 @@ export async function runWithKeyRotation<T>(opts: {
       const attemptReason =
         planIdx === 0 && attempt === 0 ? opts.initialAttemptReason : "retry";
       try {
-        let result: CompletionResult;
-        if (opts.mode === "stream") {
-          result = await tryStreamOnce(
-            provider,
-            providerId,
-            request,
-            model,
-            auth,
-            opts.onToken ?? (() => {}),
-            opts.onStatus,
-            attemptReason,
-            singleDispatch,
-            opts.onSuccessfulRequest,
-          );
-        } else {
-          result = await tryCompleteOnce(
-            provider,
-            providerId,
-            request,
-            model,
-            auth,
-            attemptReason,
-            opts.onStatus,
-            singleDispatch,
-          );
-        }
+        const result = await withRequestPurpose(request.purpose, () =>
+          opts.mode === "stream"
+            ? tryStreamOnce(
+                provider,
+                providerId,
+                request,
+                model,
+                auth,
+                opts.onToken ?? (() => {}),
+                opts.onStatus,
+                attemptReason,
+                singleDispatch,
+                opts.onSuccessfulRequest,
+              )
+            : tryCompleteOnce(
+                provider,
+                providerId,
+                request,
+                model,
+                auth,
+                attemptReason,
+                opts.onStatus,
+                singleDispatch,
+              ),
+        );
         if (multi.source !== "env" && multi.source !== "local") {
           void markProviderKeySuccess(providerId, keyIndex).catch(() => {});
         }

@@ -126,6 +126,16 @@ export function registerRouteAcceptedEfforts(
   catalogReasoningEfforts.set(reasoningKey(provider, model), [...efforts]);
 }
 
+export function registerPreflightEfforts(
+  provider: ProviderId,
+  model: string,
+  efforts: readonly string[],
+): void {
+  if (efforts.length === 0) return;
+  registerRouteAcceptedEfforts(provider, model, efforts);
+  registerModelReasoningSupport(provider, model, true);
+}
+
 export function registerWireRejectionEfforts(
   provider: ProviderId,
   model: string,

@@ -11,7 +11,7 @@ export function isSubagentTool(name: string): boolean {
 
 export function orchestrationContext(enabled: boolean): string {
   return `ORCHESTRATION: ${enabled ? "ON" : "OFF"}. ${enabled
-    ? "Read-only subagents are available for independent research. Delegate only useful independent work and leave the assigned investigation to its child. Continue necessary non-overlapping parent work; do not re-read delegated surfaces while their owner is still investigating. Terminal results are delivered automatically at safe model boundaries. When no necessary independent work remains, use subagent.wait without a timeout to suspend until a result, error or stop arrives; omit id to join whichever child settles first. Do not poll or manufacture work to stay busy. Do not cancel healthy children because they are slow, to free slots, or because you duplicated their assignment. Inspect delivered evidence and verify decisive claims after the child finishes. Reuse settled children with subagent.restart for scoped follow-ups."
+    ? "Read-only context-gathering subagents are available. Consider one to three children when the request holds two or more independent threads such as different issues, features, or file areas with no shared dependency; single-thread or tightly dependent work stays with you. Name delegated surfaces in each child context and avoid reading them while that child runs. Children return comprehensive evidence-backed summaries and never modify project files or delegate; shell use is read-only search and inspection only. For two or more independent assignments, prefer one subagent.start_many call or emit all subagent.start calls together before any wait, read, or dependent task work; never launch one sibling, wait for it, then launch the next. When no independent non-delegated work exists, suspend with subagent.wait without a timeout and omit id to join whichever child settles first. Otherwise do independent work on non-delegated surfaces while children run. Terminal results arrive at safe model boundaries through wait and read; an early report may unblock its own thread while others still run. Read every report page through nextOffset, verify decisive claims, and own implementation. Do not poll, manufacture busywork, or cancel healthy children for slowness. Reuse settled children with subagent.restart for scoped follow-ups."
     : "Subagent tools are disabled. Only the user can enable them with /orchestration on."}`;
 }
 
@@ -44,6 +44,19 @@ function integer(value: unknown, fallback: number, maximum: number): number {
   return value;
 }
 
+function assignmentFromArgs(value: unknown, index: number, context: { provider: ProviderId; model: string; cwd: string }) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Assignment ${index + 1} must be an object.`);
+  const assignment = value as Record<string, unknown>;
+  return {
+    title: text(assignment.title, `assignments[${index}].title`, 120),
+    prompt: text(assignment.prompt, `assignments[${index}].prompt`, 12000),
+    context: assignment.context === undefined ? undefined : text(assignment.context, `assignments[${index}].context`, 24000),
+    cwd: context.cwd,
+    provider: context.provider,
+    model: context.model,
+  };
+}
+
 export async function runSubagentTool(
   call: ToolCall,
   context: { manager?: SubagentManager | undefined; provider: ProviderId; model: string; cwd: string },
@@ -61,6 +74,12 @@ export async function runSubagentTool(
         const prompt = text(args.prompt, "prompt", 12000);
         const details = args.context === undefined ? undefined : text(args.context, "context", 24000);
         value = summary(manager.start({ title, prompt, context: details, cwd: context.cwd, provider: context.provider, model: context.model }));
+        break;
+      }
+      case "subagent.start_many": {
+        if (!Array.isArray(args.assignments)) throw new Error("assignments must be an array");
+        const assignments = args.assignments.map((assignment, index) => assignmentFromArgs(assignment, index, context));
+        value = manager.startMany(assignments).map(summary);
         break;
       }
       case "subagent.list": value = manager.list().map(summary); break;

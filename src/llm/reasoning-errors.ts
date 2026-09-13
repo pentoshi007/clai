@@ -33,7 +33,7 @@ export function isInvalidReasoningContentError(error: unknown): boolean {
 }
 
 export function mentionsReasoning(error: unknown): boolean {
-  return /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning[_ ]?(?:content|text)|\breasoning\b|\bthinking\b/i.test(
+  return /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning[_ ]?(?:content|text)|思考|推理|\breasoning\b|\bthinking\b/i.test(
     errorHaystack(error),
   );
 }

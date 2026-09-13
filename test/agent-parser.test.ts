@@ -897,6 +897,7 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
     "web.fetch",
     "web.search",
     "sysinfo",
+    "subagent.start",
   ]);
   const safe = (c: { name: string }) => READ_ONLY.has(c.name);
   const call = (name: string) => ({ name, args: {} });
@@ -911,6 +912,28 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
       "net.pingSweep",
       "web.search",
       "http.fetch",
+    ]);
+  });
+
+  it("groups independent context gatherer starts together", () => {
+    const groups = groupToolCallsForExecution(
+      [call("subagent.start"), call("subagent.start"), call("subagent.start")],
+      safe,
+      3,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(3);
+  });
+
+  it("keeps wait and restart operations as sequential barriers", () => {
+    const groups = groupToolCallsForExecution(
+      [call("subagent.start"), call("subagent.wait"), call("subagent.start")],
+      safe,
+    );
+    expect(groups.map((group) => group.map((item) => item.name))).toEqual([
+      ["subagent.start"],
+      ["subagent.wait"],
+      ["subagent.start"],
     ]);
   });
 

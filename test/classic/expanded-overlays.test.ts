@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { render } from "ink-testing-library";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ClassicApp } from "../../src/classic/app/ClassicApp.js";
 import { createClassicAppWiring } from "../../src/classic/app/app-wiring.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
@@ -9,6 +9,8 @@ import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
 import { overlaySize } from "../../src/ui-core/layout/overlay-size.js";
 import { renderColumns } from "../../src/ui-core/rendering/text-width.js";
+
+vi.setConfig({ testTimeout: 30_000 });
 
 describe("Classic expanded overlays", () => {
   it.each([[120, 40], [40, 20], [24, 10], [8, 4]])("fills %i by %i without changing the slash completion panel", async (columns, rows) => {

@@ -43,16 +43,31 @@ describe("SubagentManager", () => {
     expect(() => new SubagentManager(id)).toThrow("Invalid parent session ID");
   });
 
-  it("is on by default and does not impose a fixed concurrency cap", async () => {
+  it("is on by default and limits active context gatherers to three", async () => {
     const { manager, work } = controlled();
     expect(manager.enabled).toBe(true);
-    const runs = Array.from({ length: 8 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
-    expect(new Set(runs.map((run) => run.id)).size).toBe(8);
+    const runs = Array.from({ length: 3 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
+    expect(new Set(runs.map((run) => run.id)).size).toBe(3);
+    expect(() => manager.start({ ...assignment, prompt: "Task 3" })).toThrow("At most three");
     await tick();
-    expect(work).toHaveLength(8);
+    expect(work).toHaveLength(3);
     work[0]!.resolve("A report");
     expect((await manager.wait(runs[0]!.id)).status).toBe("completed");
     expect(manager.start(assignment).status).toBe("running");
+  });
+
+  it("launches a batch of independent assignments together", async () => {
+    const { manager, work } = controlled();
+    const runs = manager.startMany([
+      { ...assignment, prompt: "First" },
+      { ...assignment, prompt: "Second" },
+      { ...assignment, prompt: "Third" },
+    ]);
+    expect(runs).toHaveLength(3);
+    await tick();
+    expect(work).toHaveLength(3);
+    for (const item of work) item.resolve("A report");
+    await expect(Promise.all(runs.map((run) => manager.wait(run.id)))).resolves.toHaveLength(3);
   });
 
   it("keeps aborting assignments reserved and ignores late events and reports", async () => {

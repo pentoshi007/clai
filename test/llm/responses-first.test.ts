@@ -12,6 +12,7 @@ import {
 } from "../../src/llm/http.js";
 import { resetResponsesWireStatesForTesting } from "../../src/llm/wire/responses-first.js";
 import { sessionCacheAffinityKey } from "../../src/llm/cache-affinity.js";
+import { withRequestPurpose } from "../../src/llm/request-purpose.js";
 import { withSessionAffinity } from "../../src/llm/session-affinity.js";
 import { textStreamResponse } from "../conformance/wire-fixtures.js";
 
@@ -95,6 +96,7 @@ function completeOptions(model: string) {
     model,
     messages: [{ role: "user" as const, content: "hi" }],
     responsesFirst: true,
+    discoverCapabilities: false,
   };
 }
 
@@ -219,6 +221,74 @@ describe("responses-first transport", () => {
     expect(body.include).toEqual(["reasoning.encrypted_content"]);
     expect(String(body.prompt_cache_key)).toMatch(/^clai-/);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("selects the same wire for compaction as a normal request on a cold cache", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses" ? responsesCompleted("compacted") : chatJson("wrong-wire"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await withRequestPurpose("compaction", () =>
+      openAiCompatibleComplete({
+        ...completeOptions("m-compaction"),
+        messages: [{ role: "user", content: "compact this history" }],
+      }),
+    );
+
+    expect(result.text).toBe("compacted");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/responses");
+    const probeBody = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
+    expect(JSON.stringify(probeBody.input)).toContain("smallest positive integer");
+    const compactionBody = await requestBody(fetchMock.mock.calls[1]![1] as RequestInit);
+    expect(JSON.stringify(compactionBody.input)).toContain("compact this history");
+  });
+
+  it("uses the learned route for compaction without another probe", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses" ? responsesCompleted("ok") : chatJson("wrong-wire"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withSessionAffinity("ses_responses_compaction", async () => {
+      await openAiCompatibleComplete(completeOptions("m-session-compaction"));
+      await withRequestPurpose("compaction", () =>
+        openAiCompatibleComplete({
+          ...completeOptions("m-session-compaction"),
+          messages: [{ role: "user", content: "compact this history" }],
+        }),
+      );
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const compactionBody = await requestBody(fetchMock.mock.calls[2]![1] as RequestInit);
+    expect(JSON.stringify(compactionBody.input)).toContain("compact this history");
+    expect(JSON.stringify(compactionBody.input)).not.toContain("smallest positive integer");
+  });
+
+  it("reuses one capability selection across provider-model request shapes in a session", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses" ? responsesCompleted("ok") : chatJson("wrong-wire"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withSessionAffinity("ses_responses_capability", async () => {
+      await openAiCompatibleComplete(completeOptions("m-session-capability"));
+      await openAiCompatibleComplete({
+        ...completeOptions("m-session-capability"),
+        messages: [{ role: "user", content: "second request" }],
+        tools: [{
+          name: "lookup",
+          description: "lookup",
+          parameters: { type: "object", properties: {} },
+        }],
+      });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const probeBody = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
+    expect(JSON.stringify(probeBody.input)).toContain("smallest positive integer");
   });
 
   it("keeps the Responses cache key stable when compaction changes the opening message", async () => {

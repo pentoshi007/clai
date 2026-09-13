@@ -222,10 +222,11 @@ describe("router retries without reasoning when a knob is rejected", () => {
       (message) => statuses.push(message),
     );
 
-    expect(requests).toHaveLength(3);
-    expect(requests[0]!.thinking).toEqual({ enabled: true, effort: "max" });
-    expect(requests[1]!.thinking).toEqual({ enabled: true, effort: "high" });
-    expect(requests[2]!.thinking).toBeUndefined();
+    expect(requests).toHaveLength(6);
+    expect(requests.map((request) => request.thinking?.effort)).toEqual([
+      "max", "high", "medium", "low", "minimal", undefined,
+    ]);
+    expect(requests[5]!.thinking).toBeUndefined();
     expect(result.text).toBe("ok");
     expect(isReasoningUnsupported("nvidia", "muse-spark-1.2")).toBe(true);
     expect(statuses.join("")).toMatch(/rejected reasoning options/i);
@@ -397,10 +398,11 @@ describe("router retries without reasoning when a knob is rejected", () => {
       { maxRetries: 0 },
     );
 
-    expect(requests).toHaveLength(3);
-    expect(requests[0]!.thinking).toEqual({ enabled: true, effort: "max" });
-    expect(requests[1]!.thinking).toEqual({ enabled: true, effort: "high" });
-    expect(requests[2]!.thinking).toBeUndefined();
+    expect(requests).toHaveLength(6);
+    expect(requests.map((request) => request.thinking?.effort)).toEqual([
+      "max", "high", "medium", "low", "minimal", undefined,
+    ]);
+    expect(requests[5]!.thinking).toBeUndefined();
     expect(result.text).toBe("ok");
     expect(isReasoningUnsupported("nvidia", "muse-spark-1.2")).toBe(true);
   });

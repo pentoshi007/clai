@@ -103,7 +103,7 @@ describe("isolated read-only subagent worker", () => {
     expect(requests[0]!.messages).toEqual(snapshots[0]);
     expect(requests[1]!.messages.slice(0, 2)).toEqual(snapshots[0]);
     expect(requests[0]!.tools).toBe(requests[1]!.tools);
-    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "web.fetch", "web.search"]);
+    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "http.fetch", "image.ocr", "image.view", "pdf.read", "shell.exec", "skill.list", "skill.load", "sysinfo", "tool.check", "web.fetch", "web.search", "wordlist.find"]);
     expect(requests[0]!.messages[0]!.content).not.toContain(input.run.prompt);
     expect(requests[0]!.messages[0]!.content).not.toContain(cwd);
     expect(requests[0]!.messages[0]!.content.length).toBeLessThan(1800);
@@ -112,7 +112,7 @@ describe("isolated read-only subagent worker", () => {
     expect(requests[0]!.messages[1]!.content).toContain(input.run.prompt);
     expect(requests[1]!.messages[2]).toMatchObject({ role: "assistant", toolCalls: [{ id: "native-42" }], reasoningBlock, reasoningArtifacts });
     expect(requests[1]!.messages[3]).toMatchObject({ role: "tool", toolCallId: "native-42", ok: true });
-    expect(runToolCall).toHaveBeenCalledWith(expect.objectContaining({ name: "fs.read", args: expect.objectContaining({ path: join(cwd, "src/example.ts"), maxBytes: 12_000 }) }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(runToolCall).toHaveBeenCalledWith(expect.objectContaining({ name: "fs.read", args: expect.objectContaining({ path: expect.stringContaining(join("src", "example.ts")), maxBytes: 12_000 }) }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(input.emit).toHaveBeenCalledWith({ kind: "assistant", text: "Inspecting export", append: false });
     expect(input.emit).toHaveBeenCalledWith({ kind: "assistant", text: REPORT, append: false });
     expect(vi.mocked(input.emit).mock.calls.filter(([event]) => event.kind === "assistant")).toHaveLength(2);
@@ -132,7 +132,7 @@ describe("isolated read-only subagent worker", () => {
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [malicious])).mockResolvedValueOnce(completion());
     await runReadOnlySubagent(input);
     expect(runToolCall).not.toHaveBeenCalled();
-    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "tool", text: expect.stringContaining("Tool denied") }));
+    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "tool", text: expect.stringMatching(/denied/i) }));
   });
 
   it.each([
