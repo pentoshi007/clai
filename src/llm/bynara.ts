@@ -17,10 +17,8 @@ import {
   ingestOpenAiModelCatalog,
   streamIdleBudgets,
   THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS,
-  ProviderError,
   type ReasoningStyle,
 } from "./http.js";
-import { withEffortFallback } from "./effort-fallback.js";
 
 const baseUrl = "https://router.bynara.id/v1";
 
@@ -72,48 +70,35 @@ export const bynaraProvider: LlmProvider = {
     const apiKey = auth.apiKey;
     if (!apiKey) throw new Error("Bynara API key is required");
     const model = request.model ?? defaultModels.bynara;
-    let attemptIndex = 0;
-    return await withEffortFallback(
+    return await runGenerationAttempt(
       request,
-      async (thinking) =>
-        runGenerationAttempt(
-          request,
-          {
-            provider: "bynara",
-            model,
-            mode: "complete",
-            reason:
-              attemptIndex++ === 0
-                ? (request.attemptReason ?? "initial")
-                : "provider-retry",
-          },
-          async () => {
-            const payload = await openAiCompatibleComplete({
-      responsesFirst: true,
-              provider: "Bynara",
-              providerId: "bynara",
-              baseUrl,
-              apiKey,
-              model,
-              messages: request.messages,
-              maxTokens: request.maxTokens,
-              temperature: request.temperature,
-              signal: request.signal,
-              reasoning: thinking,
-              reasoningStyle: BYNARA_REASONING_STYLE,
-              tools: request.tools,
-              toolChoice: request.toolChoice,
-              parallelToolCalls: request.parallelToolCalls,
-              reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-              ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-            });
-            return toCompletionResult("bynara", model, payload);
-          },
-        ),
-      () => {
-        throw new ProviderError(
-          `Bynara returned no completion text (model=${model}).`,
-        );
+      {
+        provider: "bynara",
+        model,
+        mode: "complete",
+        reason: request.attemptReason ?? "initial",
+      },
+      async () => {
+        const payload = await openAiCompatibleComplete({
+          responsesFirst: true,
+          provider: "Bynara",
+          providerId: "bynara",
+          baseUrl,
+          apiKey,
+          model,
+          messages: request.messages,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+          signal: request.signal,
+          reasoning: request.thinking,
+          reasoningStyle: BYNARA_REASONING_STYLE,
+          tools: request.tools,
+          toolChoice: request.toolChoice,
+          parallelToolCalls: request.parallelToolCalls,
+          reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+          ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+        });
+        return toCompletionResult("bynara", model, payload);
       },
     );
   },
@@ -125,55 +110,44 @@ export const bynaraProvider: LlmProvider = {
     const apiKey = auth.apiKey;
     if (!apiKey) throw new Error("Bynara API key is required");
     const model = request.model ?? defaultModels.bynara;
-    let attemptIndex = 0;
-    return await withEffortFallback(
+    return await runGenerationAttempt(
       request,
-      async (thinking) =>
-        runGenerationAttempt(
-          request,
-          {
-            provider: "bynara",
-            model,
-            mode: "stream",
-            reason:
-              attemptIndex++ === 0
-                ? (request.attemptReason ?? "initial")
-                : "provider-retry",
-          },
-          async () => {
-            const budgets = streamIdleBudgets(Boolean(thinking?.enabled));
-            const payload = await openAiCompatibleStream({
-      responsesFirst: true,
-              provider: "Bynara",
-              providerId: "bynara",
-              baseUrl,
-              apiKey,
-              model,
-              messages: request.messages,
-              maxTokens: request.maxTokens,
-              temperature: request.temperature,
-              signal: request.signal,
-              onToken,
-              onToolCallDelta: request.onToolCallDelta,
-      onStreamEvent: request.onStreamEvent,
-              reasoning: thinking,
-              reasoningStyle: BYNARA_REASONING_STYLE,
-              idleTimeoutMs: budgets.idleTimeoutMs,
-              initialIdleTimeoutMs: thinking?.enabled
-                ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
-                : 60_000,
-              outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
-              tools: request.tools,
-              toolChoice: request.toolChoice,
-              parallelToolCalls: request.parallelToolCalls,
-              reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-              ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-            });
-            return toCompletionResult("bynara", model, payload);
-          },
-        ),
-      () => {
-        throw new ProviderError(`Bynara stream failed (model=${model}).`);
+      {
+        provider: "bynara",
+        model,
+        mode: "stream",
+        reason: request.attemptReason ?? "initial",
+      },
+      async () => {
+        const budgets = streamIdleBudgets(Boolean(request.thinking?.enabled));
+        const payload = await openAiCompatibleStream({
+          responsesFirst: true,
+          provider: "Bynara",
+          providerId: "bynara",
+          baseUrl,
+          apiKey,
+          model,
+          messages: request.messages,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+          signal: request.signal,
+          onToken,
+          onToolCallDelta: request.onToolCallDelta,
+          onStreamEvent: request.onStreamEvent,
+          reasoning: request.thinking,
+          reasoningStyle: BYNARA_REASONING_STYLE,
+          idleTimeoutMs: budgets.idleTimeoutMs,
+          initialIdleTimeoutMs: request.thinking?.enabled
+            ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
+            : 60_000,
+          outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
+          tools: request.tools,
+          toolChoice: request.toolChoice,
+          parallelToolCalls: request.parallelToolCalls,
+          reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+          ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+        });
+        return toCompletionResult("bynara", model, payload);
       },
     );
   },

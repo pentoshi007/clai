@@ -3,7 +3,6 @@ import type {
   CompletionRequestPurpose,
   ProviderId,
   ReasoningArtifactReplayObserver,
-  ReasoningEffort,
   ReasoningPreference,
   ToolChoice,
   ToolDefinition,
@@ -11,7 +10,7 @@ import type {
 import { learnModelEmitsReasoning } from "../capabilities.js";
 import { ProviderError } from "../http.js";
 import { isOperationPolicyError } from "../operation-ledger.js";
-import { generationFetch, withUnrecordedTransport } from "../operation-usage.js";
+import { generationFetch } from "../operation-usage.js";
 import { visibleReasoningDetailText } from "../reasoning-artifacts.js";
 import { compileRequestPlan } from "../request-plan.js";
 import { parseFireworksUsage, parseOpenAiUsage } from "../token-usage.js";
@@ -30,35 +29,6 @@ import { ReasoningStyle } from "./reasoning-payload.js";
 import { readJson } from "./response-errors.js";
 import { currentRequestPurpose } from "../request-purpose.js";
 import { openAiCompatibleCompleteViaResponses } from "./responses-first.js";
-import {
-  applyDiscoveredReasoning,
-  discoveryRouteFor,
-  discoverRouteEfforts,
-  DISCOVERY_MESSAGES,
-  effortProbePreference,
-  type EffortSender,
-} from "./effort-discovery.js";
-
-type ChatWireOptions = Parameters<typeof openAiCompatibleComplete>[0];
-
-function chatEffortSender(options: ChatWireOptions): EffortSender {
-  return (preference) =>
-    withUnrecordedTransport(
-      () =>
-        openAiCompatibleComplete({
-          ...options,
-          responsesFirst: false,
-          discoverCapabilities: false,
-          messages: DISCOVERY_MESSAGES,
-          tools: undefined,
-          toolChoice: undefined,
-          maxTokens: 512,
-          reasoning: preference,
-          reasoningEffortProbe: effortProbePreference(preference),
-        }),
-      512,
-    );
-}
 
 export async function openAiCompatibleComplete(options: {
   provider: string;
@@ -72,7 +42,6 @@ export async function openAiCompatibleComplete(options: {
   headers?: Record<string, string> | undefined;
   signal?: AbortSignal | undefined;
   reasoning?: ReasoningPreference | undefined;
-  reasoningEffortProbe?: ReasoningEffort | undefined;
   discoverCapabilities?: boolean | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
   tools?: ToolDefinition[] | undefined;
@@ -94,19 +63,13 @@ export async function openAiCompatibleComplete(options: {
         openAiCompatibleComplete({ ...options, ...probe, responsesFirst: false }))
     : undefined;
   if (viaResponses) return { ...viaResponses, api: "responses" };
-  await discoverRouteEfforts(
-    discoveryRouteFor(responsesOptions),
-    [chatEffortSender(responsesOptions)],
-    options.signal,
-  );
-  const effective = applyDiscoveredReasoning(responsesOptions);
   const plan = compileRequestPlan({
     provider: options.providerId,
     model: options.model,
     messages: options.messages,
     stream: false,
     endpoint: options.baseUrl,
-    reasoning: effective.reasoning,
+    reasoning: responsesOptions.reasoning,
     tools: options.tools,
     toolChoice: options.toolChoice,
     parallelToolCalls: options.parallelToolCalls,
@@ -115,7 +78,6 @@ export async function openAiCompatibleComplete(options: {
   });
   const requestBody = chatCompletionsBodyFromPlan(plan, {
     reasoningStyle: options.reasoningStyle,
-    reasoningEffortProbe: options.reasoningEffortProbe,
     reasoningArtifactReplayObserver: options.reasoningArtifactReplayObserver,
     ...(options.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
   });

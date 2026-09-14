@@ -1,13 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
-
-setEffortDiscoveryEnabledForTesting(false);
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetEffortPreflightForTesting } from "../../src/llm/wire/effort-preflight.js";
 import { agentrouterProvider } from "../../src/llm/agentrouter.js";
 import type { LlmProvider } from "../../src/llm/provider.js";
 import {
   clearLearnedVisionCapabilities,
   modelVisionSupport,
   registerModelVisionCapability,
+  registerRouteAcceptedEfforts,
   resetReasoningKnowledge,
 } from "../../src/llm/capabilities.js";
 import { ProviderError, toOpenAiMessages } from "../../src/llm/http.js";
@@ -39,6 +38,20 @@ const request: CompletionRequest = {
   toolChoice: { type: "function", name: "image.view" },
 };
 
+const SETTLED_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+beforeEach(() => {
+  registerRouteAcceptedEfforts("agentrouter", model, SETTLED_EFFORTS);
+});
+
 async function establishChatRoute(): Promise<void> {
   installTransport(({ url }) => url.endsWith("/responses")
     ? jsonResponse({ error: { message: "not found" } }, 404)
@@ -50,6 +63,7 @@ afterEach(() => {
   clearLearnedVisionCapabilities();
   resetReasoningKnowledge();
   resetResponsesWireStatesForTesting();
+  resetEffortPreflightForTesting();
   vi.unstubAllGlobals();
 });
 

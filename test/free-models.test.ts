@@ -460,8 +460,8 @@ describe("free provider (zen + kilo)", () => {
       expect(String(fetchMock.mock.calls[0]![0])).toBe(
         "https://api.kilo.ai/api/gateway/responses",
       );
-      expect(bodies[0]?.max_output_tokens).toBe(512);
-      expect(JSON.stringify(bodies[0]?.input)).toContain("smallest positive integer");
+      expect(bodies[0]?.max_output_tokens).toBe(128);
+      expect(JSON.stringify(bodies[0]?.input)).toContain("21 multiplied by 4");
       expect(JSON.stringify(bodies[1]?.input)).toContain("hi");
     });
   });

@@ -192,8 +192,8 @@ describe("responses-first transport", () => {
     const firstBodies = await Promise.all(
       fetchMock.mock.calls.map(([, init]) => requestBody(init as RequestInit)),
     );
-    expect(firstBodies[0]?.max_output_tokens).toBe(512);
-    expect(JSON.stringify(firstBodies[0]?.input)).toContain("smallest positive integer");
+    expect(firstBodies[0]?.max_output_tokens).toBe(128);
+    expect(JSON.stringify(firstBodies[0]?.input)).toContain("21 multiplied by 4");
     expect(JSON.stringify(firstBodies[2]?.input)).toContain("hi");
     await run();
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -215,8 +215,8 @@ describe("responses-first transport", () => {
     expect(String(fetchMock.mock.calls[0]![0])).toBe(`${BASE_URL}/responses`);
     const preflight = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
     const body = await requestBody(fetchMock.mock.calls[1]![1] as RequestInit);
-    expect(preflight.max_output_tokens).toBe(512);
-    expect(JSON.stringify(preflight.input)).toContain("smallest positive integer");
+    expect(preflight.max_output_tokens).toBe(128);
+    expect(JSON.stringify(preflight.input)).toContain("21 multiplied by 4");
     expect(body.store).toBe(false);
     expect(body.include).toEqual(["reasoning.encrypted_content"]);
     expect(String(body.prompt_cache_key)).toMatch(/^clai-/);
@@ -240,7 +240,7 @@ describe("responses-first transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/responses");
     const probeBody = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
-    expect(JSON.stringify(probeBody.input)).toContain("smallest positive integer");
+    expect(JSON.stringify(probeBody.input)).toContain("21 multiplied by 4");
     const compactionBody = await requestBody(fetchMock.mock.calls[1]![1] as RequestInit);
     expect(JSON.stringify(compactionBody.input)).toContain("compact this history");
   });
@@ -264,7 +264,7 @@ describe("responses-first transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const compactionBody = await requestBody(fetchMock.mock.calls[2]![1] as RequestInit);
     expect(JSON.stringify(compactionBody.input)).toContain("compact this history");
-    expect(JSON.stringify(compactionBody.input)).not.toContain("smallest positive integer");
+    expect(JSON.stringify(compactionBody.input)).not.toContain("21 multiplied by 4");
   });
 
   it("reuses one capability selection across provider-model request shapes in a session", async () => {
@@ -288,7 +288,7 @@ describe("responses-first transport", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const probeBody = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
-    expect(JSON.stringify(probeBody.input)).toContain("smallest positive integer");
+    expect(JSON.stringify(probeBody.input)).toContain("21 multiplied by 4");
   });
 
   it("keeps the Responses cache key stable when compaction changes the opening message", async () => {
@@ -314,7 +314,7 @@ describe("responses-first transport", () => {
       fetchMock.mock.calls.map(([, init]) => requestBody(init as RequestInit)),
     );
     expect(bodies).toHaveLength(3);
-    expect(bodies[0]?.max_output_tokens).toBe(512);
+    expect(bodies[0]?.max_output_tokens).toBe(128);
     expect(bodies[1]?.prompt_cache_key).toBe(
       sessionCacheAffinityKey("ses_responses_cache"),
     );

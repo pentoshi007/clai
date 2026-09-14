@@ -5,7 +5,6 @@ import type {
   CompletionResult,
   ProviderId,
   ReasoningArtifactReplayObserver,
-  ReasoningEffort,
   ReasoningPreference,
   ToolChoice,
   ToolDefinition,
@@ -45,14 +44,6 @@ import {
   selectResponsesWire,
   type ResponsesSelection,
 } from "./responses-preflight.js";
-import {
-  applyDiscoveredReasoning,
-  discoveryRouteFor,
-  discoverRouteEfforts,
-  effortProbePreference,
-  resetEffortDiscovery,
-  type EffortSender,
-} from "./effort-discovery.js";
 
 const RESPONSES_FIRST_EXCLUDED: ReadonlySet<ProviderId> = new Set([
   "anthropic",
@@ -147,7 +138,6 @@ export interface ResponsesFirstOptions {
   headers?: Record<string, string> | undefined;
   signal?: AbortSignal | undefined;
   reasoning?: ReasoningPreference | undefined;
-  reasoningEffortProbe?: ReasoningEffort | undefined;
   discoverCapabilities?: boolean | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
   includeStreamUsage?: boolean | undefined;
@@ -172,40 +162,6 @@ type ResponsesRunner = (
 ) => Promise<CompletionResult>;
 
 type ChatProbe = (options: ResponsesFirstOptions) => Promise<OpenAiCompatibleResult>;
-
-function effortProbeOptions(
-  probe: ResponsesFirstOptions,
-  preference: ReasoningPreference | undefined,
-): ResponsesFirstOptions {
-  return {
-    ...probe,
-    discoverCapabilities: false,
-    reasoning: preference,
-    reasoningEffortProbe: effortProbePreference(preference),
-  };
-}
-
-function chatSender(
-  probe: ResponsesFirstOptions,
-  probeChat: ChatProbe,
-): EffortSender {
-  return (preference) => probeChat(effortProbeOptions(probe, preference));
-}
-
-function responsesSender(
-  probe: ResponsesFirstOptions,
-  run: ResponsesRunner,
-  config: ResponsesDialectConfig,
-  auth: ProviderAuth,
-): EffortSender {
-  return (preference) =>
-    run(
-      config,
-      bridgeCompletionRequest(effortProbeOptions(probe, preference)),
-      auth,
-      () => {},
-    );
-}
 
 function bridgeCompletionRequest(
   options: ResponsesFirstOptions,
@@ -258,14 +214,11 @@ async function runResponsesFirst(
   const auth: ProviderAuth = { apiKey: options.apiKey };
   const selection = await selectResponsesWire(options, Boolean(stream), async (signal) => {
     const probe = preflightOptions(options, signal);
-    const discovery = discoveryRouteFor(options);
-    const chatLadder = chatSender(probe, probeChat);
     const fallback = async (
       kind: TransportEventKind,
       extras: ExtrasLevel,
     ): Promise<ResponsesSelection> => {
       emitTransportEvent({ kind, provider: options.provider, model: options.model });
-      await discoverRouteEfforts(discovery, [chatLadder], signal);
       return { wire: "chat", extras };
     };
     try {
@@ -312,11 +265,6 @@ async function runResponsesFirst(
             if (status === 401 || status === 403 || status === 429) throw error;
           }
         }
-        await discoverRouteEfforts(
-          discovery,
-          [responsesSender(probe, run, configFor(extras), auth), chatLadder],
-          signal,
-        );
         return { wire: "responses", extras };
       }, probe.maxTokens);
     } catch (error) {
@@ -330,8 +278,7 @@ async function runResponsesFirst(
   });
   options.signal?.throwIfAborted();
   if (!selection || selection.wire === "chat") return undefined;
-  const effective = applyDiscoveredReasoning(options);
-  return compatibleFromCompletion(await run(configFor(selection.extras), bridgeCompletionRequest(effective, stream), auth, stream?.onToken ?? (() => {})));
+  return compatibleFromCompletion(await run(configFor(selection.extras), bridgeCompletionRequest(options, stream), auth, stream?.onToken ?? (() => {})));
 }
 
 export async function openAiCompatibleCompleteViaResponses(
@@ -362,5 +309,4 @@ export async function openAiCompatibleStreamViaResponses(
 
 export function resetResponsesWireStatesForTesting(): void {
   resetResponsesPreflight();
-  resetEffortDiscovery();
 }

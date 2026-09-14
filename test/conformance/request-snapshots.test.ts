@@ -4,9 +4,6 @@ import { providers } from "../../src/llm/router.js";
 import { resetReasoningKnowledge } from "../../src/llm/capabilities.js";
 import { CONFORMANCE_ROUTES } from "./routes.js";
 import { installFakeTransport } from "./fake-transport.js";
-import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
-
-setEffortDiscoveryEnabledForTesting(false);
 import {
   redactHeaders,
   redactUrl,

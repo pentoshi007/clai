@@ -8,7 +8,6 @@ import {
   displayReasoningEfforts,
   learnedRouteEfforts,
 } from "./capabilities.js";
-import { routeDisableAccepted } from "./wire/effort-discovery.js";
 import { resolveBuiltInProfile } from "./provider-profiles.js";
 
 export function lowestReasoningPreference(
@@ -29,8 +28,7 @@ export function lowestReasoningPreference(
     reasoning.disable === "supported" &&
     (disableByOmission ||
       accepted.length === 0 ||
-      accepted.includes("none") ||
-      routeDisableAccepted(provider, model));
+      accepted.includes("none"));
   if (reasoning.control.status === "unsupported" || disableAllowed) {
     return { enabled: false, effort: "none" };
   }

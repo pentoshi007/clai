@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetEffortPreflightForTesting } from "../../src/llm/wire/effort-preflight.js";
 
 import {
   clearReasoningUnsupported,
@@ -73,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
   clearReasoningUnsupported();
   resetReasoningKnowledge();
+  resetEffortPreflightForTesting();
   vi.unstubAllGlobals();
 });
 
