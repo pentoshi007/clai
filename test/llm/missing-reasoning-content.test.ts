@@ -9,7 +9,7 @@ import {
   ProviderError,
   isReasoningUnsupportedError,
 } from "../../src/llm/http.js";
-import { isEffortRejectedError } from "../../src/llm/effort-fallback.js";
+import { shouldContinueEffortLadder } from "../../src/llm/routing/error-classification.js";
 
 function providerError(status: number, body: string): ProviderError {
   const error = new ProviderError(`request failed with ${status}`);
@@ -45,7 +45,9 @@ describe("a missing-reasoning_content rejection is not an unsupported-reasoning 
   });
 
   it("does not route that body into the effort classifier", () => {
-    expect(isEffortRejectedError(providerError(400, DEEPSEEK_400))).toBe(false);
+    expect(shouldContinueEffortLadder(providerError(400, DEEPSEEK_400))).toBe(
+      false,
+    );
   });
 
   it("still classifies a genuine parameter rejection as unsupported", () => {
@@ -61,7 +63,7 @@ describe("a missing-reasoning_content rejection is not an unsupported-reasoning 
     );
     expect(isInvalidReasoningContentError(error)).toBe(true);
     expect(isReasoningUnsupportedError(error)).toBe(false);
-    expect(isEffortRejectedError(error)).toBe(false);
+    expect(shouldContinueEffortLadder(error)).toBe(false);
   });
 
   it("does not confuse a missing continuation with an invalid one", () => {
@@ -74,7 +76,7 @@ describe("a missing-reasoning_content rejection is not an unsupported-reasoning 
     const error = providerError(400, "'messages.reasoning_content' must be an authentic continuation for this route.");
     expect(isInvalidReasoningContentError(error)).toBe(true);
     expect(isReasoningUnsupportedError(error)).toBe(false);
-    expect(isEffortRejectedError(error)).toBe(false);
+    expect(shouldContinueEffortLadder(error)).toBe(false);
   });
 
   it.each(["Invalid enable_thinking value", "thinking.budget_tokens is invalid", "Invalid reasoning_effort"])("does not confuse control rejection with replay rejection: %s", (body) => {
@@ -107,7 +109,7 @@ describe("a missing-reasoning_content rejection is not an unsupported-reasoning 
     const error = providerError(400, body);
     expect(isMissingReasoningContentError(error)).toBe(true);
     expect(isReasoningUnsupportedError(error)).toBe(false);
-    expect(isEffortRejectedError(error)).toBe(false);
+    expect(shouldContinueEffortLadder(error)).toBe(false);
   });
 
   it("ignores a 5xx that merely mentions reasoning", () => {

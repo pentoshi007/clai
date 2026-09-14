@@ -3,7 +3,6 @@ import type {
   ProviderId,
   ReasoningArtifactReplayObserver,
   ReasoningArtifactReplayTarget,
-  ReasoningEffort,
   ReasoningPreference,
   ToolChoice,
   ToolDefinition,
@@ -107,7 +106,6 @@ export interface ChatCompletionsBodyOptions {
   stream: boolean;
   includeStreamUsage?: boolean | undefined;
   reasoning?: ReasoningPreference | undefined;
-  reasoningEffortProbe?: ReasoningEffort | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
   supportsVision?: boolean | undefined;
   tools?: ToolDefinition[] | undefined;
@@ -130,29 +128,6 @@ export interface ChatCompletionsBodyOptions {
 
 const DEFAULT_REASONING_OUTPUT_FLOOR = 16_384;
 
-function probeReasoning(
-  reasoning: ReasoningPreference | undefined,
-  effort: ReasoningEffort | undefined,
-): ReasoningPreference | undefined {
-  return effort === undefined || reasoning === undefined
-    ? reasoning
-    : { ...reasoning, effort };
-}
-
-function probeControl(
-  control: ReasoningControlContext | undefined,
-  effort: ReasoningEffort | undefined,
-): ReasoningControlContext | undefined {
-  if (!control || effort === undefined) return control;
-  return {
-    ...control,
-    profile: {
-      ...control.profile,
-      reasoning: { ...control.profile.reasoning, acceptedEfforts: [effort] },
-    },
-  };
-}
-
 function outputBudgetWithReasoning(
   requested: number,
   options: ChatCompletionsBodyOptions,
@@ -170,15 +145,11 @@ function outputBudgetWithReasoning(
 }
 
 function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
-  const reasoningPreference = probeReasoning(
-    options.reasoning,
-    options.reasoningEffortProbe,
-  );
-  const control = probeControl(options.control, options.reasoningEffortProbe);
+  const control = options.control;
   const capabilityDeniesThinking =
     control === undefined &&
     options.providerId !== undefined &&
-    Boolean(reasoningPreference?.enabled) &&
+    Boolean(options.reasoning?.enabled) &&
     !modelSupportsThinking(options.providerId, options.model);
   const legacyControlDenied =
     control === undefined &&
@@ -190,14 +161,14 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     control?.suppressed === true
       ? {}
       : buildReasoningPayload(
-          reasoningPreference,
+          options.reasoning,
           options.reasoningStyle ?? "none",
           options.model,
           options.providerId,
           control,
         );
 
-  const reasoningOn = Boolean(reasoningPreference?.enabled);
+  const reasoningOn = Boolean(options.reasoning?.enabled);
   const isMinimaxM3 = /minimax-m3/i.test(options.model);
   const defaultMaxTokens = isMinimaxM3 ? 8_192 : reasoningOn ? 8_192 : 4_096;
   const sampling = options.resolvedSampling ?? {
@@ -355,7 +326,6 @@ export function chatCompletionsBodyFromPlan(
   plan: RequestPlanV1,
   extras: {
     reasoningStyle?: ReasoningStyle | undefined;
-    reasoningEffortProbe?: ReasoningEffort | undefined;
     includeStreamUsage?: boolean | undefined;
     reasoningArtifactReplayObserver?:
       ReasoningArtifactReplayObserver | undefined;
@@ -380,7 +350,6 @@ export function chatCompletionsBodyFromPlan(
       policy: plan.policy.cache,
     }),
     includeStreamUsage: extras.includeStreamUsage,
-    reasoningEffortProbe: extras.reasoningEffortProbe,
     reasoning: plan.controls.reasoning,
     reasoningStyle: extras.reasoningStyle,
     supportsVision: plan.images.visionAccepted,

@@ -8,7 +8,6 @@ import {
   learnedRouteEfforts,
 } from "../capabilities.js";
 import { isInvalidReasoningContentError } from "../reasoning-errors.js";
-import { fallbackEffortsFor } from "../effort-fallback.js";
 import {
   isReasoningUnsupportedError,
   ProviderError,
@@ -106,6 +105,24 @@ const UNIVERSAL_EFFORTS: ReadonlySet<string> = new Set([
   "medium",
   "high",
 ]);
+
+export const EFFORT_LADDER: readonly ReasoningEffort[] = [
+  "max",
+  "xhigh",
+  "high",
+  "medium",
+  "low",
+  "minimal",
+  "none",
+];
+
+export function fallbackEffortsFor(
+  requested: ReasoningEffort,
+): ReasoningEffort[] {
+  const normalized = requested.toLowerCase();
+  const index = EFFORT_LADDER.findIndex((effort) => effort === normalized);
+  return index < 0 ? [] : [...EFFORT_LADDER.slice(index + 1)];
+}
 
 const OPAQUE_PARAMETER_REJECTION_RE =
   /invalid request|invalid parameter|unsupported parameter|unknown parameter|unrecognized|extra inputs are not permitted|not a valid/i;

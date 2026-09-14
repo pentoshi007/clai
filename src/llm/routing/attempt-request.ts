@@ -4,6 +4,7 @@ import type {
   CompletionResult,
   GenerationAttemptReason,
   ProviderId,
+  ReasoningEffort,
   SuccessfulRequestSnapshot,
 } from "../../types.js";
 import {
@@ -17,8 +18,17 @@ import type { ReasoningStyle } from "../http.js";
 import { isBuiltInProviderId } from "../provider-profile.js";
 import { resolveBuiltInProfile } from "../provider-profiles.js";
 import { isOperationPolicyError } from "../operation-ledger.js";
-import { runGenerationAttempt } from "../operation-usage.js";
-import { isModelNotFoundError } from "./error-classification.js";
+import { runGenerationAttempt, withUnrecordedTransport } from "../operation-usage.js";
+import {
+  needsEffortPreflight,
+  runEffortPreflight,
+  PREFLIGHT_MAX_TOKENS,
+  PREFLIGHT_MESSAGES,
+  type EffortPreflightRoute,
+  type EffortProbeOutcome,
+} from "../wire/effort-preflight.js";
+import { isModelNotFoundError, shouldContinueEffortLadder } from "./error-classification.js";
+import type { LlmProvider, ProviderAuth } from "../provider.js";
 
 export function successfulRequestSnapshot(
   provider: ProviderId,
@@ -99,6 +109,72 @@ export async function runRecordedProviderAttempt(input: {
     },
     input.run,
   );
+}
+
+export interface EffortPreflightInput {
+  provider: LlmProvider;
+  providerId: ProviderId;
+  model: string;
+  request: CompletionRequest;
+  auth: ProviderAuth;
+  singleDispatch: boolean;
+  onStatus: ((message: string) => void) | undefined;
+}
+
+function probeRequestFor(
+  request: CompletionRequest,
+  effort: ReasoningEffort,
+): CompletionRequest {
+  return {
+    ...request,
+    messages: [...PREFLIGHT_MESSAGES],
+    maxTokens: PREFLIGHT_MAX_TOKENS,
+    tools: undefined,
+    toolChoice: undefined,
+    parallelToolCalls: undefined,
+    attemptUsage: undefined,
+    onToolCallDelta: undefined,
+    onStreamEvent: undefined,
+    onReasoningArtifactReplayDecision: undefined,
+    thinking: { enabled: effort !== "none", effort },
+  };
+}
+
+async function probeEffort(
+  input: EffortPreflightInput,
+  effort: ReasoningEffort,
+): Promise<EffortProbeOutcome> {
+  const probe = probeRequestFor(input.request, effort);
+  try {
+    await withUnrecordedTransport(
+      () => input.provider.complete(probe, input.auth),
+      PREFLIGHT_MAX_TOKENS,
+    );
+    return "accepted";
+  } catch (error) {
+    return shouldContinueEffortLadder(error) ? "unsupported" : "abort";
+  }
+}
+
+export async function preflightEffort(
+  input: EffortPreflightInput,
+): Promise<void> {
+  if (input.singleDispatch) return;
+  const thinking = input.request.thinking;
+  if (!thinking) return;
+  if (!thinking.enabled && thinking.effort !== "none") return;
+  const route: EffortPreflightRoute = {
+    providerId: input.providerId,
+    model: input.model,
+    endpoint: input.auth.baseUrl,
+    requested: thinking.effort,
+    purpose: input.request.purpose,
+  };
+  if (!needsEffortPreflight(route)) return;
+  input.onStatus?.(
+    `i ${input.providerId}/${input.model} checking which reasoning efforts it accepts`,
+  );
+  await runEffortPreflight(route, (effort) => probeEffort(input, effort));
 }
 
 export function requestForRoute(

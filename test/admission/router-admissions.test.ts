@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
-
-setEffortDiscoveryEnabledForTesting(false);
+import { resetEffortPreflightForTesting } from "../../src/llm/wire/effort-preflight.js";
+import { registerRouteAcceptedEfforts } from "../../src/llm/capabilities.js";
+import { EFFORT_SCALE } from "../../src/llm/reasoning-controls.js";
 
 import type { CompletionRequest, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
@@ -146,6 +146,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetEffortPreflightForTesting();
   vi.unstubAllGlobals();
 });
 
@@ -342,27 +343,30 @@ describe("in-place route adaptation admissions", () => {
     ).toBeUndefined();
   });
 
-  it("spends a second admission on a reasoning-control rejection", async () => {
+  it("probes the effort with physical sends that cost no recorded admission", async () => {
     slotsByProvider = { nvidia: keySlots(["nvapi-a"]) };
     const transport = installScript(reasoningControlUnsupported, () =>
       chatCompletion("answer without reasoning control", REASONING_CONTROL_MODEL),
     );
+    const recorder = new OperationUsageRecorder();
 
-    await completeWithProvider(
+    const result = await completeWithProvider(
       turn({
         model: REASONING_CONTROL_MODEL,
         thinking: { enabled: true, effort: "high" },
       }),
-      { maxRetries: 0 },
+      { maxRetries: 0, attemptUsage: recorder },
     );
 
-    expect(transport.generations).toHaveLength(2);
-    const first = transport.generations[0]!.body as Record<string, unknown>;
-    const second = transport.generations[1]!.body as Record<string, unknown>;
-    expect(first.chat_template_kwargs).toEqual({ thinking: true });
-    // Every enabled effort shares one wire key on a knob-only route, so the
-    // ladder's next distinct rung is the explicit disable form.
-    expect(second.chat_template_kwargs).toEqual({ thinking: false });
+    expect(result.text).toContain("answer without reasoning control");
+    // The cold route pays for short probes until one is accepted, then the real
+    // request goes out already clamped to the settled ceiling.
+    expect(transport.generations).toHaveLength(3);
+    const probe = transport.generations[0]!.body as Record<string, unknown>;
+    const real = transport.generations[2]!.body as Record<string, unknown>;
+    expect(JSON.stringify(probe.messages)).toContain("Reply with exactly: ok");
+    expect(real.chat_template_kwargs).toEqual({ thinking: true });
+    expect(recorder.snapshot().attempts).toHaveLength(1);
   });
 
   it("spends a second admission on an image-input rejection", async () => {
@@ -756,7 +760,7 @@ describe("operation attempt usage", () => {
     expect(transport.generations).toHaveLength(2);
     expect(recorder.snapshot().attempts).toMatchObject([
       { provider: "bynara", reason: "initial", outcome: "failure" },
-      { provider: "bynara", reason: "provider-retry", outcome: "success" },
+      { provider: "bynara", reason: "adaptation", outcome: "success" },
     ]);
   });
 
@@ -806,6 +810,7 @@ describe("operation attempt usage", () => {
         maxTokens: 4_096,
         thinking: { enabled: true },
       };
+      registerRouteAcceptedEfforts("agentrouter", model, EFFORT_SCALE);
 
       if (mode === "complete") {
         await completeWithProvider(request, {

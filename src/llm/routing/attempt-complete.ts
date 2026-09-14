@@ -10,6 +10,7 @@ import {
   markReasoningMandatory,
   markReasoningUnsupported,
   registerWireRejectionEfforts,
+  settleRouteEfforts,
 } from "../capabilities.js";
 import {
   isImageInputUnsupportedError,
@@ -28,6 +29,7 @@ import {
 } from "../tool-protocol.js";
 import {
   hasImageInput,
+  preflightEffort,
   reasoningWireKey,
   requestForRoute,
   revertVisionSubstitution,
@@ -88,6 +90,15 @@ export async function tryCompleteOnce(
     model,
     providerId,
   );
+  await preflightEffort({
+    provider,
+    providerId,
+    model,
+    request: activeRequest,
+    auth,
+    singleDispatch,
+    onStatus,
+  });
   try {
     const result = await runAttempt(activeRequest, reason);
     if (hasImageInput(activeRequest)) {
@@ -182,6 +193,7 @@ export async function tryCompleteOnce(
           };
           try {
             const result = await runAttempt(retryRequest, "adaptation");
+            settleRouteEfforts(providerId, model, thinking.effort, effort);
             for (const rejected of rejectedEfforts) {
               learnRejectedEffort(providerId, model, rejected);
             }

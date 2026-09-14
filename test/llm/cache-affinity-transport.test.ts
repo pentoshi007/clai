@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetEffortPreflightForTesting } from "../../src/llm/wire/effort-preflight.js";
+import { registerRouteAcceptedEfforts } from "../../src/llm/capabilities.js";
+import { EFFORT_SCALE } from "../../src/llm/reasoning-controls.js";
 import type { ChatMessage, CompletionRequest } from "../../src/types.js";
 import { sessionCacheAffinityKey } from "../../src/llm/cache-affinity.js";
 import { completeWithProvider, streamWithProvider } from "../../src/llm/router.js";
@@ -25,6 +28,12 @@ const routes = [
   { provider: "explabs", model: "deepseek-v4-flash-0731" },
   { provider: "meta", model: "muse-spark" },
 ] as const;
+
+beforeEach(() => {
+  for (const route of routes) {
+    registerRouteAcceptedEfforts(route.provider, route.model, EFFORT_SCALE);
+  }
+});
 
 const messages: ChatMessage[] = [
   { role: "system", content: "Stable system rules" },
@@ -53,6 +62,7 @@ function captureTransport() {
 beforeEach(() => resetResponsesWireStatesForTesting());
 afterEach(() => {
   resetResponsesWireStatesForTesting();
+  resetEffortPreflightForTesting();
   vi.unstubAllGlobals();
 });
 

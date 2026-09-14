@@ -190,7 +190,7 @@ describe("responses stream reasoning handling", () => {
     const preflight = await requestBody(fetchMock.mock.calls[0]?.[1]);
     const real = await requestBody(fetchMock.mock.calls[2]?.[1]);
     expect(preflight.max_output_tokens).toBe(64);
-    expect(JSON.stringify(preflight.input)).toContain("smallest positive integer");
+    expect(JSON.stringify(preflight.input)).toContain("21 multiplied by 4");
     expect(JSON.stringify(real.input)).toContain("17*23?");
   });
 });

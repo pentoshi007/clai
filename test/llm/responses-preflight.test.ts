@@ -90,7 +90,7 @@ describe("small production-format capability preflight", () => {
     expect(calls.map((call) => [call.wire, call.real])).toEqual([["responses", false], ["chat", false], ["chat", true]]);
     for (const call of calls.slice(0, 2)) {
       expect(JSON.stringify(call.body).length).toBeLessThan(3000);
-      expect(call.body.max_output_tokens ?? call.body.max_tokens ?? call.body.max_completion_tokens).toBe(512);
+      expect(call.body.max_output_tokens ?? call.body.max_tokens ?? call.body.max_completion_tokens).toBe(128);
       expect(call.headers.get("authorization")).toBe("Bearer test-key");
       expect(call.headers.get("x-custom-route")).toBe("preferred");
       expect(call.headers.get("user-agent")).toBe("test-agent");
@@ -203,7 +203,7 @@ describe("small production-format capability preflight", () => {
     expect(result.usage?.promptTokens).toBe(115_000);
   });
 
-  it("discovers the supported Qwen effort ladder on both candidate APIs", async () => {
+  it("sends only the requested effort while negotiating the responses wire", async () => {
     const calls: { wire: string; effort: string | undefined; real: boolean }[] = [];
     const request = {
       ...options,
@@ -223,8 +223,13 @@ describe("small production-format capability preflight", () => {
       return reply(wire, false, real ? "REAL" : "PROBE", "visible");
     }));
     expect((await openAiCompatibleComplete(request)).api).toBe("responses");
-    expect(displayReasoningEfforts("agentrouter", "qwen3.8-max")).toEqual(["minimal", "low", "medium", "max"]);
-    expect(new Set(calls.map(({ wire }) => wire))).toEqual(new Set(["responses", "chat"]));
+    expect(displayReasoningEfforts("agentrouter", "qwen3.8-max")).toEqual([
+      "low",
+      "medium",
+      "xhigh",
+    ]);
+    expect(calls.every(({ effort }) => effort === "medium")).toBe(true);
+    expect(new Set(calls.map(({ wire }) => wire))).toEqual(new Set(["responses"]));
     expect(calls.filter(({ real }) => real)).toHaveLength(1);
     expect(calls.find(({ real }) => real)?.effort).toBe("medium");
   });

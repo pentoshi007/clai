@@ -4,6 +4,7 @@ import type {
   ReasoningPreference,
 } from "../types.js";
 import type { ToolCallingMode } from "./tool-protocol.js";
+import { EFFORT_SCALE } from "./reasoning-controls.js";
 import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
 import {
@@ -126,16 +127,6 @@ export function registerRouteAcceptedEfforts(
   catalogReasoningEfforts.set(reasoningKey(provider, model), [...efforts]);
 }
 
-export function registerPreflightEfforts(
-  provider: ProviderId,
-  model: string,
-  efforts: readonly string[],
-): void {
-  if (efforts.length === 0) return;
-  registerRouteAcceptedEfforts(provider, model, efforts);
-  registerModelReasoningSupport(provider, model, true);
-}
-
 export function registerWireRejectionEfforts(
   provider: ProviderId,
   model: string,
@@ -160,6 +151,24 @@ export function learnRejectedEffort(
   const reduced = effective.filter((value) => value !== effort);
   if (reduced.length === 0 || reduced.length === effective.length) return;
   registerWireRejectionEfforts(provider, model, reduced);
+}
+
+export function settleRouteEfforts(
+  provider: ProviderId,
+  model: string,
+  requested: ReasoningEffort,
+  succeeded: ReasoningEffort,
+): void {
+  if (!model.trim()) return;
+  if (displayReasoningEfforts(provider, model) !== undefined) return;
+  const rungIndex = EFFORT_SCALE.indexOf(succeeded);
+  const requestedIndex = EFFORT_SCALE.indexOf(requested);
+  if (rungIndex < 0 || requestedIndex < 0) return;
+  const vocabulary =
+    rungIndex < requestedIndex
+      ? EFFORT_SCALE.slice(0, rungIndex + 1)
+      : EFFORT_SCALE.slice(rungIndex);
+  registerWireRejectionEfforts(provider, model, vocabulary);
 }
 
 export function markReasoningMandatory(

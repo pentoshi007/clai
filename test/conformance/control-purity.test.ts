@@ -13,9 +13,6 @@ import type {
 } from "../../src/types.js";
 import { CONFORMANCE_ROUTES } from "./routes.js";
 import { installFakeTransport } from "./fake-transport.js";
-import { setEffortDiscoveryEnabledForTesting } from "../../src/llm/wire/effort-discovery.js";
-
-setEffortDiscoveryEnabledForTesting(false);
 import { requestForCase } from "./request-cases.js";
 
 const REASONING_CONTROL_FIELDS = [

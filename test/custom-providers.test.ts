@@ -19,8 +19,6 @@ describe('custom providers', () => {
   });
 
   async function loadModules() {
-    const discovery = await import('../src/llm/wire/effort-discovery.js');
-    discovery.setEffortDiscoveryEnabledForTesting(false);
     const config = await import('../src/store/config.js');
     const cp = await import('../src/llm/custom-providers.js');
     const provider = await import('../src/llm/provider.js');

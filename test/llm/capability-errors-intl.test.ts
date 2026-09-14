@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { ProviderError } from "../../src/llm/http.js";
-import {
-  isEffortRejectedError,
-} from "../../src/llm/effort-fallback.js";
 import { mentionsReasoning } from "../../src/llm/reasoning-errors.js";
 import {
   effortCandidatesFor,
@@ -30,7 +27,6 @@ describe("chinese reasoning-control rejection recognition", () => {
     expect(isReasoningUnsupportedError(glmError())).toBe(true);
     expect(shouldContinueEffortLadder(glmError())).toBe(true);
     expect(mentionsReasoning(glmError())).toBe(true);
-    expect(isEffortRejectedError(glmError())).toBe(true);
   });
 
   it("extracts mandatory plus the accepted effort vocabulary from the advice", () => {
@@ -78,7 +74,6 @@ describe("chinese reasoning-control rejection recognition", () => {
       '{"error":{"message":"请求参数无效,请检查输入"}}',
     );
     expect(isReasoningUnsupportedError(error)).toBe(false);
-    expect(isEffortRejectedError(error)).toBe(false);
     expect(mentionsReasoning(error)).toBe(false);
     expect(reasoningRejectionAdvice(error)).toBeUndefined();
   });

@@ -18,6 +18,7 @@ interface PendingSelection {
 
 const MAX_ENTRIES = 400;
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const PREFLIGHT_OUTPUT_TOKENS = 128;
 const selections = new Map<string, { value: ResponsesSelection; expiresAt: number }>();
 const sessionSelections = new Map<string, ResponsesSelection>();
 const pendingSelections = new Map<string, PendingSelection>();
@@ -43,13 +44,13 @@ export function preflightOptions(
   }] : undefined;
   const messages: ChatMessage[] = [{
     role: "user",
-    content: "Find the smallest positive integer n such that n mod 7 = 3 and n mod 11 = 5. Use your reasoning channel if available, then give only the integer or return it through the provided tool.",
+    content: "What is 21 multiplied by 4? Think briefly, then reply with only the number.",
   }];
   return {
     ...options,
     messages,
     tools,
-    maxTokens: Math.min(options.maxTokens ?? 512, 512),
+    maxTokens: Math.min(options.maxTokens ?? PREFLIGHT_OUTPUT_TOKENS, PREFLIGHT_OUTPUT_TOKENS),
     signal,
     reasoningArtifactReplayObserver: undefined,
   };
