@@ -12,11 +12,13 @@ import { Composer } from "../chrome/Composer.js";
 import { directoryRow } from "../chrome/directory-row.js";
 import { QueuePanel } from "../chrome/QueuePanel.js";
 import { ResponderStrip } from "../chrome/ResponderStrip.js";
+import { SubagentsStrip } from "../chrome/SubagentsStrip.js";
 import { StatusBar } from "../chrome/StatusBar.js";
 import { ToastRow } from "../chrome/ToastRow.js";
 import { toastRowsWanted } from "../chrome/toast-rows.js";
 import { composerFrame, composerTextRowsWanted } from "../chrome/composer-frame.js";
 import { responderVisible } from "../chrome/responder-row.js";
+import { subagentsVisible } from "../chrome/subagents-row.js";
 import { allocateChrome, type ChromeDemand } from "../chrome/row-budget.js";
 import { statusRowsWanted } from "../chrome/status-rows.js";
 import { gutterShellWidth, horizontalPadding, SCROLLBAR_GUTTER_COLS } from "../render/shell-width.js";
@@ -77,6 +79,7 @@ export function ClassicApp(
     toastCount: toastRowsWanted(snapshot.toasts, shellWidth),
     queueCount: session.queued.length,
     responderVisible: responderVisible(session.responder),
+    subagentsVisible: subagentsVisible(session.subagents),
     planVisible: snapshot.planVisible && plan !== undefined,
     planRowsWanted: plan?.tasks.length ?? 0,
     overlay,
@@ -155,6 +158,7 @@ export function ClassicApp(
       overlay: panelSlot,
       queue: <QueuePanel ink={feed.ink} columns={shellWidth} allocatedRows={layout.queue} queued={session.queued} selected={snapshot.queueSelected} />,
       responder: <ResponderStrip ink={feed.ink} columns={shellWidth} state={session.responder} />,
+      subagents: <SubagentsStrip ink={feed.ink} columns={shellWidth} state={session.subagents} />,
       toast: <ToastRow ink={feed.ink} columns={shellWidth} allocatedRows={layout.toast} toasts={snapshot.toasts} />,
       composer: <Box flexDirection="column" flexShrink={0} width={shellWidth}>
         {frame.showDirectory ? <Text wrap="truncate"> </Text> : null}

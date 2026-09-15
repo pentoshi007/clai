@@ -27,6 +27,7 @@ export interface ChromeDemand {
   readonly toastCount: number;
   readonly queueCount: number;
   readonly responderVisible: boolean;
+  readonly subagentsVisible?: boolean | undefined;
   readonly planVisible: boolean;
   readonly planRowsWanted: number;
   readonly overlay: ChromeOverlayDemand | undefined;
@@ -38,6 +39,7 @@ export interface ChromeLayout {
   readonly toast: number;
   readonly queue: number;
   readonly responder: number;
+  readonly subagents: number;
   readonly plan: number;
   readonly overlay: number;
   readonly liveTail: number;
@@ -89,6 +91,9 @@ export function allocateChrome(demand: ChromeDemand): ChromeLayout {
   const responder = demand.responderVisible ? Math.min(1, budget) : 0;
   budget -= responder;
 
+  const subagents = demand.subagentsVisible ? Math.min(1, budget) : 0;
+  budget -= subagents;
+
   const plan = demand.planVisible
     ? clamp(
         whole(demand.planRowsWanted) + PLAN_BORDER_ROWS,
@@ -104,7 +109,7 @@ export function allocateChrome(demand: ChromeDemand): ChromeLayout {
   budget -= Math.max(0, statusExtra);
 
   const liveTail = budget;
-  const total = composer + status + toast + queue + responder + plan + overlay + liveTail;
+  const total = composer + status + toast + queue + responder + subagents + plan + overlay + liveTail;
 
   return {
     composer,
@@ -112,6 +117,7 @@ export function allocateChrome(demand: ChromeDemand): ChromeLayout {
     toast,
     queue,
     responder,
+    subagents,
     plan,
     overlay,
     liveTail,

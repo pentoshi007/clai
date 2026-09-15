@@ -577,7 +577,7 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
-| `/orchestrator [on\|off\|status]` · `/orchestration` | Show delegation status and turn subagents on/off |
+| `/orchestrator [on\|off\|status\|models]` · `/orchestration` | Show delegation status, configure subagent model fallbacks, or turn subagents on/off |
 | `/agents [id\|stop id\|restart id]` | Pick a subagent to inspect live output, or stop/restart its assignment |
 | `/compact` · `/context` | Compact history now · show context size |
 | `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle (`/clear` deletes the current session outright) |
@@ -590,19 +590,24 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 
 Orchestration is enabled in new and restored sessions. `/orchestrator`,
 `/orchestration`, and `/orchastrator` show the current status and open a picker
-whose two options turn delegation **On** or **Off**; the active row is marked
-`· current`. `/orchestrator status` prints the status without changing it, and
-`/orchestrator on` / `/orchestrator off` set it directly. Turning it off stops
-active children and blocks new starts and restarts for this session; turning it
-back on re-enables delegation. `/agents` opens the separate live inspector.
-`/agents` opens the same live inspector in Classic and
-OpenTUI: select a child, press `Esc` to return to the picker, then select another
-child or **Main agent**. Inspecting output never interrupts the main turn. The
-pager follows live output; `l` toggles follow. Turning orchestration off stops
-active children and prevents new starts and restarts. `/agents stop <id>` stops
-an individual child. `/agents restart <id>` reruns the assignment when orchestration
-is enabled. Saved child reports can be inspected after resuming their parent
-session; `--no-history` keeps child records in memory only.
+with **On**, **Off**, and **Models…**. `/orchestrator status` prints the status
+without changing it, `/orchestrator on` / `/orchestrator off` set it directly,
+and `/orchestrator models` opens the subagent model editor. The active position
+determines the first eligible model; other enabled rows are fallbacks in rotation
+order. With no saved chain, subagents follow the parent session route. A fallback
+is used only for a retryable pre-output failure, and model-chain changes apply to
+new attempts.
+Turning orchestration off stops active children and blocks new starts and
+restarts for this session; turning it back on re-enables delegation. `/agents`
+opens the separate live inspector. `/agents` opens the same live inspector in
+Classic and OpenTUI: select a child, press `Esc` to return to the picker, then
+select another child or **Main agent**. Inspecting output never interrupts the
+main turn. The pager follows live output; `l` toggles follow. Turning
+orchestration off stops active children and prevents new starts and restarts.
+`/agents stop <id>` stops an individual child. `/agents restart <id>` reruns the
+assignment when orchestration is enabled. Saved child reports can be inspected
+after resuming their parent session; `--no-history` keeps child records in
+memory only.
 
 The last usable child summary is stored separately from activity and survives
 stop, restart, and compaction. `subagent.read` with `view=summary` recovers it with
@@ -610,12 +615,15 @@ its original attempt and completion status; a prior summary never marks a stoppe
 attempt complete. Undelivered terminal results return through the parent inbox on
 session restore, and acknowledged results are not replayed on later restores.
 
-Children have no fixed concurrency, step, or assignment-time budget. They inherit the parent's provider/model and project
-root, with independent histories and stable cache prefixes. Their only tools are
-confined file reads/listings/searches and web search/fetch; shell, editing, MCP,
-arbitrary HTTP actions, and further delegation are unavailable. Provider context
-and transport safety limits still apply. Context compaction retains evidence and
-continues research without displaying internal partial reports as deliverables.
+Children have no fixed concurrency, step, or assignment-time budget. By default,
+they inherit the parent's provider/model and project root; a configured subagent
+model chain selects a primary execution route and fallbacks without changing the
+assignment identity. Children retain independent histories and stable cache
+prefixes. Their only tools are confined file reads/listings/searches and web
+search/fetch; shell, editing, MCP, arbitrary HTTP actions, and further delegation
+are unavailable. Provider context and transport safety limits still apply. Context
+compaction retains evidence and continues research without displaying internal
+partial reports as deliverables.
 
 The parent leaves delegated investigations to their children and continues only
 necessary non-overlapping work. Results arrive automatically at safe model
