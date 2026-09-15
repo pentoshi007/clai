@@ -158,7 +158,7 @@ export class SubagentManager {
     const child = this.children.get(id);
     if (child?.run.attempt === attempt && terminal(child.run.status) && !child.run.resultAcknowledged) {
       child.run = { ...child.run, resultAcknowledged: true };
-      this.flush(child);
+      this.changed(child, true);
     }
   }
 

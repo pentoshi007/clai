@@ -27,6 +27,7 @@ import {
   preparePagerDisplay,
   type PagerMarkdownMode,
 } from "../../rendering/pager-markdown.js";
+import { subagentAnsiPaint } from "../../rendering/subagent-ansi.js";
 import {
   extractFsReadFileBody,
   stripPagerLineGutters,
@@ -81,6 +82,10 @@ export function Pager(props: PagerProps): ReactNode {
   } = props;
   const colorMode = services.capabilities.colorMode;
   const isSubagent = source?.path.startsWith("memory://subagent/") ?? false;
+  const subagentPaint = useMemo(
+    () => (isSubagent ? subagentAnsiPaint(theme, colorMode) : undefined),
+    [isSubagent, theme, colorMode],
+  );
   const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [displayBody, setDisplayBody] = useState(body);
@@ -110,6 +115,7 @@ export function Pager(props: PagerProps): ReactNode {
         defaultFg: theme.foreground,
         theme,
         colorMode,
+        subagentPaint: isSubagent ? subagentPaint : undefined,
       });
     }
     return preparePagerDisplay({
@@ -120,7 +126,7 @@ export function Pager(props: PagerProps): ReactNode {
       theme,
       colorMode,
     });
-  }, [displayBody, contentCols, viewMode, theme, colorMode]);
+  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint]);
 
   const lines = useMemo(
     () => display.lines.map((l) => l.plain),
@@ -683,6 +689,23 @@ export function Pager(props: PagerProps): ReactNode {
               />
             );
           });
+        }
+        if (isSubagent && !useDiffGutters) {
+          return [
+            <PagerLine
+              key={`${index}-0`}
+              line={line}
+              index={index}
+              theme={theme}
+              matches={matches}
+              activeMatchIndex={matchIndex}
+              hasQuery={hasQuery}
+              highlightPath={pathForHighlight}
+              carry={syntaxCarry}
+              diffGutters={false}
+              subagent
+            />,
+          ];
         }
         return wrapPagerLine(line, contentCols, { preserveWhitespace: true }).map((chunk, part) => (
           <PagerLine

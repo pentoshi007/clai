@@ -56,7 +56,7 @@ const operationUsage: OperationUsageSnapshot = {
 
 describe("ContextSnapshotV1", () => {
   it("waits for the first provider response before displaying a local estimate", () => {
-    expect(resolveContextSnapshot(target, [{ role: "user", content: "hello" }], undefined)).toBeUndefined();
+    expect(resolveContextSnapshot(target, undefined)).toBeUndefined();
     expect(estimatedContextSnapshot(target, undefined, 720)).toBeUndefined();
     expect(estimatedContextSnapshot(target, undefined, 720, () => 1, true)).toMatchObject({
       contextTokens: 720,
@@ -71,7 +71,7 @@ describe("ContextSnapshotV1", () => {
       undefined,
       () => 1,
     );
-    expect(resolveContextSnapshot(target, [{ role: "user", content: "hello" }], current)).toBe(current);
+    expect(resolveContextSnapshot(target, current)).toBe(current);
     expect(estimatedContextSnapshot(target, current, 200)).toBe(current);
     expect(restoredContextSnapshot(target, current)).toMatchObject({
       contextTokens: 0,
@@ -79,15 +79,11 @@ describe("ContextSnapshotV1", () => {
     });
   });
 
-  it("uses an estimate only after a completed response omits prompt usage", () => {
+  it("keeps the provider measurement when a completed response omits prompt usage", () => {
     const current = recordContextUsageSnapshot(target, undefined, usage, undefined, () => 1);
     const fallback = estimatedContextSnapshot(target, current, 720, () => 2, true);
-    expect(fallback).toMatchObject({
-      contextTokens: 720,
-      precision: "estimate",
-      scope: "assembled-request",
-    });
-    expect(recordContextUsageSnapshot(target, fallback, usage, undefined).contextTokens).toBe(600);
+    expect(fallback).toBe(current);
+    expect(recordContextUsageSnapshot(target, current, usage, undefined).contextTokens).toBe(600);
   });
 
   it.each(["message-history", "assembled-request"] as const)(
@@ -343,7 +339,7 @@ describe("ContextSnapshotV1", () => {
     });
   });
 
-  it("demotes promptless provider usage and replaces it with a newer estimate", () => {
+  it("preserves the provider measurement when a later attempt omits prompt tokens", () => {
     const current = recordContextUsageSnapshot(
       target,
       undefined,
@@ -359,29 +355,26 @@ describe("ContextSnapshotV1", () => {
       exact: true,
       reasoningTokens: 12,
     };
-    const stale = recordContextUsageSnapshot(
+    const preserved = recordContextUsageSnapshot(
       target,
       current,
       promptless,
       undefined,
       () => 2,
     );
-    const estimated = estimatedContextSnapshot(target, stale, 720, () => 3)!;
+    const estimated = estimatedContextSnapshot(target, preserved, 720, () => 3, true)!;
 
-    expect(stale).toMatchObject({
+    expect(preserved).toMatchObject({
       contextTokens: 600,
-      scope: "unknown",
-      precision: "unknown",
+      scope: "provider-request",
+      precision: "provider-exact",
       cache: { kind: "unknown" },
       reasoning: { kind: "reported", outputTokens: 12 },
     });
     expect(estimated).toMatchObject({
-      contextTokens: 720,
-      scope: "assembled-request",
-      precision: "estimate",
-      cache: { kind: "unknown" },
-      reasoning: { kind: "unknown" },
-      observedAt: 3,
+      contextTokens: 600,
+      scope: "provider-request",
+      precision: "provider-exact",
     });
   });
 });

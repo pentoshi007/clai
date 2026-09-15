@@ -142,7 +142,6 @@ export function resolveThinkingPresentation(input: {
 
 export interface ThinkingHeadingStyle {
   readonly fg: string;
-  readonly underline: boolean;
 }
 
 export function resolveThinkingFooter(input: {
@@ -161,7 +160,5 @@ export function resolveThinkingHeadingStyle(input: {
   readonly accent: string;
   readonly hover: string;
 }): ThinkingHeadingStyle {
-  return input.hovered
-    ? { fg: input.hover, underline: true }
-    : { fg: input.accent, underline: false };
+  return { fg: input.hovered ? input.hover : input.accent };
 }

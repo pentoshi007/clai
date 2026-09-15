@@ -1,6 +1,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import type { BackgroundJob } from "../../app/ports/jobs-port.js";
 import type { InkTheme } from "../render/ink-theme.js";
+import { styleSubagentBody } from "../../ui-core/rendering/subagent-presentation.js";
 import { ConfirmPanel } from "./ConfirmPanel.js";
 import { JobsPanel } from "./JobsPanel.js";
 import { KeysPanel } from "./KeysPanel.js";
@@ -39,11 +40,19 @@ export function PanelHost(props: PanelHostProps): ReactNode {
     case "picker":
       return <PickerPanel {...shared} request={overlay.request} state={snapshot.picker} />;
     case "pager": {
+      const subagent =
+        overlay.source?.path.startsWith("memory://subagent/") ?? false;
+      const body = subagent
+        ? styleSubagentBody(snapshot.pagerBody, (span) =>
+            props.ink.style(span.text, span),
+          )
+        : snapshot.pagerBody;
       const view = pagerViewModel(
-        snapshot.pagerBody,
+        body,
         props.columns,
         props.rows,
         snapshot.pager.format,
+        subagent,
       );
       return (
         <PagerPanel
@@ -53,7 +62,7 @@ export function PanelHost(props: PanelHostProps): ReactNode {
           searchLines={view.searchLines}
           state={snapshot.pager}
           live={snapshot.pagerLive}
-          subagent={overlay.source?.path.startsWith("memory://subagent/") ?? false}
+          subagent={subagent}
         />
       );
     }

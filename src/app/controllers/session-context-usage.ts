@@ -98,46 +98,14 @@ function estimateHistoryRequestTokens(
   );
 }
 
-function historyEstimateSnapshot(
-  target: ContextUsageTarget,
-  current: ContextSnapshotV1 | undefined,
-  history: readonly ChatMessage[],
-  now: ContextClock,
-): ContextSnapshotV1 {
-  return createContextSnapshot({
-    contextTokens: estimateHistoryRequestTokens(target, history),
-    lastCompletionTokens: current?.lastCompletionTokens,
-    sessionPromptTokens: current?.sessionPromptTokens,
-    sessionCompletionTokens: current?.sessionCompletionTokens,
-    scope: "message-history",
-    precision: "estimate",
-    limit: limitFor(target),
-    observedAt: now(),
-  });
-}
-
-const REQUEST_SCOPES: ReadonlySet<ContextSnapshotScope> = new Set([
-  "provider-request",
-  "assembled-request",
-]);
-
 export function resolveContextSnapshot(
   target: ContextUsageTarget,
-  history: readonly ChatMessage[],
   current: ContextSnapshotV1 | undefined,
-  now: ContextClock = systemNow,
 ): ContextSnapshotV1 | undefined {
   if (!current) return undefined;
-  const limit = limitFor(target);
-  if (
-    REQUEST_SCOPES.has(current.scope) &&
-    measuredOnTargetRoute(target, current)
-  ) {
-    return sameLimit(current.limit, limit)
-      ? current
-      : withContextSnapshotLimit(current, limit);
-  }
-  return historyEstimateSnapshot(target, current, history, now);
+  return sameLimit(current.limit, limitFor(target))
+    ? current
+    : withContextSnapshotLimit(current, limitFor(target));
 }
 
 export function recordContextUsageSnapshot(
@@ -157,18 +125,28 @@ export function recordContextUsageSnapshot(
     (usage.exact ? usage.completionTokens : 0);
   const cache = reportedCache(usage);
   const reasoning = reportedReasoning(usage);
+  if (consumedPromptTokens === undefined) {
+    return createContextSnapshot({
+      contextTokens: current?.contextTokens ?? 0,
+      lastCompletionTokens: usage.completionTokens,
+      sessionPromptTokens,
+      sessionCompletionTokens,
+      scope: current?.scope ?? "unknown",
+      precision: current?.precision ?? "unknown",
+      limit: limitFor(target),
+      ...(cache ? { cache } : {}),
+      ...(reasoning ? { reasoning } : {}),
+      ...(attempt ? { attempt } : {}),
+      observedAt: now(),
+    });
+  }
   return createContextSnapshot({
-    contextTokens: consumedPromptTokens ?? current?.contextTokens ?? 0,
+    contextTokens: consumedPromptTokens,
     lastCompletionTokens: usage.completionTokens,
     sessionPromptTokens,
     sessionCompletionTokens,
-    scope: promptMeasured ? "provider-request" : "unknown",
-    precision:
-      usage.exact && promptMeasured
-        ? "provider-exact"
-        : promptMeasured
-          ? "estimate"
-          : "unknown",
+    scope: "provider-request",
+    precision: usage.exact ? "provider-exact" : "estimate",
     limit: limitFor(target),
     ...(cache ? { cache } : {}),
     ...(reasoning ? { reasoning } : {}),
@@ -201,18 +179,6 @@ export function compactedContextSnapshot(
   });
 }
 
-function measuredOnTargetRoute(
-  target: ContextUsageTarget,
-  snapshot: ContextSnapshotV1,
-): boolean {
-  const attempt = snapshot.attempt;
-  if (attempt.kind !== "generation") return true;
-  return (
-    (target.provider === undefined || attempt.provider === target.provider) &&
-    (target.model === undefined || attempt.model === target.model)
-  );
-}
-
 export function estimatedContextSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -222,18 +188,10 @@ export function estimatedContextSnapshot(
 ): ContextSnapshotV1 | undefined {
   if (!current && !promptUsageMissing) return undefined;
   if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
-  const tokens = Math.floor(estimatedTokens);
-  if (
-    current &&
-    !promptUsageMissing &&
-    current.scope === "provider-request" &&
-    current.precision === "provider-exact" &&
-    measuredOnTargetRoute(target, current)
-  ) {
-    return sameLimit(current.limit, limitFor(target))
-      ? current
-      : withContextSnapshotLimit(current, limitFor(target));
+  if (current?.precision === "provider-exact") {
+    return resolveContextSnapshot(target, current);
   }
+  const tokens = Math.floor(estimatedTokens);
   return createContextSnapshot({
     contextTokens: tokens,
     lastCompletionTokens: current?.lastCompletionTokens,
@@ -256,61 +214,18 @@ export function createContextProjector(
   formatChip: (snapshot: ContextUsageSnapshot) => string,
 ): (
   target: ContextUsageTarget,
-  history: readonly ChatMessage[],
   current: ContextSnapshotV1 | undefined,
-  now?: ContextClock,
 ) => ContextProjection {
-  let cache: { key: string; value: ContextProjection } | undefined;
-  return (target, history, current, now = systemNow) => {
-    const first = history[0];
-    const last = history[history.length - 1];
-    const key = [
-      target.provider ?? "",
-      target.model ?? "",
-      target.contextLimitTokens ?? 0,
-      history.length,
-      first?.content.length ?? 0,
-      last?.content.length ?? 0,
-      current?.version ?? 0,
-      current?.contextTokens ?? -1,
-      current?.scope ?? "",
-      current?.precision ?? "",
-      current?.limit.source ?? "",
-      current?.limit.tokens ?? -1,
-      current?.cache.kind ?? "",
-      current?.cache.kind === "reported" ? current.cache.readTokens ?? -1 : -1,
-      current?.cache.kind === "reported"
-        ? current.cache.creationTokens ?? -1
-        : -1,
-      current?.cache.kind === "reported"
-        ? current.cache.uncachedTokens ?? -1
-        : -1,
-      current?.reasoning.kind ?? "",
-      current?.reasoning.kind === "reported"
-        ? current.reasoning.outputTokens ?? -1
-        : -1,
-      current?.reasoning.kind === "reported"
-        ? current.reasoning.inputArtifactTokens ?? -1
-        : -1,
-      current?.observedAt ?? -1,
-    ].join("|");
-    if (cache?.key === key) return cache.value;
-    const contextSnapshot = resolveContextSnapshot(
-      target,
-      history,
-      current,
-      now,
-    );
+  return (target, current) => {
+    const contextSnapshot = resolveContextSnapshot(target, current);
     const contextUsage = contextSnapshot
       ? toLegacyContextUsage(contextSnapshot)
       : undefined;
-    const value: ContextProjection = {
+    return {
       contextSnapshot,
       contextUsage,
       contextChip: contextUsage ? formatChip(contextUsage) : undefined,
     };
-    cache = { key, value };
-    return value;
   };
 }
 
@@ -361,49 +276,4 @@ export function restoredContextSnapshot(
     limitFor(target),
     now(),
   );
-}
-
-export function resolveContextUsageSnapshot(
-  target: ContextUsageTarget,
-  history: readonly ChatMessage[],
-  current: ContextUsageSnapshot | undefined,
-): ContextUsageSnapshot | undefined {
-  const canonical = resolveContextSnapshot(
-    target,
-    history,
-    current
-      ? contextSnapshotFromLegacy(current, limitFor(target))
-      : undefined,
-  );
-  return canonical ? toLegacyContextUsage(canonical) : undefined;
-}
-
-export function compactedUsageSnapshot(
-  target: ContextUsageTarget,
-  current: ContextUsageSnapshot | undefined,
-  history: readonly ChatMessage[],
-  afterTokens?: number,
-): ContextUsageSnapshot {
-  return toLegacyContextUsage(
-    compactedContextSnapshot(
-      target,
-      current ? contextSnapshotFromLegacy(current, limitFor(target)) : undefined,
-      history,
-      afterTokens,
-      "message-history",
-    ),
-  );
-}
-
-export function estimatedUsageSnapshot(
-  target: ContextUsageTarget,
-  current: ContextUsageSnapshot | undefined,
-  estimatedTokens: number,
-): ContextUsageSnapshot | undefined {
-  const canonical = estimatedContextSnapshot(
-    target,
-    current ? contextSnapshotFromLegacy(current, limitFor(target)) : undefined,
-    estimatedTokens,
-  );
-  return canonical ? toLegacyContextUsage(canonical) : undefined;
 }

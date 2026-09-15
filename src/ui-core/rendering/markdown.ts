@@ -18,7 +18,7 @@ import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdow
 import { renderColumns } from "./text-width.js";
 export { renderInlineMarkdown };
 
-const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
+export const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
   none: 0,
   "16": 1,
   "256": 2,

@@ -14,9 +14,11 @@ import { App } from "../../src/tui-v2/app/App.js";
 import { themeFor, type Theme } from "../../src/ui-core/rendering/theme.js";
 
 const workers = new Map<string, SubagentWorkerInput>();
+const resolvers = new Map<string, (report: string) => void>();
 const manager = new SubagentManager("native-parent", {
   worker: (input) => new Promise<string>((resolve) => {
     workers.set(input.run.id, input);
+    resolvers.set(input.run.id, resolve);
     input.signal.addEventListener("abort", () => resolve("stopped"), { once: true });
   }),
 });
@@ -103,9 +105,17 @@ try {
   assertColor("fs.read", "cyan");
   assertColor("✓", "success");
   assertColor("Activity", "magenta");
+  await waitForFrame(/--passWithNoTests/, () => {
+    const worker = workers.get(first.id)!;
+    worker.emit({ kind: "tool", text: 'Calling shell.exec: {"command":"npm run test --coverage --reporter=json --outputFile=/tmp/clai/coverage/coverage-final.json --watch=false --passWithNoTests"}' });
+    worker.emit({ kind: "tool", text: "Success: exit 0" });
+  });
+  assertColor("shell.exec", "cyan");
+  assertColor("--passWithNoTests", "muted");
   await settle(() => setup.mockInput.pressKey("r"));
   assertColor("fs.read", "cyan");
   assertColor("✓", "success");
+  assertColor("--passWithNoTests", "muted");
   await settle(() => setup.mockInput.pressKey("f"));
   await waitForFrame(/Notice: Retrying request/, () => {
     const worker = workers.get(first.id)!;
@@ -132,8 +142,15 @@ try {
   assert.equal(services.overlay.getState().kind, "none");
   assert.equal(services.session.getState().running, true);
   assert.equal(mainAborted, false);
+  await waitForFrame(/Subagents: 0 running · 2 done/, () => resolvers.get(first.id)!("Status: complete\nAll evidence gathered."));
+  await settle(() => {
+    manager.acknowledgeResult(first.id, manager.get(first.id)!.attempt);
+    manager.acknowledgeResult(second.id, manager.get(second.id)!.attempt);
+  });
+  const deliveredFrame = await settle();
+  assert.doesNotMatch(deliveredFrame, /Subagents:/);
   await settle(async () => { finishMain(); await main; });
-  console.log("Native subagent inspector passed: live output, child switching, Escape, final status, and uninterrupted main turn");
+  console.log("Native subagent inspector passed: live output, wrapped tool colors, child switching, Escape, final status, delivered-results bar removal, and uninterrupted main turn");
 } finally {
   await act(async () => {
     finishMain?.();

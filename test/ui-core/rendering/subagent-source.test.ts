@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SubagentEvent, SubagentRun } from "../../../src/agent/subagents/types.js";
-import { createSubagentPagerSource, formatSubagentRun, orderSubagentRuns } from "../../../src/ui-core/rendering/subagent-source.js";
+import { createSubagentPagerSource, formatSubagentRun, orderSubagentRuns, subagentsBarVisible } from "../../../src/ui-core/rendering/subagent-source.js";
 
 function run(events: Array<Pick<SubagentEvent, "kind" | "text">> = [], extra: Partial<SubagentRun> = {}): SubagentRun {
   return {
@@ -157,5 +157,30 @@ describe("subagent pager snapshots", () => {
     expect(listeners.size).toBe(0);
     expect(changed).toHaveBeenCalledTimes(2);
     expect(source.isGrowing!()).toBe(false);
+  });
+});
+
+describe("subagents bar visibility", () => {
+  it("stays visible while any run is live or undelivered", () => {
+    expect(subagentsBarVisible([run()])).toBe(true);
+    expect(subagentsBarVisible([run([], { status: "stopping" })])).toBe(true);
+    expect(subagentsBarVisible([run([], { status: "completed", resultAcknowledged: false })])).toBe(true);
+    expect(subagentsBarVisible([run([], { status: "error", resultAcknowledged: undefined })])).toBe(true);
+  });
+
+  it("hides once every run is settled and delivered", () => {
+    expect(subagentsBarVisible([run([], { status: "completed", resultAcknowledged: true })])).toBe(false);
+    expect(subagentsBarVisible([
+      run([], { status: "completed", resultAcknowledged: true }),
+      run([], { status: "error", resultAcknowledged: true }),
+    ])).toBe(false);
+    expect(subagentsBarVisible([])).toBe(false);
+  });
+
+  it("stays visible when a delivered run sits beside a live one", () => {
+    expect(subagentsBarVisible([
+      run([], { status: "completed", resultAcknowledged: true }),
+      run(),
+    ])).toBe(true);
   });
 });

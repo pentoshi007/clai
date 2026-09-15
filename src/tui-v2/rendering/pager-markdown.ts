@@ -2,6 +2,10 @@ import type { ColorMode } from "../../app/ports/terminal-port.js";
 import { renderStyledMarkdownLines } from "./styled-markdown.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { looksLikeMarkdown } from "../../ui-core/rendering/pager-source.js";
+import {
+  styleSubagentBody,
+  type SubagentSpanPaint,
+} from "../../ui-core/rendering/subagent-presentation.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 
 export type PagerMarkdownMode = "auto" | "force" | "plain";
@@ -20,6 +24,7 @@ export interface PreparePagerDisplayOptions {
   readonly defaultFg?: string | undefined;
   readonly theme?: Theme | undefined;
   readonly colorMode?: ColorMode | undefined;
+  readonly subagentPaint?: SubagentSpanPaint | undefined;
 }
 
 function plainLines(body: string): PagerDisplayLine[] {
@@ -32,20 +37,23 @@ export function preparePagerDisplay(
   options: PreparePagerDisplayOptions,
 ): { readonly mode: "markdown" | "plain"; readonly lines: readonly PagerDisplayLine[] } {
   const mode = options.mode ?? "auto";
-  const body = sanitizeDisplayText(options.body ?? "");
+  const sanitized = sanitizeDisplayText(options.body ?? "");
   const width = Math.max(24, options.width);
 
   if (mode === "plain") {
-    return { mode: "plain", lines: plainLines(body) };
+    return { mode: "plain", lines: plainLines(sanitized) };
   }
 
   const wantMarkdown =
-    mode === "force" || (mode === "auto" && looksLikeMarkdown(body));
+    mode === "force" || (mode === "auto" && looksLikeMarkdown(sanitized));
 
   if (!wantMarkdown) {
-    return { mode: "plain", lines: plainLines(body) };
+    return { mode: "plain", lines: plainLines(sanitized) };
   }
 
+  const body = options.subagentPaint
+    ? styleSubagentBody(sanitized, options.subagentPaint)
+    : sanitized;
   try {
     const styled = renderStyledMarkdownLines(body, {
       width,
@@ -55,7 +63,7 @@ export function preparePagerDisplay(
       colorMode: options.colorMode,
     });
     if (styled.length === 0) {
-      return { mode: "plain", lines: plainLines(body) };
+      return { mode: "plain", lines: plainLines(sanitized) };
     }
     const lines: PagerDisplayLine[] = styled.map((st) => {
       const joined = st.chunks.map((c) => c.text).join("");
@@ -64,6 +72,6 @@ export function preparePagerDisplay(
     });
     return { mode: "markdown", lines };
   } catch {
-    return { mode: "plain", lines: plainLines(body) };
+    return { mode: "plain", lines: plainLines(sanitized) };
   }
 }

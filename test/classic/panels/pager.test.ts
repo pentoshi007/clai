@@ -5,6 +5,7 @@ import {
   panelFrameRows,
 } from "../../../src/classic/panels/panel-frame.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
+import { styleSubagentBody } from "../../../src/ui-core/rendering/subagent-presentation.js";
 import {
   pagerKey,
   pagerLines,
@@ -36,6 +37,20 @@ function press(state: PagerPanelState, chord: string, text?: string, rows = 8) {
 }
 
 describe("pager rows", () => {
+  it.each(["raw", "formatted"] as const)("keeps subagent tool colors on wrapped rows in %s mode", (format) => {
+    const command = `→ shell.exec npm run test --coverage --reporter=json --outputFile=${"long-path/".repeat(14)}final.json`;
+    const styled = styleSubagentBody(command, (span) => colorInk.style(span.text, span));
+    const lines = pagerLines(styled, 40, 20, format, true);
+    expect(lines.length).toBeGreaterThan(2);
+    const muted = colorInk.style("x", { fg: "muted" });
+    const opener = muted.slice(0, muted.indexOf("x"));
+    for (const line of lines) {
+      expect(line).toContain(opener);
+      expect(displayWidth(line)).toBeLessThanOrEqual(panelBodyWidth(40) - 2);
+    }
+    expect(stripAnsi(lines.join(""))).toContain("final.json");
+  });
+
   it.each(["raw", "formatted"] as const)("colors subagent activity in %s mode without changing copy text", (format) => {
     const source = "## Activity\n✓ fs.read src/index.ts\n✗ web.fetch https://example.test\nNotice: Retrying";
     const lines = pagerLines(source, 100, 20, format);

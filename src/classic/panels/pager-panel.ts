@@ -75,11 +75,12 @@ export function pagerLines(
   columns: number,
   rows = Number.MAX_SAFE_INTEGER,
   format: PagerFormat = "formatted",
+  ansiBody = false,
 ): readonly string[] {
   const width = panelBodyWidth(columns);
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
   const lines = logicalPagerLines(body, textWidth, format).flatMap((line) =>
-    format === "formatted"
+    format === "formatted" || ansiBody
       ? wrapAnsiLine(line, textWidth)
       : wrapPagerLine(line, textWidth, { preserveWhitespace: true }),
   );
@@ -101,6 +102,7 @@ let pagerCache:
       readonly columns: number;
       readonly rows: number;
       readonly format: PagerFormat;
+      readonly ansiBody: boolean;
       readonly view: PagerViewModel;
     }
   | undefined;
@@ -110,6 +112,7 @@ export function pagerViewModel(
   columns: number,
   rows = Number.MAX_SAFE_INTEGER,
   format: PagerFormat = "formatted",
+  ansiBody = false,
 ): PagerViewModel {
   const hit = pagerCache;
   if (
@@ -117,13 +120,14 @@ export function pagerViewModel(
     hit.body === body &&
     hit.columns === columns &&
     hit.rows === rows &&
-    hit.format === format
+    hit.format === format &&
+    hit.ansiBody === ansiBody
   ) {
     return hit.view;
   }
-  const lines = pagerLines(body, columns, rows, format);
+  const lines = pagerLines(body, columns, rows, format, ansiBody);
   const view: PagerViewModel = { lines, searchLines: pagerSearchLines(lines) };
-  pagerCache = { body, columns, rows, format, view };
+  pagerCache = { body, columns, rows, format, ansiBody, view };
   return view;
 }
 function clampTop(caret: number, top: number, height: number, count: number): number {

@@ -6,7 +6,7 @@ import { TextAttributes, type MouseEvent } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
-import { orderSubagentRuns, watchSubagents } from "../../../ui-core/rendering/subagent-source.js";
+import { orderSubagentRuns, subagentsBarVisible, watchSubagents } from "../../../ui-core/rendering/subagent-source.js";
 import { openSubagentRun, SUBAGENT_STATUS_ICON } from "../../../ui-core/commands/subagent-commands.js";
 import type { SubagentRun } from "../../../agent/subagents/types.js";
 
@@ -53,7 +53,7 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
     };
   }, [services.session, manager]);
 
-  if (blockingOverlay || runs.length === 0) return null;
+  if (blockingOverlay || !subagentsBarVisible(runs)) return null;
   const ordered = orderSubagentRuns(runs);
   const running = ordered.filter((run) => run.status === "running" || run.status === "stopping").length;
   const settled = ordered.length - running;

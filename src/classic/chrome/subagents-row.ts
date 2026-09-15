@@ -9,7 +9,7 @@ export interface SubagentsViewInput {
 }
 
 export function subagentsVisible(state: SubagentsRuntimeState): boolean {
-  return state.total > 0;
+  return state.running > 0 || state.pendingDelivery > 0;
 }
 
 export function subagentsRow(input: SubagentsViewInput): string {

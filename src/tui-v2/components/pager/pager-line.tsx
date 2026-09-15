@@ -277,6 +277,7 @@ export function PagerLine(props: {
       <text
         id={`pager-line-${index}`}
         selectable
+        wrapMode="word"
         style={{
           width: "100%",
           fg: baseFg,
@@ -293,6 +294,7 @@ export function PagerLine(props: {
     <text
       id={`pager-line-${index}`}
       selectable
+      wrapMode="word"
       style={{
         width: "100%",
         fg: baseFg,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RGBA } from "@opentui/core";
 import { preparePagerDisplay } from "../../../src/tui-v2/rendering/pager-markdown.js";
 import {
   extractFsReadFileBody,
@@ -120,6 +121,26 @@ describe("preparePagerDisplay", () => {
         mode: "force",
       }),
     ).not.toThrow();
+  });
+
+  it("keeps subagent tool colors on wrapped rows when subagentPaint is set", () => {
+    const command = `→ shell.exec npm run test --coverage --reporter=json --outputFile=${"long-path/".repeat(14)}final.json`;
+    const prep = preparePagerDisplay({
+      body: `# Inspector\n\n## Activity\n${command}`,
+      width: 40,
+      mode: "force",
+      subagentPaint: (span) => `\x1b[38;2;10;200;10m${span.text}\x1b[0m`,
+    });
+    expect(prep.mode).toBe("markdown");
+    const rows = prep.lines.filter((line) => line.plain.includes("long-path") || line.plain.includes("→"));
+    expect(rows.length).toBeGreaterThan(2);
+    for (const row of rows) {
+      const chunks = row.styled?.chunks ?? [];
+      expect(
+        chunks.some((chunk) => chunk.text.trim().length > 0 && chunk.fg?.equals(RGBA.fromHex("#0ac80a"))),
+      ).toBe(true);
+    }
+    expect(stripAnsiSequences(prep.lines.map((line) => line.plain).join("\n"))).toContain("final.json");
   });
 
   it("plain mode never uses markdown", () => {

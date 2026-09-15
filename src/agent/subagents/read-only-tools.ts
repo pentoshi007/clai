@@ -39,7 +39,7 @@ const descriptions: Record<string, string> = {
   "wordlist.find": "Locate wordlists on disk.",
   "skill.load": "Read one skill's instructions.",
   "skill.list": "List installed skills.",
-  "shell.exec": "Read-only shell fallback for search and inspection when file search is insufficient. Writes, redirects, chaining, and installs are denied.",
+  "shell.exec": "Read-only shell fallback for search and inspection. Normal command composition, pipelines, chaining, line breaks, and absolute read paths are allowed; file mutations, git state changes, installs, redirects, and network commands are denied.",
 };
 
 export const READ_ONLY_TOOLS: ToolDefinition[] = TOOL_DEFINITIONS
@@ -129,21 +129,27 @@ function stringList(value: unknown, key: string, min: number, max: number, itemM
   });
 }
 
+const GIT_ALWAYS_MUTATING_SUBCOMMANDS = new Set([
+  "add", "am", "apply", "bisect", "cherry-pick", "clean", "clone", "commit",
+  "fetch", "gc", "merge", "mv", "pull", "push", "rebase", "revert", "rm",
+  "reset", "restore", "stash", "switch", "update-ref",
+]);
+
 const SHELL_FIRST_ALLOW = new Set([
   "grep", "egrep", "fgrep", "rg", "ag", "ack",
   "find", "ls", "dir", "cat", "head", "tail", "wc",
   "sort", "uniq", "cut", "tr", "file", "stat", "du",
   "git", "python3", "python", "node", "jq",
   "diff", "cmp", "comm", "strings", "xxd", "od",
-]);
-
-const GIT_READ_SUBCOMMANDS = new Set([
-  "grep", "log", "show", "diff", "status", "ls-files",
-  "blame", "rev-parse", "ls-tree", "cat-file",
+  "pwd", "printf", "echo", "true", "false", "date", "uname",
+  "whoami", "id", "readlink", "realpath", "basename", "dirname", "which",
 ]);
 
 const SHELL_CONTENT_DENY: readonly RegExp[] = [
   /-delete\b/, /-exec(dir)?\b/, /-ok\b/, /-fls\b/, /-fprint\b/,
+  /\b(?:rm|rmdir|mv|cp|install|mkdir|mktemp|touch|tee|dd|unlink|chmod|chown|ln|truncate)\b/,
+  /\b(?:npm|pnpm|yarn|bun)\s+(?:install|ci|add|remove|uninstall|update|link|publish|pack)\b/,
+  /\b(?:curl|wget|nc|netcat|socat|ssh|scp|rsync|ftp|telnet)\b/,
   /subprocess/, /os\.system/, /os\.popen/, /os\.exec\w*\b/, /os\.spawn\w*\b/,
   /os\.remove/, /os\.unlink/, /os\.rmdir/, /os\.mkdir/, /os\.rename/, /os\.replace/,
   /os\.chmod/, /os\.chown/, /os\.symlink/, /os\.link/, /os\.truncate/, /os\.write/,
@@ -182,21 +188,56 @@ function stripQuoted(command: string): string {
 function denyShellStructure(visible: string): void {
   if (/`|\$\(|\$\{/.test(visible)) throw new Error("Command denied: shell expansion is not allowed");
   if (/[><]/.test(visible)) throw new Error("Command denied: redirection is not allowed");
-  if (/[;&]/.test(visible)) throw new Error("Command denied: run one command per call without chaining");
-  if (/(^|[\s"'=:(,])\.\.(\/|\\|$|["'\s])/.test(visible)) throw new Error("Command denied: paths must stay inside the assignment directory");
-  if (/(^|[\s"'=:(,])~(\/|$)/.test(visible)) throw new Error("Command denied: home-directory paths are not allowed");
-  if (/(^|[\s"'=:(,])\//.test(visible)) throw new Error("Command denied: absolute paths are not allowed");
 }
 
 function denyShellContent(lower: string): void {
   if (SHELL_CONTENT_DENY.some((pattern) => pattern.test(lower))) throw new Error("Command denied: mutating, network, or environment access is not allowed");
 }
 
+function shellSegments(visible: string): string[] {
+  const segments: string[] = [];
+  let start = 0;
+  for (let index = 0; index < visible.length; index += 1) {
+    const separator = visible[index];
+    if (separator !== "|" && separator !== ";" && separator !== "&" && separator !== "\n" && separator !== "\r") continue;
+    const segment = visible.slice(start, index).trim();
+    if (segment) segments.push(segment);
+    if ((separator === "|" || separator === "&") && visible[index + 1] === separator) index += 1;
+    start = index + 1;
+  }
+  const tail = visible.slice(start).trim();
+  if (tail) segments.push(tail);
+  return segments;
+}
+
+function assertGitSegment(tokens: readonly string[], segment: string): void {
+  const subcommand = tokens[1]?.toLowerCase();
+  if (!subcommand) return;
+  if (GIT_ALWAYS_MUTATING_SUBCOMMANDS.has(subcommand)) {
+    throw new Error("Command denied: git state changes are not allowed for context gathering");
+  }
+  const args = tokens.slice(2);
+  if (subcommand === "branch" || subcommand === "tag") {
+    if (args.some((token) => !token.startsWith("-"))) {
+      throw new Error("Command denied: git state changes are not allowed for context gathering");
+    }
+  }
+  if (subcommand === "remote" && args.some((token) => !["-v", "--verbose"].includes(token))) {
+    throw new Error("Command denied: git remote changes are not allowed for context gathering");
+  }
+  if (subcommand === "config" && !args.some((token) => ["--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin", "--show-scope", "--name-only"].includes(token))) {
+    throw new Error("Command denied: git config changes are not allowed for context gathering");
+  }
+  if (/\b(?:-d|-D|--delete|--move|--set-upstream-to)\b/.test(segment)) {
+    throw new Error("Command denied: git state changes are not allowed for context gathering");
+  }
+}
+
 function assertShellSegment(segment: string): void {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
   const first = tokens[0]?.toLowerCase();
   if (!first || !SHELL_FIRST_ALLOW.has(first)) throw new Error("Command denied: use a read-only search or inspection command");
-  if (first === "git" && !GIT_READ_SUBCOMMANDS.has(tokens[1]?.toLowerCase() ?? "")) throw new Error("Command denied: only read-only git subcommands are allowed");
+  if (first === "git") assertGitSegment(tokens, segment);
   if (first === "find" && /-(delete|exec(dir)?|ok|fls|fprint)\b/.test(segment)) throw new Error("Command denied: find may not modify or execute");
   if (first === "sort" && /-o\b|--output\b/.test(segment)) throw new Error("Command denied: sort may not write files");
 }
@@ -204,11 +245,10 @@ function assertShellSegment(segment: string): void {
 async function prepareShellExec(root: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const raw = string(args, "command", 4000).trim();
   if (!raw) throw new Error("Invalid command");
-  if (/[\r\n]/.test(raw)) throw new Error("Command denied: run one command per call without line breaks");
   const visible = stripQuoted(raw);
   denyShellStructure(visible);
   denyShellContent(raw.toLowerCase());
-  for (const segment of visible.split("|")) assertShellSegment(segment);
+  for (const segment of shellSegments(visible)) assertShellSegment(segment);
   return { command: raw, cwd: await confinedPath(root, "."), timeoutMs: number(args, "timeoutMs", 15_000, 30_000), background: "never" };
 }
 
