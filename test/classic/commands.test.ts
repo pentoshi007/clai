@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { slashCommands } from "../../src/app/commands/catalog.js";
 import { normalizeCommandName } from "../../src/app/commands/command.js";
 import { buildDefaultCommandRegistry } from "../../src/app/commands/registry.js";
-import { getConfig, updateConfig } from "../../src/store/config.js";
+import { getConfig, getSubagentModelChain, updateConfig } from "../../src/store/config.js";
 import { purgeSession, upsertSession } from "../../src/store/history.js";
 import type { AppServices } from "../../src/ui-core/bootstrap/composition-root.js";
 import { createHarness, type Harness, type HarnessOptions } from "./app/harness.js";
@@ -533,6 +533,35 @@ describe("classic command parity (W12)", () => {
       expect(modelEditor.request.itemLabel).toBe("model");
     }
     services.overlay.answerKeys(undefined);
+  });
+
+  it("persists model editor active and disabled rows and resets the chain", async () => {
+    const { services } = open();
+    updateConfig({ subagentModels: undefined });
+    await run(services, "orchestrator", "models");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("keys-editor"));
+    services.overlay.answerKeys({
+      action: "save",
+      rows: [
+        { slotId: "free\u001ffree-1/primary", value: "free / free-1/primary", disabled: false },
+        { slotId: "free\u001ffree-2/fallback", value: "free / free-2/fallback", disabled: true },
+      ],
+      activeIndex: 1,
+    });
+    await vi.waitFor(() => expect(getSubagentModelChain()).toEqual({
+      entries: [
+        { provider: "free", model: "free-1/primary" },
+        { provider: "free", model: "free-2/fallback", disabled: true },
+      ],
+      activeIndex: 1,
+    }));
+    expect(noticed(services, "applies to new attempts")).toBe(true);
+
+    await run(services, "orchestrator", "models");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("keys-editor"));
+    services.overlay.answerKeys({ action: "reset" });
+    await vi.waitFor(() => expect(getSubagentModelChain()).toBeUndefined());
+    expect(noticed(services, "subagent models reset")).toBe(true);
   });
 
   spec(["agents"], "/agents opens the shared picker and returns to the main conversation", async () => {

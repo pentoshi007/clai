@@ -77,14 +77,14 @@ async function flush(): Promise<void> {
 }
 
 describe("shared orchestration commands", () => {
-  it("lists /orchestrator with the toggle usage and description", () => {
+  it("lists /orchestrator with model fallback configuration", () => {
     const command = buildDefaultCommandRegistry().get("orchestrator");
     expect(command?.name).toBe("orchestrator");
-    expect(command?.description).toBe("show delegation status or turn subagents on/off");
-    expect(command?.usage).toBe("[on|off|status]");
+    expect(command?.description).toBe("show delegation status, configure subagent models, or turn subagents on/off");
+    expect(command?.usage).toBe("[on|off|status|models]");
   });
 
-  it.each(["orchestration", "orchestrator", "orchastrator"])("/%s opens a status picker whose selection toggles delegation", async (command) => {
+  it.each(["orchestration", "orchestrator", "orchastrator"])("/%s opens an orchestration picker whose toggle selection changes delegation", async (command) => {
     const f = fixture();
     await f.dispatch(`/${command}`);
     expect(f.manager.enabled).toBe(true);
@@ -93,7 +93,7 @@ describe("shared orchestration commands", () => {
     expect(state.kind).toBe("picker");
     if (state.kind !== "picker") throw new Error("expected picker");
     expect(state.request.title).toBe("Orchestration · on");
-    expect(state.request.options.map((option) => option.value)).toEqual(["on", "off"]);
+    expect(state.request.options.map((option) => option.value)).toEqual(["on", "off", "models"]);
     expect(state.request.options.every((option) => option.description)).toBe(true);
     expect(state.request.options.find((option) => option.value === "on")?.active).toBe(true);
     f.overlay.selectPicker("off");

@@ -19,6 +19,7 @@ function demand(over: Partial<ChromeDemand> = {}): ChromeDemand {
     toastCount: 0,
     queueCount: 0,
     responderVisible: false,
+    subagentsVisible: false,
     planVisible: false,
     planRowsWanted: 0,
     overlay: undefined,
@@ -34,6 +35,7 @@ const demandArb = fc.record({
   toastCount: fc.integer({ min: 0, max: 5 }),
   queueCount: fc.integer({ min: 0, max: 12 }),
   responderVisible: fc.boolean(),
+  subagentsVisible: fc.boolean(),
   planVisible: fc.boolean(),
   planRowsWanted: fc.integer({ min: 0, max: 40 }),
   overlay: fc.option(
@@ -51,6 +53,7 @@ const parts = (layout: ChromeLayout): number[] => [
   layout.toast,
   layout.queue,
   layout.responder,
+  layout.subagents,
   layout.plan,
   layout.overlay,
   layout.liveTail,
@@ -98,6 +101,7 @@ describe("allocateChrome invariants", () => {
         expect(layout.queue).toBeLessThanOrEqual(QUEUE_MAX_ROWS);
         expect(layout.plan).toBeLessThanOrEqual(PLAN_MAX_ROWS);
         expect(layout.responder).toBeLessThanOrEqual(1);
+        expect(layout.subagents).toBeLessThanOrEqual(1);
         expect(layout.status).toBeLessThanOrEqual(input.statusRowsWanted);
         if (input.overlay) {
           expect(layout.overlay).toBeLessThanOrEqual(Math.floor(input.rows * 0.6));
@@ -107,6 +111,7 @@ describe("allocateChrome invariants", () => {
         if (input.queueCount === 0) expect(layout.queue).toBe(0);
         if (!input.planVisible) expect(layout.plan).toBe(0);
         if (!input.responderVisible) expect(layout.responder).toBe(0);
+        if (!input.subagentsVisible) expect(layout.subagents).toBe(0);
       }),
       { numRuns: 2_000 },
     );
@@ -180,6 +185,14 @@ describe("priority order", () => {
     );
     expect(layout.status).toBe(1);
     expect(layout.overlay).toBe(2);
+  });
+
+  it("allocates one row to each visible strip", () => {
+    const layout = allocateChrome(
+      demand({ rows: 24, responderVisible: true, subagentsVisible: true }),
+    );
+    expect(layout.responder).toBe(1);
+    expect(layout.subagents).toBe(1);
   });
 
   it("expands the status only after the plan is served", () => {

@@ -4,7 +4,7 @@ import type { ChromeLayout } from "./row-budget.js";
 
 export type ChromeSectionKey = keyof Pick<
   ChromeLayout,
-  "liveTail" | "plan" | "overlay" | "queue" | "responder" | "toast" | "composer" | "status"
+  "liveTail" | "plan" | "overlay" | "queue" | "responder" | "subagents" | "toast" | "composer" | "status"
 >;
 
 const SECTIONS: readonly { readonly key: ChromeSectionKey; readonly label: string }[] = [
@@ -14,6 +14,7 @@ const SECTIONS: readonly { readonly key: ChromeSectionKey; readonly label: strin
   { key: "overlay", label: "overlay" },
   { key: "queue", label: "queue" },
   { key: "responder", label: "responder" },
+  { key: "subagents", label: "subagents" },
   { key: "composer", label: "composer" },
   { key: "status", label: "status" },
 ];
