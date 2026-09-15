@@ -7,6 +7,8 @@ import {
   type ProviderAuth,
 } from "./provider.js";
 import { singleLeadingSystemMessages } from "./system-messages.js";
+import { currentSessionAffinity } from "./session-affinity.js";
+import { sessionCacheAffinityKey } from "./cache-affinity.js";
 import {
   ProviderError,
   openAiCompatibleComplete,
@@ -74,6 +76,8 @@ let generatedSessionId: string | undefined;
 
 export function modalSessionId(): string {
   const configured = process.env.MODAL_SESSION_ID?.trim();
+  const affinity = currentSessionAffinity();
+  if (affinity) return sessionCacheAffinityKey(configured ? `${configured}\0${affinity}` : affinity);
   if (configured) return configured;
   generatedSessionId ??= `clai-${randomUUID()}`;
   return generatedSessionId;

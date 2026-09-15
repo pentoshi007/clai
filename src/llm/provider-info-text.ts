@@ -269,9 +269,9 @@ ENVIRONMENT VARIABLES (used only when nothing is stored)
                               ("/v1" is appended if missing)
   MODAL_PROXY_TOKEN_ID        wk-...  both halves needed, or it is ignored
   MODAL_PROXY_TOKEN_SECRET    ws-...
-  MODAL_SESSION_ID            optional sticky-session id. When unset, clai
-                              generates one per run so a whole conversation
-                              lands on the same warm container.
+  MODAL_SESSION_ID            optional sticky-session seed. Each conversation,
+                              subagent and auxiliary stream keeps its own ID.
+                              Standalone requests use this ID directly.
 
 GOOD TO KNOW
   - Cold start: the first request after idle pays container start-up, which
