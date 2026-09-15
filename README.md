@@ -255,7 +255,7 @@ Token pairs rotate on failure like any other provider's keys (the pair is stored
 
 From inside the console, `/provider modal` walks the same setup in two prompts — endpoint URL first (shown in full, since it isn't a secret), then the token pair — and leaves the active provider untouched if you cancel.
 
-Sticky sessions are on by default — clai sends a `Modal-Session-ID` per run so a whole conversation stays on one warm container, which keeps the prompt cache hot and avoids paying a cold start mid-task (override with `MODAL_SESSION_ID`). The first request after idle still pays container start-up, so clai allows up to 3 minutes for the first token.
+Sticky sessions are on by default — clai sends a stable `Modal-Session-ID` for each conversation, with separate IDs for each subagent and auxiliary request stream. `MODAL_SESSION_ID` optionally seeds those IDs; it does not collapse active agents onto one shared ID. Standalone requests without a conversation use the configured ID directly, or a generated process-local ID. Sticky routing helps preserve warm caches, but does not guarantee a cache hit. The first request after idle still pays container start-up, so clai allows up to 3 minutes for the first token.
 
 `/info modal` prints the whole thing as a walkthrough: numbered setup steps, which credentials go where, the plan limits (Starter also caps you at 3 seats, 100 containers and 10 GPUs of concurrency), and a troubleshooting table.
 

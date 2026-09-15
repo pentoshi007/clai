@@ -13,6 +13,7 @@ import {
 } from "../../src/llm/capabilities.js";
 import { resolveBuiltInProfile } from "../../src/llm/provider-profiles.js";
 import { clearControlRejections } from "../../src/llm/provider-profile.js";
+import { withSessionAffinity } from "../../src/llm/session-affinity.js";
 import { getConfig, updateConfig } from "../../src/store/config.js";
 
 const PROVIDER = "tokenrouter";
@@ -119,6 +120,25 @@ describe("learned route capabilities persist positives only", () => {
     expect(learnedRouteRejectedFields(PROVIDER, "free-7/alias-probe")).toEqual([
       "reasoning",
     ]);
+  });
+
+  it("keeps child field rejections out of parent and sibling sessions", () => {
+    withSessionAffinity("parent-1:subagent:alpha", () => {
+      learnRouteRejectedField(PROVIDER, MODEL, "reasoning_effort");
+      expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual([
+        "reasoning_effort",
+      ]);
+    });
+
+    expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual([]);
+    withSessionAffinity("parent-1:subagent:beta", () => {
+      expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual([]);
+    });
+    withSessionAffinity("parent-1:subagent:alpha", () => {
+      expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual([
+        "reasoning_effort",
+      ]);
+    });
   });
 
   it("migrates an existing learned vision entry forward without dropping it", () => {

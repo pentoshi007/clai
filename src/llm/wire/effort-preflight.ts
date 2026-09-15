@@ -7,9 +7,10 @@ import type {
 import {
   displayReasoningEfforts,
   isReasoningUnsupported,
+  learnModelReasoningSupport,
   modelSupportsThinking,
-  registerModelReasoningSupport,
   registerWireRejectionEfforts,
+  scopedRuntimeReasoningEffortsKnown,
 } from "../capabilities.js";
 import { EFFORT_SCALE } from "../reasoning-controls.js";
 import { currentSessionAffinity } from "../session-affinity.js";
@@ -49,7 +50,9 @@ const EFFORT_RANK = new Map<string, number>(
 
 const probedKeys = new Set<string>();
 
-const pendingProbes = new Map<string, Promise<void>>();
+const pendingProbes = new Map<string, Promise<ReasoningEffort | undefined>>();
+
+const probeOutcomes = new Map<string, ReasoningEffort | undefined>();
 
 function rankOf(effort: ReasoningEffort): number {
   return EFFORT_RANK.get(effort) ?? -1;
@@ -80,7 +83,14 @@ export function needsEffortPreflight(route: EffortPreflightRoute): boolean {
   if (route.purpose === "compaction" || route.purpose === "auxiliary") {
     return false;
   }
-  if (probedKeys.has(effortPreflightKey(route))) return false;
+  const key = effortPreflightKey(route);
+  const scopedKnown = isSubagentProbe(route)
+    ? scopedRuntimeReasoningEffortsKnown(route.providerId, route.model)
+    : undefined;
+  if (scopedKnown !== undefined && probeOutcomes.has(key)) {
+    return probeOutcomes.get(key) !== undefined && !scopedKnown;
+  }
+  if (probedKeys.has(key)) return false;
   if (isReasoningUnsupported(route.providerId, route.model)) return false;
   if (!modelSupportsThinking(route.providerId, route.model)) return false;
   return !displayReasoningEfforts(route.providerId, route.model)?.length;
@@ -101,15 +111,22 @@ function settleProbedEfforts(
     : EFFORT_SCALE.slice(0, index + 1);
   registerWireRejectionEfforts(route.providerId, route.model, observed);
   if (accepted !== "none") {
-    registerModelReasoningSupport(route.providerId, route.model, true);
+    learnModelReasoningSupport(route.providerId, route.model);
   }
 }
 
-function rememberKey(key: string): void {
+function rememberProbeOutcome(
+  key: string,
+  outcome: ReasoningEffort | undefined,
+): void {
   probedKeys.delete(key);
   probedKeys.add(key);
+  probeOutcomes.delete(key);
+  probeOutcomes.set(key, outcome);
   while (probedKeys.size > MAX_PROBED_KEYS) {
-    probedKeys.delete(probedKeys.keys().next().value!);
+    const oldest = probedKeys.keys().next().value!;
+    probedKeys.delete(oldest);
+    probeOutcomes.delete(oldest);
   }
 }
 
@@ -117,7 +134,7 @@ async function probeEffortLadder(
   route: EffortPreflightRoute,
   probe: (effort: ReasoningEffort) => Promise<EffortProbeOutcome>,
   key: string,
-): Promise<void> {
+): Promise<ReasoningEffort | undefined> {
   let accepted: ReasoningEffort | undefined;
   for (const effort of probeOrder(route)) {
     const outcome = await probe(effort);
@@ -127,8 +144,8 @@ async function probeEffortLadder(
       break;
     }
   }
-  rememberKey(key);
-  if (accepted) settleProbedEfforts(route, accepted);
+  rememberProbeOutcome(key, accepted);
+  return accepted;
 }
 
 export async function runEffortPreflight(
@@ -137,12 +154,28 @@ export async function runEffortPreflight(
 ): Promise<void> {
   if (!needsEffortPreflight(route)) return;
   const key = effortPreflightKey(route);
+  const scopedKnown = isSubagentProbe(route)
+    ? scopedRuntimeReasoningEffortsKnown(route.providerId, route.model)
+    : undefined;
+  if (scopedKnown !== undefined && probeOutcomes.has(key)) {
+    const accepted = probeOutcomes.get(key);
+    if (accepted && !scopedKnown) settleProbedEfforts(route, accepted);
+    return;
+  }
   const pending = pendingProbes.get(key);
-  if (pending) return pending;
+  if (pending) {
+    await pending;
+    const accepted = probeOutcomes.get(key);
+    if (scopedKnown !== undefined && accepted && !scopedKnown) {
+      settleProbedEfforts(route, accepted);
+    }
+    return;
+  }
   const run = Promise.resolve().then(() => probeEffortLadder(route, probe, key));
   pendingProbes.set(key, run);
   try {
-    await run;
+    const accepted = await run;
+    if (accepted) settleProbedEfforts(route, accepted);
   } finally {
     if (pendingProbes.get(key) === run) pendingProbes.delete(key);
   }
@@ -150,5 +183,6 @@ export async function runEffortPreflight(
 
 export function resetEffortPreflightForTesting(): void {
   probedKeys.clear();
+  probeOutcomes.clear();
   pendingProbes.clear();
 }
