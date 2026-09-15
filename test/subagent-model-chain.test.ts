@@ -86,11 +86,12 @@ describe("subagent model chain", () => {
   });
 
   it("returns no candidates when the chain is absent or disabled", async () => {
-    const { resolveSubagentModelChain } = await import(
+    const { resolveSubagentModelChain, subagentModelChainBlocked } = await import(
       "../src/agent/subagents/model-chain.js"
     );
 
     expect(resolveSubagentModelChain({ customProviders: [] })).toEqual([]);
+    expect(subagentModelChainBlocked({ customProviders: [] })).toBe(false);
     expect(
       resolveSubagentModelChain({
         customProviders: [],
@@ -102,5 +103,54 @@ describe("subagent model chain", () => {
         },
       }),
     ).toEqual([]);
+    expect(
+      subagentModelChainBlocked({
+        customProviders: [],
+        subagentModels: {
+          activeIndex: 0,
+          entries: [
+            { provider: "free", model: "one", disabled: true },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("blocks launches only while every configured model is disabled", async () => {
+    const { setSubagentModelChain, clearSubagentModelChain } = await import(
+      "../src/store/config/subagent-models.js"
+    );
+    const { SubagentManager } = await import("../src/agent/subagents/manager.js");
+    const assignment = { title: "Investigate", prompt: "Read the implementation", cwd: "/tmp", provider: "openai", model: "test" };
+    const launch = async (): Promise<string> => {
+      const manager = new SubagentManager("parent", { worker: async () => "Done" });
+      try {
+        return (await manager.wait(manager.start(assignment).id)).status;
+      } finally {
+        manager.dispose();
+      }
+    };
+
+    setSubagentModelChain([{ provider: "free", model: "one", disabled: true }]);
+    const blocked = new SubagentManager("parent", { worker: async () => "Done" });
+    try {
+      expect(() => blocked.start(assignment)).toThrow(/All configured subagent models are disabled/);
+    } finally {
+      blocked.dispose();
+    }
+
+    setSubagentModelChain([{ provider: "free", model: "one", disabled: true }, { provider: "free", model: "two" }]);
+    const allowed = new SubagentManager("parent", { worker: async () => "Done" });
+    try {
+      const run = allowed.start(assignment);
+      expect((await allowed.wait(run.id)).status).toBe("completed");
+      setSubagentModelChain([{ provider: "free", model: "one", disabled: true }]);
+      expect(() => allowed.restart(run.id)).toThrow(/All configured subagent models are disabled/);
+    } finally {
+      allowed.dispose();
+    }
+
+    clearSubagentModelChain();
+    await expect(launch()).resolves.toBe("completed");
   });
 });

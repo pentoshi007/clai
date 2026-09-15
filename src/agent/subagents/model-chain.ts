@@ -1,5 +1,5 @@
-import { isKeyRotatableError, buildKeyAttemptPlan } from "../../llm/key-rotation.js";
-import { isRateLimited, isRetriableError } from "../../llm/routing/error-classification.js";
+import { buildKeyAttemptPlan, isKeyCircleStopError, isKeyRotatableError } from "../../llm/key-rotation.js";
+import { isModelNotFoundError, isRateLimited, isRetriableError } from "../../llm/routing/error-classification.js";
 import { streamEmittedBytes } from "../../llm/stream-progress.js";
 import { getConfig, type ClaiConfig } from "../../store/config/endpoints.js";
 import { sanitizeSubagentModelChain } from "../../store/config/subagent-models.js";
@@ -8,6 +8,27 @@ import type { ChatMessage, NativeToolCall, ProviderId, ToolCall } from "../../ty
 export interface SubagentModelRoute {
   provider: ProviderId;
   model: string;
+}
+
+const ROUTE_FAILURE = Symbol.for("clai.subagent.routeFailure");
+
+export function markSubagentRouteFailure<E>(error: E): E {
+  if (typeof error === "object" && error !== null) {
+    try {
+      Object.defineProperty(error, ROUTE_FAILURE, {
+        value: true,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+    }
+  }
+  return error;
+}
+
+export function isSubagentRouteFailure(error: unknown): boolean {
+  return typeof error === "object" && error !== null && ROUTE_FAILURE in error;
 }
 
 export interface SubagentStreamResult<T> {
@@ -41,15 +62,22 @@ export async function runSubagentModelRotation<T>({
   stream,
   startIndex = 0,
   attemptsPerCandidate = 2,
-  shouldRotate = (error) => isKeyRotatableError(error, isRetriableError) || isRateLimited(error),
+  shouldRotate = (error) =>
+    isSubagentRouteFailure(error) ||
+    isKeyRotatableError(error, isRetriableError) ||
+    isRateLimited(error) ||
+    isModelNotFoundError(error) ||
+    isKeyCircleStopError(error),
   onRoute,
   onSwitch,
 }: SubagentModelRotationOptions<T>): Promise<SubagentModelRotationResult<T>> {
   if (!candidates.length) throw new Error("No subagent model candidates configured");
-  const first = Math.min(Math.max(Math.trunc(startIndex), 0), candidates.length - 1);
+  const total = candidates.length;
+  const first = Math.min(Math.max(Math.trunc(startIndex), 0), total - 1);
   const attempts = Math.max(1, Math.trunc(attemptsPerCandidate));
   let lastError: unknown;
-  for (let index = first; index < candidates.length; index += 1) {
+  for (let step = 0; step < total; step += 1) {
+    const index = (first + step) % total;
     const route = candidates[index]!;
     onRoute?.(route, index);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -63,8 +91,9 @@ export async function runSubagentModelRotation<T>({
         if (streamEmittedBytes(error) > 0 || !shouldRotate(error)) throw error;
         lastError = error;
         if (attempt + 1 < attempts) continue;
-        if (index + 1 >= candidates.length) throw error;
-        onSwitch?.(error, candidates[index + 1]!, index + 1);
+        if (step + 1 >= total) throw error;
+        const next = (index + 1) % total;
+        onSwitch?.(error, candidates[next]!, next);
       }
     }
   }
@@ -93,13 +122,13 @@ function nativeToFenced(messages: readonly ChatMessage[]): ChatMessage[] {
   });
 }
 
-function parseFencedCalls(content: string): { text: string; calls: NativeToolCall[] } {
+function parseFencedCalls(content: string, nextId: () => string): { text: string; calls: NativeToolCall[] } {
   const calls: NativeToolCall[] = [];
   const text = content.replace(/```tool\s*\n?([\s\S]*?)```/gi, (block, raw: string) => {
     try {
       const parsed = JSON.parse(raw) as { name?: unknown; args?: unknown };
       if (typeof parsed.name !== "string" || typeof parsed.args !== "object" || parsed.args === null || Array.isArray(parsed.args)) return block;
-      calls.push({ id: `subagent-tool-${calls.length + 1}`, name: parsed.name, args: parsed.args as Record<string, unknown> });
+      calls.push({ id: nextId(), name: parsed.name, args: parsed.args as Record<string, unknown> });
       return "";
     } catch {
       return block;
@@ -109,11 +138,12 @@ function parseFencedCalls(content: string): { text: string; calls: NativeToolCal
 }
 
 function fencedToNative(messages: readonly ChatMessage[]): ChatMessage[] {
-  let lastCalls: NativeToolCall[] = [];
+  let callSequence = 0;
+  let pending: NativeToolCall[] = [];
   return messages.map((message) => {
     if (message.role === "assistant") {
-      const parsed = parseFencedCalls(message.content);
-      lastCalls = parsed.calls;
+      const parsed = parseFencedCalls(message.content, () => `subagent-tool-${(callSequence += 1)}`);
+      pending = [...parsed.calls];
       return {
         ...message,
         content: parsed.text,
@@ -124,7 +154,7 @@ function fencedToNative(messages: readonly ChatMessage[]): ChatMessage[] {
     const result = message.content.match(/^Untrusted tool result for ([^:\n]+):\n([\s\S]*)$/);
     if (!result) return { ...message };
     const name = result[1]!.trim();
-    const call = lastCalls.find((candidate) => candidate.name === name);
+    const call = pending.shift();
     return {
       role: "tool",
       name,
@@ -152,4 +182,11 @@ export function resolveSubagentModelChain(
     .map((index) => chain.entries[index]!)
     .filter((entry) => entry.disabled !== true)
     .map((entry) => ({ provider: entry.provider as ProviderId, model: entry.model }));
+}
+
+export function subagentModelChainBlocked(
+  config: Pick<ClaiConfig, "subagentModels" | "customProviders"> = getConfig(),
+): boolean {
+  const chain = sanitizeSubagentModelChain(config.subagentModels, config.customProviders);
+  return Boolean(chain) && !resolveSubagentModelChain(config).length;
 }

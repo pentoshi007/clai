@@ -14,6 +14,7 @@ import { boundedOutput, executeReadOnlyCall, prepareReadOnlyCall, READ_ONLY_TOOL
 import { subagentReportStatus } from "./report.js";
 import {
   adaptSubagentHistory,
+  markSubagentRouteFailure,
   runSubagentModelRotation,
   type SubagentModelRoute,
 } from "./model-chain.js";
@@ -224,7 +225,7 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
           }));
           signal.throwIfAborted();
           if (value.provider !== route.provider || value.model !== route.model) throw new Error("Incomplete report: provider route changed");
-          if (["error", "content_filter"].includes(value.finishReason ?? "")) throw new Error("Incomplete report: provider response failed");
+          if (["error", "content_filter"].includes(value.finishReason ?? "")) throw markSubagentRouteFailure(new Error("Incomplete report: provider response failed"));
           if (Buffer.byteLength(value.text) > MAX_RESPONSE_BYTES || Buffer.byteLength(JSON.stringify([value.toolCalls, value.reasoningArtifacts, value.reasoningBlock])) > MAX_RESPONSE_BYTES) throw new Error("Incomplete report: response exceeds the transport safety limit");
           return { value, streamedBytes };
         } catch (error) {

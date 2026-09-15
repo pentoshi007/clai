@@ -3,6 +3,7 @@ import { ProviderError } from "../../src/llm/http.js";
 import { markStreamEmittedBytes } from "../../src/llm/stream-progress.js";
 import {
   adaptSubagentHistory,
+  markSubagentRouteFailure,
   runSubagentModelRotation,
   type SubagentModelRoute,
 } from "../../src/agent/subagents/model-chain.js";
@@ -49,6 +50,40 @@ describe("subagent model rotation", () => {
     })).rejects.toThrow("failure-1");
   });
 
+  it("wraps to earlier candidates when the active route fails on a later turn", async () => {
+    const calls: string[] = [];
+    const result = await runSubagentModelRotation({
+      candidates,
+      signal: new AbortController().signal,
+      startIndex: 1,
+      stream: async (route, attempt) => {
+        calls.push(`${route.model}:${attempt}`);
+        if (route.model === "fallback") throw failure();
+        return { value: "ok" };
+      },
+    });
+    expect(result).toMatchObject({ value: "ok", index: 0, route: candidates[0] });
+    expect(calls).toEqual(["fallback:0", "fallback:1", "primary:0"]);
+  });
+
+  it("falls back when the selected model is unavailable or the provider reports a terminal error", async () => {
+    const unavailable: string[] = [];
+    await rotate(async (route) => {
+      unavailable.push(route.model);
+      if (route.model === "primary") throw new ProviderError("model not found", 404);
+      return { value: "ok" };
+    }).then((result) => expect(result.value).toBe("ok"));
+    expect(unavailable).toEqual(["primary", "primary", "fallback"]);
+
+    const rejected: string[] = [];
+    await rotate(async (route) => {
+      rejected.push(route.model);
+      if (route.model === "primary") throw markSubagentRouteFailure(new Error("Incomplete report: provider response failed"));
+      return { value: "ok" };
+    }).then((result) => expect(result.value).toBe("ok"));
+    expect(rejected).toEqual(["primary", "primary", "fallback"]);
+  });
+
   it("does not rotate after streamed bytes or after abort", async () => {
     const streamed = new Error("connection closed");
     let calls = 0;
@@ -81,5 +116,28 @@ describe("subagent model rotation", () => {
     const restored = adaptSubagentHistory(fenced, false, true);
     expect(restored[2]).toMatchObject({ role: "assistant", toolCalls: [{ name: "fs.read", args: { path: "src/a.ts" } }] });
     expect(restored[3]).toMatchObject({ role: "tool", name: "fs.read", content: "evidence" });
+  });
+
+  it("keeps repeated same-name tool calls linked to distinct ordered ids across dialects", () => {
+    const native: ChatMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "call-1", name: "fs.read", args: { path: "src/a.ts" } },
+          { id: "call-2", name: "fs.read", args: { path: "src/b.ts" } },
+        ],
+      },
+      { role: "tool", name: "fs.read", toolCallId: "call-1", content: "first" },
+      { role: "tool", name: "fs.read", toolCallId: "call-2", content: "second" },
+    ];
+    const round = adaptSubagentHistory(adaptSubagentHistory(native, true, false), false, true);
+    const ids = round[0]?.toolCalls?.map((call) => call.id) ?? [];
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(round[1]).toMatchObject({ role: "tool", toolCallId: ids[0] });
+    expect(round[2]).toMatchObject({ role: "tool", toolCallId: ids[1] });
+    expect(round[1]).toMatchObject({ content: "first" });
+    expect(round[2]).toMatchObject({ content: "second" });
   });
 });

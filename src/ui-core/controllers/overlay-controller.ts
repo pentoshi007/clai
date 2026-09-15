@@ -59,6 +59,7 @@ export interface KeysEditorRequest {
   readonly itemLabel?: string | undefined;
   readonly heading?: string | undefined;
   readonly addViaPicker?: boolean | undefined;
+  readonly maxRows?: number | undefined;
 }
 
 /**

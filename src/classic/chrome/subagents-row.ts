@@ -20,7 +20,7 @@ export function subagentsRow(input: SubagentsViewInput): string {
     active ? "spinner" : "muted",
     `${state.running} running ${ink.glyphs.separator} ${state.settled} done`,
   );
-  const inspect = ink.fg("muted", `${ink.glyphs.separator} /agents inspect`);
+  const inspect = ink.fg("muted", `${ink.glyphs.separator} /agents`);
 
   return clipToWidth(
     `${bullet} ${summary} ${inspect}`,

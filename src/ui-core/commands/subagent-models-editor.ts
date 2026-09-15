@@ -3,6 +3,7 @@ import type { KeysEditorAnswer } from "../controllers/overlay-controller.js";
 import {
   getSubagentModelChain,
   setSubagentModelChain,
+  MAX_SUBAGENT_MODELS,
   type SubagentModelEntry,
 } from "../../store/config.js";
 import { collectAllModels, CATALOG_SEPARATOR } from "./picker-commands.js";
@@ -103,6 +104,7 @@ export async function openSubagentModelEditor(services: AppServices): Promise<vo
       itemLabel: "model",
       heading: "SUBAGENT MODELS",
       addViaPicker: true,
+      maxRows: MAX_SUBAGENT_MODELS,
     });
     if (!answer) return;
     if (answer.action === "reset") {

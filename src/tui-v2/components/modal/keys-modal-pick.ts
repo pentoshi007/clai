@@ -21,3 +21,10 @@ export function buildKeysPickerAnswer(
     activeIndex,
   };
 }
+
+export function keysAddAtCapacity(
+  rows: readonly KeysModalPickRow[],
+  maxRows: number,
+): boolean {
+  return rows.filter((row) => row.slotId !== undefined || row.text.trim().length > 0).length >= maxRows;
+}

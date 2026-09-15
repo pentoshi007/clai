@@ -55,11 +55,19 @@ function activity(run: SubagentRun): string[] {
   return lines;
 }
 
+const isLiveSubagentRun = (run: SubagentRun): boolean => run.status === "running" || run.status === "stopping";
+
+export function orderSubagentRuns(runs: readonly SubagentRun[]): readonly SubagentRun[] {
+  const live = runs.filter(isLiveSubagentRun);
+  const settled = runs.filter((run) => !isLiveSubagentRun(run)).sort((a, b) => b.updatedAt - a.updatedAt);
+  return [...live, ...settled];
+}
+
 export function formatSubagentRun(run: SubagentRun): string {
   const events = activity(run);
   return [
     `# ${run.title}`,
-    `${run.status} · attempt ${run.attempt} · ${run.provider}/${run.model}`,
+    `${run.status} · attempt ${run.attempt} · ${run.activeProvider ?? run.provider}/${run.activeModel ?? run.model}`,
     `Workspace: ${run.cwd}`,
     `Agent: ${run.id}`,
     ...(run.recovery ? [`Recovery: ${run.recovery === "exact" ? "saved conversation checkpoint" : run.recovery === "history" ? "retained evidence; exact checkpoint unavailable" : "fresh investigation"}`] : []),

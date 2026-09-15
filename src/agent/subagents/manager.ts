@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { isValidSubagentParentId, restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../../store/subagents.js";
 import { subagentReportStatus } from "./report.js";
-import { resolveSubagentModelChain } from "./model-chain.js";
+import { resolveSubagentModelChain, subagentModelChainBlocked } from "./model-chain.js";
 import type { SubagentAssignment, SubagentCheckpoint, SubagentEvent, SubagentFollowup, SubagentRun, SubagentStore, SubagentWorker } from "./types.js";
 
 type Child = {
@@ -92,7 +92,14 @@ export class SubagentManager {
     if (this.activeCount() + additional > 3) throw new Error("At most three subagents may run concurrently");
   }
 
+  private assertLaunchModels(): void {
+    if (subagentModelChainBlocked()) {
+      throw new Error("All configured subagent models are disabled; enable one in /orchestrator models or reset the chain");
+    }
+  }
+
   private startAssigned(assignment: SubagentAssignment): SubagentRun {
+    this.assertLaunchModels();
     const now = Date.now();
     const child: Child = { assignment, run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, updatedAt: now, events: [] } };
     this.children.set(child.run.id, child);
@@ -176,6 +183,7 @@ export class SubagentManager {
     const followup = this.followup(value);
     this.assertUnique(child.assignment);
     this.assertCapacity(1);
+    this.assertLaunchModels();
     const previous = child.run;
     this.settledAttempts.set(`${previous.id}:${previous.attempt}`, this.snapshot(previous));
     const summary = `Attempt ${previous.attempt}: ${previous.status}\n${previous.report ?? previous.error ?? "No report"}`;
