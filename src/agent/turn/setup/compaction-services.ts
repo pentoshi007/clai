@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   CompletionResult,
   ProviderId,
+  ReasoningPreference,
   SuccessfulRequestSnapshot,
   ToolDefinition,
 } from "../../../types.js";
@@ -54,6 +55,7 @@ export interface CompactionServicesInput {
   readonly runningJobs: () => readonly BackgroundJob[];
   readonly recentJobs: () => readonly BackgroundJob[];
   readonly requestSnapshot: () => SuccessfulRequestSnapshot | undefined;
+  readonly thinking?: (() => ReasoningPreference | undefined) | undefined;
   readonly clearRequestSnapshot: () => void;
   readonly instructionsBlock: () => string | undefined;
   readonly skillsBlock: () => string | undefined;
@@ -100,6 +102,19 @@ export const createCompactionServices = (
     state: input.executionState,
     currentContextLimitTokens: input.contextLimitTokens,
     toolsForSourceMessages: input.selectTools,
+    requestSettings: () => {
+      const snapshot = input.requestSnapshot();
+      if (snapshot) return snapshot;
+      const tools = input.selectTools();
+      return {
+        provider: input.provider(),
+        model: input.model(),
+        thinking: input.thinking?.(),
+        ...(tools?.length
+          ? { tools, toolChoice: "auto" as const, parallelToolCalls: true }
+          : {}),
+      };
+    },
     writeDelta: input.writeDelta,
     onUsage: input.onUsage,
   });

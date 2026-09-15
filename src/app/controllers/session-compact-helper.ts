@@ -23,6 +23,7 @@ import {
   type CompactResult,
 } from "../../agent/context-manager.js";
 import { projectToolHistory } from "../../agent/tool-history.js";
+import { buildContextBreakdown } from "../../agent/context-breakdown.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
 import { contextAttemptFromOperationUsage } from "../../llm/context-snapshot.js";
@@ -46,6 +47,7 @@ export async function summarizeForSessionCompact(
     stage?: "single" | "map" | "reduce" | undefined;
     sourceMessages?: readonly ChatMessage[] | undefined;
     baseRequest?: SuccessfulRequestSnapshot | undefined;
+    requestSettings?: Omit<SuccessfulRequestSnapshot, "messages"> | undefined;
     history?: readonly ChatMessage[] | undefined;
     contextLimitTokens?: number | undefined;
     operation?: OperationLedger | undefined;
@@ -71,6 +73,7 @@ export async function summarizeForSessionCompact(
     signal: opts.signal,
     ...(opts.sourceMessages ? { sourceMessages: opts.sourceMessages } : {}),
     ...(opts.baseRequest ? { baseRequest: opts.baseRequest } : {}),
+    ...(opts.requestSettings ? { requestSettings: opts.requestSettings } : {}),
     ...(opts.history ? { history: opts.history } : {}),
     ...(opts.contextLimitTokens !== undefined
       ? { contextLimitTokens: opts.contextLimitTokens }
@@ -95,6 +98,7 @@ interface RunSessionCompactionOptions {
   readonly provider: ProviderId | undefined;
   readonly model: string | undefined;
   readonly successfulRequest?: SuccessfulRequestSnapshot | undefined;
+  readonly requestSettings?: Omit<SuccessfulRequestSnapshot, "messages"> | undefined;
   readonly contextLimitTokens?: number | undefined;
   readonly requestTokensBefore?: number | undefined;
   readonly persist: boolean;
@@ -208,8 +212,9 @@ export async function runSessionCompaction(
         !forcePrefixSlice && replayPlan && !replayPlan.accounting.overLimit
           ? replayRequest
           : undefined;
-      const requestProvider = replay?.provider ?? options.provider;
-      const requestModel = replay?.model ?? options.model;
+      const requestSettings = successfulRequest ?? options.requestSettings;
+      const requestProvider = requestSettings?.provider ?? options.provider;
+      const requestModel = requestSettings?.model ?? options.model;
       return compactMessagesWithSummary(
         history,
         (prompt, stage) =>
@@ -219,6 +224,7 @@ export async function runSessionCompaction(
             signal: options.signal,
             purpose: options.purpose,
             stage: stage?.phase,
+            ...(requestSettings ? { requestSettings } : {}),
             ...(replay
               ? {
                   baseRequest: replay,
@@ -264,10 +270,13 @@ export async function runSessionCompaction(
           ...(replay ? { forceDirectSinglePass: true } : {}),
           ...(forcePrefixSlice ? { forcePrefixSlice: true } : {}),
           singlePassInputBudgetTokens:
-            calibratedCompactionSinglePassInputBudget(
-              contextLimitTokens,
-              requestProvider,
-              requestModel,
+            Math.max(
+              0,
+              calibratedCompactionSinglePassInputBudget(
+                contextLimitTokens,
+                requestProvider,
+                requestModel,
+              ) - buildContextBreakdown([], requestSettings?.tools).estimatedTotalTokens,
             ),
         },
       );

@@ -32,7 +32,7 @@ export function preparePagerDisplay(
   options: PreparePagerDisplayOptions,
 ): { readonly mode: "markdown" | "plain"; readonly lines: readonly PagerDisplayLine[] } {
   const mode = options.mode ?? "auto";
-  const body = options.body ?? "";
+  const body = sanitizeDisplayText(options.body ?? "");
   const width = Math.max(24, options.width);
 
   if (mode === "plain") {
