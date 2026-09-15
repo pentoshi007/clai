@@ -37,4 +37,23 @@ describe("patchOpenTuiTextContent", () => {
     expect((sanitized as StyledText).chunks.map((chunk) => chunk.text).join(""))
       .toBe("safe:");
   });
+
+  it("removes terminal sequences split across independently styled chunks", () => {
+    const chunks = [
+      ...stringToStyledText("✓ \x1b[").chunks,
+      ...stringToStyledText("32mtests\x1b]0;window").chunks,
+      ...stringToStyledText(" title\x07 passed\x1b[0m").chunks,
+    ];
+    const sanitized = sanitizeOpenTuiTextContent(new StyledText(chunks)) as StyledText;
+    expect(sanitized.chunks.map((chunk) => chunk.text).join("")).toBe("✓ tests passed");
+    expect(chunks.map((chunk) => chunk.text).join("")).toContain("\x1b[32m");
+  });
+
+  it("uses a safe placeholder for styled content containing only controls", () => {
+    const dirty = new StyledText([
+      ...stringToStyledText("\x1b[").chunks,
+      ...stringToStyledText("?1049l\x1b[2J").chunks,
+    ]);
+    expect(sanitizeOpenTuiTextContent(dirty)).toBe(" ");
+  });
 });

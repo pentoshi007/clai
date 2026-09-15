@@ -72,6 +72,18 @@ describe("looksLikeMarkdown", () => {
 });
 
 describe("preparePagerDisplay", () => {
+  it.each(["plain", "auto", "force"] as const)("sanitizes terminal output before %s layout", (mode) => {
+    const prep = preparePagerDisplay({
+      body: "\x1b[?1049l\x1b[2J\x1b[H\x1b[32m✓ tests passed\x1b[0m\r\nplain\x00 text\x1b_PNG payload\x1b\\\n\x1b[31",
+      width: 24,
+      mode,
+    });
+    const plain = prep.lines.map((line) => line.plain).join("\n");
+    expect(plain).toContain("✓ tests passed");
+    expect(plain).toContain("plain text");
+    expect(plain).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f-\x9f]|1049|PNG|\[31/);
+  });
+
   it("force-renders markdown without throwing", () => {
     const body = formatShortcutsReference();
     const prep = preparePagerDisplay({

@@ -26,8 +26,12 @@ async function main(): Promise<SpikeResult> {
     const { runDiffCardOverflowSpike } = await import("./diff-card-overflow.spike.js");
     return runDiffCardOverflowSpike();
   }
+  if (kind === "pager-live") {
+    const { runPagerLiveSpike } = await import("./pager-live.spike.js");
+    return runPagerLiveSpike();
+  }
   throw new Error(
-    `Unknown spike "${kind}". Use: viewport | markdown | shell | diff-card-overflow`,
+    `Unknown spike "${kind}". Use: viewport | markdown | shell | diff-card-overflow | pager-live`,
   );
 }
 
