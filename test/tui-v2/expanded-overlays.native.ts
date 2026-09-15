@@ -106,7 +106,7 @@ try {
       assert.equal(overlay.kind, "picker");
       if (overlay.kind === "picker") {
         assertPickerTitle(overlay.request.title, size.width - 2);
-        assert.deepEqual(overlay.request.options.map((option) => option.value), ["on", "off"]);
+        assert.deepEqual(overlay.request.options.map((option) => option.value), ["on", "off", "models"]);
       }
       const border = picker.split("\n").findIndex((row) => row.includes("╭"));
       assert.equal(border, size.marginY, picker);

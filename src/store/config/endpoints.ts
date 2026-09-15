@@ -17,6 +17,17 @@ export interface ProviderEndpoints {
   disabledUrls?: string[] | undefined;
 }
 
+export interface SubagentModelEntry {
+  provider: string;
+  model: string;
+  disabled?: boolean | undefined;
+}
+
+export interface SubagentModelConfig {
+  entries: SubagentModelEntry[];
+  activeIndex: number;
+}
+
 export const MAX_PROVIDER_ENDPOINTS = 10;
 
 const endpointEnvVars: Partial<Record<ProviderId, string>> = {
@@ -50,6 +61,7 @@ export interface ClaiConfig {
   defaultModel: string;
   defaultMode: Mode;
   providerModels: Partial<Record<ProviderId, string>>;
+  subagentModels?: SubagentModelConfig | undefined;
   allowAlwaysTools: string[];
   pentestAuthorized: boolean;
   sandboxRoots: string[];
@@ -181,6 +193,14 @@ function cloneConfig(config: ClaiConfig): ClaiConfig {
     ...config,
     providerEndpoints,
     providerModels: { ...config.providerModels },
+    ...(config.subagentModels
+      ? {
+          subagentModels: {
+            entries: config.subagentModels.entries.map((entry) => ({ ...entry })),
+            activeIndex: config.subagentModels.activeIndex,
+          },
+        }
+      : {}),
     allowAlwaysTools: [...config.allowAlwaysTools],
     sandboxRoots: [...config.sandboxRoots],
     thinking: { ...config.thinking },
@@ -229,7 +249,7 @@ export function getConfig(): ClaiConfig {
   return cloneConfig(resolved);
 }
 
-function knownProviderId(
+export function knownProviderId(
   id: string | undefined,
   custom: readonly CustomProviderDef[] | undefined,
 ): id is ProviderId {
@@ -275,8 +295,17 @@ export function findCustomProviderDefSync(
 
 export function updateConfig(patch: Partial<ClaiConfig>): ClaiConfig {
   const next = { ...getConfig(), ...patch } satisfies ClaiConfig;
+  const unsetKeys: (keyof ClaiConfig)[] = [];
+  const nextRecord = next as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete nextRecord[key];
+      unsetKeys.push(key as keyof ClaiConfig);
+    }
+  }
   try {
     store.set(next);
+    for (const key of unsetKeys) store.delete(key);
     fixOwnerSync(store.path);
   } catch (err: any) {
     handlePermissionError(err);

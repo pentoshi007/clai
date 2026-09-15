@@ -921,4 +921,30 @@ describe("isolated read-only subagent worker", () => {
     expect(checkpoint?.finished).toBe(true);
   });
 
+  it("rotates the configured chain with per-route dialect and limit recomputation", async () => {
+    const routes = [
+      { provider: "openai" as const, model: "gpt-4.1" },
+      { provider: "anthropic" as const, model: "claude" },
+    ];
+    const requests: CompletionRequest[] = [];
+    const noteRoute = vi.fn();
+    vi.mocked(resolveToolDialect).mockImplementation((provider) => provider === "anthropic" ? "none" : "openai");
+    vi.mocked(modelContextWindow).mockImplementation((model) => model === "claude" ? 64_000 : 128_000);
+    vi.mocked(modelMaxOutputTokens).mockImplementation((provider, model) => model === "claude" ? 2048 : 4096);
+    vi.mocked(streamWithProvider).mockImplementation(async (request) => {
+      requests.push(request);
+      if (request.provider === "openai") throw new Error("provider timeout");
+      return { ...completion(), provider: request.provider!, model: request.model! };
+    });
+    await expect(runReadOnlySubagent({ ...input, modelChain: routes, noteRoute })).resolves.toBe(REPORT);
+    expect(requests.map((request) => [request.provider, request.model])).toEqual([
+      ["openai", "gpt-4.1"], ["openai", "gpt-4.1"], ["anthropic", "claude"],
+    ]);
+    expect(requests[2]!.tools).toBeUndefined();
+    expect(requests[2]!.messages[0]!.content).toContain("Available tool schemas");
+    expect(noteRoute).toHaveBeenCalledWith(routes[1]);
+    expect(modelContextWindow).toHaveBeenCalledWith("claude", "anthropic");
+    expect(modelMaxOutputTokens).toHaveBeenCalledWith("anthropic", "claude");
+  });
+
 });

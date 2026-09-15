@@ -21,6 +21,17 @@ const REQUEST: KeysEditorRequest = {
   activeIndex: 0,
 };
 
+const MODEL_REQUEST: KeysEditorRequest = {
+  provider: "subagents",
+  initialKeys: [
+    { id: "openai\u001fgpt-4.1", masked: "openai / gpt-4.1" },
+    { id: "anthropic\u001fclaude", masked: "anthropic / claude", disabled: true },
+  ],
+  activeIndex: 0,
+  itemLabel: "model",
+  addViaPicker: true,
+};
+
 function render(state: KeysPanelState = keysInitialState(REQUEST), request = REQUEST) {
   const frame = keysView({ ink, columns: 80, rows: 7, request, state });
   return { frame, rows: rowsOf(panelFrameRows(frame).rows) };
@@ -145,5 +156,26 @@ describe("keys keys", () => {
 
   it("leaves unknown chords to the router", () => {
     expect(press(keysInitialState(REQUEST), "ctrl+g").handled).toBe(false);
+  });
+
+  it("answers pick on the add row and keeps model rows read-only", () => {
+    let state = keysInitialState(MODEL_REQUEST);
+    expect(press(state, "enter", undefined, MODEL_REQUEST).state.editing).toBe(false);
+    state = press(state, "down", undefined, MODEL_REQUEST).state;
+    state = press(state, "down", undefined, MODEL_REQUEST).state;
+    const result = press(state, "enter", undefined, MODEL_REQUEST);
+    expect(result.effects[0]).toEqual({
+      kind: "keys",
+      answer: {
+        action: "pick",
+        rows: [
+          { slotId: "openai\u001fgpt-4.1", value: "openai / gpt-4.1", disabled: false },
+          { slotId: "anthropic\u001fclaude", value: "anthropic / claude", disabled: true },
+        ],
+        activeIndex: 0,
+      },
+    });
+    expect(render(state, MODEL_REQUEST).rows.join("\n")).toContain("openai / gpt-4.1");
+    expect(render(state, MODEL_REQUEST).frame.hints?.[0]).toBe("⏎ add");
   });
 });

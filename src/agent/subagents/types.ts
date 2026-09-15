@@ -1,4 +1,5 @@
 import type { ChatMessage, ProviderId, ToolCall } from "../../types.js";
+import type { SubagentModelRoute } from "./model-chain.js";
 
 export type SubagentStatus = "running" | "stopping" | "completed" | "partial" | "stopped" | "error";
 
@@ -19,6 +20,8 @@ export interface SubagentAssignment {
 }
 
 export interface SubagentRun extends SubagentAssignment {
+  readonly activeProvider?: ProviderId | undefined;
+  readonly activeModel?: string | undefined;
   readonly id: string;
   readonly parentSessionId: string;
   readonly attempt: number;
@@ -65,6 +68,8 @@ export interface SubagentWorkerInput {
   readonly checkpoint?: SubagentCheckpoint | undefined;
   readonly saveCheckpoint?: ((checkpoint: SubagentCheckpoint) => void) | undefined;
   readonly saveSummary?: ((report: string) => void) | undefined;
+  readonly modelChain?: readonly SubagentModelRoute[] | undefined;
+  readonly noteRoute?: ((route: SubagentModelRoute) => void) | undefined;
   readonly emit: (event: {
     kind: SubagentEvent["kind"];
     text: string;

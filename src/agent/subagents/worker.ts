@@ -3,6 +3,7 @@ import { resolveToolDialect } from "../../llm/capability/tool-dialect.js";
 import { modelContextWindow, modelMaxOutputTokens } from "../../llm/context-windows.js";
 import { lowestReasoningPreference } from "../../llm/lowest-reasoning.js";
 import { streamWithProvider } from "../../llm/router.js";
+import { markStreamEmittedBytes } from "../../llm/stream-progress.js";
 import { withSessionAffinity } from "../../llm/session-affinity.js";
 import { SUBAGENT_LIMITS } from "../../store/subagents.js";
 import { runToolCall } from "../../tools/registry.js";
@@ -11,6 +12,11 @@ import { estimateMessagesTokens, estimateToolSchemaTokens, RESERVED_OUTPUT_TOKEN
 import { looksLikeTruncatedToolCall, parseAllToolCalls } from "../tool-call-parser.js";
 import { boundedOutput, executeReadOnlyCall, prepareReadOnlyCall, READ_ONLY_TOOLS } from "./read-only-tools.js";
 import { subagentReportStatus } from "./report.js";
+import {
+  adaptSubagentHistory,
+  runSubagentModelRotation,
+  type SubagentModelRoute,
+} from "./model-chain.js";
 import type { SubagentFollowup, SubagentWorker, SubagentWorkerInput } from "./types.js";
 
 const SYSTEM_PREFIX = `You are an isolated read-only context gatherer. Your only job is to gather comprehensive context and report it. You must never create, modify, or delete any project or work file, or delegate to anyone. No write, terminal, batch, approval, or delegation tool exists for you; the shell fallback is read-only search and inspection only and rejects every modifying command.
@@ -72,28 +78,59 @@ function followupMessage(followup: SubagentFollowup): ChatMessage {
   return { role: "user", content: `Parent follow-up for this assignment. Reuse relevant retained evidence and complete this request without unrelated research.\n${JSON.stringify(followup)}` };
 }
 
-async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, followup }: SubagentWorkerInput, signal: AbortSignal): Promise<string> {
+async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, followup, modelChain, noteRoute }: SubagentWorkerInput, signal: AbortSignal): Promise<string> {
   signal.throwIfAborted();
   const root = await realpath(run.cwd);
   if (!(await stat(root)).isDirectory()) throw new Error("Assigned cwd is not a directory");
-  const native = checkpoint?.nativeTools ?? (resolveToolDialect(run.provider, run.model) !== "none");
+  const candidates: SubagentModelRoute[] = modelChain?.length
+    ? [...modelChain]
+    : [{ provider: run.provider, model: run.model }];
   const tools = structuredClone(READ_ONLY_TOOLS);
-  const messages: ChatMessage[] = checkpoint ? structuredClone([...checkpoint.messages]) : [
-    { role: "system", content: SYSTEM_PREFIX + (native ? "" : `\n${FENCED_PROTOCOL}\nAvailable tool schemas:\n${JSON.stringify(tools)}`) },
-    { role: "user", content: JSON.stringify({ task: run.prompt, context: run.context ?? "", cwd: root }) },
-  ];
-  const contextLimit = modelContextWindow(run.model, run.provider);
-  const outputLimit = modelMaxOutputTokens(run.provider, run.model) ?? RESERVED_OUTPUT_TOKENS;
-  const compactionReserve = Math.min(4096, outputLimit, Math.floor(contextLimit / 8));
-  const contextMargin = Math.min(2048, Math.floor(contextLimit / 16));
-  const schemaTokens = native ? estimateToolSchemaTokens(tools) : 0;
-  const estimate = (): number => estimateMessagesTokens(messages) + schemaTokens;
-  const researchLimit = contextLimit - 2 * compactionReserve - contextMargin * 2;
+  let native = checkpoint?.nativeTools ?? (resolveToolDialect(candidates[0]!.provider, candidates[0]!.model) !== "none");
+  const messages: ChatMessage[] = checkpoint ? structuredClone([...checkpoint.messages]) : [];
+  let contextLimit = 0;
+  let outputLimit = RESERVED_OUTPUT_TOKENS;
+  let compactionReserve = 0;
+  let contextMargin = 0;
+  let schemaTokens = 0;
+  let researchLimit = 0;
+  let activeRouteIndex = 0;
   let reportReason = checkpoint?.reportReason;
   let pending = checkpoint?.pending ? structuredClone(checkpoint.pending) : undefined;
   const followupUpdate = followup ?? checkpoint?.pendingFollowup;
   let pendingFollowup = followupUpdate ? { ...run.followup, ...followupUpdate } : !checkpoint ? run.followup : undefined;
   const currentFollowup = run.followup ?? pendingFollowup;
+  const systemMessage = (routeNative: boolean): ChatMessage => ({
+    role: "system",
+    content: SYSTEM_PREFIX + (routeNative ? "" : `\n${FENCED_PROTOCOL}\nAvailable tool schemas:\n${JSON.stringify(tools)}`),
+  });
+  const prepareRoute = (route: SubagentModelRoute, index: number): void => {
+    const routeNative = checkpoint?.nativeTools !== undefined && !modelChain?.length && index === 0
+      ? checkpoint.nativeTools
+      : resolveToolDialect(route.provider, route.model) !== "none";
+    if (!messages.length) {
+      native = routeNative;
+      messages.push(
+        systemMessage(native),
+        { role: "user", content: JSON.stringify({ task: run.prompt, context: run.context ?? "", cwd: root }) },
+      );
+    } else if (native !== routeNative) {
+      messages.splice(0, messages.length, ...adaptSubagentHistory(messages, native, routeNative));
+      native = routeNative;
+      if (messages[0]?.role === "system") messages[0] = systemMessage(native);
+      if (pending) pending = { ...pending, native };
+    }
+    activeRouteIndex = index;
+    contextLimit = modelContextWindow(route.model, route.provider);
+    outputLimit = modelMaxOutputTokens(route.provider, route.model) ?? RESERVED_OUTPUT_TOKENS;
+    compactionReserve = Math.min(4096, outputLimit, Math.floor(contextLimit / 8));
+    contextMargin = Math.min(2048, Math.floor(contextLimit / 16));
+    schemaTokens = native ? estimateToolSchemaTokens(tools) : 0;
+    researchLimit = contextLimit - 2 * compactionReserve - contextMargin * 2;
+    noteRoute?.(route);
+  };
+  prepareRoute(candidates[0]!, 0);
+  const estimate = (): number => estimateMessagesTokens(messages) + schemaTokens;
   const save = (finished = false): void => saveCheckpoint?.({ messages, nativeTools: native, reportReason, pending, pendingFollowup, finished });
   const synthesize = (reason: string): void => {
     if (reportReason) return;
@@ -125,7 +162,7 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
           const safe = await prepareReadOnlyCall(root, call);
           result = await settleOperation(signal, () => executeReadOnlyCall(root, safe, runToolCall, {
             signal, sessionId: `${run.parentSessionId}:subagent:${run.id}`,
-            llmProvider: run.provider, llmModel: run.model,
+            llmProvider: candidates[activeRouteIndex]!.provider, llmModel: candidates[activeRouteIndex]!.model,
           }));
         } catch (error) {
           signal.throwIfAborted();
@@ -151,28 +188,52 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
       save();
     }
     if (estimate() + compactionReserve >= researchLimit) synthesize("model context window requires compaction");
-    const inputTokens = estimate();
-    if (inputTokens + compactionReserve + contextMargin > contextLimit) throw new Error("Incomplete report: request context budget exhausted");
-    const responseLimit = reportReason ? contextLimit - contextMargin : researchLimit;
-    const maxTokens = Math.min(outputLimit, responseLimit - inputTokens);
-    let streamedBytes = 0;
-    let responseOpen = true;
-    const completion = await settleOperation(signal, () => streamWithProvider({
-      provider: run.provider, model: run.model, messages: messages.slice(), maxTokens, signal,
-      thinking: lowestReasoningPreference(run.provider, run.model),
-      allowModelFallback: false, preferModelFallback: false,
-      ...(native ? { tools, toolChoice: "auto" as const, parallelToolCalls: true } : {}),
-    }, (text) => {
-      if (signal.aborted || !responseOpen) return;
-      streamedBytes += Buffer.byteLength(text);
-      if (streamedBytes > MAX_RESPONSE_BYTES) throw new Error("Incomplete report: response exceeds the transport safety limit");
-    }, {
-      allowProviderFallback: false, adoptFallback: false, maxRetries: 0, retryRateLimits: false,
-      onStatus: (text) => { if (!signal.aborted && responseOpen) emit({ kind: "notice", text: boundedOutput(text) }); },
-    })).finally(() => { responseOpen = false; });
-    signal.throwIfAborted();
-    if (completion.provider !== run.provider || completion.model !== run.model) throw new Error("Incomplete report: provider route changed");
-    if (["error", "content_filter"].includes(completion.finishReason ?? "")) throw new Error("Incomplete report: provider response failed");
+    const completion = (await settleOperation(signal, () => runSubagentModelRotation({
+      candidates,
+      signal,
+      startIndex: activeRouteIndex,
+      attemptsPerCandidate: modelChain?.length ? 2 : 1,
+      onRoute: prepareRoute,
+      onSwitch: (error, route) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        emit({ kind: "notice", text: boundedOutput(`switching subagent model → ${route.provider}/${route.model} (${reason})`) });
+      },
+      stream: async (route) => {
+        signal.throwIfAborted();
+        prepareRoute(route, candidates.indexOf(route));
+        if (estimate() + compactionReserve >= researchLimit) synthesize("model context window requires compaction");
+        const inputTokens = estimate();
+        if (inputTokens + compactionReserve + contextMargin > contextLimit) throw new Error("Incomplete report: request context budget exhausted");
+        const responseLimit = reportReason ? contextLimit - contextMargin : researchLimit;
+        const maxTokens = Math.min(outputLimit, responseLimit - inputTokens);
+        let streamedBytes = 0;
+        let responseOpen = true;
+        try {
+          const value = await settleOperation(signal, () => streamWithProvider({
+            provider: route.provider, model: route.model, messages: messages.slice(), maxTokens, signal,
+            thinking: lowestReasoningPreference(route.provider, route.model),
+            allowModelFallback: false, preferModelFallback: false,
+            ...(native ? { tools, toolChoice: "auto" as const, parallelToolCalls: true } : {}),
+          }, (text) => {
+            if (signal.aborted || !responseOpen) return;
+            streamedBytes += Buffer.byteLength(text);
+            if (streamedBytes > MAX_RESPONSE_BYTES) throw new Error("Incomplete report: response exceeds the transport safety limit");
+          }, {
+            allowProviderFallback: false, adoptFallback: false, maxRetries: 0, retryRateLimits: false,
+            onStatus: (text) => { if (!signal.aborted && responseOpen) emit({ kind: "notice", text: boundedOutput(text) }); },
+          }));
+          signal.throwIfAborted();
+          if (value.provider !== route.provider || value.model !== route.model) throw new Error("Incomplete report: provider route changed");
+          if (["error", "content_filter"].includes(value.finishReason ?? "")) throw new Error("Incomplete report: provider response failed");
+          if (Buffer.byteLength(value.text) > MAX_RESPONSE_BYTES || Buffer.byteLength(JSON.stringify([value.toolCalls, value.reasoningArtifacts, value.reasoningBlock])) > MAX_RESPONSE_BYTES) throw new Error("Incomplete report: response exceeds the transport safety limit");
+          return { value, streamedBytes };
+        } catch (error) {
+          throw markStreamEmittedBytes(error, streamedBytes);
+        } finally {
+          responseOpen = false;
+        }
+      },
+    }))).value;
     if (Buffer.byteLength(completion.text) > MAX_RESPONSE_BYTES || Buffer.byteLength(JSON.stringify([completion.toolCalls, completion.reasoningArtifacts, completion.reasoningBlock])) > MAX_RESPONSE_BYTES) throw new Error("Incomplete report: response exceeds the transport safety limit");
     if (completion.finishReason === "length") {
       messages.push({ role: "assistant", content: completion.text });

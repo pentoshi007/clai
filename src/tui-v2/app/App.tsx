@@ -18,6 +18,7 @@ import { PlanView } from "../components/plan/plan-view.js";
 import { OverlayHost } from "../components/overlay/overlay-host.js";
 import { QueuePanel } from "../components/queue/queue-panel.js";
 import { ResponderPanel } from "../components/jobs/jobs-panel.js";
+import { SubagentsPanel } from "../components/jobs/subagents-panel.js";
 import {
   chordFromKeyEvent,
   consumeCancellationKeyRepeat,
@@ -746,6 +747,17 @@ export function App(): ReactNode {
         />
 
         <ResponderPanel
+          services={services}
+          theme={theme}
+          width={contentInnerWidth}
+          blockingOverlay={
+            overlay.kind === "secret" ||
+            overlay.kind === "confirm" ||
+            overlay.kind === "scope-editor" ||
+            overlay.kind === "keys-editor"
+          }
+        />
+        <SubagentsPanel
           services={services}
           theme={theme}
           width={contentInnerWidth}

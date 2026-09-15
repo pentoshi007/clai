@@ -47,11 +47,23 @@ export function resolveProviderCategory(provider: ProviderId): ProviderCategory 
 
 import { setCustomDefaultModelResolver, setCustomProviderInfoResolver, setCustomProviderResolver, setEnvVarResolver } from "../llm/provider.js";
 import { setCustomProfileSpecResolver } from "../llm/custom-profile-resolver.js";
-import { ClaiConfig, findCustomProviderDefSync, getConfig, store, updateConfig } from "./config/endpoints.js";
+import { ClaiConfig, findCustomProviderDefSync, getConfig, knownProviderId, store, updateConfig } from "./config/endpoints.js";
 export { getProviderModel, hasExplicitConfigKey, setActiveSearchProvider, setDefaultMode, setDefaultProvider, setExaSearchType, setProviderModel, setThinking } from "./config/settings.js";
 export { MAX_PROVIDER_ENDPOINTS, appendProviderEndpoint, getActiveProviderEndpoint, getProviderEndpoints, setActiveProviderEndpoint, setProviderEndpointDisabled, setProviderEndpoints } from "./config/endpoints.js";
-export { findCustomProviderDefSync, getConfig, updateConfig };
-export type { ClaiConfig, LearnedRouteEntry, LearnedVisionEntry, ProviderEndpoints } from "./config/endpoints.js";
+export { findCustomProviderDefSync, getConfig, knownProviderId, updateConfig };
+export {
+  clearSubagentModelChain,
+  getSubagentModelChain,
+  setSubagentModelChain,
+} from "./config/subagent-models.js";
+export type {
+  ClaiConfig,
+  LearnedRouteEntry,
+  LearnedVisionEntry,
+  ProviderEndpoints,
+  SubagentModelConfig,
+  SubagentModelEntry,
+} from "./config/endpoints.js";
 setCustomProviderResolver((id: string): boolean => {
   const list = getConfig().customProviders ?? [];
   return list.some((d) => d.id === id);

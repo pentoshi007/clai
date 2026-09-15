@@ -11,7 +11,7 @@ export const slashCommands: SlashCommand[] = [
   { command: "/agent", description: "switch to agent mode" },
   {
     command: "/orchestrator",
-    usage: "[on|off|status]",
+    usage: "[on|off|status|models]",
     description: "show delegation status or turn subagents on/off",
   },
   {

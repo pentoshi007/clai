@@ -1,5 +1,7 @@
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
+import { getSubagentModelChain } from "../../store/config.js";
+import { openSubagentModelEditor } from "./subagent-models-editor.js";
 import type { PickerOption, PickerOptionTone } from "../rendering/picker-filter.js";
 import {
   createSubagentPagerSource,
@@ -7,7 +9,7 @@ import {
   watchSubagents,
 } from "../rendering/subagent-source.js";
 
-const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOptionTone }> = {
+export const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOptionTone }> = {
   running: { icon: "⟳", tone: "warn" },
   stopping: { icon: "⊗", tone: "warn" },
   completed: { icon: "✓", tone: "success" },
@@ -26,24 +28,36 @@ const ORCHESTRATION_EFFECT = {
 const orchestrationNotice = (enabled: boolean): string =>
   `Orchestration ${enabled ? "on" : "off"} · ${ORCHESTRATION_EFFECT[enabled ? "on" : "off"]}`;
 
-const orchestrationOptions = (enabled: boolean): PickerOption[] => [
-  {
-    value: "on",
-    label: "On",
-    icon: "●",
-    tone: "success",
-    active: enabled,
-    description: "let the main agent delegate independent read-only research",
-  },
-  {
-    value: "off",
-    label: "Off",
-    icon: "○",
-    tone: "muted",
-    active: !enabled,
-    description: "stop active children and block new starts and restarts",
-  },
-];
+const orchestrationOptions = (enabled: boolean): PickerOption[] => {
+  const chain = getSubagentModelChain();
+  return [
+    {
+      value: "on",
+      label: "On",
+      icon: "●",
+      tone: "success",
+      active: enabled,
+      description: "let the main agent delegate independent read-only research",
+    },
+    {
+      value: "off",
+      label: "Off",
+      icon: "○",
+      tone: "muted",
+      active: !enabled,
+      description: "stop active children and block new starts and restarts",
+    },
+    {
+      value: "models",
+      label: "Models…",
+      icon: "◇",
+      tone: "accent",
+      description: chain?.entries.length
+        ? `${chain.entries[chain.activeIndex]?.provider ?? chain.entries[0]!.provider}/${chain.entries[chain.activeIndex]?.model ?? chain.entries[0]!.model} · ${chain.entries.length - 1} fallback${chain.entries.length === 2 ? "" : "s"}`
+        : "not set · subagents follow the session route",
+    },
+  ];
+};
 
 function applyOrchestration(
   services: AppServices,
@@ -53,6 +67,25 @@ function applyOrchestration(
   if (services.session.subagents !== manager) return;
   services.session.setOrchestrationEnabled(enabled);
   services.session.notice("info", orchestrationNotice(enabled));
+}
+
+export function openSubagentRun(
+  services: AppServices,
+  manager: OrchestrationManager,
+  id: string,
+): boolean {
+  const run = manager.get(id);
+  if (!run) {
+    services.session.notice("warn", `Unknown subagent: ${id}`);
+    return false;
+  }
+  return services.overlay.openPager(
+    `${run.title} · ${id}`,
+    formatSubagentRun(run),
+    createSubagentPagerSource(manager, id),
+    undefined,
+    "force",
+  );
 }
 
 export function handleOrchestration(services: AppServices, invocation: CommandInvocation): void {
@@ -66,8 +99,12 @@ export function handleOrchestration(services: AppServices, invocation: CommandIn
     services.session.notice("info", orchestrationNotice(manager.enabled));
     return;
   }
+  if (action === "models") {
+    void openSubagentModelEditor(services);
+    return;
+  }
   if (action !== "") {
-    services.session.notice("warn", "usage: /orchestrator [on|off|status]");
+    services.session.notice("warn", "usage: /orchestrator [on|off|status|models]");
     return;
   }
   services.overlay.openPicker(
@@ -79,7 +116,8 @@ export function handleOrchestration(services: AppServices, invocation: CommandIn
     },
     (value) => {
       services.overlay.close();
-      applyOrchestration(services, manager, value === "on");
+      if (value === "models") void openSubagentModelEditor(services);
+      else applyOrchestration(services, manager, value === "on");
     },
   );
 }
@@ -111,20 +149,6 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
     return;
   }
 
-  const openRun = (id: string): boolean => {
-    const run = manager.get(id);
-    if (!run) {
-      services.session.notice("warn", `Unknown subagent: ${id}`);
-      return false;
-    }
-    return services.overlay.openPager(
-      `${run.title} · ${id}`,
-      formatSubagentRun(run),
-      createSubagentPagerSource(manager, id),
-      undefined,
-      "force",
-    );
-  };
   if (args[0] === "main") return;
   let selectedId = "main";
   const options = (): PickerOption[] => [
@@ -147,11 +171,11 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
     else {
       selectedId = id;
       services.overlay.replacePickerOptions(options());
-      openRun(id);
+      openSubagentRun(services, manager, id);
     }
   };
   const opened = args[0]
-    ? openRun(args[0])
+    ? openSubagentRun(services, manager, args[0])
     : services.overlay.openPicker({ title: "Agents", twoLine: true, searchDescription: true, options: options() }, select);
   if (!opened) return;
 

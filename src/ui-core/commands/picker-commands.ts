@@ -105,9 +105,9 @@ export async function handleModel(
   );
 }
 
-const CATALOG_SEPARATOR = "\u001f";
+export const CATALOG_SEPARATOR = "\u001f";
 
-interface CatalogEntry {
+export interface CatalogEntry {
   readonly provider: ProviderId;
   readonly model: string;
   readonly live: boolean;
@@ -132,7 +132,7 @@ async function configuredProviderIds(): Promise<ProviderId[]> {
   return configured.filter((provider): provider is ProviderId => Boolean(provider));
 }
 
-async function collectAllModels(): Promise<{
+export async function collectAllModels(): Promise<{
   entries: CatalogEntry[];
   providers: number;
   liveProviders: number;

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { isValidSubagentParentId, restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../../store/subagents.js";
 import { subagentReportStatus } from "./report.js";
+import { resolveSubagentModelChain } from "./model-chain.js";
 import type { SubagentAssignment, SubagentCheckpoint, SubagentEvent, SubagentFollowup, SubagentRun, SubagentStore, SubagentWorker } from "./types.js";
 
 type Child = {
@@ -212,6 +213,13 @@ export class SubagentManager {
     child.controller = controller;
     inFlight.set(controller, fingerprint(child.assignment));
     const inputRun = this.snapshot(child.run);
+    const modelChain = resolveSubagentModelChain();
+    const noteRoute: Parameters<SubagentWorker>[0]["noteRoute"] = (route) => {
+      if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
+      if (child.run.activeProvider === route.provider && child.run.activeModel === route.model) return;
+      child.run = this.snapshot({ ...child.run, activeProvider: route.provider, activeModel: route.model, updatedAt: Date.now() });
+      this.changed(child, true);
+    };
     this.changed(child, true);
     const emit: Parameters<SubagentWorker>[0]["emit"] = (event) => {
       if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
@@ -236,6 +244,8 @@ export class SubagentManager {
       controller.signal.throwIfAborted();
       return this.workerContext.run(true, () => this.worker({
         run: inputRun, signal: controller.signal, emit, followup,
+        modelChain,
+        noteRoute,
         checkpoint: child.checkpoint ? structuredClone(child.checkpoint) : undefined,
         saveSummary: (report) => {
           if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
