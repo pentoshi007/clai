@@ -43,6 +43,7 @@ import {
 } from "./error-classification.js";
 import { authForSlot } from "./provider-selection.js";
 import { withRequestPurpose } from "../request-purpose.js";
+import { isolatedSessionRoute } from "../session-route.js";
 
 function failureReason(error: unknown): string {
   if (isRateLimited(error)) return "rate limited";
@@ -106,7 +107,11 @@ export async function runWithKeyRotation<T>(opts: {
     throw new Error("no API key configured");
   }
 
-  const fullPlan = buildKeyAttemptPlan(slots.length, multi.activeIndex).filter(
+  const sessionRoute = isolatedSessionRoute(providerId, model);
+  const pinnedKeyIndex = sessionRoute?.keyId
+    ? slots.findIndex((slot) => slot.id === sessionRoute.keyId && !slot.disabled)
+    : -1;
+  const fullPlan = buildKeyAttemptPlan(slots.length, pinnedKeyIndex >= 0 ? pinnedKeyIndex : multi.activeIndex).filter(
     (index) => !slots[index]!.disabled,
   );
   // large prompt again under a different credential.
@@ -117,6 +122,7 @@ export async function runWithKeyRotation<T>(opts: {
     );
   }
   const enabledCount = plan.length;
+  if (sessionRoute) sessionRoute.keyId = slots[plan[0]!]!.id;
   const multiKey = enabledCount > 1;
   const maxPerKey = singleDispatch
     ? 1
@@ -125,19 +131,22 @@ export async function runWithKeyRotation<T>(opts: {
   let serverAttempts = 0;
 
   const storedEndpoints =
-    providerUsesEndpoints(providerId) && !singleDispatch
+    providerUsesEndpoints(providerId) && (!singleDispatch || sessionRoute)
       ? getProviderEndpoints(providerId)
       : undefined;
   const endpointUrls = (storedEndpoints?.urls ?? []).filter(
     (url) => !(storedEndpoints?.disabledUrls ?? []).includes(url),
   );
-  const activeEndpointUrl = storedEndpoints?.urls[storedEndpoints.activeIndex];
+  const activeEndpointUrl = sessionRoute?.endpoint && endpointUrls.includes(sessionRoute.endpoint)
+    ? sessionRoute.endpoint
+    : storedEndpoints?.urls[storedEndpoints.activeIndex];
   const activeEndpointPos = activeEndpointUrl
     ? endpointUrls.indexOf(activeEndpointUrl)
     : -1;
   const endpointStart = activeEndpointPos >= 0 ? activeEndpointPos : 0;
   let endpointOffset = 0;
   const endpointCount = endpointUrls.length;
+  if (sessionRoute && endpointCount > 0) sessionRoute.endpoint = endpointUrls[endpointStart]!;
   const authForAttempt = (value: string | undefined): ProviderAuth => {
     if (endpointCount === 0) return authForSlot(providerId, value);
     const url = endpointUrls[(endpointStart + endpointOffset) % endpointCount]!;
@@ -191,10 +200,13 @@ export async function runWithKeyRotation<T>(opts: {
                 singleDispatch,
               ),
         );
-        if (multi.source !== "env" && multi.source !== "local") {
+        if (sessionRoute) {
+          sessionRoute.keyId = slot.id;
+          if (auth.baseUrl) sessionRoute.endpoint = auth.baseUrl;
+        } else if (multi.source !== "env" && multi.source !== "local") {
           void markProviderKeySuccess(providerId, keyIndex).catch(() => {});
         }
-        if (storedEndpoints && endpointCount > 0) {
+        if (!sessionRoute && storedEndpoints && endpointCount > 0) {
           const winningUrl =
             endpointUrls[(endpointStart + endpointOffset) % endpointCount]!;
           const storedIndex = storedEndpoints.urls.indexOf(winningUrl);
@@ -227,6 +239,8 @@ export async function runWithKeyRotation<T>(opts: {
         if (isKeyCircleStopError(error)) {
           throw error;
         }
+
+        if (singleDispatch) throw error;
 
         if (isImmediateKeySwitchError(error)) {
           if (endpointCount > 1 && endpointOffset + 1 < endpointCount) {

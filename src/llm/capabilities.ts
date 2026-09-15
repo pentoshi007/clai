@@ -38,11 +38,13 @@ import {
   providerModelCatalog,
   reasoningKey,
   reasoningUnsupportedModels,
+  resetReasoningKnowledge as resetReasoningKnowledgeFromState,
   visionSubstitutions,
   wireRejectionEfforts,
 } from "./capability/state.js";
 import { registerModelVisionCapability } from "./capability/vision-registry.js";
 import { resolveToolDialect } from "./capability/tool-dialect.js";
+import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 export { resolveToolDialect };
 
 export {
@@ -61,13 +63,71 @@ export {
 export { registerModelVisionCapability };
 export {
   reloadLearnedCapabilities,
-  resetReasoningKnowledge,
 } from "./capability/state.js";
+
+interface ScopedReasoningKnowledge {
+  reasoningUnsupported?: true;
+  reasoningMandatory?: true;
+  reasoningObserved?: true;
+  acceptedEfforts?: readonly string[];
+  displayEfforts?: readonly string[] | undefined;
+  declaredSupport?: boolean | undefined;
+}
+
+const scopedReasoningKnowledge = new Map<string, ScopedReasoningKnowledge>();
+const MAX_SCOPED_REASONING_ROUTES = 512;
+
+function scopedReasoningKey(provider: ProviderId, model: string): string | undefined {
+  const scope = currentIsolatedSessionAffinity();
+  return scope ? `${scope}\u0000${reasoningKey(provider, model)}` : undefined;
+}
+
+function scopedKnowledge(
+  provider: ProviderId,
+  model: string,
+  create = true,
+): ScopedReasoningKnowledge | undefined {
+  const key = scopedReasoningKey(provider, model);
+  if (!key) return undefined;
+  let knowledge = scopedReasoningKnowledge.get(key);
+  if (!knowledge && create) {
+    loadLearnedCapabilities();
+    const route = reasoningKey(provider, model);
+    const efforts = wireRejectionEfforts.get(route);
+    knowledge = {
+      ...(reasoningUnsupportedModels.has(route) ? { reasoningUnsupported: true } : {}),
+      ...(mandatoryReasoningRoutes.has(route) ? { reasoningMandatory: true } : {}),
+      ...(observedReasoningModels.has(route) ? { reasoningObserved: true } : {}),
+      ...(efforts?.length ? { acceptedEfforts: [...efforts] } : {}),
+      displayEfforts: modelReasoningEfforts(provider, model) ?? endpointAcceptedEfforts(provider),
+      declaredSupport: declaredThinkingSupport(provider, model),
+    };
+    scopedReasoningKnowledge.set(key, knowledge);
+    while (scopedReasoningKnowledge.size > MAX_SCOPED_REASONING_ROUTES) {
+      scopedReasoningKnowledge.delete(scopedReasoningKnowledge.keys().next().value!);
+    }
+  }
+  if (knowledge) {
+    scopedReasoningKnowledge.delete(key);
+    scopedReasoningKnowledge.set(key, knowledge);
+  }
+  return knowledge;
+}
+
+export function resetReasoningKnowledge(): void {
+  scopedReasoningKnowledge.clear();
+  resetReasoningKnowledgeFromState();
+}
 
 export function markReasoningUnsupported(
   provider: ProviderId,
   model: string,
 ): void {
+  const scoped = scopedKnowledge(provider, model, true);
+  if (scoped) {
+    scoped.reasoningUnsupported = true;
+    return;
+  }
   const key = reasoningKey(provider, model);
   reasoningUnsupportedModels.add(key);
   const dialect = routeControlDialect(key) ?? UNATTRIBUTED_CONTROL_DIALECT;
@@ -89,6 +149,8 @@ export function isReasoningUnsupported(
   model: string,
 ): boolean {
   loadLearnedCapabilities();
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped) return scoped.reasoningUnsupported === true;
   const key = reasoningKey(provider, model);
   if (!reasoningUnsupportedModels.has(key)) return false;
   if (negativeLearnedUnderAnotherDialect(key)) {
@@ -133,6 +195,11 @@ export function registerWireRejectionEfforts(
   efforts: readonly string[],
 ): void {
   if (!model.trim() || efforts.length === 0) return;
+  const scoped = scopedKnowledge(provider, model, true);
+  if (scoped) {
+    scoped.acceptedEfforts = [...efforts];
+    return;
+  }
   wireRejectionEfforts.set(reasoningKey(provider, model), [...efforts]);
   registerRouteAcceptedEfforts(provider, model, efforts);
   persistLearnedRoute(reasoningKey(provider, model), {
@@ -176,6 +243,13 @@ export function markReasoningMandatory(
   model: string,
 ): void {
   if (!model.trim()) return;
+  const scoped = scopedKnowledge(provider, model, true);
+  if (scoped) {
+    scoped.reasoningMandatory = true;
+    delete scoped.reasoningUnsupported;
+    scoped.reasoningObserved = true;
+    return;
+  }
   const key = reasoningKey(provider, model);
   mandatoryReasoningRoutes.add(key);
   reasoningUnsupportedModels.delete(key);
@@ -188,6 +262,8 @@ export function routeReasoningIsMandatory(
   provider: ProviderId,
   model: string,
 ): boolean {
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped) return scoped.reasoningMandatory === true;
   return mandatoryReasoningRoutes.has(reasoningKey(provider, model));
 }
 
@@ -195,14 +271,43 @@ export function learnedRouteEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped) return scoped.acceptedEfforts;
   const efforts = wireRejectionEfforts.get(reasoningKey(provider, model));
   return efforts?.length ? efforts : undefined;
+}
+
+export function scopedRuntimeReasoningEffortsKnown(
+  provider: ProviderId,
+  model: string,
+): boolean | undefined {
+  const key = scopedReasoningKey(provider, model);
+  if (!key) return undefined;
+  return Boolean(scopedReasoningKnowledge.get(key)?.acceptedEfforts?.length);
+}
+
+export function learnModelReasoningSupport(
+  provider: ProviderId,
+  model: string,
+): void {
+  if (!model.trim()) return;
+  const scoped = scopedKnowledge(provider, model, true);
+  if (scoped) {
+    scoped.reasoningObserved = true;
+    return;
+  }
+  registerModelReasoningSupport(provider, model, true);
 }
 
 export function clearReasoningRejection(
   provider: ProviderId,
   model: string,
 ): void {
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped) {
+    delete scoped.reasoningUnsupported;
+    return;
+  }
   const key = reasoningKey(provider, model);
   reasoningUnsupportedModels.delete(key);
   clearPersistedLearnedRouteReasoning(key);
@@ -222,6 +327,11 @@ export function learnModelEmitsReasoning(
   model: string,
 ): void {
   if (!model.trim()) return;
+  const scoped = scopedKnowledge(provider, model, true);
+  if (scoped) {
+    scoped.reasoningObserved = true;
+    return;
+  }
   observedReasoningModels.add(reasoningKey(provider, model));
 }
 
@@ -232,9 +342,12 @@ export function modelReasoningEvidence(
   provider: ProviderId,
   model: string,
 ): ReasoningEvidence {
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped?.reasoningUnsupported) return "rejected";
+  if (scoped?.reasoningObserved) return "observed";
   const key = reasoningKey(provider, model);
-  if (reasoningUnsupportedModels.has(key)) return "rejected";
-  if (observedReasoningModels.has(key)) return "observed";
+  if (!scoped && reasoningUnsupportedModels.has(key)) return "rejected";
+  if (!scoped && observedReasoningModels.has(key)) return "observed";
   if (catalogReasoningSupport.has(key)) return "catalog";
   const facts = catalogFactsByRoute.get(key);
   if (facts?.reasoning?.supported !== undefined) return "catalog";
@@ -250,9 +363,17 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   loadLearnedCapabilities();
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped?.reasoningUnsupported) return false;
+  if (scoped?.reasoningObserved) return true;
   const key = reasoningKey(provider, model);
-  if (reasoningUnsupportedModels.has(key)) return false;
-  if (observedReasoningModels.has(key)) return true;
+  if (!scoped && reasoningUnsupportedModels.has(key)) return false;
+  if (!scoped && observedReasoningModels.has(key)) return true;
+  return scoped ? scoped.declaredSupport === true : declaredThinkingSupport(provider, model);
+}
+
+function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
+  const key = reasoningKey(provider, model);
   const declared = catalogReasoningSupport.get(key);
   if (declared !== undefined) return declared;
   const facts = catalogFactsByRoute.get(key);
@@ -269,6 +390,8 @@ export function displayReasoningEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  const scoped = scopedKnowledge(provider, model);
+  if (scoped) return scoped.acceptedEfforts ?? scoped.displayEfforts;
   return (
     modelReasoningEfforts(provider, model) ?? endpointAcceptedEfforts(provider)
   );
