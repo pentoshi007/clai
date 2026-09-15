@@ -61,6 +61,7 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "components", "pager", "pager.tsx"),
   join(tuiV2Root, "components", "pager", "pager-line.tsx"),
   join(tuiV2Root, "components", "jobs", "jobs-panel.tsx"),
+  join(tuiV2Root, "components", "jobs", "subagents-panel.tsx"),
   join(tuiV2Root, "components", "plan", "plan-view.tsx"),
   join(tuiV2Root, "components", "plan", "use-pane-presence.ts"),
   join(tuiV2Root, "components", "overlay", "overlay-host.tsx"),

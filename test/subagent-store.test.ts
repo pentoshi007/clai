@@ -20,6 +20,34 @@ function run(overrides: Partial<SubagentRun> = {}): SubagentRun {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("FileSubagentStore", () => {
+  it("round-trips the active model route and bounds malformed route fields", () => {
+    const { store } = fixture();
+    store.save(run({ activeProvider: "bynara", activeModel: "active-model" }));
+    expect(store.load("parent")[0]).toMatchObject({
+      activeProvider: "bynara",
+      activeModel: "active-model",
+    });
+
+    const bounded = sanitizeSubagentRun(
+      run({ activeProvider: "p".repeat(200), activeModel: "m".repeat(300) }),
+    );
+    expect(bounded.activeProvider).toHaveLength(128);
+    expect(bounded.activeModel).toHaveLength(256);
+
+    expect(
+      restoreSubagentRun(
+        run({ activeProvider: "p".repeat(129), activeModel: "m".repeat(257) }),
+        "parent",
+      ),
+    ).toBeUndefined();
+    expect(
+      restoreSubagentRun(
+        { ...run(), activeProvider: 42, activeModel: false },
+        "parent",
+      ),
+    ).toBeUndefined();
+  });
+
   it("round-trips generated session IDs without changing content redaction", () => {
     const { store } = fixture();
     const parentSessionId = "sess-mtwvqvsk-abcdef";

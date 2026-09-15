@@ -513,7 +513,7 @@ describe("classic command parity (W12)", () => {
     expect(opened.kind).toBe("picker");
     if (opened.kind === "picker") {
       expect(opened.request.title).toBe("Orchestration · on");
-      expect(opened.request.options.map((option) => option.value)).toEqual(["on", "off"]);
+      expect(opened.request.options.map((option) => option.value)).toEqual(["on", "off", "models"]);
     }
     services.overlay.selectPicker("off");
     expect(services.overlay.getState().kind).toBe("none");
@@ -525,6 +525,14 @@ describe("classic command parity (W12)", () => {
     expect(services.session.subagents.enabled).toBe(true);
     await run(services, "orchestration", "off");
     expect(services.session.subagents.enabled).toBe(false);
+    await run(services, "orchestration", "models");
+    const modelEditor = services.overlay.getState();
+    expect(modelEditor.kind).toBe("keys-editor");
+    if (modelEditor.kind === "keys-editor") {
+      expect(modelEditor.request.addViaPicker).toBe(true);
+      expect(modelEditor.request.itemLabel).toBe("model");
+    }
+    services.overlay.answerKeys(undefined);
   });
 
   spec(["agents"], "/agents opens the shared picker and returns to the main conversation", async () => {

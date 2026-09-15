@@ -15,18 +15,20 @@ function setup(manager = new SubagentManager("parent", { worker: async () => "Ve
     return { status: "completed" as "completed" | "aborted" | "error" };
   });
   const continueQueue = vi.fn(async () => { state.queued = false; });
+  const notifyState = vi.fn();
   const delivery = new SessionSubagents({
     sessionId: () => state.sessionId,
     isBusy: () => state.busy,
     hasQueuedWork: () => state.queued,
     continueQueue,
     runTurn,
+    notifyState,
   });
   deliveries.push(delivery);
   delivery.bind(manager);
   delivery.activate();
   const start = () => manager.start({ title: "Research", prompt: `Task ${manager.list().length}`, provider: "openai", model: "test", cwd: "/tmp" });
-  return { manager, delivery, state, runTurn, continueQueue, start };
+  return { manager, delivery, state, runTurn, continueQueue, notifyState, start };
 }
 
 afterEach(async () => {
@@ -36,6 +38,15 @@ afterEach(async () => {
 });
 
 describe("SessionSubagents", () => {
+  it("notifies state when bound and when the manager changes", async () => {
+    const { start, manager, notifyState } = setup();
+    expect(notifyState).toHaveBeenCalledOnce();
+    start();
+    expect(notifyState.mock.calls.length).toBeGreaterThan(1);
+    manager.setEnabled(false);
+    expect(notifyState.mock.calls.length).toBeGreaterThan(2);
+  });
+
   it("wakes once for a restored result and persists its acknowledgement", async () => {
     const save = vi.fn();
     const manager = new SubagentManager("parent", { store: { save, remove: () => undefined, load: () => [{

@@ -8,6 +8,7 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import type { KeysEditorRequest } from "../../../ui-core/controllers/overlay-controller.js";
 import { MAX_PROVIDER_KEYS } from "../../../llm/key-rotation.js";
+import { buildKeysPickerAnswer } from "./keys-modal-pick.js";
 
 export interface KeysModalProps {
   readonly services: AppServices;
@@ -35,6 +36,15 @@ function itemLabelOf(request: KeysEditorRequest): string {
 
 function rowsFromRequest(request: KeysEditorRequest): KeyRow[] {
   const label = itemLabelOf(request);
+  if (request.addViaPicker) {
+    return request.initialKeys.map((k) => ({
+      id: nextRowId++,
+      slotId: k.id,
+      placeholder: k.masked,
+      text: "",
+      disabled: k.disabled === true,
+    }));
+  }
   if (request.initialKeys.length === 0) {
     return [{ id: nextRowId++, placeholder: `paste ${label}`, text: "", disabled: false }];
   }
@@ -108,6 +118,10 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
   function addRow(): void {
     const synced = syncFromInputs();
+    if (request.addViaPicker) {
+      services.overlay.answerKeys(buildKeysPickerAnswer(synced, activeKeyIdx));
+      return;
+    }
     const nonEmpty = synced.filter(
       (r) => r.slotId || r.text.trim().length > 0,
     );
@@ -128,6 +142,12 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
   function removeRow(index: number): void {
     const synced = syncFromInputs();
+    if (request.addViaPicker && synced.length <= 1) {
+      setRows([]);
+      setFocusIdx(0);
+      setActiveKeyIdx(0);
+      return;
+    }
     if (synced.length <= 1) {
       const only = {
         id: nextRowId++,
@@ -166,7 +186,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     const synced = syncFromInputs();
     const out: { slotId?: string; value: string; disabled?: boolean }[] = [];
     for (const row of synced) {
-      const value = row.text.trim();
+      const value = request.addViaPicker ? row.text.trim() || row.placeholder : row.text.trim();
       if (row.slotId) {
         out.push({ slotId: row.slotId, value, disabled: row.disabled });
       } else if (value) {
@@ -203,9 +223,15 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       resetAll();
       return;
     }
-    if (chord === "ctrl+enter" || chord === "meta+enter" || chord === "enter") {
+    if (chord === "ctrl+enter" || chord === "meta+enter") {
       key.preventDefault();
       submit();
+      return;
+    }
+    if (chord === "enter") {
+      key.preventDefault();
+      if (request.addViaPicker) addRow();
+      else submit();
     }
   });
 
@@ -245,9 +271,11 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
       <text
         content={
-          existingCount > 0
-            ? `${existingCount} stored · type to replace a slot · + adds another (max ${MAX_PROVIDER_KEYS})${showActiveToggle ? " · ★ = active" : ""}`
-            : `Nothing stored yet · paste one or more ${itemLabelPlural} (max ${MAX_PROVIDER_KEYS})`
+          request.addViaPicker
+            ? `${existingCount} stored · choose models from the catalogue${showActiveToggle ? " · ★ = active" : ""}`
+            : existingCount > 0
+              ? `${existingCount} stored · type to replace a slot · + adds another (max ${MAX_PROVIDER_KEYS})${showActiveToggle ? " · ★ = active" : ""}`
+              : `Nothing stored yet · paste one or more ${itemLabelPlural} (max ${MAX_PROVIDER_KEYS})`
         }
         style={{ fg: theme.muted, attributes: TextAttributes.DIM }}
       />
@@ -287,24 +315,35 @@ export function KeysModal(props: KeysModalProps): ReactNode {
                 }}
               />
             ) : null}
-            <input
-              ref={(el: InputRenderable | null) => {
-                inputRefs.current.set(row.id, el);
-              }}
-              focused={focusIdx === index}
-              placeholder={row.placeholder}
-              onContentChange={() => {
-                const el = inputRefs.current.get(row.id);
-                updateRowText(row.id, el?.plainText ?? "");
-                setFocusIdx(index);
-              }}
-              backgroundColor={theme.background}
-              textColor={row.disabled ? theme.muted : theme.foreground}
-              focusedBackgroundColor={theme.background}
-              focusedTextColor={row.disabled ? theme.muted : theme.foreground}
-              cursorColor={ACCENT}
-              style={{ flexGrow: 1, minWidth: 20 }}
-            />
+            {request.addViaPicker ? (
+              <text
+                content={row.placeholder}
+                style={{
+                  fg: row.disabled ? theme.muted : theme.foreground,
+                  flexGrow: 1,
+                  minWidth: 20,
+                }}
+              />
+            ) : (
+              <input
+                ref={(el: InputRenderable | null) => {
+                  inputRefs.current.set(row.id, el);
+                }}
+                focused={focusIdx === index}
+                placeholder={row.placeholder}
+                onContentChange={() => {
+                  const el = inputRefs.current.get(row.id);
+                  updateRowText(row.id, el?.plainText ?? "");
+                  setFocusIdx(index);
+                }}
+                backgroundColor={theme.background}
+                textColor={row.disabled ? theme.muted : theme.foreground}
+                focusedBackgroundColor={theme.background}
+                focusedTextColor={row.disabled ? theme.muted : theme.foreground}
+                cursorColor={ACCENT}
+                style={{ flexGrow: 1, minWidth: 20 }}
+              />
+            )}
             <text content=" " />
             <text
               content=" ✕ "
@@ -322,7 +361,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
       <box style={{ flexDirection: "row", width: "100%" }}>
         <text
-          content=" + add "
+          content={request.addViaPicker ? " + add from models " : " + add "}
           style={{
             fg: theme.background,
             bg: ACCENT,
@@ -359,7 +398,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       </box>
 
       <text
-        content={`enter:save  ·  ^a / +:add  ·  ✕:remove${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
+        content={`${request.addViaPicker ? "enter:add from models  ·  ^a:add from models" : "enter:save  ·  ^a / +:add"}  ·  ✕:remove${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
         style={{ fg: theme.muted, attributes: TextAttributes.DIM }}
       />
     </box>

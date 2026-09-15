@@ -89,6 +89,13 @@ import {
 } from "./session-usage-ledger.js";
 import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
 
+export interface SubagentsRuntimeState {
+  readonly enabled: boolean;
+  readonly running: number;
+  readonly settled: number;
+  readonly total: number;
+}
+
 export interface SessionState {
   readonly sessionId: SessionId;
   readonly mode: Mode;
@@ -99,6 +106,7 @@ export interface SessionState {
   readonly historyLength: number;
   readonly queued: readonly string[];
   readonly responder: ResponderRuntimeState;
+  readonly subagents: SubagentsRuntimeState;
   readonly title: string | undefined;
   readonly contextSnapshot: ContextSnapshotV1 | undefined;
   readonly contextUsage: ContextUsageSnapshot | undefined;
@@ -225,6 +233,7 @@ export class SessionController implements Disposable {
         displayPrompt: null,
         materializeHistoryImages: false,
       }),
+      notifyState: () => this.notifyState(),
     });
     this.subagentDelivery.bind(this.subagentsValue);
     this.namer = new SessionNamer({
@@ -282,6 +291,13 @@ export class SessionController implements Disposable {
   getState(): SessionState {
     const { contextSnapshot, contextUsage, contextChip } =
       this.contextUsageProjection();
+    const subagentRuns = this.subagentsValue.list();
+    const subagents: SubagentsRuntimeState = {
+      enabled: this.subagentsValue.enabled,
+      running: subagentRuns.filter((run) => run.status === "running" || run.status === "stopping").length,
+      settled: subagentRuns.filter((run) => run.status !== "running" && run.status !== "stopping").length,
+      total: subagentRuns.length,
+    };
     return {
       sessionId: this.sessionIdValue,
       mode: this.mode,
@@ -294,6 +310,7 @@ export class SessionController implements Disposable {
       historyLength: this.history.length,
       queued: this.prompts.snapshot(),
       responder: this.responder?.getState() ?? IDLE_RESPONDER_STATE,
+      subagents,
       title: this.sessionTitle,
       contextSnapshot,
       contextUsage,

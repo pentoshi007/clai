@@ -66,6 +66,14 @@ export interface KeysKeyInput {
   readonly rows: number;
 }
 
+function pickerRows(state: KeysPanelState): readonly { slotId?: string; value: string; disabled?: boolean }[] {
+  return state.rows.map((row) => ({
+    ...(row.slotId ? { slotId: row.slotId } : {}),
+    value: row.value || row.masked || "",
+    disabled: row.disabled,
+  }));
+}
+
 export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
   const { state, chord } = input;
   const count = keysRowCount(state);
@@ -98,6 +106,13 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
     return handled({ ...state, cursor, top: window.top });
   }
   if (chord === "enter") {
+    if (input.request.addViaPicker) {
+      if (!isAddRow) return handled(state);
+      return handled(state, {
+        kind: "keys",
+        answer: { action: "pick", rows: pickerRows(state), activeIndex: state.activeIndex },
+      });
+    }
     return handled({ ...state, editing: true, draft: "" });
   }
   if (chord === "space") {
@@ -184,7 +199,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
           ink,
           width,
           columns: input.columns,
-          label: `    ${state.rows.length + 1}  ${editing ? state.draft : `+ add ${keysItemLabel(input.request)}`}`,
+          label: `    ${state.rows.length + 1}  ${editing ? state.draft : input.request.addViaPicker ? "+ add from models" : `+ add ${keysItemLabel(input.request)}`}`,
           active,
           labelToken: editing ? "foreground" : "muted",
         }),
@@ -214,7 +229,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
     title: `${input.request.provider} ${ink.glyphs.separator} ${keysItemLabel(input.request)}s`,
     counter: windowCounter(state.cursor, count),
     hints: [
-      `${ink.glyphs.enter} edit`,
+      `${ink.glyphs.enter} ${input.request.addViaPicker ? "add" : "edit"}`,
       "space set active",
       "d disable",
       "^D remove",

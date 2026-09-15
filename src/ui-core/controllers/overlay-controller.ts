@@ -58,6 +58,7 @@ export interface KeysEditorRequest {
   readonly activeIndex?: number | undefined;
   readonly itemLabel?: string | undefined;
   readonly heading?: string | undefined;
+  readonly addViaPicker?: boolean | undefined;
 }
 
 /**
@@ -66,7 +67,8 @@ export interface KeysEditorRequest {
  */
 export type KeysEditorAnswer =
   | { readonly action: "save"; readonly rows: readonly { slotId?: string; value: string; disabled?: boolean }[]; readonly activeIndex?: number | undefined }
-  | { readonly action: "reset" };
+  | { readonly action: "reset" }
+  | { readonly action: "pick"; readonly rows: readonly { slotId?: string; value: string; disabled?: boolean }[]; readonly activeIndex?: number | undefined };
 
 export interface PromptActionsRequest {
   readonly prompt: string;

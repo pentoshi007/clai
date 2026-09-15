@@ -6,6 +6,7 @@ interface SessionSubagentsDeps {
   readonly hasQueuedWork: () => boolean;
   readonly continueQueue: () => Promise<void>;
   readonly runTurn: (prompt: string) => Promise<{ readonly status: "completed" | "aborted" | "error" }>;
+  readonly notifyState: () => void;
 }
 
 export class SessionSubagents {
@@ -23,7 +24,13 @@ export class SessionSubagents {
     this.deactivate();
     this.unsubscribe?.();
     this.manager = manager;
-    this.unsubscribe = this.disposed ? undefined : manager.subscribe(() => this.scheduleWake());
+    this.deps.notifyState();
+    this.unsubscribe = this.disposed
+      ? undefined
+      : manager.subscribe(() => {
+          this.deps.notifyState();
+          this.scheduleWake();
+        });
   }
 
   activate(): void {

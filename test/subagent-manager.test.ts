@@ -43,6 +43,20 @@ describe("SubagentManager", () => {
     expect(() => new SubagentManager(id)).toThrow("Invalid parent session ID");
   });
 
+  it("passes model-chain inputs and publishes the active route", async () => {
+    const worker = vi.fn(async (input: SubagentWorkerInput) => {
+      expect(input.modelChain).toEqual([]);
+      input.noteRoute?.({ provider: "anthropic", model: "fallback" });
+      return "A report";
+    });
+    const manager = new SubagentManager("parent", { worker });
+    managers.push(manager);
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    const settled = await manager.wait(run.id);
+    expect(settled).toMatchObject({ activeProvider: "anthropic", activeModel: "fallback" });
+  });
+
   it("is on by default and limits active context gatherers to three", async () => {
     const { manager, work } = controlled();
     expect(manager.enabled).toBe(true);

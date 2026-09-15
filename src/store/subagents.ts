@@ -51,6 +51,10 @@ export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
     cwd: clean(run.cwd, 4096),
     provider: clean(run.provider, 128) as SubagentRun["provider"],
     model: clean(run.model, 256),
+    activeProvider: run.activeProvider === undefined
+      ? undefined
+      : clean(run.activeProvider, 128) as SubagentRun["activeProvider"],
+    activeModel: run.activeModel === undefined ? undefined : clean(run.activeModel, 256),
     report,
     lastKnownSummary,
     resultAcknowledged: run.resultAcknowledged,
@@ -91,6 +95,8 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
     && bounded(run.title, SUBAGENT_LIMITS.title) && !!run.title.trim() && bounded(run.prompt, SUBAGENT_LIMITS.prompt) && !!run.prompt.trim()
     && (run.context === undefined || bounded(run.context, SUBAGENT_LIMITS.context))
     && bounded(run.cwd, 4096) && !!run.cwd.trim() && bounded(run.provider, 128) && !!run.provider.trim() && bounded(run.model, 256) && !!run.model.trim()
+    && (run.activeProvider === undefined || (bounded(run.activeProvider, 128) && !!run.activeProvider.trim()))
+    && (run.activeModel === undefined || (bounded(run.activeModel, 256) && !!run.activeModel.trim()))
     && (run.report === undefined || (bounded(run.report, SUBAGENT_LIMITS.report) && Buffer.byteLength(run.report) <= SUBAGENT_LIMITS.report))
     && (run.error === undefined || bounded(run.error, 4096))
     && (run.resultAcknowledged === undefined || typeof run.resultAcknowledged === "boolean")
@@ -104,7 +110,8 @@ export function restoreSubagentRun(value: unknown, parentSessionId: string): Sub
   if (!validRun(value, parentSessionId)) return undefined;
   const run: SubagentRun = {
     id: value.id, parentSessionId, title: value.title, prompt: value.prompt, context: value.context, followup: value.followup,
-    cwd: value.cwd, provider: value.provider, model: value.model, attempt: value.attempt,
+    cwd: value.cwd, provider: value.provider, model: value.model,
+    activeProvider: value.activeProvider, activeModel: value.activeModel, attempt: value.attempt,
     status: value.status, createdAt: value.createdAt, updatedAt: value.updatedAt,
     events: value.events.map(({ sequence, kind, text, timestamp }) => ({ sequence, kind, text, timestamp })),
     report: value.report, error: value.error, lastKnownSummary: value.lastKnownSummary,
