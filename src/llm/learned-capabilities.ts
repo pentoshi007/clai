@@ -4,6 +4,7 @@ import {
   type LearnedRouteEntry,
   type LearnedVisionEntry,
 } from "../store/config.js";
+import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 
 export const UNATTRIBUTED_CONTROL_DIALECT = "unattributed";
 
@@ -114,12 +115,18 @@ export function persistLearnedRoute(
 
 const sessionRejectedFields = new Map<string, readonly string[]>();
 
+function scopedRejectedFieldsKey(key: string): string {
+  const scope = currentIsolatedSessionAffinity();
+  return scope ? `${scope}\u0000${key}` : key;
+}
+
 export function learnSessionRejectedField(key: string, field: string): void {
   const name = field.trim().toLowerCase();
   if (!name) return;
-  const existing = sessionRejectedFields.get(key) ?? [];
+  const scopedKey = scopedRejectedFieldsKey(key);
+  const existing = sessionRejectedFields.get(scopedKey) ?? [];
   if (existing.includes(name)) return;
-  sessionRejectedFields.set(key, [...existing, name]);
+  sessionRejectedFields.set(scopedKey, [...existing, name]);
 }
 
 export function clearSessionRejectedFields(): void {
@@ -196,7 +203,9 @@ export function learnedRouteRejectedFields(
   provider: string,
   model: string,
 ): readonly string[] {
-  return sessionRejectedFields.get(sessionRejectedFieldsKey(provider, model)) ?? [];
+  return sessionRejectedFields.get(
+    scopedRejectedFieldsKey(sessionRejectedFieldsKey(provider, model)),
+  ) ?? [];
 }
 
 function sessionRejectedFieldsKey(provider: string, model: string): string {

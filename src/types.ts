@@ -284,6 +284,7 @@ export interface SuccessfulRequestSnapshot {
   readonly messages: readonly ChatMessage[];
   readonly temperature?: number | undefined;
   readonly thinking?: ReasoningPreference | undefined;
+  readonly forceReasoningReplay?: boolean | undefined;
   readonly tools?: readonly ToolDefinition[] | undefined;
   readonly toolChoice?: ToolChoice | undefined;
   readonly parallelToolCalls?: boolean | undefined;

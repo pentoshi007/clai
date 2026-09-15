@@ -2,6 +2,7 @@ import { AGENT_INSTRUCTIONS_PREFIX } from "../../instructions/load.js";
 import { redactSecrets } from "../../llm/provider.js";
 import { hasReasoningMarker } from "../../llm/reasoning-marker.js";
 import { ACTIVE_SKILLS_PREFIX } from "../../skills/catalog.js";
+import { compactionSourcePrefixEnd } from "./compaction-source-prefix.js";
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import {
@@ -327,11 +328,27 @@ export async function compactMessagesWithSummary(
   let modelSummary: string;
   let strategy: CompactionStrategy;
   let retainedMiddle: ChatMessage[] = [];
+  const sourcePrefixEnd = options.singleAdmission && directSourceMessages
+    ? compactionSourcePrefixEnd({
+        messages: directSourceMessages,
+        start,
+        tailStart,
+        prompt: directPrompt,
+        budgetTokens: singlePassInputBudget,
+      })
+    : undefined;
   if (useDirectSinglePass && directSourceMessages) {
     strategy = "direct";
     modelSummary = await summarizeUsable(directPrompt, {
       phase: "single",
       sourceMessages: directSourceMessages,
+    });
+  } else if (sourcePrefixEnd !== undefined && directSourceMessages) {
+    strategy = "emergency_prefix_slice";
+    retainedMiddle = messages.slice(sourcePrefixEnd, tailStart);
+    modelSummary = await summarizeUsable(directPrompt, {
+      phase: "single",
+      sourceMessages: directSourceMessages.slice(0, sourcePrefixEnd),
     });
   } else if (chunks.length <= 1 && options.forcePrefixSlice !== true) {
     strategy = "single";

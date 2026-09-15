@@ -122,13 +122,16 @@ function compactionCompatibilityRequest(
     removed.push("tool controls");
   }
   let removedArtifacts = false;
+  let removedImages = false;
   const messages = request.messages.map((message) => {
+    if (message.images?.length) removedImages = true;
     if (message.reasoningBlock || message.reasoningArtifacts?.length) {
       removedArtifacts = true;
     }
     return cloneCompatibilityMessage(message);
   });
   if (removedArtifacts) removed.push("reasoning replay artifacts");
+  if (removedImages) removed.push("image payloads");
   if (removed.length === 0) return undefined;
 
   const {
@@ -218,6 +221,7 @@ export interface CompactionSummaryExecution {
   readonly signal?: AbortSignal | undefined;
   readonly sourceMessages?: readonly ChatMessage[] | undefined;
   readonly baseRequest?: SuccessfulRequestSnapshot | undefined;
+  readonly requestSettings?: Omit<SuccessfulRequestSnapshot, "messages"> | undefined;
   readonly history?: readonly ChatMessage[] | undefined;
   readonly contextLimitTokens?: number | undefined;
   readonly tools?: CompletionRequest["tools"] | undefined;
@@ -310,8 +314,8 @@ export function buildCompactionReplayMessages(
   userPrompt: string,
 ): ChatMessage[] {
   return [
-    ...baseRequest.messages.map(cloneTextOnlyMessage),
-    ...missingHistoryTail(baseRequest.messages, history),
+    ...baseRequest.messages.map((message) => structuredClone(message)),
+    ...missingHistoryTail(baseRequest.messages, history, false),
     { role: "user" as const, content: userPrompt },
   ];
 }
@@ -332,7 +336,9 @@ export async function executeCompactionSummary(
     }
     return execution.sourceMessages
       ? [
-          ...execution.sourceMessages.map(cloneTextOnlyMessage),
+          ...execution.sourceMessages.map((message) =>
+            execution.requestSettings ? structuredClone(message) : cloneTextOnlyMessage(message),
+          ),
           { role: "user" as const, content: userPrompt },
         ]
       : [
@@ -342,6 +348,7 @@ export async function executeCompactionSummary(
   };
 
   const baseRequest = execution.baseRequest;
+  const settings = baseRequest ?? execution.requestSettings;
   if (
     baseRequest &&
     (projectToolHistory(baseRequest.messages).changed ||
@@ -354,27 +361,30 @@ export async function executeCompactionSummary(
     );
   }
   const request: CompletionRequest = {
-    provider: baseRequest?.provider ?? execution.provider,
-    model: baseRequest?.model ?? execution.model,
+    provider: settings?.provider ?? execution.provider,
+    model: settings?.model ?? execution.model,
     purpose: "compaction",
     messages: attemptMessages(execution.prompt, execution.systemContent),
     maxTokens: execution.maxTokens,
-    ...(baseRequest
+    ...(settings
       ? {
-          ...(baseRequest.temperature !== undefined
-            ? { temperature: baseRequest.temperature }
+          ...(settings.temperature !== undefined
+            ? { temperature: settings.temperature }
             : {}),
-          ...(baseRequest.thinking
-            ? { thinking: structuredClone(baseRequest.thinking) }
+          ...(settings.thinking
+            ? { thinking: structuredClone(settings.thinking) }
             : {}),
-          ...(baseRequest.tools
-            ? { tools: baseRequest.tools.map((tool) => structuredClone(tool)) }
+          ...(settings.forceReasoningReplay !== undefined
+            ? { forceReasoningReplay: settings.forceReasoningReplay }
             : {}),
-          ...(baseRequest.toolChoice !== undefined
-            ? { toolChoice: structuredClone(baseRequest.toolChoice) }
+          ...(settings.tools
+            ? { tools: settings.tools.map((tool) => structuredClone(tool)) }
             : {}),
-          ...(baseRequest.parallelToolCalls !== undefined
-            ? { parallelToolCalls: baseRequest.parallelToolCalls }
+          ...(settings.toolChoice !== undefined
+            ? { toolChoice: structuredClone(settings.toolChoice) }
+            : {}),
+          ...(settings.parallelToolCalls !== undefined
+            ? { parallelToolCalls: settings.parallelToolCalls }
             : {}),
         }
       : {
