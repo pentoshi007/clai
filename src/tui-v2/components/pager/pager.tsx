@@ -31,6 +31,7 @@ import {
   extractFsReadFileBody,
   stripPagerLineGutters,
 } from "../../../ui-core/rendering/pager-source.js";
+import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import {
   PagerLine,
   bodyOnlyForCopy,
@@ -152,27 +153,19 @@ export function Pager(props: PagerProps): ReactNode {
   const syntaxCarry = useMemo(() => emptyCarry(), [displayBody, pathForHighlight]);
 
   useEffect(() => {
+    setFollowing(canFollow);
     if (!source) {
       setDisplayBody(body);
       setArtifactPage(undefined);
       return;
     }
+    if (canFollow) return;
     let active = true;
     setPageBusy(true);
-    const growing = source.isGrowing?.() ?? canFollow;
-    const first = canFollow && source.readTail ? source.readTail() : source.readPage(0);
-    void first.then((page) => {
+    void source.readPage(0).then((page) => {
       if (!active) return;
       setArtifactPage(page);
       setDisplayBody(page.body || "(no output yet)");
-      setFollowing(growing);
-      if (canFollow) {
-        queueMicrotask(() => {
-          const box = scrollRef.current;
-          if (!box) return;
-          box.scrollTo(Math.max(0, box.scrollHeight - (box.viewport?.height ?? 0)));
-        });
-      }
     }).catch((error) => {
       if (active) setExportError(error instanceof Error ? error.message : String(error));
     }).finally(() => { if (active) setPageBusy(false); });
@@ -184,29 +177,25 @@ export function Pager(props: PagerProps): ReactNode {
     let active = true;
     let reading = false;
     let pending = false;
+    const box = scrollRef.current;
+    if (box) box.scrollTo(Math.max(0, box.scrollHeight - box.viewport.height));
     const pull = (): void => {
-      if (!active || !source.readTail) return;
+      if (!active) return;
       if (reading) {
         pending = true;
         return;
       }
       reading = true;
-      const growing = source.isGrowing?.() ?? true;
-      void source
-        .readTail()
+      const page = source.readTail ? source.readTail() : source.readPage(0);
+      void page
         .then((page) => {
           if (!active) return;
           setArtifactPage(page);
           setDisplayBody(page.body || "(no output yet)");
-          setFollowing(growing);
-          queueMicrotask(() => {
-            const box = scrollRef.current;
-            if (!box) return;
-            box.scrollTo(Math.max(0, box.scrollHeight - (box.viewport?.height ?? 0)));
-            refreshScrollHint();
-          });
         })
-        .catch(() => undefined)
+        .catch((error) => {
+          if (active) setExportError(error instanceof Error ? error.message : String(error));
+        })
         .finally(() => {
           reading = false;
           if (pending) {
@@ -228,6 +217,7 @@ export function Pager(props: PagerProps): ReactNode {
     scroll: "top" | "bottom" = "top",
   ): Promise<void> {
     if (!source || pageBusy) return;
+    setFollowing(false);
     setPageBusy(true);
     try {
       const page = await source.readPage(offset);
@@ -266,7 +256,16 @@ export function Pager(props: PagerProps): ReactNode {
     if (!sb) return;
     sb.verticalScrollBar.visible = false;
     sb.horizontalScrollBar.visible = false;
-  }, [lines.length]);
+    sb.verticalScrollBar.on("change", refreshScrollHint);
+    sb.content.on("resize", refreshScrollHint);
+    sb.viewport.on("resize", refreshScrollHint);
+    refreshScrollHint();
+    return () => {
+      sb.verticalScrollBar.off("change", refreshScrollHint);
+      sb.content.off("resize", refreshScrollHint);
+      sb.viewport.off("resize", refreshScrollHint);
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasQuery || matches.length === 0) {
@@ -317,6 +316,7 @@ export function Pager(props: PagerProps): ReactNode {
 
   async function submitSearch(): Promise<void> {
     if (source && query.trim()) {
+      setFollowing(false);
       setPageBusy(true);
       try {
         const page = await source.search(query.trim(), artifactPage?.offset ?? 0);
@@ -437,6 +437,7 @@ export function Pager(props: PagerProps): ReactNode {
         scrollByRows(Math.max(1, Math.floor((sb?.viewport.height ?? 10) / 2)));
         break;
       case "pager.top":
+        setFollowing(false);
         if (source && artifactPage?.offset) {
           void loadArtifactPage(0, "top");
         } else {
@@ -575,11 +576,9 @@ export function Pager(props: PagerProps): ReactNode {
 
   const viewLabel = viewMode === "formatted" ? "fmt" : "raw";
   const growing = source?.isGrowing?.() ?? false;
-  const followLabel = following
-    ? "● following"
-    : growing
-      ? "❙❙ paused (running)"
-      : "finished";
+  const followLabel = growing
+    ? following ? "● following" : "❙❙ paused (running)"
+    : "finished";
   const footerLeft = exportError
     ? `export failed: ${exportError}`
     : statusFlash
@@ -716,7 +715,7 @@ export function Pager(props: PagerProps): ReactNode {
     ],
   );
 
-  const borderTitle = ` ${fitOneLine([title], Math.max(1, size.width - 4))} `;
+  const borderTitle = ` ${fitOneLine([sanitizeDisplayText(title)], Math.max(1, size.width - 4))} `;
 
   return (
     <box
@@ -802,7 +801,8 @@ export function Pager(props: PagerProps): ReactNode {
         viewportCulling
         scrollY
         scrollX={false}
-        stickyScroll={false}
+        stickyScroll={following}
+        stickyStart="bottom"
         scrollbarOptions={HIDDEN_SCROLLBARS}
         verticalScrollbarOptions={HIDDEN_SCROLLBARS}
         horizontalScrollbarOptions={HIDDEN_SCROLLBARS}
@@ -818,7 +818,10 @@ export function Pager(props: PagerProps): ReactNode {
           paddingRight: padding,
           paddingTop: 0,
         }}
-        onMouseScroll={() => refreshScrollHint()}
+        onMouseScroll={(event) => {
+          if (following && event.scroll?.direction === "up") setFollowing(false);
+          refreshScrollHint();
+        }}
       >
         {bodyRows}
       </scrollbox>

@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   clearReasoningUnsupported,
+  clearReasoningRejection,
   displayReasoningEfforts,
+  effectiveThinkingEffort,
   markReasoningUnsupported,
   registerModelReasoningSupport,
   registerRouteAcceptedEfforts,
+  registerWireRejectionEfforts,
   resetReasoningKnowledge,
 } from "../../src/llm/capabilities.js";
 import { withSessionAffinity } from "../../src/llm/session-affinity.js";
@@ -103,15 +106,18 @@ describe("session-scoped effort preflight", () => {
 
   it("climbs from none for subagent probes and settles the accepted floor", async () => {
     const { seen, probe } = prober(["low"]);
-    await runEffortPreflight(route({ requested: "none", purpose: undefined }), probe);
+    await inSession("parent-1:subagent:alpha", async () => {
+      await runEffortPreflight(route({ requested: "none", purpose: undefined }), probe);
+      expect(displayReasoningEfforts(PROVIDER, MODEL)).toEqual([
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ]);
+    });
     expect(seen).toEqual(["none", "low"]);
-    expect(displayReasoningEfforts(PROVIDER, MODEL)).toEqual([
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
+    expect(displayReasoningEfforts(PROVIDER, MODEL)).toBeUndefined();
   });
 
   it("never probes compaction or auxiliary requests", async () => {
@@ -166,18 +172,63 @@ describe("session-scoped effort preflight", () => {
     let parentKey = "";
     await inSession("parent-1:subagent:alpha", async () => {
       parentKey = effortPreflightKey(childRoute);
-      await runEffortPreflight(childRoute, prober(["none"]).probe);
+      await runEffortPreflight(childRoute, prober(["low"]).probe);
+      expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "none" })).toBe("low");
     });
 
-    const beta = prober(["none"]);
+    const beta = prober(["low"]);
     let siblingKey = "";
     await inSession("parent-1:subagent:beta", async () => {
       siblingKey = effortPreflightKey(childRoute);
       await runEffortPreflight(childRoute, beta.probe);
+      expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "none" })).toBe("low");
     });
 
     expect(siblingKey).toBe(parentKey);
     expect(beta.seen).toEqual([]);
+    await inSession("parent-1:subagent:alpha", async () => {
+      expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "none" })).toBe("low");
+    });
+  });
+
+  it("keeps child rejection and accepted-effort learning out of parent and sibling scopes", async () => {
+    const childRoute = route({ requested: "none", purpose: undefined });
+    await inSession("parent-2:subagent:alpha", async () => {
+      await runEffortPreflight(childRoute, prober(["low"]).probe);
+      expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" })).toBe("max");
+      markReasoningUnsupported(PROVIDER, MODEL);
+      expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" })).toBeUndefined();
+    });
+
+    expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" })).toBe("max");
+    await inSession("parent-2:subagent:beta", async () => {
+      expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" })).toBe("max");
+    });
+  });
+
+  it("does not let later parent learning change an active child's runtime baseline", async () => {
+    registerModelReasoningSupport(PROVIDER, MODEL, true);
+    registerRouteAcceptedEfforts(PROVIDER, MODEL, FULL_SCALE);
+    const child = "baseline-parent:subagent:one";
+    const requested = { enabled: true, effort: "max" as const };
+    expect(withSessionAffinity(child, () => effectiveThinkingEffort(PROVIDER, MODEL, requested))).toBe("max");
+    registerWireRejectionEfforts(PROVIDER, MODEL, ["low"]);
+    markReasoningUnsupported(PROVIDER, MODEL);
+    expect(effectiveThinkingEffort(PROVIDER, MODEL, requested)).toBeUndefined();
+    expect(withSessionAffinity(child, () => effectiveThinkingEffort(PROVIDER, MODEL, requested))).toBe("max");
+    withSessionAffinity(child, () => clearReasoningRejection(PROVIDER, MODEL));
+    expect(effectiveThinkingEffort(PROVIDER, MODEL, requested)).toBeUndefined();
+  });
+
+  it("keeps clearing a fresh child's rejection and auxiliary learning local", async () => {
+    registerModelReasoningSupport(PROVIDER, MODEL, true);
+    markReasoningUnsupported(PROVIDER, MODEL);
+    const child = "clear-parent:subagent:one";
+    withSessionAffinity(child, () => clearReasoningRejection(PROVIDER, MODEL));
+    expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" })).toBeUndefined();
+    expect(withSessionAffinity(child, () => effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" }))).toBe("max");
+    withSessionAffinity(`${child}:auxiliary`, () => markReasoningUnsupported(PROVIDER, MODEL));
+    expect(withSessionAffinity(child, () => effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "max" }))).toBe("max");
   });
 
   it("keeps turn and subagent probes independent", async () => {
