@@ -154,9 +154,7 @@ export function ThinkingBlock(props: {
     accent: theme.thinking,
     hover: theme.white,
   });
-  const headingAttributes = headingStyle.underline
-    ? TextAttributes.BOLD | TextAttributes.UNDERLINE
-    : TextAttributes.BOLD;
+  const headingAttributes = TextAttributes.BOLD;
 
   const onBodyScroll = (event: MouseEvent): void => {
     if (!event.scroll) return;

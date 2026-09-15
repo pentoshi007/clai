@@ -7,11 +7,10 @@ import {
 } from "../../src/agent/context-manager.js";
 import { reasoningArtifactTokensForMessage } from "../../src/llm/reasoning-artifacts.js";
 import {
-  compactedUsageSnapshot,
+  compactedContextSnapshot,
   estimatedContextSnapshot,
-  estimatedUsageSnapshot,
   recordContextUsageSnapshot,
-  resolveContextUsageSnapshot,
+  resolveContextSnapshot,
   type ContextUsageTarget,
 } from "../../src/app/controllers/session-context-usage.js";
 import { parseMetaUsage } from "../../src/llm/meta.js";
@@ -325,7 +324,7 @@ describe("exactness lifetime", () => {
     expect(next.exact).toBe(false);
   });
 
-  it("does not retain a legacy unknown-scope exact count after history grows", () => {
+  it("keeps a legacy estimate unchanged instead of re-estimating from history", () => {
     const previous = createContextSnapshot({
       contextTokens: 120_000,
       lastCompletionTokens: 900,
@@ -341,24 +340,12 @@ describe("exactness lifetime", () => {
       { role: "user", content: textOfTokens(150_000) },
     ];
 
-    const resolved = resolveContextUsageSnapshot(
-      target,
-      grown,
-      {
-        contextTokens: previous.contextTokens,
-        contextLimit: CONTEXT_LIMIT,
-        lastCompletionTokens: 900,
-        sessionPromptTokens: 120_000,
-        sessionCompletionTokens: 900,
-        exact: false,
-      },
-    )!;
+    const resolved = resolveContextSnapshot(target, previous);
 
     expect(estimateMessagesTokens(grown)).toBeGreaterThan(240_000);
-    expect(resolved.contextTokens).toBeGreaterThanOrEqual(
-      estimateMessagesTokens(grown),
-    );
-    expect(resolved.exact).toBe(false);
+    expect(resolved).toBe(previous);
+    expect(resolved?.contextTokens).toBe(120_000);
+    expect(resolved?.precision).toBe("estimate");
   });
 
   it("replaces an exact snapshot with a newer assembled-request estimate", () => {
@@ -433,7 +420,7 @@ describe("exactness lifetime", () => {
     });
   });
 
-  it("stops trusting a measurement taken on another route", () => {
+  it("keeps a provider-exact measurement when the route changes", () => {
     const previous = createContextSnapshot({
       contextTokens: 200_000,
       lastCompletionTokens: 100,
@@ -462,24 +449,34 @@ describe("exactness lifetime", () => {
     )!;
 
     expect(refreshed).toMatchObject({
-      contextTokens: 90_000,
-      scope: "assembled-request",
-      precision: "estimate",
+      contextTokens: 200_000,
+      scope: "provider-request",
+      precision: "provider-exact",
     });
   });
 
   it("uses reported after-tokens after compaction instead of the stale measurement", () => {
-    const previous = exactSnapshot();
+    const previous = createContextSnapshot({
+      contextTokens: 120_000,
+      lastCompletionTokens: 900,
+      sessionPromptTokens: 120_000,
+      sessionCompletionTokens: 900,
+      scope: "provider-request",
+      precision: "provider-exact",
+      limit: { source: "session-override", tokens: CONTEXT_LIMIT },
+      observedAt: 1,
+    });
 
-    const compacted = compactedUsageSnapshot(
+    const compacted = compactedContextSnapshot(
       target,
       previous,
       fixture.historySlice,
       18_000,
+      "message-history",
     );
 
     expect(compacted.contextTokens).toBe(18_000);
-    expect(compacted.exact).toBe(false);
+    expect(compacted.precision).toBe("estimate");
     expect(compacted.sessionPromptTokens).toBe(previous.sessionPromptTokens);
   });
 });

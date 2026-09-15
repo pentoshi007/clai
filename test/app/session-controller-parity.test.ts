@@ -157,16 +157,107 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(session.sessionId).not.toBe("sess-old");
   });
 
-  it("estimateContext reports message count", async () => {
+  it("estimateContext reports message count and only provider-reported tokens", async () => {
     const session = new SessionController({
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
     });
     await session.submit("hi");
-    const est = session.estimateContext();
-    expect(est.messages).toBe(2);
-    expect(est.tokens).toBeGreaterThan(0);
+    const before = session.estimateContext();
+    expect(before.messages).toBe(2);
+    expect(before.tokens).toBe(0);
+    session.recordTokenUsage(
+      { promptTokens: 1_234, completionTokens: 56, totalTokens: 1_290, exact: true },
+      "test-model",
+      "nvidia" as never,
+    );
+    expect(session.estimateContext().tokens).toBe(1_234);
+  });
+
+  it("keeps the provider-reported context across model switch, persist, and reopen", async () => {
+    const saved: Array<{
+      messages: readonly { role: string; content: string }[];
+      options: Parameters<PersistencePort["saveSession"]>[1];
+    }> = [];
+    const persistence: PersistencePort = {
+      async saveSession(messages, options) {
+        saved.push({
+          messages: messages.map((message) => ({ ...message })),
+          options: options ? { ...options } : undefined,
+        });
+      },
+      async loadPlan() {
+        return undefined;
+      },
+      async savePlan() {},
+      async deletePlan() {},
+    };
+    const reported = createContextSnapshot({
+      contextTokens: 200_000,
+      lastCompletionTokens: 100,
+      sessionPromptTokens: 200_000,
+      sessionCompletionTokens: 100,
+      scope: "provider-request",
+      precision: "provider-exact",
+      limit: { source: "session-override", tokens: 300_000 },
+      attempt: {
+        kind: "generation",
+        sequence: 1,
+        provider: "openai",
+        model: "gpt-5.4-mini",
+        mode: "stream",
+        reason: "initial",
+        outcome: "success",
+      },
+      observedAt: 1,
+    });
+    const session = new SessionController({
+      agent: fakeAgent(),
+      persistence,
+      emit: () => {},
+      sessionId: "sess-context-stability",
+      provider: "nvidia" as never,
+      model: "test-model",
+    });
+    session.loadHistory(
+      [
+        { role: "user", content: "resumed task" },
+        { role: "assistant", content: "resumed progress" },
+      ],
+      {
+        sessionId: "sess-context-stability",
+        contextUsage: {
+          contextTokens: 200_000,
+          contextLimit: 300_000,
+          exact: true,
+          contextSnapshot: reported,
+        },
+      },
+    );
+
+    session.setModel("other-model");
+    expect(session.getState().contextUsage?.contextTokens).toBe(200_000);
+    expect(session.getState().contextUsage?.exact).toBe(true);
+
+    await session.persistNow();
+    expect(saved[0]?.options?.contextUsage?.contextTokens).toBe(200_000);
+    expect(saved[0]?.options?.contextUsage?.exact).toBe(true);
+
+    const reopened = new SessionController({
+      agent: fakeAgent(),
+      persistence,
+      emit: () => {},
+      sessionId: "sess-context-stability",
+      provider: "nvidia" as never,
+      model: "test-model",
+    });
+    reopened.loadHistory(saved[0]?.messages as never, {
+      sessionId: "sess-context-stability",
+      contextUsage: saved[0]?.options?.contextUsage,
+    });
+    expect(reopened.getState().contextUsage?.contextTokens).toBe(200_000);
+    expect(reopened.getState().contextUsage?.exact).toBe(true);
   });
 
   it("waits for provider telemetry before displaying context", () => {

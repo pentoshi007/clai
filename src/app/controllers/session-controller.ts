@@ -7,7 +7,6 @@ import type {
   ToolResult,
 } from "../../types.js";
 import {
-  estimateMessagesTokens,
   type CompactResult,
 } from "../../agent/context-manager.js";
 import {
@@ -94,6 +93,7 @@ export interface SubagentsRuntimeState {
   readonly running: number;
   readonly settled: number;
   readonly total: number;
+  readonly pendingDelivery: number;
 }
 
 export interface SessionState {
@@ -297,6 +297,9 @@ export class SessionController implements Disposable {
       running: subagentRuns.filter((run) => run.status === "running" || run.status === "stopping").length,
       settled: subagentRuns.filter((run) => run.status !== "running" && run.status !== "stopping").length,
       total: subagentRuns.length,
+      pendingDelivery: subagentRuns.filter(
+        (run) => run.status !== "running" && run.status !== "stopping" && !run.resultAcknowledged,
+      ).length,
     };
     return {
       sessionId: this.sessionIdValue,
@@ -319,12 +322,7 @@ export class SessionController implements Disposable {
   }
 
   private contextUsageProjection(): ContextProjection {
-    return this.projectContext(
-      this.usageTarget,
-      this.history,
-      this.contextSnapshot,
-      () => this.contextTimestamp(),
-    );
+    return this.projectContext(this.usageTarget, this.contextSnapshot);
   }
 
   private get contextLimitTokens(): number | undefined {
@@ -349,12 +347,7 @@ export class SessionController implements Disposable {
   }
 
   private resolveContextSnapshot(): ContextSnapshotV1 | undefined {
-    return resolveSnapshot(
-      this.usageTarget,
-      this.history,
-      this.contextSnapshot,
-      () => this.contextTimestamp(),
-    );
+    return resolveSnapshot(this.usageTarget, this.contextSnapshot);
   }
 
   private requestScopedContextTokens(): number | undefined {
@@ -431,17 +424,6 @@ export class SessionController implements Disposable {
     }
   }
 
-  private refreshEstimatedContext(): void {
-    this.setContextSnapshot(
-      resolveSnapshot(
-        this.usageTarget,
-        this.history,
-        undefined,
-        () => this.contextTimestamp(),
-      ),
-    );
-  }
-
   get messages(): readonly ChatMessage[] {
     return this.history;
   }
@@ -454,7 +436,6 @@ export class SessionController implements Disposable {
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
     this.lastMainRequestSnapshot = undefined;
-    this.preserveCompactionEstimate = false;
     this.setContextSnapshot(this.resolveContextSnapshot());
     clearTextOnlyModels();
     void prefetchProviderCatalog(provider);
@@ -471,7 +452,6 @@ export class SessionController implements Disposable {
   setModel(model: string | undefined): void {
     this.model = model;
     this.lastMainRequestSnapshot = undefined;
-    this.preserveCompactionEstimate = false;
     this.setContextSnapshot(this.resolveContextSnapshot());
     clearTextOnlyModels();
     publishRouteReasoningVocabulary(this.provider, model);
@@ -521,7 +501,6 @@ export class SessionController implements Disposable {
       this.setContextSnapshot(restored);
     } else {
       this.setContextSnapshot(undefined);
-      this.refreshEstimatedContext();
     }
     if (options.sessionId) {
       const nextSessionId = asSessionId(options.sessionId);
@@ -644,7 +623,7 @@ export class SessionController implements Disposable {
     if (restored) {
       this.setContextSnapshot(restored);
     } else {
-      this.refreshEstimatedContext();
+      this.setContextSnapshot(undefined);
     }
     this.notifyState();
   }
@@ -787,7 +766,7 @@ export class SessionController implements Disposable {
     const snapshot = this.resolveContextSnapshot();
     return {
       messages: this.history.length,
-      tokens: snapshot?.contextTokens ?? estimateMessagesTokens(this.history),
+      tokens: snapshot?.contextTokens ?? 0,
     };
   }
 

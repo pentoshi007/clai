@@ -57,6 +57,10 @@ function activity(run: SubagentRun): string[] {
 
 const isLiveSubagentRun = (run: SubagentRun): boolean => run.status === "running" || run.status === "stopping";
 
+export function subagentsBarVisible(runs: readonly SubagentRun[]): boolean {
+  return runs.some((run) => isLiveSubagentRun(run) || !run.resultAcknowledged);
+}
+
 export function orderSubagentRuns(runs: readonly SubagentRun[]): readonly SubagentRun[] {
   const live = runs.filter(isLiveSubagentRun);
   const settled = runs.filter((run) => !isLiveSubagentRun(run)).sort((a, b) => b.updatedAt - a.updatedAt);

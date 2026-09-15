@@ -92,14 +92,12 @@ describe("thinking heading hover", () => {
   it("keeps the accent colour with no underline when idle", () => {
     expect(resolveThinkingHeadingStyle({ hovered: false, accent, hover })).toEqual({
       fg: accent,
-      underline: false,
     });
   });
 
-  it("highlights and underlines on hover to signal it is clickable", () => {
+  it("highlights on hover without underlining", () => {
     expect(resolveThinkingHeadingStyle({ hovered: true, accent, hover })).toEqual({
       fg: hover,
-      underline: true,
     });
   });
 });

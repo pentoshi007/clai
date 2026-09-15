@@ -57,3 +57,15 @@ export function subagentLineSpans(line: string): readonly SubagentSpan[] | undef
   if (/^\s*(?:No result recorded|No activity recorded)/.test(line)) return [{ text: line, fg: "muted" }];
   return undefined;
 }
+
+export type SubagentSpanPaint = (span: SubagentSpan) => string;
+
+export function styleSubagentBody(body: string, paint: SubagentSpanPaint): string {
+  return body
+    .split("\n")
+    .map((line) => {
+      const spans = subagentLineSpans(line);
+      return spans ? spans.map(paint).join("") : line;
+    })
+    .join("\n");
+}

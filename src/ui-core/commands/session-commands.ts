@@ -187,9 +187,11 @@ export function handleContext(services: AppServices): void {
   const legacy = state.contextUsage;
   const snapshot = state.contextSnapshot;
   const exact = legacy?.exact === true;
-  const usedLabel = exact
-    ? `${tokens.toLocaleString()} tokens`
-    : `~${tokens.toLocaleString()} tokens (estimate)`;
+  const usedLabel = !legacy || tokens <= 0
+    ? "size unknown until the model reports usage"
+    : exact
+      ? `${tokens.toLocaleString()} tokens`
+      : `~${tokens.toLocaleString()} tokens (estimate)`;
   const sessionBits =
     legacy && (legacy.sessionPromptTokens > 0 || legacy.sessionCompletionTokens > 0)
       ? ` · session in ${legacy.sessionPromptTokens.toLocaleString()} / out ${legacy.sessionCompletionTokens.toLocaleString()}`

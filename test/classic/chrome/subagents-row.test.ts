@@ -11,13 +11,15 @@ import { displayWidth } from "../../../src/classic/render/measure.js";
 const ink = createInkTheme({ themeHint: "dark", colorMode: "none", unicode: true });
 
 function state(overrides: Partial<SubagentsRuntimeState> = {}): SubagentsRuntimeState {
-  return { enabled: true, running: 0, settled: 0, total: 0, ...overrides };
+  return { enabled: true, running: 0, settled: 0, total: 0, pendingDelivery: 0, ...overrides };
 }
 
 describe("subagents strip", () => {
   it("hides itself until there is a subagent run", () => {
     expect(subagentsVisible(state())).toBe(false);
-    expect(subagentsVisible(state({ total: 1, settled: 1 }))).toBe(true);
+    expect(subagentsVisible(state({ total: 1, settled: 1 }))).toBe(false);
+    expect(subagentsVisible(state({ total: 1, settled: 1, pendingDelivery: 1 }))).toBe(true);
+    expect(subagentsVisible(state({ total: 1, running: 1 }))).toBe(true);
   });
 
   it("reports running and settled work with the inspector hint", () => {

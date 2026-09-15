@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { subagentLineSpans } from "../../src/ui-core/rendering/subagent-presentation.js";
+import { subagentLineSpans, styleSubagentBody } from "../../src/ui-core/rendering/subagent-presentation.js";
 
 describe("subagent semantic colors", () => {
   it.each([
@@ -47,5 +47,24 @@ describe("subagent semantic colors", () => {
   it("leaves report markdown and unclassified prose to the existing renderer", () => {
     expect(subagentLineSpans("A **verified** finding with `code`.")).toBeUndefined();
     expect(subagentLineSpans("const value = 1;")).toBeUndefined();
+  });
+});
+
+describe("styleSubagentBody", () => {
+  const paint = (span: { text: string; fg: string }): string => `\x1b[${span.fg === "muted" ? 37 : 31}m${span.text}\x1b[0m`;
+
+  it("paints classified lines and leaves unclassified lines untouched", () => {
+    const body = ["→ fs.read src/index.ts (offset=4)", "plain prose line"].join("\n");
+    expect(styleSubagentBody(body, paint)).toBe(
+      [
+        "\x1b[31m→ \x1b[0m\x1b[31mfs.read\x1b[0m\x1b[37m src/index.ts (offset=4)\x1b[0m",
+        "plain prose line",
+      ].join("\n"),
+    );
+  });
+
+  it("preserves the copy text of every line", () => {
+    const body = ["## Activity", "✓ fs.read src/index.ts", "running · attempt 1 · openai/test", "Status: complete"].join("\n");
+    expect(styleSubagentBody(body, paint).replace(/\x1b\[\d+m|\x1b\[0m/g, "")).toBe(body);
   });
 });
