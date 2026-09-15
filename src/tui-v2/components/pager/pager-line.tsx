@@ -272,12 +272,13 @@ export function PagerLine(props: {
   }
 
   const baseFg = baseLineFg(line, theme);
+  const wrapProps = props.subagent ? { wrapMode: "word" as const } : {};
   if (!hasQuery || matches.length === 0) {
     return (
       <text
         id={`pager-line-${index}`}
         selectable
-        wrapMode="word"
+        {...wrapProps}
         style={{
           width: "100%",
           fg: baseFg,
@@ -294,7 +295,7 @@ export function PagerLine(props: {
     <text
       id={`pager-line-${index}`}
       selectable
-      wrapMode="word"
+      {...wrapProps}
       style={{
         width: "100%",
         fg: baseFg,
