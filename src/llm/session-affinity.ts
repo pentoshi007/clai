@@ -12,3 +12,8 @@ export function withSessionAffinity<T>(
 export function currentSessionAffinity(): string | undefined {
   return sessionAffinityStorage.getStore();
 }
+
+export function currentIsolatedSessionAffinity(): string | undefined {
+  const session = currentSessionAffinity();
+  return session && (session.includes(":subagent:") || session.endsWith(":auxiliary")) ? session : undefined;
+}
