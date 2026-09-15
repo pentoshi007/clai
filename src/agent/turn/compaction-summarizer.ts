@@ -28,6 +28,7 @@ export interface CompactionSummarizerPorts {
   readonly state: CompactionExecutionState;
   readonly currentContextLimitTokens: () => number | undefined;
   readonly toolsForSourceMessages: () => ToolDefinition[] | undefined;
+  readonly requestSettings?: (() => Omit<SuccessfulRequestSnapshot, "messages">) | undefined;
   readonly writeDelta: (id: string, text: string, replace?: boolean) => void;
   readonly onUsage?: ((completion: CompletionResult) => void) | undefined;
   readonly execute?: typeof executeCompactionSummary | undefined;
@@ -49,6 +50,7 @@ const summarize = async (
     const replay = ports.state.replaySnapshot;
     const contextLimitTokens = ports.currentContextLimitTokens();
     const execute = ports.execute ?? executeCompactionSummary;
+    const requestSettings = ports.requestSettings?.();
     return execute({
       provider: ports.provider,
       model: ports.model,
@@ -56,6 +58,7 @@ const summarize = async (
       prompt: summaryPrompt,
       maxTokens,
       signal: ports.signal,
+      ...(requestSettings ? { requestSettings } : {}),
       ...(replay
         ? {
             baseRequest: replay,

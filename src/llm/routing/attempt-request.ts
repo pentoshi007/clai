@@ -43,6 +43,9 @@ export function successfulRequestSnapshot(
       ? { temperature: request.temperature }
       : {}),
     ...(request.thinking ? { thinking: request.thinking } : {}),
+    ...(request.forceReasoningReplay !== undefined
+      ? { forceReasoningReplay: request.forceReasoningReplay }
+      : {}),
     ...(request.tools ? { tools: request.tools } : {}),
     ...(request.toolChoice !== undefined
       ? { toolChoice: request.toolChoice }
