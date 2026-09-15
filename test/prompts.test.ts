@@ -173,6 +173,12 @@ describe("prompt rendering", () => {
     expect(d).toMatch(/not as vague activity labels or hardcoded commands/i);
     expect(d).toMatch(/acceptanceCriteria/i);
     expect(d).toMatch(/branch conditions/i);
+    expect(d).toMatch(/cold-start agent/i);
+    expect(d).toMatch(/SCOPE AND NON-GOALS/i);
+    expect(d).toMatch(/Software\/build roadmap coverage/i);
+    expect(d).toMatch(/Pentest\/VAPT\/red-team roadmap coverage/i);
+    expect(d).toMatch(/attack-surface ledger/i);
+    expect(d).toMatch(/residual\/untested/i);
   });
 
   it("renderRequestEnvironmentContext includes NO PLAN EXISTS when plan is omitted", () => {

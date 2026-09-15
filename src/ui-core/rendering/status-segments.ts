@@ -98,7 +98,7 @@ export function cwdViewportWidth(
 }
 
 export function formatActivity(activity: string | undefined, maxLen: number): string {
-  let base = (activity ?? "waiting").replace(/\s+/g, " ").trim() || "working";
+  let base = (activity ?? "working").replace(/\s+/g, " ").trim() || "working";
   base = base.replace(/^[⏳·•\s]+/, "").replace(/\n/g, " ").trim();
   if (/\/output\b|open full output|Ctrl\+O or|full output saved|\.clai\/outputs/i.test(base)) {
     base = "tool finished";
@@ -107,6 +107,7 @@ export function formatActivity(activity: string | undefined, maxLen: number): st
     const toolish = base.match(/^[\w.-]+/);
     base = toolish ? toolish[0]! : `${base.slice(0, Math.max(0, maxLen - 1))}…`;
   }
+  if (base.length <= 1) base = "working";
   if (/rate limited|retrying in/i.test(base) && !base.startsWith("⏳")) {
     base = `⏳ ${base}`;
   }

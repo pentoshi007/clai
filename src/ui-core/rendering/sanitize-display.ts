@@ -1,8 +1,8 @@
 
 const ANSI_ESCAPE_RE =
-  /(?:\x1b\]|\x9d)[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?|(?:\x1b[PX^_]|[\x90\x98\x9e\x9f])[^\x1b\x9c]*(?:\x1b\\|\x9c)?|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]?|\x1b(?:[ -/]+[0-~]|[@-Z\\-_a-z0-9=><~])/g;
+  /(?:\u{1b}\]|\x9d)[^\x07\u{1b}\x9c]*(?:\x07|\u{1b}\\|\x9c)?|(?:\u{1b}[PX^_]|[\x90\x98\x9e\x9f])[^\u{1b}\x9c]*(?:\u{1b}\\|\x9c)?|(?:\u{1b}\[|\x9b)[0-?]*[ -/]*[@-~]?|\u{1b}(?:[ -/]+[0-~]|[@-Z\\-_a-z0-9=><~])/gu;
 const CONTROL_CHARS_RE = /[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]/g;
-const DISPLAY_CONTROLS_RE = new RegExp(`${ANSI_ESCAPE_RE.source}|${CONTROL_CHARS_RE.source}`, "g");
+const DISPLAY_CONTROLS_RE = new RegExp(`${ANSI_ESCAPE_RE.source}|${CONTROL_CHARS_RE.source}`, "gu");
 
 export function stripAnsiSequences(text: string): string {
   return text.replace(ANSI_ESCAPE_RE, "");
