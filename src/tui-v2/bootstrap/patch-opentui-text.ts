@@ -1,6 +1,6 @@
 
-import { TextRenderable, stringToStyledText, StyledText } from "@opentui/core";
-import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
+import { TextBuffer, TextRenderable, stringToStyledText, StyledText } from "@opentui/core";
+import { sanitizeDisplayText, sanitizeDisplayTextChunks } from "../../ui-core/rendering/sanitize-display.js";
 
 let patched = false;
 
@@ -21,15 +21,8 @@ export function sanitizeOpenTuiTextContent(value: unknown): string | StyledText 
   }
   if (isStyledText(value)) {
     if (!value.chunks || value.chunks.length === 0) return " ";
-    let changed = false;
-    const chunks = value.chunks.map((chunk) => {
-      const sanitized = sanitizeDisplayText(chunk.text);
-      if (sanitized === chunk.text) return chunk;
-      changed = true;
-      return { ...chunk, text: sanitized };
-    });
-    if (chunks.every((chunk) => chunk.text.length === 0)) return " ";
-    return changed ? new StyledText(chunks) : value;
+    const sanitized = sanitizeStyledText(value);
+    return sanitized.chunks.length === 0 ? " " : sanitized;
   }
   try {
     const sanitized = sanitizeDisplayText(String(value));
@@ -39,9 +32,21 @@ export function sanitizeOpenTuiTextContent(value: unknown): string | StyledText 
   }
 }
 
+function sanitizeStyledText(value: StyledText): StyledText {
+  const chunks = sanitizeDisplayTextChunks(value.chunks).filter((chunk) => chunk.text.length > 0);
+  return chunks.length === value.chunks.length && chunks.every((chunk, index) => chunk === value.chunks[index])
+    ? value
+    : new StyledText(chunks);
+}
+
 export function patchOpenTuiTextContent(): void {
   if (patched) return;
   patched = true;
+
+  const setStyledText = TextBuffer.prototype.setStyledText;
+  TextBuffer.prototype.setStyledText = function (value: StyledText): void {
+    setStyledText.call(this, sanitizeStyledText(value));
+  };
 
   const proto = TextRenderable.prototype as unknown as {
     content: unknown;
