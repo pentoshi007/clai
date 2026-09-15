@@ -131,6 +131,15 @@ describe("status rows", () => {
     expect(busy).not.toContain("/ commands");
   });
 
+  it("shows a complete working label when activity is missing or truncated to one character", () => {
+    const missing = plainText(statusRows(base(120, { running: true }))[0]!);
+    const truncated = plainText(statusRows(base(120, { running: true, activity: "i" }))[0]!);
+    expect(missing).toContain("working");
+    expect(missing).not.toContain("waiting");
+    expect(truncated).toContain("working");
+    expect(truncated).not.toMatch(/⠋ i(?: ·| )/);
+  });
+
   it("never renders MCP live state or tool counts in the status row", () => {
     const injected = {
       ...base(120),

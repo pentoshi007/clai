@@ -206,6 +206,9 @@ describe("plan.create draft revision replaces obsolete tasks", () => {
       { planVersion: 2 },
     );
     expect(prompt).toMatch(/COMPLETE intended/i);
+    expect(prompt).toMatch(/self-contained after approval and context compaction/i);
+    expect(prompt).toMatch(/observable acceptanceCriteria/i);
+    expect(prompt).toMatch(/attack-surface ledger/i);
     expect(prompt).toMatch(/Omit obsolete/i);
     expect(prompt).toMatch(/decisively|decisive/i);
     expect(prompt).toMatch(/frontend-only/i);
