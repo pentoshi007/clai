@@ -717,6 +717,10 @@ export async function runAgentTurn(
         runningJobs: () => jobManager.getRunningJobs(session.sessionId),
         recentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
         requestSnapshot: () => loop.lastSuccessfulRequestSnapshot,
+        thinking: () =>
+          loop.retryWithoutThinking && config.thinking
+            ? { ...config.thinking, enabled: false, effort: "low" }
+            : config.thinking,
         clearRequestSnapshot: () => {
           loop.lastSuccessfulRequestSnapshot = undefined;
         },

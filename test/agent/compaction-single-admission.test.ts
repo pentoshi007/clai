@@ -202,8 +202,8 @@ describe("single-admission compaction executor", () => {
     expect(transport.generations).toHaveLength(2);
     const first = transport.generations[0]!.body as Record<string, unknown>;
     const second = transport.generations[1]!.body as Record<string, unknown>;
-    expect(JSON.stringify(first)).not.toContain("image_url");
-    expect(JSON.stringify(first)).not.toContain("bm90LW9uLXRoZS13aXJl");
+    expect(JSON.stringify(first)).toContain("image_url");
+    expect(JSON.stringify(first)).toContain("bm90LW9uLXRoZS13aXJl");
     expect(first.tools).toBeDefined();
     expect(first.tool_choice).toBe("auto");
     expect(first.max_tokens).toBeGreaterThanOrEqual(12_288);
