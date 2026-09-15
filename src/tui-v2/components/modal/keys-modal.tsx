@@ -8,7 +8,7 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import type { KeysEditorRequest } from "../../../ui-core/controllers/overlay-controller.js";
 import { MAX_PROVIDER_KEYS } from "../../../llm/key-rotation.js";
-import { buildKeysPickerAnswer } from "./keys-modal-pick.js";
+import { buildKeysPickerAnswer, keysAddAtCapacity } from "./keys-modal-pick.js";
 
 export interface KeysModalProps {
   readonly services: AppServices;
@@ -118,18 +118,16 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
   function addRow(): void {
     const synced = syncFromInputs();
-    if (request.addViaPicker) {
-      services.overlay.answerKeys(buildKeysPickerAnswer(synced, activeKeyIdx));
-      return;
-    }
-    const nonEmpty = synced.filter(
-      (r) => r.slotId || r.text.trim().length > 0,
-    );
-    if (nonEmpty.length >= MAX_PROVIDER_KEYS) {
+    const maxRows = request.maxRows ?? MAX_PROVIDER_KEYS;
+    if (keysAddAtCapacity(synced, maxRows)) {
       services.session.notice(
         "warn",
-        `at most ${MAX_PROVIDER_KEYS} ${itemLabelPlural} per provider`,
+        `at most ${maxRows} ${itemLabelPlural} per provider`,
       );
+      return;
+    }
+    if (request.addViaPicker) {
+      services.overlay.answerKeys(buildKeysPickerAnswer(synced, activeKeyIdx));
       return;
     }
     const next = [

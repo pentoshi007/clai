@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SubagentEvent, SubagentRun } from "../../../src/agent/subagents/types.js";
-import { createSubagentPagerSource, formatSubagentRun } from "../../../src/ui-core/rendering/subagent-source.js";
+import { createSubagentPagerSource, formatSubagentRun, orderSubagentRuns } from "../../../src/ui-core/rendering/subagent-source.js";
 
 function run(events: Array<Pick<SubagentEvent, "kind" | "text">> = [], extra: Partial<SubagentRun> = {}): SubagentRun {
   return {
@@ -85,6 +85,30 @@ describe("subagent presentation", () => {
     expect(text).not.toContain("Status: complete");
     expect(text).toContain("retained evidence; exact checkpoint unavailable");
     expect(formatSubagentRun(run([], { recovery: "exact" }))).toContain("saved conversation checkpoint");
+  });
+
+  it("shows the active fallback route instead of the assignment route", () => {
+    const text = formatSubagentRun(run([], { activeProvider: "anthropic", activeModel: "fallback" }));
+    expect(text).toContain("running · attempt 1 · anthropic/fallback");
+    expect(text).not.toContain("openai/test");
+    expect(formatSubagentRun(run([]))).toContain("running · attempt 1 · openai/test");
+  });
+});
+
+describe("subagent bar ordering", () => {
+  it("shows live runs first and the most recent settled work next", () => {
+    const runs = [
+      run([], { id: "old", status: "completed", updatedAt: 1 }),
+      run([], { id: "live", status: "running", updatedAt: 2 }),
+      run([], { id: "newest-done", status: "error", updatedAt: 3 }),
+      run([], { id: "stopping", status: "stopping", updatedAt: 4 }),
+    ];
+    expect(orderSubagentRuns(runs).map((entry) => entry.id)).toEqual([
+      "live",
+      "stopping",
+      "newest-done",
+      "old",
+    ]);
   });
 });
 

@@ -89,4 +89,3 @@ export function setSubagentModelChain(
 export function clearSubagentModelChain(): void {
   updateConfig({ subagentModels: undefined });
 }
-

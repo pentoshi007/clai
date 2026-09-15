@@ -161,7 +161,7 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
         icon: status.icon,
         tone: status.tone,
         label: run.title,
-        description: `${run.status} · ${run.id} · attempt ${run.attempt} · ${run.provider}/${run.model}`,
+        description: `${run.status} · ${run.id} · attempt ${run.attempt} · ${run.activeProvider ?? run.provider}/${run.activeModel ?? run.model}`,
       };
     }),
   ];

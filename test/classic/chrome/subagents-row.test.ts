@@ -24,7 +24,7 @@ describe("subagents strip", () => {
     const row = plainText(
       subagentsRow({ ink, columns: 120, state: state({ running: 2, settled: 3, total: 5 }) }),
     );
-    expect(row).toBe("◆ 2 running · 3 done · /agents inspect");
+    expect(row).toBe("◆ 2 running · 3 done · /agents");
   });
 
   it("stays inside the available width", () => {

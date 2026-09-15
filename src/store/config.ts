@@ -54,6 +54,7 @@ export { findCustomProviderDefSync, getConfig, knownProviderId, updateConfig };
 export {
   clearSubagentModelChain,
   getSubagentModelChain,
+  MAX_SUBAGENT_MODELS,
   setSubagentModelChain,
 } from "./config/subagent-models.js";
 export type {

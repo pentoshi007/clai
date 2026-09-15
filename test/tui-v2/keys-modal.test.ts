@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildKeysPickerAnswer } from "../../src/tui-v2/components/modal/keys-modal-pick.js";
+import { buildKeysPickerAnswer, keysAddAtCapacity } from "../../src/tui-v2/components/modal/keys-modal-pick.js";
 
 describe("tui-v2 model keys modal", () => {
   it("carries catalogue labels and row state through pick answers", () => {
@@ -14,5 +14,25 @@ describe("tui-v2 model keys modal", () => {
       ],
       activeIndex: 1,
     });
+  });
+
+  it("blocks the eleventh picker addition instead of dropping it on save", () => {
+    const rows = Array.from({ length: 10 }, (_, index) => ({
+      id: index + 1,
+      slotId: `free\u001fmodel-${index}`,
+      placeholder: `free / model-${index}`,
+      text: "",
+      disabled: false,
+    }));
+    expect(keysAddAtCapacity(rows, 10)).toBe(true);
+    expect(keysAddAtCapacity(rows.slice(0, 9), 10)).toBe(false);
+    expect(keysAddAtCapacity([
+      ...rows.slice(0, 9),
+      { id: 10, slotId: undefined, placeholder: "paste model", text: "typed", disabled: false },
+    ], 10)).toBe(true);
+    expect(keysAddAtCapacity([
+      ...rows.slice(0, 9),
+      { id: 10, slotId: undefined, placeholder: "paste model", text: "  ", disabled: false },
+    ], 10)).toBe(false);
   });
 });

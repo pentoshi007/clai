@@ -77,6 +77,7 @@ try {
   await settle(() => services.commands.dispatch({ name: "orchestration", args: "on" }));
   const first = manager.start({ title: "First inspector", prompt: "inspect first", cwd: process.cwd(), provider: "openai", model: "test" });
   const second = manager.start({ title: "Second inspector", prompt: "inspect second", cwd: process.cwd(), provider: "openai", model: "test" });
+  await waitForFrame(/Subagents: 2 running · 0 done/, () => undefined);
   await settle(() => { main = services.session.submit("Keep the main turn running"); });
   assert.equal(services.session.getState().running, true);
   const pickerFrame = await settle(() => {

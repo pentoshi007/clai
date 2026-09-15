@@ -6,7 +6,7 @@ import { TextAttributes, type MouseEvent } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
-import { watchSubagents } from "../../../ui-core/rendering/subagent-source.js";
+import { orderSubagentRuns, watchSubagents } from "../../../ui-core/rendering/subagent-source.js";
 import { openSubagentRun, SUBAGENT_STATUS_ICON } from "../../../ui-core/commands/subagent-commands.js";
 import type { SubagentRun } from "../../../agent/subagents/types.js";
 
@@ -54,10 +54,11 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
   }, [services.session, manager]);
 
   if (blockingOverlay || runs.length === 0) return null;
-  const running = runs.filter((run) => run.status === "running" || run.status === "stopping").length;
-  const settled = runs.length - running;
-  const shown = runs.slice(0, MAX_ROWS);
-  const hidden = Math.max(0, runs.length - shown.length);
+  const ordered = orderSubagentRuns(runs);
+  const running = ordered.filter((run) => run.status === "running" || run.status === "stopping").length;
+  const settled = ordered.length - running;
+  const shown = ordered.slice(0, MAX_ROWS);
+  const hidden = Math.max(0, ordered.length - shown.length);
   const stateColor = running > 0 ? theme.cyan : settled > 0 ? theme.success : theme.muted;
   const header = `${collapsed ? "▸" : "▾"} Subagents: ${running} running · ${settled} done`;
 

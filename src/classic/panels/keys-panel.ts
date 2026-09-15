@@ -50,12 +50,12 @@ export function keysRevealed(request: KeysEditorRequest): boolean {
   return label !== undefined && !/key|secret|token|password/i.test(label);
 }
 
-export function keysCanAdd(state: KeysPanelState): boolean {
-  return state.rows.length < MAX_PROVIDER_KEYS;
+export function keysCanAdd(state: KeysPanelState, maxRows = MAX_PROVIDER_KEYS): boolean {
+  return state.rows.length < maxRows;
 }
 
-export function keysRowCount(state: KeysPanelState): number {
-  return state.rows.length + (keysCanAdd(state) ? 1 : 0);
+export function keysRowCount(state: KeysPanelState, maxRows = MAX_PROVIDER_KEYS): number {
+  return state.rows.length + (keysCanAdd(state, maxRows) ? 1 : 0);
 }
 
 export interface KeysKeyInput {
@@ -76,7 +76,8 @@ function pickerRows(state: KeysPanelState): readonly { slotId?: string; value: s
 
 export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
   const { state, chord } = input;
-  const count = keysRowCount(state);
+  const maxRows = input.request.maxRows ?? MAX_PROVIDER_KEYS;
+  const count = keysRowCount(state, maxRows);
   const height = Math.max(1, panelBodyHeight(input.rows));
   const isAddRow = state.cursor >= state.rows.length;
 
@@ -179,7 +180,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
   const { ink, state } = input;
   const width = panelBodyWidth(input.columns);
   const height = panelBodyHeight(input.rows);
-  const count = keysRowCount(state);
+  const count = keysRowCount(state, input.request.maxRows ?? MAX_PROVIDER_KEYS);
   const reveal = keysRevealed(input.request);
   const window = listWindow({
     count,
