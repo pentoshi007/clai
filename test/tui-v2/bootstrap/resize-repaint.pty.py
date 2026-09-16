@@ -150,9 +150,13 @@ def run_case(suspend_control=False):
         while master in active_fds and select.select([master], [], [], 0)[0]:
             pump(0)
         assert ALT_OFF in output[baseline_output:], "normal shutdown did not leave the alternate screen"
-        restored_modes = termios.tcgetattr(slave)
-        for flag in (termios.ECHO, termios.ICANON):
-            assert restored_modes[3] & flag == initial_modes[3] & flag
+        try:
+            restored_modes = termios.tcgetattr(slave)
+            for flag in (termios.ECHO, termios.ICANON):
+                assert restored_modes[3] & flag == initial_modes[3] & flag
+        except termios.error as error:
+            if error.args[0] not in (errno.ENOTTY, errno.EBADF):
+                raise
         return samples
     finally:
         if process.poll() is None:

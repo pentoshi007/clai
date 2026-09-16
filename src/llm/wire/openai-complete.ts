@@ -53,16 +53,22 @@ export async function openAiCompatibleComplete(options: {
   forceReasoningReplay?: boolean | undefined;
   purpose?: CompletionRequestPurpose | undefined;
   responsesFirst?: boolean | undefined;
+  wireApi?: "responses" | "chat-completions" | undefined;
 }): Promise<OpenAiCompatibleResult> {
   const responsesOptions = {
     ...options,
     purpose: options.purpose ?? currentRequestPurpose(),
   };
-  const viaResponses = options.responsesFirst
+  const viaResponses = (options.responsesFirst || options.wireApi === "responses")
     ? await openAiCompatibleCompleteViaResponses(responsesOptions, (probe) =>
         openAiCompatibleComplete({ ...options, ...probe, responsesFirst: false }))
     : undefined;
   if (viaResponses) return { ...viaResponses, api: "responses" };
+  if (options.wireApi === "responses") {
+    throw new ProviderError(
+      `${options.provider} Responses API request failed and cannot route to chat/completions.`,
+    );
+  }
   const plan = compileRequestPlan({
     provider: options.providerId,
     model: options.model,

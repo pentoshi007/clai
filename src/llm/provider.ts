@@ -94,13 +94,26 @@ export function sanitizeProviderModel(
   return replacement ?? normalized;
 }
 
+function isRootResponsesHost(value: string): boolean {
+  try {
+    return /api\.deepseek\.com$/i.test(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeEndpointUrl(url: string): string {
   let value = url.trim();
   if (!value) return "";
   if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
   value = value.replace(/\/+$/, "");
-  value = value.replace(/\/chat\/completions$/i, "").replace(/\/models$/i, "");
-  if (!/\/v\d+$/i.test(value)) value = `${value}/v1`;
+  value = value
+    .replace(/\/chat\/completions$/i, "")
+    .replace(/\/models$/i, "")
+    .replace(/\/responses$/i, "");
+  if (!/\/v\d+$/i.test(value) && !isRootResponsesHost(value)) {
+    value = `${value}/v1`;
+  }
   return value;
 }
 

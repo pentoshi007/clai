@@ -696,4 +696,122 @@ GOOD TO KNOW
 
 Docs: https://vercel.com/docs/ai-gateway
 API: https://ai-gateway.vercel.sh/v1/responses`,
+  deepseek: `DeepSeek — frontier reasoning and chat models with automatic KV cache
+
+WHAT IT IS
+  Direct API access to DeepSeek models (DeepSeek-V3, DeepSeek-R1 / reasoner,
+  DeepSeek-V4 Pro/Flash). Full support for OpenAI-compatible chat completions,
+  OpenAI Responses API format, streaming, function tool calling, and thinking mode.
+
+  Base URL   https://api.deepseek.com
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions · /responses
+
+MODELS
+  deepseek-chat               DeepSeek-V3 flagship general model (default)
+  deepseek-reasoner           DeepSeek-R1 deep reasoning model
+  deepseek-v4-pro             DeepSeek-V4 next-generation reasoning
+  deepseek-flash              Fast, low-latency conversational model
+
+CAPABILITIES
+  - Thinking Mode: deepseek-reasoner streams chain-of-thought in reasoning_content;
+    effort levels low, high, and max are supported.
+  - Automatic KV Caching: prompt caching operates on 64-token boundaries.
+    Cache hits are reported in usage.prompt_cache_hit_tokens.
+  - Tool Calling: full function calling support with arguments streaming.
+  - Responses API: full support for the /responses endpoint.
+
+SETUP
+  1. Get an API key at https://platform.deepseek.com
+  2. clai set deepseek <key>
+  3. clai use deepseek
+
+Docs: https://api-docs.deepseek.com`,
+  kimi: `Kimi (Moonshot AI) — long-context frontier models with context caching
+
+WHAT IT IS
+  Direct API access to Moonshot AI's Kimi series models (Kimi K3, K2.5, K2.6,
+  K2.7-Code, and Moonshot-v1). Features long context windows, deep reasoning,
+  automatic context caching, and native tool calling.
+
+  Base URL   https://api.moonshot.ai/v1
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions · /responses
+
+MODELS
+  kimi-k3                     Kimi K3 reasoning model (default)
+  kimi-k2.7-code              Optimized for programming and agentic workflows
+  kimi-k2.6                   Frontier reasoning model
+  moonshot-v1-128k            128k context general model
+  moonshot-v1-32k             32k context model
+  moonshot-v1-8k              8k context fast model
+
+CAPABILITIES
+  - Thinking: Chain-of-thought via template kwargs and reasoning_content.
+  - Context Caching: Automatic prefix caching with cached token reporting.
+  - Tool Calling: Standard OpenAI-compatible tool calling.
+  - Responses API: Full support for /v1/responses endpoint.
+
+SETUP
+  1. Create an API key at https://platform.kimi.ai
+  2. clai set kimi <key>
+  3. clai use kimi
+
+Docs: https://platform.kimi.ai/docs`,
+  glm: `GLM (Zhipu AI / Z.AI) — bilingual frontier models with thinking mode
+
+WHAT IT IS
+  Direct API access to Zhipu AI's General Language Model family (GLM-4-Plus,
+  GLM-4-Flash, GLM-5.1, and vision models). Supports reasoning thinking mode,
+  native tool calling, and multimodal inputs.
+
+  Base URL   https://api.z.ai/api/paas/v4 (or https://open.bigmodel.cn/api/paas/v4)
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions
+
+MODELS
+  glm-4-plus                  Flagship general model (default)
+  glm-4-flash                 High-speed, cost-effective model
+  glm-4v-plus                 Multimodal vision model
+  glm-5.1                     Next-generation reasoning model
+
+CAPABILITIES
+  - Thinking Mode: glm-enable-thinking with streaming reasoning_content.
+  - Tool Calling: Function calling in OpenAI format.
+  - Vision: Image understanding on GLM-4V models.
+  - Cache: Prefix caching with prompt token details.
+
+SETUP
+  1. Create an API key at https://open.bigmodel.cn or https://z.ai
+  2. clai set glm <key>
+  3. clai use glm
+
+Docs: https://docs.z.ai`,
+  minimax: `MiniMax — ultra long-context frontier models
+
+WHAT IT IS
+  Direct API access to MiniMax models (MiniMax-Text-01, MiniMax-M3,
+  MiniMax-M2.7) supporting ultra-long contexts up to 4 million tokens.
+
+  Base URL   https://api.minimaxi.chat/v1 (global) or https://api.minimax.chat/v1
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions
+
+MODELS
+  MiniMax-Text-01             Flagship model with 4M context window (default)
+  MiniMax-M3                  Deep reasoning model with 1M context
+  minimax-m2.7                High-efficiency conversational model
+
+CAPABILITIES
+  - Context Window: Up to 4,000,000 tokens for massive codebase analysis.
+  - Tool Calling: Standard function calling support.
+  - Thinking: Chain-of-thought reasoning extraction.
+  - Multi-key rotation: Full support in clai.
+
+SETUP
+  1. Create an API key at https://intl.minimaxi.com or https://api.minimax.chat
+  2. clai set minimax <key>
+  3. clai use minimax
+
+Docs: https://intl.minimaxi.com`,
 };

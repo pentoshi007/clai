@@ -67,6 +67,23 @@ export const providerAliases: Record<string, ProviderId> = {
   "ai-gateway": "vercel",
   "vercel-ai-gateway": "vercel",
   gateway: "vercel",
+  deepseek: "deepseek",
+  "deepseek-ai": "deepseek",
+  "deep-seek": "deepseek",
+  kimi: "kimi",
+  moonshot: "kimi",
+  moonshotai: "kimi",
+  "moonshot-ai": "kimi",
+  glm: "glm",
+  zhipu: "glm",
+  zhipuai: "glm",
+  "zhipu-ai": "glm",
+  "z.ai": "glm",
+  zai: "glm",
+  bigmodel: "glm",
+  minimax: "minimax",
+  minimaxi: "minimax",
+  "minimax-ai": "minimax",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -91,6 +108,10 @@ export const defaultModels: Record<ProviderId, string> = {
   "merge-gateway": "openai/gpt-5.2",
   explabs: "claude-fable-5.1",
   vercel: "openai/gpt-5.4-mini",
+  deepseek: "deepseek-chat",
+  kimi: "kimi-k3",
+  glm: "glm-4-plus",
+  minimax: "MiniMax-Text-01",
 };
 
 export const retiredModelReplacements: Partial<
@@ -146,4 +167,8 @@ export const envVars: Record<ProviderId, string | undefined> = {
   "merge-gateway": "MERGE_GATEWAY_API_KEY",
   explabs: "EXPLABS_API_KEY",
   vercel: "AI_GATEWAY_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  kimi: "KIMI_API_KEY",
+  glm: "GLM_API_KEY",
+  minimax: "MINIMAX_API_KEY",
 };

@@ -25,6 +25,10 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   "aws-mantle": "openai",
   gemini: "gemini",
   ollama: "ollama",
+  deepseek: "openai",
+  kimi: "openai",
+  glm: "openai",
+  minimax: "openai",
 };
 
 const nativeToolsDenylist: RegExp[] = [

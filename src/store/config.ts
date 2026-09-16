@@ -39,6 +39,10 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   "merge-gateway": "paid-cloud",
   explabs: "paid-cloud",
   vercel: "paid-cloud",
+  deepseek: "paid-cloud",
+  kimi: "paid-cloud",
+  glm: "paid-cloud",
+  minimax: "paid-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

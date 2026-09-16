@@ -4,7 +4,7 @@ import { createOpenTuiRendererHandle } from "../../../src/tui-v2/bootstrap/rende
 import { repaintAttachedScreen } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
 
 describe("OpenTUI renderer teardown", () => {
-  it("restores the normal screen before the exit epilogue runs", async () => {
+  it("drains resize work before releasing alternate-screen ownership", async () => {
     const events: string[] = [];
     let releaseIdle!: () => void;
     let releaseFinalized!: () => void;
@@ -18,6 +18,12 @@ describe("OpenTUI renderer teardown", () => {
       };
     });
     const renderer = {
+      resize() {
+        events.push("resize");
+      },
+      pause() {
+        events.push("pause");
+      },
       suspend() {
         events.push("suspend");
       },
@@ -43,10 +49,11 @@ describe("OpenTUI renderer teardown", () => {
     });
 
     await lifecycle.start();
+    renderer.resize();
     const shutdown = lifecycle.shutdown();
     await Promise.resolve();
 
-    expect(events).toEqual(["mount", "unmount", "suspend", "idle"]);
+    expect(events).toEqual(["mount", "resize", "unmount", "pause", "idle"]);
     expect(events).not.toContain("summary");
 
     releaseIdle();
@@ -54,9 +61,11 @@ describe("OpenTUI renderer teardown", () => {
 
     expect(events).toEqual([
       "mount",
+      "resize",
       "unmount",
-      "suspend",
+      "pause",
       "idle",
+      "suspend",
       "destroy-requested",
     ]);
     expect(events).not.toContain("summary");
@@ -67,9 +76,11 @@ describe("OpenTUI renderer teardown", () => {
 
     expect(events).toEqual([
       "mount",
+      "resize",
       "unmount",
-      "suspend",
+      "pause",
       "idle",
+      "suspend",
       "destroy-requested",
       "alternate-screen-off",
       "rescue-disarmed",
@@ -87,6 +98,7 @@ describe("OpenTUI renderer teardown", () => {
         throw new Error("unmount failed");
       },
       renderer: {
+        pause: () => events.push("pause"),
         suspend: () => events.push("suspend"),
         idle: async () => void events.push("idle"),
         destroy: () => events.push("alternate-screen-off"),
@@ -101,8 +113,9 @@ describe("OpenTUI renderer teardown", () => {
 
     expect(events).toEqual([
       "unmount",
-      "suspend",
+      "pause",
       "idle",
+      "suspend",
       "alternate-screen-off",
       "rescue-disarmed",
       "services-disposed",
@@ -115,6 +128,7 @@ describe("OpenTUI renderer teardown", () => {
       isDestroyed: false,
       forceFullRepaintRequested: false,
       requestRender: () => events.push("repaint-requested"),
+      pause: () => events.push("pause"),
       suspend: () => events.push("suspend"),
       idle: async () => void events.push("idle"),
       destroy() {
@@ -144,8 +158,9 @@ describe("OpenTUI renderer teardown", () => {
       "mount",
       "repaint-requested",
       "unmount",
-      "suspend",
+      "pause",
       "idle",
+      "suspend",
       "alternate-screen-off",
       "rescue-disarmed",
       "services-disposed",

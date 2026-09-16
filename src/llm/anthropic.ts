@@ -12,6 +12,7 @@ import {
   ProviderError,
   createSseFrameAssembler,
   imageCapableMessages,
+  ingestOpenAiModelCatalog,
   readJson,
   readStreamLines,
   streamIdleBudgets,
@@ -191,12 +192,40 @@ export function buildAnthropicBody(
   });
 }
 
+let cachedModels: string[] | null = null;
+let lastFetchTime = 0;
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
 export const anthropicProvider: LlmProvider = {
   id: "anthropic",
   displayName: "Anthropic",
   defaultModel: defaultModels.anthropic,
   envVar: "ANTHROPIC_API_KEY",
   validateKey: (key: string) => /^sk-ant-[A-Za-z0-9_-]{12,}$/.test(key),
+  async listModels(auth: ProviderAuth): Promise<string[]> {
+    if (!auth.apiKey) throw new Error("Anthropic API key is required");
+    const now = Date.now();
+    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
+      return cachedModels;
+    }
+    const endpoint = auth.baseUrl ?? baseUrl;
+    const response = await fetch(`${endpoint}/models`, {
+      headers: {
+        "x-api-key": auth.apiKey,
+        "anthropic-version": anthropicVersion,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to list Anthropic models: HTTP ${response.status}`);
+    }
+    const data = await readJson<unknown>(response);
+    const models = ingestOpenAiModelCatalog("anthropic", data);
+    if (models.length > 0) {
+      cachedModels = models;
+      lastFetchTime = now;
+    }
+    return models;
+  },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
     const response = await fetch(`${baseUrl}/models`, {

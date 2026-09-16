@@ -20,6 +20,10 @@ export const providerIds = [
   "merge-gateway",
   "explabs",
   "vercel",
+  "deepseek",
+  "kimi",
+  "glm",
+  "minimax",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

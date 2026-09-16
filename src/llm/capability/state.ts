@@ -2,6 +2,7 @@ import type { LearnedRouteEntry } from "../../store/config.js";
 import type { ProviderId } from "../../types.js";
 import { isModelUnavailable, providerModelIsKnown } from "../capabilities.js";
 import type { CatalogFacts } from "../catalog-facts.js";
+import { isKnownPatternVisionModel } from "./vision-patterns.js";
 import {
   clearPersistedLearnedRouteReasoning,
   clearSessionRejectedFields,
@@ -48,7 +49,10 @@ export const visionCapabilityCache = new Map<
 >();
 
 export const capabilityKey = (provider: ProviderId, model: string): string =>
-  `${provider}:${model.trim().toLowerCase()}`;
+  `${provider}:${model
+    .trim()
+    .toLowerCase()
+    .replace(/^free-\d+\//, "")}`;
 
 export const providerModelCatalog = new Map<ProviderId, Set<string>>();
 
@@ -79,6 +83,12 @@ export function loadLearnedCapabilities(): void {
     const entry = readLearnedVisionEntry(raw);
     if (!entry) continue;
     if (!entry.vision && negativeIsStale(entry.at)) continue;
+    const sep = key.indexOf(":");
+    const provider = sep >= 0 ? (key.slice(0, sep) as ProviderId) : undefined;
+    const model = sep >= 0 ? key.slice(sep + 1) : "";
+    if (!entry.vision && provider && isKnownPatternVisionModel(provider, model)) {
+      continue;
+    }
     visionCapabilityCache.set(key, {
       vision: entry.vision,
       source: "provider",
@@ -93,8 +103,13 @@ export function loadLearnedCapabilities(): void {
 function applyLearnedRouteEntry(key: string, entry: LearnedRouteEntry): void {
   const at = learnedRouteAt(entry);
   const stale = negativeIsStale(at);
+  const sep = key.indexOf(":");
+  const provider = sep >= 0 ? (key.slice(0, sep) as ProviderId) : undefined;
+  const model = sep >= 0 ? key.slice(sep + 1) : "";
+  const knownVision = !entry.vision && provider ? isKnownPatternVisionModel(provider, model) : false;
   if (
     entry.vision !== undefined &&
+    !knownVision &&
     !visionCapabilityCache.has(key) &&
     (entry.vision || !stale)
   ) {
@@ -135,7 +150,6 @@ function applyLearnedRouteEntry(key: string, entry: LearnedRouteEntry): void {
   ) {
     return;
   }
-  const model = key.slice(key.indexOf(":") + 1);
   if (!model) return;
   const existing = catalogFactsByRoute.get(key);
   catalogFactsByRoute.set(key, {

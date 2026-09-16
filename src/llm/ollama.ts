@@ -6,6 +6,7 @@ import {
 } from "./provider.js";
 import {
   imageCapableMessages,
+  ingestOpenAiModelCatalog,
   readJson,
   readStreamLines,
   streamIdleBudgets,
@@ -91,12 +92,40 @@ function ollamaChatBody(
   return { model, body };
 }
 
+let cachedOllamaModels: string[] | null = null;
+let cachedOllamaBase = "";
+let lastOllamaFetchTime = 0;
+const OLLAMA_CACHE_TTL_MS = 60 * 1000;
+
 export const ollamaProvider: LlmProvider = {
   id: "ollama",
   displayName: "Ollama",
   defaultModel: defaultModels.ollama,
   envVar: "OLLAMA_HOST",
   validateKey: (key: string) => /^https?:\/\/.+/.test(key),
+  async listModels(auth: ProviderAuth): Promise<string[]> {
+    const endpoint = base(auth);
+    const now = Date.now();
+    if (
+      cachedOllamaModels &&
+      cachedOllamaBase === endpoint &&
+      now - lastOllamaFetchTime < OLLAMA_CACHE_TTL_MS
+    ) {
+      return cachedOllamaModels;
+    }
+    const response = await fetch(`${endpoint}/api/tags`);
+    if (!response.ok) {
+      throw new Error(`Failed to list Ollama models: HTTP ${response.status}`);
+    }
+    const data = await readJson<unknown>(response);
+    const models = ingestOpenAiModelCatalog("ollama", data);
+    if (models.length > 0) {
+      cachedOllamaModels = models;
+      cachedOllamaBase = endpoint;
+      lastOllamaFetchTime = now;
+    }
+    return models;
+  },
   async ping(auth: ProviderAuth): Promise<void> {
     const response = await fetch(`${base(auth)}/api/tags`);
     await readJson<unknown>(response);

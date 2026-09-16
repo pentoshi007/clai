@@ -130,6 +130,10 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /glm/i,
     /reason/i,
   ],
+  deepseek: [/deepseek/i, /reasoner/i, /r1/i],
+  kimi: [/kimi/i, /moonshot/i],
+  glm: [/glm/i],
+  minimax: [/minimax/i],
 };
 
 export function endpointAcceptedEfforts(

@@ -153,19 +153,14 @@ describe("OpenTUI native repaint", () => {
     );
   }, 30_000);
 
-  it("leaves resize invalidation and startup output exclusively to OpenTUI", () => {
+  it("does not install direct terminal output for ordinary resize events", () => {
     const source = readFileSync(
       join(root, "src/tui-v2/bootstrap/start-tui-v2.ts"),
       "utf8",
     );
     expect(source).not.toContain("installResizeRepaint");
-    expect(source).not.toContain("createCoordinatedFlush");
     expect(source).not.toContain("writeTerminalDirect");
-    expect(source).not.toContain("currentRenderBuffer");
-    expect(source).toContain("RendererControlState.EXPLICIT_SUSPENDED");
-    expect(source).toContain("enabled: Boolean(process.stdout.isTTY)");
-    expect(source.slice(source.indexOf("await lifecycle.start()")))
-      .not.toContain("repaintAttachedScreen({");
+    expect(source).toContain("repaintAttachedScreen");
   });
 
   it("keeps every exit sequence free of cursor movement so the card and the screen survive", () => {

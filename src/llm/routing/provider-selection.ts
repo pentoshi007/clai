@@ -29,6 +29,10 @@ import type { LlmProvider, ProviderAuth } from "../provider.js";
 import { qwenCloudProvider } from "../qwen-cloud.js";
 import { tokenrouterProvider } from "../tokenrouter.js";
 import { vercelProvider } from "../vercel.js";
+import { deepseekProvider } from "../deepseek.js";
+import { kimiProvider } from "../kimi.js";
+import { glmProvider } from "../glm.js";
+import { minimaxProvider } from "../minimax.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -52,6 +56,10 @@ export const providers: Record<ProviderId, LlmProvider> = {
   "merge-gateway": mergeGatewayProvider,
   explabs: explabsProvider,
   vercel: vercelProvider,
+  deepseek: deepseekProvider,
+  kimi: kimiProvider,
+  glm: glmProvider,
+  minimax: minimaxProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -76,6 +84,10 @@ const fallbackOrder: ProviderId[] = [
   "merge-gateway",
   "explabs",
   "vercel",
+  "deepseek",
+  "kimi",
+  "glm",
+  "minimax",
 ];
 
 function allFallbackIds(): ProviderId[] {

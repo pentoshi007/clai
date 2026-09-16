@@ -146,6 +146,7 @@ export interface ResponsesFirstOptions {
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
+  wireApi?: "responses" | "chat-completions" | undefined;
 }
 
 interface StreamBridgeOptions {
@@ -212,6 +213,16 @@ async function runResponsesFirst(
   const configFor = (extras: ExtrasLevel): ResponsesDialectConfig =>
     genericResponsesConfig(options.providerId, options.provider, options.baseUrl, options.headers, extras);
   const auth: ProviderAuth = { apiKey: options.apiKey };
+  if (options.wireApi === "responses") {
+    return compatibleFromCompletion(
+      await run(
+        configFor("full"),
+        bridgeCompletionRequest(options, stream),
+        auth,
+        stream?.onToken ?? (() => {}),
+      ),
+    );
+  }
   const selection = await selectResponsesWire(options, Boolean(stream), async (signal) => {
     const probe = preflightOptions(options, signal);
     const fallback = async (

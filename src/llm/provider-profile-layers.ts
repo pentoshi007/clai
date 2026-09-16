@@ -529,6 +529,124 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  deepseek: {
+    evidence: providerDoc("deepseek-official-api"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "deepseek-thinking",
+        status: "supported",
+        evidence: providerDoc("deepseek-thinking-mode"),
+      },
+      acceptedEfforts: ["low", "high", "max"],
+      disable: "supported",
+      disableForm: "thinking-disabled",
+      outputShapes: ["reasoning-content"],
+      replayScope: "tool-turn",
+      finalTurnPreservation: "supported",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools", "thinking", "reasoning_effort"],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_cache_hit_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
+  kimi: {
+    evidence: providerDoc("kimi-moonshot-api"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "kimi-template-thinking",
+        status: "supported",
+        evidence: providerDoc("kimi-thinking"),
+      },
+      disable: "supported",
+      disableForm: "template-thinking-false",
+      outputShapes: ["reasoning-content"],
+      replayScope: "configurable",
+      finalTurnPreservation: "supported",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools", "thinking"],
+    },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.cached_tokens",
+      ],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
+  glm: {
+    evidence: providerDoc("zhipu-glm-api"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "glm-enable-thinking",
+        status: "supported",
+        evidence: providerDoc("glm-thinking"),
+      },
+      disable: "supported",
+      disableForm: "template-enable-thinking-false",
+      outputShapes: ["reasoning-content"],
+      replayScope: "tool-turn",
+      finalTurnPreservation: "supported",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools", "thinking"],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
+  minimax: {
+    evidence: providerDoc("minimax-api"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "none",
+        status: "unsupported",
+        evidence: providerDoc("minimax-reasoning"),
+      },
+      outputShapes: ["reasoning-content"],
+      replayScope: "configurable",
+      finalTurnPreservation: "supported",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools"],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
 };
 
 const freeGatewayEffortLayer: ProviderProfileLayer = {

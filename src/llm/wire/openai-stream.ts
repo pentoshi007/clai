@@ -93,12 +93,13 @@ export async function openAiCompatibleStream(request: {
   outputIdleTimeoutMs?: number | undefined;
   purpose?: CompletionRequestPurpose | undefined;
   responsesFirst?: boolean | undefined;
+  wireApi?: "responses" | "chat-completions" | undefined;
 }): Promise<OpenAiCompatibleResult> {
   const responsesOptions = {
     ...request,
     purpose: request.purpose ?? currentRequestPurpose(),
   };
-  const viaResponses = request.responsesFirst
+  const viaResponses = (request.responsesFirst || request.wireApi === "responses")
     ? await openAiCompatibleStreamViaResponses(responsesOptions, {
         onToken: request.onToken,
         ...(request.onToolCallDelta
@@ -115,6 +116,11 @@ export async function openAiCompatibleStream(request: {
       }))
     : undefined;
   if (viaResponses) return { ...viaResponses, api: "responses" };
+  if (request.wireApi === "responses") {
+    throw new ProviderError(
+      `${request.provider} Responses API request failed and cannot route to chat/completions.`,
+    );
+  }
   const options = responsesOptions;
   const reasoningOn = Boolean(options.reasoning?.enabled);
   const idleTimeoutMs =

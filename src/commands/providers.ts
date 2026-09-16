@@ -102,6 +102,14 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Experiential Labs keys start with xpl_ (mint one at https://platform.experientiallabs.ai/settings/api-keys)";
   if (provider === "vercel")
     return "Vercel AI Gateway keys are issued by Vercel (AI_GATEWAY_API_KEY)";
+  if (provider === "deepseek")
+    return "DeepSeek keys start with sk- (from https://platform.deepseek.com)";
+  if (provider === "kimi")
+    return "Kimi keys start with sk- (from https://platform.kimi.ai)";
+  if (provider === "glm")
+    return "GLM keys are alphanumeric or id.secret (from https://open.bigmodel.cn or https://z.ai)";
+  if (provider === "minimax")
+    return "MiniMax keys are alphanumeric (from https://intl.minimaxi.com or https://api.minimax.chat)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

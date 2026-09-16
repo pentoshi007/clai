@@ -2,6 +2,7 @@ import { getConfig } from "../../store/config.js";
 import { providerIds } from "../../types.js";
 import type { ProviderId } from "../../types.js";
 import {
+  isKnownPatternVisionModel,
   preferredVisionModels,
   textOnlyPatterns,
   universalVisionPatterns,
@@ -70,6 +71,7 @@ export function learnModelVisionCapability(
   model: string,
   vision: boolean,
 ): void {
+  if (!vision && isKnownPatternVisionModel(provider, model)) return;
   loadLearnedCapabilities();
   const key = capabilityKey(provider, model);
   const existing = visionCapabilityCache.get(key);
@@ -119,7 +121,8 @@ export function modelVisionSupport(
   warnOnUnknownProviderId("modelVisionSupport", provider);
   loadLearnedCapabilities();
   const cached = visionCapabilityCache.get(capabilityKey(provider, model));
-  if (cached) return cached.vision ? "yes" : "no";
+  if (cached && cached.source === "user") return cached.vision ? "yes" : "no";
+  if (cached?.vision) return "yes";
   const configured = configuredVisionModel(provider);
   if (configured?.toLowerCase() === model.trim().toLowerCase()) return "yes";
   const normalizedModel = model.trim().replace(/\s+/g, "-");
@@ -128,6 +131,7 @@ export function modelVisionSupport(
   if (textOnlyPatterns.some(matches)) return "no";
   if ((visionPatterns[provider] ?? []).some(matches)) return "yes";
   if (universalVisionPatterns.some(matches)) return "yes";
+  if (cached && !cached.vision) return "no";
   return "unknown";
 }
 

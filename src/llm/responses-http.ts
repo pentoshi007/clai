@@ -3,9 +3,10 @@ import type { ProviderAuth } from "./provider.js";
 import { ProviderError, readJson } from "./http.js";
 import { generationFetch } from "./operation-usage.js";
 import { isOperationPolicyError } from "./operation-ledger.js";
-import type {
-  ResponsesAccept,
-  ResponsesDialectConfig,
+import {
+  resolveResponsesUrl,
+  type ResponsesAccept,
+  type ResponsesDialectConfig,
 } from "./responses-config.js";
 import { buildResponsesBody } from "./responses-request.js";
 
@@ -65,7 +66,7 @@ export async function postResponses(
   accept: ResponsesAccept,
 ): Promise<Response> {
   try {
-    return await generationFetch(`${config.baseUrl}/responses`, {
+    return await generationFetch(resolveResponsesUrl(config.baseUrl), {
       method: "POST",
       signal,
       headers: config.buildHeaders(auth, accept),

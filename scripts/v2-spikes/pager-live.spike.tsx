@@ -84,7 +84,10 @@ export async function runPagerLiveSpike(): Promise<SpikeResult> {
     for (let pass = 0; pass < 10; pass += 1) {
       await act(async () => { await Promise.allSettled(pendingReads); });
       await act(async () => { await setup.flush(); });
-      if (pendingReads.size === 0) return;
+      if (pendingReads.size === 0) {
+        await act(async () => { await setup.flush(); });
+        return;
+      }
     }
     throw new Error("pager artifact reads did not settle");
   };
