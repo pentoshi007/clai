@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearModelCatalogFacts,
   modelSupportsNativeTools,
+  registerModelCatalogFacts,
   resolveToolDialect,
 } from "../../src/llm/capabilities.js";
 import { clearTextOnlyModels, markTextOnlyModel } from "../../src/llm/tool-protocol.js";
@@ -35,5 +37,22 @@ describe("resolveToolDialect", () => {
     markTextOnlyModel("nvidia", "some-model");
     expect(modelSupportsNativeTools("nvidia", "some-model", "auto")).toBe(false);
     clearTextOnlyModels();
+  });
+
+  it("resolves to none when model catalog facts omit tools parameter", () => {
+    registerModelCatalogFacts("openrouter", {
+      id: "z-ai/glm-5.2:free",
+      acceptedParameters: ["temperature", "top_p"],
+    });
+    expect(resolveToolDialect("openrouter", "z-ai/glm-5.2:free", "auto")).toBe("none");
+    expect(modelSupportsNativeTools("openrouter", "z-ai/glm-5.2:free", "auto")).toBe(false);
+
+    registerModelCatalogFacts("openrouter", {
+      id: "openai/gpt-4o",
+      acceptedParameters: ["temperature", "tools", "tool_choice"],
+    });
+    expect(resolveToolDialect("openrouter", "openai/gpt-4o", "auto")).toBe("openai");
+    expect(modelSupportsNativeTools("openrouter", "openai/gpt-4o", "auto")).toBe(true);
+    clearModelCatalogFacts();
   });
 });

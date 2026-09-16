@@ -74,7 +74,15 @@ function contextSegment(input: StatusViewInput, density: StatusDensity): string 
     };
     return contextLimitEditorLabel(input.ink, state, Math.max(1, input.columns));
   }
-  const baseChip = contextChipForDensity(input.contextUsage, density);
+  const usage: ContextUsageSnapshot = input.contextUsage ?? {
+    contextTokens: 0,
+    contextLimit: 0,
+    lastCompletionTokens: 0,
+    sessionPromptTokens: 0,
+    sessionCompletionTokens: 0,
+    exact: true,
+  };
+  const baseChip = contextChipForDensity(usage, density);
   if (baseChip === undefined) return undefined;
   const chip =
     density === "xs" || density === "sm"
@@ -139,7 +147,7 @@ function idleSegments(input: StatusViewInput, density: StatusDensity): string[] 
     hints.push({ label: hLabel, token });
   }
   hints.push({ label: `${ink.unicode ? "⇧⇥" : "S-tab"} mode`, token: "muted" });
-  if (input.contextUsage !== undefined && density !== "xs" && density !== "sm") {
+  if (density !== "xs" && density !== "sm") {
     hints.push({ label: "^L ctx", token: "muted" });
   }
   const queued =

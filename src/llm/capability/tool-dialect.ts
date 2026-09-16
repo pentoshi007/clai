@@ -2,6 +2,7 @@ import { getConfig } from "../../store/config.js";
 import type { ProviderId } from "../../types.js";
 import { isTextOnlyModel } from "../tool-protocol.js";
 import type { ToolCallingMode, ToolDialect } from "../tool-protocol.js";
+import { catalogFactsByRoute, reasoningKey } from "./state.js";
 
 const providerToolDialect: Record<ProviderId, ToolDialect> = {
   free: "openai",
@@ -79,6 +80,13 @@ export function resolveToolDialect(
   if (mode === "text") return "none";
   if (isTextOnlyModel(provider, model)) return "none";
   if (nativeToolsDenylist.some((re) => re.test(model))) return "none";
+  const facts = catalogFactsByRoute.get(reasoningKey(provider, model));
+  if (
+    facts?.acceptedParameters !== undefined &&
+    !facts.acceptedParameters.includes("tools")
+  ) {
+    return "none";
+  }
 
   if (provider === "aws-mantle") {
     return isAwsMantleAnthropicModel(model) ? "anthropic" : "openai";
