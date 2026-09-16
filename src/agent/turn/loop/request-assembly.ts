@@ -112,10 +112,17 @@ export const assembleRequest = async (
     model: ports.model,
     contextLimitTokens: ports.contextLimitTokens,
   });
-  const stepMaxTokens = contextLimit.limitTokens !== undefined &&
-    requestedStepMaxTokens + contextLimit.safetyMarginTokens >= contextLimit.limitTokens
-    ? Math.max(1, Math.min(requestedStepMaxTokens, contextLimit.reservedOutputTokens))
-    : requestedStepMaxTokens;
+  const stepMaxTokens =
+    contextLimit.limitTokens !== undefined &&
+    requestedStepMaxTokens +
+      contextLimit.safetyMarginTokens +
+      contextLimit.reservedOutputTokens >=
+      contextLimit.limitTokens
+      ? Math.max(
+          1,
+          Math.min(requestedStepMaxTokens, contextLimit.reservedOutputTokens),
+        )
+      : requestedStepMaxTokens;
 
   await ports.audit("agent.turn", {
     provider: ports.provider,

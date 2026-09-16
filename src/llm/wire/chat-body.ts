@@ -250,11 +250,15 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       : { max_tokens: effectiveMaxTokens }),
     ...(emitTemperature ? { temperature: sampling.temperature } : {}),
     ...reasoning,
-    ...openAiToolBodyFields({
-      tools: options.tools,
-      toolChoice: options.toolChoice,
-      parallelToolCalls: options.parallelToolCalls,
-    }),
+    ...(options.control?.profile?.capabilities?.acceptedParameters !==
+    undefined &&
+    !options.control.profile.capabilities.acceptedParameters.includes("tools")
+      ? {}
+      : openAiToolBodyFields({
+          tools: options.tools,
+          toolChoice: options.toolChoice,
+          parallelToolCalls: options.parallelToolCalls,
+        })),
   };
   if (emitTemperature && sampling.topP !== undefined) {
     body.top_p = sampling.topP;
@@ -370,11 +374,22 @@ export function chatCompletionsBodyFromPlan(
     ...(plan.policy.limits.outputTokens !== undefined
       ? { outputTokenLimit: plan.policy.limits.outputTokens }
       : {}),
-    tools: plan.tools.definitions.length
-      ? [...plan.tools.definitions]
-      : undefined,
-    toolChoice: plan.tools.choice,
-    parallelToolCalls: plan.tools.parallelToolCalls,
+    tools:
+      plan.tools.definitions.length &&
+      (plan.policy.acceptedParameters === undefined ||
+        plan.policy.acceptedParameters.includes("tools"))
+        ? [...plan.tools.definitions]
+        : undefined,
+    toolChoice:
+      plan.policy.acceptedParameters === undefined ||
+      plan.policy.acceptedParameters.includes("tools")
+        ? plan.tools.choice
+        : undefined,
+    parallelToolCalls:
+      plan.policy.acceptedParameters === undefined ||
+      plan.policy.acceptedParameters.includes("tools")
+        ? plan.tools.parallelToolCalls
+        : undefined,
     replayTarget: plan.replay.target,
     reasoningArtifactReplayObserver: extras.reasoningArtifactReplayObserver,
     ...(extras.forceReasoningReplay ? { forceReasoningReplay: true } : {}),

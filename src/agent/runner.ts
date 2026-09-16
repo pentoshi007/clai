@@ -10,7 +10,10 @@ import type {
   ToolDefinition,
   ToolResult,
 } from "../types.js";
-import { providerInputTokenBudget } from "../llm/context-windows.js";
+import {
+  modelContextWindow,
+  providerInputTokenBudget,
+} from "../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { createStreamRecoveryState } from "./stream-recovery.js";
 import type {
@@ -359,7 +362,10 @@ export async function runAgentTurn(
       loop.provider,
       loop.model,
     );
-    const useCompactSystemPrompt = inputTokenBudget !== undefined;
+    const windowTokens = modelContextWindow(loop.model, loop.provider);
+    const effectiveLimit = currentContextLimitTokens() ?? windowTokens;
+    const useCompactSystemPrompt =
+      inputTokenBudget !== undefined || effectiveLimit <= 65_536;
     const selectToolDefs = (
       native: boolean,
       compact: boolean,

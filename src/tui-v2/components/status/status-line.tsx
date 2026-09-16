@@ -18,6 +18,7 @@ import type { ResponderRuntimeState } from "../../../app/controllers/session-res
 import type { Mode } from "../../../types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { ContextLimitChip } from "./context-limit-chip.js";
+import type { ContextUsageSnapshot } from "../../../llm/token-usage.js";
 import {
   contextChipForDensity,
   type StatusDensity,
@@ -341,7 +342,15 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
     };
   }, [busy]);
 
-  const ctxChip = contextChipForDensity(state.contextUsage, density);
+  const contextUsage: ContextUsageSnapshot = state.contextUsage ?? {
+    contextTokens: 0,
+    contextLimit: 0,
+    lastCompletionTokens: 0,
+    sessionPromptTokens: 0,
+    sessionCompletionTokens: 0,
+    exact: true,
+  };
+  const ctxChip = contextChipForDensity(contextUsage, density);
   const idleHints = idleHintIds(density, hasDraft);
 
   if (busy) {
@@ -452,12 +461,12 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
               style={{ fg: theme.userBorder, flexShrink: 0, paddingRight: 2 }}
             />
           ) : null}
-          {ctxChip && state.contextUsage ? (
+          {ctxChip ? (
             <ContextLimitChip
               chip={ctxChip}
               theme={theme}
-              exact={state.contextUsage.exact}
-              usage={state.contextUsage}
+              exact={contextUsage.exact}
+              usage={contextUsage}
               session={session}
               onEditingStart={onContextLimitEditingStart}
               onEditingDone={onFocusComposer}
@@ -629,12 +638,12 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             style={{ fg: theme.userBorder, flexShrink: 0, paddingRight: 2 }}
           />
         ) : null}
-        {ctxChip && state.contextUsage ? (
+        {ctxChip ? (
           <ContextLimitChip
             chip={ctxChip}
             theme={theme}
-            exact={state.contextUsage.exact}
-            usage={state.contextUsage}
+            exact={contextUsage.exact}
+            usage={contextUsage}
             session={session}
             onEditingStart={onContextLimitEditingStart}
             onEditingDone={onFocusComposer}
