@@ -2044,6 +2044,425 @@ exports[`serialized request snapshots > bynara / tools 1`] = `
 }
 `;
 
+exports[`serialized request snapshots > deepseek / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "deepseek-chat",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > deepseek / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "deepseek-chat",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > deepseek / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "deepseek-chat",
+    "reasoning_effort": "high",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > deepseek / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "deepseek-chat",
+    "reasoning_effort": "high",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > deepseek / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "deepseek-chat",
+    "reasoning_effort": "high",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > deepseek / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "deepseek-chat",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
 exports[`serialized request snapshots > explabs / images 1`] = `
 {
   "body": {
@@ -3914,6 +4333,425 @@ exports[`serialized request snapshots > gemini / tools 1`] = `
 }
 `;
 
+exports[`serialized request snapshots > glm / images 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "enable_thinking": false,
+    },
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "glm-4-plus",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > glm / minimal 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "enable_thinking": false,
+    },
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "glm-4-plus",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > glm / reasoning-control 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "clear_thinking": false,
+      "enable_thinking": true,
+    },
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "glm-4-plus",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > glm / tool-loop-replay 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "clear_thinking": false,
+      "enable_thinking": true,
+    },
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "glm-4-plus",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > glm / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "clear_thinking": false,
+      "enable_thinking": true,
+    },
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "glm-4-plus",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > glm / tools 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "enable_thinking": false,
+    },
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "glm-4-plus",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.z.ai/api/paas/v4/chat/completions",
+}
+`;
+
 exports[`serialized request snapshots > hetzner / images 1`] = `
 {
   "body": {
@@ -4333,6 +5171,416 @@ exports[`serialized request snapshots > hetzner / tools 1`] = `
   },
   "method": "POST",
   "url": "https://inference.hetzner.com/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > kimi / images 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "thinking": true,
+    },
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "kimi-k3",
+    "stream": false,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.moonshot.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > kimi / minimal 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "thinking": true,
+    },
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "kimi-k3",
+    "stream": false,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.moonshot.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > kimi / reasoning-control 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "thinking": true,
+    },
+    "max_tokens": 16000,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "kimi-k3",
+    "stream": false,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.moonshot.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > kimi / tool-loop-replay 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "thinking": true,
+    },
+    "max_tokens": 16000,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "kimi-k3",
+    "stream": false,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.moonshot.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > kimi / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "thinking": true,
+    },
+    "max_tokens": 16000,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "kimi-k3",
+    "stream": false,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.moonshot.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > kimi / tools 1`] = `
+{
+  "body": {
+    "chat_template_kwargs": {
+      "thinking": true,
+    },
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "kimi-k3",
+    "stream": false,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.moonshot.ai/v1/chat/completions",
 }
 `;
 
@@ -5669,6 +6917,404 @@ exports[`serialized request snapshots > meta / tools 1`] = `
   },
   "method": "POST",
   "url": "https://api.meta.ai/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > minimax / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "MiniMax-Text-01",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.minimaxi.chat/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > minimax / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "MiniMax-Text-01",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.minimaxi.chat/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > minimax / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "MiniMax-Text-01",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.minimaxi.chat/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > minimax / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "MiniMax-Text-01",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.minimaxi.chat/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > minimax / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "MiniMax-Text-01",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.minimaxi.chat/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > minimax / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "MiniMax-Text-01",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.minimaxi.chat/v1/chat/completions",
 }
 `;
 

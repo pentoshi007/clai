@@ -13,7 +13,10 @@ import {
   emitStreamReasoningDelta,
 } from "./stream-events.js";
 import { requireTerminalProof } from "./stream-terminal.js";
-import type { ResponsesDialectConfig } from "./responses-config.js";
+import {
+  resolveResponsesUrl,
+  type ResponsesDialectConfig,
+} from "./responses-config.js";
 import {
   assembleCompletionResult,
   collectEofToolCalls,
@@ -55,7 +58,7 @@ async function openResponsesStream(
       watchdog.armOutputTimer();
     }
     try {
-      response = await generationFetch(`${config.baseUrl}/responses`, {
+      response = await generationFetch(resolveResponsesUrl(config.baseUrl), {
         method: "POST",
         signal: watchdog.controller.signal,
         headers: config.buildHeaders(auth, "text/event-stream"),
@@ -317,7 +320,7 @@ export async function responsesStream(
   request: CompletionRequest,
   auth: ProviderAuth,
   onToken: (token: string) => void,
-  model: string,
+  model: string = request.model ?? "",
 ): Promise<CompletionResult> {
   const watchdog = createStreamIdleWatchdog();
   const onCallerAbort = (): void =>

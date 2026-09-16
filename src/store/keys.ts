@@ -29,11 +29,18 @@ export function searchProviderEnvVar(id: SearchProviderId): string | undefined {
 
 
 export function envValue(provider: ProviderId): string | undefined {
-  // Modal is the one provider whose credential is a *pair*: the proxy token id
   if (provider === 'modal') {
     const id = process.env.MODAL_PROXY_TOKEN_ID?.trim();
     const secret = process.env.MODAL_PROXY_TOKEN_SECRET?.trim();
     return id && secret ? `${id}:${secret}` : undefined;
+  }
+  if (provider === 'kimi') {
+    const key = process.env.KIMI_API_KEY?.trim() || process.env.MOONSHOT_API_KEY?.trim();
+    return key && key.length > 0 ? key : undefined;
+  }
+  if (provider === 'glm') {
+    const key = process.env.GLM_API_KEY?.trim() || process.env.ZHIPU_API_KEY?.trim() || process.env.ZAI_API_KEY?.trim();
+    return key && key.length > 0 ? key : undefined;
   }
   const envVar = getEnvVar(provider);
   if (!envVar) {

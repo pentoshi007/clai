@@ -56,7 +56,7 @@ export async function handleModel(
   const provider = state.provider ?? getConfig().defaultProvider;
   const arg = invocation.args.trim();
   if (arg && arg !== "list" && arg !== "ls") {
-    applyModel(services, provider, arg, getKnownModels(provider));
+    applyModel(services, provider, arg);
     return;
   }
 
@@ -225,7 +225,6 @@ export async function handleModels(
       "warn",
       "no models found — configure a provider key with /set first",
     );
-    return;
   }
 
   const filter = invocation.args.trim().toLowerCase();
@@ -297,7 +296,7 @@ function applyModel(
   services: AppServices,
   provider: ProviderId,
   model: string,
-  options: readonly string[] = getKnownModels(provider),
+  options: readonly string[] = [],
 ): void {
   const index = Number.parseInt(model, 10);
   const next =
@@ -332,6 +331,11 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   orcarouter: "https://api.orcarouter.ai/v1",
   "merge-gateway": "https://api-gateway.merge.dev/v1/openai",
   explabs: "https://api.experientiallabs.ai/v1",
+  vercel: "https://ai-gateway.vercel.sh/v1",
+  deepseek: "https://api.deepseek.com",
+  kimi: "https://api.moonshot.ai/v1",
+  glm: "https://api.z.ai/api/paas/v4",
+  minimax: "https://api.minimaxi.chat/v1",
 };
 
 function providerBaseUrl(provider: ProviderId): string | undefined {

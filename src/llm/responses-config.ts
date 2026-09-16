@@ -47,3 +47,10 @@ export function responsesReasoningSummary(effort: string): string {
   if (effort === "medium") return "concise";
   return "auto";
 }
+
+export function resolveResponsesUrl(baseUrl: string): string {
+  const clean = baseUrl.trim().replace(/\/+$/, "");
+  if (/\/responses$/i.test(clean)) return clean;
+  return `${clean}/responses`;
+}
+

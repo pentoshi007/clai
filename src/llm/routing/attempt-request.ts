@@ -27,6 +27,7 @@ import {
   type EffortPreflightRoute,
   type EffortProbeOutcome,
 } from "../wire/effort-preflight.js";
+import { withSendableImages } from "../wire/image-payloads.js";
 import { isModelNotFoundError, shouldContinueEffortLadder } from "./error-classification.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 
@@ -185,15 +186,16 @@ export function requestForRoute(
   provider: ProviderId,
   model: string,
 ): CompletionRequest {
-  if (modelSupportsVision(provider, model)) return request;
+  const sendable = withSendableImages(request);
+  if (modelSupportsVision(provider, model)) return sendable;
 
   const tools = request.tools?.filter((tool) => tool.name !== "image.view");
   const forcedImageView =
     typeof request.toolChoice === "object" &&
     request.toolChoice.name === "image.view";
   const routeMessages = modelAcceptsImages(provider, model)
-    ? request.messages
-    : stripImagesFromMessages(request.messages);
+    ? sendable.messages
+    : stripImagesFromMessages(sendable.messages);
   const messages = routeMessages.map((message) =>
     message.role === "system" && message.content.includes("image.view")
       ? {

@@ -5,6 +5,7 @@ import type {
   ProviderId,
 } from "../../types.js";
 import {
+  isKnownPatternVisionModel,
   learnModelVisionCapability,
   learnRejectedEffort,
   markReasoningMandatory,
@@ -107,7 +108,9 @@ export async function tryCompleteOnce(
     return result;
   } catch (error) {
     if (hasImageInput(activeRequest) && isImageInputUnsupportedError(error)) {
-      learnModelVisionCapability(providerId, model, false);
+      if (!isKnownPatternVisionModel(providerId, model)) {
+        learnModelVisionCapability(providerId, model, false);
+      }
       if (singleDispatch) throw error;
       onStatus?.(
         `ℹ ${providerId}/${model} rejected image input — continuing without images; their contents are unavailable to this model`,

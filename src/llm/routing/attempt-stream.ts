@@ -7,6 +7,7 @@ import type {
   ToolCallStreamDelta,
 } from "../../types.js";
 import {
+  isKnownPatternVisionModel,
   learnModelVisionCapability,
   learnRejectedEffort,
   markReasoningMandatory,
@@ -224,7 +225,9 @@ export async function tryStreamOnce(
       hasImageInput(activeRequest) &&
       isImageInputUnsupportedError(error)
     ) {
-      learnModelVisionCapability(providerId, model, false);
+      if (!isKnownPatternVisionModel(providerId, model)) {
+        learnModelVisionCapability(providerId, model, false);
+      }
       if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
       onStatus?.(
         `ℹ ${providerId}/${model} rejected image input — continuing without images; their contents are unavailable to this model`,

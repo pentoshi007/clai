@@ -47,6 +47,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /glm-?5/i, tokens: 200_000 },
   { pattern: /glm-?4\.[56]/i, tokens: 200_000 },
   { pattern: /glm-?4/i, tokens: 128_000 },
+  { pattern: /minimax-text-01/i, tokens: 4_000_000 },
   { pattern: /minimax-m3/i, tokens: 1_000_000 },
   { pattern: /minimax-m2\.7/i, tokens: 204_800 },
   { pattern: /minimax/i, tokens: 128_000 },

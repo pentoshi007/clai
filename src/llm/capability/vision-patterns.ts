@@ -46,10 +46,19 @@ export const universalVisionPatterns: RegExp[] = [
   /glm-4\.?\d*v/i,
   /kimi-k2\.\d/i,
   /kimi-k[3-9]/i,
+  /muse-spark/i,
+  /mimo-v?(?:2\.5|[3-9])/i,
+  /claude-fable/i,
+  /gpt-[6-9]/i,
+  /vila/i,
+  /neva/i,
+  /minimax-m3/i,
+  /step-3(?:\.\d+)?/i,
+  /qwen3\.[5-9]-(?:plus|max|flash)/i,
 ];
 
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
-  free: [],
+  free: [/muse-spark/i, /mimo/i, /step-3/i, /dots-.*note/i],
   gemini: [
     /gemini-/i,
   ],
@@ -192,9 +201,14 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /vision/i,
     /vl$/i,
   ],
+  deepseek: [/vl/i, /vision/i, /deepseek-vl/i],
+  kimi: [/kimi/i, /moonshot/i],
+  glm: [/glm-4.*v/i, /glm-5.*v/i, /vision/i, /vl$/i],
+  minimax: [/minimax-m3/i, /vision/i, /vl/i],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
+  free: "free-1/muse-spark-1.2-contributor-free",
   gemini: "gemini-3.5-flash",
   openrouter: "google/gemini-2.5-flash",
   openai: "gpt-4o-mini",
@@ -214,4 +228,23 @@ export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   "merge-gateway": "openai/gpt-5.2",
   explabs: "claude-fable-5.1",
   vercel: "openai/gpt-4o",
+  deepseek: "deepseek-chat",
+  kimi: "kimi-k3",
+  glm: "glm-4v-plus",
+  minimax: "MiniMax-Text-01",
 };
+
+function matchesPattern(patterns: readonly RegExp[], model: string): boolean {
+  const normalized = model.trim().replace(/\s+/g, "-");
+  return patterns.some((p) => p.test(model) || p.test(normalized));
+}
+
+export function isKnownPatternVisionModel(
+  provider: ProviderId,
+  model: string,
+): boolean {
+  if (matchesPattern(textOnlyPatterns, model)) return false;
+  const list = visionPatterns[provider];
+  if (list && matchesPattern(list, model)) return true;
+  return matchesPattern(universalVisionPatterns, model);
+}

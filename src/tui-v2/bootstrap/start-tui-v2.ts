@@ -39,6 +39,7 @@ import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import { repaintAttachedScreen } from "./resize-repaint.js";
+import { installShrinkResizeGuard } from "./shrink-resize-guard.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -182,10 +183,11 @@ export async function startTuiV2(
     disarmTerminalRescue,
     disposeServices: () => services.dispose(),
   });
-
+  const disposeShrinkResizeGuard = installShrinkResizeGuard({ renderer });
   const lifecycle = new RendererLifecycle({
     handle,
     disposers: [
+      disposeShrinkResizeGuard,
       () => disposeRuntimeBridge(),
       epilogue.capture,
       async () => {

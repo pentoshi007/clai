@@ -60,6 +60,7 @@ export {
   visionSubstitutionOrigin,
   warnOnUnknownProviderId,
 } from "./capability/vision-registry.js";
+export { isKnownPatternVisionModel } from "./capability/vision-patterns.js";
 export { registerModelVisionCapability };
 export {
   reloadLearnedCapabilities,
