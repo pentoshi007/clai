@@ -99,9 +99,9 @@ describe("router retry ownership for agent streams", () => {
     expect(calls()).toBe(SERVER_ERROR_MAX_ATTEMPTS);
   });
 
-  it("keeps rate-limit retries in default router ownership", async () => {
+  it("stops default router rate-limit retries after four retries", async () => {
     const calls = hetznerAlwaysRateLimited();
     await expect(streamWithProvider(request, () => {})).rejects.toThrow(/429/);
-    expect(calls()).toBe(7);
+    expect(calls()).toBe(5);
   });
 });

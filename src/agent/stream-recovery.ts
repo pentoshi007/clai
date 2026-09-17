@@ -48,7 +48,7 @@ export interface StreamRecoveryLimits {
 
 export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxEmpty: 4,
-  maxRateLimit: 5,
+  maxRateLimit: 4,
   maxServer: 3,
   maxServerAttempts: SERVER_ERROR_MAX_ATTEMPTS,
   maxNetwork: 3,
