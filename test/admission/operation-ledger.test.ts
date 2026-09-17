@@ -394,7 +394,7 @@ describe("ledger budget mechanics", () => {
 
     await expect(completeWithProvider(turn())).rejects.toThrow();
 
-    expect(transport.generations).toHaveLength(7);
+    expect(transport.generations).toHaveLength(5);
   });
 
   it("counts explicit continuations separately from admissions", () => {
