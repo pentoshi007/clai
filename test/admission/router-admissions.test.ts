@@ -162,13 +162,13 @@ describe("key rotation admissions", () => {
     expect(transport.generations).toHaveLength(1);
   });
 
-  it("issues seven admissions for a single key on the default retry budget", async () => {
+  it("issues five admissions for a single key on the default retry budget", async () => {
     slotsByProvider = { nvidia: keySlots(["nvapi-a"]) };
     const transport = installScript(rateLimitedWithoutBackoff);
 
     await expect(completeWithProvider(turn())).rejects.toThrow();
 
-    expect(transport.generations).toHaveLength(7);
+    expect(transport.generations).toHaveLength(5);
     expect(new Set(admittedKeys(transport))).toEqual(new Set(["nvapi-a"]));
   });
 
@@ -477,11 +477,9 @@ describe("operation attempt usage", () => {
     ).rejects.toThrow();
 
     const snapshot = recorder.snapshot();
-    expect(snapshot.attempts).toHaveLength(7);
+    expect(snapshot.attempts).toHaveLength(5);
     expect(snapshot.attempts.map((attempt) => attempt.reason)).toEqual([
       "initial",
-      "retry",
-      "retry",
       "retry",
       "retry",
       "retry",
@@ -493,7 +491,7 @@ describe("operation attempt usage", () => {
     expect(snapshot.aggregate).toEqual({
       status: "unknown",
       knownAdmissions: 0,
-      unknownAdmissions: 7,
+      unknownAdmissions: 5,
     });
   });
 
