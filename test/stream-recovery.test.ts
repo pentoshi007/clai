@@ -177,9 +177,9 @@ describe("planStreamRecovery — bounded escalation", () => {
     );
   });
 
-  it("follows the exact 10/20/30/40/60 second rate-limit schedule", () => {
+  it("follows the exact 5/10/15/20 second rate-limit schedule and stops after four retries", () => {
     const state = createStreamRecoveryState();
-    const schedule = [10_000, 20_000, 30_000, 40_000, 60_000];
+    const schedule = [5_000, 10_000, 15_000, 20_000];
     for (const expected of schedule) {
       const plan = planStreamRecovery({ kind: "rate-limit", state });
       expect(plan.action).toBe("retry");
@@ -196,7 +196,7 @@ describe("planStreamRecovery — bounded escalation", () => {
     const long = new ProviderError("rate limited", 429, "", 45);
     expect(
       planStreamRecovery({ kind: "rate-limit", state, error: long }).delayMs,
-    ).toBe(10_000);
+    ).toBe(5_000);
     recordRecoveryAttempt(state, "rate-limit");
     const short = new ProviderError("rate limited", 429, "", 2);
     expect(
@@ -211,7 +211,7 @@ describe("planStreamRecovery — bounded escalation", () => {
     );
     expect(
       planStreamRecovery({ kind: "rate-limit", state, error }).delayMs,
-    ).toBe(10_000);
+    ).toBe(5_000);
   });
 
   it("compacts on context overflow before retrying, then gives up", () => {

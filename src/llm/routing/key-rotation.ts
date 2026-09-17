@@ -20,6 +20,7 @@ import {
   isKeyCircleStopError,
   isKeyRotatableError,
   isQuotaKeyError,
+  RATE_LIMIT_RETRY_WAIT_MS,
 } from "../key-rotation.js";
 import type { ProviderKeyEvent } from "../key-rotation.js";
 import { isOperationPolicyError } from "../operation-ledger.js";
@@ -273,7 +274,12 @@ export async function runWithKeyRotation<T>(opts: {
         const serverBudgetExhausted =
           isServerErrorFailure(error) &&
           serverAttempts >= SERVER_ERROR_MAX_ATTEMPTS;
-        const canRetrySame = attempt + 1 < maxPerKey && !serverBudgetExhausted;
+        const rateLimitBudgetExhausted =
+          isRateLimited(error) && attempt >= RATE_LIMIT_RETRY_WAIT_MS.length;
+        const canRetrySame =
+          attempt + 1 < maxPerKey &&
+          !serverBudgetExhausted &&
+          !rateLimitBudgetExhausted;
         if (canRetrySame) {
           const wait =
             isRateLimited(error) || isServerUnavailable(error)
