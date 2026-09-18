@@ -2196,7 +2196,8 @@ exports[`serialized request snapshots > deepseek / tool-loop-replay 1`] = `
         "role": "user",
       },
       {
-        "content": null,
+        "content": "",
+        "reasoning_content": "the file must be inspected first",
         "role": "assistant",
         "tool_calls": [
           {
@@ -2299,7 +2300,7 @@ exports[`serialized request snapshots > deepseek / tool-loop-replay-unsigned 1`]
         "role": "user",
       },
       {
-        "content": null,
+        "content": "",
         "reasoning_content": "the file must be inspected first",
         "role": "assistant",
         "tool_calls": [
@@ -3328,12 +3329,15 @@ exports[`serialized request snapshots > free / images 1`] = `
   },
   "headers": {
     "accept": "application/json",
+    "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/1.18.27",
+    "user-agent": "opencode/latest/2.0.8/cli",
     "x-opencode-client": "cli",
     "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
+    "x-session-affinity": "<generated>",
+    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -3370,12 +3374,15 @@ exports[`serialized request snapshots > free / minimal 1`] = `
   },
   "headers": {
     "accept": "application/json",
+    "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/1.18.27",
+    "user-agent": "opencode/latest/2.0.8/cli",
     "x-opencode-client": "cli",
     "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
+    "x-session-affinity": "<generated>",
+    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -3413,12 +3420,15 @@ exports[`serialized request snapshots > free / reasoning-control 1`] = `
   },
   "headers": {
     "accept": "application/json",
+    "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/1.18.27",
+    "user-agent": "opencode/latest/2.0.8/cli",
     "x-opencode-client": "cli",
     "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
+    "x-session-affinity": "<generated>",
+    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -3447,113 +3457,7 @@ exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
         "role": "user",
       },
       {
-        "content": null,
-        "role": "assistant",
-        "tool_calls": [
-          {
-            "function": {
-              "arguments": "{"path":"docs/example.md"}",
-              "name": "fs_read",
-            },
-            "id": "call_replay_1",
-            "type": "function",
-          },
-        ],
-      },
-      {
-        "content": "example file contents",
-        "name": "fs_read",
-        "role": "tool",
-        "tool_call_id": "call_replay_1",
-      },
-    ],
-    "model": "deepseek-v4-flash-free",
-    "reasoning_effort": "high",
-    "stream": false,
-    "thinking": {
-      "type": "enabled",
-    },
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "content-type": "application/json",
-    "user-agent": "opencode/1.18.27",
-    "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
-    "x-opencode-request": "<generated>",
-    "x-opencode-session": "<generated>",
-  },
-  "method": "POST",
-  "url": "https://opencode.ai/zen/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
-{
-  "body": {
-    "max_tokens": 16384,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "read the example file",
-        "role": "user",
-      },
-      {
-        "content": null,
+        "content": "",
         "reasoning_content": "the file must be inspected first",
         "role": "assistant",
         "tool_calls": [
@@ -3626,12 +3530,125 @@ exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
   },
   "headers": {
     "accept": "application/json",
+    "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/1.18.27",
+    "user-agent": "opencode/latest/2.0.8/cli",
     "x-opencode-client": "cli",
     "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
+    "x-session-affinity": "<generated>",
+    "x-session-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://opencode.ai/zen/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": "",
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "deepseek-v4-flash-free",
+    "reasoning_effort": "high",
+    "stream": false,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "opencode/latest/2.0.8/cli",
+    "x-opencode-client": "cli",
+    "x-opencode-project": "<generated>",
+    "x-opencode-request": "<generated>",
+    "x-opencode-session": "<generated>",
+    "x-session-affinity": "<generated>",
+    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -3711,12 +3728,15 @@ exports[`serialized request snapshots > free / tools 1`] = `
   },
   "headers": {
     "accept": "application/json",
+    "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/1.18.27",
+    "user-agent": "opencode/latest/2.0.8/cli",
     "x-opencode-client": "cli",
     "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
+    "x-session-affinity": "<generated>",
+    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -9103,7 +9123,8 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay 1`] = `
         "role": "user",
       },
       {
-        "content": null,
+        "content": "",
+        "reasoning_content": "the file must be inspected first",
         "role": "assistant",
         "tool_calls": [
           {
@@ -9208,7 +9229,7 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay-unsigned 1
         "role": "user",
       },
       {
-        "content": null,
+        "content": "",
         "reasoning_content": "the file must be inspected first",
         "role": "assistant",
         "tool_calls": [

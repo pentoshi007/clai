@@ -7,7 +7,10 @@ import {
   isReasoningUnsupported,
   learnedRouteEfforts,
 } from "../capabilities.js";
-import { isInvalidReasoningContentError } from "../reasoning-errors.js";
+import {
+  isInvalidReasoningContentError,
+  isMissingReasoningContentError,
+} from "../reasoning-errors.js";
 import {
   isReasoningUnsupportedError,
   ProviderError,
@@ -209,6 +212,7 @@ export function shouldEnterEffortLadder(
   singleDispatch: boolean,
 ): boolean {
   if (isInvalidReasoningContentError(error)) return false;
+  if (isMissingReasoningContentError(error)) return false;
   if (isReasoningUnsupportedError(error)) return true;
   if (singleDispatch) return false;
   if (!thinking?.enabled) return false;

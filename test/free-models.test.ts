@@ -219,7 +219,9 @@ describe("free provider (zen + kilo)", () => {
       expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
         "https://opencode.ai/zen/v1/chat/completions",
       );
-      expect(request.headers).not.toHaveProperty("authorization");
+      expect(request.headers).toMatchObject({
+        authorization: "Bearer public",
+      });
     });
 
     it("routes free-1/ models to the zen gateway with the prefix stripped", async () => {
@@ -240,7 +242,9 @@ describe("free provider (zen + kilo)", () => {
       const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       const body = JSON.parse(String(request.body)) as { model?: string };
       expect(body.model).toBe("deepseek-v4-flash-free");
-      expect(request.headers).not.toHaveProperty("authorization");
+      expect(request.headers).toMatchObject({
+        authorization: "Bearer public",
+      });
     });
 
     it("routes free-2/ models to the kilo gateway with the prefix stripped", async () => {
@@ -356,14 +360,14 @@ describe("free provider (zen + kilo)", () => {
 
       const request = fetchMock.mock.calls.at(-1)![1] as Record<string, unknown>;
       expect(request.headers).toMatchObject({
-        "user-agent": "opencode/1.18.27",
+        "user-agent": "opencode/latest/2.0.8/cli",
         "x-opencode-client": "cli",
+        authorization: "Bearer public",
       });
       const headers = request.headers as Record<string, string>;
-      expect(headers["x-opencode-session"]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(headers["x-opencode-session"]).toMatch(/^ses_[0-9a-fA-Za-z]+$/);
       expect(headers["x-opencode-request"]).toMatch(/^[0-9a-f-]{36}$/);
       expect(headers["x-opencode-project"]).toMatch(/^[0-9a-f-]{36}$/);
-      expect(request.headers).not.toHaveProperty("authorization");
     });
 
     it("presents kilo requests as the kilocode client", async () => {

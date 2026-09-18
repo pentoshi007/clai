@@ -80,9 +80,13 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
       input?: unknown;
       messages?: unknown;
       max_output_tokens?: number;
+      tools?: Array<{ name: string }>;
     };
     expect(body.model).toBe("muse-spark-1.2-contributor-free");
     expect(Array.isArray(body.input)).toBe(true);
+    expect(Array.isArray(body.tools)).toBe(true);
+    expect(body.tools?.some((t) => t.name === "read")).toBe(true);
+    expect(body.tools?.some((t) => t.name === "shell")).toBe(true);
     expect(body.messages).toBeUndefined();
     expect(typeof body.max_output_tokens).toBe("number");
     expect(result.text).toBe("hi there");
@@ -90,7 +94,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     expect(result.model).toBe("free-1/muse-spark-1.2-contributor-free");
   });
 
-  it("sends no Authorization header for a keyless muse-spark request", async () => {
+  it("sends the public Authorization header for a keyless muse-spark request", async () => {
     const fetchMock = jsonResponsesMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -103,8 +107,10 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     );
 
     const request = fetchMock.mock.calls[0]![1] as RequestInit;
-    expect(request.headers).not.toHaveProperty("authorization");
-    expect(request.headers).toMatchObject({ accept: "application/json" });
+    expect(request.headers).toMatchObject({
+      authorization: "Bearer public",
+      accept: "text/event-stream",
+    });
   });
 
   it("sends the Authorization header when a key is configured", async () => {
@@ -125,7 +131,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     });
   });
 
-  it("streams a muse-spark zen model over /responses SSE without an auth header", async () => {
+  it("streams a muse-spark zen model over /responses SSE", async () => {
     const fetchMock = vi.fn(async () =>
       sseResponse([
         { type: "response.created", response: { id: "r1" } },
@@ -163,8 +169,10 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     };
     expect(Array.isArray(body.input)).toBe(true);
     expect(body.stream).toBe(true);
-    expect(request.headers).not.toHaveProperty("authorization");
-    expect(request.headers).toMatchObject({ accept: "text/event-stream" });
+    expect(request.headers).toMatchObject({
+      authorization: "Bearer public",
+      accept: "text/event-stream",
+    });
     expect(tokens.join("")).toBe("hello");
     expect(result.text).toBe("hello");
     expect(result.model).toBe("free-1/muse-spark-1.2-contributor-free");
@@ -245,5 +253,70 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     const request = fetchMock.mock.calls[1]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as { input?: unknown };
     expect(body.input).toBeUndefined();
+  });
+
+  it("sanitizes toolChoice none so the Zen gateway receives auto", async () => {
+    const fetchMock = jsonResponsesMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await freeProvider.complete(
+      {
+        model: "free-1/muse-spark-1.2-contributor-free",
+        messages: [{ role: "user", content: "summarize this" }],
+        toolChoice: "none",
+        tools: [
+          {
+            name: "fs.read",
+            wireName: "fs_read",
+            description: "read",
+            parameters: { type: "object" },
+          },
+        ],
+      },
+      {},
+    );
+
+    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as {
+      tool_choice?: string;
+    };
+    expect(body.tool_choice).toBe("auto");
+  });
+
+  it("suppresses unexpected tool calls when tools were not requested", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: "completed",
+          output: [
+            {
+              type: "function_call",
+              call_id: "c1",
+              name: "read",
+              arguments: "{}",
+            },
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "text only" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await freeProvider.complete(
+      {
+        model: "free-1/muse-spark-1.2-contributor-free",
+        messages: [{ role: "user", content: "hi" }],
+      },
+      {},
+    );
+
+    expect(result.text).toBe("text only");
+    expect(result.toolCalls).toBeUndefined();
   });
 });
