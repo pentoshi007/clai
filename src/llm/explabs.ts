@@ -190,9 +190,6 @@ function catalogFactsEntry(
   const entry: Record<string, unknown> = {
     id: slug,
     reasoning,
-    ...(reasoning !== false
-      ? { supported_parameters: ["reasoning_effort", "reasoning"] }
-      : {}),
     ...(contextWindow !== undefined ? { context_window: contextWindow } : {}),
     ...(maxOutput !== undefined ? { max_completion_tokens: maxOutput } : {}),
     ...(inputModalities.length > 0
