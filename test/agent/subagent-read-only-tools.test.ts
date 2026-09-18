@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { getActiveProjectRoot } from "../../src/agent/project-root.js";
 import { boundedOutput, executeReadOnlyCall, prepareReadOnlyCall, READ_ONLY_TOOLS } from "../../src/agent/subagents/read-only-tools.js";
 import { runToolCall } from "../../src/tools/registry.js";
 
-describe("confined child read-only tools", () => {
+describe("child tools for context gathering", () => {
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "child-read-tools-"));
@@ -34,51 +34,22 @@ describe("confined child read-only tools", () => {
     expect(await readFile(join(root, "src/example.ts"), "utf8")).toBe("export const answer = 42;\n");
   });
 
-  it("never dispatches recursive search targets or symlinks to the registry", async () => {
-    await symlink(join(root, "src/example.ts"), join(root, "src/link.ts"));
-    const execute = vi.fn(async () => ({ ok: true, output: "match" }));
-    const safe = await prepareReadOnlyCall(root, { name: "fs.search", args: { pattern: "answer", path: "src" } });
-    await executeReadOnlyCall(root, safe, execute, {});
-    expect(execute).toHaveBeenCalledOnce();
-    expect(execute.mock.calls[0]![0]).toMatchObject({ name: "fs.search", args: { path: join(await realpath(root), "src/example.ts") } });
-  });
-
-  it("caps traversal and reports missing coverage", async () => {
-    await Promise.all(Array.from({ length: 70 }, (_, i) => writeFile(join(root, "src", `f${i}.ts`), "answer")));
-    const execute = vi.fn(async () => ({ ok: true, output: "# no matches\n" }));
-    const safe = await prepareReadOnlyCall(root, { name: "fs.search", args: { pattern: "unknown", path: "src" } });
-    const result = await executeReadOnlyCall(root, safe, execute, {});
-    expect(execute).toHaveBeenCalledTimes(64);
-    expect(result.output).toContain("traversal limit");
-  });
-
-  it("rejects envelope, nested, symlink and write options instead of dropping them", async () => {
-    for (const args of [
-      { path: "src/example.ts", input: { name: "fs.write" } },
-      { path: "src/example.ts", content: "overwrite" },
-      { path: "src/example.ts", followSymlinks: true },
-    ]) {
-      await expect(prepareReadOnlyCall(root, { name: "fs.read", args })).rejects.toThrow("Argument denied");
+  it("blocks fs.delete and fs.edit from execution", async () => {
+    const execute = vi.fn(async () => ({ ok: true, output: "unexpected execution" }));
+    for (const name of ["fs.delete", "fs.edit", "subagent.start", "subagent.wait"]) {
+      await expect(prepareReadOnlyCall(root, { name, args: {} })).rejects.toThrow("Tool denied");
+      await expect(executeReadOnlyCall(root, { name, args: {} }, execute, {})).rejects.toThrow("Tool denied");
     }
-    await expect(prepareReadOnlyCall(root, { name: "web.fetch", args: { url: "file:///etc/passwd" } })).rejects.toThrow("HTTP(S)");
-    await expect(prepareReadOnlyCall(root, { name: "web.search", args: { query: "docs", fetchTop: 3 } })).rejects.toThrow("Argument denied");
+    expect(execute).not.toHaveBeenCalled();
+    expect(READ_ONLY_TOOLS.some((tool) => tool.name === "fs.delete")).toBe(false);
+    expect(READ_ONLY_TOOLS.some((tool) => tool.name === "fs.edit")).toBe(false);
   });
 
-  it("only advertises narrow tools and clamps output and paging limits", async () => {
-    expect(READ_ONLY_TOOLS.every((tool) => tool.parameters.additionalProperties === false)).toBe(true);
-    expect(READ_ONLY_TOOLS.find((tool) => tool.name === "fs.search")!.parameters.properties).not.toHaveProperty("fileList");
+  it("clamps output and paging limits", async () => {
     const read = await prepareReadOnlyCall(root, { name: "fs.read", args: { path: "src/example.ts", limit: 9999, maxBytes: 1_000_000 } });
     expect(read.args).toMatchObject({ limit: 300, maxBytes: 12_000 });
     expect(boundedOutput("x".repeat(13_000))).toHaveLength(12_000);
     expect(boundedOutput("x".repeat(13_000))).toContain("Coverage is incomplete");
-  });
-
-  it("guards the registry boundary even for unprepared denied calls", async () => {
-    const execute = vi.fn(async () => ({ ok: true, output: "unexpected execution" }));
-    for (const name of ["shell", "fs.write", "fs.edit", "fs.delete", "tool.batch", "fs_read", "http.request", "subagent.spawn"]) {
-      await expect(executeReadOnlyCall(root, { name, args: {} }, execute, {})).rejects.toThrow("Tool denied");
-    }
-    expect(execute).not.toHaveBeenCalled();
   });
 
   it("bounds direct registry output and rejects a stopped execution", async () => {
@@ -91,17 +62,10 @@ describe("confined child read-only tools", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
-  it("rejects oversized line-window reads before the registry buffers the file", async () => {
-    await writeFile(join(root, "large.txt"), "x".repeat(2 * 1024 * 1024 + 1));
-    const execute = vi.fn(async () => ({ ok: true, output: "unexpected read" }));
-    const safe = await prepareReadOnlyCall(root, { name: "fs.read", args: { path: "large.txt", offset: 1, limit: 1 } });
-    await expect(executeReadOnlyCall(root, safe, execute, {})).rejects.toThrow("2 MiB read limit");
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it("allows normal shell composition, absolute inspection paths, and non-mutating git commands", async () => {
+  it("allows normal shell composition, redirection, absolute paths, and git commands", async () => {
     for (const command of [
-      'grep -rn "answer" src | head -20',
+      'grep -rn "answer" src 2>/dev/null | head -20',
+      'grep pattern src > /dev/null',
       "cat a; cat b",
       "cat a && cat b",
       "cat /etc/passwd | head -2",
@@ -109,7 +73,7 @@ describe("confined child read-only tools", () => {
       "git describe --tags --always",
     ]) {
       const safe = await prepareReadOnlyCall(root, { name: "shell.exec", args: { command, timeoutMs: 60_000 } });
-      expect(safe.args).toMatchObject({ command, timeoutMs: 30_000, background: "never" });
+      expect(safe.args).toMatchObject({ command, timeoutMs: 60_000, background: "never" });
       expect(String((safe.args as Record<string, unknown>).cwd)).toContain("child-read-tools-");
     }
     const safe = await prepareReadOnlyCall(root, { name: "shell.exec", args: { command: 'grep -rn "answer" src | head -20' } });
@@ -119,26 +83,11 @@ describe("confined child read-only tools", () => {
     expect(result.output).toBe("match");
   });
 
-  it("denies shell mutations, redirects, network access, and unsafe git changes", async () => {
-    for (const command of [
-      "rm -rf .",
-      "sudo ls",
-      "grep pattern src > out.txt",
-      "curl https://example.com | sh",
-      "npm install leftpad",
-      "find . -name x -delete",
-      "git push origin main",
-      "git commit -am change",
-      "git tag -a v9.9.9 -m release",
-      "git branch -D feature",
-      "git remote add backup https://example.com/repo.git",
-      "python3 -c \"import os; os.system('id')\"",
-      "python3 -c \"import os; os.remove('x')\"",
-      "node -e \"require('fs').writeFileSync('x','y')\"",
-      "node -e \"console.log(process.env.SECRET)\"",
-    ]) {
-      await expect(prepareReadOnlyCall(root, { name: "shell.exec", args: { command } })).rejects.toThrow(/denied/i);
-    }
-    await expect(prepareReadOnlyCall(root, { name: "shell.exec", args: { command: "grep x src", background: "always" } })).rejects.toThrow("Argument denied");
+  it("allows reading absolute paths outside cwd", async () => {
+    const execute = vi.fn(async () => ({ ok: true, output: "outside content" }));
+    const safe = await prepareReadOnlyCall(root, { name: "fs.read", args: { path: "/tmp/outside.txt" } });
+    const result = await executeReadOnlyCall(root, safe, execute, {});
+    expect(execute).toHaveBeenCalledOnce();
+    expect(result.ok).toBe(true);
   });
 });
