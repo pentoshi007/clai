@@ -82,32 +82,42 @@ function compatibleReasoningFields(
     ...selectReasoningArtifactsForReplay({
       artifacts: reasoningArtifactsForMessage(message),
       target: replay.target,
-      context: {
-        hasToolCalls: Boolean(
-          message.toolCalls?.length ||
-            (typeof message.content === "string" &&
-              (/```tool\b|<tool_call>|<\|tool_call/i.test(message.content))),
-        ),
-        ...(replay.forceScope ? { forceScope: true } : {}),
-      },
       observe: replay.observe,
+      context: {
+        forceScope: replay.forceScope,
+        hasToolCalls: Boolean(message.toolCalls?.length),
+      },
     }),
-  ].sort((left, right) => left.position.sequence - right.position.sequence);
-  const plaintext = artifacts.find((artifact) => artifact.kind === "plaintext");
+  ];
+  const plaintext = artifacts.find(
+    (artifact) => artifact.kind === "plaintext",
+  );
   const details = artifacts.find(
     (artifact) => artifact.kind === "structured-details",
   );
   const signature = artifacts.find(
     (artifact) => artifact.kind === "thought-signature",
   );
-  const reasoningContent = plaintext
+  let reasoningContent = plaintext
     ? reasoningArtifactText(plaintext)
     : undefined;
+  const isDeepSeek =
+    replay.target.provider === "deepseek" ||
+    Boolean(replay.target.model && /deepseek/i.test(replay.target.model));
+  if (
+    !reasoningContent &&
+    isDeepSeek &&
+    message.toolCalls?.length &&
+    !message.reasoningArtifacts?.length &&
+    message.reasoningBlock?.text
+  ) {
+    reasoningContent = message.reasoningBlock.text;
+  }
   const thoughtSignature = signature
     ? reasoningArtifactSignature(signature)
     : undefined;
   return {
-    ...(reasoningContent ? { reasoningContent } : {}),
+    ...(reasoningContent !== undefined ? { reasoningContent } : {}),
     ...(details ? { reasoningDetails: details.raw } : {}),
     ...(thoughtSignature ? { thoughtSignature } : {}),
   };
@@ -120,6 +130,9 @@ export function toOpenAiToolMessages(
 ): OpenAiWireMessage[] {
   const out: OpenAiWireMessage[] = [];
   const invalidHistory = invalidNativeToolHistoryIndexes(messages);
+  const isDeepSeek =
+    replay?.target?.provider === "deepseek" ||
+    Boolean(replay?.target?.model && /deepseek/i.test(replay.target.model));
   for (const [index, message] of messages.entries()) {
     const portable =
       replay?.portableToolHistory?.has(message) || invalidHistory.has(index);
@@ -160,8 +173,8 @@ export function toOpenAiToolMessages(
       const reasoning = compatibleReasoningFields(message, replay);
       out.push({
         role: "assistant",
-        content: message.content || null,
-        ...(reasoning.reasoningContent
+        content: isDeepSeek ? (message.content ?? "") : (message.content || null),
+        ...(reasoning.reasoningContent !== undefined
           ? { reasoning_content: reasoning.reasoningContent }
           : {}),
         ...(reasoning.reasoningDetails !== undefined

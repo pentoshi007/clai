@@ -140,6 +140,9 @@ function agentrouterModelLayer(
         defaultEffort: "high",
         disable: "supported",
         disableForm: "thinking-disabled",
+        replayScope: "tool-turn",
+        finalTurnPreservation: "supported",
+        outputShapes: ["reasoning-content"],
       },
     };
   }
@@ -193,6 +196,7 @@ function openrouterModelLayer(model: string): ProviderProfileLayer | undefined {
       },
       acceptedEfforts: ["low", "medium", "high"],
       replayScope: "tool-turn",
+      finalTurnPreservation: "supported",
       outputShapes: ["reasoning-content", "structured-details"],
     },
   };

@@ -7,6 +7,12 @@ import type {
 import { decision } from "../reasoning-artifacts.js";
 import type { ReasoningArtifactReplayContext } from "../reasoning-artifacts.js";
 
+function isSameModel(sourceModel: string | undefined, targetModel: string): boolean {
+  if (!sourceModel || sourceModel === targetModel) return true;
+  const strip = (m: string) => m.toLowerCase().replace(/^(?:free-[12]|openrouter|agentrouter)\//, "");
+  return strip(sourceModel) === strip(targetModel);
+}
+
 export function reasoningArtifactReplayDecision(
   artifact: ReasoningArtifact,
   target: ReasoningArtifactReplayTarget,
@@ -28,14 +34,14 @@ export function reasoningArtifactReplayDecision(
   if (source.dialect !== target.dialect) {
     return decision(artifact, target, "omitted", "dialect-mismatch");
   }
-  if (source.model && source.model !== target.model) {
+  if (source.model && !isSameModel(source.model, target.model)) {
     return decision(artifact, target, "omitted", "model-mismatch");
   }
-  if (source.endpointHash && !target.endpointHash) {
-    return decision(artifact, target, "omitted", "endpoint-unknown");
-  }
-  if (source.endpointHash && source.endpointHash !== target.endpointHash) {
+  if (source.endpointHash && target.endpointHash && source.endpointHash !== target.endpointHash) {
     return decision(artifact, target, "omitted", "endpoint-mismatch");
+  }
+  if (source.endpointHash && !target.endpointHash && source.provider !== target.provider) {
+    return decision(artifact, target, "omitted", "endpoint-unknown");
   }
   return decision(artifact, target, "replayed");
 }

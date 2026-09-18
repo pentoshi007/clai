@@ -238,6 +238,27 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       },
       outputShapes: ["reasoning-content"],
     },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: [
+        "messages",
+        "tools",
+        "tool_choice",
+        "thinking",
+        "reasoning_effort",
+      ],
+    },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.prompt_cache_hit_tokens",
+        "usage.input_tokens_details.cached_tokens",
+      ],
+      reasoningOutput: [
+        "usage.completion_tokens_details.reasoning_tokens",
+        "usage.output_tokens_details.reasoning_tokens",
+      ],
+    },
     terminal: {
       proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
@@ -507,6 +528,27 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         evidence: codeFact("free-gateway-contracts-unknown"),
       },
       outputShapes: ["reasoning-content"],
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: [
+        "messages",
+        "tools",
+        "tool_choice",
+        "thinking",
+        "reasoning_effort",
+      ],
+    },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.prompt_cache_hit_tokens",
+        "usage.input_tokens_details.cached_tokens",
+      ],
+      reasoningOutput: [
+        "usage.completion_tokens_details.reasoning_tokens",
+        "usage.output_tokens_details.reasoning_tokens",
+      ],
     },
     terminal: {
       proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,

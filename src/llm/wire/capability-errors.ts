@@ -20,18 +20,20 @@ export function isReasoningUnsupportedError(error: unknown): boolean {
       : "";
   const message = error instanceof Error ? error.message : String(error);
   const hay = `${message}\n${body}`.toLowerCase();
+  if (/reasoning[_ ]?(?:content|text)/.test(hay)) return false;
 
   const mentionsReasoningKnob =
-    /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning_content|思考|推理|\breasoning\b|\bthinking\b/.test(
+    /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|思考|推理|\breasoning\b|\bthinking\b/.test(
       hay,
     );
   if (!mentionsReasoningKnob) return false;
 
-  if (status === 400 || status === 422) return true;
-
-  return /not support|unsupported|unknown|unrecognized|not a valid|not allowed|unexpected keyword|does not accept|extra fields not permitted|additional propert|不支持|不允许|无效|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field)/.test(
-    hay,
-  );
+  const rejectsKnob =
+    /not support|unsupported|unknown|unrecognized|not a valid|not allowed|unexpected keyword|does not accept|extra fields not permitted|additional propert|不支持|不允许|无效|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field)/.test(
+      hay,
+    );
+  if (rejectsKnob) return true;
+  return status === 400 || status === 422;
 }
 
 export interface ReasoningRejectionAdvice {
