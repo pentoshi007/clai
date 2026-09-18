@@ -250,8 +250,8 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       : { max_tokens: effectiveMaxTokens }),
     ...(emitTemperature ? { temperature: sampling.temperature } : {}),
     ...reasoning,
-    ...(options.control?.profile?.capabilities?.acceptedParameters !==
-    undefined &&
+    ...(options.providerId === "openrouter" &&
+    options.control?.profile?.capabilities?.acceptedParameters !== undefined &&
     !options.control.profile.capabilities.acceptedParameters.includes("tools")
       ? {}
       : openAiToolBodyFields({
@@ -340,6 +340,10 @@ export function chatCompletionsBodyFromPlan(
     plan,
     Boolean(extras.forceReasoningReplay),
   );
+  const allowTools =
+    plan.route.provider !== "openrouter" ||
+    plan.policy.acceptedParameters === undefined ||
+    plan.policy.acceptedParameters.includes("tools");
   return emitChatCompletionsBody({
     model: plan.route.model,
     providerId: plan.route.provider,
@@ -375,21 +379,11 @@ export function chatCompletionsBodyFromPlan(
       ? { outputTokenLimit: plan.policy.limits.outputTokens }
       : {}),
     tools:
-      plan.tools.definitions.length &&
-      (plan.policy.acceptedParameters === undefined ||
-        plan.policy.acceptedParameters.includes("tools"))
+      plan.tools.definitions.length && allowTools
         ? [...plan.tools.definitions]
         : undefined,
-    toolChoice:
-      plan.policy.acceptedParameters === undefined ||
-      plan.policy.acceptedParameters.includes("tools")
-        ? plan.tools.choice
-        : undefined,
-    parallelToolCalls:
-      plan.policy.acceptedParameters === undefined ||
-      plan.policy.acceptedParameters.includes("tools")
-        ? plan.tools.parallelToolCalls
-        : undefined,
+    toolChoice: allowTools ? plan.tools.choice : undefined,
+    parallelToolCalls: allowTools ? plan.tools.parallelToolCalls : undefined,
     replayTarget: plan.replay.target,
     reasoningArtifactReplayObserver: extras.reasoningArtifactReplayObserver,
     ...(extras.forceReasoningReplay ? { forceReasoningReplay: true } : {}),

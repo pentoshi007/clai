@@ -82,6 +82,7 @@ export function resolveToolDialect(
   if (nativeToolsDenylist.some((re) => re.test(model))) return "none";
   const facts = catalogFactsByRoute.get(reasoningKey(provider, model));
   if (
+    provider === "openrouter" &&
     facts?.acceptedParameters !== undefined &&
     !facts.acceptedParameters.includes("tools")
   ) {

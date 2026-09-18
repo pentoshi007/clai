@@ -52,7 +52,16 @@ describe("resolveToolDialect", () => {
       acceptedParameters: ["temperature", "tools", "tool_choice"],
     });
     expect(resolveToolDialect("openrouter", "openai/gpt-4o", "auto")).toBe("openai");
-    expect(modelSupportsNativeTools("openrouter", "openai/gpt-4o", "auto")).toBe(true);
+    clearModelCatalogFacts();
+  });
+
+  it("does not gate non-openrouter models by acceptedParameters", () => {
+    registerModelCatalogFacts("explabs", {
+      id: "gpt-5.6-luna",
+      acceptedParameters: ["reasoning_effort", "reasoning"],
+    });
+    expect(resolveToolDialect("explabs", "gpt-5.6-luna", "auto")).toBe("openai");
+    expect(modelSupportsNativeTools("explabs", "gpt-5.6-luna", "auto")).toBe(true);
     clearModelCatalogFacts();
   });
 });
