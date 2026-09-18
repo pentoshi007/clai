@@ -1,6 +1,6 @@
 import type { ToolCall } from "../../types.js";
-import { DEEPSEEK_TOOL_CALL_RE, KIMI_TOOL_CALL_RE, parseAllDsmlToolCalls, parseAllIdTaggedToolCalls, parseAllOpenSepToolCalls, parseDeepseekToolCall, parseDsmlToolCall, parseIdTaggedToolCall, parseKimiToolCall, parseOpenSepToolCall, tryJson } from "./vendor-protocols.js";
-import { parseXmlToolCall, tryParseCall } from "./xml-protocol.js";
+import { DEEPSEEK_TOOL_CALL_RE, KIMI_TOOL_CALL_RE, parseAllBracketedToolCalls, parseAllDsmlToolCalls, parseAllIdTaggedToolCalls, parseAllOpenSepToolCalls, parseAllToCodeToolCalls, parseBracketedToolCall, parseDeepseekToolCall, parseDsmlToolCall, parseIdTaggedToolCall, parseKimiToolCall, parseOpenSepToolCall, parseToCodeToolCall, tryJson } from "./vendor-protocols.js";
+import { extractBalancedJson, parseXmlToolCall, tryParseCall } from "./xml-protocol.js";
 
 export interface ParseToolCallOptions {
   strict?: boolean | undefined;
@@ -33,6 +33,12 @@ export function parseToolCall(
 
   const deepseek = parseDeepseekToolCall(text);
   if (deepseek) return deepseek;
+
+  const bracketed = parseBracketedToolCall(text);
+  if (bracketed) return bracketed;
+
+  const toCode = parseToCodeToolCall(text);
+  if (toCode) return toCode;
 
   if (options.strict) return undefined;
 
@@ -106,6 +112,20 @@ export function looksLikeTruncatedToolCall(text: string): boolean {
     const after = text.slice(lastOpener.index + lastOpener[0].length);
     if (!/<\/tool_call\b/i.test(after)) return true;
   }
+  const bracketOpeners = [...text.matchAll(/\[(?:tool[ _]?call|toolcall|tool)\s*[:=]/gi)];
+  const lastBracketOpener = bracketOpeners[bracketOpeners.length - 1];
+  if (lastBracketOpener?.index !== undefined) {
+    const after = text.slice(lastBracketOpener.index + lastBracketOpener[0].length);
+    if (!extractBalancedJson(after)) return true;
+  }
+  const toCodeOpeners = [
+    ...text.matchAll(/(?:^|\s)to\s*=\s*["']?(?:functions\.)?[A-Za-z][\w.]*?["']?\s+code\s*:/gi),
+  ];
+  const lastToCodeOpener = toCodeOpeners[toCodeOpeners.length - 1];
+  if (lastToCodeOpener?.index !== undefined) {
+    const after = text.slice(lastToCodeOpener.index + lastToCodeOpener[0].length);
+    if (!extractBalancedJson(after)) return true;
+  }
   return false;
 }
 
@@ -134,6 +154,14 @@ export function parseAllToolCalls(text: string): ToolCall[] {
   }
 
   for (const entry of parseAllOpenSepToolCalls(text)) {
+    found.push(entry);
+  }
+
+  for (const entry of parseAllBracketedToolCalls(text)) {
+    found.push(entry);
+  }
+
+  for (const entry of parseAllToCodeToolCalls(text)) {
     found.push(entry);
   }
 

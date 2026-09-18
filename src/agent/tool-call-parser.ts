@@ -42,6 +42,16 @@ export function stripSentinelTokens(text: string): string {
     .replace(/<[|｜]+open[|｜]+>?tools\b[\s\S]*?(?:<[|｜]+close[|｜]+>?tools\s*>?|$)/gi, "")
     .replace(/<[|｜]+(?:open|close)[|｜]+>?[A-Za-z][\w-]*[^>|<]*>?/gi, "")
     .replace(/<[|｜]+sep[|｜]+>/gi, "")
+    .replace(
+      /\[(?:tool[ _]?call|toolcall|tool)\s*[:=]\s*["']?[\w.]+?["']?\]\s*(?:```(?:json)?\s*)?\{[\s\S]*?\}(?:\s*```)?/gi,
+      "",
+    )
+    .replace(/\[(?:tool[ _]?call|toolcall|tool)\s*[:=]\s*["']?[\w.]+?["']?\]/gi, "")
+    .replace(
+      /(?:^|\s)to\s*=\s*["']?(?:functions\.)?[\w.]*?\s+code\s*:\s*(?:```(?:json)?\s*)?\{[\s\S]*?\}(?:\s*```)?/gi,
+      "",
+    )
+    .replace(/(?:^|\s)to\s*=\s*["']?(?:functions\.)?[\w.]*?\s+code\s*:/gi, "")
     .trim();
 }
 
@@ -125,6 +135,8 @@ export function textBeforeToolCall(text: string): string {
     /\*\*tool\*\*\s*\n\s*\{[\s\S]*$/i,
     /```\w*\s*\n?\{[\s\S]*?"name"[\s\S]*$/i,
     /\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*$/i,
+    /\[(?:tool[ _]?call|toolcall|tool)\s*[:=][\s\S]*$/i,
+    /(?:^|\s)to\s*=\s*["']?(?:functions\.)?[\w.]*?\s+code\s*:[\s\S]*$/i,
   ];
   for (const pattern of patterns) {
     const idx = text.search(pattern);

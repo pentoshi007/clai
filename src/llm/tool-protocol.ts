@@ -304,15 +304,6 @@ export interface AccumulateToolCallDeltaResult {
   argumentsBytes: number;
 }
 
-function completeObjectArguments(raw: string): boolean {
-  try {
-    const parsed = JSON.parse(raw);
-    return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed));
-  } catch {
-    return false;
-  }
-}
-
 export function accumulateOpenAiToolCallDelta(
   state: Map<number, OpenAiToolCallAccumulator>,
   entry: {
@@ -350,12 +341,11 @@ export function accumulateOpenAiToolCallDelta(
         acc.arguments = fragment;
       } else if (acc.argumentsMode === "snapshots") {
         acc.arguments = fragment;
-      } else if (fragment === acc.arguments) {
-        acc.argumentsMode = "snapshots";
+      } else if (acc.argumentsMode === "fragments") {
+        acc.arguments += fragment;
       } else if (
-        fragment.startsWith(acc.arguments) ||
-        (acc.arguments.startsWith(fragment) && fragment.trimStart().startsWith("{")) ||
-        completeObjectArguments(fragment)
+        fragment === acc.arguments ||
+        (fragment.length > acc.arguments.length && fragment.startsWith(acc.arguments))
       ) {
         acc.arguments = fragment;
         acc.argumentsMode = "snapshots";

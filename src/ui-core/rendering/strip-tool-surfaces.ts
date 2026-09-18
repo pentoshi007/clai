@@ -1,3 +1,5 @@
+import { extractBalancedJson } from "../../agent/parser/xml-protocol.js";
+
 const COMPLETE_TOOL_FENCE =
   /```(?:tool|json\s*tool)\b[^\n]*\n[\s\S]*?```/gi;
 const TRAILING_TOOL_FENCE = /```(?:tool|json\s*tool)\b[\s\S]*$/i;
@@ -80,9 +82,89 @@ export function stripToolCallSurfaces(text: string): string {
   s = s.replace(COMPLETE_TOOL_FUNCTION, "\n");
   s = s.replace(TRAILING_TOOL_FUNCTION, "");
   s = s.replace(TRAILING_PARTIAL_TAG, "");
+  s = stripBracketedToolCalls(s);
+  s = stripToCodeToolCalls(s);
+  s = stripBareJsonToolCalls(s);
   s = s.replace(/[ \t]+\n/g, "\n");
   s = s.replace(/\n{3,}/g, "\n\n");
   return s;
+}
+
+const TRAILING_TOOL_BRACKETED =
+  /\[(?:tool[ _]?call|toolcall|tool)\s*[:=][\s\S]*$/i;
+
+function stripBracketedToolCalls(text: string): string {
+  const re = /\[(?:tool[ _]?call|toolcall|tool)\s*[:=]\s*["']?[\w.]+?["']?\]/gi;
+  let out = "";
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out += text.slice(cursor, m.index);
+    const after = text.slice(m.index + m[0].length);
+    const braceIdx = after.indexOf("{");
+    if (braceIdx >= 0) {
+      const json = extractBalancedJson(after);
+      if (json) {
+        let end = m.index + m[0].length + braceIdx + json.length;
+        const fenceCheck = text.slice(end).match(/^\s*```/);
+        if (fenceCheck) end += fenceCheck[0].length;
+        cursor = end;
+        re.lastIndex = cursor;
+        continue;
+      }
+    }
+    cursor = m.index + m[0].length;
+  }
+  out += text.slice(cursor);
+  return out.replace(TRAILING_TOOL_BRACKETED, "");
+}
+
+const TRAILING_TOOL_TO_CODE =
+  /(?:^|\s)to\s*=\s*["']?(?:functions\.)?[\w.]*?\s+code[\s\S]*$/i;
+
+function stripToCodeToolCalls(text: string): string {
+  const re = /(?:^|\s)to\s*=\s*["']?(?:functions\.)?([A-Za-z][\w.]*?)["']?\s+code\s*:\s*/gi;
+  let out = "";
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out += text.slice(cursor, m.index);
+    const after = text.slice(m.index + m[0].length);
+    const braceIdx = after.indexOf("{");
+    if (braceIdx >= 0) {
+      const json = extractBalancedJson(after.slice(braceIdx));
+      if (json) {
+        let end = m.index + m[0].length + braceIdx + json.length;
+        const fenceCheck = text.slice(end).match(/^\s*```/);
+        if (fenceCheck) end += fenceCheck[0].length;
+        cursor = end;
+        re.lastIndex = cursor;
+        continue;
+      }
+    }
+    cursor = m.index + m[0].length;
+  }
+  out += text.slice(cursor);
+  return out.replace(TRAILING_TOOL_TO_CODE, "");
+}
+
+function stripBareJsonToolCalls(text: string): string {
+  const re = /\{\s*"name"\s*:\s*"[A-Za-z][\w.]*"\s*,\s*"args"\s*:\s*\{/gi;
+  let out = "";
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out += text.slice(cursor, m.index);
+    const json = extractBalancedJson(text.slice(m.index));
+    if (json) {
+      cursor = m.index + json.length;
+      re.lastIndex = cursor;
+      continue;
+    }
+    cursor = m.index + m[0].length;
+  }
+  out += text.slice(cursor);
+  return out;
 }
 
 export function isToolFenceOnlyText(text: string): boolean {

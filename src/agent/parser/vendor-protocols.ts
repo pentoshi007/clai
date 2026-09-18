@@ -1,4 +1,5 @@
 import type { ToolCall } from "../../types.js";
+import { fromWireName } from "../../llm/tool-protocol.js";
 import { extractBalancedJson, lenientJsonParse, preprocessJson, tryParseCall } from "./xml-protocol.js";
 
 export const KIMI_TOOL_CALL_RE =
@@ -297,4 +298,115 @@ export function tryJson(raw: string): Record<string, unknown> | undefined {
   } catch {
   }
   return undefined;
+}
+
+export const BRACKETED_TOOL_CALL_RE =
+  /\[(?:tool[ _]?call|toolcall|tool)\s*[:=]\s*["']?([A-Za-z][\w.]*?)["']?\]/gi;
+
+const BRACKETED_BLOCK_BOUNDARIES: RegExp[] = [
+  /\[(?:tool[ _]?call|toolcall|tool)\s*[:=]/i,
+  /```tool/i,
+  /<tool_call/i,
+  /<\|tool_call/i,
+  /<[|｜]+(?:tool[_▁]|open[|｜]|DSML[|｜])/i,
+];
+
+function boundBracketedBlock(after: string): string {
+  let end = after.length;
+  for (const re of BRACKETED_BLOCK_BOUNDARIES) {
+    const match = re.exec(after);
+    if (match && match.index < end) end = match.index;
+  }
+  return after.slice(0, end);
+}
+
+function resolveBracketedToolName(raw: string): string {
+  const stripped = raw.replace(/^functions\./, "");
+  const canonical = fromWireName(stripped);
+  if (canonical) return canonical;
+  if (stripped.includes(".")) return stripped;
+  return stripped.replace(/_/g, ".");
+}
+
+export function parseAllBracketedToolCalls(
+  text: string,
+): Array<{ index: number; call: ToolCall }> {
+  const found: Array<{ index: number; call: ToolCall }> = [];
+  const re = new RegExp(BRACKETED_TOOL_CALL_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const name = resolveBracketedToolName(m[1]!);
+    const section = boundBracketedBlock(text.slice(m.index + m[0].length));
+    const json = extractBalancedJson(section);
+    if (json) {
+      const parsed = tryJson(json);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (typeof parsed.name === "string" && parsed.args && typeof parsed.args === "object") {
+          const call = tryParseCall(json);
+          if (call) found.push({ index: m.index, call });
+        } else {
+          found.push({ index: m.index, call: { name, args: parsed } });
+        }
+      }
+    } else if (!section.includes("{")) {
+      found.push({ index: m.index, call: { name, args: {} } });
+    }
+  }
+  return found;
+}
+
+export function parseBracketedToolCall(text: string): ToolCall | undefined {
+  return parseAllBracketedToolCalls(text)[0]?.call;
+}
+
+export const TO_CODE_TOOL_CALL_RE =
+  /(?:^|\s)to\s*=\s*["']?(?:functions\.)?([A-Za-z][\w.]*?)["']?\s+code\s*:\s*/gi;
+
+const TO_CODE_BLOCK_BOUNDARIES: RegExp[] = [
+  /(?:^|\s)to\s*=\s*["']?(?:functions\.)?[A-Za-z][\w.]*?["']?\s+code\s*:/i,
+  /\[(?:tool[ _]?call|toolcall|tool)\s*[:=]/i,
+  /```tool/i,
+  /<tool_call/i,
+  /<\|tool_call/i,
+  /<[|｜]+(?:tool[_▁]|open[|｜]|DSML[|｜])/i,
+];
+
+function boundToCodeBlock(after: string): string {
+  let end = after.length;
+  for (const re of TO_CODE_BLOCK_BOUNDARIES) {
+    const match = re.exec(after);
+    if (match && match.index < end) end = match.index;
+  }
+  return after.slice(0, end);
+}
+
+export function parseAllToCodeToolCalls(
+  text: string,
+): Array<{ index: number; call: ToolCall }> {
+  const found: Array<{ index: number; call: ToolCall }> = [];
+  const re = new RegExp(TO_CODE_TOOL_CALL_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const name = resolveBracketedToolName(m[1]!);
+    const section = boundToCodeBlock(text.slice(m.index + m[0].length));
+    const json = extractBalancedJson(section);
+    if (json) {
+      const parsed = tryJson(json);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (typeof parsed.name === "string" && parsed.args && typeof parsed.args === "object") {
+          const call = tryParseCall(json);
+          if (call) found.push({ index: m.index, call });
+        } else {
+          found.push({ index: m.index, call: { name, args: parsed } });
+        }
+      }
+    } else if (!section.includes("{")) {
+      found.push({ index: m.index, call: { name, args: {} } });
+    }
+  }
+  return found;
+}
+
+export function parseToCodeToolCall(text: string): ToolCall | undefined {
+  return parseAllToCodeToolCalls(text)[0]?.call;
 }

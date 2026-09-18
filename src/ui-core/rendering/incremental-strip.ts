@@ -17,7 +17,7 @@ export const EMPTY_STRIP_STREAM: StripStream = {
 
 const TAIL_FLUSH_CHARS = 4_096;
 
-const DIRTY = /[`<]|tool_call\s*\(|invoke_tool\s*\(|[ \t]\n|\n\n\n/;
+const DIRTY = /[`<]|\[(?:tool[ _]?call|toolcall|tool)\b|\bto\s*=\s*["']?(?:functions\.)?[\w.]*?\s+code\s*:|tool_call\s*\(|invoke_tool\s*\(|[ \t]\n|\n\n\n/i;
 
 const OVERLAP = 2;
 
@@ -34,7 +34,7 @@ function flushBoundary(text: string, limit: number): number {
 }
 
 const COMPLETE_SURFACE =
-  /```(?:tool|json\s*tool)\b[^\n]*\n[\s\S]*?```|<tool_call\b(?!:)[^>]*>[\s\S]*?<\/tool_call>|<tool_calls:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_calls:\1>|<tool_call:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_call:\2>|<[|｜]+DSML[|｜]+tool_calls\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+tool_calls>|<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*?<[|｜]+tool[_▁]calls[_▁]end[|｜]+>|<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>|<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>|<[|｜]+open[|｜]+>?tools\b[\s\S]*?<[|｜]+close[|｜]+>?tools(?:\s*>|(?=\s*\n))|<[|｜]+open[|｜]+>?call\b[\s\S]*?<[|｜]+close[|｜]+>?call(?:\s*>|(?=\s*\n))/gi;
+  /```(?:tool|json\s*tool)\b[^\n]*\n[\s\S]*?```|<tool_call\b(?!:)[^>]*>[\s\S]*?<\/tool_call>|<tool_calls:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_calls:\1>|<tool_call:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_call:\2>|<[|｜]+DSML[|｜]+tool_calls\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+tool_calls>|<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*?<[|｜]+tool[_▁]calls[_▁]end[|｜]+>|<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>|<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>|<[|｜]+open[|｜]+>?tools\b[\s\S]*?<[|｜]+close[|｜]+>?tools(?:\s*>|(?=\s*\n))|<[|｜]+open[|｜]+>?call\b[\s\S]*?<[|｜]+close[|｜]+>?call(?:\s*>|(?=\s*\n))|\[(?:tool[ _]?call|toolcall|tool)\s*[:=]\s*["']?[\w.]+?["']?\]\s*(?:```(?:json)?\s*)?\{[\s\S]*?\}(?:\s*```)?|(?:^|\s)to\s*=\s*["']?(?:functions\.)?[\w.]*?\s+code\s*:\s*(?:```(?:json)?\s*)?\{[\s\S]*?\}(?:\s*```)?/gi;
 
 const FENCE_WINDOW = 512;
 
