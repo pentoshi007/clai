@@ -30,6 +30,7 @@ import {
 } from "./injected-blocks.js";
 import { REQUEST_CONTEXT_PREFIX } from "../llm/system-messages.js";
 import { PLAN_CONTEXT_PREFIX } from "./plan-tool.js";
+import { stripToolCallSurfaces } from "../ui-core/rendering/strip-tool-surfaces.js";
 
 export {
   collapseOversizedToolHistory,
@@ -92,24 +93,37 @@ function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
-    if (message.role === "assistant" && message.toolCalls?.length) {
-      bindings = new Map();
-      groupOpen = true;
-      const fixed = ensureUniqueToolCallIds(message.toolCalls, reserved);
-      for (let callIndex = 0; callIndex < message.toolCalls.length; callIndex += 1) {
-        const original = message.toolCalls[callIndex]!;
-        const replacement = fixed[callIndex]!;
-        const originalId = typeof original.id === "string" ? original.id : "";
-        const queue = bindings.get(originalId) ?? [];
-        queue.push({ id: replacement.id, name: replacement.name });
-        bindings.set(originalId, queue);
-        reserved.add(replacement.id);
-        if (replacement.id !== original.id) repairs += 1;
+    if (message.role === "assistant") {
+      let content = message.content;
+      if (typeof content === "string" && content) {
+        const stripped = stripToolCallSurfaces(content).trim();
+        if (stripped !== content && (stripped.length > 0 || message.toolCalls?.length)) {
+          content = stripped;
+          repairs += 1;
+        }
       }
-      if (fixed.some((call, callIndex) => call !== message.toolCalls![callIndex])) {
-        messages[index] = { ...message, toolCalls: fixed };
+      if (message.toolCalls?.length) {
+        bindings = new Map();
+        groupOpen = true;
+        const fixed = ensureUniqueToolCallIds(message.toolCalls, reserved);
+        for (let callIndex = 0; callIndex < message.toolCalls.length; callIndex += 1) {
+          const original = message.toolCalls[callIndex]!;
+          const replacement = fixed[callIndex]!;
+          const originalId = typeof original.id === "string" ? original.id : "";
+          const queue = bindings.get(originalId) ?? [];
+          queue.push({ id: replacement.id, name: replacement.name });
+          bindings.set(originalId, queue);
+          reserved.add(replacement.id);
+          if (replacement.id !== original.id) repairs += 1;
+        }
+        if (content !== message.content || fixed.some((call, callIndex) => call !== message.toolCalls![callIndex])) {
+          messages[index] = { ...message, content, toolCalls: fixed };
+        }
+        continue;
       }
-      continue;
+      if (content !== message.content) {
+        messages[index] = { ...message, content };
+      }
     }
 
     if (message.role === "tool" && groupOpen) {

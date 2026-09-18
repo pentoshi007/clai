@@ -57,6 +57,7 @@ import type { TurnLoopDeps } from "./deps.js";
 import { resolveAnswerPath } from "./answer-path.js";
 import { SubagentInbox, SubagentInboxCapacityError } from "../subagent-inbox.js";
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
+import { stripToolCallSurfaces } from "../../../ui-core/rendering/strip-tool-surfaces.js";
 
 export const runTurnRounds = async (
   deps: TurnLoopDeps,
@@ -501,7 +502,7 @@ export const runTurnRounds = async (
       const beforeTool = recoveredFromBareJson
         ? ""
         : nativeToolCalls.length
-          ? toolDisplayText.trim()
+          ? stripToolCallSurfaces(toolDisplayText).trim()
           : textBeforeToolCall(toolDisplayText);
       if (beforeTool) {
         deps.writeAssistantMessage(beforeTool);
