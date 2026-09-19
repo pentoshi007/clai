@@ -378,10 +378,6 @@ export async function runAgentTurn(
     let { dialect: toolDialect, native: nativeToolsActive } =
       resolveNativeTools(loop.provider, loop.model);
     const session: SessionPolicy = options.session ?? createSessionPolicy();
-    if (!session.pendingTaskBatch)
-      session.pendingTaskBatch = { value: undefined };
-    if (!session.pendingDependency)
-      session.pendingDependency = { value: undefined };
     if (!getActiveSessionWorkspace()) {
       beginSessionWorkspace();
     }
@@ -535,14 +531,8 @@ export async function runAgentTurn(
     const mutateSessionPlan: PlanMutator = (mutator) =>
       mutatePlan(session.sessionId, mutator);
     const taskGate = setUpTaskGate({
-      toolState,
-      looseWork: sessionLooseWork,
-      featureAppRequired: featureAppAsk,
-      projectRoot: getActiveProjectRoot,
       mutatePlan: mutateSessionPlan,
     });
-    const ledgerForTaskGate = taskGate.ledgerForTask;
-    const completionGateForTask = taskGate.completionGateForTask;
     const persistProjectRootOnPlan = taskGate.persistProjectRootOnPlan;
     const persistTaskEvidence = taskGate.persistTaskEvidence;
 
@@ -663,14 +653,11 @@ export async function runAgentTurn(
       sessionLooseWork,
       deferredPostToolMessages,
       deferredResponderLedgerNotifications,
-      batchRemindCalls: () => loop.batchRemindCalls,
-      batchReminderNote: () => loop.batchReminderNote,
       turnState: () => turnStateMachine.snapshot(),
       probeStateKey,
       moveTurn,
       persistTaskEvidence,
       persistProjectRootOnPlan,
-      completionGateForTask,
       matchesWakeRevision,
       executeMcpAgentCall,
       responderWakeTurn,

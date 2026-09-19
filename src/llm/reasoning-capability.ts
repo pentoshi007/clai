@@ -134,6 +134,20 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   kimi: [/kimi/i, /moonshot/i],
   glm: [/glm/i],
   minimax: [/minimax/i],
+  cline: [
+    /kimi/i,
+    /deepseek/i,
+    /claude-(?:opus|sonnet|haiku)/i,
+    /gpt-[56]/i,
+    /glm-?[45]/i,
+    /qwen3/i,
+    /grok/i,
+    /minimax/i,
+    /nemotron/i,
+    /reason/i,
+  ],
+  codex: [/gpt-5/i, /codex/i, /o[34]/i, /reason/i],
+  copilot: [/gpt-5/i, /claude/i, /gemini/i, /o[34]/i, /reason/i],
 };
 
 export function endpointAcceptedEfforts(

@@ -1,20 +1,10 @@
 import type { TaskEvidence } from "../../store/plan.js";
 import type { ToolCall } from "../../types.js";
-import { classifyTaskTitle, isPentestPlanKind, looksLikeInstallTaskTitle, looksLikeScaffoldTaskTitle } from "./task-classification.js";
+import { looksLikeInstallTaskTitle, looksLikeScaffoldTaskTitle } from "./task-classification.js";
 import { isScaffoldCreateCommand } from "./tool-budgets.js";
 
 export interface TaskWorkLedger extends TaskEvidence {
   taskId: string;
-}
-
-export interface CanMarkTaskDoneOpts {
-  taskTitle?: string | undefined;
-  featureAppRequired?: boolean | undefined;
-  sessionFeatureSeen?: boolean | undefined;
-  existingProject?: boolean | undefined;
-  runtimeVerified?: boolean | undefined;
-  planKind?: string | undefined;
-  remoteWorkVerified?: boolean | undefined;
 }
 
 export function isRuntimeObservationTask(title: string): boolean {
@@ -59,50 +49,6 @@ export function isRemoteObservationTask(title: string): boolean {
     return true;
   }
   return false;
-}
-
-export function canMarkTaskDone(
-  ledger: TaskWorkLedger | null,
-  taskId: string,
-  opts?: CanMarkTaskDoneOpts,
-): { ok: true } | { ok: false; reason: string } {
-  const title = opts?.taskTitle ?? "";
-  const planKind = opts?.planKind;
-  const pentest = isPentestPlanKind(planKind);
-  const cls = title ? classifyTaskTitle(title, { planKind }) : "generic";
-  const leaveRunningIntent =
-    isRuntimeObservationTask(title) ||
-    /\bleave\s+(?:it\s+)?running\b|\bkeep\s+(?:it\s+)?running\b|\bfor\s+(?:the\s+)?user\s+to\s+test\b/i.test(
-      title,
-    );
-  const inheritedCompletion =
-    (cls === "scaffold" && Boolean(opts?.existingProject)) ||
-    (!pentest && leaveRunningIntent && Boolean(opts?.runtimeVerified)) ||
-    (pentest &&
-      isRemoteObservationTask(title) &&
-      Boolean(opts?.remoteWorkVerified));
-  if ((!ledger || ledger.taskId !== taskId) && !inheritedCompletion) {
-    return {
-      ok: false,
-      reason:
-        `Cannot mark [${taskId}] done: no work ledger for this task. ` +
-        `Call task.update {taskId:"${taskId}", state:"in_progress"}, do the real work, ` +
-        `inspect the tool result, and only then mark done if you are satisfied.`,
-    };
-  }
-  if ((ledger?.successWorkCount ?? 0) < 1 && !inheritedCompletion) {
-    return {
-      ok: false,
-      reason:
-        `Cannot mark [${taskId}] done: no successful tool result observed since it went in_progress. ` +
-        `Do the work, wait for the tool output, verify it succeeded, and only mark done when satisfied. ` +
-        (ledger?.lastOkTool
-          ? ""
-          : "Example: fs.write / shell.exec / shell.start must return ok first."),
-    };
-  }
-
-  return { ok: true };
 }
 
 export function commandOf(call: ToolCall): string {

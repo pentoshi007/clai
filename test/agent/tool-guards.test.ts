@@ -10,7 +10,6 @@ const guard = (overrides: Record<string, unknown> = {}) =>
     call: { name: "shell.exec", args: { command: "nmap -sV lab" } },
     narrowNmapOperation: false,
     narrowNmapDispatched: 0,
-    heldBatchReminder: undefined,
     ...overrides,
   } as never);
 
@@ -52,25 +51,6 @@ describe("tool guards", () => {
     expect(
       guard({ call: { name: "shell.jobs", args: {} }, narrowNmapOperation: true }),
     ).toEqual({ kind: "proceed", consumesNarrowNmapScan: false });
-  });
-
-  it("holds a batch-reminded task update", () => {
-    expect(
-      guard({
-        call: { name: "task.update", args: {} },
-        heldBatchReminder: "confirm the batch",
-      }),
-    ).toEqual({ kind: "hold", reason: "confirm the batch" });
-  });
-
-  it("holds the batch even during a narrow nmap turn", () => {
-    expect(
-      guard({
-        call: { name: "task.read", args: {} },
-        narrowNmapOperation: true,
-        heldBatchReminder: "confirm the batch",
-      }),
-    ).toEqual({ kind: "hold", reason: "confirm the batch" });
   });
 
   it("reads a structured retry reason and ignores anything else", () => {

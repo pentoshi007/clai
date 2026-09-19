@@ -301,35 +301,8 @@ export function validateSessionPlan(plan: SessionPlan): { ok: true } | { ok: fal
   return validatePlanDag(toVersionedTaskPlan(plan));
 }
 
-export function activeForegroundTasks(plan: SessionPlan): PlanTask[] {
-  return plan.tasks.filter(
-    (task) => !task.responderOwned && task.state === "in_progress",
-  );
-}
-
 export function enforcePlanInvariants(plan: SessionPlan): string[] {
-  const repairs: string[] = [...repairOrphanParents(plan)];
-  const active = activeForegroundTasks(plan);
-  if (active.length <= 1) return repairs;
-
-  const settled = new Set(
-    plan.tasks
-      .filter((task) => task.state === "done" || task.state === "skipped")
-      .map((task) => task.id),
-  );
-  const dependencyValid = (task: PlanTask): boolean =>
-    (task.dependencies ?? []).every((dependency) => settled.has(dependency));
-
-  const keep = active.find(dependencyValid) ?? active[0]!;
-  for (const task of active) {
-    if (task === keep) continue;
-    task.state = "pending";
-    task.note = task.note
-      ? `${task.note} (reopened later: only one foreground task may be active)`
-      : "Demoted to pending: only one foreground task may be active at a time.";
-    repairs.push(`demoted ${task.id} to pending (single-active invariant)`);
-  }
-  return repairs;
+  return [...repairOrphanParents(plan)];
 }
 
 function repairOrphanParents(plan: SessionPlan): string[] {

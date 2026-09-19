@@ -24,6 +24,7 @@ export interface ResponsesDialectConfig {
   readonly artifactDialect: ReasoningArtifactDialect;
   readonly terminalPolicy: StreamTerminalPolicy;
   readonly omitSampling?: boolean | undefined;
+  readonly maxTokensField?: "max_tokens" | "omit" | undefined;
   buildHeaders(
     auth: ProviderAuth,
     accept: ResponsesAccept,

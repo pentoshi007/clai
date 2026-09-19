@@ -7,7 +7,8 @@ import { join } from "node:path";
 /**
  * TASK-001: concurrent whole-plan saves used to lose transitions (a foreground
  * completion and an async responder settlement each saved their own v+1 from
- * the same base). TASK-002: at most one foreground task may be in_progress.
+ * the same base). Foreground tasks may run concurrently; no single-active
+ * demotion is applied.
  */
 
 let root: string;
@@ -119,8 +120,8 @@ describe("mutatePlan", () => {
   });
 });
 
-describe("single-active foreground invariant (TASK-002)", () => {
-  it("demotes a second active foreground task on commit", async () => {
+describe("concurrent foreground tasks stay active", () => {
+  it("keeps a second active foreground task on commit", async () => {
     const { mutatePlan } = await store();
     const seeded = await seed("s4");
     // Note: the responder child is inserted directly after its parent.
@@ -132,9 +133,8 @@ describe("single-active foreground invariant (TASK-002)", () => {
     const active = result.plan!.tasks.filter(
       (t) => !t.responderOwned && t.state === "in_progress",
     );
-    expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(seeded.tasks[0]!.id);
-    expect(result.repairs?.join(" ")).toContain(second);
+    expect(active).toHaveLength(2);
+    expect(result.repairs).toBeUndefined();
   });
 
   it("allows a responder child to run alongside a foreground task", async () => {
@@ -187,8 +187,8 @@ describe("applyForegroundSnapshot", () => {
 });
 
 
-describe("load-time single-active repair (TASK-002)", () => {
-  it("repairs a persisted plan that has two active foreground tasks", async () => {
+describe("load-time concurrent foreground tasks", () => {
+  it("keeps a persisted plan that has two active foreground tasks", async () => {
     const { savePlan, loadPlan } = await store();
     const seeded = await seed("s8");
     const second = seeded.tasks.find((t) => t.title === "report")!.id;
@@ -199,11 +199,10 @@ describe("load-time single-active repair (TASK-002)", () => {
     const active = loaded.tasks.filter(
       (t) => !t.responderOwned && t.state === "in_progress",
     );
-    expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(seeded.tasks[0]!.id);
-    expect(loaded.tasks.find((t) => t.id === second)!.state).toBe("pending");
+    expect(active).toHaveLength(2);
+    expect(loaded.tasks.find((t) => t.id === second)!.state).toBe("in_progress");
 
     const reloaded = (await loadPlan("s8"))!;
-    expect(reloaded.tasks.find((t) => t.id === second)!.state).toBe("pending");
+    expect(reloaded.tasks.find((t) => t.id === second)!.state).toBe("in_progress");
   });
 });

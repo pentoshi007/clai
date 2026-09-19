@@ -38,3 +38,9 @@ clai-vs-opencode-cache-report.md
 *-cache-report.md
 
 vercel.txt
+CLINE_PROVIDER_RESEARCH.md
+
+# Provider research notes (contain live-token findings; never commit)
+cline-provider-research.md
+codex-provider-research.md
+copilot-provider-research.md

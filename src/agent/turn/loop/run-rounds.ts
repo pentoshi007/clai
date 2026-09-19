@@ -19,7 +19,6 @@ import { createRoundRecorder } from "./round-recorder.js";
 import { createRoundState } from "./round-state.js";
 import { createToolResultRecorder } from "../tool-result-recorder.js";
 import { decidePlanCallDeferral } from "./plan-call-deferral.js";
-import { evaluateTaskBatchGuard } from "../task-batch-guard.js";
 import { executeToolGroups } from "./group-execution.js";
 import { formatToolArgs } from "../../tool-call-parser.js";
 import { getActiveProjectRoot } from "../../project-root.js";
@@ -728,23 +727,6 @@ export const runTurnRounds = async (
         boundCall: BoundCall,
         res: RecordedToolResult,
       ): void => record(boundCall.id, res);
-
-      {
-        const livePlanForBatch = await loadPlan(deps.session.sessionId).catch(
-          () => undefined,
-        );
-        const guard = evaluateTaskBatchGuard({
-          calls: toRun.map((bound) => bound.call),
-          plan: livePlanForBatch,
-          pendingSignature: deps.session.pendingTaskBatch.value,
-        });
-        deps.loop.batchRemindCalls = new Set<ToolCall>(guard.remindCalls);
-        deps.loop.batchReminderNote = guard.reminderNote;
-        deps.session.pendingTaskBatch.value = guard.pendingSignature;
-        for (const notice of guard.notices) {
-          deps.writeNotice(notice.level, notice.message);
-        }
-      }
 
       const replayExecutedOccurrence = (
         bc: BoundCall,

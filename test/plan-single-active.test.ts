@@ -1,17 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { clearAllPlans, createPlan, loadPlan, markTask, savePlan } from "../src/store/plan.js";
-import {
-  evaluateTaskTransition,
-  isTerminalTaskState,
-} from "../src/store/task-transitions.js";
 import { handlePlanTool } from "../src/agent/plan-tool.js";
 import { LoopGuard } from "../src/agent/loop-guard.js";
 import { createSessionPolicy } from "../src/agent/session-policy.js";
-import {
-  buildMultiOpenRejection,
-  multiOpenToast,
-  openingTaskIds,
-} from "../src/agent/task-sync.js";
 
 async function seedPlan(sessionId: string) {
   const plan = createPlan({
@@ -31,12 +22,12 @@ function openTask(sessionId: string, taskId: string) {
   return { name: "task.update", args: { taskId, state: "in_progress" } } as const;
 }
 
-describe("task.update single-active rejection (TASK-002)", () => {
+describe("task.update allows concurrent foreground tasks", () => {
   afterEach(async () => {
     await clearAllPlans();
   });
 
-  it("refuses to open a second foreground task while one is active", async () => {
+  it("allows opening a second foreground task while one is active", async () => {
     const sessionId = "single-active";
     const session = createSessionPolicy(sessionId);
     session.planApproved.value = true;
@@ -52,12 +43,11 @@ describe("task.update single-active rejection (TASK-002)", () => {
       loopGuard: new LoopGuard(),
       step: 2,
     });
-    expect(second.ok).toBe(false);
-    expect(second.modelNote).toMatch(/still in_progress/);
+    expect(second.ok).toBe(true);
 
     const live = (await loadPlan(sessionId))!;
     expect(live.tasks.find((task) => task.id === "t1")!.state).toBe("in_progress");
-    expect(live.tasks.find((task) => task.id === "t2")!.state).toBe("pending");
+    expect(live.tasks.find((task) => task.id === "t2")!.state).toBe("in_progress");
   });
 
   it("allows the close-then-open handoff", async () => {
@@ -134,61 +124,12 @@ describe("task.update single-active rejection (TASK-002)", () => {
   });
 });
 
-describe("multi-open rejection copy", () => {
-  const intent = (taskId: string, state: string) => ({
-    call: { name: "task.update", args: { taskId, state } },
-    taskId,
-    state,
-  });
-
-  it("reports distinct opened ids only", () => {
-    expect(
-      openingTaskIds([
-        intent("t1", "in_progress"),
-        intent("t1", "in_progress"),
-        intent("t2", "in_progress"),
-        intent("t3", "done"),
-      ] as any),
-    ).toEqual(["t1", "t2"]);
-  });
-
-  it("states that the rejection is not confirmable", () => {
-    const note = buildMultiOpenRejection([
-      { taskId: "t1", title: "First", targetState: "in_progress" },
-      { taskId: "t2", title: "Second", targetState: "in_progress" },
-    ]);
-    expect(note).toMatch(/REJECTED/);
-    expect(note).toMatch(/will not apply/);
-    expect(multiOpenToast(2)).toMatch(/one active task only/);
-  });
-});
-
-
-describe("task transition table (TASK-003)", () => {
+describe("task transitions allow rewind and retry", () => {
   afterEach(async () => {
     await clearAllPlans();
   });
 
-  it("treats done and skipped as terminal", () => {
-    expect(evaluateTaskTransition("done", "pending")).toMatchObject({
-      allowed: false,
-      code: "terminal",
-    });
-    expect(evaluateTaskTransition("done", "in_progress").allowed).toBe(false);
-    expect(evaluateTaskTransition("skipped", "in_progress").allowed).toBe(false);
-    expect(evaluateTaskTransition("done", "done").allowed).toBe(true);
-    expect(isTerminalTaskState("failed")).toBe(false);
-  });
-
-  it("requires an explicit retry before a failed task can complete", () => {
-    expect(evaluateTaskTransition("failed", "done")).toMatchObject({
-      allowed: false,
-      code: "retry-required",
-    });
-    expect(evaluateTaskTransition("failed", "in_progress").allowed).toBe(true);
-  });
-
-  it("rejects rewinding a completed task through task.update", async () => {
+  it("allows rewinding a completed task through task.update", async () => {
     const sessionId = "no-rewind";
     const session = createSessionPolicy(sessionId);
     session.planApproved.value = true;
@@ -208,13 +149,12 @@ describe("task transition table (TASK-003)", () => {
       session,
       { loopGuard: new LoopGuard(), step: 3 },
     );
-    expect(rewind.ok).toBe(false);
-    expect(rewind.modelNote).toMatch(/not reopened/);
+    expect(rewind.ok).toBe(true);
     const live = (await loadPlan(sessionId))!;
-    expect(live.tasks.find((task) => task.id === "t1")!.state).toBe("done");
+    expect(live.tasks.find((task) => task.id === "t1")!.state).toBe("pending");
   });
 
-  it("markTask refuses a forbidden transition", async () => {
+  it("markTask allows rewinding a completed task", async () => {
     const plan = createPlan({
       sessionId: "mark-guard",
       goal: "g",
@@ -222,8 +162,8 @@ describe("task transition table (TASK-003)", () => {
       taskTitles: ["only"],
     });
     plan.tasks[0]!.state = "done";
-    expect(markTask(plan, plan.tasks[0]!.id, "pending")).toBe(false);
-    expect(plan.tasks[0]!.state).toBe("done");
+    expect(markTask(plan, plan.tasks[0]!.id, "pending")).toBe(true);
+    expect(plan.tasks[0]!.state).toBe("pending");
   });
 });
 

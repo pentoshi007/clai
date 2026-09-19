@@ -384,6 +384,20 @@ export const knownModels: Record<string, string[]> = {
     "deepseek-v4-flash",
     "qwen3.8-27b",
   ],
+  codex: [
+    "gpt-5.1-codex",
+    "gpt-5.1",
+    "gpt-5.1-mini",
+    "o3",
+    "o4-mini",
+  ],
+  copilot: [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-5.1",
+    "claude-sonnet-4.5",
+    "gemini-2.5-pro",
+  ],
 };
 
 export function getKnownModels(provider: string): string[] {

@@ -92,7 +92,7 @@ describe("normalizeTaskDependencies", () => {
     expect(plan.tasks[2]!.dependencies).toEqual([]);
   });
 
-  it("preserves authored dependencies while opening early with a warning", async () => {
+  it("preserves authored dependencies while opening early without a warning", async () => {
     const session = createSessionPolicy("heal-dag");
     session.planApproved.value = true;
     const plan = createPlan({
@@ -118,8 +118,8 @@ describe("normalizeTaskDependencies", () => {
       { loopGuard: new LoopGuard(), step: 1 },
     );
     expect(result.ok).toBe(true);
-    expect(result.modelNote).toMatch(/WARNING/);
-    expect(result.toast).toMatch(/prerequisites still pending/i);
+    expect(result.modelNote).not.toMatch(/WARNING/);
+    expect(result.toast).toBeUndefined();
     const live = await loadPlan("heal-dag");
     expect(live!.tasks.find((t) => t.id === "t2")?.state).toBe("in_progress");
     expect(live!.tasks.find((t) => t.id === "t2")?.dependencies).toContain(

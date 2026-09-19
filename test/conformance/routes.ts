@@ -227,4 +227,28 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     auth: { apiKey: "conformance-key-00000" },
     urlContains: "/chat/completions",
   },
+  {
+    id: "cline",
+    provider: "cline",
+    family: "chat_completions",
+    model: "cline-free/deepseek-v4.1-flash",
+    auth: { apiKey: "workos:conformance-token-0000000000" },
+    urlContains: "/chat/completions",
+  },
+  {
+    id: "codex",
+    provider: "codex",
+    family: "meta_responses",
+    model: "gpt-5.1-codex",
+    auth: { apiKey: "codex:eyJhIjoiY29uZm9ybWFuY2UtdG9rZW4tMDAwMDAwMDAwMCIsImkiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJyIjoiIiwiZSI6MH0" },
+    urlContains: "/responses",
+  },
+  {
+    id: "copilot",
+    provider: "copilot",
+    family: "chat_completions",
+    model: "gpt-4o",
+    auth: { apiKey: "ghu_conformance0000000000000000000000" },
+    urlContains: "/chat/completions",
+  },
 ];

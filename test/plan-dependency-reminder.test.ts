@@ -26,7 +26,7 @@ describe("dependency-open reminder", () => {
     await clearAllPlans();
   });
 
-  it("opens an early task immediately with a warning but still blocks completion", async () => {
+  it("opens an early task immediately and allows out-of-order completion", async () => {
     const sessionId = "dep-remind";
     const session = createSessionPolicy(sessionId);
     session.planApproved.value = true;
@@ -38,8 +38,7 @@ describe("dependency-open reminder", () => {
     });
     expect(opened.ok).toBe(true);
     expect(opened.reminder).toBeUndefined();
-    expect(opened.toast).toMatch(/prerequisites still pending/);
-    expect(opened.modelNote).toMatch(/WARNING/);
+    expect(opened.toast).toBeUndefined();
     const live = await loadPlan(sessionId);
     expect(live!.tasks.find((task) => task.id === "t2")?.state).toBe("in_progress");
 
@@ -48,8 +47,7 @@ describe("dependency-open reminder", () => {
       session,
       { loopGuard: new LoopGuard(), step: 2 },
     );
-    expect(completed.ok).toBe(false);
-    expect(completed.modelNote).toMatch(/not complete/);
+    expect(completed.ok).toBe(true);
   });
 
   it("opens a dependency-ready task normally without any reminder", async () => {

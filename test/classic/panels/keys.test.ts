@@ -154,6 +154,15 @@ describe("keys keys", () => {
     await expect(answer).resolves.toEqual({ action: "reset" });
   });
 
+  it("refreshes a selected Cline account with r", () => {
+    const request: KeysEditorRequest = { ...REQUEST, provider: "cline", refreshable: true };
+    const result = press(keysInitialState(request), "r", undefined, request);
+    expect(result.effects[0]).toEqual({
+      kind: "keys",
+      answer: { action: "refresh", slotId: "k1" },
+    });
+  });
+
   it("leaves unknown chords to the router", () => {
     expect(press(keysInitialState(REQUEST), "ctrl+g").handled).toBe(false);
   });

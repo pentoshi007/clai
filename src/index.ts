@@ -14,6 +14,9 @@ import {
   unsetProviderKey,
   useProvider,
   ensureProviderConfigured,
+  authCline,
+  authCodex,
+  authCopilot,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
 import {
@@ -459,6 +462,26 @@ async function main(): Promise<void> {
     .action(async () => {
       await runDoctor();
     });
+
+  program
+    .command("auth")
+    .description("authenticate a provider via browser/OAuth (cline, codex, copilot)")
+    .argument("<provider>", "provider id (cline, codex, copilot)")
+    .option("--import", "import an existing app sign-in (Cline/Codex/Copilot)")
+    .action(
+      async (provider: string, options: { import?: boolean | undefined }) => {
+        const id = provider.trim().toLowerCase();
+        if (id === "codex" || id === "chatgpt" || id === "openai-codex" || id === "codex-cli" || id === "chatgpt-codex") {
+          await authCodex("codex", options);
+          return;
+        }
+        if (id === "copilot" || id === "github-copilot" || id === "gh-copilot" || id === "copilot-chat" || id === "github") {
+          await authCopilot("copilot", options);
+          return;
+        }
+        await authCline(provider, options);
+      },
+    );
 
   program
     .command("history")

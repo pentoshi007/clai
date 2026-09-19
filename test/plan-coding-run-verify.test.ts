@@ -219,7 +219,7 @@ describe("plan merge no-reboot (X7)", () => {
     expect(result.modelNote).toMatch(/shell\.start|Do NOT create a new plan/i);
   });
 
-  it("refuses re-opening a done task and points at the next pending", async () => {
+  it("allows re-opening a done task", async () => {
     const session = createSessionPolicy("x-reopen-done");
     const plan = createPlan({
       sessionId: "x-reopen-done",
@@ -247,8 +247,8 @@ describe("plan merge no-reboot (X7)", () => {
       session,
       { loopGuard: new LoopGuard(), step: 1 },
     );
-    expect(result.ok).toBe(false);
-    expect(result.modelNote).toMatch(/already done|Do not re-run/i);
-    expect(result.modelNote).toMatch(/t3|Leave server/i);
+    expect(result.ok).toBe(true);
+    const live = await loadPlan("x-reopen-done");
+    expect(live!.tasks.find((t) => t.id === "t1")?.state).toBe("in_progress");
   });
 });

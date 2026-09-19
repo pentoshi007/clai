@@ -43,6 +43,9 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   kimi: "paid-cloud",
   glm: "paid-cloud",
   minimax: "paid-cloud",
+  cline: "free-cloud",
+  codex: "free-cloud",
+  copilot: "free-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

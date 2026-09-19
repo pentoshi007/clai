@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
   absorbLooseWorkIntoLedger,
   applyDestinationCwd,
-  canMarkTaskDone,
   classifyTaskTitle,
   codingBuildRequiresPlan,
   hasLocalRuntimeProof,
@@ -68,12 +67,11 @@ describe("task evidence / verify-before-done", () => {
     expect(picked?.id).toBe("t2");
   });
 
-  it("blocks done without successful work", () => {
-    expect(canMarkTaskDone(null, "t1").ok).toBe(false);
-    expect(canMarkTaskDone(openTaskLedger("t1"), "t1").ok).toBe(false);
+  it("records successful work per task", () => {
+    expect(openTaskLedger("t1").successWorkCount).toBe(0);
     const led = recordTaskWorkSuccess(openTaskLedger("t1"), "t1", "fs.write");
-    expect(canMarkTaskDone(led, "t1").ok).toBe(true);
-    expect(canMarkTaskDone(led, "t2").ok).toBe(false);
+    expect(led?.successWorkCount).toBe(1);
+    expect(led?.taskId).toBe("t1");
   });
 
   it("counts only non-meta tools as evidence", () => {
@@ -91,7 +89,7 @@ describe("task evidence / verify-before-done", () => {
     expect(classifyTaskTitle("Verify tools present")).toBe("explore");
   });
 
-  it("absorbs preflight tool.check into explore tasks for done gate", () => {
+  it("absorbs preflight tool.check into explore tasks", () => {
     const title = "Check Node.js and npm availability";
     expect(toolFitsTaskClass("tool.check", title)).toBe(true);
     expect(toolFitsTaskClass("tool.check", "Create React project with Vite")).toBe(
@@ -101,23 +99,14 @@ describe("task evidence / verify-before-done", () => {
       { toolName: "tool.check" },
     ]);
     expect(led?.successWorkCount).toBe(1);
-    expect(canMarkTaskDone(led, "t1", { taskTitle: title }).ok).toBe(true);
   });
 
-  it("does not let tool.check alone complete an install task", () => {
+  it("does not absorb tool.check into an install task", () => {
     const title = "Install dependencies (npm install)";
     const led = absorbLooseWorkIntoLedger(null, "t3", title, [
       { toolName: "tool.check" },
     ]);
-    // No install signal → still blocked by install gate or empty absorb
-    const count = led?.successWorkCount ?? 0;
-    if (count > 0) {
-      expect(
-        canMarkTaskDone(led, "t3", { taskTitle: title }).ok,
-      ).toBe(false);
-    } else {
-      expect(canMarkTaskDone(led, "t3", { taskTitle: title }).ok).toBe(false);
-    }
+    expect(led?.successWorkCount ?? 0).toBe(0);
   });
 });
 
@@ -316,86 +305,54 @@ describe("typed task evidence", () => {
     ).toBe("verify");
   });
 
-  it("allows implement done on real work without a boilerplate heuristic", () => {
+  it("records implement work with source and feature signals", () => {
     let led = openTaskLedger("t2");
     led = recordTaskWorkSuccess(led, "t2", "fs.write", { sourceWrite: true });
-    const gate = canMarkTaskDone(led, "t2", {
-      taskTitle: "Implement the requested product feature",
-      featureAppRequired: true,
-      sessionFeatureSeen: false,
-    });
-    expect(gate.ok).toBe(true);
+    expect(led?.successWorkCount).toBe(1);
+    expect(led?.sawSourceWrite).toBe(true);
 
     led = recordTaskWorkSuccess(led, "t2", "fs.write", { featureWrite: true });
-    expect(
-      canMarkTaskDone(led, "t2", {
-        taskTitle: "Implement the requested product feature",
-        featureAppRequired: true,
-      }).ok,
-    ).toBe(true);
+    expect(led?.successWorkCount).toBe(2);
+    expect(led?.sawFeatureWrite).toBe(true);
   });
 
-  it("still blocks any task with no successful work at all", () => {
+  it("starts empty ledgers with no successful work", () => {
     const empty = openTaskLedger("t2");
-    const gate = canMarkTaskDone(empty, "t2", {
-      taskTitle: "Implement the requested product feature",
-      featureAppRequired: true,
-    });
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) expect(gate.reason).toMatch(/no successful tool result/i);
+    expect(empty.successWorkCount).toBe(0);
   });
 
-  it("allows verify done on successful work without demanding a server probe", () => {
+  it("records verify work including server start signals", () => {
     let led = openTaskLedger("t4");
     led = recordTaskWorkSuccess(led, "t4", "fs.list");
-    const gate = canMarkTaskDone(led, "t4", {
-      taskTitle: "Start dev server, probe localhost, leave running",
-    });
-    expect(gate.ok).toBe(true);
+    expect(led?.successWorkCount).toBe(1);
 
     led = recordTaskWorkSuccess(led, "t4", "shell.start", {
       devServerStart: true,
     });
-    expect(
-      canMarkTaskDone(led, "t4", {
-        taskTitle: "Start dev server, probe localhost, leave running",
-      }).ok,
-    ).toBe(true);
+    expect(led?.successWorkCount).toBe(2);
+    expect(led?.sawDevServerStart).toBe(true);
   });
 
-  it("accepts port LISTEN or ready tail as local runtime proof", () => {
+  it("records port LISTEN and ready tail as runtime signals", () => {
     let led = openTaskLedger("t7");
     led = recordTaskWorkSuccess(led, "t7", "shell.exec", {
       portListening: true,
     });
-    expect(
-      canMarkTaskDone(led, "t7", {
-        taskTitle: "Leave server running for user to test",
-      }).ok,
-    ).toBe(true);
+    expect(led?.sawPortListening).toBe(true);
+    expect(hasLocalRuntimeProof(led)).toBe(true);
 
     let led2 = openTaskLedger("t7");
     led2 = recordTaskWorkSuccess(led2, "t7", "shell.tail", {
       serverReady: true,
     });
-    expect(
-      canMarkTaskDone(led2, "t7", {
-        taskTitle: "Leave server running for user to test",
-      }).ok,
-    ).toBe(true);
+    expect(led2?.sawServerReady).toBe(true);
+    expect(hasLocalRuntimeProof(led2)).toBe(true);
   });
 
-  it("inherits runtime for leave-running observation tasks (resume)", () => {
+  it("classifies leave-running observation tasks", () => {
     expect(isRuntimeObservationTask("Leave server running for user to test")).toBe(
       true,
     );
-    // No ledger required when plan already proved runtime
-    expect(
-      canMarkTaskDone(null, "t7", {
-        taskTitle: "Leave server running for user to test",
-        runtimeVerified: true,
-      }).ok,
-    ).toBe(true);
   });
 
   it("detects vite ready and lsof LISTEN outputs", () => {
@@ -413,7 +370,7 @@ describe("typed task evidence", () => {
     expect(hasLocalRuntimeProof({ sawPortListening: true })).toBe(true);
   });
 
-  it("does not apply coding verify/implement gates on pentest titles", () => {
+  it("classifies pentest titles without coding classes", () => {
     expect(
       classifyTaskTitle("Probe HTTP endpoints on target", { planKind: "pentest" }),
     ).toBe("recon");
@@ -428,35 +385,19 @@ describe("typed task evidence", () => {
 
     let led = openTaskLedger("t2");
     led = recordTaskWorkSuccess(led, "t2", "net.pingSweep", { remoteReconOk: true });
-    expect(
-      canMarkTaskDone(led, "t2", {
-        taskTitle: "Probe HTTP endpoints on example.com",
-        planKind: "pentest",
-      }).ok,
-    ).toBe(true);
+    expect(led?.successWorkCount).toBe(1);
+    expect(led?.sawRemoteReconOk).toBe(true);
 
-    // Classification must not drag coding gates onto pentest probe tasks
     let led2 = openTaskLedger("t2");
     led2 = recordTaskWorkSuccess(led2, "t2", "fs.list");
-    const local = canMarkTaskDone(led2, "t2", {
-      taskTitle: "Probe HTTP endpoints on example.com",
-      planKind: "pentest",
-    });
-    expect(local.ok).toBe(true);
+    expect(led2?.successWorkCount).toBe(1);
   });
 
-  it("allows report observation when remote work already verified", () => {
+  it("classifies report observation tasks", () => {
     expect(isRemoteObservationTask("Write findings report")).toBe(true);
-    expect(
-      canMarkTaskDone(null, "t9", {
-        taskTitle: "Document residual risk and findings",
-        planKind: "pentest",
-        remoteWorkVerified: true,
-      }).ok,
-    ).toBe(true);
   });
 
-  it("classifies an exploit task without gating its completion on active-test evidence", () => {
+  it("classifies exploit tasks and records recon signals", () => {
     const title = "Exploit SQL injection on /login to dump users";
     expect(classifyTaskTitle(title, { planKind: "pentest" })).toBe("exploit");
 
@@ -464,45 +405,26 @@ describe("typed task evidence", () => {
     led = recordTaskWorkSuccess(led, "t5", "http.fetch", {
       remoteReconOk: true,
     });
-    const gate = canMarkTaskDone(led, "t5", {
-      taskTitle: title,
-      planKind: "pentest",
-    });
-    expect(gate.ok).toBe(true);
+    expect(led?.successWorkCount).toBe(1);
+    expect(led?.sawRemoteReconOk).toBe(true);
   });
 
-  it("allows a pentest exploit task once an active test succeeded", () => {
+  it("records active-test signals for pentest exploit tasks", () => {
     let led = openTaskLedger("t5");
     led = recordTaskWorkSuccess(led, "t5", "shell.exec", {
       remoteActiveTestOk: true,
     });
-    expect(
-      canMarkTaskDone(led, "t5", {
-        taskTitle: "Exploit SQL injection on /login to dump users",
-        planKind: "pentest",
-      }).ok,
-    ).toBe(true);
+    expect(led?.successWorkCount).toBe(1);
+    expect(led?.sawRemoteActiveTestOk).toBe(true);
   });
 
-  it("does not block pentest recon or report tasks with the exploit rule", () => {
+  it("records recon signals for pentest recon tasks", () => {
     let recon = openTaskLedger("t6");
     recon = recordTaskWorkSuccess(recon, "t6", "shell.exec", {
       remoteReconOk: true,
     });
-    expect(
-      canMarkTaskDone(recon, "t6", {
-        taskTitle: "Scan and enumerate services on target",
-        planKind: "pentest",
-      }).ok,
-    ).toBe(true);
-
-    expect(
-      canMarkTaskDone(null, "t7", {
-        taskTitle: "Write findings report and residual risk",
-        planKind: "pentest",
-        remoteWorkVerified: true,
-      }).ok,
-    ).toBe(true);
+    expect(recon?.successWorkCount).toBe(1);
+    expect(recon?.sawRemoteReconOk).toBe(true);
   });
 });
 

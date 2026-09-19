@@ -151,7 +151,7 @@ async function probeEffort(
   const probe = probeRequestFor(input.request, effort);
   try {
     await withUnrecordedTransport(
-      () => input.provider.complete(probe, input.auth),
+      () => input.provider.complete(probe, input.auth, input.onStatus),
       PREFLIGHT_MAX_TOKENS,
     );
     return "accepted";

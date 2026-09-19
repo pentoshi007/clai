@@ -353,6 +353,12 @@ export function buildResponsesBody(
     }),
   );
   body.max_output_tokens = responsesMaxOutputTokens(plan);
+  if (config.maxTokensField === "omit") {
+    delete body.max_output_tokens;
+  } else if (config.maxTokensField) {
+    body[config.maxTokensField] = body.max_output_tokens;
+    delete body.max_output_tokens;
+  }
   if (!config.omitSampling) {
     body.temperature = plan.controls.temperature;
     if (plan.controls.topP !== undefined) body.top_p = plan.controls.topP;
