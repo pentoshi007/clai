@@ -36,6 +36,7 @@ export async function openEndpointsEditor(
     notice(services, "info", `unset all endpoint URLs for ${id}`);
     return;
   }
+  if (answer.action === "refresh") return;
 
   const byId = new Map(urls.map((url, index) => [String(index), url]));
   const detailed = resolveEditorRowsDetailed(answer.rows, byId).map((row) => ({
@@ -107,6 +108,7 @@ export async function openSearchKeysEditor(
     notice(services, "info", `unset all keys for ${id}`);
     return;
   }
+  if (answer.action === "refresh") return;
 
   const detailed = resolveEditorRowsDetailed(
     answer.rows,

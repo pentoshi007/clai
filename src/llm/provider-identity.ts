@@ -84,6 +84,19 @@ export const providerAliases: Record<string, ProviderId> = {
   minimax: "minimax",
   minimaxi: "minimax",
   "minimax-ai": "minimax",
+  cline: "cline",
+  "cline-bot": "cline",
+  "cline.ai": "cline",
+  codex: "codex",
+  chatgpt: "codex",
+  "chatgpt-codex": "codex",
+  "openai-codex": "codex",
+  "codex-cli": "codex",
+  copilot: "copilot",
+  "github-copilot": "copilot",
+  "gh-copilot": "copilot",
+  "copilot-chat": "copilot",
+  github: "copilot",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -112,6 +125,9 @@ export const defaultModels: Record<ProviderId, string> = {
   kimi: "kimi-k3",
   glm: "glm-4-plus",
   minimax: "MiniMax-Text-01",
+  cline: "cline-free/deepseek-v4.1-flash",
+  codex: "gpt-5.1-codex",
+  copilot: "gpt-4o",
 };
 
 export const retiredModelReplacements: Partial<
@@ -171,4 +187,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   kimi: "KIMI_API_KEY",
   glm: "GLM_API_KEY",
   minimax: "MINIMAX_API_KEY",
+  cline: "CLINE_API_KEY",
+  codex: "CODEX_API_KEY",
+  copilot: "COPILOT_API_KEY",
 };

@@ -6,8 +6,6 @@ export interface SessionPolicy {
   pentestAuthorized: { value: boolean };
   sessionId: string;
   planApproved: { value: boolean };
-  pendingTaskBatch: { value: string | undefined };
-  pendingDependency: { value: string | undefined };
 }
 
 export function createSessionPolicy(sessionId?: string): SessionPolicy {
@@ -18,8 +16,6 @@ export function createSessionPolicy(sessionId?: string): SessionPolicy {
       sessionId ??
       `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     planApproved: { value: false },
-    pendingTaskBatch: { value: undefined },
-    pendingDependency: { value: undefined },
   };
 }
 

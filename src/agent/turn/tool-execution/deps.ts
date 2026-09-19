@@ -19,7 +19,6 @@ import type { McpRuntime } from "../../../mcp/runtime.js";
 import type { ConfirmPort } from "../../confirm-port.js";
 import type { PromptMutex } from "../tool-call-preparation.js";
 import type { ResponderClaimLedger } from "../responder-claims.js";
-import type { TaskUpdateGateResult } from "../task-update-gate.js";
 import type { ToolExecutionState } from "./state.js";
 import type { createTurnEventEmitter } from "../event-emitter.js";
 import type { createMcpAgentToolExecutor } from "../mcp-agent-tools.js";
@@ -69,8 +68,6 @@ export interface SingleToolDeps extends TurnWriters {
   readonly sessionLooseWork: LooseWorkReceipt[];
   readonly deferredPostToolMessages: ChatMessage[];
   readonly deferredResponderLedgerNotifications: ResponderNotification[];
-  readonly batchRemindCalls: () => Set<ToolCall>;
-  readonly batchReminderNote: () => string;
   readonly turnState: () => TurnStateSnapshot;
   readonly probeStateKey: (call: ToolCall) => string | undefined;
   readonly moveTurn: (to: TurnState, reason?: string) => void;
@@ -79,10 +76,6 @@ export interface SingleToolDeps extends TurnWriters {
     evidence: TaskEvidence,
   ) => Promise<void>;
   readonly persistProjectRootOnPlan: (root: string) => Promise<void>;
-  readonly completionGateForTask: (
-    plan: SessionPlan,
-    taskId: string,
-  ) => TaskUpdateGateResult;
   readonly matchesWakeRevision: (
     notification: ResponderNotification,
   ) => boolean;

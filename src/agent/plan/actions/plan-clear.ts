@@ -1,14 +1,12 @@
 import type { PlanToolResult } from "../handle-plan-tool.js";
 import { appendPlanTask, applyForegroundSnapshot, applySessionPlanOperation, createPlan, deletePlan, isBareTaskIdTitle, isPlanSuccessful, isPlanTerminal, loadPlan, markTask, mutatePlan, normalizeTaskDependencies, readyPlanTasks, savePlan, validateSessionPlan } from "../../../store/plan.js";
 import type { SessionPlan, TaskState } from "../../../store/plan.js";
-import { evaluateTaskTransition } from "../../../store/task-transitions.js";
 import type { ToolCall } from "../../../types.js";
 import { renderPlanChecklist } from "../../../ui/plan-pane.js";
 import type { LoopGuard } from "../../loop-guard.js";
 import { getActiveProjectRoot } from "../../project-root.js";
 import type { SessionPolicy } from "../../session-policy.js";
 import { classifyTaskTitle } from "../../task-evidence.js";
-import { buildDependencyReminder, dependencyToast } from "../../task-sync.js";
 import { isLumpedSingleTask } from "../../tool-call-parser.js";
 import { detectPackageManager } from "../../workspace-orient.js";
 import chalk from "chalk";

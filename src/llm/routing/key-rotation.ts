@@ -148,16 +148,21 @@ export async function runWithKeyRotation<T>(opts: {
   let endpointOffset = 0;
   const endpointCount = endpointUrls.length;
   if (sessionRoute && endpointCount > 0) sessionRoute.endpoint = endpointUrls[endpointStart]!;
-  const authForAttempt = (value: string | undefined): ProviderAuth => {
-    if (endpointCount === 0) return authForSlot(providerId, value);
+  const authForAttempt = (slot: (typeof slots)[number]): ProviderAuth => {
+    if (endpointCount === 0) return authForSlot(providerId, slot.value, slot);
     const url = endpointUrls[(endpointStart + endpointOffset) % endpointCount]!;
-    return { apiKey: value, baseUrl: url };
+    return {
+      apiKey: slot.value,
+      baseUrl: url,
+      ...(slot.refreshToken ? { refreshToken: slot.refreshToken } : {}),
+      ...(slot.expiresAt !== undefined ? { expiresAt: slot.expiresAt } : {}),
+    };
   };
 
   for (let planIdx = 0; planIdx < plan.length; planIdx++) {
     const keyIndex = plan[planIdx]!;
     const slot = slots[keyIndex]!;
-    const auth = authForAttempt(slot.value);
+    const auth = authForAttempt(slot);
     const tail = maskSecretTail(slot.value);
 
     if (planIdx > 0) {

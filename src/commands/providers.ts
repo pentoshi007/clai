@@ -26,6 +26,24 @@ import {
   listProviderStatuses,
   unsetProviderSecret,
 } from "../store/keys.js";
+import {
+  importExistingClineAuth,
+  pollClineDeviceAuth,
+  startClineDeviceAuth,
+} from "../llm/cline-auth.js";
+import type { ClineOAuthTokens } from "../llm/cline-auth.js";
+import {
+  encodeCodexKey,
+  importExistingCodexKey,
+  pollCodexDeviceAuth,
+  startCodexDeviceAuth,
+} from "../llm/codex-auth.js";
+import type { CodexCredential } from "../llm/codex-auth.js";
+import {
+  importExistingCopilotKey,
+  pollCopilotDeviceAuth,
+  startCopilotDeviceAuth,
+} from "../llm/copilot-auth.js";
 import type { ProviderId } from "../types.js";
 
 export interface SetKeyOptions {
@@ -33,6 +51,13 @@ export interface SetKeyOptions {
   stdin?: boolean | undefined;
   url?: string | string[] | undefined;
   skipPing?: boolean | undefined;
+}
+
+function clineCredentialMetadata(tokens: ClineOAuthTokens) {
+  return {
+    ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+    ...(tokens.expiresAt !== undefined ? { expiresAt: tokens.expiresAt } : {}),
+  };
 }
 
 function urlList(url: SetKeyOptions["url"]): string[] {
@@ -110,6 +135,10 @@ function invalidFormatHint(provider: ProviderId): string {
     return "GLM keys are alphanumeric or id.secret (from https://open.bigmodel.cn or https://z.ai)";
   if (provider === "minimax")
     return "MiniMax keys are alphanumeric (from https://intl.minimaxi.com or https://api.minimax.chat)";
+  if (provider === "codex")
+    return "Codex uses ChatGPT sign-in — run `clai auth codex` (or import with --import)";
+  if (provider === "copilot")
+    return "Copilot uses GitHub sign-in — run `clai auth copilot` (or import with --import)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 
@@ -136,7 +165,6 @@ export async function setProviderKey(
   const provider = assertProvider(providerValue);
   const providerImpl = getProvider(provider);
 
-  // For endpoint providers `--url` is configuration, not a credential, and it
   const urls = urlList(options.url);
   if (providerUsesEndpoints(provider) && urls.length > 0) {
     for (const url of urls) addEndpoint(provider, url);
@@ -144,6 +172,7 @@ export async function setProviderKey(
   }
 
   let secret = providerUsesEndpoints(provider) ? keyArg : (urls[0] ?? keyArg);
+  let clineMetadata: ReturnType<typeof clineCredentialMetadata> | undefined;
   if (options.fromEnv) {
     secret = process.env[options.fromEnv];
     if (!secret)
@@ -153,6 +182,31 @@ export async function setProviderKey(
   }
   if (options.stdin) {
     secret = await readStdin();
+  }
+  if (!secret && provider === "cline" && !options.fromEnv) {
+    const tokens = await resolveClineTokensInteractive();
+    if (!tokens) {
+      console.log("cancelled");
+      return;
+    }
+    secret = tokens.accessToken;
+    clineMetadata = clineCredentialMetadata(tokens);
+  }
+  if (!secret && provider === "codex" && !options.fromEnv) {
+    const credential = await resolveCodexCredentialInteractive();
+    if (!credential) {
+      console.log("cancelled");
+      return;
+    }
+    secret = encodeCodexKey(credential);
+  }
+  if (!secret && provider === "copilot" && !options.fromEnv) {
+    const token = await resolveCopilotCredentialInteractive();
+    if (!token) {
+      console.log("cancelled");
+      return;
+    }
+    secret = token;
   }
   if (!secret) {
     secret = await promptForSecret(provider);
@@ -197,7 +251,9 @@ export async function setProviderKey(
     updateConfig({ ollamaHost: secret });
     setDefaultProvider(provider);
   } else {
-    const storage = await appendProviderKey(provider, secret);
+    const storage = clineMetadata
+      ? await appendProviderKey(provider, secret, clineMetadata)
+      : await appendProviderKey(provider, secret);
     if (storage === "fallback") {
       process.exitCode = 3;
       console.warn(
@@ -245,7 +301,6 @@ export async function unsetProviderKey(
     return;
   }
   const provider = assertProvider(providerValue);
-  // `--url` targets the endpoint list instead of the credentials, so a bad URL
   if (options.url) {
     if (!providerUsesEndpoints(provider)) {
       console.log(`${provider} has no endpoint URLs`);
@@ -370,15 +425,299 @@ export async function useProvider(providerValue: string): Promise<void> {
   }
   const secret = await getProviderSecret(provider);
   if (!secret.value && !envValue(provider) && provider !== "ollama" && provider !== "free") {
-    const entered = await promptForSecret(provider);
-    if (!entered) {
-      console.log("provider unchanged");
-      return;
+    if (provider === "cline") {
+      const tokens = await resolveClineTokensInteractive();
+      if (!tokens) {
+        console.log("provider unchanged");
+        return;
+      }
+      await appendProviderKey(
+        "cline",
+        tokens.accessToken,
+        clineCredentialMetadata(tokens),
+      );
+    } else if (provider === "codex") {
+      const credential = await resolveCodexCredentialInteractive();
+      if (!credential) {
+        console.log("provider unchanged");
+        return;
+      }
+      await appendProviderKey("codex", encodeCodexKey(credential));
+    } else if (provider === "copilot") {
+      const token = await resolveCopilotCredentialInteractive();
+      if (!token) {
+        console.log("provider unchanged");
+        return;
+      }
+      await appendProviderKey("copilot", token);
+    } else {
+      const entered = await promptForSecret(provider);
+      if (!entered) {
+        console.log("provider unchanged");
+        return;
+      }
+      await setProviderKey(provider, entered, { skipPing: false });
     }
-    await setProviderKey(provider, entered, { skipPing: false });
   }
   setDefaultProvider(provider);
   console.log(`now using ${provider} · model=${getProviderModel(provider)}`);
+}
+
+export async function authCline(
+  providerValue: string,
+  options: { import?: boolean | undefined } = {},
+): Promise<void> {
+  const provider = assertProvider(providerValue);
+  if (provider !== "cline") {
+    throw new Error(
+      `OAuth browser sign-in is only supported for the cline provider (got "${provider}"). Use \`clai set ${provider} <key>\` instead.`,
+    );
+  }
+
+  if (options.import) {
+    process.stderr.write("Looking for an existing Cline CLI/Desktop sign-in…\n");
+    const tokens = await importExistingClineAuth();
+    if (!tokens) {
+      process.exitCode = 5;
+      throw new Error(
+        "No usable Cline credential found. Sign in with `clai auth cline` (no --import) or install Cline CLI/Desktop and log in first.",
+      );
+    }
+    const token = tokens.accessToken;
+    const storage = await appendProviderKey(
+      "cline",
+      token,
+      clineCredentialMetadata(tokens),
+    );
+    if (storage === "fallback") {
+      process.exitCode = 3;
+      console.warn(
+        chalk.yellow(
+          `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+        ),
+      );
+    }
+    const multi = await getProviderKeys("cline");
+    console.log(
+      `imported cline ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    );
+    return;
+  }
+
+  const tokens = await resolveClineTokensInteractive();
+  if (!tokens) {
+    process.exitCode = 5;
+    throw new Error("Cline authentication failed or was cancelled.");
+  }
+  const token = tokens.accessToken;
+  const storage = await appendProviderKey(
+    "cline",
+    token,
+    clineCredentialMetadata(tokens),
+  );
+  if (storage === "fallback") {
+    process.exitCode = 3;
+    console.warn(
+      chalk.yellow(
+        `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+      ),
+    );
+  }
+  const multi = await getProviderKeys("cline");
+  console.log(
+    `authenticated cline ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+  );
+}
+
+export async function resolveClineTokensInteractive(): Promise<
+  ClineOAuthTokens | undefined
+> {
+  const start = await startClineDeviceAuth();
+  console.log("To authenticate Cline:");
+  console.log(
+    `  1. Open this link on any device:\n       ${start.verificationUrl}`,
+  );
+  console.log(`  2. Enter code: ${chalk.bold(start.userCode)}`);
+  console.log("");
+
+  const tokens = await pollClineDeviceAuth(start, {
+    onPending: (remaining) => {
+      const mm = Math.floor(remaining / 60);
+      const ss = String(remaining % 60).padStart(2, "0");
+      process.stderr.write(
+        `\rWaiting for approval… ${mm}:${ss} remaining (Ctrl-C to cancel)   `,
+      );
+    },
+  });
+  process.stderr.write("\n");
+  return tokens;
+}
+
+export async function resolveClineCredentialInteractive(): Promise<
+  string | undefined
+> {
+  return (await resolveClineTokensInteractive())?.accessToken;
+}
+
+export async function authCodex(
+  providerValue: string,
+  options: { import?: boolean | undefined } = {},
+): Promise<void> {
+  const provider = assertProvider(providerValue);
+  if (provider !== "codex") {
+    throw new Error(
+      `OAuth browser sign-in is only supported for the codex provider (got "${provider}"). Use \`clai set ${provider} <key>\` instead.`,
+    );
+  }
+
+  if (options.import) {
+    process.stderr.write("Looking for an existing Codex CLI sign-in…\n");
+    const key = await importExistingCodexKey();
+    if (!key) {
+      process.exitCode = 5;
+      throw new Error(
+        "No usable Codex credential found. Sign in with `clai auth codex` (no --import) or install Codex CLI and log in first.",
+      );
+    }
+    const storage = await appendProviderKey("codex", key);
+    if (storage === "fallback") {
+      process.exitCode = 3;
+      console.warn(
+        chalk.yellow(
+          `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+        ),
+      );
+    }
+    const multi = await getProviderKeys("codex");
+    console.log(
+      `imported codex ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    );
+    return;
+  }
+
+  const credential = await resolveCodexCredentialInteractive();
+  if (!credential) {
+    process.exitCode = 5;
+    throw new Error("Codex authentication failed or was cancelled.");
+  }
+  const key = encodeCodexKey(credential);
+  const storage = await appendProviderKey("codex", key);
+  if (storage === "fallback") {
+    process.exitCode = 3;
+    console.warn(
+      chalk.yellow(
+        `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+      ),
+    );
+  }
+  const multi = await getProviderKeys("codex");
+  console.log(
+    `authenticated codex ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+  );
+}
+
+export async function authCopilot(
+  providerValue: string,
+  options: { import?: boolean | undefined } = {},
+): Promise<void> {
+  const provider = assertProvider(providerValue);
+  if (provider !== "copilot") {
+    throw new Error(
+      `OAuth browser sign-in is only supported for the copilot provider (got "${provider}"). Use \`clai set ${provider} <key>\` instead.`,
+    );
+  }
+
+  if (options.import) {
+    process.stderr.write("Looking for an existing Copilot sign-in…\n");
+    const key = await importExistingCopilotKey();
+    if (!key) {
+      process.exitCode = 5;
+      throw new Error(
+        "No usable Copilot credential found. Sign in with `clai auth copilot` (no --import) or install Copilot CLI/VS Code and log in first.",
+      );
+    }
+    const storage = await appendProviderKey("copilot", key);
+    if (storage === "fallback") {
+      process.exitCode = 3;
+      console.warn(
+        chalk.yellow(
+          `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+        ),
+      );
+    }
+    const multi = await getProviderKeys("copilot");
+    console.log(
+      `imported copilot ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    );
+    return;
+  }
+
+  const token = await resolveCopilotCredentialInteractive();
+  if (!token) {
+    process.exitCode = 5;
+    throw new Error("Copilot authentication failed or was cancelled.");
+  }
+  const storage = await appendProviderKey("copilot", token);
+  if (storage === "fallback") {
+    process.exitCode = 3;
+    console.warn(
+      chalk.yellow(
+        `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+      ),
+    );
+  }
+  const multi = await getProviderKeys("copilot");
+  console.log(
+    `authenticated copilot ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+  );
+}
+
+export async function resolveCodexCredentialInteractive(): Promise<
+  CodexCredential | undefined
+> {
+  const start = await startCodexDeviceAuth();
+  console.log("To authenticate Codex (ChatGPT):");
+  console.log(
+    `  1. Open this link on any device:\n       ${start.verificationUrl}`,
+  );
+  console.log(`  2. Enter code: ${chalk.bold(start.userCode)}`);
+  console.log("");
+
+  const credential = await pollCodexDeviceAuth(start, {
+    onPending: (remaining) => {
+      const mm = Math.floor(remaining / 60);
+      const ss = String(remaining % 60).padStart(2, "0");
+      process.stderr.write(
+        `\rWaiting for approval… ${mm}:${ss} remaining (Ctrl-C to cancel)   `,
+      );
+    },
+  });
+  process.stderr.write("\n");
+  return credential;
+}
+
+export async function resolveCopilotCredentialInteractive(): Promise<
+  string | undefined
+> {
+  const start = await startCopilotDeviceAuth();
+  console.log("To authenticate GitHub Copilot:");
+  console.log(
+    `  1. Open this link on any device:\n       ${start.verificationUrl}`,
+  );
+  console.log(`  2. Enter code: ${chalk.bold(start.userCode)}`);
+  console.log("");
+
+  const token = await pollCopilotDeviceAuth(start, {
+    onPending: (remaining) => {
+      const mm = Math.floor(remaining / 60);
+      const ss = String(remaining % 60).padStart(2, "0");
+      process.stderr.write(
+        `\rWaiting for approval… ${mm}:${ss} remaining (Ctrl-C to cancel)   `,
+      );
+    },
+  });
+  process.stderr.write("\n");
+  return token;
 }
 
 export async function providerSwitcher(

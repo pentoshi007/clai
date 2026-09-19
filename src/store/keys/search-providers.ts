@@ -14,6 +14,8 @@ export interface ProviderKeySlot {
   readonly value: string;
   readonly createdAt: number;
   readonly disabled?: boolean | undefined;
+  readonly refreshToken?: string | undefined;
+  readonly expiresAt?: number | undefined;
 }
 
 export interface ProviderKeysResult {
@@ -24,7 +26,14 @@ export interface ProviderKeysResult {
 
 interface ProviderKeysEnvelopeV1 {
   v: 1;
-  keys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }>;
+  keys: Array<{
+    id: string;
+    value: string;
+    createdAt: number;
+    disabled?: boolean;
+    refreshToken?: string;
+    expiresAt?: number;
+  }>;
   activeIndex: number;
 }
 
@@ -74,6 +83,10 @@ export function parseProviderKeysPayload(
             value: k.value,
             createdAt: k.createdAt || Date.now(),
             ...(k.disabled === true ? { disabled: true } : {}),
+            ...(typeof k.refreshToken === "string"
+              ? { refreshToken: k.refreshToken }
+              : {}),
+            ...(typeof k.expiresAt === "number" ? { expiresAt: k.expiresAt } : {}),
           }))
           .filter((k) => k.value.trim().length > 0)
           .slice(0, MAX_PROVIDER_KEYS);
@@ -101,6 +114,8 @@ export function serializeProviderKeysPayload(
       value: k.value.trim(),
       createdAt: k.createdAt || Date.now(),
       ...(k.disabled === true ? { disabled: true } : {}),
+      ...(k.refreshToken ? { refreshToken: k.refreshToken } : {}),
+      ...(k.expiresAt !== undefined ? { expiresAt: k.expiresAt } : {}),
     }))
     .filter((k) => k.value.length > 0)
     .slice(0, MAX_PROVIDER_KEYS);

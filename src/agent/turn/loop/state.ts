@@ -26,8 +26,6 @@ export interface TurnLoopState {
   freeTierConsecutiveFailures: number;
   freeTierAdvisoryShown: boolean;
   lastSuccessfulRequestSnapshot: SuccessfulRequestSnapshot | undefined;
-  batchRemindCalls: Set<ToolCall>;
-  batchReminderNote: string;
   codingSession: boolean;
 }
 
@@ -58,7 +56,5 @@ export const createTurnLoopState = (input: {
   freeTierConsecutiveFailures: 0,
   freeTierAdvisoryShown: false,
   lastSuccessfulRequestSnapshot: input.previousSuccessfulRequest,
-  batchRemindCalls: new Set(),
-  batchReminderNote: "",
   codingSession: false,
 });

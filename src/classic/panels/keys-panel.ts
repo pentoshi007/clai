@@ -120,6 +120,12 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
     if (isAddRow) return handled(state);
     return handled({ ...state, activeIndex: state.cursor });
   }
+  if (chord === "r" && input.request.refreshable && !isAddRow) {
+    const slotId = state.rows[state.cursor]?.slotId;
+    if (slotId) {
+      return handled(state, { kind: "keys", answer: { action: "refresh", slotId } });
+    }
+  }
   if (chord === "d") {
     if (isAddRow) return handled(state);
     const rows = state.rows.map((row, index) =>
@@ -218,7 +224,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
         columns: input.columns,
         label: `${sticky} ${index + 1}  ${rowValue(row, reveal, editing, state.draft)}${disabledTag}`,
         active,
-        trailing: ink.fg("muted", ink.glyphs.remove),
+        trailing: `${input.request.refreshable ? "↻ " : ""}${ink.fg("muted", ink.glyphs.remove)}`,
       }),
     );
   }
@@ -231,6 +237,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
     counter: windowCounter(state.cursor, count),
     hints: [
       `${ink.glyphs.enter} ${input.request.addViaPicker ? "add" : "edit"}`,
+      ...(input.request.refreshable ? ["r refresh"] : []),
       "space set active",
       "d disable",
       "^D remove",

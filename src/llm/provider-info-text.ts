@@ -814,4 +814,103 @@ SETUP
   3. clai use minimax
 
 Docs: https://intl.minimaxi.com`,
+  cline: `Cline — OpenAI-compatible gateway with free and paid frontier models
+
+WHAT IT IS
+  Cline's hosted gateway (api.cline.bot). One OAuth sign-in unlocks a catalog
+  of models across many vendors (Anthropic, OpenAI, Moonshot, xAI, Z.ai,
+  DeepSeek, and more), including a rotating set of free "cline-free/*" models.
+  Authenticated route — clai mimics the official Cline desktop client so free
+  models work. Chat Completions with SSE streaming and native tool calling.
+
+  Base URL   https://api.cline.bot/api/v1
+  Auth       OAuth (WorkOS device flow) — or import an existing Cline sign-in
+  Endpoints  /chat/completions · /ai/cline/recommended-models · /users/me
+
+MODELS
+  /model lists the live catalog (cached for an hour), grouped by tier:
+    cline-free/deepseek-v4.1-flash   free default
+    anthropic/claude-opus-5          frontier
+    moonshotai/kimi-k3               long-context agentic
+    cline-pass/*                     requires a paid Cline subscription
+
+SETUP (pick one)
+  1. Sign in with your browser (works on headless servers too):
+       clai auth cline
+     then open the printed link on any device and approve the code.
+  2. Import an existing Cline CLI/Desktop sign-in automatically:
+       clai auth cline --import
+  3. Paste a token manually:
+       clai set cline <access-token>
+
+  Multi-account: run "clai auth cline" again to add more keys (up to 10),
+  with automatic rotation on auth/quota errors.
+
+Docs: https://docs.cline.bot`,
+  codex: `ChatGPT (Codex) — sign in with your ChatGPT subscription
+
+WHAT IT IS
+  The backend the official Codex CLI uses (chatgpt.com/backend-api/codex).
+  Sign in with a ChatGPT account — any tier, including the free plan — and
+  clai mimics the Codex CLI's requests (originator codex_cli_rs, the
+  Responses API with reasoning, SSE streaming) so subscription usage works
+  from the terminal.
+
+  Base URL   https://chatgpt.com/backend-api/codex
+  Auth       OAuth device flow (Sign in with ChatGPT) — or import an existing
+             Codex CLI sign-in
+  Endpoints  /responses · /models
+
+MODELS
+  /model lists the account-visible catalog (cached for an hour), e.g.
+    gpt-5.1-codex        agentic coding default
+    gpt-5.1              general reasoning
+  Free-tier quota errors are shown exactly as the backend returns them.
+
+SETUP (pick one)
+  1. Sign in with your browser (works on headless servers too):
+       clai auth codex
+     then open the printed link on any device and approve the code.
+  2. Import an existing Codex CLI sign-in:
+       clai auth codex --import
+  3. Paste a stored credential manually:
+       clai set codex <key>
+
+  Multi-account: run "clai auth codex" again to add more keys (up to 10),
+  with automatic rotation on auth/quota errors.
+
+Docs: https://developers.openai.com/codex/`,
+  copilot: `GitHub Copilot — use your Copilot subscription from the terminal
+
+WHAT IT IS
+  The GitHub Copilot chat API (api.githubcopilot.com). Sign in with a GitHub
+  account that has Copilot — including Copilot Free — via the GitHub device
+  flow, and clai mimics the VS Code Copilot Chat client's requests
+  (Copilot-Integration-Id, Editor/Plugin versions, X-Initiator) so
+  subscription usage works from the terminal.
+
+  Base URL   https://api.githubcopilot.com
+  Auth       GitHub device flow — or import an existing Copilot sign-in
+  Endpoints  /chat/completions · /models
+
+MODELS
+  /model lists the account-visible catalog (cached for an hour), e.g.
+    gpt-4o               general default
+    claude-sonnet-4.5    frontier reasoning
+    gpt-5.1              agentic coding
+  Copilot Free quota errors are shown exactly as the backend returns them.
+
+SETUP (pick one)
+  1. Sign in with your browser (works on headless servers too):
+       clai auth copilot
+     then open the printed link on any device and enter the code.
+  2. Import an existing Copilot sign-in (Copilot CLI / VS Code):
+       clai auth copilot --import
+  3. Paste a GitHub token manually:
+       clai set copilot <ghu_...>
+
+  Multi-account: run "clai auth copilot" again to add more keys (up to 10),
+  with automatic rotation on auth/quota errors.
+
+Docs: https://docs.github.com/copilot`,
 };

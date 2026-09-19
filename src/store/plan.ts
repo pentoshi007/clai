@@ -1,12 +1,11 @@
 import { rm } from "node:fs/promises";
 import { handlePermissionError, safeExists } from "../os/permissions.js";
-import { evaluateTaskTransition } from "./task-transitions.js";
 import { applyPlanOperation, type PlanOperation, type VersionedPlanStep } from "../agent/task-plan.js";
 import { PlanMeta, PlanStatus, PlanTask, SessionPlan, TaskState, loadDatabase } from "./plan/sqlite-backend.js";
 import { jsonlFile, readAllJsonl, withJsonlLock, writeJsonlAtomic } from "./plan/jsonl-backend.js";
 import { shortenPlanGoal } from "./plan/task-normalization.js";
 import { isBareTaskIdTitle, toVersionedTaskPlan } from "./plan/mutation.js";
-export { activeForegroundTasks, enforcePlanInvariants, loadPlan, mutatePlan, savePlan, stripBareTaskIdTasks, validateSessionPlan } from "./plan/mutation.js";
+export { enforcePlanInvariants, loadPlan, mutatePlan, savePlan, stripBareTaskIdTasks, validateSessionPlan } from "./plan/mutation.js";
 export { isBareTaskIdTitle };
 export type { PlanMutationResult } from "./plan/mutation.js";
 export { appendPlanTask, applyForegroundSnapshot, nextPlanTaskId, normalizeTaskDependencies } from "./plan/task-normalization.js";
@@ -161,7 +160,6 @@ export function markTask(
 ): boolean {
   const task = plan.tasks.find((t) => t.id === taskId);
   if (!task) return false;
-  if (!evaluateTaskTransition(task.state, state).allowed) return false;
   task.state = state;
   if (note !== undefined) task.note = note;
   plan.version = (plan.version ?? 1) + 1;

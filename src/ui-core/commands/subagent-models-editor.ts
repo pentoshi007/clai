@@ -112,6 +112,7 @@ export async function openSubagentModelEditor(services: AppServices): Promise<vo
       services.session.notice("info", "subagent models reset · subagents follow the session route");
       return;
     }
+    if (answer.action === "refresh") return;
     if (answer.action === "pick") {
       rows = answer.rows.map((row) => ({ ...row }));
       activeIndex = answer.activeIndex ?? activeIndex;

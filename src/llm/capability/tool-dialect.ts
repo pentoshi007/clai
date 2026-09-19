@@ -30,6 +30,9 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   kimi: "openai",
   glm: "openai",
   minimax: "openai",
+  cline: "openai",
+  codex: "openai",
+  copilot: "openai",
 };
 
 const nativeToolsDenylist: RegExp[] = [

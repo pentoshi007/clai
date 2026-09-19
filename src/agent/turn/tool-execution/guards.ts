@@ -23,7 +23,6 @@ export interface ToolGuardInput {
   readonly call: ToolCall;
   readonly narrowNmapOperation: boolean;
   readonly narrowNmapDispatched: number;
-  readonly heldBatchReminder: string | undefined;
 }
 
 export interface ToolGuardLoopInput {
@@ -34,7 +33,6 @@ export interface ToolGuardLoopInput {
 export type ToolGuardDecision =
   | { readonly kind: "proceed"; readonly consumesNarrowNmapScan: boolean }
   | { readonly kind: "reject"; readonly reason: string }
-  | { readonly kind: "hold"; readonly reason: string }
   | { readonly kind: "reuse"; readonly reason: string }
   | { readonly kind: "warn-reject"; readonly reason: string }
   | { readonly kind: "loop-reset" };
@@ -84,18 +82,10 @@ const checkNarrowNmap = (input: ToolGuardInput): ToolGuardDecision => {
 export const evaluateToolGuards = (
   input: ToolGuardInput,
 ): ToolGuardDecision => {
-  if (input.narrowNmapOperation) {
-    const narrow = checkNarrowNmap(input);
-    if (narrow.kind !== "proceed") return narrow;
-    if (input.heldBatchReminder !== undefined) {
-      return { kind: "hold", reason: input.heldBatchReminder };
-    }
-    return narrow;
+  if (!input.narrowNmapOperation) {
+    return { kind: "proceed", consumesNarrowNmapScan: false };
   }
-  if (input.heldBatchReminder !== undefined) {
-    return { kind: "hold", reason: input.heldBatchReminder };
-  }
-  return { kind: "proceed", consumesNarrowNmapScan: false };
+  return checkNarrowNmap(input);
 };
 
 export const evaluateLoopGuardBlock = (

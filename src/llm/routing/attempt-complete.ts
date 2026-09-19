@@ -71,7 +71,7 @@ export async function tryCompleteOnce(
       mode: "complete",
       reason: attemptReason,
       request: attemptRequest,
-      run: () => provider.complete(attemptRequest, auth),
+      run: () => provider.complete(attemptRequest, auth, onStatus),
     });
   };
   const runAttempt = (

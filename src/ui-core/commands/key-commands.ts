@@ -1,6 +1,3 @@
-/**
- * Credential management: /set, /unset, /keys, /info (multi-key per provider).
- */
 
 import { getProvider } from "../../llm/router.js";
 import {
@@ -17,7 +14,24 @@ import { formatKeyStatus, type SearchKeyStatus } from "../rendering/format-keys.
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
+import type { KeysEditorAnswer } from "../controllers/overlay-controller.js";
 import {notice, openEndpointsEditor, openSearchKeysEditor, resolveEditorRowsDetailed} from "./keys/editors.js";
+import {
+  pollClineDeviceAuth,
+  startClineDeviceAuth,
+  type ClineOAuthTokens,
+} from "../../llm/cline-auth.js";
+import {
+  encodeCodexKey,
+  pollCodexDeviceAuth,
+  startCodexDeviceAuth,
+  type CodexCredential,
+} from "../../llm/codex-auth.js";
+import {
+  pollCopilotDeviceAuth,
+  startCopilotDeviceAuth,
+} from "../../llm/copilot-auth.js";
+import { appendProviderKey, replaceProviderKey, type ProviderKeySlot } from "../../store/keys.js";
 import { MAX_PROVIDER_KEYS } from "../../llm/key-rotation.js";
 
 const SEARCH_IDS = new Set(["brave", "tavily", "duckduckgo", "exa"]);
@@ -383,6 +397,484 @@ async function unsetLlmKey(services: AppServices, id: ProviderId): Promise<void>
     storedCount > 1 ? `unset all ${storedCount} keys for ${id}` : `unset ${id}`,
   );
 }
+export async function runClineAuthForUI(
+  services: AppServices,
+): Promise<ClineOAuthTokens | undefined> {
+  let start;
+  try {
+    start = await startClineDeviceAuth();
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `could not start Cline sign-in: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+
+  services.overlay.openPager(
+    "Cline sign-in",
+    [
+      "Authenticate Cline on any device:",
+      "",
+      `  ${start.verificationUrl}`,
+      "",
+      `  Code: ${start.userCode}`,
+      "",
+      "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const waiting = services.toast.info("waiting for Cline approval…", {
+    sticky: true,
+  });
+  try {
+    const tokens = await pollClineDeviceAuth(start);
+    services.toast.dismiss(waiting);
+    notice(services, "info", "Cline authenticated");
+    return tokens;
+  } catch (error) {
+    services.toast.dismiss(waiting);
+    notice(
+      services,
+      "warn",
+      `Cline sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+}
+
+async function clineAddAccount(
+  services: AppServices,
+): Promise<ClineOAuthTokens | undefined> {
+  const tokens = await runClineAuthForUI(services);
+  if (!tokens) {
+    notice(services, "info", "cancelled");
+    return undefined;
+  }
+  return tokens;
+}
+
+export async function runCodexAuthForUI(
+  services: AppServices,
+): Promise<CodexCredential | undefined> {
+  let start;
+  try {
+    start = await startCodexDeviceAuth();
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `could not start Codex sign-in: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+
+  services.overlay.openPager(
+    "Codex sign-in",
+    [
+      "Authenticate Codex (ChatGPT) on any device:",
+      "",
+      `  ${start.verificationUrl}`,
+      "",
+      `  Code: ${start.userCode}`,
+      "",
+      "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const waiting = services.toast.info("waiting for Codex approval…", {
+    sticky: true,
+  });
+  try {
+    const credential = await pollCodexDeviceAuth(start);
+    services.toast.dismiss(waiting);
+    notice(services, "info", "Codex authenticated");
+    return credential;
+  } catch (error) {
+    services.toast.dismiss(waiting);
+    notice(
+      services,
+      "warn",
+      `Codex sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+}
+
+export async function runCopilotAuthForUI(
+  services: AppServices,
+): Promise<string | undefined> {
+  let start;
+  try {
+    start = await startCopilotDeviceAuth();
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `could not start Copilot sign-in: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+
+  services.overlay.openPager(
+    "Copilot sign-in",
+    [
+      "Authenticate GitHub Copilot on any device:",
+      "",
+      `  ${start.verificationUrl}`,
+      "",
+      `  Code: ${start.userCode}`,
+      "",
+      "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const waiting = services.toast.info("waiting for Copilot approval…", {
+    sticky: true,
+  });
+  try {
+    const token = await pollCopilotDeviceAuth(start);
+    services.toast.dismiss(waiting);
+    notice(services, "info", "Copilot authenticated");
+    return token;
+  } catch (error) {
+    services.toast.dismiss(waiting);
+    notice(
+      services,
+      "warn",
+      `Copilot sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+}
+
+async function loadClineKeys(): Promise<{
+  keys: ProviderKeySlot[];
+  activeIndex: number;
+}> {
+  const multi = await getProviderKeys("cline");
+  return {
+    keys: multi.source === "env" ? [] : multi.keys,
+    activeIndex: multi.source === "env" ? 0 : multi.activeIndex,
+  };
+}
+
+async function storeClineAccount(
+  services: AppServices,
+  tokens: ClineOAuthTokens,
+): Promise<void> {
+  if (tokens.refreshToken || tokens.expiresAt !== undefined) {
+    await appendProviderKey("cline", tokens.accessToken, {
+      ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+      ...(tokens.expiresAt !== undefined ? { expiresAt: tokens.expiresAt } : {}),
+    });
+  } else {
+    await appendProviderKey("cline", tokens.accessToken);
+  }
+  notice(services, "info", `added Cline account ${maskSecret(tokens.accessToken)}`);
+}
+
+async function refreshClineAccount(
+  services: AppServices,
+  oldValue: string,
+): Promise<void> {
+  const tokens = await runClineAuthForUI(services);
+  if (!tokens) {
+    notice(services, "info", "cancelled");
+    return;
+  }
+  const replaced = await replaceProviderKey(
+    "cline",
+    oldValue,
+    tokens.accessToken,
+    {
+      ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+      ...(tokens.expiresAt !== undefined ? { expiresAt: tokens.expiresAt } : {}),
+    },
+  );
+  if (!replaced) {
+    notice(services, "warn", "Cline account was not found");
+    return;
+  }
+  notice(services, "info", `refreshed Cline account ${maskSecret(tokens.accessToken)}`);
+}
+
+async function saveClineKeys(
+  services: AppServices,
+  answer: Extract<KeysEditorAnswer, { action: "save" }>,
+  keys: readonly ProviderKeySlot[],
+  activeIndex: number,
+): Promise<void> {
+  const byId = new Map(keys.map((key) => [key.id, key.value]));
+  const detailed = resolveEditorRowsDetailed(answer.rows, byId);
+  const resolved = detailed.map((row) => row.value);
+  if (resolved.length === 0) {
+    await unsetProviderSecret("cline");
+    notice(services, "info", "unset all keys for cline");
+    return;
+  }
+  for (const key of resolved) {
+    if (!getProvider("cline").validateKey(key)) {
+      notice(services, "warn", "invalid Cline token");
+      return;
+    }
+  }
+  if (resolved.length > MAX_PROVIDER_KEYS) {
+    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} Cline accounts`);
+    return;
+  }
+  await setProviderKeys(
+    "cline",
+    resolved,
+    answer.activeIndex ?? activeIndex,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
+  const index = answer.activeIndex ?? activeIndex;
+  notice(
+    services,
+    "info",
+    resolved.length === 1
+      ? `saved cline · ${maskSecret(resolved[0]!)}`
+      : `saved cline · ${resolved.length} accounts · active: #${index + 1}`,
+  );
+}
+
+async function openClineKeysFlow(services: AppServices): Promise<void> {
+  let { keys, activeIndex } = await loadClineKeys();
+  for (;;) {
+    services.overlay.close();
+    const answer = await services.overlay.openKeysEditor({
+      provider: "cline",
+      heading: "CLINE ACCOUNTS",
+      itemLabel: "account",
+      addViaPicker: true,
+      refreshable: true,
+      initialKeys: keys.map((key) => ({
+        id: key.id,
+        masked: maskSecret(key.value),
+        disabled: key.disabled === true,
+      })),
+      activeIndex,
+    });
+    if (!answer) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    if (answer.action === "reset") {
+      await unsetProviderSecret("cline");
+      notice(services, "info", "unset all keys for cline");
+      return;
+    }
+    if (answer.action === "pick") {
+      const tokens = await clineAddAccount(services);
+      if (tokens) await storeClineAccount(services, tokens);
+      ({ keys, activeIndex } = await loadClineKeys());
+      continue;
+    }
+    if (answer.action === "refresh") {
+      const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected) {
+        await refreshClineAccount(services, selected.value);
+      } else {
+        notice(services, "warn", "Cline account was not found");
+      }
+      ({ keys, activeIndex } = await loadClineKeys());
+      continue;
+    }
+    await saveClineKeys(services, answer, keys, activeIndex);
+    return;
+  }
+}
+
+async function loadOAuthKeys(
+  provider: "codex" | "copilot",
+): Promise<{ keys: ProviderKeySlot[]; activeIndex: number }> {
+  const multi = await getProviderKeys(provider);
+  return {
+    keys: multi.source === "env" ? [] : multi.keys,
+    activeIndex: multi.source === "env" ? 0 : multi.activeIndex,
+  };
+}
+
+async function saveOAuthKeys(
+  services: AppServices,
+  provider: "codex" | "copilot",
+  answer: Extract<KeysEditorAnswer, { action: "save" }>,
+  keys: readonly ProviderKeySlot[],
+  activeIndex: number,
+): Promise<void> {
+  const byId = new Map(keys.map((key) => [key.id, key.value]));
+  const detailed = resolveEditorRowsDetailed(answer.rows, byId);
+  const resolved = detailed.map((row) => row.value);
+  if (resolved.length === 0) {
+    await unsetProviderSecret(provider);
+    notice(services, "info", `unset all keys for ${provider}`);
+    return;
+  }
+  for (const key of resolved) {
+    if (!getProvider(provider).validateKey(key)) {
+      notice(services, "warn", `invalid ${provider} token`);
+      return;
+    }
+  }
+  if (resolved.length > MAX_PROVIDER_KEYS) {
+    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} ${provider} accounts`);
+    return;
+  }
+  await setProviderKeys(
+    provider,
+    resolved,
+    answer.activeIndex ?? activeIndex,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
+  const index = answer.activeIndex ?? activeIndex;
+  notice(
+    services,
+    "info",
+    resolved.length === 1
+      ? `saved ${provider} · ${maskSecret(resolved[0]!)}`
+      : `saved ${provider} · ${resolved.length} accounts · active: #${index + 1}`,
+  );
+}
+
+async function openCodexKeysFlow(services: AppServices): Promise<void> {
+  let { keys, activeIndex } = await loadOAuthKeys("codex");
+  for (;;) {
+    services.overlay.close();
+    const answer = await services.overlay.openKeysEditor({
+      provider: "codex",
+      heading: "CODEX ACCOUNTS",
+      itemLabel: "account",
+      addViaPicker: true,
+      refreshable: true,
+      initialKeys: keys.map((key) => ({
+        id: key.id,
+        masked: maskSecret(key.value),
+        disabled: key.disabled === true,
+      })),
+      activeIndex,
+    });
+    if (!answer) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    if (answer.action === "reset") {
+      await unsetProviderSecret("codex");
+      notice(services, "info", "unset all keys for codex");
+      return;
+    }
+    if (answer.action === "pick") {
+      const credential = await runCodexAuthForUI(services);
+      if (credential) {
+        const key = encodeCodexKey(credential);
+        await appendProviderKey("codex", key);
+        notice(services, "info", `added Codex account ${maskSecret(key)}`);
+      } else {
+        notice(services, "info", "cancelled");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("codex"));
+      continue;
+    }
+    if (answer.action === "refresh") {
+      const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected) {
+        const credential = await runCodexAuthForUI(services);
+        if (credential) {
+          const key = encodeCodexKey(credential);
+          const replaced = await replaceProviderKey("codex", selected.value, key);
+          if (!replaced) {
+            notice(services, "warn", "Codex account was not found");
+          } else {
+            notice(services, "info", `refreshed Codex account ${maskSecret(key)}`);
+          }
+        } else {
+          notice(services, "info", "cancelled");
+        }
+      } else {
+        notice(services, "warn", "Codex account was not found");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("codex"));
+      continue;
+    }
+    await saveOAuthKeys(services, "codex", answer, keys, activeIndex);
+    return;
+  }
+}
+
+async function openCopilotKeysFlow(services: AppServices): Promise<void> {
+  let { keys, activeIndex } = await loadOAuthKeys("copilot");
+  for (;;) {
+    services.overlay.close();
+    const answer = await services.overlay.openKeysEditor({
+      provider: "copilot",
+      heading: "COPILOT ACCOUNTS",
+      itemLabel: "account",
+      addViaPicker: true,
+      refreshable: true,
+      initialKeys: keys.map((key) => ({
+        id: key.id,
+        masked: maskSecret(key.value),
+        disabled: key.disabled === true,
+      })),
+      activeIndex,
+    });
+    if (!answer) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    if (answer.action === "reset") {
+      await unsetProviderSecret("copilot");
+      notice(services, "info", "unset all keys for copilot");
+      return;
+    }
+    if (answer.action === "pick") {
+      const token = await runCopilotAuthForUI(services);
+      if (token) {
+        await appendProviderKey("copilot", token);
+        notice(services, "info", `added Copilot account ${maskSecret(token)}`);
+      } else {
+        notice(services, "info", "cancelled");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("copilot"));
+      continue;
+    }
+    if (answer.action === "refresh") {
+      const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected) {
+        const token = await runCopilotAuthForUI(services);
+        if (token) {
+          const replaced = await replaceProviderKey("copilot", selected.value, token);
+          if (!replaced) {
+            notice(services, "warn", "Copilot account was not found");
+          } else {
+            notice(services, "info", `refreshed Copilot account ${maskSecret(token)}`);
+          }
+        } else {
+          notice(services, "info", "cancelled");
+        }
+      } else {
+        notice(services, "warn", "Copilot account was not found");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("copilot"));
+      continue;
+    }
+    await saveOAuthKeys(services, "copilot", answer, keys, activeIndex);
+    return;
+  }
+}
 
 export async function openLlmKeysEditor(
   services: AppServices,
@@ -400,6 +892,21 @@ export async function openLlmKeysEditor(
     }
     updateConfig({ ollamaHost: host.trim() });
     notice(services, "info", `saved ollama host → ${host.trim()}`);
+    return;
+  }
+
+  if (id === "cline") {
+    await openClineKeysFlow(services);
+    return;
+  }
+
+  if (id === "codex") {
+    await openCodexKeysFlow(services);
+    return;
+  }
+
+  if (id === "copilot") {
+    await openCopilotKeysFlow(services);
     return;
   }
 
@@ -432,6 +939,7 @@ export async function openLlmKeysEditor(
     notice(services, "info", `unset all keys for ${id}`);
     return;
   }
+  if (answer.action === "refresh") return;
 
   const byId = new Map(stored.map((key) => [key.id, key.value]));
   const detailed = resolveEditorRowsDetailed(answer.rows, byId);

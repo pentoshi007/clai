@@ -2044,6 +2044,1451 @@ exports[`serialized request snapshots > bynara / tools 1`] = `
 }
 `;
 
+exports[`serialized request snapshots > cline / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "cline-free/deepseek-v4.1-flash",
+    "stream": false,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "http-referer": "https://cline.bot",
+    "user-agent": "Cline/3.0.52",
+    "x-client-type": "cline-desktop",
+    "x-is-multiroot": "false",
+    "x-title": "Cline",
+  },
+  "method": "POST",
+  "url": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > cline / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "cline-free/deepseek-v4.1-flash",
+    "stream": false,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "http-referer": "https://cline.bot",
+    "user-agent": "Cline/3.0.52",
+    "x-client-type": "cline-desktop",
+    "x-is-multiroot": "false",
+    "x-title": "Cline",
+  },
+  "method": "POST",
+  "url": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > cline / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "cline-free/deepseek-v4.1-flash",
+    "reasoning_effort": "high",
+    "stream": false,
+    "thinking": {
+      "type": "enabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "http-referer": "https://cline.bot",
+    "user-agent": "Cline/3.0.52",
+    "x-client-type": "cline-desktop",
+    "x-is-multiroot": "false",
+    "x-title": "Cline",
+  },
+  "method": "POST",
+  "url": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > cline / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": "",
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "cline-free/deepseek-v4.1-flash",
+    "reasoning_effort": "high",
+    "stream": false,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "http-referer": "https://cline.bot",
+    "user-agent": "Cline/3.0.52",
+    "x-client-type": "cline-desktop",
+    "x-is-multiroot": "false",
+    "x-title": "Cline",
+  },
+  "method": "POST",
+  "url": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > cline / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": "",
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "cline-free/deepseek-v4.1-flash",
+    "reasoning_effort": "high",
+    "stream": false,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "http-referer": "https://cline.bot",
+    "user-agent": "Cline/3.0.52",
+    "x-client-type": "cline-desktop",
+    "x-is-multiroot": "false",
+    "x-title": "Cline",
+  },
+  "method": "POST",
+  "url": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > cline / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "cline-free/deepseek-v4.1-flash",
+    "stream": false,
+    "thinking": {
+      "type": "disabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "http-referer": "https://cline.bot",
+    "user-agent": "Cline/3.0.52",
+    "x-client-type": "cline-desktop",
+    "x-is-multiroot": "false",
+    "x-title": "Cline",
+  },
+  "method": "POST",
+  "url": "https://api.cline.bot/api/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > codex / images 1`] = `
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content",
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "system",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "input_text",
+          },
+          {
+            "detail": "high",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            "type": "input_image",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-5.1-codex",
+    "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "store": false,
+    "stream": true,
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
+    "content-type": "application/json",
+    "originator": "codex_cli_rs",
+    "session-id": "<generated>",
+    "user-agent": "codex_cli_rs/0.147.0",
+    "x-client-request-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://chatgpt.com/backend-api/codex/responses",
+}
+`;
+
+exports[`serialized request snapshots > codex / minimal 1`] = `
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content",
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "system",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "second user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-5.1-codex",
+    "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "store": false,
+    "stream": true,
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
+    "content-type": "application/json",
+    "originator": "codex_cli_rs",
+    "session-id": "<generated>",
+    "user-agent": "codex_cli_rs/0.147.0",
+    "x-client-request-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://chatgpt.com/backend-api/codex/responses",
+}
+`;
+
+exports[`serialized request snapshots > codex / reasoning-control 1`] = `
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content",
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "system",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "second user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-5.1-codex",
+    "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "reasoning": {
+      "effort": "high",
+      "summary": "detailed",
+    },
+    "store": false,
+    "stream": true,
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
+    "content-type": "application/json",
+    "originator": "codex_cli_rs",
+    "session-id": "<generated>",
+    "user-agent": "codex_cli_rs/0.147.0",
+    "x-client-request-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://chatgpt.com/backend-api/codex/responses",
+}
+`;
+
+exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content",
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "system",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "read the example file",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "arguments": "{"path":"docs/example.md"}",
+        "call_id": "call_replay_1",
+        "name": "fs_read",
+        "type": "function_call",
+      },
+      {
+        "call_id": "call_replay_1",
+        "output": "example file contents",
+        "type": "function_call_output",
+      },
+    ],
+    "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
+    "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "reasoning": {
+      "effort": "medium",
+      "summary": "concise",
+    },
+    "store": false,
+    "stream": true,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "description": "read a file",
+        "name": "fs_read",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+      {
+        "description": "run a shell command",
+        "name": "shell_run",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "command",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
+    "content-type": "application/json",
+    "originator": "codex_cli_rs",
+    "session-id": "<generated>",
+    "user-agent": "codex_cli_rs/0.147.0",
+    "x-client-request-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://chatgpt.com/backend-api/codex/responses",
+}
+`;
+
+exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content",
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "system",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "read the example file",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "arguments": "{"path":"docs/example.md"}",
+        "call_id": "call_replay_1",
+        "name": "fs_read",
+        "type": "function_call",
+      },
+      {
+        "call_id": "call_replay_1",
+        "output": "example file contents",
+        "type": "function_call_output",
+      },
+    ],
+    "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
+    "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "reasoning": {
+      "effort": "medium",
+      "summary": "concise",
+    },
+    "store": false,
+    "stream": true,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "description": "read a file",
+        "name": "fs_read",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+      {
+        "description": "run a shell command",
+        "name": "shell_run",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "command",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
+    "content-type": "application/json",
+    "originator": "codex_cli_rs",
+    "session-id": "<generated>",
+    "user-agent": "codex_cli_rs/0.147.0",
+    "x-client-request-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://chatgpt.com/backend-api/codex/responses",
+}
+`;
+
+exports[`serialized request snapshots > codex / tools 1`] = `
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content",
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "system",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "second user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
+    "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "store": false,
+    "stream": true,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "description": "read a file",
+        "name": "fs_read",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+      {
+        "description": "run a shell command",
+        "name": "shell_run",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "command",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
+    "content-type": "application/json",
+    "originator": "codex_cli_rs",
+    "session-id": "<generated>",
+    "user-agent": "codex_cli_rs/0.147.0",
+    "x-client-request-id": "<generated>",
+  },
+  "method": "POST",
+  "url": "https://chatgpt.com/backend-api/codex/responses",
+}
+`;
+
+exports[`serialized request snapshots > copilot / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "gpt-4o",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "copilot-integration-id": "vscode-chat",
+    "editor-plugin-version": "copilot-chat/0.35.0",
+    "editor-version": "vscode/1.107.0",
+    "openai-intent": "conversation-panel",
+    "openai-organization": "github-copilot",
+    "user-agent": "GitHubCopilotChat/0.35.0",
+    "x-github-api-version": "2025-04-01",
+    "x-initiator": "agent",
+    "x-request-id": "<generated>",
+    "x-vscode-user-agent-library-version": "electron-fetch",
+  },
+  "method": "POST",
+  "url": "https://api.githubcopilot.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > copilot / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "gpt-4o",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "copilot-integration-id": "vscode-chat",
+    "editor-plugin-version": "copilot-chat/0.35.0",
+    "editor-version": "vscode/1.107.0",
+    "openai-intent": "conversation-panel",
+    "openai-organization": "github-copilot",
+    "user-agent": "GitHubCopilotChat/0.35.0",
+    "x-github-api-version": "2025-04-01",
+    "x-initiator": "agent",
+    "x-request-id": "<generated>",
+    "x-vscode-user-agent-library-version": "electron-fetch",
+  },
+  "method": "POST",
+  "url": "https://api.githubcopilot.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > copilot / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "gpt-4o",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "copilot-integration-id": "vscode-chat",
+    "editor-plugin-version": "copilot-chat/0.35.0",
+    "editor-version": "vscode/1.107.0",
+    "openai-intent": "conversation-panel",
+    "openai-organization": "github-copilot",
+    "user-agent": "GitHubCopilotChat/0.35.0",
+    "x-github-api-version": "2025-04-01",
+    "x-initiator": "agent",
+    "x-request-id": "<generated>",
+    "x-vscode-user-agent-library-version": "electron-fetch",
+  },
+  "method": "POST",
+  "url": "https://api.githubcopilot.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > copilot / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "gpt-4o",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "copilot-integration-id": "vscode-chat",
+    "editor-plugin-version": "copilot-chat/0.35.0",
+    "editor-version": "vscode/1.107.0",
+    "openai-intent": "conversation-panel",
+    "openai-organization": "github-copilot",
+    "user-agent": "GitHubCopilotChat/0.35.0",
+    "x-github-api-version": "2025-04-01",
+    "x-initiator": "agent",
+    "x-request-id": "<generated>",
+    "x-vscode-user-agent-library-version": "electron-fetch",
+  },
+  "method": "POST",
+  "url": "https://api.githubcopilot.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > copilot / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "gpt-4o",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "copilot-integration-id": "vscode-chat",
+    "editor-plugin-version": "copilot-chat/0.35.0",
+    "editor-version": "vscode/1.107.0",
+    "openai-intent": "conversation-panel",
+    "openai-organization": "github-copilot",
+    "user-agent": "GitHubCopilotChat/0.35.0",
+    "x-github-api-version": "2025-04-01",
+    "x-initiator": "agent",
+    "x-request-id": "<generated>",
+    "x-vscode-user-agent-library-version": "electron-fetch",
+  },
+  "method": "POST",
+  "url": "https://api.githubcopilot.com/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > copilot / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "gpt-4o",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "copilot-integration-id": "vscode-chat",
+    "editor-plugin-version": "copilot-chat/0.35.0",
+    "editor-version": "vscode/1.107.0",
+    "openai-intent": "conversation-panel",
+    "openai-organization": "github-copilot",
+    "user-agent": "GitHubCopilotChat/0.35.0",
+    "x-github-api-version": "2025-04-01",
+    "x-initiator": "agent",
+    "x-request-id": "<generated>",
+    "x-vscode-user-agent-library-version": "electron-fetch",
+  },
+  "method": "POST",
+  "url": "https://api.githubcopilot.com/chat/completions",
+}
+`;
+
 exports[`serialized request snapshots > deepseek / images 1`] = `
 {
   "body": {

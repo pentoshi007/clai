@@ -1,13 +1,11 @@
 import { appendPlanTask, applyForegroundSnapshot, applySessionPlanOperation, createPlan, deletePlan, isBareTaskIdTitle, isPlanSuccessful, isPlanTerminal, loadPlan, markTask, mutatePlan, normalizeTaskDependencies, readyPlanTasks, savePlan, validateSessionPlan } from "../../store/plan.js";
 import type { SessionPlan, TaskState } from "../../store/plan.js";
-import { evaluateTaskTransition } from "../../store/task-transitions.js";
 import type { ToolCall } from "../../types.js";
 import { renderPlanChecklist } from "../../ui/plan-pane.js";
 import type { LoopGuard } from "../loop-guard.js";
 import { getActiveProjectRoot } from "../project-root.js";
 import type { SessionPolicy } from "../session-policy.js";
 import { classifyTaskTitle } from "../task-evidence.js";
-import { buildDependencyReminder, dependencyToast } from "../task-sync.js";
 import { isLumpedSingleTask } from "../tool-call-parser.js";
 import { detectPackageManager } from "../workspace-orient.js";
 import chalk from "chalk";
@@ -51,8 +49,6 @@ export async function handlePlanTool(
   const autoApprove = Boolean(ctx.autoApprove);
   void ctx.loopGuard;
   void ctx.step;
-  if (!session.pendingDependency) session.pendingDependency = { value: undefined };
-  if (!session.pendingTaskBatch) session.pendingTaskBatch = { value: undefined };
   if (call.name === "plan.create") {
     return handlePlanCreate(call, session, autoApprove);
   }
@@ -122,170 +118,9 @@ export async function handlePlanTool(
     };
   }
   
-  let dependencyWarning: string | undefined;
-  let dependencyWarningToast: string | undefined;
-
-  if (stateRaw === "in_progress") {
-    const target = plan.tasks.find((task) => task.id === taskId);
-    const ready = readyPlanTasks(plan).some((task) => task.id === taskId);
-    const retryingFailedTask = target?.state === "failed";
-    if (target?.state === "done" || target?.state === "skipped") {
-      const nextPending = readyPlanTasks(plan)[0];
-      const nextHint = nextPending
-        ? ` Continue with task.update {taskId:"${nextPending.id}", state:"in_progress"} ("${nextPending.title}").`
-        : " All ready work is finished — write the final summary if needed.";
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(
-          `  ✗ task.update: [${taskId}] is already ${target.state} — do not re-open\n`,
-        ),
-        modelNote:
-          `task.update failed: [${taskId}] is already ${target.state}. ` +
-          `Do not re-run completed tasks.${nextHint}`,
-      };
-    }
-    if (target?.state !== "in_progress") {
-      const otherActive = plan.tasks.find(
-        (task) =>
-          task.id !== taskId &&
-          task.state === "in_progress" &&
-          !task.responderOwned,
-      );
-      if (otherActive) {
-        return {
-          handled: true,
-          ok: false,
-          display: chalk.red(
-            `  ✗ task.update: [${otherActive.id}] is still in progress — only one foreground task may be active\n`,
-          ),
-          modelNote:
-            `task.update failed: [${otherActive.id}] "${otherActive.title}" is still in_progress. ` +
-            `Defer it first with task.update {taskId:"${otherActive.id}", state:"pending"} (or finish it with "done"; use "failed"/"skipped" with a reason), then open [${taskId}]. ` +
-            `Exactly one foreground task may be active at a time; Responder-owned subtasks are exempt.`,
-        };
-      }
-      const incompleteDependencies = (target?.dependencies ?? []).filter((dependency) => {
-        const dependencyTask = plan.tasks.find((task) => task.id === dependency);
-        return !dependencyTask || (dependencyTask.state !== "done" && dependencyTask.state !== "skipped");
-      });
-      const heldLocks = new Set(
-        plan.tasks
-          .filter((task) => task.state === "in_progress" && task.id !== taskId)
-          .flatMap((task) => task.resourceLocks ?? []),
-      );
-      const conflictingLocks = (target?.resourceLocks ?? []).filter((lock) => heldLocks.has(lock));
-      if (
-        target &&
-        incompleteDependencies.length > 0 &&
-        !retryingFailedTask &&
-        conflictingLocks.length === 0
-      ) {
-        dependencyWarning = buildDependencyReminder({
-          taskId,
-          title: target.title,
-          targetState: stateRaw,
-          blockers: incompleteDependencies.map((id) => ({
-            id,
-            title: plan.tasks.find((task) => task.id === id)?.title ?? "",
-          })),
-        });
-        dependencyWarningToast = dependencyToast(taskId);
-      } else if ((!ready && !retryingFailedTask) || conflictingLocks.length > 0) {
-        const nextReady = readyPlanTasks(plan)[0];
-        return {
-          handled: true,
-          ok: false,
-          display: chalk.red(`  ✗ task.update: [${taskId}] is not dependency/resource ready\n`),
-          modelNote:
-            `task.update failed: [${taskId}] is not ready. ` +
-            (incompleteDependencies.length ? `Incomplete dependencies: ${incompleteDependencies.join(", ")}. ` : "") +
-            (conflictingLocks.length ? `Resources currently locked: ${conflictingLocks.join(", ")}. ` : "") +
-            (nextReady
-              ? `Open the next ready task first: ${nextReady.id} ("${nextReady.title}").`
-              : ""),
-        };
-      }
-    }
-    if (retryingFailedTask && target) target.evidence = undefined;
-  }
-  if (stateRaw === "done") {
-    const target = plan.tasks.find((task) => task.id === taskId);
-    const incompleteDependencies = (target?.dependencies ?? []).filter((dependency) => {
-      const dependencyTask = plan.tasks.find((task) => task.id === dependency);
-      return !dependencyTask || (dependencyTask.state !== "done" && dependencyTask.state !== "skipped");
-    });
-    if (incompleteDependencies.length > 0) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(`  ✗ task.update: cannot complete [${taskId}] before dependencies\n`),
-        modelNote: `task.update failed: earlier task/dependency ${incompleteDependencies.join(", ")} is not complete for [${taskId}].`,
-      };
-    }
-    if (target && target.state !== "in_progress") {
-      if (target.state === "pending" && incompleteDependencies.length === 0) {
-        const opened = markTask(plan, taskId, "in_progress", note);
-        if (!opened) {
-          return {
-            handled: true,
-            ok: false,
-            display: chalk.red(
-              `  ✗ task.update: could not auto-open [${taskId}] before completion\n`,
-            ),
-            modelNote: `task.update failed: could not auto-open pending [${taskId}].`,
-          };
-        }
-      } else if (target.state === "failed") {
-        return {
-          handled: true,
-          ok: false,
-          display: chalk.red(
-            `  ✗ task.update: [${taskId}] is failed — retry with in_progress first\n`,
-          ),
-          modelNote:
-            `task.update failed: [${taskId}] is failed. ` +
-            `Call task.update {taskId:"${taskId}", state:"in_progress"} to retry, then mark done after recovery work.`,
-        };
-      } else {
-        const nextReady = readyPlanTasks(plan)[0];
-        return {
-          handled: true,
-          ok: false,
-          display: chalk.red(
-            `  ✗ task.update: [${taskId}] must be in_progress before completion\n`,
-          ),
-          modelNote:
-            `task.update failed: [${taskId}] is ${target.state}. ` +
-            "Start or retry it, perform fresh work, then mark it done." +
-            (nextReady
-              ? ` Open next ready: ${nextReady.id} ("${nextReady.title}").`
-              : ""),
-        };
-      }
-    }
-  }
-  const transitionTarget = plan.tasks.find((task) => task.id === taskId);
-  if (transitionTarget) {
-    const verdict = evaluateTaskTransition(
-      transitionTarget.state,
-      stateRaw as TaskState,
-    );
-    if (!verdict.allowed) {
-      const nextReady = readyPlanTasks(plan)[0];
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(
-          `  ✗ task.update: [${taskId}] ${transitionTarget.state} → ${stateRaw} is not a valid transition\n`,
-        ),
-        modelNote:
-          `task.update failed: [${taskId}] ${verdict.reason}. ` +
-          (nextReady
-            ? `Continue with ${nextReady.id} ("${nextReady.title}").`
-            : "All ready work is finished — write the final summary if needed."),
-      };
-    }
+  const target = plan.tasks.find((task) => task.id === taskId);
+  if (stateRaw === "in_progress" && target?.state === "failed") {
+    target.evidence = undefined;
   }
   const ok = markTask(plan, taskId, stateRaw as TaskState, note);
   if (!ok) {
@@ -365,15 +200,7 @@ export async function handlePlanTool(
     handled: true,
     ok: true,
     plan,
-    display:
-      checklist +
-      "\n" +
-      (dependencyWarning
-        ? chalk.yellow(`  ⚠ ${dependencyWarning}\n`)
-        : ""),
-    modelNote: dependencyWarning
-      ? `${dependencyWarning}\n${modelNote}`
-      : modelNote,
-    ...(dependencyWarningToast ? { toast: dependencyWarningToast } : {}),
+    display: checklist + "\n",
+    modelNote,
   };
 }

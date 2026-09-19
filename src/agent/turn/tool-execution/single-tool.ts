@@ -153,24 +153,10 @@ export const runSingleTool = async (
     call,
     narrowNmapOperation: deps.narrowNmapOperation,
     narrowNmapDispatched: deps.toolState.narrowNmapDispatchCount,
-    heldBatchReminder:
-      call.name === "task.update" && deps.batchRemindCalls().has(rawCall)
-        ? deps.batchReminderNote()
-        : undefined,
   });
   if (guard.kind === "reject") {
     const result = { ok: false, output: guard.reason, exitCode: 1 };
     deps.emitToolResult(toolEventId, result, guard.reason);
-    return { ok: false, call, result, contextOutput: guard.reason };
-  }
-  if (guard.kind === "hold") {
-    if (!deps.alreadyPrintedIds.has(toolEventId)) {
-      deps.writeToolCall(toolEventId, call);
-      deps.alreadyPrintedIds.add(toolEventId);
-    }
-    const result = { ok: false, output: guard.reason, exitCode: 1 };
-    deps.emitToolResult(toolEventId, result, guard.reason);
-    deps.writeToolOutput(toolEventId, "held\n");
     return { ok: false, call, result, contextOutput: guard.reason };
   }
   if (guard.kind === "proceed" && guard.consumesNarrowNmapScan) {
@@ -245,8 +231,6 @@ export const runSingleTool = async (
       queueResponderLedger: (notification) =>
         deps.deferredResponderLedgerNotifications.push(notification),
       loadPlan: () => loadPlan(deps.session.sessionId).catch(() => undefined),
-      completionGate: (livePlan, taskId) =>
-        deps.completionGateForTask(livePlan, taskId),
       handlePlanTool: (planCall) =>
         handlePlanTool(planCall, deps.session, {
           loopGuard: deps.loopGuard,

@@ -205,6 +205,9 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
   kimi: [/kimi/i, /moonshot/i],
   glm: [/glm-4.*v/i, /glm-5.*v/i, /vision/i, /vl$/i],
   minimax: [/minimax-m3/i, /vision/i, /vl/i],
+  cline: [/vision/i, /vl$/i, /glm-.*v/i, /gpt/i, /claude/i, /grok/i, /muse-spark/i],
+  codex: [/gpt/i, /codex/i, /o[34]/i, /vision/i],
+  copilot: [/gpt/i, /claude/i, /gemini/i, /vision/i, /o[34]/i],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {

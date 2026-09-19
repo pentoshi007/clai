@@ -146,9 +146,9 @@ export async function tryStreamOnce(
       run: async () => {
         let result: CompletionResult;
         if (provider.stream) {
-          result = await provider.stream(attemptRequest, auth, emit);
+          result = await provider.stream(attemptRequest, auth, emit, onStatus);
         } else {
-          result = await provider.complete(attemptRequest, auth);
+          result = await provider.complete(attemptRequest, auth, onStatus);
           emit(result.text);
         }
         for (const [index, call] of (result.toolCalls ?? []).entries()) {

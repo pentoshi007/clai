@@ -179,6 +179,9 @@ const VOLATILE_HEADERS = new Set([
   "x-opencode-project",
   "x-session-affinity",
   "x-session-id",
+  "session-id",
+  "x-client-request-id",
+  "x-request-id",
 ]);
 
 export function redactHeaders(

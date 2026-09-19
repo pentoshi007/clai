@@ -14,6 +14,10 @@ import { MAX_PROVIDER_KEYS, ProviderKeySlot, ProviderKeysResult, clampActiveInde
 export { appendSearchProviderKey, getSearchProviderKey, getSearchProviderKeys, markSearchProviderKeySuccess, setSearchProviderKeyDisabled, setSearchProviderKeys, unsetSearchProviderSecret } from "./keys/search-providers.js";
 export { parseProviderKeysPayload, serializeProviderKeysPayload };
 export type { ProviderKeySlot, ProviderKeysResult } from "./keys/search-providers.js";
+export interface ProviderKeyMetadata {
+  readonly refreshToken?: string | undefined;
+  readonly expiresAt?: number | undefined;
+}
 export { secretAccount } from "./keys/secret-store.js";
 export { getSecret, setSecret, unsetSecret };
 export type { SecretNamespace, SecretSource } from "./keys/secret-store.js";
@@ -138,6 +142,7 @@ export async function setProviderKeys(
   if (provider === 'ollama') {
     return 'fallback';
   }
+  const current = await getProviderKeys(provider);
   const cleaned = values.map((v) => v.trim()).filter(Boolean);
   const seen = new Set<string>();
   const unique: string[] = [];
@@ -151,23 +156,22 @@ export async function setProviderKeys(
     await unsetSecret('llm', provider);
     return 'fallback';
   }
-  let carried = disabledValues;
-  if (carried === undefined) {
-    const stored = await getSecret('llm', provider);
-    carried = stored.value
-      ? parseProviderKeysPayload(stored.value)
-          .keys.filter((k) => k.disabled)
-          .map((k) => k.value)
-      : [];
-  }
+  const carried =
+    disabledValues ?? current.keys.filter((key) => key.disabled).map((key) => key.value);
   const disabledSet = new Set(carried);
+  const priorByValue = new Map(current.keys.map((key) => [key.value, key]));
   const now = Date.now();
-  const slots: ProviderKeySlot[] = unique.map((value) => ({
-    id: newKeyId(),
-    value,
-    createdAt: now,
-    ...(disabledSet.has(value) ? { disabled: true } : {}),
-  }));
+  const slots: ProviderKeySlot[] = unique.map((value) => {
+    const prior = priorByValue.get(value);
+    return {
+      id: prior?.id ?? newKeyId(),
+      value,
+      createdAt: prior?.createdAt ?? now,
+      ...(prior?.refreshToken ? { refreshToken: prior.refreshToken } : {}),
+      ...(prior?.expiresAt !== undefined ? { expiresAt: prior.expiresAt } : {}),
+      ...(disabledSet.has(value) ? { disabled: true } : {}),
+    };
+  });
   const payload = serializeProviderKeysPayload(slots, activeIndex);
   return setSecret('llm', provider, payload);
 }
@@ -175,6 +179,7 @@ export async function setProviderKeys(
 export async function appendProviderKey(
   provider: ProviderId,
   secret: string,
+  metadata?: ProviderKeyMetadata,
 ): Promise<'keychain' | 'fallback'> {
   if (provider === 'ollama') {
     return 'fallback';
@@ -184,24 +189,58 @@ export async function appendProviderKey(
     throw new Error('empty API key');
   }
   const current = await getProviderKeys(provider);
-  const base =
+  const base: ProviderKeySlot[] =
     current.source === 'env'
       ? []
       : current.keys.map((k) => ({ ...k }));
   if (base.some((k) => k.value === trimmed)) {
     const idx = base.findIndex((k) => k.value === trimmed);
+    const existing = idx >= 0 ? base[idx] : undefined;
+    if (existing && metadata) base[idx] = { ...existing, ...metadata };
     const payload = serializeProviderKeysPayload(base, idx >= 0 ? idx : current.activeIndex);
     return setSecret('llm', provider, payload);
   }
   if (base.length >= MAX_PROVIDER_KEYS) {
     throw new Error(`at most ${MAX_PROVIDER_KEYS} API keys per provider`);
   }
-  base.push({ id: newKeyId(), value: trimmed, createdAt: Date.now() });
+  base.push({
+    id: newKeyId(),
+    value: trimmed,
+    createdAt: Date.now(),
+    ...(metadata?.refreshToken ? { refreshToken: metadata.refreshToken } : {}),
+    ...(metadata?.expiresAt !== undefined ? { expiresAt: metadata.expiresAt } : {}),
+  });
   const payload = serializeProviderKeysPayload(
     base,
     base.length === 1 ? 0 : current.activeIndex,
   );
   return setSecret('llm', provider, payload);
+}
+
+export async function replaceProviderKey(
+  provider: ProviderId,
+  oldValue: string,
+  newValue: string,
+  metadata?: ProviderKeyMetadata,
+): Promise<boolean> {
+  if (provider === 'ollama') return false;
+  const current = await getProviderKeys(provider);
+  if (current.source === 'env') return false;
+  const oldTrimmed = oldValue.trim();
+  const nextValue = newValue.trim();
+  if (!nextValue || !current.keys.some((key) => key.value === oldTrimmed)) return false;
+  const keys = current.keys.map((key) =>
+    key.value === oldTrimmed
+      ? {
+          ...key,
+          value: nextValue,
+          ...(metadata?.refreshToken ? { refreshToken: metadata.refreshToken } : {}),
+          ...(metadata?.expiresAt !== undefined ? { expiresAt: metadata.expiresAt } : {}),
+        }
+      : key,
+  );
+  await setSecret('llm', provider, serializeProviderKeysPayload(keys, current.activeIndex));
+  return true;
 }
 
 export async function setProviderSecret(provider: ProviderId, secret: string): Promise<'keychain' | 'fallback'> {

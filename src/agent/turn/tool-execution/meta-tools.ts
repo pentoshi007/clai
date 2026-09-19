@@ -4,17 +4,11 @@ import type { ResponderNotification } from "../../../tools/jobs.js";
 import type { LooseWorkReceipt, TaskWorkLedger } from "../../task-evidence.js";
 import type { SingleToolResult } from "../contracts.js";
 import { RUNNER_META_TOOL_NAMES } from "../../../tools/definitions.js";
-import { resolvePlanTaskId } from "../../plan-tool.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
   type ResponderReadWakeIdentity,
 } from "../responder-read-tool.js";
-import {
-  decideTaskUpdateDoneGate,
-  parseTaskUpdateRequest,
-  type TaskUpdateGateResult,
-} from "../task-update-gate.js";
 import { applyTaskUpdateLedgerTransition } from "./plan-tool-ledger.js";
 
 export interface MetaToolPlanResult {
@@ -37,10 +31,6 @@ export interface MetaToolPorts {
   readonly releaseClaim: (notificationId: string) => void;
   readonly queueResponderLedger: (notification: ResponderNotification) => void;
   readonly loadPlan: () => Promise<SessionPlan | undefined>;
-  readonly completionGate: (
-    plan: SessionPlan,
-    taskId: string,
-  ) => TaskUpdateGateResult;
   readonly handlePlanTool: (call: ToolCall) => Promise<MetaToolPlanResult>;
   readonly recordAttempt: (call: ToolCall, ok: boolean) => void;
   readonly showCall: (call: ToolCall) => void;
@@ -121,20 +111,6 @@ const rejectTaskUpdate = (
   };
 };
 
-const checkTaskUpdateGate = async (
-  ports: MetaToolPorts,
-  call: ToolCall,
-): Promise<MetaToolOutcome> => {
-  const request = parseTaskUpdateRequest(call.args);
-  if (request.state !== "done" || !request.taskId) return { kind: "not-meta" };
-  const live = await ports.loadPlan();
-  const resolved =
-    (live ? resolvePlanTaskId(live, request.taskId) : undefined) ??
-    request.taskId;
-  const gate = decideTaskUpdateDoneGate(live, resolved, ports.completionGate);
-  return gate.ok ? { kind: "not-meta" } : rejectTaskUpdate(ports, call, gate.reason);
-};
-
 const applyPlanResult = async (
   ports: MetaToolPorts,
   call: ToolCall,
@@ -189,10 +165,6 @@ export const runMetaTool = async (
   if (!isRunnerMetaTool(call.name)) return { kind: "not-meta" };
   if (call.name === "job.read" || call.name === "task.read") {
     return handleResponderRead(ports, call);
-  }
-  if (call.name === "task.update") {
-    const gate = await checkTaskUpdateGate(ports, call);
-    if (gate.kind === "handled") return gate;
   }
   const planResult = await ports.handlePlanTool(call);
   if (!planResult.handled) return { kind: "not-meta" };

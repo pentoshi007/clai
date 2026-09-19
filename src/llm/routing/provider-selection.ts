@@ -4,7 +4,11 @@ import {
   providerUsesEndpoints,
   resolveProviderCategory,
 } from "../../store/config.js";
-import { getProviderKeys, getProviderSecret } from "../../store/keys.js";
+import {
+  getProviderKeys,
+  getProviderSecret,
+  type ProviderKeySlot,
+} from "../../store/keys.js";
 import type { ProviderId } from "../../types.js";
 import { agentrouterProvider } from "../agentrouter.js";
 import { anthropicProvider } from "../anthropic.js";
@@ -33,6 +37,9 @@ import { deepseekProvider } from "../deepseek.js";
 import { kimiProvider } from "../kimi.js";
 import { glmProvider } from "../glm.js";
 import { minimaxProvider } from "../minimax.js";
+import { clineProvider } from "../cline.js";
+import { codexProvider } from "../codex.js";
+import { copilotProvider } from "../copilot.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -60,6 +67,9 @@ export const providers: Record<ProviderId, LlmProvider> = {
   kimi: kimiProvider,
   glm: glmProvider,
   minimax: minimaxProvider,
+  cline: clineProvider,
+  codex: codexProvider,
+  copilot: copilotProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -88,6 +98,9 @@ const fallbackOrder: ProviderId[] = [
   "kimi",
   "glm",
   "minimax",
+  "cline",
+  "codex",
+  "copilot",
 ];
 
 function allFallbackIds(): ProviderId[] {
@@ -150,13 +163,19 @@ export async function providerAuth(
 export function authForSlot(
   providerId: ProviderId,
   value: string | undefined,
+  slot?: Pick<ProviderKeySlot, "refreshToken" | "expiresAt">,
 ): ProviderAuth {
+  const credential = {
+    apiKey: value,
+    ...(slot?.refreshToken ? { refreshToken: slot.refreshToken } : {}),
+    ...(slot?.expiresAt !== undefined ? { expiresAt: slot.expiresAt } : {}),
+  };
   if (providerId === "ollama") {
     return { baseUrl: value };
   }
   if (providerUsesEndpoints(providerId)) {
     const baseUrl = getActiveProviderEndpoint(providerId);
-    return { apiKey: value, ...(baseUrl ? { baseUrl } : {}) };
+    return { ...credential, ...(baseUrl ? { baseUrl } : {}) };
   }
-  return { apiKey: value };
+  return credential;
 }

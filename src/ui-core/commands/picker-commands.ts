@@ -7,7 +7,12 @@ import { getKnownModels } from "../../app/commands/catalog.js";
 import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import { appendProviderEndpoint, getActiveProviderEndpoint, getCustomProviders, getConfig, getProviderModel } from "../../store/config.js";
 import { saveSessionModel } from "../../store/session-model.js";
-import { envValue, getProviderSecret, setProviderSecret } from "../../store/keys.js";
+import {
+  appendProviderKey,
+  envValue,
+  getProviderSecret,
+  setProviderSecret,
+} from "../../store/keys.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
@@ -336,6 +341,9 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   kimi: "https://api.moonshot.ai/v1",
   glm: "https://api.z.ai/api/paas/v4",
   minimax: "https://api.minimaxi.chat/v1",
+  cline: "https://api.cline.bot/api/v1",
+  codex: "https://chatgpt.com/backend-api/codex",
+  copilot: "https://api.githubcopilot.com",
 };
 
 function providerBaseUrl(provider: ProviderId): string | undefined {
@@ -416,24 +424,60 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
     const configured =
       next === "ollama" || next === "free" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
     if (!configured) {
-      services.overlay.close();
-      const key = await services.overlay.openSecret({
-        title: `${next} API key`,
-        prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
-      });
-      const value = key?.trim();
-      if (!value) {
-        services.session.notice("info", `cancelled · provider unchanged`);
-        return;
+      if (next === "cline") {
+        services.overlay.close();
+        const { runClineAuthForUI } = await import("./key-commands.js");
+        const tokens = await runClineAuthForUI(services);
+        if (!tokens) {
+          services.overlay.close();
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        await appendProviderKey(next, tokens.accessToken, {
+          ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+          ...(tokens.expiresAt !== undefined ? { expiresAt: tokens.expiresAt } : {}),
+        });
+      } else if (next === "codex") {
+        services.overlay.close();
+        const { runCodexAuthForUI } = await import("./key-commands.js");
+        const { encodeCodexKey } = await import("../../llm/codex-auth.js");
+        const credential = await runCodexAuthForUI(services);
+        if (!credential) {
+          services.overlay.close();
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        await appendProviderKey(next, encodeCodexKey(credential));
+      } else if (next === "copilot") {
+        services.overlay.close();
+        const { runCopilotAuthForUI } = await import("./key-commands.js");
+        const token = await runCopilotAuthForUI(services);
+        if (!token) {
+          services.overlay.close();
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        await appendProviderKey(next, token);
+      } else {
+        services.overlay.close();
+        const key = await services.overlay.openSecret({
+          title: `${next} API key`,
+          prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+        });
+        const value = key?.trim();
+        if (!value) {
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        if (!getProvider(next).validateKey(value)) {
+          services.session.notice(
+            "warn",
+            `invalid API key format for ${next} · provider unchanged`,
+          );
+          return;
+        }
+        await setProviderSecret(next, value);
       }
-      if (!getProvider(next).validateKey(value)) {
-        services.session.notice(
-          "warn",
-          `invalid API key format for ${next} · provider unchanged`,
-        );
-        return;
-      }
-      await setProviderSecret(next, value);
     }
   }
   let model = getProviderModel(next);

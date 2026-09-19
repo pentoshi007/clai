@@ -29,6 +29,7 @@ import { createSessionPolicy } from "../src/agent/session-policy.js";
 import {
   clearAllPlans,
   createPlan,
+  loadPlan,
   savePlan,
 } from "../src/store/plan.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../src/ui-core/rendering/sanitize-display.js";
@@ -223,7 +224,7 @@ describe("X8 ordered done", () => {
     await clearAllPlans();
   });
 
-  it("rejects done on t3 while t2 still pending", async () => {
+  it("allows done on t3 while t2 still pending", async () => {
     const session = createSessionPolicy("x8-order");
     session.planApproved.value = true;
     const plan = createPlan({
@@ -243,8 +244,9 @@ describe("X8 ordered done", () => {
       session,
       { loopGuard: new LoopGuard(), step: 1 },
     );
-    expect(result.ok).toBe(false);
-    expect(result.modelNote).toMatch(/earlier task|\[t2\]/i);
+    expect(result.ok).toBe(true);
+    const live = await loadPlan("x8-order");
+    expect(live!.tasks.find((t) => t.id === "t3")?.state).toBe("done");
   });
 });
 

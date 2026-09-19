@@ -26,11 +26,13 @@ export interface LlmProvider {
   complete(
     request: CompletionRequest,
     auth: ProviderAuth,
+    onStatus?: ((message: string) => void) | undefined,
   ): Promise<CompletionResult>;
   stream?(
     request: CompletionRequest,
     auth: ProviderAuth,
     onToken: (token: string) => void,
+    onStatus?: ((message: string) => void) | undefined,
   ): Promise<CompletionResult>;
   listModels?(auth: ProviderAuth): Promise<string[]>;
 }
@@ -38,6 +40,8 @@ export interface LlmProvider {
 export interface ProviderAuth {
   apiKey?: string | undefined;
   baseUrl?: string | undefined;
+  refreshToken?: string | undefined;
+  expiresAt?: number | undefined;
 }
 
 export function getEnvVar(provider: ProviderId): string | undefined {

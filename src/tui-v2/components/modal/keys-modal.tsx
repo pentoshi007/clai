@@ -8,7 +8,7 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import type { KeysEditorRequest } from "../../../ui-core/controllers/overlay-controller.js";
 import { MAX_PROVIDER_KEYS } from "../../../llm/key-rotation.js";
-import { buildKeysPickerAnswer, keysAddAtCapacity } from "./keys-modal-pick.js";
+import { buildKeysPickerAnswer, buildKeysSaveRows, keysAddAtCapacity } from "./keys-modal-pick.js";
 
 export interface KeysModalProps {
   readonly services: AppServices;
@@ -182,20 +182,18 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
   function submit(): void {
     const synced = syncFromInputs();
-    const out: { slotId?: string; value: string; disabled?: boolean }[] = [];
-    for (const row of synced) {
-      const value = request.addViaPicker ? row.text.trim() || row.placeholder : row.text.trim();
-      if (row.slotId) {
-        out.push({ slotId: row.slotId, value, disabled: row.disabled });
-      } else if (value) {
-        out.push({ value, disabled: row.disabled });
-      }
-    }
+    const out = buildKeysSaveRows(synced, request.addViaPicker === true);
     services.overlay.answerKeys({ action: "save", rows: out, activeIndex: activeKeyIdx });
   }
 
   function resetAll(): void {
     services.overlay.answerKeys({ action: "reset" });
+  }
+
+  function refreshRow(index: number): void {
+    const row = rows[index];
+    if (!request.refreshable || !row?.slotId) return;
+    services.overlay.answerKeys({ action: "refresh", slotId: row.slotId });
   }
 
   useKeyboard((key: KeyEvent) => {
@@ -342,6 +340,18 @@ export function KeysModal(props: KeysModalProps): ReactNode {
                 style={{ flexGrow: 1, minWidth: 20 }}
               />
             )}
+            {request.refreshable && row.slotId ? (
+              <text
+                content=" ↻ "
+                style={{
+                  fg: theme.background,
+                  bg: ACCENT,
+                  attributes: TextAttributes.BOLD,
+                  flexShrink: 0,
+                }}
+                onMouseDown={() => refreshRow(index)}
+              />
+            ) : null}
             <text content=" " />
             <text
               content=" ✕ "
@@ -396,7 +406,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       </box>
 
       <text
-        content={`${request.addViaPicker ? "enter:add from models  ·  ^a:add from models" : "enter:save  ·  ^a / +:add"}  ·  ✕:remove${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
+        content={`${request.addViaPicker ? "enter:add from models  ·  ^a:add from models" : "enter:save  ·  ^a / +:add"}  ·  ✕:remove${request.refreshable ? "  ·  ↻:refresh" : ""}${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
         style={{ fg: theme.muted, attributes: TextAttributes.DIM }}
       />
     </box>

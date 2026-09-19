@@ -91,6 +91,14 @@ export function installTransport(
         body: parseBody(init),
       };
       transport.all.push(record);
+      if (url.includes("/copilot_internal/v2/token")) {
+        return jsonResponse({
+          token: "tid=conformance;exp=9999999999;sku=conformance",
+          expires_at: 9999999999,
+          refresh_in: 1500,
+          endpoints: { api: "https://api.githubcopilot.com" },
+        });
+      }
       if (!isGeneration(url)) {
         return jsonResponse({ data: [], models: [] });
       }

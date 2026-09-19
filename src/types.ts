@@ -24,6 +24,9 @@ export const providerIds = [
   "kimi",
   "glm",
   "minimax",
+  "cline",
+  "codex",
+  "copilot",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

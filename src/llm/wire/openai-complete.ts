@@ -54,6 +54,7 @@ export async function openAiCompatibleComplete(options: {
   purpose?: CompletionRequestPurpose | undefined;
   responsesFirst?: boolean | undefined;
   wireApi?: "responses" | "chat-completions" | undefined;
+    unwrapDataEnvelope?: boolean | undefined;
 }): Promise<OpenAiCompatibleResult> {
   const responsesOptions = {
     ...options,
@@ -143,6 +144,17 @@ export async function openAiCompatibleComplete(options: {
       );
     }
     throw error;
+  }
+  if (options.unwrapDataEnvelope) {
+    const inner = (data as { data?: unknown } | undefined)?.data;
+    if (
+      inner &&
+      typeof inner === "object" &&
+      !Array.isArray(inner) &&
+      Array.isArray((inner as { choices?: unknown }).choices)
+    ) {
+      data = inner as typeof data;
+    }
   }
   const choice = data.choices?.[0];
   const message = choice?.message;
