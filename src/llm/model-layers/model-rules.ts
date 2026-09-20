@@ -242,6 +242,12 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
   ],
   free: [{ pattern: /deepseek/i, layer: deepseekV4DefaultOn }],
   openrouter: [],
+  cline: [
+    { pattern: /kimi-k3|kimi-k2\.7/i, layer: kimiMandatoryLayer },
+    { pattern: /kimi-k2\.6/i, layer: kimiConfigurableLayer },
+    { pattern: /kimi/i, layer: kimiNoPreservationLayer },
+    { pattern: /deepseek/i, layer: deepseekV4DefaultOn },
+  ],
   deepseek: [{ pattern: /reasoner|r1|v4/i, layer: deepseekV4DefaultOn }],
   kimi: [
     { pattern: /kimi-k3|kimi-k2\.7/i, layer: kimiMandatoryLayer },

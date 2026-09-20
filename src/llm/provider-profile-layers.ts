@@ -211,6 +211,48 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  cline: {
+    evidence: codeFact("cline-openai-compatible"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "unknown" },
+    reasoning: {
+      control: {
+        dialect: "openai-nested-reasoning",
+        status: "supported",
+        evidence: codeFact("cline-openrouter-style-reasoning"),
+      },
+      outputShapes: ["reasoning-content", "structured-details"],
+      replayScope: "tool-turn",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: [
+        "messages",
+        "tools",
+        "tool_choice",
+        "reasoning",
+      ],
+    },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.prompt_cache_hit_tokens",
+        "usage.input_tokens_details.cached_tokens",
+      ],
+      cacheWrite: [
+        "usage.prompt_tokens_details.cache_write_tokens",
+        "usage.cache_creation_input_tokens",
+      ],
+      reasoningOutput: [
+        "usage.completion_tokens_details.reasoning_tokens",
+        "usage.output_tokens_details.reasoning_tokens",
+      ],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
   nvidia: {
     evidence: codeFact("nvidia-nim"),
     capabilities: { tools: "supported" },
@@ -688,6 +730,65 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
+  },
+  codex: {
+    evidence: providerDoc("codex-responses"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "openai-effort",
+        status: "supported",
+        evidence: providerDoc("codex-responses-reasoning"),
+      },
+      generation: "optional",
+      outputShapes: ["encrypted-reasoning-items"],
+      replayScope: "tool-turn",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["input", "tools"],
+    },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.input_tokens_details.cached_tokens",
+      ],
+      reasoningOutput: [
+        "usage.completion_tokens_details.reasoning_tokens",
+        "usage.output_tokens_details.reasoning_tokens",
+      ],
+    },
+    terminal: { proofs: ["response-completed", "response-incomplete"], naturalEofAccepted: false },
+  },
+  copilot: {
+    evidence: providerDoc("copilot-api"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "openai-effort",
+        status: "supported",
+        evidence: providerDoc("copilot-reasoning"),
+      },
+      generation: "optional",
+      acceptedEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+      outputShapes: ["reasoning-content", "thought-signature", "encrypted-reasoning-items"],
+      replayScope: "tool-turn",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools", "system", "cache_control"],
+    },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.cache_read_input_tokens",
+      ],
+      cacheWrite: ["usage.cache_creation_input_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: { proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS, naturalEofAccepted: false },
   },
 };
 
