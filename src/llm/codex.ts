@@ -1,11 +1,19 @@
 import type { CompletionRequest, CompletionResult } from "../types.js";
-import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
+import {
+  CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
+  defaultModels,
+  type LlmProvider,
+  type ProviderAuth,
+} from "./provider.js";
 import { readJson, ingestModelCatalogEntries, ProviderError } from "./http.js";
 import {
   CODEX_API_BASE_URL,
   CODEX_CLIENT_VERSION,
+  accountIdFromIdToken,
   codexRequestHeaders,
   decodeCodexKey,
+  extractResidency,
+  expiresAtFromAccessToken,
   maybeRefreshCodexCredential,
   type CodexCredential,
 } from "./codex-auth.js";
@@ -16,35 +24,56 @@ import { currentSessionAffinity } from "./session-affinity.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import {
   mapResponsesEffort,
-  responsesReasoningSummary,
   responsesStream,
   type ResponsesBodyExtrasContext,
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
+export const codexFallbackModels: readonly string[] = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex-spark",
+];
 
 const baseUrl = CODEX_API_BASE_URL;
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
+
+export function resetCodexModelCache(): void {
+  cachedModels = null;
+  lastFetchTime = 0;
+}
 
 function requireKey(auth: ProviderAuth): string {
   if (!auth.apiKey) {
     throw new Error(
-      "Codex authentication required. Run `clai auth codex` (browser sign-in) or add a key with `clai set codex <token>`.",
+      `${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} authentication required. Run \`clai auth chatgpt\` (browser sign-in) or add a key with \`clai set chatgpt <token>\`.`,
     );
   }
   return auth.apiKey;
 }
 
 function credentialFor(auth: ProviderAuth) {
-  const credential = decodeCodexKey(requireKey(auth));
-  if (!credential) {
+  const key = requireKey(auth);
+  const decoded = decodeCodexKey(key);
+  if (decoded) return decoded;
+  const accountId = accountIdFromIdToken(key);
+  if (!accountId) {
     throw new Error(
-      "Codex credential is malformed. Run `clai auth codex` to sign in again.",
+      `${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} credential is malformed. Run \`clai auth chatgpt\` to sign in again.`,
     );
   }
-  return credential;
+  return {
+    accessToken: key,
+    accountId,
+    expiresAt: expiresAtFromAccessToken(key),
+    residency: extractResidency(key),
+  };
 }
 
 async function withCodexCredential<T>(
@@ -60,10 +89,17 @@ async function withCodexCredential<T>(
       (status === 401 || status === 403) && currentRequestPurpose() === undefined;
     if (!renewable) throw error;
     const fresh = await maybeRefreshCodexCredential(auth.apiKey ?? "");
-    if (!fresh || fresh === auth.apiKey) throw error;
+    if (!fresh || fresh === auth.apiKey) {
+      if (!credential.refreshToken) {
+        throw new ProviderError(
+          `${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} token expired and has no refresh token. Run \`clai auth chatgpt\` to sign in again.`,
+          status ?? 401,
+        );
+      }
+      throw error;
+    }
     await replaceCodexKey(auth.apiKey ?? "", fresh).catch(() => undefined);
-    const renewed = decodeCodexKey(fresh);
-    if (!renewed) throw error;
+    const renewed = credentialFor({ ...auth, apiKey: fresh });
     return run(renewed);
   }
 }
@@ -82,7 +118,7 @@ async function replaceCodexKey(oldKey: string, newKey: string): Promise<void> {
 }
 
 function settingsFor(credential: ReturnType<typeof credentialFor>) {
-  return codexRequestHeaders(credential.accountId);
+  return codexRequestHeaders(credential.accountId, {}, credential.residency);
 }
 
 function codexCacheKey(context: ResponsesBodyExtrasContext): string {
@@ -97,25 +133,29 @@ function codexConfigFor(credential: CodexCredential): ResponsesDialectConfig {
   return {
     baseUrl,
     providerId: "codex",
-    displayName: "Codex",
+    displayName: CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
     artifactDialect: "openai-compatible",
     terminalPolicy: META_STREAM_TERMINAL,
     omitSampling: true,
     maxTokensField: "omit",
+    omitParallelToolCalls: true,
+    instructionsField: "instructions",
+    systemRole: "developer",
     buildHeaders(auth, accept) {
+      const sessionId = currentSessionAffinity();
       return {
         "content-type": "application/json",
         accept,
         ...(auth.apiKey ? { authorization: `Bearer ${auth.apiKey}` } : {}),
-        ...codexRequestHeaders(credential.accountId),
+        ...codexRequestHeaders(credential.accountId, {}, credential.residency),
+        ...(sessionId ? { "session-id": sessionId } : {}),
       };
     },
     reasoningPayload(reasoning) {
       if (!reasoning?.enabled) return undefined;
-      const effort = mapResponsesEffort(reasoning.effort);
-      return { effort, summary: responsesReasoningSummary(effort) };
+      return { effort: mapResponsesEffort(reasoning.effort), summary: "auto" };
     },
-    bodyExtras(context) {
+    bodyExtras(context: ResponsesBodyExtrasContext) {
       return {
         store: false,
         include: ["reasoning.encrypted_content"],
@@ -155,11 +195,12 @@ function codexCatalogEntries(payload: unknown): readonly unknown[] {
 
 export const codexProvider: LlmProvider = {
   id: "codex",
-  displayName: "ChatGPT (Codex)",
+  displayName: CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
   reasoningStyle: "openai",
   defaultModel: defaultModels.codex,
   envVar: "CODEX_API_KEY",
-  validateKey: (key: string) => decodeCodexKey(key) !== undefined,
+  validateKey: (key: string) =>
+    decodeCodexKey(key) !== undefined || accountIdFromIdToken(key) !== undefined,
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const now = Date.now();
     if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
@@ -179,11 +220,12 @@ export const codexProvider: LlmProvider = {
     );
     const payload = await readJson<unknown>(response);
     const models = ingestModelCatalogEntries("codex", codexCatalogEntries(payload));
-    if (models.length > 0) {
-      cachedModels = models;
+    const result = models.length > 0 ? models : [...codexFallbackModels];
+    if (result.length > 0) {
+      cachedModels = result;
       lastFetchTime = now;
     }
-    return models;
+    return result;
   },
   async ping(auth: ProviderAuth): Promise<void> {
     const credential = credentialFor(auth);
@@ -198,7 +240,7 @@ export const codexProvider: LlmProvider = {
     );
     if (!response.ok) {
       throw new ProviderError(
-        `Codex authentication failed (HTTP ${response.status}). Run \`clai auth codex\` to sign in.`,
+        `${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} authentication failed (HTTP ${response.status}). Run \`clai auth chatgpt\` to sign in.`,
         response.status,
       );
     }
@@ -207,7 +249,7 @@ export const codexProvider: LlmProvider = {
     request: CompletionRequest,
     auth: ProviderAuth,
   ): Promise<CompletionResult> {
-    const model = request.model ?? defaultModels.codex;
+    const model = await resolveCodexModel(auth, request.model);
     return withCodexCredential(auth, async (credential) => {
       const config = codexConfigFor(credential);
       const streamRequest: CompletionRequest = {
@@ -229,7 +271,7 @@ export const codexProvider: LlmProvider = {
     auth: ProviderAuth,
     onToken: (token: string) => void,
   ): Promise<CompletionResult> {
-    const model = request.model ?? defaultModels.codex;
+    const model = await resolveCodexModel(auth, request.model);
     return withCodexCredential(auth, async (credential) => {
       const config = codexConfigFor(credential);
       const streamRequest: CompletionRequest = {
@@ -247,3 +289,20 @@ export const codexProvider: LlmProvider = {
     });
   },
 };
+
+async function resolveCodexModel(
+  auth: ProviderAuth,
+  requestedModel?: string,
+): Promise<string> {
+  if (requestedModel) return requestedModel;
+  let available: string[] = [];
+  try {
+    available = await codexProvider.listModels!(auth);
+  } catch {
+    available = cachedModels ?? [...codexFallbackModels];
+  }
+  if (available.includes(defaultModels.codex)) {
+    return defaultModels.codex;
+  }
+  return available[0] ?? defaultModels.codex;
+}

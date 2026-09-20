@@ -25,6 +25,9 @@ export interface ResponsesDialectConfig {
   readonly terminalPolicy: StreamTerminalPolicy;
   readonly omitSampling?: boolean | undefined;
   readonly maxTokensField?: "max_tokens" | "omit" | undefined;
+  readonly omitParallelToolCalls?: boolean | undefined;
+  readonly instructionsField?: "instructions" | "input" | undefined;
+  readonly systemRole?: "developer" | "system" | undefined;
   buildHeaders(
     auth: ProviderAuth,
     accept: ResponsesAccept,

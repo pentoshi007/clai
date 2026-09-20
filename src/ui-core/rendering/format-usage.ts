@@ -1,3 +1,4 @@
+import { getProvider } from "../../llm/router.js";
 import {
   usageCacheHitRate,
   type SessionUsageReport,
@@ -38,7 +39,8 @@ function bold(text: string): string {
 }
 
 function routeLabel(route: SessionUsageRoute): string {
-  return `${route.provider ?? "unknown provider"} / ${route.model ?? "unknown model"}`;
+  const provider = route.provider ? getProvider(route.provider).displayName : "unknown provider";
+  return `${provider} / ${route.model ?? "unknown model"}`;
 }
 
 function count(value: number): string {

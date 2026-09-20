@@ -1,5 +1,6 @@
 import { MAX_PROVIDER_KEYS } from "../../../llm/key-rotation.js";
 import { maskSecret, normalizeEndpointUrl } from "../../../llm/provider.js";
+import { getProvider } from "../../../llm/router.js";
 import { getProviderEndpoints, MAX_PROVIDER_ENDPOINTS, setProviderEndpoints } from "../../../store/config.js";
 import { getSearchProviderKeys, setSearchProviderKeys, unsetSearchProviderSecret } from "../../../store/keys.js";
 import type { SearchProviderId } from "../../../tools/web/types.js";
@@ -15,6 +16,7 @@ export async function openEndpointsEditor(
   services: AppServices,
   id: ProviderId,
 ): Promise<void> {
+  const label = getProvider(id).displayName;
   const { urls, activeIndex, disabledUrls } = getProviderEndpoints(id);
   const answer = await services.overlay.openKeysEditor({
     provider: id,
@@ -33,7 +35,7 @@ export async function openEndpointsEditor(
   }
   if (answer.action === "reset") {
     setProviderEndpoints(id, []);
-    notice(services, "info", `unset all endpoint URLs for ${id}`);
+    notice(services, "info", `unset all endpoint URLs for ${label}`);
     return;
   }
   if (answer.action === "refresh") return;
@@ -46,7 +48,7 @@ export async function openEndpointsEditor(
   const resolved = detailed.map((row) => row.value);
   if (resolved.length === 0) {
     setProviderEndpoints(id, []);
-    notice(services, "info", `unset all endpoint URLs for ${id}`);
+    notice(services, "info", `unset all endpoint URLs for ${label}`);
     return;
   }
   if (resolved.length > MAX_PROVIDER_ENDPOINTS) {
@@ -70,8 +72,8 @@ export async function openEndpointsEditor(
     services,
     "info",
     saved.urls.length === 1
-      ? `saved ${id} endpoint → ${saved.urls[0]}`
-      : `saved ${saved.urls.length} ${id} endpoints · active #${saved.activeIndex + 1} ${saved.urls[saved.activeIndex]}`,
+      ? `saved ${label} endpoint → ${saved.urls[0]}`
+      : `saved ${saved.urls.length} ${label} endpoints · active #${saved.activeIndex + 1} ${saved.urls[saved.activeIndex]}`,
   );
 }
 

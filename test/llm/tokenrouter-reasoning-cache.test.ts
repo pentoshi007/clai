@@ -43,6 +43,8 @@ describe("tokenrouter reasoning efforts", () => {
       "low",
       "medium",
       "high",
+      "xhigh",
+      "max",
     ]);
     expect(displayReasoningEfforts("tokenrouter", "qwen/qwen3.7-max")).toEqual([
       "low",

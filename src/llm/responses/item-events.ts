@@ -110,6 +110,16 @@ export function handleOutputItemDone(
       item,
       typeof parsed.output_index === "number" ? parsed.output_index : undefined,
     );
+    const summary = extractReasoningSummary(item);
+    if (summary && !ctx.state.reasoningSeen.includes(summary)) {
+      const remaining = summary.startsWith(ctx.state.reasoningSeen)
+        ? summary.slice(ctx.state.reasoningSeen.length)
+        : summary;
+      if (remaining) {
+        ctx.watchdog.resetIdleTimer();
+        ctx.emitReasoningDelta(remaining);
+      }
+    }
   }
   if (item?.type === "function_call") {
     mergeFunctionCallDone(ctx, parsed, item);

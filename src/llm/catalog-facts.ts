@@ -74,6 +74,9 @@ function modalitiesDeclareImage(value: unknown): boolean | undefined {
 }
 
 function parseVision(entry: Record<string, unknown>): boolean | undefined {
+  const caps = asRecord(entry.capabilities);
+  const supports = asRecord(caps?.supports);
+  if (typeof supports?.vision === "boolean") return supports.vision;
   for (const flag of [
     entry.vision,
     entry.supports_vision,
@@ -118,6 +121,17 @@ function parseEffortsFromOptions(entry: Record<string, unknown>): string[] | und
   }
   for (const value of stringList(entry.supported_reasoning_efforts) ?? []) {
     collected.push(value);
+  }
+  if (Array.isArray(entry.supported_reasoning_levels)) {
+    for (const level of entry.supported_reasoning_levels) {
+      if (typeof level === "string") {
+        collected.push(level);
+        continue;
+      }
+      const shaped = asRecord(level);
+      const effort = shaped?.effort;
+      if (typeof effort === "string" && effort.trim()) collected.push(effort.trim());
+    }
   }
   const effortObject = asRecord(entry.reasoning_effort);
   for (const value of stringList(effortObject?.values) ?? []) collected.push(value);
@@ -189,6 +203,34 @@ function parseReasoning(
   }
   if (optionEfforts) facts.supported = true;
 
+  if (typeof entry.default_reasoning_level === "string" && entry.default_reasoning_level.trim()) {
+    facts.supported = true;
+    if (facts.defaultEffort === undefined) {
+      facts.defaultEffort = entry.default_reasoning_level.trim();
+    }
+    const level = entry.default_reasoning_level.trim();
+    if (Array.isArray(facts.supportedEfforts) && !facts.supportedEfforts.includes(level)) {
+      facts.supportedEfforts = [...facts.supportedEfforts, level];
+    } else if (facts.supportedEfforts === undefined) {
+      facts.supportedEfforts = [level];
+    }
+  }
+
+  const caps = asRecord(entry.capabilities);
+  const supports = asRecord(caps?.supports);
+  if (supports) {
+    if (supports.adaptive_thinking === true || supports.max_thinking_budget !== undefined) {
+      facts.supported = true;
+    }
+    const efforts = stringList(supports.reasoning_effort);
+    if (efforts && efforts.length > 0) {
+      facts.supported = true;
+      if (facts.supportedEfforts === undefined) {
+        facts.supportedEfforts = efforts;
+      }
+    }
+  }
+
   const reasoningOptionList = entry.reasoning_options;
   const reasoningOptions = Array.isArray(reasoningOptionList)
     && reasoningOptionList.length > 0;
@@ -231,13 +273,18 @@ function parseLimits(entry: Record<string, unknown>): {
   maxOutputTokens?: number;
 } {
   const topProvider = asRecord(entry.top_provider);
+  const caps = asRecord(entry.capabilities);
+  const capsLimits = asRecord(caps?.limits);
   const nominal =
+    positiveInteger(capsLimits?.max_context_window_tokens) ??
+    positiveInteger(capsLimits?.max_prompt_tokens) ??
     positiveInteger(entry.context_length) ??
     positiveInteger(entry.context_window) ??
     positiveInteger(entry.max_model_len) ??
     positiveInteger(entry.inputTokenLimit);
   const served = positiveInteger(topProvider?.context_length) ?? nominal;
   const maxOutput =
+    positiveInteger(capsLimits?.max_output_tokens) ??
     positiveInteger(topProvider?.max_completion_tokens) ??
     positiveInteger(entry.max_completion_tokens) ??
     positiveInteger(entry.max_output_length) ??

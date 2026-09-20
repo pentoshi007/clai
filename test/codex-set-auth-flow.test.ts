@@ -3,6 +3,7 @@ import { encodeCodexKey } from "../src/llm/codex-auth.js";
 import type { CodexCredential } from "../src/llm/codex-auth.js";
 
 const h = vi.hoisted(() => ({
+  startCodexBrowserAuth: vi.fn(),
   startCodexDeviceAuth: vi.fn(),
   pollCodexDeviceAuth: vi.fn(),
   appendProviderKey: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("../src/llm/codex-auth.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/llm/codex-auth.js")>();
   return {
     ...actual,
+    startCodexBrowserAuth: h.startCodexBrowserAuth,
     startCodexDeviceAuth: h.startCodexDeviceAuth,
     pollCodexDeviceAuth: h.pollCodexDeviceAuth,
   };
@@ -64,7 +66,13 @@ function makeServices(answers: Array<unknown>) {
       events.push("open:pager");
       return true;
     },
-    openPicker: () => true,
+    openPicker: (
+      _request: unknown,
+      onSelect?: (value: string) => void,
+    ) => {
+      onSelect?.("headless");
+      return true;
+    },
     openSecret: async () => undefined,
     openKeysEditor: async () => {
       if (busy !== null) return undefined;
@@ -93,6 +101,7 @@ function makeServices(answers: Array<unknown>) {
 describe("codex /set auth flow", () => {
   beforeEach(() => {
     h.stored.length = 0;
+    h.startCodexBrowserAuth.mockReset().mockRejectedValue(new Error("no browser"));
     h.startCodexDeviceAuth.mockReset().mockResolvedValue({
       deviceAuthId: "dev",
       userCode: "ABCD-EFGH",
@@ -174,7 +183,7 @@ describe("codex /set auth flow", () => {
 
     expect(h.replaceProviderKey).toHaveBeenCalledWith("codex", oldKey, NEW_KEY);
     expect(h.stored[0]).toMatchObject({ id: "k0", value: NEW_KEY, disabled: true });
-    expect(notices.some((text) => text.startsWith("refreshed Codex account "))).toBe(true);
+    expect(notices.some((text) => text.startsWith("refreshed ChatGPT Subscription account "))).toBe(true);
   });
 
   it("saves star/disable/remove edits on untouched rows without invalid-token errors", async () => {

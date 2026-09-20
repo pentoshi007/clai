@@ -23,7 +23,7 @@ function resolveBaseUrl(auth: ProviderAuth): string {
 }
 
 const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const CHAT_ENDPOINT_TYPES = new Set([
   "openai",

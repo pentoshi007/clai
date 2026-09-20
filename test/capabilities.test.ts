@@ -80,7 +80,7 @@ describe("effectiveThinkingEffort", () => {
   it("clamps the configured effort to what the route advertises", () => {
     expect(
       effectiveThinkingEffort("openai", "gpt-5.1", { enabled: true, effort: "max" }),
-    ).toBe("high");
+    ).toBe("max");
     expect(
       effectiveThinkingEffort("openai", "gpt-5.1", { enabled: true, effort: "low" }),
     ).toBe("low");

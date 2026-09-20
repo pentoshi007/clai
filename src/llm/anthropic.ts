@@ -194,7 +194,7 @@ export function buildAnthropicBody(
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export const anthropicProvider: LlmProvider = {
   id: "anthropic",
@@ -241,67 +241,7 @@ export const anthropicProvider: LlmProvider = {
     auth: ProviderAuth,
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
-    const model = request.model ?? defaultModels.anthropic;
-    const endpoint = auth.baseUrl ?? baseUrl;
-    const provider = request.provider ?? "anthropic";
-    const response = await generationFetch(`${endpoint}/messages`, {
-      method: "POST",
-      signal: request.signal ?? null,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": auth.apiKey,
-        "anthropic-version": anthropicVersion,
-      },
-      body: buildAnthropicBody(request, false, endpoint),
-    });
-    const data = await readJson<{
-      content?: Array<{
-        type: string;
-        text?: string;
-        thinking?: string;
-        id?: string;
-        name?: string;
-        input?: unknown;
-      }>;
-      stop_reason?: string;
-      usage?: unknown;
-    }>(response);
-    const parsed = parseAnthropicToolUseBlocks(data.content);
-    if (!parsed.text && parsed.toolCalls.length === 0) {
-      throw new Error("Anthropic returned no completion text");
-    }
-    const reasoningBlock =
-      parsed.thinkingSignature && parsed.thinkingText
-        ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
-        : undefined;
-    const reasoningArtifacts = anthropicReasoningArtifacts(
-      provider,
-      model,
-      parsed.thinkingBlocks,
-      endpoint,
-    );
-    const usage = withReasoningObservation(
-      parseAnthropicUsage(data.usage),
-      Boolean(parsed.thinkingText.trim()),
-    );
-    return {
-      text: parsed.text,
-      provider,
-      model,
-      api: "anthropic-messages",
-      ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
-      ...(reasoningBlock ? { reasoningBlock } : {}),
-      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
-      ...(data.stop_reason
-        ? {
-            finishReason:
-              data.stop_reason === "tool_use" ? "tool_calls" : data.stop_reason,
-          }
-        : parsed.toolCalls.length
-          ? { finishReason: "tool_calls" }
-          : {}),
-      ...(usage ? { usage } : {}),
-    };
+    return executeAnthropicComplete(request, auth);
   },
   async stream(
     request: CompletionRequest,
@@ -309,19 +249,99 @@ export const anthropicProvider: LlmProvider = {
     onToken: (token: string) => void,
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
-    const model = request.model ?? defaultModels.anthropic;
-    const endpoint = auth.baseUrl ?? baseUrl;
-    const provider = request.provider ?? "anthropic";
-    const response = await generationFetch(`${endpoint}/messages`, {
-      method: "POST",
-      signal: request.signal ?? null,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": auth.apiKey,
-        "anthropic-version": anthropicVersion,
-      },
-      body: buildAnthropicBody(request, true, endpoint),
-    });
+    return executeAnthropicStream(request, auth, onToken);
+  },
+};
+
+export async function executeAnthropicComplete(
+  request: CompletionRequest,
+  auth: ProviderAuth,
+  customHeaders?: Record<string, string>,
+): Promise<CompletionResult> {
+  const model = request.model ?? defaultModels.anthropic;
+  const endpoint = auth.baseUrl ?? baseUrl;
+  const provider = request.provider ?? "anthropic";
+  const headers = customHeaders ?? {
+    "content-type": "application/json",
+    ...(auth.apiKey ? { "x-api-key": auth.apiKey } : {}),
+    "anthropic-version": anthropicVersion,
+  };
+  const response = await generationFetch(`${endpoint}/messages`, {
+    method: "POST",
+    signal: request.signal ?? null,
+    headers,
+    body: buildAnthropicBody(request, false, endpoint),
+  });
+  const data = await readJson<{
+    content?: Array<{
+      type: string;
+      text?: string;
+      thinking?: string;
+      id?: string;
+      name?: string;
+      input?: unknown;
+    }>;
+    stop_reason?: string;
+    usage?: unknown;
+  }>(response);
+  const parsed = parseAnthropicToolUseBlocks(data.content);
+  if (!parsed.text && parsed.toolCalls.length === 0) {
+    throw new Error(`${request.provider ?? "Anthropic"} returned no completion text`);
+  }
+  const reasoningBlock =
+    parsed.thinkingSignature && parsed.thinkingText
+      ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
+      : undefined;
+  const reasoningArtifacts = anthropicReasoningArtifacts(
+    provider,
+    model,
+    parsed.thinkingBlocks,
+    endpoint,
+  );
+  const usage = withReasoningObservation(
+    parseAnthropicUsage(data.usage),
+    Boolean(parsed.thinkingText.trim()),
+  );
+  return {
+    text: parsed.text,
+    provider,
+    model,
+    api: "anthropic-messages",
+    ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
+    ...(reasoningBlock ? { reasoningBlock } : {}),
+    ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
+    ...(data.stop_reason
+      ? {
+          finishReason:
+            data.stop_reason === "tool_use" ? "tool_calls" : data.stop_reason,
+        }
+      : parsed.toolCalls.length
+        ? { finishReason: "tool_calls" }
+        : {}),
+    ...(usage ? { usage } : {}),
+  };
+}
+
+export async function executeAnthropicStream(
+  request: CompletionRequest,
+  auth: ProviderAuth,
+  onToken: (token: string) => void,
+  customHeaders?: Record<string, string>,
+): Promise<CompletionResult> {
+  const model = request.model ?? defaultModels.anthropic;
+  const endpoint = auth.baseUrl ?? baseUrl;
+  const provider = request.provider ?? "anthropic";
+  const headers = customHeaders ?? {
+    "content-type": "application/json",
+    ...(auth.apiKey ? { "x-api-key": auth.apiKey } : {}),
+    "anthropic-version": anthropicVersion,
+  };
+  const response = await generationFetch(`${endpoint}/messages`, {
+    method: "POST",
+    signal: request.signal ?? null,
+    headers,
+    body: buildAnthropicBody(request, true, endpoint),
+  });
     if (!response.ok) {
       await readJson<unknown>(response);
     }
@@ -488,5 +508,4 @@ export const anthropicProvider: LlmProvider = {
           : {}),
       ...(usage ? { usage } : {}),
     };
-  },
-};
+}

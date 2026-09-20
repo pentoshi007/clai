@@ -7,12 +7,20 @@ import { providerIds } from "../types.js";
 import type { ReasoningStyle } from "./http.js";
 import { providerInfo } from "./provider-info-text.js";
 import {
+  CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
+  GITHUB_COPILOT_DISPLAY_NAME,
   defaultModels,
   envVars,
   providerAliases,
   retiredModelReplacements,
 } from "./provider-identity.js";
-export { defaultModels, envVars, providerAliases };
+export {
+  CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
+  GITHUB_COPILOT_DISPLAY_NAME,
+  defaultModels,
+  envVars,
+  providerAliases,
+};
 export { providerInfo };
 
 export interface LlmProvider {

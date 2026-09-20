@@ -245,9 +245,11 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
             : {}),
         }
       : {}),
-    ...(reasoningModel
-      ? { max_completion_tokens: effectiveMaxTokens }
-      : { max_tokens: effectiveMaxTokens }),
+    ...(options.providerId === "copilot" && options.maxTokens === undefined
+      ? {}
+      : reasoningModel
+        ? { max_completion_tokens: effectiveMaxTokens }
+        : { max_tokens: effectiveMaxTokens }),
     ...(emitTemperature ? { temperature: sampling.temperature } : {}),
     ...reasoning,
     ...(options.providerId === "openrouter" &&

@@ -51,7 +51,7 @@ export const nvidiaFallbackModels = [
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const NVIDIA_FIRST_BYTE_IDLE_TIMEOUT_MS = 120_000;
 

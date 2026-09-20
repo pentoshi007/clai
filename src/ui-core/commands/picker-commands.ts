@@ -44,7 +44,7 @@ export async function resolveModelsForProvider(
     source = "known";
   }
 
-  if (currentModel && !models.includes(currentModel) && currentModel === getProviderModel(provider)) {
+  if (source === "known" && currentModel && !models.includes(currentModel) && currentModel === getProviderModel(provider)) {
     const isFreeModel = currentModel.startsWith("free-1/") || currentModel.startsWith("free-2/");
     if (!(isFreeModel && provider !== "free")) {
       models = [currentModel, ...models];
@@ -66,7 +66,8 @@ export async function handleModel(
   }
 
   const currentModel = state.model ?? getProviderModel(provider);
-  const fetchingToastId = services.toast.info(`fetching ${provider} models…`, {
+  const label = getProvider(provider).displayName;
+  const fetchingToastId = services.toast.info(`fetching ${label} models…`, {
     key: "model-fetch",
     sticky: true,
   });
@@ -75,28 +76,28 @@ export async function handleModel(
   if (error) {
     services.session.notice(
       "warn",
-      `could not refresh ${provider} models: ${error} · showing known models`,
+      `could not refresh ${label} models: ${error} · showing known models`,
     );
   } else if (source === "known" && getProvider(provider).listModels) {
     services.session.notice(
       "warn",
-      `${provider} model list empty from API · showing known models`,
+      `${label} model list empty from API · showing known models`,
     );
   } else if (source === "live") {
-    services.session.notice("info", `${provider} · ${models.length} models (live)`);
+    services.session.notice("info", `${label} · ${models.length} models (live)`);
   }
 
   if (models.length === 0) {
     services.session.notice(
       "info",
-      `no models for ${provider} — type /model <name> to set one manually`,
+      `no models for ${label} — type /model <name> to set one manually`,
     );
     return;
   }
 
   services.overlay.openPicker(
     {
-      title: `Models · ${provider}${source === "live" ? " · live" : ""}`,
+      title: `Models · ${label}${source === "live" ? " · live" : ""}`,
       options: models.map((value) => ({
         value,
         label: value,
@@ -210,7 +211,7 @@ async function switchToCatalogEntry(
   await persistSessionModel(services, entry.provider, entry.model);
   services.session.notice(
     "info",
-    `provider → ${entry.provider} · model → ${entry.model}`,
+    `provider → ${getProvider(entry.provider).displayName} · model → ${entry.model}`,
   );
 }
 
@@ -261,7 +262,7 @@ export async function handleModels(
   if (failed.length > 0) {
     services.session.notice(
       "warn",
-      `could not refresh ${failed.join(", ")} · showing known models for those`,
+      `could not refresh ${failed.map((provider) => getProvider(provider).displayName).join(", ")} · showing known models for those`,
     );
   }
   services.session.notice(
@@ -276,7 +277,7 @@ export async function handleModels(
       twoLine: true,
       options: entries.map((entry) => ({
         value: `${entry.provider}${CATALOG_SEPARATOR}${entry.model}`,
-        label: `${entry.provider} / ${entry.model}`,
+        label: `${getProvider(entry.provider).displayName} / ${entry.model}`,
         description: entry.live ? "live catalogue" : "known models",
         active: entry.provider === activeProvider && entry.model === state.model,
       })),
@@ -382,9 +383,11 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
         : []),
       ...providerIds.map((value) => {
         const baseUrl = providerBaseUrl(value);
+        const p = getProvider(value);
+        const label = p?.displayName ?? value;
         return {
           value,
-          label: value,
+          label,
           ...(baseUrl ? { description: `(${baseUrl})` } : {}),
           active: value === current,
         };
@@ -447,7 +450,8 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
           services.session.notice("info", `cancelled · provider unchanged`);
           return;
         }
-        await appendProviderKey(next, encodeCodexKey(credential));
+        const manualKey = (credential as { manualKey?: string }).manualKey;
+        await appendProviderKey(next, manualKey ?? encodeCodexKey(credential));
       } else if (next === "copilot") {
         services.overlay.close();
         const { runCopilotAuthForUI } = await import("./key-commands.js");
@@ -460,9 +464,10 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
         await appendProviderKey(next, token);
       } else {
         services.overlay.close();
+        const label = getProvider(next).displayName;
         const key = await services.overlay.openSecret({
-          title: `${next} API key`,
-          prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+          title: `${label} API key`,
+          prompt: `No API key is configured for ${label}. Enter it now to activate this provider.`,
         });
         const value = key?.trim();
         if (!value) {
@@ -472,7 +477,7 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
         if (!getProvider(next).validateKey(value)) {
           services.session.notice(
             "warn",
-            `invalid API key format for ${next} · provider unchanged`,
+            `invalid API key format for ${label} · provider unchanged`,
           );
           return;
         }
@@ -480,6 +485,7 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
       }
     }
   }
+  const label = getProvider(next).displayName;
   let model = getProviderModel(next);
   const isFreeModel = model.startsWith("free-1/") || model.startsWith("free-2/");
   if (isFreeModel && next !== "free") {
@@ -489,8 +495,8 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
   services.session.setModel(model);
   await persistSessionModel(services, next, model);
   services.overlay.close();
-  services.session.notice("info", `provider → ${next} · model → ${model}`);
-  const fetchingToastId = services.toast.info(`fetching ${next} models…`, {
+  services.session.notice("info", `provider → ${label} · model → ${model}`);
+  const fetchingToastId = services.toast.info(`fetching ${label} models…`, {
     key: "model-fetch",
     sticky: true,
   });
@@ -499,26 +505,32 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
   if (error) {
     services.session.notice(
       "warn",
-      `could not refresh ${next} models: ${error} · showing known models`,
+      `could not refresh ${label} models: ${error} · showing known models`,
     );
   } else if (source === "known" && getProvider(next).listModels) {
     services.session.notice(
       "warn",
-      `${next} model list empty from API · showing known models`,
+      `${label} model list empty from API · showing known models`,
     );
   } else if (source === "live") {
-    services.session.notice("info", `${next} · ${models.length} models (live)`);
+    services.session.notice("info", `${label} · ${models.length} models (live)`);
+    if (models.length > 0 && !models.includes(model)) {
+      model = models[0]!;
+      services.session.setModel(model);
+      void persistSessionModel(services, next, model).catch(() => undefined);
+      services.session.notice("info", `model → ${model}`);
+    }
   }
   if (models.length === 0) {
     services.session.notice(
       "info",
-      `no models for ${next} — type /model <name> to set one manually`,
+      `no models for ${label} — type /model <name> to set one manually`,
     );
     return;
   }
   services.overlay.openPicker(
     {
-      title: `Models · ${next}${source === "live" ? " · live" : ""}`,
+      title: `Models · ${label}${source === "live" ? " · live" : ""}`,
       options: models.map((value) => ({
         value,
         label: value,

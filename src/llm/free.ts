@@ -42,18 +42,13 @@ const CURATED_ZEN_MODELS: readonly string[] = [
   "deepseek-v4-flash-free",
   "big-pickle",
   "mimo-v2.5-free",
-  "hy3-free",
   "nemotron-3-ultra-free",
-  "north-mini-code-free",
 ];
 
 const CURATED_KILO_MODELS: readonly string[] = [
   "kilo-auto/free",
-  "deepseek/deepseek-v4-flash-0731:free",
   "stepfun/step-3.7-flash:free",
   "poolside/laguna-s-2.1:free",
-  "tencent/hy3:free",
-  "inclusionai/ling-3.0-tiny:free",
   "poolside/laguna-xs-2.1:free",
   "cohere/north-mini-code:free",
   "nvidia/nemotron-3.5-content-safety:free",
@@ -318,7 +313,7 @@ interface ModelCache {
   fetchedAt: number;
 }
 const modelCache = new Map<string, ModelCache>();
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 async function listSourceModels(
   source: FreeSource,

@@ -29,7 +29,7 @@ interface ModelCache {
   fetchedAt: number;
 }
 const modelCache = new Map<string, ModelCache>();
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export const bynaraProvider: LlmProvider = {
   id: "bynara",

@@ -122,7 +122,7 @@ function responsesConfig(
 export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
   const providerId = def.id as ProviderId;
   const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-  const CACHE_TTL_MS = 60 * 60 * 1000;
+  const CACHE_TTL_MS = 30 * 60 * 1000;
   const keyless =
     def.profile?.authType === "none-keyless" ||
     def.profile?.authType === "custom-headers";
