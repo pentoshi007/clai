@@ -165,7 +165,16 @@ export const runTurnRounds = async (
             model: completion.model,
             promptUsageMissing: true,
           }),
-          emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, api, attempt }) =>
+          emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, api, attempt }) => {
+            if (
+              usage.exact &&
+              usage.promptTokensKnown !== false &&
+              usage.promptTokens > 0 &&
+              usageProvider === deps.loop.provider &&
+              usageModel === deps.loop.model
+            ) {
+              deps.loop.lastProviderPromptTokens = usage.promptTokens;
+            }
             deps.emit({
               type: "token-usage",
               usage,
@@ -173,7 +182,8 @@ export const runTurnRounds = async (
               provider: usageProvider,
               ...(api ? { api } : {}),
               ...(attempt ? { attempt } : {}),
-            }),
+            });
+          },
           audit: (event, payload) => auditLog(event, payload),
         },
         completion,

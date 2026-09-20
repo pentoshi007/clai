@@ -6,6 +6,9 @@ import {
   autoCompactTriggerTokens,
   getReliabilityPolicy,
 } from "../reliability-policy.js";
+import { requestTokenCalibration } from "../../llm/token-estimate-calibration.js";
+
+export const PROVIDER_TRUTH_SKIP_RATIO = 2;
 
 export interface CompactionAdmissionPorts {
   readonly messages: readonly ChatMessage[];
@@ -19,10 +22,17 @@ export interface CompactionAdmissionPorts {
   readonly buildDurableEnvelope: () => Promise<string | undefined>;
   readonly isSuppressed: (attemptKey: string) => boolean;
   readonly isExhausted?: ((attemptKey: string) => boolean) | undefined;
+  readonly providerPromptTokens?: (() => number | undefined) | undefined;
+  readonly audit?: CompactionAuditFn | undefined;
 }
 
+export type CompactionAuditFn = (
+  event: string,
+  payload: Readonly<Record<string, string | number | boolean | undefined>>,
+) => void;
+
 export type CompactionAdmission =
-  | { readonly admitted: false }
+  | { readonly admitted: false; readonly skippedByProviderTruth?: boolean }
   | {
       readonly admitted: true;
       readonly beforeTokens: number;
@@ -53,6 +63,30 @@ export const planCompactionAdmission = async (
       : {}),
   });
   if (!bypassThreshold && beforeTokens < compactTrigger) return REJECTED;
+  const calibration = requestTokenCalibration(ports.provider, ports.model);
+  const providerPromptTokens = ports.providerPromptTokens?.();
+  ports.audit?.("agent.compact.admission", {
+    reason: bypassThreshold ? "forced" : "threshold",
+    estimatedTokens: beforeTokens,
+    triggerTokens: compactTrigger,
+    ...(calibration
+      ? { calibrationRatio: calibration.ratio, calibrationSamples: calibration.samples }
+      : {}),
+    ...(providerPromptTokens !== undefined ? { providerPromptTokens } : {}),
+  });
+  if (
+    !bypassThreshold &&
+    providerPromptTokens !== undefined &&
+    providerPromptTokens > 0 &&
+    compactTrigger >= PROVIDER_TRUTH_SKIP_RATIO * providerPromptTokens
+  ) {
+    ports.audit?.("agent.compact.skip-estimate-desync", {
+      estimatedTokens: beforeTokens,
+      providerPromptTokens,
+      triggerTokens: compactTrigger,
+    });
+    return { admitted: false, skippedByProviderTruth: true };
+  }
   if (ports.messages.length <= 2) return REJECTED;
   const durableEnvelope = await ports.buildDurableEnvelope();
   const attemptKey = compactionAttemptKey({
