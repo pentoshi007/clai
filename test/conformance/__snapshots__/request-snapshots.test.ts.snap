@@ -2079,10 +2079,10 @@ exports[`serialized request snapshots > cline / images 1`] = `
       },
     ],
     "model": "cline-free/deepseek-v4.1-flash",
-    "stream": false,
-    "thinking": {
-      "type": "disabled",
+    "reasoning": {
+      "enabled": false,
     },
+    "stream": false,
   },
   "headers": {
     "accept": "application/json",
@@ -2122,10 +2122,10 @@ exports[`serialized request snapshots > cline / minimal 1`] = `
       },
     ],
     "model": "cline-free/deepseek-v4.1-flash",
-    "stream": false,
-    "thinking": {
-      "type": "disabled",
+    "reasoning": {
+      "enabled": false,
     },
+    "stream": false,
   },
   "headers": {
     "accept": "application/json",
@@ -2165,11 +2165,11 @@ exports[`serialized request snapshots > cline / reasoning-control 1`] = `
       },
     ],
     "model": "cline-free/deepseek-v4.1-flash",
-    "reasoning_effort": "high",
-    "stream": false,
-    "thinking": {
-      "type": "enabled",
+    "reasoning": {
+      "effort": "high",
+      "enabled": true,
     },
+    "stream": false,
   },
   "headers": {
     "accept": "application/json",
@@ -2230,11 +2230,11 @@ exports[`serialized request snapshots > cline / tool-loop-replay 1`] = `
       },
     ],
     "model": "cline-free/deepseek-v4.1-flash",
-    "reasoning_effort": "high",
-    "stream": false,
-    "thinking": {
-      "type": "enabled",
+    "reasoning": {
+      "effort": "high",
+      "enabled": true,
     },
+    "stream": false,
     "tool_choice": "auto",
     "tools": [
       {
@@ -2338,11 +2338,11 @@ exports[`serialized request snapshots > cline / tool-loop-replay-unsigned 1`] = 
       },
     ],
     "model": "cline-free/deepseek-v4.1-flash",
-    "reasoning_effort": "high",
-    "stream": false,
-    "thinking": {
-      "type": "enabled",
+    "reasoning": {
+      "effort": "high",
+      "enabled": true,
     },
+    "stream": false,
     "tool_choice": "auto",
     "tools": [
       {
@@ -2425,10 +2425,10 @@ exports[`serialized request snapshots > cline / tools 1`] = `
       },
     ],
     "model": "cline-free/deepseek-v4.1-flash",
-    "stream": false,
-    "thinking": {
-      "type": "disabled",
+    "reasoning": {
+      "enabled": false,
     },
+    "stream": false,
     "tool_choice": "auto",
     "tools": [
       {

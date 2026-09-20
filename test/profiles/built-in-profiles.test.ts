@@ -269,6 +269,28 @@ describe("route-specific contracts", () => {
     expect(profile.limits.source).toBe("catalog");
   });
 
+  it("cline exposes an automatic-prefix cache policy and usage counters", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "cline",
+      model: "cline-free/kimi-k3",
+    });
+    expect(profile.cache.kind).toBe("automatic-prefix");
+    expect(profile.cache.cacheAffectingFields).toContain("messages");
+    expect(profile.usage.cachedInput).toContain(
+      "usage.prompt_tokens_details.cached_tokens",
+    );
+  });
+
+  it("cline kimi-k3 uses the kimi mandatory all-history contract", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "cline",
+      model: "cline-free/kimi-k3",
+    });
+    expect(profile.reasoning.generation).toBe("mandatory");
+    expect(profile.reasoning.replayScope).toBe("all-history");
+    expect(profile.reasoning.finalTurnPreservation).toBe("required");
+  });
+
   it("modal keeps proxy auth and omits deployment-owned controls", () => {
     const profile = resolveBuiltInProfile({
       provider: "modal",
