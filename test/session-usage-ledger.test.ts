@@ -256,8 +256,8 @@ describe("formatSessionUsage markdown", () => {
     expect(lines[0]).toBe("# Session usage");
     expect(body).toContain("| PROVIDER / MODEL | API | REQ | IN | OUT | TOTAL | CACHED | RATE |");
     expect(body).toContain("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
-    expect(body).toContain("| `anthropic / claude-opus-4-7` | anthropic-messages | 1 | 32,704 | 1,312 | 34,016 | 28,928 | 88.5% |");
-    expect(body).toContain("| `ollama / llama3.1:8b` | ollama-chat | 1 | 640 | 96 | 736 | — | — |");
+    expect(body).toContain("| `Anthropic / claude-opus-4-7` | anthropic-messages | 1 | 32,704 | 1,312 | 34,016 | 28,928 | 88.5% |");
+    expect(body).toContain("| `Ollama / llama3.1:8b` | ollama-chat | 1 | 640 | 96 | 736 | — | — |");
 
     const tableRows = lines.filter((line) => line.startsWith("|"));
     expect(tableRows[tableRows.length - 1]).toBe(
@@ -269,7 +269,7 @@ describe("formatSessionUsage markdown", () => {
     const ledger = new SessionUsageLedger();
     ledger.record(usage(), "ollama", "llama3.1:8b");
     const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1" });
-    expect(body).toContain("| `ollama / llama3.1:8b` | — | 1 | 100 | 20 | 120 | — | — |");
+    expect(body).toContain("| `Ollama / llama3.1:8b` | — | 1 | 100 | 20 | 120 | — | — |");
     expect(body).not.toContain("0.0%");
   });
 
@@ -286,7 +286,7 @@ describe("formatSessionUsage markdown", () => {
       "qwen3.8-flash-free",
     );
     const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1" });
-    expect(body).toContain("| `bynara / qwen3.8-flash-free` | — | 2 | 239,733 | 647 | 240,380 | 118,272 | 98.4% |");
+    expect(body).toContain("| `Bynara / qwen3.8-flash-free` | — | 2 | 239,733 | 647 | 240,380 | 118,272 | 98.4% |");
     expect(body).toContain("cache measured input 120,195");
   });
 
