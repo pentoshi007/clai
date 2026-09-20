@@ -84,6 +84,7 @@ export interface CompactionCoordinatorPorts {
   ) => void;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly audit: (event: string, payload: CompactionAuditPayload) => void;
+  readonly providerPromptTokens?: (() => number | undefined) | undefined;
 }
 
 const summaryBodyOf = (messages: readonly ChatMessage[]): string =>
@@ -273,6 +274,8 @@ export const createCompactionCoordinator =
         isExhausted: ports.attempts.isExhausted
           ? (key) => ports.attempts.isExhausted?.(key) === true
           : undefined,
+        providerPromptTokens: ports.providerPromptTokens,
+        audit: ports.audit,
       },
       options,
     );

@@ -143,4 +143,59 @@ describe("compaction admission", () => {
     await planCompactionAdmission(ports({ isExhausted }));
     expect(isExhausted).not.toHaveBeenCalled();
   });
+
+  it("skips threshold-triggered admission when provider-reported tokens are far below the trigger", async () => {
+    const audit = vi.fn();
+    const buildDurableEnvelope = vi.fn(async () => "durable state");
+    const admission = await planCompactionAdmission(
+      ports({
+        estimateRequestTokens: () => trigger,
+        providerPromptTokens: () => Math.floor(trigger / 4),
+        buildDurableEnvelope,
+        audit,
+      }),
+    );
+    expect(admission).toEqual({ admitted: false, skippedByProviderTruth: true });
+    expect(buildDurableEnvelope).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledWith(
+      "agent.compact.skip-estimate-desync",
+      expect.objectContaining({ estimatedTokens: trigger }),
+    );
+  });
+
+  it("admits when provider-reported tokens are close to the trigger", async () => {
+    const admission = await planCompactionAdmission(
+      ports({
+        estimateRequestTokens: () => trigger,
+        providerPromptTokens: () => Math.floor(trigger * 0.8),
+      }),
+    );
+    expect(admission.admitted).toBe(true);
+  });
+
+  it("never skips forced compaction on provider truth", async () => {
+    const admission = await planCompactionAdmission(
+      ports({
+        estimateRequestTokens: () => 1,
+        providerPromptTokens: () => 1,
+      }),
+      { bypassThreshold: true },
+    );
+    expect(admission.admitted).toBe(true);
+  });
+
+  it("audits admission diagnostics with estimate, calibration, and provider truth", async () => {
+    const audit = vi.fn();
+    await planCompactionAdmission(
+      ports({ audit, providerPromptTokens: () => 123_456 }),
+    );
+    expect(audit).toHaveBeenCalledWith(
+      "agent.compact.admission",
+      expect.objectContaining({
+        estimatedTokens: trigger,
+        triggerTokens: trigger,
+        providerPromptTokens: 123_456,
+      }),
+    );
+  });
 });

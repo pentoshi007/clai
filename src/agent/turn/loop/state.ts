@@ -26,6 +26,7 @@ export interface TurnLoopState {
   freeTierConsecutiveFailures: number;
   freeTierAdvisoryShown: boolean;
   lastSuccessfulRequestSnapshot: SuccessfulRequestSnapshot | undefined;
+  lastProviderPromptTokens: number | undefined;
   codingSession: boolean;
 }
 
@@ -56,5 +57,6 @@ export const createTurnLoopState = (input: {
   freeTierConsecutiveFailures: 0,
   freeTierAdvisoryShown: false,
   lastSuccessfulRequestSnapshot: input.previousSuccessfulRequest,
+  lastProviderPromptTokens: undefined,
   codingSession: false,
 });
