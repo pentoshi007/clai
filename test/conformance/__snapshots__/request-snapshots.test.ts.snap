@@ -2498,16 +2498,6 @@ exports[`serialized request snapshots > codex / images 1`] = `
       {
         "content": [
           {
-            "text": "stable system prefix for cache reuse",
-            "type": "input_text",
-          },
-        ],
-        "role": "system",
-        "type": "message",
-      },
-      {
-        "content": [
-          {
             "text": "first user turn",
             "type": "input_text",
           },
@@ -2537,6 +2527,7 @@ exports[`serialized request snapshots > codex / images 1`] = `
         "type": "message",
       },
     ],
+    "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "store": false,
@@ -2547,9 +2538,10 @@ exports[`serialized request snapshots > codex / images 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
+    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.147.0",
+    "user-agent": "codex_cli_rs/0.0.0",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2567,16 +2559,6 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
       {
         "content": [
           {
-            "text": "stable system prefix for cache reuse",
-            "type": "input_text",
-          },
-        ],
-        "role": "system",
-        "type": "message",
-      },
-      {
-        "content": [
-          {
             "text": "first user turn",
             "type": "input_text",
           },
@@ -2601,6 +2583,7 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
         "type": "message",
       },
     ],
+    "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "store": false,
@@ -2611,9 +2594,10 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
+    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.147.0",
+    "user-agent": "codex_cli_rs/0.0.0",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2631,16 +2615,6 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
       {
         "content": [
           {
-            "text": "stable system prefix for cache reuse",
-            "type": "input_text",
-          },
-        ],
-        "role": "system",
-        "type": "message",
-      },
-      {
-        "content": [
-          {
             "text": "first user turn",
             "type": "input_text",
           },
@@ -2665,11 +2639,12 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
         "type": "message",
       },
     ],
+    "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "reasoning": {
       "effort": "high",
-      "summary": "detailed",
+      "summary": "auto",
     },
     "store": false,
     "stream": true,
@@ -2679,9 +2654,10 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
+    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.147.0",
+    "user-agent": "codex_cli_rs/0.0.0",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2699,16 +2675,6 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
       {
         "content": [
           {
-            "text": "stable system prefix for cache reuse",
-            "type": "input_text",
-          },
-        ],
-        "role": "system",
-        "type": "message",
-      },
-      {
-        "content": [
-          {
             "text": "first user turn",
             "type": "input_text",
           },
@@ -2744,12 +2710,12 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
         "type": "function_call_output",
       },
     ],
+    "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
-    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "reasoning": {
       "effort": "medium",
-      "summary": "concise",
+      "summary": "auto",
     },
     "store": false,
     "stream": true,
@@ -2798,9 +2764,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
+    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.147.0",
+    "user-agent": "codex_cli_rs/0.0.0",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2818,16 +2785,6 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
       {
         "content": [
           {
-            "text": "stable system prefix for cache reuse",
-            "type": "input_text",
-          },
-        ],
-        "role": "system",
-        "type": "message",
-      },
-      {
-        "content": [
-          {
             "text": "first user turn",
             "type": "input_text",
           },
@@ -2863,12 +2820,12 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
         "type": "function_call_output",
       },
     ],
+    "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
-    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "reasoning": {
       "effort": "medium",
-      "summary": "concise",
+      "summary": "auto",
     },
     "store": false,
     "stream": true,
@@ -2917,9 +2874,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
+    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.147.0",
+    "user-agent": "codex_cli_rs/0.0.0",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2934,16 +2892,6 @@ exports[`serialized request snapshots > codex / tools 1`] = `
       "reasoning.encrypted_content",
     ],
     "input": [
-      {
-        "content": [
-          {
-            "text": "stable system prefix for cache reuse",
-            "type": "input_text",
-          },
-        ],
-        "role": "system",
-        "type": "message",
-      },
       {
         "content": [
           {
@@ -2971,8 +2919,8 @@ exports[`serialized request snapshots > codex / tools 1`] = `
         "type": "message",
       },
     ],
+    "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
-    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "store": false,
     "stream": true,
@@ -3021,9 +2969,10 @@ exports[`serialized request snapshots > codex / tools 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
+    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.147.0",
+    "user-agent": "codex_cli_rs/0.0.0",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -3034,7 +2983,6 @@ exports[`serialized request snapshots > codex / tools 1`] = `
 exports[`serialized request snapshots > copilot / images 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3076,10 +3024,10 @@ exports[`serialized request snapshots > copilot / images 1`] = `
     "copilot-integration-id": "vscode-chat",
     "editor-plugin-version": "copilot-chat/0.35.0",
     "editor-version": "vscode/1.107.0",
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-edits",
     "openai-organization": "github-copilot",
     "user-agent": "GitHubCopilotChat/0.35.0",
-    "x-github-api-version": "2025-04-01",
+    "x-github-api-version": "2025-10-01",
     "x-initiator": "agent",
     "x-request-id": "<generated>",
     "x-vscode-user-agent-library-version": "electron-fetch",
@@ -3092,7 +3040,6 @@ exports[`serialized request snapshots > copilot / images 1`] = `
 exports[`serialized request snapshots > copilot / minimal 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3122,10 +3069,10 @@ exports[`serialized request snapshots > copilot / minimal 1`] = `
     "copilot-integration-id": "vscode-chat",
     "editor-plugin-version": "copilot-chat/0.35.0",
     "editor-version": "vscode/1.107.0",
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-edits",
     "openai-organization": "github-copilot",
     "user-agent": "GitHubCopilotChat/0.35.0",
-    "x-github-api-version": "2025-04-01",
+    "x-github-api-version": "2025-10-01",
     "x-initiator": "agent",
     "x-request-id": "<generated>",
     "x-vscode-user-agent-library-version": "electron-fetch",
@@ -3138,7 +3085,6 @@ exports[`serialized request snapshots > copilot / minimal 1`] = `
 exports[`serialized request snapshots > copilot / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3158,6 +3104,7 @@ exports[`serialized request snapshots > copilot / reasoning-control 1`] = `
       },
     ],
     "model": "gpt-4o",
+    "reasoning_effort": "high",
     "stream": false,
     "temperature": 0.2,
   },
@@ -3168,10 +3115,10 @@ exports[`serialized request snapshots > copilot / reasoning-control 1`] = `
     "copilot-integration-id": "vscode-chat",
     "editor-plugin-version": "copilot-chat/0.35.0",
     "editor-version": "vscode/1.107.0",
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-edits",
     "openai-organization": "github-copilot",
     "user-agent": "GitHubCopilotChat/0.35.0",
-    "x-github-api-version": "2025-04-01",
+    "x-github-api-version": "2025-10-01",
     "x-initiator": "agent",
     "x-request-id": "<generated>",
     "x-vscode-user-agent-library-version": "electron-fetch",
@@ -3184,7 +3131,6 @@ exports[`serialized request snapshots > copilot / reasoning-control 1`] = `
 exports[`serialized request snapshots > copilot / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3224,6 +3170,7 @@ exports[`serialized request snapshots > copilot / tool-loop-replay 1`] = `
       },
     ],
     "model": "gpt-4o",
+    "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
     "tool_choice": "auto",
@@ -3277,10 +3224,10 @@ exports[`serialized request snapshots > copilot / tool-loop-replay 1`] = `
     "copilot-integration-id": "vscode-chat",
     "editor-plugin-version": "copilot-chat/0.35.0",
     "editor-version": "vscode/1.107.0",
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-edits",
     "openai-organization": "github-copilot",
     "user-agent": "GitHubCopilotChat/0.35.0",
-    "x-github-api-version": "2025-04-01",
+    "x-github-api-version": "2025-10-01",
     "x-initiator": "agent",
     "x-request-id": "<generated>",
     "x-vscode-user-agent-library-version": "electron-fetch",
@@ -3293,7 +3240,6 @@ exports[`serialized request snapshots > copilot / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > copilot / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3334,6 +3280,7 @@ exports[`serialized request snapshots > copilot / tool-loop-replay-unsigned 1`] 
       },
     ],
     "model": "gpt-4o",
+    "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
     "tool_choice": "auto",
@@ -3387,10 +3334,10 @@ exports[`serialized request snapshots > copilot / tool-loop-replay-unsigned 1`] 
     "copilot-integration-id": "vscode-chat",
     "editor-plugin-version": "copilot-chat/0.35.0",
     "editor-version": "vscode/1.107.0",
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-edits",
     "openai-organization": "github-copilot",
     "user-agent": "GitHubCopilotChat/0.35.0",
-    "x-github-api-version": "2025-04-01",
+    "x-github-api-version": "2025-10-01",
     "x-initiator": "agent",
     "x-request-id": "<generated>",
     "x-vscode-user-agent-library-version": "electron-fetch",
@@ -3403,7 +3350,6 @@ exports[`serialized request snapshots > copilot / tool-loop-replay-unsigned 1`] 
 exports[`serialized request snapshots > copilot / tools 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3476,10 +3422,10 @@ exports[`serialized request snapshots > copilot / tools 1`] = `
     "copilot-integration-id": "vscode-chat",
     "editor-plugin-version": "copilot-chat/0.35.0",
     "editor-version": "vscode/1.107.0",
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-edits",
     "openai-organization": "github-copilot",
     "user-agent": "GitHubCopilotChat/0.35.0",
-    "x-github-api-version": "2025-04-01",
+    "x-github-api-version": "2025-10-01",
     "x-initiator": "agent",
     "x-request-id": "<generated>",
     "x-vscode-user-agent-library-version": "electron-fetch",

@@ -194,7 +194,7 @@ export const MODEL_FAMILIES: readonly ModelFamilyContract[] = [
     pattern: /(?:^|[-./])(?:gpt-[56]|o[1-4])(?![a-z])/,
     generation: "optional",
     dialect: "openai-effort",
-    acceptedEfforts: ["minimal", "low", "medium", "high"],
+    acceptedEfforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
     disableForm: "effort-minimal-floor",
     finalTurnPreservation: "unknown",
     omitSampling: ["temperature", "top_p"],

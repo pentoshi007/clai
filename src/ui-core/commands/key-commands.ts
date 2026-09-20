@@ -22,11 +22,14 @@ import {
   type ClineOAuthTokens,
 } from "../../llm/cline-auth.js";
 import {
+  codexKeyFromAccessToken,
   encodeCodexKey,
   pollCodexDeviceAuth,
+  startCodexBrowserAuth,
   startCodexDeviceAuth,
   type CodexCredential,
 } from "../../llm/codex-auth.js";
+import { openSystemBrowser } from "../../mcp/auth/loopback.js";
 import {
   pollCopilotDeviceAuth,
   startCopilotDeviceAuth,
@@ -160,7 +163,7 @@ async function openSetPicker(services: AppServices): Promise<void> {
               : `✓ ${count} keys`;
       const row: PickerOption = {
         value: `llm:${status.provider}`,
-        label: `${status.provider} ${keyLabel}${status.active ? " (active)" : ""}`,
+        label: `${getProvider(status.provider).displayName} ${keyLabel}${status.active ? " (active)" : ""}`,
       };
       if (!status.endpoints) return [row];
       const urlCount = status.endpoints.length;
@@ -168,7 +171,7 @@ async function openSetPicker(services: AppServices): Promise<void> {
         row,
         {
           value: `endpoint:${status.provider}`,
-          label: `${status.provider} endpoints ${urlCount === 0 ? "✗ none" : `✓ ${urlCount} URL${urlCount === 1 ? "" : "s"}`}`,
+          label: `${getProvider(status.provider).displayName} endpoints ${urlCount === 0 ? "✗ none" : `✓ ${urlCount} URL${urlCount === 1 ? "" : "s"}`}`,
           description: status.note ?? "endpoint URLs",
         },
       ];
@@ -220,14 +223,14 @@ async function openUnsetPicker(services: AppServices): Promise<void> {
               : `✓ ${count} keys — reset all`;
       const row: PickerOption = {
         value: `llm:${status.provider}`,
-        label: `${status.provider} ${keyLabel}${status.active ? " (active)" : ""}`,
+        label: `${getProvider(status.provider).displayName} ${keyLabel}${status.active ? " (active)" : ""}`,
       };
       if (!status.endpoints || status.endpoints.length === 0) return [row];
       return [
         row,
         {
           value: `endpoint:${status.provider}`,
-          label: `${status.provider} endpoints ✓ ${status.endpoints.length} URL${status.endpoints.length === 1 ? "" : "s"} — clear all`,
+          label: `${getProvider(status.provider).displayName} endpoints ✓ ${status.endpoints.length} URL${status.endpoints.length === 1 ? "" : "s"} — clear all`,
           description: status.note ?? "endpoint URLs",
         },
       ];
@@ -259,7 +262,7 @@ async function openUnsetPicker(services: AppServices): Promise<void> {
       else if (kind === "endpoint") {
         const count = getProviderEndpoints(id as ProviderId).urls.length;
         setProviderEndpoints(id as ProviderId, []);
-        notice(services, "info", `unset ${count} endpoint URL(s) for ${id}`);
+        notice(services, "info", `unset ${count} endpoint URL(s) for ${getProvider(id as ProviderId).displayName}`);
       } else await unsetLlmKey(services, id as ProviderId);
     })();
   });
@@ -299,7 +302,7 @@ async function appendLlmKey(
       notice(
         services,
         "info",
-        `${added ? "saved" : "activated"} ${id} endpoint #${endpoints.activeIndex + 1}/${endpoints.urls.length} → ${endpoint}`,
+        `${added ? "saved" : "activated"} ${getProvider(id).displayName} endpoint #${endpoints.activeIndex + 1}/${endpoints.urls.length} → ${endpoint}`,
       );
     } catch (error) {
       notice(services, "warn", error instanceof Error ? error.message : String(error));
@@ -307,13 +310,14 @@ async function appendLlmKey(
     return;
   }
   const key = keyVal.trim();
+  const label = getProvider(id).displayName;
   if (!getProvider(id).validateKey(key)) {
     notice(
       services,
       "warn",
       providerUsesEndpoints(id)
-        ? `invalid value for ${id} · expected a key/token, or an https:// URL to add an endpoint`
-        : `invalid API key format for ${id}`,
+        ? `invalid value for ${label} · expected a key/token, or an https:// URL to add an endpoint`
+        : `invalid API key format for ${label}`,
     );
     return;
   }
@@ -325,8 +329,8 @@ async function appendLlmKey(
     services,
     "info",
     count > 1
-      ? `added ${id} ${maskSecret(key)} · ${count} keys total`
-      : `saved ${id} ${maskSecret(key)}`,
+      ? `added ${label} ${maskSecret(key)} · ${count} keys total`
+      : `saved ${label} ${maskSecret(key)}`,
   );
 }
 
@@ -384,17 +388,18 @@ async function unsetLlmKey(services: AppServices, id: ProviderId): Promise<void>
     notice(services, "info", "ollama does not store an API key");
     return;
   }
+  const label = getProvider(id).displayName;
   const multi = await getProviderKeys(id);
   const storedCount = multi.source === "env" ? 0 : multi.keys.length;
   if (storedCount === 0) {
-    notice(services, "warn", `${id} has no key to unset`);
+    notice(services, "warn", `${label} has no key to unset`);
     return;
   }
   await unsetProviderSecret(id);
   notice(
     services,
     "info",
-    storedCount > 1 ? `unset all ${storedCount} keys for ${id}` : `unset ${id}`,
+    storedCount > 1 ? `unset all ${storedCount} keys for ${label}` : `unset ${label}`,
   );
 }
 export async function runClineAuthForUI(
@@ -459,7 +464,115 @@ async function clineAddAccount(
   return tokens;
 }
 
+async function promptCodexApiKey(services: AppServices): Promise<string | undefined> {
+  const answer = await services.overlay.openSecret({
+    title: "ChatGPT Subscription access token",
+    prompt: "Paste a ChatGPT access token (JWT from auth.openai.com) or an existing `codex:` key:",
+  });
+  const value = answer?.trim();
+  if (!value) return undefined;
+  const key = codexKeyFromAccessToken(value) ?? (value.startsWith("codex:") ? value : undefined);
+  if (!key) {
+    notice(
+      services,
+      "warn",
+      "invalid ChatGPT token — expected a JWT containing the chatgpt account id",
+    );
+    return undefined;
+  }
+  return key;
+}
+
+function pickCodexAuthMethod(
+  services: AppServices,
+): Promise<"browser" | "headless" | "apikey" | undefined> {
+  return new Promise((resolve) => {
+    const opened = services.overlay.openPicker(
+      {
+        title: "ChatGPT Subscription sign-in method",
+        options: [
+          {
+            value: "browser",
+            label: "Sign in with ChatGPT (browser)",
+            description: "opens auth.openai.com in your browser",
+          },
+          {
+            value: "headless",
+            label: "Sign in with ChatGPT (headless)",
+            description: "device code — works on remote/SSH machines",
+          },
+          {
+            value: "apikey",
+            label: "Manually enter access token / API key",
+            description: "paste an existing Chatgpt Subscription token",
+          },
+        ],
+      },
+      (value) => {
+        services.overlay.close();
+        resolve(value as "browser" | "headless" | "apikey");
+      },
+    );
+    if (!opened) resolve(undefined);
+  });
+}
+
 export async function runCodexAuthForUI(
+  services: AppServices,
+): Promise<CodexCredential | undefined> {
+  const method = await pickCodexAuthMethod(services);
+  if (method === "headless") return runCodexDeviceAuthForUI(services);
+  if (method === "apikey") {
+    const key = await promptCodexApiKey(services);
+    return key
+      ? ({ manualKey: key, accessToken: "", accountId: "" } as CodexCredential)
+      : undefined;
+  }
+  if (method !== "browser") return undefined;
+  let handle;
+  try {
+    handle = await startCodexBrowserAuth();
+  } catch {
+    return runCodexDeviceAuthForUI(services);
+  }
+
+  services.overlay.openPager(
+    "ChatGPT Subscription sign-in",
+    [
+      "Opening ChatGPT sign-in in your browser…",
+      "",
+      `  ${handle.url}`,
+      "",
+      "Log in with your ChatGPT account in the browser tab that opens.",
+      "clai will continue automatically once authorization completes.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const waiting = services.toast.info("waiting for ChatGPT approval…", {
+    sticky: true,
+  });
+  try {
+    await openSystemBrowser(handle.url).catch(() => {});
+    const credential = await handle.waitForCredential();
+    services.toast.dismiss(waiting);
+    notice(services, "info", "ChatGPT Subscription authenticated");
+    return credential;
+  } catch (error) {
+    services.toast.dismiss(waiting);
+    notice(
+      services,
+      "warn",
+      `ChatGPT Subscription sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+}
+
+export async function runCodexDeviceAuthForUI(
   services: AppServices,
 ): Promise<CodexCredential | undefined> {
   let start;
@@ -469,15 +582,15 @@ export async function runCodexAuthForUI(
     notice(
       services,
       "warn",
-      `could not start Codex sign-in: ${error instanceof Error ? error.message : String(error)}`,
+      `could not start ChatGPT Subscription sign-in: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
   }
 
   services.overlay.openPager(
-    "Codex sign-in",
+    "ChatGPT Subscription sign-in",
     [
-      "Authenticate Codex (ChatGPT) on any device:",
+      "Authenticate ChatGPT Subscription on any device:",
       "",
       `  ${start.verificationUrl}`,
       "",
@@ -491,20 +604,20 @@ export async function runCodexAuthForUI(
     "plain",
   );
 
-  const waiting = services.toast.info("waiting for Codex approval…", {
+  const waiting = services.toast.info("waiting for ChatGPT approval…", {
     sticky: true,
   });
   try {
     const credential = await pollCodexDeviceAuth(start);
     services.toast.dismiss(waiting);
-    notice(services, "info", "Codex authenticated");
+    notice(services, "info", "ChatGPT Subscription authenticated");
     return credential;
   } catch (error) {
     services.toast.dismiss(waiting);
     notice(
       services,
       "warn",
-      `Codex sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+      `ChatGPT Subscription sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
   }
@@ -520,15 +633,15 @@ export async function runCopilotAuthForUI(
     notice(
       services,
       "warn",
-      `could not start Copilot sign-in: ${error instanceof Error ? error.message : String(error)}`,
+      `could not start Github Copilot sign-in: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
   }
 
   services.overlay.openPager(
-    "Copilot sign-in",
+    "Github Copilot sign-in",
     [
-      "Authenticate GitHub Copilot on any device:",
+      "Authenticate Github Copilot on any device:",
       "",
       `  ${start.verificationUrl}`,
       "",
@@ -542,20 +655,20 @@ export async function runCopilotAuthForUI(
     "plain",
   );
 
-  const waiting = services.toast.info("waiting for Copilot approval…", {
+  const waiting = services.toast.info("waiting for Github Copilot approval…", {
     sticky: true,
   });
   try {
     const token = await pollCopilotDeviceAuth(start);
     services.toast.dismiss(waiting);
-    notice(services, "info", "Copilot authenticated");
+    notice(services, "info", "Github Copilot authenticated");
     return token;
   } catch (error) {
     services.toast.dismiss(waiting);
     notice(
       services,
       "warn",
-      `Copilot sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Github Copilot sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
   }
@@ -716,22 +829,23 @@ async function saveOAuthKeys(
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
 ): Promise<void> {
+  const label = getProvider(provider).displayName;
   const byId = new Map(keys.map((key) => [key.id, key.value]));
   const detailed = resolveEditorRowsDetailed(answer.rows, byId);
   const resolved = detailed.map((row) => row.value);
   if (resolved.length === 0) {
     await unsetProviderSecret(provider);
-    notice(services, "info", `unset all keys for ${provider}`);
+    notice(services, "info", `unset all keys for ${label}`);
     return;
   }
   for (const key of resolved) {
     if (!getProvider(provider).validateKey(key)) {
-      notice(services, "warn", `invalid ${provider} token`);
+      notice(services, "warn", `invalid ${label} token`);
       return;
     }
   }
   if (resolved.length > MAX_PROVIDER_KEYS) {
-    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} ${provider} accounts`);
+    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} ${label} accounts`);
     return;
   }
   await setProviderKeys(
@@ -745,8 +859,8 @@ async function saveOAuthKeys(
     services,
     "info",
     resolved.length === 1
-      ? `saved ${provider} · ${maskSecret(resolved[0]!)}`
-      : `saved ${provider} · ${resolved.length} accounts · active: #${index + 1}`,
+      ? `saved ${label} · ${maskSecret(resolved[0]!)}`
+      : `saved ${label} · ${resolved.length} accounts · active: #${index + 1}`,
   );
 }
 
@@ -756,7 +870,7 @@ async function openCodexKeysFlow(services: AppServices): Promise<void> {
     services.overlay.close();
     const answer = await services.overlay.openKeysEditor({
       provider: "codex",
-      heading: "CODEX ACCOUNTS",
+      heading: "CHATGPT SUBSCRIPTION ACCOUNTS",
       itemLabel: "account",
       addViaPicker: true,
       refreshable: true,
@@ -773,15 +887,16 @@ async function openCodexKeysFlow(services: AppServices): Promise<void> {
     }
     if (answer.action === "reset") {
       await unsetProviderSecret("codex");
-      notice(services, "info", "unset all keys for codex");
+      notice(services, "info", "unset all keys for Chatgpt Subscription");
       return;
     }
     if (answer.action === "pick") {
       const credential = await runCodexAuthForUI(services);
+      const manualKey = (credential as { manualKey?: string } | undefined)?.manualKey;
       if (credential) {
-        const key = encodeCodexKey(credential);
+        const key = manualKey ?? encodeCodexKey(credential);
         await appendProviderKey("codex", key);
-        notice(services, "info", `added Codex account ${maskSecret(key)}`);
+        notice(services, "info", `added ChatGPT Subscription account ${maskSecret(key)}`);
       } else {
         notice(services, "info", "cancelled");
       }
@@ -792,19 +907,20 @@ async function openCodexKeysFlow(services: AppServices): Promise<void> {
       const selected = keys.find((key) => key.id === answer.slotId);
       if (selected) {
         const credential = await runCodexAuthForUI(services);
+        const manualKey = (credential as { manualKey?: string } | undefined)?.manualKey;
         if (credential) {
-          const key = encodeCodexKey(credential);
+          const key = manualKey ?? encodeCodexKey(credential);
           const replaced = await replaceProviderKey("codex", selected.value, key);
           if (!replaced) {
-            notice(services, "warn", "Codex account was not found");
+            notice(services, "warn", "ChatGPT Subscription account was not found");
           } else {
-            notice(services, "info", `refreshed Codex account ${maskSecret(key)}`);
+            notice(services, "info", `refreshed ChatGPT Subscription account ${maskSecret(key)}`);
           }
         } else {
           notice(services, "info", "cancelled");
         }
       } else {
-        notice(services, "warn", "Codex account was not found");
+        notice(services, "warn", "ChatGPT Subscription account was not found");
       }
       ({ keys, activeIndex } = await loadOAuthKeys("codex"));
       continue;
@@ -820,7 +936,7 @@ async function openCopilotKeysFlow(services: AppServices): Promise<void> {
     services.overlay.close();
     const answer = await services.overlay.openKeysEditor({
       provider: "copilot",
-      heading: "COPILOT ACCOUNTS",
+      heading: "GITHUB COPILOT ACCOUNTS",
       itemLabel: "account",
       addViaPicker: true,
       refreshable: true,
@@ -837,14 +953,14 @@ async function openCopilotKeysFlow(services: AppServices): Promise<void> {
     }
     if (answer.action === "reset") {
       await unsetProviderSecret("copilot");
-      notice(services, "info", "unset all keys for copilot");
+      notice(services, "info", "unset all keys for Github Copilot");
       return;
     }
     if (answer.action === "pick") {
       const token = await runCopilotAuthForUI(services);
       if (token) {
         await appendProviderKey("copilot", token);
-        notice(services, "info", `added Copilot account ${maskSecret(token)}`);
+        notice(services, "info", `added Github Copilot account ${maskSecret(token)}`);
       } else {
         notice(services, "info", "cancelled");
       }
@@ -858,15 +974,15 @@ async function openCopilotKeysFlow(services: AppServices): Promise<void> {
         if (token) {
           const replaced = await replaceProviderKey("copilot", selected.value, token);
           if (!replaced) {
-            notice(services, "warn", "Copilot account was not found");
+            notice(services, "warn", "Github Copilot account was not found");
           } else {
-            notice(services, "info", `refreshed Copilot account ${maskSecret(token)}`);
+            notice(services, "info", `refreshed Github Copilot account ${maskSecret(token)}`);
           }
         } else {
           notice(services, "info", "cancelled");
         }
       } else {
-        notice(services, "warn", "Copilot account was not found");
+        notice(services, "warn", "Github Copilot account was not found");
       }
       ({ keys, activeIndex } = await loadOAuthKeys("copilot"));
       continue;

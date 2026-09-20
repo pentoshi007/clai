@@ -329,6 +329,7 @@ export function dispatchStreamEvent(
   }
   const type = parsed.type as string | undefined;
   if (dispatchLifecycleEvent(ctx, type, parsed)) return;
+  if (dispatchReasoningEvent(ctx, type, parsed)) return;
   if (dispatchItemEvent(ctx, type, parsed)) return;
   if (dispatchContentDeltaEvent(ctx, type, parsed)) return;
   if (dispatchToolEvent(ctx, type, parsed)) return;
@@ -347,7 +348,12 @@ function dispatchReasoningEvent(
     type === "response.reasoning_summary.delta" ||
     type === "response.reasoning.delta"
   ) {
-    const delta = typeof parsed.delta === "string" ? parsed.delta : "";
+    const delta =
+      typeof parsed.delta === "string"
+        ? parsed.delta
+        : typeof parsed.text === "string"
+          ? parsed.text
+          : "";
     if (delta) {
       ctx.watchdog.resetIdleTimer();
       ctx.emitReasoningDelta(delta);
@@ -355,13 +361,24 @@ function dispatchReasoningEvent(
     return true;
   }
   if (
+    type === "response.reasoning_summary_part.added" ||
+    type === "response.reasoning_summary_part.done" ||
     type === "response.reasoning_summary_text.done" ||
     type === "response.reasoning_text.done" ||
-    type === "response.reasoning_summary.done"
+    type === "response.reasoning_summary.done" ||
+    type === "response.reasoning.done"
   ) {
-    const textVal = typeof parsed.text === "string" ? parsed.text : "";
+    const part = parsed.part as Record<string, unknown> | undefined;
+    const textVal =
+      typeof parsed.text === "string"
+        ? parsed.text
+        : typeof part?.text === "string"
+          ? part.text
+          : "";
     if (textVal && !ctx.state.reasoningSeen.includes(textVal)) {
-      const remaining = textVal.slice(ctx.state.reasoningSeen.length);
+      const remaining = textVal.startsWith(ctx.state.reasoningSeen)
+        ? textVal.slice(ctx.state.reasoningSeen.length)
+        : textVal;
       if (remaining) {
         ctx.watchdog.resetIdleTimer();
         ctx.emitReasoningDelta(remaining);

@@ -1,3 +1,4 @@
+import { getProvider } from "../../llm/router.js";
 import type { ProviderStatus } from "../../types.js";
 
 export interface SearchKeyStatus {
@@ -14,7 +15,7 @@ export interface SearchKeyStatus {
 
 /** Render credential metadata without ever including an unmasked secret. */
 export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]): string {
-  const header = "  PROVIDER      SOURCE    KEYS          MODEL";
+  const header = "  PROVIDER                            SOURCE    KEYS          MODEL";
 
   const llmRows: string[] = [];
   for (const s of llm) {
@@ -36,8 +37,9 @@ export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]
               ? s.maskedKey || "••••••••"
               : `${count} keys`;
     const source = (s.source === "missing" ? "no key" : s.source).padEnd(9);
+    const name = getProvider(s.provider).displayName;
     llmRows.push(
-      `  ${mark} ${s.provider.padEnd(13)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
+      `  ${mark} ${name.padEnd(34)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
     );
     if (s.provider !== "ollama" && s.provider !== "free" && s.note) {
       llmRows.push(`      endpoint: ${s.note}`);

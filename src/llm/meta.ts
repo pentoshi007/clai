@@ -21,7 +21,7 @@ export { parseResponsesUsage as parseMetaUsage } from "./responses-dialect.js";
 const baseUrl = "https://api.meta.ai/v1";
 
 const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 function metaReasoningPayload(
   reasoning: ReasoningPreference | undefined,

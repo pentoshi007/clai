@@ -17,7 +17,7 @@ const baseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export const qwenCloudProvider: LlmProvider = {
   id: "qwen-cloud",

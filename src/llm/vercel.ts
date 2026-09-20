@@ -20,7 +20,7 @@ const VERCEL_STREAM_TERMINAL: StreamTerminalPolicy = {
   proofs: ["response-completed", "response-incomplete"],
   naturalEofAccepted: false,
 };
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 const NON_TEXT_MODEL =
   /embed|embedding|image-generation|imagen|dall-e|tts|whisper|video|moderation|rerank|transcrib/i;
 

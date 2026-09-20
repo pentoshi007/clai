@@ -1,3 +1,8 @@
+import {
+  CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
+  GITHUB_COPILOT_DISPLAY_NAME,
+} from "./provider-identity.js";
+
 export const providerInfo: Record<string, string> = {
   free: `Free (opencode zen + kilo gateway) — keyless OpenAI-compatible models
 
@@ -15,12 +20,12 @@ WHAT IT IS
   Endpoints  /models · /chat/completions on both gateways
 
 MODELS
-  /model lists the live catalogs from both gateways (each cached for an
-  hour), namespaced by source:
+  /model lists the live catalogs from both gateways (each cached for up to
+  30 minutes), namespaced by source:
     free-2/kilo-auto/free                      (clai default)
     free-1/mimo-v2.5-free
-    free-1/hy3-free
-    free-1/x-preview-f-free
+    free-1/deepseek-v4-flash-free
+    free-1/nemotron-3.5-lightning-free
     free-2/stepfun/step-3.7-flash:free
     free-2/nvidia/nemotron-3-ultra-550b-a55b:free
   zen free ids end in -free; kilo free ids end in :free or /free (the kilo
@@ -604,7 +609,7 @@ WHAT IT IS
 MODELS
   /model lists the slugs your key can call, read live from /v1/models and
   enriched from the public catalog at /api/models (context window, vision,
-  per-model reasoning efforts). Both are cached for an hour; if the gateway
+  per-model reasoning efforts). Each is cached for up to 30 minutes; if the gateway
   is unreachable, a documented offline subset is shown. Image/embedding/batch
   slugs stay out of the picker.
 
@@ -662,9 +667,9 @@ WHAT IT IS
   Endpoints  /models · /responses
 
 MODELS
-  /model reads the public live catalog and caches it for one hour. It keeps
-  text-capable language models, registers model context, modalities and
-  reasoning_options, and excludes image-generation, embeddings, audio and
+  /model reads the public live catalog and caches it for up to 30 minutes.
+  It keeps text-capable language models, registers model context, modalities
+  and reasoning_options, and excludes image-generation, embeddings, audio and
   video-only entries. Reasoning effort options are model-specific and are
   discovered from the catalog instead of inferred from a model family.
 
@@ -828,7 +833,7 @@ WHAT IT IS
   Endpoints  /chat/completions · /ai/cline/recommended-models · /users/me
 
 MODELS
-  /model lists the live catalog (cached for an hour), grouped by tier:
+  /model lists the live catalog (cached for up to 30 minutes), grouped by tier:
     cline-free/deepseek-v4.1-flash   free default
     anthropic/claude-opus-5          frontier
     moonshotai/kimi-k3               long-context agentic
@@ -847,7 +852,7 @@ SETUP (pick one)
   with automatic rotation on auth/quota errors.
 
 Docs: https://docs.cline.bot`,
-  codex: `ChatGPT (Codex) — sign in with your ChatGPT subscription
+  codex: `${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} — sign in with your ChatGPT account
 
 WHAT IT IS
   The backend the official Codex CLI uses (chatgpt.com/backend-api/codex).
@@ -857,30 +862,32 @@ WHAT IT IS
   from the terminal.
 
   Base URL   https://chatgpt.com/backend-api/codex
-  Auth       OAuth device flow (Sign in with ChatGPT) — or import an existing
-             Codex CLI sign-in
+  Auth       Sign in with ChatGPT — browser OAuth (auth.openai.com), headless
+             device code, or paste a token — or import an existing Codex CLI
+             sign-in
   Endpoints  /responses · /models
 
 MODELS
-  /model lists the account-visible catalog (cached for an hour), e.g.
+  /model lists the account-visible catalog (cached for up to 30 minutes), e.g.
     gpt-5.1-codex        agentic coding default
     gpt-5.1              general reasoning
   Free-tier quota errors are shown exactly as the backend returns them.
 
 SETUP (pick one)
-  1. Sign in with your browser (works on headless servers too):
-       clai auth codex
-     then open the printed link on any device and approve the code.
+  1. Sign in with ChatGPT — choose browser or headless device code:
+       clai auth chatgpt
+     (forces: --browser opens auth.openai.com directly, --headless prints a
+      device code to approve on any device)
   2. Import an existing Codex CLI sign-in:
-       clai auth codex --import
-  3. Paste a stored credential manually:
-       clai set codex <key>
+       clai auth chatgpt --import
+  3. Paste a ChatGPT access token or stored credential manually:
+       clai set chatgpt <token-or-key>
 
-  Multi-account: run "clai auth codex" again to add more keys (up to 10),
+  Multi-account: run "clai auth chatgpt" again to add more keys (up to 10),
   with automatic rotation on auth/quota errors.
 
 Docs: https://developers.openai.com/codex/`,
-  copilot: `GitHub Copilot — use your Copilot subscription from the terminal
+  copilot: `${GITHUB_COPILOT_DISPLAY_NAME} — use your Copilot subscription from the terminal
 
 WHAT IT IS
   The GitHub Copilot chat API (api.githubcopilot.com). Sign in with a GitHub
@@ -894,7 +901,7 @@ WHAT IT IS
   Endpoints  /chat/completions · /models
 
 MODELS
-  /model lists the account-visible catalog (cached for an hour), e.g.
+  /model lists the account-visible catalog (cached for up to 30 minutes), e.g.
     gpt-4o               general default
     claude-sonnet-4.5    frontier reasoning
     gpt-5.1              agentic coding

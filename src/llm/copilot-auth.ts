@@ -2,11 +2,14 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 
+import { currentSessionAffinity } from "./session-affinity.js";
+import { GITHUB_COPILOT_DISPLAY_NAME } from "./provider-identity.js";
+
 export const COPILOT_API_BASE_URL = "https://api.githubcopilot.com";
 export const COPILOT_GITHUB_API_BASE_URL = "https://api.github.com";
 export const COPILOT_DEVICE_CODE_URL = "https://github.com/login/device/code";
 export const COPILOT_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
-export const COPILOT_CLIENT_ID = "Iv1.b507a08c87ecfe98";
+export const COPILOT_CLIENT_ID = "Ov23li8tweQw6odWQebz";
 export const COPILOT_SCOPE = "read:user";
 export const COPILOT_VERSION = "0.35.0";
 export const COPILOT_EDITOR_VERSION = "vscode/1.107.0";
@@ -16,9 +19,9 @@ export const COPILOT_REQUEST_HEADERS: Record<string, string> = {
   "Editor-Version": COPILOT_EDITOR_VERSION,
   "Editor-Plugin-Version": `copilot-chat/${COPILOT_VERSION}`,
   "User-Agent": `GitHubCopilotChat/${COPILOT_VERSION}`,
-  "OpenAI-Intent": "conversation-panel",
+  "OpenAI-Intent": "conversation-edits",
   "OpenAI-Organization": "github-copilot",
-  "X-GitHub-Api-Version": "2025-04-01",
+  "X-GitHub-Api-Version": "2025-10-01",
   "X-VSCode-User-Agent-Library-Version": "electron-fetch",
 };
 
@@ -107,11 +110,11 @@ export async function pollCopilotDeviceAuth(
   let interval = Math.max(1, start.pollIntervalSeconds) * 1000;
   for (;;) {
     if (options.signal?.aborted) {
-      throw new Error("GitHub Copilot authentication cancelled");
+      throw new Error(`${GITHUB_COPILOT_DISPLAY_NAME} authentication cancelled`);
     }
     const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
     if (remaining <= 0) {
-      throw new Error("GitHub Copilot authentication code expired — start again");
+      throw new Error(`${GITHUB_COPILOT_DISPLAY_NAME} authentication code expired — start again`);
     }
     options.onPending?.(remaining);
     const response = await fetch(COPILOT_ACCESS_TOKEN_URL, {
@@ -144,14 +147,14 @@ export async function pollCopilotDeviceAuth(
     if (error === "expired_token" || error === "access_denied") {
       throw new Error(
         error === "access_denied"
-          ? "GitHub Copilot authentication was denied"
-          : "GitHub Copilot authentication code expired — start again",
+          ? `${GITHUB_COPILOT_DISPLAY_NAME} authentication was denied`
+          : `${GITHUB_COPILOT_DISPLAY_NAME} authentication code expired — start again`,
       );
     }
     const description =
       typeof json.error_description === "string" ? json.error_description : "";
     throw new Error(
-      `GitHub Copilot authentication failed (${response.status})${description ? `: ${description}` : ""}`,
+      `${GITHUB_COPILOT_DISPLAY_NAME} authentication failed (${response.status})${description ? `: ${description}` : ""}`,
     );
   }
 }
@@ -177,7 +180,7 @@ export async function fetchCopilotApiToken(
   if (!response.ok || !token) {
     const message =
       typeof json?.message === "string" ? json.message : `HTTP ${response.status}`;
-    throw new Error(`GitHub Copilot token exchange failed: ${message}`);
+    throw new Error(`${GITHUB_COPILOT_DISPLAY_NAME} token exchange failed: ${message}`);
   }
   const endpoints = asRecord(json?.endpoints);
   const baseUrl =
@@ -199,9 +202,19 @@ export async function resolveCopilotApiToken(
 ): Promise<CopilotApiToken> {
   const cached = tokenCache.get(githubToken);
   if (cached && cached.expiresAt - REFRESH_SKEW_MS > Date.now()) return cached;
-  const fresh = await fetchCopilotApiToken(githubToken);
-  tokenCache.set(githubToken, fresh);
-  return fresh;
+  try {
+    const fresh = await fetchCopilotApiToken(githubToken);
+    tokenCache.set(githubToken, fresh);
+    return fresh;
+  } catch {
+    const direct: CopilotApiToken = {
+      token: githubToken,
+      baseUrl: COPILOT_API_BASE_URL,
+      expiresAt: Date.now() + 30 * 86400 * 1000,
+    };
+    tokenCache.set(githubToken, direct);
+    return direct;
+  }
 }
 
 export function invalidateCopilotApiToken(githubToken: string): void {
@@ -211,7 +224,13 @@ export function invalidateCopilotApiToken(githubToken: string): void {
 export function copilotRequestHeaders(
   extra: Record<string, string> = {},
 ): Record<string, string> {
-  return { ...COPILOT_REQUEST_HEADERS, "X-Request-Id": crypto.randomUUID(), ...extra };
+  const session = currentSessionAffinity();
+  return {
+    ...COPILOT_REQUEST_HEADERS,
+    ...(session ? { "X-Interaction-Id": session } : {}),
+    "X-Request-Id": crypto.randomUUID(),
+    ...extra,
+  };
 }
 
 export function copilotInitiator(

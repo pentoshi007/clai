@@ -86,10 +86,13 @@ function appendReplayItems(
   for (const entry of entries) input.push(...entry.items);
 }
 
-function systemInputItem(message: ChatMessage): Record<string, unknown> {
+function systemInputItem(
+  message: ChatMessage,
+  role: "system" | "developer" = "system",
+): Record<string, unknown> {
   return {
     type: "message",
-    role: "system",
+    role,
     content: [{ type: "input_text", text: message.content }],
   };
 }
@@ -235,15 +238,20 @@ function toResponsesInput(
   messages: ChatMessage[],
   supportsVision: boolean,
   replay: ResponsesReplayOptions,
+  config?: ResponsesDialectConfig | undefined,
 ): Array<Record<string, unknown>> {
   const input: Array<Record<string, unknown>> = [];
   const visibleMessages = supportsVision
     ? messages
     : stripImagesFromMessages(messages);
   const invalidHistory = invalidNativeToolHistoryIndexes(visibleMessages);
+  const skipSystemInInput = config?.instructionsField === "instructions";
+  const systemRole = config?.systemRole ?? "system";
   for (const [index, message] of visibleMessages.entries()) {
     if (message.role === "system") {
-      input.push(systemInputItem(message));
+      if (!skipSystemInInput) {
+        input.push(systemInputItem(message, systemRole));
+      }
     } else if (message.role === "user") {
       appendUserInput(input, message, supportsVision);
     } else if (message.role === "assistant") {
@@ -304,11 +312,14 @@ function applyResponsesTools(
   body: Record<string, unknown>,
   tools: Array<Record<string, unknown>> | undefined,
   parallelToolCalls: boolean | undefined,
+  omitParallelToolCalls?: boolean | undefined,
 ): void {
   if (!tools) return;
   body.tools = tools;
   body.tool_choice = "auto";
-  body.parallel_tool_calls = parallelToolCalls === false ? false : true;
+  if (!omitParallelToolCalls) {
+    body.parallel_tool_calls = parallelToolCalls === false ? false : true;
+  }
 }
 
 export function buildResponsesBody(
@@ -338,11 +349,22 @@ export function buildResponsesBody(
       target: plan.replay.target,
       observe: options.reasoningArtifactReplayObserver,
     },
+    config,
   );
   const tools = toResponsesTools(
     plan.tools.definitions.length ? [...plan.tools.definitions] : undefined,
   );
   const body: Record<string, unknown> = { model: options.model, input };
+  if (config.instructionsField === "instructions") {
+    const instructions = plan.timeline.messages
+      .filter((m) => m.role === "system")
+      .map((m) => m.content)
+      .filter(Boolean)
+      .join("\n\n");
+    if (instructions) {
+      body.instructions = instructions;
+    }
+  }
   Object.assign(
     body,
     config.bodyExtras({
@@ -365,7 +387,7 @@ export function buildResponsesBody(
   }
   if (reasoning) body.reasoning = reasoning;
   if (options.stream) body.stream = true;
-  applyResponsesTools(body, tools, options.parallelToolCalls);
+  applyResponsesTools(body, tools, options.parallelToolCalls, config.omitParallelToolCalls);
   if (tools && options.toolChoice !== undefined) {
     body.tool_choice = mapToolChoiceToOpenAi(options.toolChoice);
   }

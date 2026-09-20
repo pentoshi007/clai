@@ -153,7 +153,7 @@ describe("seeded contracts match the verified vendor documentation", () => {
   it("openai reasoning models floor at minimal and omit sampling", () => {
     const family = modelFamilyFor("gpt-5.4-mini")!;
     expect(family.dialect).toBe("openai-effort");
-    expect(family.acceptedEfforts).toEqual(["minimal", "low", "medium", "high"]);
+    expect(family.acceptedEfforts).toEqual(["minimal", "low", "medium", "high", "xhigh", "max"]);
     expect(family.disableForm).toBe("effort-minimal-floor");
     expect(family.omitSampling).toEqual(["temperature", "top_p"]);
   });

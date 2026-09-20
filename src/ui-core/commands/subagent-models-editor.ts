@@ -6,7 +6,14 @@ import {
   MAX_SUBAGENT_MODELS,
   type SubagentModelEntry,
 } from "../../store/config.js";
+import { normalizeProvider } from "../../llm/provider.js";
+import { getProvider } from "../../llm/router.js";
 import { collectAllModels, CATALOG_SEPARATOR } from "./picker-commands.js";
+
+function providerLabel(provider: string): string {
+  const id = normalizeProvider(provider);
+  return id ? getProvider(id).displayName : provider;
+}
 
 interface DraftRow {
   readonly slotId?: string | undefined;
@@ -42,7 +49,10 @@ async function pickModel(
   const result = await collectAllModels();
   services.toast.dismiss(fetching);
   if (result.failed.length > 0) {
-    services.session.notice("warn", `could not refresh ${result.failed.join(", ")} · showing known models`);
+    services.session.notice(
+      "warn",
+      `could not refresh ${result.failed.map((provider) => getProvider(provider).displayName).join(", ")} · showing known models`,
+    );
   }
   if (result.entries.length === 0) {
     services.session.notice("warn", "no models found — configure a provider key with /set first");
@@ -68,7 +78,7 @@ async function pickModel(
         searchDescription: true,
         options: result.entries.map((entry) => ({
           value: `${entry.provider}${CATALOG_SEPARATOR}${entry.model}`,
-          label: `${entry.provider} / ${entry.model}`,
+          label: `${getProvider(entry.provider).displayName} / ${entry.model}`,
           description: entry.live ? "live catalogue" : "known models",
           active: existing.has(`${entry.provider}${CATALOG_SEPARATOR}${entry.model}`),
         })),
@@ -85,14 +95,14 @@ async function pickModel(
 function summary(chain: ReturnType<typeof getSubagentModelChain>): string {
   if (!chain?.entries.length) return "not set · subagents follow the session route";
   const active = chain.entries[chain.activeIndex] ?? chain.entries[0]!;
-  return `main ${active.provider}/${active.model} · ${Math.max(0, chain.entries.length - 1)} fallback${chain.entries.length === 2 ? "" : "s"}`;
+  return `main ${providerLabel(active.provider)}/${active.model} · ${Math.max(0, chain.entries.length - 1)} fallback${chain.entries.length === 2 ? "" : "s"}`;
 }
 
 export async function openSubagentModelEditor(services: AppServices): Promise<void> {
   const configured = getSubagentModelChain();
   let rows: DraftRow[] = configured?.entries.map((entry) => ({
     slotId: `${entry.provider}${CATALOG_SEPARATOR}${entry.model}`,
-    value: `${entry.provider} / ${entry.model}`,
+    value: `${providerLabel(entry.provider)} / ${entry.model}`,
     ...(entry.disabled ? { disabled: true } : {}),
   })) ?? [];
   let activeIndex = configured?.activeIndex ?? 0;

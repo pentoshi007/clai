@@ -385,23 +385,43 @@ export const knownModels: Record<string, string[]> = {
     "qwen3.8-27b",
   ],
   codex: [
-    "gpt-5.1-codex",
-    "gpt-5.1",
-    "gpt-5.1-mini",
-    "o3",
-    "o4-mini",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark",
   ],
   copilot: [
     "gpt-4o",
     "gpt-4o-mini",
-    "gpt-5.1",
     "claude-sonnet-4.5",
-    "gemini-2.5-pro",
+    "claude-3.5-sonnet",
+    "o1",
+    "o3-mini",
   ],
 };
 
 export function getKnownModels(provider: string): string[] {
-  return [...(knownModels[provider] ?? [])];
+  const normalized = provider.toLowerCase().trim();
+  const direct = knownModels[normalized];
+  if (direct) return [...direct];
+  if (
+    normalized === "chatgpt" ||
+    normalized.startsWith("chatgpt-") ||
+    normalized.startsWith("chatgpt ")
+  ) {
+    return [...(knownModels.codex ?? [])];
+  }
+  if (
+    normalized === "github-copilot" ||
+    normalized === "github copilot" ||
+    normalized === "gh-copilot"
+  ) {
+    return [...(knownModels.copilot ?? [])];
+  }
+  return [];
 }
 
 export function inferProviderForModel(model: string): string | undefined {

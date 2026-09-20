@@ -1,4 +1,6 @@
 import chalk from "chalk";
+import { normalizeProvider } from "../../llm/provider.js";
+import { getProvider } from "../../llm/router.js";
 import { renderWordmark, wordmarkWidth } from "./wordmark.js";
 
 const CARD_BORDER_HEX = "#2EEBFF";
@@ -74,7 +76,8 @@ export function renderIntroHeaderLines(opts: IntroHeaderOptions): string[] {
 function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const version = opts.version || "0.0.0";
   const mode = opts.mode || "agent";
-  const provider = opts.provider || "openai";
+  const providerId = normalizeProvider(opts.provider || "openai");
+  const provider = providerId ? getProvider(providerId).displayName : opts.provider || "openai";
   const model = displayModel(opts.model || "gpt-4", opts.variant);
   const permissions = displayPermissions(opts.permissions || "default");
   const rawPermissions = opts.permissions || "default";

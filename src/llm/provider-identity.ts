@@ -1,5 +1,8 @@
 import type { ProviderId } from "../types.js";
 
+export const CHATGPT_SUBSCRIPTION_DISPLAY_NAME = "Chatgpt Subscription(free/go/plus/pro)";
+export const GITHUB_COPILOT_DISPLAY_NAME = "Github Copilot";
+
 export const providerAliases: Record<string, ProviderId> = {
   free: "free",
   zen: "free",
@@ -89,6 +92,14 @@ export const providerAliases: Record<string, ProviderId> = {
   "cline.ai": "cline",
   codex: "codex",
   chatgpt: "codex",
+  "chatgpt-subscription": "codex",
+  "chatgpt subscription": "codex",
+  "chatgpt subscription(free/go/plus/pro)": "codex",
+  "chatgpt subscription (free/go/plus/pro)": "codex",
+  "chatgpt-pro": "codex",
+  "chatgpt-plus": "codex",
+  "chatgpt-go": "codex",
+  "chatgpt-free": "codex",
   "chatgpt-codex": "codex",
   "openai-codex": "codex",
   "codex-cli": "codex",
@@ -97,6 +108,7 @@ export const providerAliases: Record<string, ProviderId> = {
   "gh-copilot": "copilot",
   "copilot-chat": "copilot",
   github: "copilot",
+  "github copilot": "copilot",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -126,13 +138,18 @@ export const defaultModels: Record<ProviderId, string> = {
   glm: "glm-4-plus",
   minimax: "MiniMax-Text-01",
   cline: "cline-free/deepseek-v4.1-flash",
-  codex: "gpt-5.1-codex",
+  codex: "gpt-5.6-luna",
   copilot: "gpt-4o",
 };
 
 export const retiredModelReplacements: Partial<
   Record<ProviderId, Record<string, string>>
 > = {
+  codex: {
+    "gpt-5.1-codex": "gpt-5.6-luna",
+    "gpt-5.1": "gpt-5.5",
+    "gpt-5.1-mini": "gpt-5.4-mini",
+  },
   gemini: {
     "gemini-2.0-flash": "gemini-3.5-flash",
     "gemini-2.0-flash-lite": "gemini-3.1-flash-lite",

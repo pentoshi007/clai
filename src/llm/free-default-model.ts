@@ -2,6 +2,7 @@ import { defaultModels } from "./provider.js";
 import { freeProvider } from "./free.js";
 
 const CATALOG_TIMEOUT_MS = 2_500;
+const DEFAULT_PICK_TTL_MS = 30 * 60 * 1000;
 
 export interface FreeDefaultModelDeps {
   readonly listModels?: (() => Promise<string[]>) | undefined;
@@ -38,7 +39,7 @@ export function pickFreeModel(catalog: readonly string[]): string {
   );
 }
 
-let cachedPick: string | undefined;
+let cachedPick: { value: string; pickedAt: number } | undefined;
 
 export function resetFreeDefaultModelCache(): void {
   cachedPick = undefined;
@@ -47,7 +48,13 @@ export function resetFreeDefaultModelCache(): void {
 export async function resolveFreeDefaultModel(
   deps: FreeDefaultModelDeps = {},
 ): Promise<string> {
-  if (cachedPick !== undefined && deps.listModels === undefined) return cachedPick;
+  if (
+    cachedPick !== undefined &&
+    deps.listModels === undefined &&
+    Date.now() - cachedPick.pickedAt < DEFAULT_PICK_TTL_MS
+  ) {
+    return cachedPick.value;
+  }
   const list: () => Promise<string[]> =
     deps.listModels ??
     (() => freeProvider.listModels?.({ apiKey: undefined }) ?? Promise.resolve([]));
@@ -56,6 +63,8 @@ export async function resolveFreeDefaultModel(
     deps.timeoutMs ?? CATALOG_TIMEOUT_MS,
   );
   const picked = pickFreeModel(catalog ?? []);
-  if (deps.listModels === undefined) cachedPick = picked;
+  if (deps.listModels === undefined) {
+    cachedPick = { value: picked, pickedAt: Date.now() };
+  }
   return picked;
 }

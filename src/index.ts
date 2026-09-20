@@ -465,17 +465,43 @@ async function main(): Promise<void> {
 
   program
     .command("auth")
-    .description("authenticate a provider via browser/OAuth (cline, codex, copilot)")
-    .argument("<provider>", "provider id (cline, codex, copilot)")
-    .option("--import", "import an existing app sign-in (Cline/Codex/Copilot)")
+    .description(
+      "authenticate a provider via browser/OAuth (Cline, Chatgpt Subscription, Github Copilot)",
+    )
+    .argument("<provider>", "provider id (cline, chatgpt, copilot)")
+    .option("--import", "import an existing app sign-in (Cline/Chatgpt Subscription/Github Copilot)")
+    .option("--browser", "authenticate via browser (default for Chatgpt Subscription)")
+    .option("--headless", "authenticate via headless/device code flow")
     .action(
-      async (provider: string, options: { import?: boolean | undefined }) => {
+      async (
+        provider: string,
+        options: {
+          import?: boolean | undefined;
+          browser?: boolean | undefined;
+          headless?: boolean | undefined;
+        },
+      ) => {
         const id = provider.trim().toLowerCase();
-        if (id === "codex" || id === "chatgpt" || id === "openai-codex" || id === "codex-cli" || id === "chatgpt-codex") {
+        if (
+          id === "codex" ||
+          id === "chatgpt" ||
+          id === "openai-codex" ||
+          id === "codex-cli" ||
+          id === "chatgpt-codex" ||
+          id === "chatgpt-subscription" ||
+          id.startsWith("chatgpt")
+        ) {
           await authCodex("codex", options);
           return;
         }
-        if (id === "copilot" || id === "github-copilot" || id === "gh-copilot" || id === "copilot-chat" || id === "github") {
+        if (
+          id === "copilot" ||
+          id === "github-copilot" ||
+          id === "gh-copilot" ||
+          id === "copilot-chat" ||
+          id === "github" ||
+          id.includes("copilot")
+        ) {
           await authCopilot("copilot", options);
           return;
         }

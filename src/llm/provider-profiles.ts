@@ -36,10 +36,11 @@ const NATIVE_WIRE_API: Partial<Record<ProviderId, WireApi>> = {
   gemini: "gemini-generate-content",
   meta: "meta-responses",
   ollama: "ollama-chat",
+  codex: "responses",
 };
 
 export function providerWireApi(provider: ProviderId, model: string): WireApi {
-  if (provider === "aws-mantle") {
+  if (provider === "aws-mantle" || provider === "copilot") {
     return /(?:^|[./-])(?:anthropic|claude)(?:[./-]|$)/i.test(model)
       ? "anthropic-messages"
       : "chat-completions";

@@ -170,6 +170,27 @@ describe("free provider (zen + kilo)", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it("refetches once the catalog cache passes 30 minutes", async () => {
+      const fetchMock = catalogFetchMock(
+        ["mimo-v2.5-free"],
+        [{ id: "kilo-auto/free", isFree: true }],
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const time = baseTime + 6 * 60 * 60 * 1000;
+      vi.spyOn(Date, "now").mockReturnValue(time);
+      await freeProvider.listModels!({});
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      vi.spyOn(Date, "now").mockReturnValue(time + 29 * 60 * 1000);
+      await freeProvider.listModels!({});
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
+      await freeProvider.listModels!({});
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+
     it("falls back to the curated lists when the catalog fetches fail", async () => {
       const fetchMock = vi.fn(async () => {
         throw new Error("network down");

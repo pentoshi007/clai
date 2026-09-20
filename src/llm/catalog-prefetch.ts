@@ -1,7 +1,7 @@
 import type { ProviderId } from "../types.js";
 import { getProvider, providerAuth } from "./router.js";
 
-const CATALOG_PREFETCH_TTL_MS = 60 * 60 * 1000;
+const CATALOG_PREFETCH_TTL_MS = 30 * 60 * 1000;
 
 const lastPrefetchAt = new Map<string, number>();
 const inFlight = new Map<string, Promise<void>>();

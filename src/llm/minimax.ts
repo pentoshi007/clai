@@ -17,7 +17,7 @@ const baseUrl = "https://api.minimaxi.chat/v1";
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export const minimaxProvider: LlmProvider = {
   id: "minimax",

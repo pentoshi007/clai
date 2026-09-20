@@ -33,12 +33,15 @@ import {
 } from "../llm/cline-auth.js";
 import type { ClineOAuthTokens } from "../llm/cline-auth.js";
 import {
+  codexKeyFromAccessToken,
   encodeCodexKey,
   importExistingCodexKey,
   pollCodexDeviceAuth,
+  startCodexBrowserAuth,
   startCodexDeviceAuth,
 } from "../llm/codex-auth.js";
 import type { CodexCredential } from "../llm/codex-auth.js";
+import { openSystemBrowser } from "../mcp/auth/loopback.js";
 import {
   importExistingCopilotKey,
   pollCopilotDeviceAuth,
@@ -69,10 +72,11 @@ function addEndpoint(provider: ProviderId, raw: string): void {
   const url = normalizeEndpointUrl(raw);
   const { endpoints, added } = appendProviderEndpoint(provider, url);
   const position = `#${endpoints.activeIndex + 1}/${endpoints.urls.length}`;
+  const label = getProvider(provider).displayName;
   console.log(
     added
-      ? `saved ${provider} endpoint ${position} ${url}`
-      : `${provider} endpoint ${position} ${url} is now active`,
+      ? `saved ${label} endpoint ${position} ${url}`
+      : `${label} endpoint ${position} ${url} is now active`,
   );
 }
 
@@ -88,7 +92,7 @@ async function promptForSecret(provider: ProviderId): Promise<string> {
   const message =
     provider === "modal"
       ? "Enter Modal proxy token as <token-id>:<token-secret> (input hidden, leave blank to cancel):"
-      : `Enter API key for ${provider} (input hidden, leave blank to cancel):`;
+      : `Enter API key for ${getProvider(provider).displayName} (input hidden, leave blank to cancel):`;
   const raw = await askSecret(message);
   return (raw ?? "").trim();
 }
@@ -136,9 +140,9 @@ function invalidFormatHint(provider: ProviderId): string {
   if (provider === "minimax")
     return "MiniMax keys are alphanumeric (from https://intl.minimaxi.com or https://api.minimax.chat)";
   if (provider === "codex")
-    return "Codex uses ChatGPT sign-in — run `clai auth codex` (or import with --import)";
+    return "Chatgpt Subscription uses ChatGPT sign-in — run `clai auth chatgpt` (or import with --import)";
   if (provider === "copilot")
-    return "Copilot uses GitHub sign-in — run `clai auth copilot` (or import with --import)";
+    return "Github Copilot uses GitHub sign-in — run `clai auth copilot` (or import with --import)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 
@@ -164,6 +168,7 @@ export async function setProviderKey(
 
   const provider = assertProvider(providerValue);
   const providerImpl = getProvider(provider);
+  const label = providerImpl.displayName;
 
   const urls = urlList(options.url);
   if (providerUsesEndpoints(provider) && urls.length > 0) {
@@ -226,7 +231,7 @@ export async function setProviderKey(
   if (!providerImpl.validateKey(secret)) {
     process.exitCode = 2;
     throw new Error(
-      `Invalid ${provider} format. ${invalidFormatHint(provider)}.`,
+      `Invalid ${label} format. ${invalidFormatHint(provider)}.`,
     );
   }
 
@@ -271,8 +276,8 @@ export async function setProviderKey(
     const count = multi.source === "env" ? 1 : multi.keys.length;
     console.log(
       count > 1
-        ? `added ${provider} ${maskSecret(secret)} · ${count} keys total`
-        : `saved ${provider} ${maskSecret(secret)}`,
+        ? `added ${label} ${maskSecret(secret)} · ${count} keys total`
+        : `saved ${label} ${maskSecret(secret)}`,
     );
   }
 
@@ -301,17 +306,18 @@ export async function unsetProviderKey(
     return;
   }
   const provider = assertProvider(providerValue);
+  const label = getProvider(provider).displayName;
   if (options.url) {
     if (!providerUsesEndpoints(provider)) {
-      console.log(`${provider} has no endpoint URLs`);
+      console.log(`${label} has no endpoint URLs`);
       return;
     }
     const count = getProviderEndpoints(provider).urls.length;
     setProviderEndpoints(provider, []);
     console.log(
       count > 0
-        ? `unset ${count} endpoint URL${count === 1 ? "" : "s"} for ${provider}`
-        : `${provider} had no endpoint URLs`,
+        ? `unset ${count} endpoint URL${count === 1 ? "" : "s"} for ${label}`
+        : `${label} had no endpoint URLs`,
     );
     return;
   }
@@ -319,7 +325,7 @@ export async function unsetProviderKey(
   const count = multi.source === "env" ? 0 : multi.keys.length;
   await unsetProviderSecret(provider);
   console.log(
-    count > 1 ? `unset all ${count} keys for ${provider}` : `unset ${provider}`,
+    count > 1 ? `unset all ${count} keys for ${label}` : `unset ${label}`,
   );
 }
 
@@ -328,7 +334,7 @@ export async function printProviderKeys(): Promise<void> {
   const statuses = await listProviderStatuses(config.defaultProvider);
 
   console.log(chalk.bold("LLM Providers:"));
-  console.log(chalk.dim("  PROVIDER      SOURCE    KEYS          MODEL"));
+  console.log(chalk.dim("  PROVIDER                            SOURCE    KEYS          MODEL"));
 
   for (const s of statuses) {
     const mark = s.configured ? chalk.green("✓") : chalk.red("✗");
@@ -345,8 +351,9 @@ export async function printProviderKeys(): Promise<void> {
               ? s.maskedKey || "••••••••"
               : `${count} keys`;
     const source = (s.source === "missing" ? "no key" : s.source).padEnd(9);
+    const name = getProvider(s.provider).displayName;
     console.log(
-      `  ${mark} ${s.provider.padEnd(13)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
+      `  ${mark} ${name.padEnd(34)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
     );
     if (s.provider !== "ollama" && s.provider !== "free" && s.note) {
       console.log(chalk.dim(`      endpoint: ${s.note}`));
@@ -414,13 +421,14 @@ export async function ensureProviderConfigured(
 
 export async function useProvider(providerValue: string): Promise<void> {
   const provider = assertProvider(providerValue);
+  const label = getProvider(provider).displayName;
   if (provider === "modal") {
     if (!(await promptModalSetup())) {
       console.log("provider unchanged");
       return;
     }
     setDefaultProvider(provider);
-    console.log(`now using ${provider} · model=${getProviderModel(provider)}`);
+    console.log(`now using ${label} · model=${getProviderModel(provider)}`);
     return;
   }
   const secret = await getProviderSecret(provider);
@@ -460,7 +468,7 @@ export async function useProvider(providerValue: string): Promise<void> {
     }
   }
   setDefaultProvider(provider);
-  console.log(`now using ${provider} · model=${getProviderModel(provider)}`);
+  console.log(`now using ${label} · model=${getProviderModel(provider)}`);
 }
 
 export async function authCline(
@@ -561,22 +569,27 @@ export async function resolveClineCredentialInteractive(): Promise<
 
 export async function authCodex(
   providerValue: string,
-  options: { import?: boolean | undefined } = {},
+  options: {
+    import?: boolean | undefined;
+    browser?: boolean | undefined;
+    headless?: boolean | undefined;
+  } = {},
 ): Promise<void> {
   const provider = assertProvider(providerValue);
+  const label = getProvider(provider).displayName;
   if (provider !== "codex") {
     throw new Error(
-      `OAuth browser sign-in is only supported for the codex provider (got "${provider}"). Use \`clai set ${provider} <key>\` instead.`,
+      `OAuth browser sign-in is only supported for the ${label} provider. Use \`clai set ${provider} <key>\` instead.`,
     );
   }
 
   if (options.import) {
-    process.stderr.write("Looking for an existing Codex CLI sign-in…\n");
+    process.stderr.write("Looking for an existing Chatgpt Subscription sign-in…\n");
     const key = await importExistingCodexKey();
     if (!key) {
       process.exitCode = 5;
       throw new Error(
-        "No usable Codex credential found. Sign in with `clai auth codex` (no --import) or install Codex CLI and log in first.",
+        "No usable ChatGPT Subscription credential found. Sign in with `clai auth chatgpt` (no --import) or install Codex CLI and log in first.",
       );
     }
     const storage = await appendProviderKey("codex", key);
@@ -590,17 +603,81 @@ export async function authCodex(
     }
     const multi = await getProviderKeys("codex");
     console.log(
-      `imported codex ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+      `imported Chatgpt Subscription ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
     );
     return;
   }
 
-  const credential = await resolveCodexCredentialInteractive();
+  let credential: CodexCredential | undefined;
+  if (options.headless) {
+    credential = await resolveCodexCredentialInteractive();
+  } else {
+    const method = options.browser
+      ? "browser"
+      : await askChoice<"browser" | "headless" | "apikey">(
+          "How do you want to sign in to ChatGPT Subscription?",
+          [
+            {
+              name: "Sign in with ChatGPT (browser) — opens auth.openai.com login",
+              value: "browser",
+            },
+            {
+              name: "Sign in with ChatGPT (headless) — device code on any device",
+              value: "headless",
+            },
+            {
+              name: "Manually enter an access token / API key",
+              value: "apikey",
+            },
+          ],
+        );
+    if (!method) {
+      console.log("cancelled");
+      return;
+    }
+    if (method === "headless") {
+      credential = await resolveCodexCredentialInteractive();
+    } else if (method === "apikey") {
+      const pasted = await askSecret(
+        "Paste a Chatgpt Subscription access token or stored `codex:` key:",
+      );
+      const key = pasted ? codexKeyFromAccessToken(pasted) ?? (pasted.startsWith("codex:") ? pasted : undefined) : undefined;
+      if (!key) {
+        process.exitCode = 5;
+        throw new Error(
+          "That token is not a valid ChatGPT access token (no chatgpt account id). Sign in with `clai auth chatgpt` instead.",
+        );
+      }
+      await storeCodexKey(key);
+      return;
+    } else {
+      try {
+        const handle = await startCodexBrowserAuth();
+        console.log("To authenticate ChatGPT Subscription:");
+        console.log(`  Open this link in your browser:\n       ${handle.url}\n`);
+        console.log(`Waiting for browser authorization…\n`);
+        await openSystemBrowser(handle.url).catch(() => {});
+        credential = await handle.waitForCredential();
+      } catch (error) {
+        if (options.browser) throw error;
+        console.warn(
+          chalk.yellow(
+            `Browser sign-in unavailable (${error instanceof Error ? error.message : String(error)}); falling back to device code.`,
+          ),
+        );
+        credential = await resolveCodexCredentialInteractive();
+      }
+    }
+  }
+
   if (!credential) {
     process.exitCode = 5;
-    throw new Error("Codex authentication failed or was cancelled.");
+    throw new Error("ChatGPT Subscription authentication failed or was cancelled.");
   }
-  const key = encodeCodexKey(credential);
+  await storeCodexKey(encodeCodexKey(credential));
+}
+
+async function storeCodexKey(key: string): Promise<void> {
   const storage = await appendProviderKey("codex", key);
   if (storage === "fallback") {
     process.exitCode = 3;
@@ -612,7 +689,7 @@ export async function authCodex(
   }
   const multi = await getProviderKeys("codex");
   console.log(
-    `authenticated codex ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    `authenticated Chatgpt Subscription ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
   );
 }
 
@@ -621,19 +698,20 @@ export async function authCopilot(
   options: { import?: boolean | undefined } = {},
 ): Promise<void> {
   const provider = assertProvider(providerValue);
+  const label = getProvider(provider).displayName;
   if (provider !== "copilot") {
     throw new Error(
-      `OAuth browser sign-in is only supported for the copilot provider (got "${provider}"). Use \`clai set ${provider} <key>\` instead.`,
+      `OAuth browser sign-in is only supported for the ${label} provider. Use \`clai set ${provider} <key>\` instead.`,
     );
   }
 
   if (options.import) {
-    process.stderr.write("Looking for an existing Copilot sign-in…\n");
+    process.stderr.write("Looking for an existing Github Copilot sign-in…\n");
     const key = await importExistingCopilotKey();
     if (!key) {
       process.exitCode = 5;
       throw new Error(
-        "No usable Copilot credential found. Sign in with `clai auth copilot` (no --import) or install Copilot CLI/VS Code and log in first.",
+        "No usable Github Copilot credential found. Sign in with `clai auth copilot` (no --import) or install Copilot CLI/VS Code and log in first.",
       );
     }
     const storage = await appendProviderKey("copilot", key);
@@ -647,7 +725,7 @@ export async function authCopilot(
     }
     const multi = await getProviderKeys("copilot");
     console.log(
-      `imported copilot ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+      `imported Github Copilot ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
     );
     return;
   }
@@ -655,7 +733,7 @@ export async function authCopilot(
   const token = await resolveCopilotCredentialInteractive();
   if (!token) {
     process.exitCode = 5;
-    throw new Error("Copilot authentication failed or was cancelled.");
+    throw new Error("Github Copilot authentication failed or was cancelled.");
   }
   const storage = await appendProviderKey("copilot", token);
   if (storage === "fallback") {
@@ -668,7 +746,7 @@ export async function authCopilot(
   }
   const multi = await getProviderKeys("copilot");
   console.log(
-    `authenticated copilot ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    `authenticated Github Copilot ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
   );
 }
 
@@ -676,7 +754,7 @@ export async function resolveCodexCredentialInteractive(): Promise<
   CodexCredential | undefined
 > {
   const start = await startCodexDeviceAuth();
-  console.log("To authenticate Codex (ChatGPT):");
+  console.log("To authenticate ChatGPT Subscription:");
   console.log(
     `  1. Open this link on any device:\n       ${start.verificationUrl}`,
   );
@@ -700,7 +778,7 @@ export async function resolveCopilotCredentialInteractive(): Promise<
   string | undefined
 > {
   const start = await startCopilotDeviceAuth();
-  console.log("To authenticate GitHub Copilot:");
+  console.log("To authenticate Github Copilot:");
   console.log(
     `  1. Open this link on any device:\n       ${start.verificationUrl}`,
   );
@@ -732,10 +810,13 @@ export async function providerSwitcher(
   const statuses = await listProviderStatuses(config.defaultProvider);
   const selected = await askChoice<ProviderId>(
     "Select provider:",
-    statuses.map((status) => ({
-      name: `${status.provider.padEnd(10)} ${status.configured ? "✓ key set" : "✗ no key"}${status.active ? " (active)" : ""}`,
-      value: status.provider,
-    })),
+    statuses.map((status) => {
+      const label = getProvider(status.provider).displayName;
+      return {
+        name: `${label.padEnd(34)} ${status.configured ? "✓ key set" : "✗ no key"}${status.active ? " (active)" : ""}`,
+        value: status.provider,
+      };
+    }),
   );
   if (!selected) {
     console.log("provider unchanged");
@@ -765,8 +846,9 @@ export async function setKeyPicker(
           : status.configured
             ? chalk.green("✓ key set")
             : chalk.red("✗ no key");
+      const name = getProvider(status.provider).displayName;
       return {
-        name: `${status.provider.padEnd(12)} ${label}${status.active ? chalk.cyan(" (active)") : ""}`,
+        name: `${name.padEnd(34)} ${label}${status.active ? chalk.cyan(" (active)") : ""}`,
         value: status.provider,
       };
     }),
@@ -801,7 +883,7 @@ export async function unsetKeyPicker(
   const selected = await askChoice<ProviderId>(
     "Unset API key for provider:",
     statuses.map((status) => ({
-      name: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ ") + (status.maskedKey ?? "key set") : chalk.red("✗ no key")}${status.active ? chalk.cyan(" (active)") : ""}`,
+      name: `${getProvider(status.provider).displayName.padEnd(34)} ${status.configured ? chalk.green("✓ ") + (status.maskedKey ?? "key set") : chalk.red("✗ no key")}${status.active ? chalk.cyan(" (active)") : ""}`,
       value: status.provider,
     })),
   );

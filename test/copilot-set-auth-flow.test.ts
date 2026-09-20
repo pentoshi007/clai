@@ -168,7 +168,7 @@ describe("copilot /set auth flow", () => {
 
     expect(h.replaceProviderKey).toHaveBeenCalledWith("copilot", oldToken, NEW_TOKEN);
     expect(h.stored[0]).toMatchObject({ id: "k0", value: NEW_TOKEN, disabled: true });
-    expect(notices.some((text) => text.startsWith("refreshed Copilot account "))).toBe(true);
+    expect(notices.some((text) => text.startsWith("refreshed Github Copilot account "))).toBe(true);
   });
 
   it("saves star/disable/remove edits on untouched rows without invalid-token errors", async () => {

@@ -82,22 +82,29 @@ export function parseResponsesUsage(raw: unknown): TokenUsage | undefined {
   });
 }
 
-function extractReasoningSummary(item: unknown): string {
-  if (!item || typeof item !== "object") return "";
-  const obj = item as Record<string, unknown>;
-  const summary = obj.summary;
-  if (!Array.isArray(summary)) return "";
+function reasoningTextParts(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
   let out = "";
-  for (const s of summary) {
-    if (
-      s &&
-      typeof s === "object" &&
-      typeof (s as Record<string, unknown>).text === "string"
-    ) {
-      out += (s as Record<string, unknown>).text as string;
+  for (const part of value) {
+    if (typeof part === "string") {
+      out += part;
+    } else if (part && typeof part === "object") {
+      const record = part as Record<string, unknown>;
+      if (typeof record.text === "string") out += record.text;
     }
   }
   return out;
+}
+
+function extractReasoningSummary(item: unknown): string {
+  if (!item || typeof item !== "object") return "";
+  const obj = item as Record<string, unknown>;
+  for (const field of [obj.summary, obj.reasoning, obj.text]) {
+    const text = reasoningTextParts(field);
+    if (text) return text;
+  }
+  return "";
 }
 
 function parseStreamToolArgs(raw: string): Record<string, unknown> {

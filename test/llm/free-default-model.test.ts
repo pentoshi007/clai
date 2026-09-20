@@ -1,11 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   pickFreeModel,
+  resetFreeDefaultModelCache,
   resolveFreeDefaultModel,
 } from "../../src/llm/free-default-model.js";
 import { defaultModels } from "../../src/llm/provider.js";
 
 describe("dynamic free default model", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    resetFreeDefaultModelCache();
+  });
+
   it("prefers the canonical free default when the catalog offers it", () => {
     expect(
       pickFreeModel(["free-1/mimo-v2.5-free", defaultModels.free, "free-2/other:free"]),
@@ -49,5 +56,36 @@ describe("dynamic free default model", () => {
       },
     });
     expect(picked).toBe(defaultModels.free);
+  });
+
+  it("re-resolves the remembered pick once it is older than 30 minutes", async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes("kilo.ai")) {
+        return new Response(
+          JSON.stringify({ data: [{ id: "stepfun/step-3.7-flash:free", isFree: true }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const time = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(time);
+    const first = await resolveFreeDefaultModel();
+    expect(first).toBe("free-2/stepfun/step-3.7-flash:free");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.spyOn(Date, "now").mockReturnValue(time + 10 * 60 * 1000);
+    expect(await resolveFreeDefaultModel()).toBe(first);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
+    expect(await resolveFreeDefaultModel()).toBe(first);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
