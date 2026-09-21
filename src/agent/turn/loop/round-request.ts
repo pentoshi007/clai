@@ -83,6 +83,7 @@ export const requestRound = async (
         thinking: deps.thinking,
         step: deps.loop.step,
         contextLimitTokens,
+        providerReportedContextTokens: deps.loop.lastProviderPromptTokens,
         estimateRequestTokens: deps.estimateNextRequestTokens,
         selectTools: () =>
           deps.selectToolDefs(deps.nativeToolsActive(), deps.useCompactSystemPrompt),

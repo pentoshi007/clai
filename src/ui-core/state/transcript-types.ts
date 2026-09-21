@@ -60,7 +60,8 @@ export interface CompactedItem extends ItemBase {
   readonly kind: "compacted";
   readonly summary: string;
   readonly beforeTokens: number;
-  readonly afterTokens: number;
+  readonly afterTokens?: number | undefined;
+  readonly measurement?: "provider-reported" | "estimated" | undefined;
   readonly streaming?: boolean | undefined;
   readonly error?: string | undefined;
   readonly startedAt?: number | undefined;
@@ -68,21 +69,34 @@ export interface CompactedItem extends ItemBase {
 }
 
 export function compactionTokenLabel(
-  item: Pick<CompactedItem, "streaming" | "error" | "beforeTokens" | "afterTokens">,
+  item: Pick<
+    CompactedItem,
+    "streaming" | "error" | "beforeTokens" | "afterTokens" | "measurement"
+  >,
 ): string {
+  const providerReported = item.measurement === "provider-reported";
+  const before = item.beforeTokens.toLocaleString();
   if (item.streaming) {
     return item.beforeTokens > 0
-      ? `~${item.beforeTokens.toLocaleString()} tokens before`
+      ? providerReported
+        ? `${before} provider-reported tokens before`
+        : `~${before} tokens before`
       : "";
   }
   if (item.error) {
+    if (providerReported) return `${before} provider-reported tokens · original context retained`;
     const retainedTokens = item.afterTokens || item.beforeTokens;
     return retainedTokens > 0
       ? `~${retainedTokens.toLocaleString()} tokens · original context retained`
       : "original context retained";
   }
-  return item.beforeTokens > 0 || item.afterTokens > 0
-    ? `~${item.beforeTokens.toLocaleString()} → ~${item.afterTokens.toLocaleString()} tokens`
+  if (providerReported) {
+    return item.beforeTokens > 0
+      ? `${before} provider-reported tokens before · next report pending`
+      : "next report pending";
+  }
+  return item.beforeTokens > 0 || (item.afterTokens ?? 0) > 0
+    ? `~${before} → ~${(item.afterTokens ?? 0).toLocaleString()} tokens`
     : "";
 }
 

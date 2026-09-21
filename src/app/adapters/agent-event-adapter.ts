@@ -238,6 +238,7 @@ export class AgentEventAdapter {
         this.push("compaction-started", {
           compactionId: event.id,
           beforeTokens: event.beforeTokens,
+          ...(event.measurement ? { measurement: event.measurement } : {}),
         });
         return;
       case "compaction-delta":
@@ -252,7 +253,10 @@ export class AgentEventAdapter {
           compactionId: event.id,
           summary: event.summary,
           beforeTokens: event.beforeTokens,
-          afterTokens: event.afterTokens,
+          ...(event.afterTokens !== undefined
+            ? { afterTokens: event.afterTokens }
+            : {}),
+          ...(event.measurement ? { measurement: event.measurement } : {}),
           contextScope: event.contextScope,
         });
         return;
@@ -261,6 +265,7 @@ export class AgentEventAdapter {
           compactionId: event.id,
           message: event.message,
           retainedTokens: event.retainedTokens,
+          ...(event.measurement ? { measurement: event.measurement } : {}),
         });
         return;
       case "compacted":

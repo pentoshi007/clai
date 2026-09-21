@@ -26,6 +26,7 @@ import {
   createCompactionCoordinator,
   type CompactionAuditPayload,
 } from "../compaction-coordinator.js";
+import type { CompactionMeasurement } from "../compaction-admission.js";
 
 export type CompactionAuditSink = (
   event: string,
@@ -66,17 +67,23 @@ export interface CompactionServicesInput {
   readonly setLastCompactionMsgCount: (count: number) => void;
   readonly writeDelta: (id: string, text: string, replace?: boolean) => void;
   readonly onUsage: (completion: CompletionResult) => void;
-  readonly writeStarted: (id: string, beforeTokens: number) => void;
+  readonly writeStarted: (
+    id: string,
+    beforeTokens: number,
+    measurement: CompactionMeasurement,
+  ) => void;
   readonly writeFailed: (
     id: string,
     message: string,
     retainedTokens: number,
+    measurement: CompactionMeasurement,
   ) => void;
   readonly writeCompleted: (
     id: string,
     summary: string,
     beforeTokens: number,
-    afterTokens: number,
+    afterTokens: number | undefined,
+    measurement: CompactionMeasurement,
   ) => void;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly audit: CompactionAuditSink;

@@ -101,6 +101,10 @@ interface RunSessionCompactionOptions {
   readonly requestSettings?: Omit<SuccessfulRequestSnapshot, "messages"> | undefined;
   readonly contextLimitTokens?: number | undefined;
   readonly requestTokensBefore?: number | undefined;
+  readonly requestTokensBeforeMeasurement?:
+    | "provider-reported"
+    | "estimated"
+    | undefined;
   readonly persist: boolean;
   readonly compactionId: string;
   readonly sequencer: EventSequencer;
@@ -112,7 +116,8 @@ interface RunSessionCompactionOptions {
 
 export interface ReportedCompaction {
   readonly beforeTokens: number;
-  readonly afterTokens: number;
+  readonly afterTokens: number | undefined;
+  readonly measurement: "provider-reported" | "estimated";
   readonly scope: "message-history" | "assembled-request";
 }
 
@@ -182,23 +187,30 @@ export async function runSessionCompaction(
     const retainedHistoryTokens = Math.max(0, result.afterTokens);
     const overheadTokens = (assembledTokens: number): number =>
       Math.max(0, assembledTokens - result.beforeTokens);
+    const measurement =
+      options.requestTokensBeforeMeasurement ?? "estimated";
     const afterTokens =
-      useContinuationAccounting && continuationAccounting
-        ? calibratedRequestTokens(
-            successfulRequest?.provider,
-            successfulRequest?.model,
-            retainedHistoryTokens +
-              overheadTokens(continuationAccounting.rawRequestTokens),
-          )
-        : requestTokensBefore === undefined
-          ? retainedHistoryTokens
-          : retainedHistoryTokens + overheadTokens(requestTokensBefore);
-    return { beforeTokens, afterTokens, scope };
+      measurement === "provider-reported"
+        ? undefined
+        : useContinuationAccounting && continuationAccounting
+          ? calibratedRequestTokens(
+              successfulRequest?.provider,
+              successfulRequest?.model,
+              retainedHistoryTokens +
+                overheadTokens(continuationAccounting.rawRequestTokens),
+            )
+          : requestTokensBefore === undefined
+            ? retainedHistoryTokens
+            : retainedHistoryTokens + overheadTokens(requestTokensBefore);
+    return { beforeTokens, afterTokens, measurement, scope };
   };
   if (options.persist) {
     emit("compaction-started", {
       compactionId: options.compactionId,
       beforeTokens,
+      ...(options.requestTokensBeforeMeasurement === "provider-reported"
+        ? { measurement: "provider-reported" as const }
+        : {}),
     });
   }
 
@@ -303,7 +315,12 @@ export async function runSessionCompaction(
         compactionId: options.compactionId,
         summary,
         beforeTokens: reported.beforeTokens,
-        afterTokens: reported.afterTokens,
+        ...(reported.afterTokens !== undefined
+          ? { afterTokens: reported.afterTokens }
+          : {}),
+        ...(reported.measurement === "provider-reported"
+          ? { measurement: "provider-reported" as const }
+          : {}),
         contextScope: reported.scope,
       });
     } else if (options.persist) {
@@ -311,6 +328,9 @@ export async function runSessionCompaction(
         compactionId: options.compactionId,
         message: "There was no closed history to compact.",
         retainedTokens: beforeTokens,
+        ...(options.requestTokensBeforeMeasurement === "provider-reported"
+          ? { measurement: "provider-reported" as const }
+          : {}),
       });
     }
     if (options.persist) settled = true;
@@ -325,6 +345,9 @@ export async function runSessionCompaction(
         compactionId: options.compactionId,
         message: /aborted/i.test(message) ? "Compaction was cancelled." : message,
         retainedTokens: beforeTokens,
+        ...(options.requestTokensBeforeMeasurement === "provider-reported"
+          ? { measurement: "provider-reported" as const }
+          : {}),
       });
     }
     throw error;

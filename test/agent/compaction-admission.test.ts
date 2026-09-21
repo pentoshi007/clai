@@ -46,6 +46,7 @@ describe("compaction admission", () => {
     expect(admission).toEqual({
       admitted: true,
       beforeTokens: trigger,
+      measurement: "estimated",
       compactTrigger: trigger,
       durableEnvelope: "durable state",
       attemptKey: compactionAttemptKey({
@@ -158,19 +159,30 @@ describe("compaction admission", () => {
     expect(admission).toEqual({ admitted: false, skippedByProviderTruth: true });
     expect(buildDurableEnvelope).not.toHaveBeenCalled();
     expect(audit).toHaveBeenCalledWith(
-      "agent.compact.skip-estimate-desync",
-      expect.objectContaining({ estimatedTokens: trigger }),
+      "agent.compact.skip-provider-truth",
+      expect.objectContaining({ providerPromptTokens: Math.floor(trigger / 4) }),
     );
   });
 
-  it("admits when provider-reported tokens are close to the trigger", async () => {
+  it("does not compact when provider-reported tokens are below the trigger", async () => {
     const admission = await planCompactionAdmission(
       ports({
         estimateRequestTokens: () => trigger,
         providerPromptTokens: () => Math.floor(trigger * 0.8),
       }),
     );
-    expect(admission.admitted).toBe(true);
+    expect(admission).toEqual({ admitted: false, skippedByProviderTruth: true });
+  });
+
+  it("admits when provider-reported tokens reach the trigger", async () => {
+    const admission = await planCompactionAdmission(
+      ports({ providerPromptTokens: () => trigger }),
+    );
+    expect(admission).toMatchObject({
+      admitted: true,
+      beforeTokens: trigger,
+      measurement: "provider-reported",
+    });
   });
 
   it("never skips forced compaction on provider truth", async () => {
@@ -187,14 +199,15 @@ describe("compaction admission", () => {
   it("audits admission diagnostics with estimate, calibration, and provider truth", async () => {
     const audit = vi.fn();
     await planCompactionAdmission(
-      ports({ audit, providerPromptTokens: () => 123_456 }),
+      ports({ audit, providerPromptTokens: () => 150_000 }),
     );
     expect(audit).toHaveBeenCalledWith(
       "agent.compact.admission",
       expect.objectContaining({
         estimatedTokens: trigger,
+        tokenMeasurement: "provider-reported",
         triggerTokens: trigger,
-        providerPromptTokens: 123_456,
+        providerPromptTokens: 150_000,
       }),
     );
   });

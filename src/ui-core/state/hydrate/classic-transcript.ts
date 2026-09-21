@@ -137,6 +137,7 @@ export function hydrateFromClassicTranscript(
           summary: raw.summary ?? "Compacted context",
           beforeTokens: raw.beforeTokens ?? 0,
           afterTokens: raw.afterTokens ?? raw.beforeTokens ?? 0,
+          ...(raw.measurement ? { measurement: raw.measurement } : {}),
           ...(raw.error ? { error: raw.error } : {}),
           ...(endedAt !== undefined ? { endedAt } : {}),
         };

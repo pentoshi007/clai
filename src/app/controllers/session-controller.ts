@@ -356,6 +356,31 @@ export class SessionController implements Disposable {
     return snapshot.contextTokens;
   }
 
+  private requestScopedContextMeasurement(): "provider-reported" | "estimated" | undefined {
+    const snapshot = this.contextSnapshot;
+    if (!snapshot || snapshot.contextTokens <= 0) return undefined;
+    return snapshot.precision === "provider-exact"
+      ? "provider-reported"
+      : "estimated";
+  }
+
+  private providerReportedContextTokens(): number | undefined {
+    const snapshot = this.contextSnapshot;
+    const attempt = snapshot?.attempt;
+    if (
+      !snapshot ||
+      snapshot.precision !== "provider-exact" ||
+      snapshot.scope !== "provider-request" ||
+      snapshot.contextTokens <= 0 ||
+      attempt?.kind !== "generation" ||
+      attempt.provider !== this.provider ||
+      attempt.model !== this.model
+    ) {
+      return undefined;
+    }
+    return snapshot.contextTokens;
+  }
+
   recordTokenUsage(
     usage: TokenUsage,
     model?: string,
@@ -389,8 +414,19 @@ export class SessionController implements Disposable {
     afterTokens?: number,
     scope: "message-history" | "assembled-request" = "assembled-request",
     compactionId?: string,
+    measurement?: "provider-reported" | "estimated" | undefined,
   ): void {
     if (compactionId && compactionId === this.lastContextCompactionId) return;
+    if (
+      afterTokens === undefined &&
+      measurement === "provider-reported" &&
+      this.contextSnapshot?.precision === "provider-exact"
+    ) {
+      this.preserveCompactionEstimate = true;
+      if (compactionId) this.lastContextCompactionId = compactionId;
+      this.notifyState();
+      return;
+    }
     this.setContextSnapshot(
       compactedContextSnapshot(
         this.usageTarget,
@@ -645,6 +681,7 @@ export class SessionController implements Disposable {
     const history = [...this.history];
     const persist = options.persist !== false;
     const requestTokensBefore = this.requestScopedContextTokens();
+    const requestTokensBeforeMeasurement = this.requestScopedContextMeasurement();
     const generation = this.lifecycleGeneration;
     const compactionId = String(this.sequencer.ids.message());
     const abortController = new AbortController();
@@ -675,6 +712,9 @@ export class SessionController implements Disposable {
             ? { contextLimitTokens: this.contextLimitTokens }
             : {}),
           ...(requestTokensBefore !== undefined ? { requestTokensBefore } : {}),
+          ...(requestTokensBeforeMeasurement
+            ? { requestTokensBeforeMeasurement }
+            : {}),
           persist,
           compactionId,
           sequencer: this.sequencer,
@@ -688,6 +728,7 @@ export class SessionController implements Disposable {
                 reported.afterTokens,
                 reported.scope,
                 compactionId,
+                reported.measurement,
               );
             }
             this.notifyState();
@@ -871,6 +912,7 @@ export class SessionController implements Disposable {
     const config = getConfig();
     const provider = this.provider ?? config.defaultProvider;
     const model = this.model ?? getProviderModel(provider);
+    const providerReportedContextTokens = this.providerReportedContextTokens();
     const checkpoint = this.continuationCheckpoint();
     const built = buildTurnRequest({
       prompt,
@@ -885,6 +927,9 @@ export class SessionController implements Disposable {
       ...(checkpoint ? { previousTurn: checkpoint } : {}),
       ...(this.lastMainRequestSnapshot
         ? { previousSuccessfulRequest: this.lastMainRequestSnapshot }
+        : {}),
+      ...(providerReportedContextTokens !== undefined
+        ? { providerReportedContextTokens }
         : {}),
       ...(this.contextLimitTokens
         ? { contextLimitTokens: this.contextLimitTokens }

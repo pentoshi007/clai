@@ -5,7 +5,10 @@ import { countRender } from "../../perf/render-counters.js";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { TranscriptStore } from "../../../ui-core/state/transcript-store.js";
-import { type TranscriptItem } from "../../../ui-core/state/transcript-types.js";
+import {
+  compactionTokenLabel,
+  type TranscriptItem,
+} from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { shouldHideQuietMetaToolInChat } from "../../../app/adapters/quiet-meta-tools.js";
 import { UserMessage } from "./user-message.js";
@@ -138,10 +141,10 @@ export function TranscriptRowImpl(props: {
           expanded={expanded}
           onToggle={() => {
             const summary = item.summary;
-            const title =
-              item.beforeTokens > 0 || item.afterTokens > 0
-                ? `Compacted context · ~${item.beforeTokens.toLocaleString()} → ~${item.afterTokens.toLocaleString()} tokens`
-                : "Compacted context";
+            const label = compactionTokenLabel(item);
+            const title = label
+              ? `Compacted context · ${label}`
+              : "Compacted context";
             services.overlay.openPager(title, summary);
           }}
         />

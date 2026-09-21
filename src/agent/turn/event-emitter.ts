@@ -3,6 +3,7 @@ import { sanitizeDisplayText as sanitizeAssistantText } from "../../ui-core/rend
 import type { SessionPlan } from "../../store/plan.js";
 import { formatToolArgs } from "../tool-call-parser.js";
 import type { AgentEvent } from "../events.js";
+import type { CompactionMeasurement } from "./compaction-admission.js";
 import type { TurnEventPort, TurnOutputState } from "./contracts.js";
 
 type Emit = TurnEventPort["emit"];
@@ -106,8 +107,13 @@ const emitToolResultEvent = (
   emit(event);
 };
 
-const emitCompactionStarted = (emit: Emit, id: string, beforeTokens: number): void => {
-  emit({ type: "compaction-start", id, beforeTokens });
+const emitCompactionStarted = (
+  emit: Emit,
+  id: string,
+  beforeTokens: number,
+  measurement: CompactionMeasurement,
+): void => {
+  emit({ type: "compaction-start", id, beforeTokens, measurement });
 };
 
 const emitCompactionDelta = (
@@ -130,14 +136,16 @@ const emitCompactionCompleted = (
   id: string,
   summary: string,
   beforeTokens: number,
-  afterTokens: number,
+  afterTokens: number | undefined,
+  measurement: CompactionMeasurement,
 ): void => {
   emit({
     type: "compaction-completed",
     id,
     summary,
     beforeTokens,
-    afterTokens,
+    ...(afterTokens !== undefined ? { afterTokens } : {}),
+    measurement,
     contextScope: "assembled-request",
   });
 };
@@ -147,8 +155,9 @@ const emitCompactionFailed = (
   id: string,
   message: string,
   retainedTokens: number,
+  measurement: CompactionMeasurement,
 ): void => {
-  emit({ type: "compaction-failed", id, message, retainedTokens });
+  emit({ type: "compaction-failed", id, message, retainedTokens, measurement });
 };
 
 export const createTurnEventEmitter = (
@@ -177,19 +186,32 @@ export const createTurnEventEmitter = (
     summary: string,
     artifactPath?: string,
   ): void => emitToolResultEvent(port.emit, id, result, summary, artifactPath),
-  writeCompactionStarted: (id: string, beforeTokens: number): void =>
-    emitCompactionStarted(port.emit, id, beforeTokens),
+  writeCompactionStarted: (
+    id: string,
+    beforeTokens: number,
+    measurement: CompactionMeasurement,
+  ): void => emitCompactionStarted(port.emit, id, beforeTokens, measurement),
   writeCompactionDelta: (id: string, text: string, replace = false): void =>
     emitCompactionDelta(port.emit, id, text, replace),
   writeCompactionCompleted: (
     id: string,
     summary: string,
     beforeTokens: number,
-    afterTokens: number,
-  ): void => emitCompactionCompleted(port.emit, id, summary, beforeTokens, afterTokens),
+    afterTokens: number | undefined,
+    measurement: CompactionMeasurement,
+  ): void =>
+    emitCompactionCompleted(
+      port.emit,
+      id,
+      summary,
+      beforeTokens,
+      afterTokens,
+      measurement,
+    ),
   writeCompactionFailed: (
     id: string,
     message: string,
     retainedTokens: number,
-  ): void => emitCompactionFailed(port.emit, id, message, retainedTokens),
+    measurement: CompactionMeasurement,
+  ): void => emitCompactionFailed(port.emit, id, message, retainedTokens, measurement),
 });

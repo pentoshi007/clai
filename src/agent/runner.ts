@@ -200,6 +200,7 @@ export interface AgentRunOptions {
   onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
   previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
+  providerReportedContextTokens?: number | undefined;
   onOutcome?:
     ((outcome: import("./turn-outcome.js").TurnOutcome) => void) | undefined;
   confirm?: ConfirmPort | undefined;
@@ -334,6 +335,9 @@ export async function runAgentTurn(
       provider: initialProvider,
       model: initialModel,
       previousSuccessfulRequest: options.previousSuccessfulRequest,
+      ...(options.providerReportedContextTokens !== undefined
+        ? { providerReportedContextTokens: options.providerReportedContextTokens }
+        : {}),
     });
     const toolRouting = createToolRouting({
       mode: agentMode,

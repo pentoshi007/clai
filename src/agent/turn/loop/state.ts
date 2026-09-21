@@ -34,6 +34,7 @@ export const createTurnLoopState = (input: {
   readonly provider: ProviderId;
   readonly model: string;
   readonly previousSuccessfulRequest: SuccessfulRequestSnapshot | undefined;
+  readonly providerReportedContextTokens?: number | undefined;
 }): TurnLoopState => ({
   provider: input.provider,
   model: input.model,
@@ -57,6 +58,6 @@ export const createTurnLoopState = (input: {
   freeTierConsecutiveFailures: 0,
   freeTierAdvisoryShown: false,
   lastSuccessfulRequestSnapshot: input.previousSuccessfulRequest,
-  lastProviderPromptTokens: undefined,
+  lastProviderPromptTokens: input.providerReportedContextTokens,
   codingSession: false,
 });

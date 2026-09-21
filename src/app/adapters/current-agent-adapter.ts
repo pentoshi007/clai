@@ -33,6 +33,9 @@ export function createCurrentAgentPort(
         ...(request.previousSuccessfulRequest
           ? { previousSuccessfulRequest: request.previousSuccessfulRequest }
           : {}),
+        ...(request.providerReportedContextTokens !== undefined
+          ? { providerReportedContextTokens: request.providerReportedContextTokens }
+          : {}),
         contextLimitTokens: request.contextLimitTokens,
         ...(request.getContextLimitTokens
           ? { getContextLimitTokens: request.getContextLimitTokens }

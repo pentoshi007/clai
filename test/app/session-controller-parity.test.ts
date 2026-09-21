@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPACTION_MAX_COMPLETION_TOKENS } from "../../src/agent/compaction-summary.js";
 import { effortReasoningBudgetTokens } from "../../src/llm/reasoning-controls.js";
-import type { AgentPort } from "../../src/app/ports/agent-port.js";
+import type { AgentPort, RunTurnRequest } from "../../src/app/ports/agent-port.js";
 import type { SuccessfulRequestSnapshot } from "../../src/types.js";
 import type {
   PersistencePort,
@@ -173,6 +173,55 @@ describe("SessionController parity helpers (V2-080)", () => {
       "nvidia" as never,
     );
     expect(session.estimateContext().tokens).toBe(1_234);
+  });
+
+  it("passes the latest provider context into a steered turn", async () => {
+    let request: RunTurnRequest | undefined;
+    const agent: AgentPort = {
+      async runTurn(nextRequest, handlers) {
+        request = nextRequest;
+        handlers.onMessages?.([
+          { role: "user", content: "steered" },
+          { role: "assistant", content: "done" },
+        ]);
+        return createTurnOutcome({
+          status: "succeeded",
+          answer: "done",
+          steps: 1,
+          remainingCriteria: [],
+        });
+      },
+    };
+    const session = new SessionController({
+      agent,
+      persistence: fakePersistence(),
+      emit: () => {},
+      provider: "openai",
+      model: "gpt-test",
+    });
+    session.recordTokenUsage(
+      {
+        promptTokens: 64_000,
+        completionTokens: 100,
+        totalTokens: 64_100,
+        exact: true,
+      },
+      "gpt-test",
+      "openai",
+      {
+        kind: "generation",
+        sequence: 1,
+        provider: "openai",
+        model: "gpt-test",
+        mode: "stream",
+        reason: "initial",
+        outcome: "success",
+      },
+    );
+
+    await session.submit("steered");
+
+    expect(request?.providerReportedContextTokens).toBe(64_000);
   });
 
   it("keeps the provider-reported context across model switch, persist, and reopen", async () => {
@@ -420,6 +469,20 @@ describe("SessionController parity helpers (V2-080)", () => {
       { role: "user", content: "continue" },
       { role: "assistant", content: "changes made" },
     ]);
+    session.recordTokenUsage(
+      usage,
+      "test-model",
+      "nvidia",
+      {
+        kind: "generation",
+        sequence: 1,
+        provider: "nvidia",
+        model: "test-model",
+        mode: "stream",
+        reason: "initial",
+        outcome: "success",
+      },
+    );
     primeCompactionSnapshot(session);
     await session.compact(undefined, 2);
     expect(completeWithProvider).toHaveBeenCalledOnce();
@@ -428,6 +491,18 @@ describe("SessionController parity helpers (V2-080)", () => {
         payload: { ...usage, provider: "nvidia", model: "test-model" },
       }),
     ]);
+    const completed = events.find((event) => event.type === "compaction-completed");
+    expect(completed).toMatchObject({
+      type: "compaction-completed",
+      payload: {
+        measurement: "provider-reported",
+        beforeTokens: 115_000,
+      },
+    });
+    if (completed?.type === "compaction-completed") {
+      expect(completed.payload.afterTokens).toBeUndefined();
+    }
+    expect(session.getState().contextSnapshot?.precision).toBe("provider-exact");
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );

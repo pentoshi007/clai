@@ -329,6 +329,9 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
             streaming: true,
             error: undefined,
             beforeTokens: event.payload.beforeTokens,
+            ...(event.payload.measurement
+              ? { measurement: event.payload.measurement }
+              : {}),
             startedAt: compacted.startedAt ?? event.timestamp,
             endedAt: undefined,
           };
@@ -343,6 +346,9 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         summary: "",
         beforeTokens: event.payload.beforeTokens,
         afterTokens: event.payload.beforeTokens,
+        ...(event.payload.measurement
+          ? { measurement: event.payload.measurement }
+          : {}),
         streaming: true,
         startedAt: event.timestamp,
       });
@@ -377,6 +383,9 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
               summary: event.payload.summary,
               beforeTokens: event.payload.beforeTokens,
               afterTokens: event.payload.afterTokens,
+              ...(event.payload.measurement
+                ? { measurement: event.payload.measurement }
+                : {}),
               streaming: false,
               error: undefined,
               startedAt: existing.startedAt ?? existing.timestamp,
@@ -391,6 +400,9 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
               summary: event.payload.summary,
               beforeTokens: event.payload.beforeTokens,
               afterTokens: event.payload.afterTokens,
+              ...(event.payload.measurement
+                ? { measurement: event.payload.measurement }
+                : {}),
               streaming: false,
               startedAt: event.timestamp,
               endedAt: event.timestamp,

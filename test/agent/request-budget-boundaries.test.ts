@@ -111,4 +111,32 @@ describe("dispatch output headroom", () => {
     }));
     expect(messages[0]!.content).toHaveLength(460_000);
   });
+
+  it("does not replace provider context with an assembled-request estimate", async () => {
+    const emitContextEstimate = vi.fn();
+    const assembled = await assembleRequest({
+      messages: [{ role: "user", content: "x".repeat(460_000) }],
+      provider: "openai",
+      model: "gpt-5",
+      dialect: "openai",
+      nativeToolsActive: true,
+      thinking: undefined,
+      step: 1,
+      contextLimitTokens: 200_000,
+      providerReportedContextTokens: 64_000,
+      estimateRequestTokens: () => 254_000,
+      selectTools: () => undefined,
+      notify: vi.fn(),
+      emitContextEstimate,
+      audit: vi.fn(async () => {}),
+    }, {
+      freeTierConsecutiveFailures: 0,
+      truncatedBudgetRounds: 0,
+      continuationBudgetFloor: 0,
+      retryWithoutThinking: false,
+    });
+
+    expect(assembled.stepMaxTokens).toBe(24_576);
+    expect(emitContextEstimate).not.toHaveBeenCalled();
+  });
 });
