@@ -51,6 +51,13 @@ export interface StartTuiV2Options {
   readonly resume?: ResumeTarget | undefined;
 }
 
+const OPEN_TUI_TERMINAL_ENV_KEYS = [
+  "TERM",
+  "COLORTERM",
+  "TERM_PROGRAM",
+  "TERM_PROGRAM_VERSION",
+];
+
 export async function startTuiV2(
   options: StartTuiV2Options = {},
 ): Promise<void> {
@@ -71,6 +78,7 @@ export async function startTuiV2(
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
+    forwardEnvKeys: OPEN_TUI_TERMINAL_ENV_KEYS,
     useKittyKeyboard: detectedCapabilities.kittyKeyboard
       ? { disambiguate: true, events: true }
       : null,

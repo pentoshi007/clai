@@ -26,6 +26,13 @@ describe("OpenTUI resume bootstrap order", () => {
     );
   });
 
+  it("forwards terminal color evidence to the native renderer", () => {
+    expect(source).toContain("forwardEnvKeys: OPEN_TUI_TERMINAL_ENV_KEYS");
+    for (const key of ["TERM", "COLORTERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION"]) {
+      expect(source).toContain(`"${key}"`);
+    }
+  });
+
   it("installs a usable repaint handler before connecting or awaiting loading work", () => {
     const loading = source.indexOf("Loading session…");
     const handler = source.indexOf("const requestRepaint =");
