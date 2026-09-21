@@ -70,6 +70,10 @@ export async function startTuiV2(
     onCapture: (level, message) => forwardConsoleCapture?.(level, message),
   });
   const detectedCapabilities = readCapabilitiesFromProcess();
+  const terminalEnvOptions =
+    detectedCapabilities.colorMode === "truecolor"
+      ? { forwardEnvKeys: OPEN_TUI_TERMINAL_ENV_KEYS }
+      : {};
   const fallbackClipboard = createSystemClipboardPort();
   let markRendererFinalized = (): void => undefined;
   const rendererFinalized = new Promise<void>((resolve) => {
@@ -78,7 +82,7 @@ export async function startTuiV2(
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
-    forwardEnvKeys: OPEN_TUI_TERMINAL_ENV_KEYS,
+    ...terminalEnvOptions,
     useKittyKeyboard: detectedCapabilities.kittyKeyboard
       ? { disambiguate: true, events: true }
       : null,
