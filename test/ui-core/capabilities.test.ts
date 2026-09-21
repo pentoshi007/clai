@@ -4,6 +4,7 @@ import {
   DEFAULT_ROWS,
   detectCapabilities,
   resolveOpenTuiCapabilities,
+  restoreSudoTruecolorHint,
   type CapabilityEnv,
 } from "../../src/ui-core/bootstrap/capabilities.js";
 
@@ -49,6 +50,27 @@ describe("detectCapabilities color mode", () => {
     const caps = detectCapabilities(makeEnv({ stdoutIsTTY: false }));
     expect(caps.colorMode).toBe("none");
     expect(caps.isTTY).toBe(false);
+  });
+
+  it("restores the lost truecolor hint for sudo on a 256-color terminal", () => {
+    const env: Record<string, string | undefined> = {
+      TERM: "xterm-256color",
+      SUDO_USER: "aniket",
+    };
+    restoreSudoTruecolorHint(env);
+
+    expect(env.COLORTERM).toBe("truecolor");
+    expect(detectCapabilities(makeEnv({ env })).colorMode).toBe("truecolor");
+  });
+
+  it("leaves explicit and non-sudo color settings unchanged", () => {
+    const noColor = { TERM: "xterm-256color", SUDO_USER: "aniket", NO_COLOR: "1" };
+    const plain = { TERM: "xterm-256color" };
+    restoreSudoTruecolorHint(noColor);
+    restoreSudoTruecolorHint(plain);
+
+    expect(noColor.COLORTERM).toBeUndefined();
+    expect(plain.COLORTERM).toBeUndefined();
   });
 });
 

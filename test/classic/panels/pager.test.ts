@@ -118,6 +118,15 @@ describe("pager rows", () => {
     expect(raw).toContain("# Heading");
     expect(raw).toContain("**bold** text");
   });
+
+  it("uses the active Ink palette instead of ambient Chalk settings", () => {
+    const body = "# Heading\n\n```ts\nconst value = 42;\n```";
+    const colored = pagerLines(body, 72, 12, "formatted", false, colorInk).join("\n");
+    const plain = pagerLines(body, 72, 12, "formatted", false, ink).join("\n");
+
+    expect(colored).toContain("\x1b[38;2;");
+    expect(plain).not.toContain("\x1b[");
+  });
 });
 
 describe("pager source normalization and width", () => {

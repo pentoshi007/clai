@@ -61,6 +61,26 @@ function explicitColorMode(
   return undefined;
 }
 
+function needsSudoTruecolorHint(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  const term = (env.TERM ?? "").toLowerCase();
+  return (
+    Boolean(env.SUDO_USER || env.SUDO_UID) &&
+    !explicitColorMode(env) &&
+    !(env.COLORTERM ?? "").trim() &&
+    !(env.TERM_PROGRAM ?? "").trim() &&
+    term.includes("256color")
+  );
+}
+
+export function restoreSudoTruecolorHint(
+  env: Record<string, string | undefined>,
+): void {
+  if (!needsSudoTruecolorHint(env)) return;
+  env.COLORTERM = "truecolor";
+}
+
 function detectColorMode(
   env: CapabilityEnv["env"],
   isTTY: boolean,
@@ -201,6 +221,7 @@ export function resolveOpenTuiCapabilities(
 }
 
 export function readCapabilitiesFromProcess(): TerminalCapabilityReport {
+  restoreSudoTruecolorHint(process.env);
   return detectCapabilities({
     env: process.env,
     stdoutIsTTY: Boolean(process.stdout.isTTY),

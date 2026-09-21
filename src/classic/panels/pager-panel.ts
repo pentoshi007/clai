@@ -59,11 +59,18 @@ function formattedPagerBody(body: string): string {
   return stripped;
 }
 
-function logicalPagerLines(body: string, width: number, format: PagerFormat): readonly string[] {
+function logicalPagerLines(
+  body: string,
+  width: number,
+  format: PagerFormat,
+  appearance?: Pick<InkTheme, "theme" | "colorMode">,
+): readonly string[] {
   if (format === "formatted") {
     const rendered = renderMarkdownLines(formattedPagerBody(body), {
       width: Math.max(20, width),
       stripOuterIndent: true,
+      theme: appearance?.theme,
+      colorMode: appearance?.colorMode,
     });
     if (rendered.length > 0) return rendered;
   }
@@ -76,10 +83,11 @@ export function pagerLines(
   rows = Number.MAX_SAFE_INTEGER,
   format: PagerFormat = "formatted",
   ansiBody = false,
+  appearance?: Pick<InkTheme, "theme" | "colorMode">,
 ): readonly string[] {
   const width = panelBodyWidth(columns);
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
-  const lines = logicalPagerLines(body, textWidth, format).flatMap((line) =>
+  const lines = logicalPagerLines(body, textWidth, format, appearance).flatMap((line) =>
     format === "formatted" || ansiBody
       ? wrapAnsiLine(line, textWidth)
       : wrapPagerLine(line, textWidth, { preserveWhitespace: true }),
@@ -103,6 +111,7 @@ let pagerCache:
       readonly rows: number;
       readonly format: PagerFormat;
       readonly ansiBody: boolean;
+      readonly appearance: Pick<InkTheme, "theme" | "colorMode"> | undefined;
       readonly view: PagerViewModel;
     }
   | undefined;
@@ -113,6 +122,7 @@ export function pagerViewModel(
   rows = Number.MAX_SAFE_INTEGER,
   format: PagerFormat = "formatted",
   ansiBody = false,
+  appearance?: Pick<InkTheme, "theme" | "colorMode">,
 ): PagerViewModel {
   const hit = pagerCache;
   if (
@@ -121,13 +131,14 @@ export function pagerViewModel(
     hit.columns === columns &&
     hit.rows === rows &&
     hit.format === format &&
-    hit.ansiBody === ansiBody
+    hit.ansiBody === ansiBody &&
+    hit.appearance === appearance
   ) {
     return hit.view;
   }
-  const lines = pagerLines(body, columns, rows, format, ansiBody);
+  const lines = pagerLines(body, columns, rows, format, ansiBody, appearance);
   const view: PagerViewModel = { lines, searchLines: pagerSearchLines(lines) };
-  pagerCache = { body, columns, rows, format, ansiBody, view };
+  pagerCache = { body, columns, rows, format, ansiBody, appearance, view };
   return view;
 }
 function clampTop(caret: number, top: number, height: number, count: number): number {
