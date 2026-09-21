@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatToolArgs } from "../../../src/agent/tool-call-parser.js";
 import { availableToolNames } from "../../../src/tools/registry.js";
 import { presentTool } from "../../../src/ui-core/rendering/tool-presenter.js";
 import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
@@ -84,5 +85,27 @@ describe("tool registry parity for v2 (V2-082)", () => {
       }),
     );
     expect(blocked.statusLabel.toLowerCase()).toContain("block");
+  });
+
+  it("presents compact subagent titles", () => {
+    const prompt = "do not display this prompt";
+    const context = "do not display this context";
+    const argsDisplay = formatToolArgs({
+      name: "subagent.start_many",
+      args: {
+        assignments: [
+          { title: "Map renderer", prompt, context },
+          { title: "Map classic", prompt, context },
+        ],
+      },
+    });
+    const presented = presentTool(
+      toolItem("subagent.start_many", { argsDisplay }),
+    );
+
+    expect(presented.name).toBe("subagent.start_many");
+    expect(presented.argsDisplay).toBe("Map renderer, Map classic");
+    expect(presented.argsDisplay).not.toContain(prompt);
+    expect(presented.argsDisplay).not.toContain(context);
   });
 });

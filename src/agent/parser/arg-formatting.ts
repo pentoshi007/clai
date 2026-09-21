@@ -76,7 +76,34 @@ function formatFsReadArgs(args: Record<string, unknown>): string {
   return `${path}\n${[...lineOptions, ...options].join(" · ")}`;
 }
 
+function displayText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function subagentTitle(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  return displayText((value as { title?: unknown }).title);
+}
+
+function formatSubagentArgs(call: ToolCall): string | undefined {
+  const id = displayText(call.args.id);
+  if (call.name === "subagent.start") return subagentTitle(call.args);
+  if (call.name === "subagent.start_many") {
+    const assignments = Array.isArray(call.args.assignments) ? call.args.assignments : [];
+    return assignments.map(subagentTitle).filter(Boolean).join(", ");
+  }
+  if (call.name === "subagent.list") return "";
+  if (call.name === "subagent.wait") return id || "any child";
+  if (call.name === "subagent.stop" || call.name === "subagent.restart") return id;
+  if (call.name === "subagent.read") {
+    return [id, displayText(call.args.view)].filter(Boolean).join(" · ");
+  }
+  return undefined;
+}
+
 export function formatToolArgs(call: ToolCall): string {
+  const subagentArgs = formatSubagentArgs(call);
+  if (subagentArgs !== undefined) return subagentArgs;
   if (call.name === "terminal.send") {
     return `id=${String(call.args.id ?? "")} kind=${String(call.args.kind ?? "")}`;
   }
