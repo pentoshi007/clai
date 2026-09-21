@@ -4717,6 +4717,31 @@ exports[`serialized request snapshots > free / images 1`] = `
     "thinking": {
       "type": "disabled",
     },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "Read file",
+          "name": "read",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Run shell",
+          "name": "shell",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
   },
   "headers": {
     "accept": "application/json",
@@ -4762,6 +4787,31 @@ exports[`serialized request snapshots > free / minimal 1`] = `
     "thinking": {
       "type": "disabled",
     },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "Read file",
+          "name": "read",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Run shell",
+          "name": "shell",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
   },
   "headers": {
     "accept": "application/json",
@@ -4808,6 +4858,31 @@ exports[`serialized request snapshots > free / reasoning-control 1`] = `
     "thinking": {
       "type": "enabled",
     },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "Read file",
+          "name": "read",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Run shell",
+          "name": "shell",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
   },
   "headers": {
     "accept": "application/json",
@@ -4912,6 +4987,28 @@ exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
             "required": [
               "command",
             ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Read file",
+          "name": "read",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Run shell",
+          "name": "shell",
+          "parameters": {
+            "properties": {},
             "type": "object",
           },
         },
@@ -5027,6 +5124,28 @@ exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
         },
         "type": "function",
       },
+      {
+        "function": {
+          "description": "Read file",
+          "name": "read",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Run shell",
+          "name": "shell",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
     ],
   },
   "headers": {
@@ -5110,6 +5229,28 @@ exports[`serialized request snapshots > free / tools 1`] = `
             "required": [
               "command",
             ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Read file",
+          "name": "read",
+          "parameters": {
+            "properties": {},
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "Run shell",
+          "name": "shell",
+          "parameters": {
+            "properties": {},
             "type": "object",
           },
         },

@@ -167,7 +167,7 @@ function summarizeProviderError(error: unknown): string {
 }
 
 const FREE_PROVIDER_HINT =
-  "the free tier (opencode zen / kilo gateway) is keyless and best-effort, so it is often rate limited or unavailable — set an API key for another provider (clai set <provider> <key>, then clai use <provider>) for reliable access";
+  "the free tier is keyless and best-effort, so it is often rate limited or unavailable — set an API key for another provider (clai set <provider> <key>, then clai use <provider>) for reliable access";
 
 export function failureMessageFor(
   providerId: ProviderId,

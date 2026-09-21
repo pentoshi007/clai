@@ -411,6 +411,79 @@ describe("free provider (zen + kilo)", () => {
       expect(request.headers).not.toHaveProperty("authorization");
     });
 
+    it("injects read and shell tools into free-1 chat requests when none are provided", async () => {
+      const fetchMock = jsonCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.5-free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+      const body = JSON.parse(String(request.body)) as {
+        tools?: Array<{ function?: { name?: string } }>;
+      };
+      const names = (body.tools ?? []).map((t) => t.function?.name);
+      expect(names).toContain("read");
+      expect(names).toContain("shell");
+    });
+
+    it("keeps existing tools and appends read and shell for free-1 chat requests", async () => {
+      const fetchMock = jsonCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "mimo-v2.5-free",
+          messages: [{ role: "user", content: "hi" }],
+          tools: [
+            {
+              name: "fs_read",
+              wireName: "fs_read",
+              description: "Read a file",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+          toolChoice: "auto",
+        },
+        {},
+      );
+
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+      const body = JSON.parse(String(request.body)) as {
+        tools?: Array<{ function?: { name?: string } }>;
+        tool_choice?: unknown;
+      };
+      const names = (body.tools ?? []).map((t) => t.function?.name);
+      expect(names).toEqual(expect.arrayContaining(["fs_read", "read", "shell"]));
+      expect(body.tool_choice).toBe("auto");
+    });
+
+    it("does not inject read and shell tools into free-2 chat requests", async () => {
+      const fetchMock = jsonCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-2/nvidia/nemotron-3-ultra-550b-a55b:free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      const chatCall = fetchMock.mock.calls.find((call) =>
+        String(call[0]).endsWith("/chat/completions"),
+      );
+      const body = JSON.parse(String(chatCall![1]?.body)) as {
+        tools?: unknown[];
+      };
+      expect(body.tools ?? []).toHaveLength(0);
+    });
+
     it("does not probe /responses for zen free models", async () => {
       const fetchMock = vi.fn(async (input: unknown) => {
         if (String(input).endsWith("/responses")) {
