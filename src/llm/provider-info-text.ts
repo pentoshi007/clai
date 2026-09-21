@@ -4,13 +4,13 @@ import {
 } from "./provider-identity.js";
 
 export const providerInfo: Record<string, string> = {
-  free: `Free (opencode zen + kilo gateway) — keyless OpenAI-compatible models
+  free: `Free — keyless OpenAI-compatible models
 
 WHAT IT IS
   The default provider for a fresh clai install. It bundles two keyless
   gateways behind one provider id, namespaced by source:
-    free-1/<model>   opencode zen   https://opencode.ai/zen/v1
-    free-2/<model>   kilo gateway   https://api.kilo.ai/api/gateway
+    free-1/<model>   https://opencode.ai/zen/v1
+    free-2/<model>   https://api.kilo.ai/api/gateway
   Both serve free models with NO API key — requests are forwarded without an
   Authorization header. Chat Completions with SSE streaming, native tool
   calling and reasoning_content thinking all work. A bare model id with no
@@ -28,7 +28,7 @@ MODELS
     free-1/nemotron-3.5-lightning-free
     free-2/stepfun/step-3.7-flash:free
     free-2/nvidia/nemotron-3-ultra-550b-a55b:free
-  zen free ids end in -free; kilo free ids end in :free or /free (the kilo
+  free-1 ids end in -free; free-2 ids end in :free or /free (the free-2
   catalog also flags them with isFree). Premium models stay hidden unless
   you add a key. The free sets rotate upstream and models can be delisted
   without notice — treat availability as transient and just pick another id
@@ -42,7 +42,7 @@ COST
 
 SETUP
   None. A fresh install already uses this provider.
-  Optional: clai set free <key>   unlock premium zen models on your account
+  Optional: clai set free <key>   unlock premium models on your account
   Optional env var: FREE_API_KEY  (used when nothing is stored)
 
 GOOD TO KNOW

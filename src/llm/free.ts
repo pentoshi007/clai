@@ -142,6 +142,7 @@ interface FreeSource {
   baseUrl: string;
   curated: readonly string[];
   responsesApi: boolean;
+  requiredTools?: boolean;
   requestHeaders(apiKey?: string): Record<string, string>;
   catalogFreeIds(payload: unknown): string[];
   keylessId(id: string): boolean;
@@ -154,6 +155,7 @@ const zenSource: FreeSource = {
   baseUrl: ZEN_BASE_URL,
   curated: CURATED_ZEN_MODELS,
   responsesApi: false,
+  requiredTools: true,
   requestHeaders: zenClientHeaders,
   catalogFreeIds(payload) {
     return ingestModelCatalogEntries("free", catalogEntries(payload)).filter(
@@ -223,18 +225,15 @@ export function isKeylessModel(model: string): boolean {
 
 function assertModelAllowed(model: string, apiKey: string): void {
   if (apiKey || isKeylessModel(model)) return;
-  const { source } = resolveFreeSource(model);
   throw new ProviderError(
-    `Free (${source.name}): model "${model}" is premium and requires an API key (402). ` +
+    `Free (model=${model}): this model is premium and requires an API key (402). ` +
       `Pick a free model from /model (free-1/… or free-2/… ids) or set a key with: clai set free <key>`,
     402,
   );
 }
 
-const RESPONSES_DIALECT_PATTERN = /muse-spark/i;
-
 function usesResponsesDialect(source: FreeSource, model: string): boolean {
-  return source.id === "free-1" && RESPONSES_DIALECT_PATTERN.test(model);
+  return source.id === "free-1" && /muse-spark/i.test(model);
 }
 
 function zenResponsesHeaders(
@@ -248,7 +247,10 @@ function zenResponsesHeaders(
   };
 }
 
-function ensureZenRequiredTools(request: CompletionRequest): CompletionRequest {
+function ensureRequiredTools(
+  request: CompletionRequest,
+  dialect: "responses" | "chat",
+): CompletionRequest {
   const existingTools = request.tools ?? [];
   const hasRead = existingTools.some(
     (t) => t.name === "read" || t.wireName === "read",
@@ -276,8 +278,16 @@ function ensureZenRequiredTools(request: CompletionRequest): CompletionRequest {
       });
     }
   }
-  const toolChoice = request.toolChoice === "auto" ? "auto" : undefined;
   const suppressTools = !request.tools?.length || request.toolChoice === "none";
+  if (dialect === "chat") {
+    return {
+      ...request,
+      tools,
+      toolChoice: suppressTools ? undefined : (request.toolChoice ?? "auto"),
+      ...(suppressTools ? { onToolCallDelta: undefined } : {}),
+    };
+  }
+  const toolChoice = request.toolChoice === "auto" ? "auto" : undefined;
   return {
     ...request,
     tools,
@@ -297,7 +307,7 @@ function zenReasoningPayload(
 const ZEN_RESPONSES_CONFIG: ResponsesDialectConfig = {
   baseUrl: ZEN_BASE_URL,
   providerId: "free",
-  displayName: "Free (opencode zen)",
+  displayName: "Free",
   artifactDialect: "openai-compatible",
   terminalPolicy: META_STREAM_TERMINAL,
   buildHeaders: zenResponsesHeaders,
@@ -343,7 +353,7 @@ async function listSourceModels(
 export const freeProvider: LlmProvider = {
   id: "free",
   reasoningStyle: "openai",
-  displayName: "Free (zen + kilo)",
+  displayName: "Free",
   defaultModel: defaultModels.free,
   envVar: "FREE_API_KEY",
   validateKey: (key: string) => key.trim().length >= 8,
@@ -377,7 +387,7 @@ export const freeProvider: LlmProvider = {
     assertModelAllowed(requested, apiKey);
     const { source, model } = resolveFreeSource(requested);
     if (usesResponsesDialect(source, model)) {
-      const zenRequest = ensureZenRequiredTools(request);
+      const zenRequest = ensureRequiredTools(request, "responses");
       const result = await responsesStream(
         ZEN_RESPONSES_CONFIG,
         zenRequest,
@@ -390,6 +400,9 @@ export const freeProvider: LlmProvider = {
       const toolCalls = suppressTools ? undefined : result.toolCalls;
       return { ...result, model: requested, toolCalls };
     }
+    const effective = source.requiredTools
+      ? ensureRequiredTools(request, "chat")
+      : request;
     const payload = await openAiCompatibleComplete({
       responsesFirst: source.responsesApi,
       headers: source.requestHeaders(apiKey),
@@ -398,15 +411,15 @@ export const freeProvider: LlmProvider = {
       baseUrl: source.baseUrl,
       apiKey,
       model,
-      messages: request.messages,
-      maxTokens: request.maxTokens,
-      temperature: request.temperature,
-      signal: request.signal,
-      reasoning: request.thinking,
+      messages: effective.messages,
+      maxTokens: effective.maxTokens,
+      temperature: effective.temperature,
+      signal: effective.signal,
+      reasoning: effective.thinking,
       reasoningStyle: FREE_REASONING_STYLE,
-      tools: request.tools,
-      toolChoice: request.toolChoice,
-      parallelToolCalls: request.parallelToolCalls,
+      tools: effective.tools,
+      toolChoice: effective.toolChoice,
+      parallelToolCalls: effective.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
       ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
@@ -429,7 +442,7 @@ export const freeProvider: LlmProvider = {
     assertModelAllowed(requested, apiKey);
     const { source, model } = resolveFreeSource(requested);
     if (usesResponsesDialect(source, model)) {
-      const zenRequest = ensureZenRequiredTools(request);
+      const zenRequest = ensureRequiredTools(request, "responses");
       const result = await responsesStream(
         ZEN_RESPONSES_CONFIG,
         zenRequest,
@@ -442,7 +455,10 @@ export const freeProvider: LlmProvider = {
       const toolCalls = suppressTools ? undefined : result.toolCalls;
       return { ...result, model: requested, toolCalls };
     }
-    const budgets = streamIdleBudgets(Boolean(request.thinking?.enabled));
+    const effective = source.requiredTools
+      ? ensureRequiredTools(request, "chat")
+      : request;
+    const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
     const payload = await openAiCompatibleStream({
       responsesFirst: source.responsesApi,
       headers: source.requestHeaders(apiKey),
@@ -451,23 +467,23 @@ export const freeProvider: LlmProvider = {
       baseUrl: source.baseUrl,
       apiKey,
       model,
-      messages: request.messages,
-      maxTokens: request.maxTokens,
-      temperature: request.temperature,
-      signal: request.signal,
+      messages: effective.messages,
+      maxTokens: effective.maxTokens,
+      temperature: effective.temperature,
+      signal: effective.signal,
       onToken,
-      onToolCallDelta: request.onToolCallDelta,
-      onStreamEvent: request.onStreamEvent,
-      reasoning: request.thinking,
+      onToolCallDelta: effective.onToolCallDelta,
+      onStreamEvent: effective.onStreamEvent,
+      reasoning: effective.thinking,
       reasoningStyle: FREE_REASONING_STYLE,
       idleTimeoutMs: budgets.idleTimeoutMs,
-      initialIdleTimeoutMs: request.thinking?.enabled
+      initialIdleTimeoutMs: effective.thinking?.enabled
         ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
         : 60_000,
       outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
-      tools: request.tools,
-      toolChoice: request.toolChoice,
-      parallelToolCalls: request.parallelToolCalls,
+      tools: effective.tools,
+      toolChoice: effective.toolChoice,
+      parallelToolCalls: effective.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
       ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
