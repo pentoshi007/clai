@@ -199,5 +199,51 @@ describe("fileToolTitle + formatToolArgs", () => {
       }),
     ).toBe("/tmp/full.ts");
   });
+
+  it("shows only subagent assignment titles", () => {
+    const prompt = "do not display this prompt";
+    const context = "do not display this context";
+    const single = formatToolArgs({
+      name: "subagent.start",
+      args: { title: "Map renderer", prompt, context },
+    });
+    const multiple = formatToolArgs({
+      name: "subagent.start_many",
+      args: {
+        assignments: [
+          { title: "Map renderer", prompt, context },
+          { title: "Map classic", prompt, context },
+        ],
+      },
+    });
+
+    expect(single).toBe("Map renderer");
+    expect(multiple).toBe("Map renderer, Map classic");
+    expect(`${single}\n${multiple}`).not.toContain(prompt);
+    expect(`${single}\n${multiple}`).not.toContain(context);
+    expect(formatToolArgs({ name: "subagent.start", args: { prompt } })).toBe("");
+  });
+
+  it("keeps subagent lifecycle cards compact", () => {
+    const prompt = "do not display this prompt";
+    const context = "do not display this context";
+    expect(
+      formatToolArgs({
+        name: "subagent.restart",
+        args: { id: "child-1", prompt, context },
+      }),
+    ).toBe("child-1");
+    expect(
+      formatToolArgs({
+        name: "subagent.read",
+        args: { id: "child-1", view: "summary", offset: 120 },
+      }),
+    ).toBe("child-1 · summary");
+    expect(formatToolArgs({ name: "subagent.wait", args: {} })).toBe("any child");
+    expect(formatToolArgs({ name: "subagent.list", args: {} })).toBe("");
+    expect(formatToolArgs({ name: "custom.tool", args: { prompt } })).toBe(
+      JSON.stringify({ prompt }),
+    );
+  });
 });
 

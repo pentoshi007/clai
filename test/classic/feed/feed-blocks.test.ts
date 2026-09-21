@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatToolArgs } from "../../../src/agent/tool-call-parser.js";
 import {
   buildFeedBlocks,
   MAX_BLOCK_ROWS,
@@ -90,6 +91,35 @@ describe("buildFeedBlocks", () => {
     expect(text).toContain("file: src/app.ts");
     expect(text).toContain("Ctrl+O to expand");
     expect(text).not.toContain("PASS src/routes/users.test.ts");
+  });
+
+  it("shows only subagent titles in classic tool cards", () => {
+    const source = transcriptItems(turn.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    );
+    expect(source).toBeDefined();
+    const prompt = "do not display this prompt";
+    const context = "do not display this context";
+    const item = {
+      ...source!,
+      name: "subagent.start_many",
+      argsDisplay: formatToolArgs({
+        name: "subagent.start_many",
+        args: {
+          assignments: [
+            { title: "Map renderer", prompt, context },
+            { title: "Map classic", prompt, context },
+          ],
+        },
+      }),
+    };
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
+    const text = buildToolLines(ctx, item).map(stripAnsi).join("\n");
+
+    expect(text).toContain("subagent.start_many");
+    expect(text).toContain("Map renderer, Map classic");
+    expect(text).not.toContain(prompt);
+    expect(text).not.toContain(context);
   });
 
   it("shows three head and tail lines in collapsed tool output", () => {
