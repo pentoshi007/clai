@@ -53,6 +53,7 @@ export function PanelHost(props: PanelHostProps): ReactNode {
         props.rows,
         snapshot.pager.format,
         subagent,
+        props.ink,
       );
       return (
         <PagerPanel

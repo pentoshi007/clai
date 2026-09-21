@@ -177,9 +177,9 @@ describe("planStreamRecovery — bounded escalation", () => {
     );
   });
 
-  it("follows the exact 5/10/15/20 second rate-limit schedule and stops after four retries", () => {
+  it("follows the exact 5/8/10/15 second rate-limit schedule and stops after four retries", () => {
     const state = createStreamRecoveryState();
-    const schedule = [5_000, 10_000, 15_000, 20_000];
+    const schedule = [5_000, 8_000, 10_000, 15_000];
     for (const expected of schedule) {
       const plan = planStreamRecovery({ kind: "rate-limit", state });
       expect(plan.action).toBe("retry");

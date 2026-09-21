@@ -6,7 +6,7 @@ export const MAX_PROVIDER_KEYS = 10;
 export const MULTI_KEY_ATTEMPTS = 2;
 
 export const RATE_LIMIT_RETRY_WAIT_MS: readonly number[] = [
-  5_000, 10_000, 15_000, 20_000,
+  5_000, 8_000, 10_000, 15_000,
 ];
 
 export function rateLimitRetryWaitMs(
