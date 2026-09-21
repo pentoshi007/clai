@@ -26,8 +26,9 @@ describe("OpenTUI resume bootstrap order", () => {
     );
   });
 
-  it("forwards terminal color evidence to the native renderer", () => {
-    expect(source).toContain("forwardEnvKeys: OPEN_TUI_TERMINAL_ENV_KEYS");
+  it("forwards terminal color evidence only with truecolor support", () => {
+    expect(source).toContain('detectedCapabilities.colorMode === "truecolor"');
+    expect(source).toContain("...terminalEnvOptions,");
     for (const key of ["TERM", "COLORTERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION"]) {
       expect(source).toContain(`"${key}"`);
     }
