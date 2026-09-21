@@ -27,6 +27,7 @@ export interface RunTurnRequest {
   readonly maxSteps?: number | undefined;
   readonly previousTurn?: PreviousTurnSignal | undefined;
   readonly previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
+  readonly providerReportedContextTokens?: number | undefined;
   readonly contextLimitTokens?: number | undefined;
   readonly getContextLimitTokens?: (
     provider: ProviderId | undefined,

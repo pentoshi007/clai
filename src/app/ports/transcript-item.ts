@@ -69,6 +69,7 @@ export interface CompactedItem {
   error?: string | undefined;
   beforeTokens?: number | undefined;
   afterTokens?: number | undefined;
+  measurement?: "provider-reported" | "estimated" | undefined;
   startedAt?: number | undefined;
   endedAt?: number | undefined;
 }

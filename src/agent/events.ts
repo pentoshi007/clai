@@ -40,14 +40,20 @@ export type AgentEvent =
   | { type: "turn-end"; outcome: TurnOutcome; finalAnswer: string; steps: number }
   | { type: "turn-aborted" }
   | { type: "turn-error"; message: string }
-  | { type: "compaction-start"; id: string; beforeTokens: number }
+  | {
+      type: "compaction-start";
+      id: string;
+      beforeTokens: number;
+      measurement?: "provider-reported" | "estimated" | undefined;
+    }
   | { type: "compaction-delta"; id: string; text: string; replace?: boolean | undefined }
   | {
       type: "compaction-completed";
       id: string;
       summary: string;
       beforeTokens: number;
-      afterTokens: number;
+      afterTokens?: number | undefined;
+      measurement?: "provider-reported" | "estimated" | undefined;
       contextScope: Extract<
         ContextSnapshotScope,
         "message-history" | "assembled-request"
@@ -58,6 +64,7 @@ export type AgentEvent =
       id: string;
       message: string;
       retainedTokens: number;
+      measurement?: "provider-reported" | "estimated" | undefined;
     }
   | { type: "compacted"; summary: string; beforeTokens: number; afterTokens: number }
   | {

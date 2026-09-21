@@ -96,6 +96,7 @@ export interface AppEventPayloads {
   "compaction-started": {
     readonly compactionId: string;
     readonly beforeTokens: number;
+    readonly measurement?: "provider-reported" | "estimated" | undefined;
   };
   "compaction-delta": {
     readonly compactionId: string;
@@ -106,7 +107,8 @@ export interface AppEventPayloads {
     readonly compactionId: string;
     readonly summary: string;
     readonly beforeTokens: number;
-    readonly afterTokens: number;
+    readonly afterTokens?: number | undefined;
+    readonly measurement?: "provider-reported" | "estimated" | undefined;
     readonly contextScope: Extract<
       ContextSnapshotScope,
       "message-history" | "assembled-request"
@@ -116,6 +118,7 @@ export interface AppEventPayloads {
     readonly compactionId: string;
     readonly message: string;
     readonly retainedTokens?: number | undefined;
+    readonly measurement?: "provider-reported" | "estimated" | undefined;
   };
   compacted: {
     readonly summary: string;

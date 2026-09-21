@@ -221,9 +221,18 @@ export function buildTurnErrorLines(
   return [row(ctx, `${glyph} ${styled(ctx, meta(ctx, ["error", text]), { fg: "diffDel" })}`)];
 }
 
-function tokenLabel(before: number, after: number): string | undefined {
-  if (before <= 0 && after <= 0) return undefined;
-  return `~${before.toLocaleString("en-US")} → ~${after.toLocaleString("en-US")} tokens`;
+function tokenLabel(
+  before: number,
+  after: number | undefined,
+  measurement?: "provider-reported" | "estimated" | undefined,
+): string | undefined {
+  if (measurement === "provider-reported") {
+    return before > 0
+      ? `${before.toLocaleString("en-US")} provider-reported tokens before`
+      : undefined;
+  }
+  if (before <= 0 && (after ?? 0) <= 0) return undefined;
+  return `~${before.toLocaleString("en-US")} → ~${(after ?? 0).toLocaleString("en-US")} tokens`;
 }
 
 function compactionRow(
@@ -242,7 +251,11 @@ export function buildCompactionStartLines(
 ): readonly string[] {
   if (quiet(ctx)) return [];
   const label =
-    event.beforeTokens > 0 ? `~${event.beforeTokens.toLocaleString("en-US")} tokens before` : undefined;
+    event.beforeTokens > 0
+      ? event.measurement === "provider-reported"
+        ? `${event.beforeTokens.toLocaleString("en-US")} provider-reported tokens before`
+        : `~${event.beforeTokens.toLocaleString("en-US")} tokens before`
+      : undefined;
   return compactionRow(ctx, "compacting context", label, "cyan");
 }
 
@@ -258,7 +271,7 @@ export function buildCompactionCompletedLines(
   return compactionRow(
     ctx,
     "compacted context",
-    tokenLabel(event.beforeTokens, event.afterTokens),
+    tokenLabel(event.beforeTokens, event.afterTokens, event.measurement),
     "cyan",
   );
 }

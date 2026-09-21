@@ -272,6 +272,7 @@ export function serializeForHistory(
           done: true,
           beforeTokens: item.beforeTokens,
           afterTokens: item.afterTokens,
+          ...(item.measurement ? { measurement: item.measurement } : {}),
           startedAt: item.startedAt,
           endedAt: item.endedAt,
           ...(item.error ? { error: item.error } : {}),

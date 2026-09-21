@@ -21,6 +21,7 @@ import { describeDominantContextBlock } from "../context-breakdown.js";
 import {
   planCompactionAdmission,
   type CompactionAdmissionOptions,
+  type CompactionMeasurement,
 } from "./compaction-admission.js";
 import { executeAutomaticCompaction } from "./automatic-compaction-execution.js";
 import { prepareCompactionCandidateMessages } from "./compaction-candidate.js";
@@ -70,17 +71,23 @@ export interface CompactionCoordinatorPorts {
   readonly resetReadOnlyGuard: () => void;
   readonly refreshSessionState: (plan: SessionPlan | undefined) => void;
   readonly setLastCompactionMsgCount: (count: number) => void;
-  readonly writeStarted: (id: string, beforeTokens: number) => void;
+  readonly writeStarted: (
+    id: string,
+    beforeTokens: number,
+    measurement: CompactionMeasurement,
+  ) => void;
   readonly writeFailed: (
     id: string,
     message: string,
     beforeTokens: number,
+    measurement: CompactionMeasurement,
   ) => void;
   readonly writeCompleted: (
     id: string,
     summary: string,
     beforeTokens: number,
-    afterTokens: number,
+    afterTokens: number | undefined,
+    measurement: CompactionMeasurement,
   ) => void;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly audit: (event: string, payload: CompactionAuditPayload) => void;
@@ -95,6 +102,7 @@ const isAbortLike = (error: Error): boolean =>
 
 interface AdmittedCompaction {
   readonly beforeTokens: number;
+  readonly measurement: CompactionMeasurement;
   readonly compactTrigger: number;
   readonly durableEnvelope: string | undefined;
   readonly attemptKey: string;
@@ -111,6 +119,7 @@ const runAdmittedCompaction = async (
 ): Promise<void> => {
   const {
     beforeTokens,
+    measurement,
     compactTrigger,
     durableEnvelope,
     attemptKey,
@@ -159,12 +168,17 @@ const runAdmittedCompaction = async (
       compactionId,
       "The generated summary was not accepted; the original context was retained.",
       beforeTokens,
+      measurement,
     );
     return;
   }
 
   const candidateTokens = ports.estimateRequestTokens(result.messages);
-  if (!force && candidateTokens >= compactTrigger) {
+  if (
+    measurement === "estimated" &&
+    !force &&
+    candidateTokens >= compactTrigger
+  ) {
     const dominant = describeDominantContextBlock(result.messages);
     ports.attempts.recordFailure(attemptKey);
     ports.audit("agent.compact.overflow", {
@@ -181,6 +195,7 @@ const runAdmittedCompaction = async (
       compactionId,
       `Summary remained over the context limit; largest block: ${dominant}.`,
       beforeTokens,
+      measurement,
     );
     return;
   }
@@ -200,7 +215,7 @@ const runAdmittedCompaction = async (
     contextLimitTokens,
     selectTools: ports.selectTools,
   });
-  if (finalFit.accounting.overLimit) {
+  if (measurement === "estimated" && finalFit.accounting.overLimit) {
     const dominant = describeDominantContextBlock(candidateMessages);
     ports.attempts.recordFailure(attemptKey);
     ports.audit("agent.compact.overflow", {
@@ -218,6 +233,7 @@ const runAdmittedCompaction = async (
       compactionId,
       `Compacted request would not fit the effective safe context limit; largest block: ${dominant}.`,
       beforeTokens,
+      measurement,
     );
     return;
   }
@@ -241,11 +257,16 @@ const runAdmittedCompaction = async (
     compactionId,
     compactionSummaryText(summaryBodyOf(ports.messages)),
     beforeTokens,
-    afterTokens,
+    measurement === "estimated" ? afterTokens : undefined,
+    measurement,
   );
+  const tokenLabel =
+    measurement === "provider-reported"
+      ? `${beforeTokens.toLocaleString()} provider-reported tokens before`
+      : `~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens`;
   ports.notify(
     "info",
-    `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)${result.strategy === "emergency_prefix_slice" ? " — oldest slice only (lower confidence); run /compact for a full summary" : ""}`,
+    `context auto-compacted to fit the window (${tokenLabel})${result.strategy === "emergency_prefix_slice" ? " — oldest slice only (lower confidence); run /compact for a full summary" : ""}`,
   );
 };
 
@@ -295,7 +316,11 @@ export const createCompactionCoordinator =
       contextLimitTokens,
       durableEnvelope: admission.durableEnvelope,
     });
-    ports.writeStarted(compactionId, admission.beforeTokens);
+    ports.writeStarted(
+      compactionId,
+      admission.beforeTokens,
+      admission.measurement,
+    );
 
     try {
       await runAdmittedCompaction(
@@ -303,8 +328,9 @@ export const createCompactionCoordinator =
         reason,
         options.bypassThreshold === true,
         {
-        beforeTokens: admission.beforeTokens,
-        compactTrigger: admission.compactTrigger,
+          beforeTokens: admission.beforeTokens,
+          measurement: admission.measurement,
+          compactTrigger: admission.compactTrigger,
         durableEnvelope: admission.durableEnvelope,
         attemptKey: admission.attemptKey,
         compactionId,
@@ -320,6 +346,7 @@ export const createCompactionCoordinator =
           policyLimited: isOperationPolicyError(error),
         }),
         admission.beforeTokens,
+        admission.measurement,
       );
       if (error instanceof Error && isAbortLike(error)) throw error;
       ports.attempts.recordFailure(admission.attemptKey);

@@ -253,6 +253,7 @@ export function createCompositionRoot(
         event.payload.afterTokens,
         event.payload.contextScope,
         event.payload.compactionId,
+        event.payload.measurement,
       );
     }
     if (event.type === "context-estimate" && sessionRef) {

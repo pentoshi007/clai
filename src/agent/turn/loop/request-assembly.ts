@@ -42,6 +42,7 @@ export interface RequestAssemblyPorts {
   readonly thinking: ReasoningPreference | undefined;
   readonly step: number;
   readonly contextLimitTokens: number | undefined;
+  readonly providerReportedContextTokens?: number | undefined;
   readonly estimateRequestTokens: (messages: readonly ChatMessage[]) => number;
   readonly selectTools: () => ToolDefinition[] | undefined;
   readonly notify: (level: "info" | "warn", message: string) => void;
@@ -164,9 +165,11 @@ export const assembleRequest = async (
       ? { contextLimitTokens: ports.contextLimitTokens }
       : {}),
   }).accounting;
-  ports.emitContextEstimate(finalAccounting.requestTokens);
+  if (ports.providerReportedContextTokens === undefined) {
+    ports.emitContextEstimate(finalAccounting.requestTokens);
+  }
 
-  if (finalAccounting.overLimit) {
+  if (finalAccounting.overLimit && ports.providerReportedContextTokens === undefined) {
     await ports.audit("agent.request.over-limit-blocked", {
       provider: ports.provider,
       model: ports.model,
