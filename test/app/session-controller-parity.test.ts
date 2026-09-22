@@ -309,6 +309,85 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(reopened.getState().contextUsage?.exact).toBe(true);
   });
 
+  it("persists the computed post-compaction context for a later resume", async () => {
+    const saved: Array<{
+      messages: readonly { role: string; content: string }[];
+      options: Parameters<PersistencePort["saveSession"]>[1];
+    }> = [];
+    const persistence: PersistencePort = {
+      async saveSession(messages, options) {
+        saved.push({
+          messages: messages.map((message) => ({ ...message })),
+          options: options ? { ...options } : undefined,
+        });
+      },
+      async loadPlan() {
+        return undefined;
+      },
+      async savePlan() {},
+      async deletePlan() {},
+    };
+    const before = createContextSnapshot({
+      contextTokens: 260_518,
+      scope: "provider-request",
+      precision: "provider-exact",
+    });
+    const session = new SessionController({
+      agent: fakeAgent(),
+      persistence,
+      emit: () => {},
+      sessionId: "sess-compaction-context",
+      provider: "nvidia" as never,
+      model: "test-model",
+    });
+    session.loadHistory(
+      [
+        { role: "user", content: "old context" },
+        { role: "assistant", content: "old response" },
+      ],
+      {
+        sessionId: "sess-compaction-context",
+        contextUsage: {
+          contextTokens: before.contextTokens,
+          contextLimit: 0,
+          exact: true,
+          contextSnapshot: before,
+        },
+      },
+    );
+
+    session.noteContextCompacted(
+      4_354,
+      "assembled-request",
+      "compaction-1",
+      "provider-reported",
+    );
+    expect(session.getState().contextSnapshot).toMatchObject({
+      contextTokens: 4_354,
+      precision: "estimate",
+    });
+    expect(session.getState().contextChip).toBe("ctx:~4,354");
+
+    await session.persistNow();
+    const reopened = new SessionController({
+      agent: fakeAgent(),
+      persistence,
+      emit: () => {},
+      sessionId: "sess-compaction-context",
+      provider: "nvidia" as never,
+      model: "test-model",
+    });
+    reopened.loadHistory(saved[0]!.messages as never, {
+      sessionId: "sess-compaction-context",
+      contextUsage: saved[0]!.options?.contextUsage,
+    });
+    expect(reopened.getState().contextSnapshot).toMatchObject({
+      contextTokens: 4_354,
+      precision: "estimate",
+    });
+    expect(reopened.getState().contextChip).toBe("ctx:~4,354");
+  });
+
   it("waits for provider telemetry before displaying context", () => {
     const session = new SessionController({
       agent: fakeAgent(),
@@ -502,8 +581,11 @@ describe("SessionController parity helpers (V2-080)", () => {
     if (completed?.type === "compaction-completed") {
       expect(completed.payload.afterTokens).toBe(115_030);
     }
-    expect(session.getState().contextSnapshot?.precision).toBe("provider-exact");
-    expect(session.getState().contextChip).toBe("115,000 tokens → 115,030 tokens");
+    expect(session.getState().contextSnapshot).toMatchObject({
+      contextTokens: 115_030,
+      precision: "estimate",
+    });
+    expect(session.getState().contextChip).toBe("ctx:~115,030");
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );

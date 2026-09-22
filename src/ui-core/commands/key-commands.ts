@@ -792,6 +792,7 @@ async function openClineKeysFlow(services: AppServices): Promise<void> {
       return;
     }
     if (answer.action === "pick") {
+      await savePickerDraft("cline", answer, keys, activeIndex);
       const tokens = await clineAddAccount(services);
       if (tokens) await storeClineAccount(services, tokens);
       ({ keys, activeIndex } = await loadClineKeys());
@@ -820,6 +821,29 @@ async function loadOAuthKeys(
     keys: multi.source === "env" ? [] : multi.keys,
     activeIndex: multi.source === "env" ? 0 : multi.activeIndex,
   };
+}
+
+async function savePickerDraft(
+  provider: "cline" | "codex" | "copilot",
+  answer: Extract<KeysEditorAnswer, { action: "pick" }>,
+  keys: readonly ProviderKeySlot[],
+  activeIndex: number,
+): Promise<void> {
+  const byId = new Map(keys.map((key) => [key.id, key.value]));
+  const detailed = answer.rows.flatMap((row) => {
+    if (row.slotId) {
+      const value = byId.get(row.slotId);
+      return value ? [{ value, disabled: row.disabled === true }] : [];
+    }
+    const value = row.value.trim();
+    return value ? [{ value, disabled: row.disabled === true }] : [];
+  });
+  await setProviderKeys(
+    provider,
+    detailed.map((row) => row.value),
+    answer.activeIndex ?? activeIndex,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
 }
 
 async function saveOAuthKeys(
@@ -891,6 +915,7 @@ async function openCodexKeysFlow(services: AppServices): Promise<void> {
       return;
     }
     if (answer.action === "pick") {
+      await savePickerDraft("codex", answer, keys, activeIndex);
       const credential = await runCodexAuthForUI(services);
       const manualKey = (credential as { manualKey?: string } | undefined)?.manualKey;
       if (credential) {
@@ -957,6 +982,7 @@ async function openCopilotKeysFlow(services: AppServices): Promise<void> {
       return;
     }
     if (answer.action === "pick") {
+      await savePickerDraft("copilot", answer, keys, activeIndex);
       const token = await runCopilotAuthForUI(services);
       if (token) {
         await appendProviderKey("copilot", token);
