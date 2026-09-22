@@ -165,7 +165,7 @@ describe("ChatGPT Subscription and GitHub Copilot integration", () => {
       if (url.endsWith("/responses")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         expect(body).not.toHaveProperty("parallel_tool_calls");
-        expect(body.prompt_cache_key).toMatch(/^clai-[0-9a-f]{40}$/);
+        expect(body.prompt_cache_key).toBe("session-codex-affinity-99");
         expect(body.tools).toBeDefined();
 
         const headers = new Headers(init?.headers);

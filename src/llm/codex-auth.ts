@@ -2,7 +2,12 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 
-import { currentSessionAffinity } from "./session-affinity.js";
+import {
+  currentIsolatedSessionAffinity,
+  currentSessionAffinity,
+} from "./session-affinity.js";
+import { cacheAffinityKey } from "./cache-affinity.js";
+import type { ResponsesBodyExtrasContext } from "./responses-config.js";
 import { CHATGPT_SUBSCRIPTION_DISPLAY_NAME } from "./provider-identity.js";
 
 export const CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex";
@@ -76,20 +81,44 @@ export function decodeCodexKey(value: string): CodexCredential | undefined {
   }
 }
 
+export function codexPromptCacheKey(
+  context?: ResponsesBodyExtrasContext | undefined,
+): string {
+  const affinity = currentSessionAffinity();
+  if (affinity) {
+    if (affinity.includes(":subagent:")) {
+      return affinity.split(":subagent:")[0]!;
+    }
+    if (affinity.endsWith(":auxiliary")) {
+      return affinity.slice(0, -":auxiliary".length);
+    }
+    return affinity;
+  }
+  if (context?.model && context?.messages) {
+    return cacheAffinityKey("codex", context.model, context.messages);
+  }
+  return defaultCodexSessionId();
+}
+
 export function codexRequestHeaders(
   accountId: string,
   extra: Record<string, string> = {},
   residency?: string,
+  sessionId?: string,
 ): Record<string, string> {
-  const session = currentSessionAffinity();
+  const affinity = currentSessionAffinity();
+  const session = sessionId ?? codexPromptCacheKey();
+  const isSubagent = Boolean(currentIsolatedSessionAffinity()?.includes(":subagent:"));
   return {
     "chatgpt-account-id": accountId,
     originator: CODEX_ORIGINATOR,
     "openai-beta": "responses=experimental",
     "User-Agent": `${CODEX_ORIGINATOR}/${CODEX_CLIENT_VERSION}`,
-    "session-id": session ?? defaultCodexSessionId(),
+    "session-id": session,
     "x-client-request-id": crypto.randomUUID(),
     ...(residency ? { "x-openai-internal-codex-residency": residency } : {}),
+    ...(affinity && affinity !== session ? { "thread-id": affinity } : {}),
+    ...(isSubagent ? { "x-openai-subagent": "collab_spawn" } : {}),
     ...extra,
   };
 }
@@ -320,14 +349,15 @@ export async function refreshCodexToken(
   refreshToken: string,
   fallback?: CodexCredential | undefined,
 ): Promise<CodexCredential> {
-  const result = await postToken(
-    {
-      grant_type: "refresh_token",
-      client_id: CODEX_CLIENT_ID,
-      refresh_token: refreshToken,
-    },
-    "application/json",
-  );
+  const body = {
+    grant_type: "refresh_token",
+    client_id: CODEX_CLIENT_ID,
+    refresh_token: refreshToken,
+  };
+  let result = await postToken(body, "application/json");
+  if (!result.ok && (result.status === 400 || result.status === 415)) {
+    result = await postToken(body, "application/x-www-form-urlencoded");
+  }
   if (!result.ok) {
     throw new Error(`${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} token refresh failed (${tokenError(result.json, result.status)})`);
   }
@@ -407,9 +437,18 @@ export async function maybeRefreshCodexCredential(
   currentKey: string,
 ): Promise<string | undefined> {
   const credential = decodeCodexKey(currentKey);
-  if (!credential?.refreshToken) return undefined;
+  let refreshToken = credential?.refreshToken;
+  let fallback = credential;
+  if (!refreshToken) {
+    const stored = await readCodexStoredAuth().catch(() => undefined);
+    if (stored?.refreshToken && (!credential || stored.accountId === credential.accountId)) {
+      refreshToken = stored.refreshToken;
+      fallback = credential ?? stored;
+    }
+  }
+  if (!refreshToken) return undefined;
   try {
-    const refreshed = await refreshCodexToken(credential.refreshToken, credential);
+    const refreshed = await refreshCodexToken(refreshToken, fallback);
     return encodeCodexKey(refreshed);
   } catch {
     return undefined;

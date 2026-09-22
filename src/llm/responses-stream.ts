@@ -15,6 +15,7 @@ import {
 import { requireTerminalProof } from "./stream-terminal.js";
 import {
   resolveResponsesUrl,
+  type ResponsesBodyExtrasContext,
   type ResponsesDialectConfig,
 } from "./responses-config.js";
 import {
@@ -46,6 +47,7 @@ async function openResponsesStream(
   body: string,
   request: CompletionRequest,
   watchdog: StreamIdleWatchdog,
+  context?: ResponsesBodyExtrasContext | undefined,
 ): Promise<Response> {
   let response: Response | undefined;
   let lastFetchError: unknown;
@@ -61,7 +63,7 @@ async function openResponsesStream(
       response = await generationFetch(resolveResponsesUrl(config.baseUrl), {
         method: "POST",
         signal: watchdog.controller.signal,
-        headers: config.buildHeaders(auth, "text/event-stream"),
+        headers: config.buildHeaders(auth, "text/event-stream", context),
         body,
         verbose: process.env.CLAI_VERBOSE === "true",
       } as unknown as RequestInit);
@@ -326,6 +328,12 @@ export async function responsesStream(
   const onCallerAbort = (): void =>
     watchdog.controller.abort(request.signal?.reason);
   request.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  const context: ResponsesBodyExtrasContext = {
+    model,
+    messages: request.messages,
+    purpose: request.purpose,
+    reasoningEnabled: Boolean(request.thinking?.enabled),
+  };
   const body = buildResponsesRequestBody(config, request, model, true);
   const cleanup = (): void => {
     watchdog.clear();
@@ -333,7 +341,7 @@ export async function responsesStream(
   };
   let response: Response;
   try {
-    response = await openResponsesStream(config, auth, body, request, watchdog);
+    response = await openResponsesStream(config, auth, body, request, watchdog, context);
   } catch (error) {
     cleanup();
     throw error;

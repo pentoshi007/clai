@@ -31,6 +31,7 @@ export interface ResponsesDialectConfig {
   buildHeaders(
     auth: ProviderAuth,
     accept: ResponsesAccept,
+    context?: ResponsesBodyExtrasContext | undefined,
   ): Record<string, string>;
   reasoningPayload(
     reasoning: ReasoningPreference | undefined,
