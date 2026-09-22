@@ -190,18 +190,16 @@ export async function runSessionCompaction(
     const measurement =
       options.requestTokensBeforeMeasurement ?? "estimated";
     const afterTokens =
-      measurement === "provider-reported"
-        ? undefined
-        : useContinuationAccounting && continuationAccounting
-          ? calibratedRequestTokens(
-              successfulRequest?.provider,
-              successfulRequest?.model,
-              retainedHistoryTokens +
-                overheadTokens(continuationAccounting.rawRequestTokens),
-            )
-          : requestTokensBefore === undefined
-            ? retainedHistoryTokens
-            : retainedHistoryTokens + overheadTokens(requestTokensBefore);
+      useContinuationAccounting && continuationAccounting
+        ? calibratedRequestTokens(
+            successfulRequest?.provider,
+            successfulRequest?.model,
+            retainedHistoryTokens +
+              overheadTokens(continuationAccounting.rawRequestTokens),
+          )
+        : requestTokensBefore === undefined
+          ? retainedHistoryTokens
+          : retainedHistoryTokens + overheadTokens(requestTokensBefore);
     return { beforeTokens, afterTokens, measurement, scope };
   };
   if (options.persist) {

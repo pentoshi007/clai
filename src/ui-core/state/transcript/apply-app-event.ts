@@ -2,7 +2,7 @@ import type { AnyAppEvent } from "../../../app/events/app-event.js";
 import { isProviderFailureStatus } from "../../../llm/key-rotation.js";
 import { isToolFenceOnlyText, stripToolCallSurfaces } from "../../rendering/strip-tool-surfaces.js";
 import { appendItem, removeItem, updateItem } from "../transcript-struct.js";
-import type { AssistantItem, CompactedItem, NoticeLevel, ThinkingItem, ToolItem, TranscriptState, TurnSummaryItem } from "../transcript-types.js";
+import type { AssistantItem, CompactedItem, NoticeLevel, ThinkingItem, ToolItem, TranscriptItem, TranscriptState, TurnSummaryItem } from "../transcript-types.js";
 import { appendDelta, clearStripStream, closePendingThinking, discardPendingToolFenceStream, finalizeMessage } from "./message-lifecycle.js";
 
 function updateToolItem(
@@ -38,6 +38,23 @@ function pushNotice(
     level,
     text,
   });
+}
+
+const MAX_COMPACTION_ORIGINAL_ITEMS = 2_000;
+
+function snapshotCompactionOriginals(
+  state: TranscriptState,
+  compactedId: string,
+): readonly TranscriptItem[] {
+  const items: TranscriptItem[] = [];
+  for (const id of state.order) {
+    if (id === compactedId) continue;
+    const item = state.byId.get(id);
+    if (item) items.push(item);
+  }
+  return items.length <= MAX_COMPACTION_ORIGINAL_ITEMS
+    ? items
+    : items.slice(items.length - MAX_COMPACTION_ORIGINAL_ITEMS);
 }
 
 function appendTurnSummary(
@@ -374,6 +391,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "compaction-completed": {
       const id = `compacted-${event.payload.compactionId}`;
       const existing = withSeq.byId.get(id);
+      const originalItems = snapshotCompactionOriginals(withSeq, id);
       const completed: CompactedItem =
         existing?.kind === "compacted"
           ? {
@@ -390,6 +408,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
               error: undefined,
               startedAt: existing.startedAt ?? existing.timestamp,
               endedAt: event.timestamp,
+              originalItems,
             }
           : {
               id,
@@ -406,6 +425,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
               streaming: false,
               startedAt: event.timestamp,
               endedAt: event.timestamp,
+              originalItems,
             };
       return existing
         ? updateItem(withSeq, id, () => completed)

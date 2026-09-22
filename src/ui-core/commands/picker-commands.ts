@@ -340,6 +340,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   vercel: "https://ai-gateway.vercel.sh/v1",
   deepseek: "https://api.deepseek.com",
   kimi: "https://api.moonshot.ai/v1",
+  mimo: "https://api.xiaomimimo.com/v1",
   glm: "https://api.z.ai/api/paas/v4",
   minimax: "https://api.minimaxi.chat/v1",
   cline: "https://api.cline.bot/api/v1",

@@ -7,6 +7,7 @@ const FAMILYLESS_FREE_MODELS = [
   "free-1/x-preview-f-free",
   "free-1/muse-spark-1.2-contributor-free",
   "free-1/hy3-free",
+  "free-1/mimo-v2.6-flash-free",
   "free-1/mimo-v2.5-free",
   "free-1/laguna-s-2.1-free",
   "free-2/kilo-auto/free",

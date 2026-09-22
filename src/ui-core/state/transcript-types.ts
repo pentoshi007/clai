@@ -1,5 +1,6 @@
 
 import type { ToolCallId, TurnId } from "../../app/events/app-event.js";
+import type { TranscriptItem as PersistedTranscriptItem } from "../../app/ports/transcript-item.js";
 import type { FileChange } from "../../tools/file-diff.js";
 import type { StripStream } from "../rendering/incremental-strip.js";
 
@@ -66,6 +67,10 @@ export interface CompactedItem extends ItemBase {
   readonly error?: string | undefined;
   readonly startedAt?: number | undefined;
   readonly endedAt?: number | undefined;
+  readonly originalItems?: readonly (
+    | TranscriptItem
+    | PersistedTranscriptItem
+  )[] | undefined;
 }
 
 export function compactionTokenLabel(
@@ -91,6 +96,9 @@ export function compactionTokenLabel(
       : "original context retained";
   }
   if (providerReported) {
+    if (item.beforeTokens > 0 && (item.afterTokens ?? 0) > 0) {
+      return `${before} tokens → ${item.afterTokens!.toLocaleString()} tokens`;
+    }
     return item.beforeTokens > 0
       ? `${before} provider-reported tokens before · next report pending`
       : "next report pending";

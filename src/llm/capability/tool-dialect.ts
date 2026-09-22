@@ -28,6 +28,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   ollama: "ollama",
   deepseek: "openai",
   kimi: "openai",
+  mimo: "openai",
   glm: "openai",
   minimax: "openai",
   cline: "openai",

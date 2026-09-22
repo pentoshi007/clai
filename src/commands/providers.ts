@@ -135,6 +135,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "DeepSeek keys start with sk- (from https://platform.deepseek.com)";
   if (provider === "kimi")
     return "Kimi keys start with sk- (from https://platform.kimi.ai)";
+  if (provider === "mimo")
+    return "Xiaomi MiMo keys start with sk- (or tp- for Token Plan) from https://platform.xiaomimimo.com";
   if (provider === "glm")
     return "GLM keys are alphanumeric or id.secret (from https://open.bigmodel.cn or https://z.ai)";
   if (provider === "minimax")

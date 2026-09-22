@@ -254,6 +254,30 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
     { pattern: /kimi-k2\.6/i, layer: kimiConfigurableLayer },
     { pattern: /kimi/i, layer: kimiNoPreservationLayer },
   ],
+  mimo: [
+    {
+      pattern: /-asr$|-tts/i,
+      layer: {
+        evidence: providerDoc("mimo-asr-tts-no-thinking"),
+        reasoning: {
+          generation: "none",
+          control: {
+            dialect: "none",
+            status: "unsupported",
+            evidence: providerDoc("mimo-asr-tts-no-thinking"),
+          },
+        },
+        capabilities: { images: "unsupported" },
+      },
+    },
+    {
+      pattern: /^mimo-v2/i,
+      layer: {
+        evidence: providerDoc("mimo-chat-output-limit"),
+        limits: { outputTokens: 131_072, source: "provider-doc" },
+      },
+    },
+  ],
   glm: [
     {
       pattern: /glm/i,

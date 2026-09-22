@@ -884,6 +884,7 @@ describe("transcript reducer (V2-050)", () => {
           summary: "## Accepted\n- safe",
           beforeTokens: 900,
           afterTokens: 300,
+          measurement: "provider-reported",
         },
         undefined,
       ),
@@ -895,6 +896,9 @@ describe("transcript reducer (V2-050)", () => {
       beforeTokens: 900,
       afterTokens: 300,
     });
+    expect(compactionTokenLabel(transcriptItems(state)[0] as CompactedItem)).toBe(
+      "900 tokens → 300 tokens",
+    );
   });
 
   it("marks a failed compaction as retaining the original context", () => {

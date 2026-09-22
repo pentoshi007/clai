@@ -227,6 +227,9 @@ function tokenLabel(
   measurement?: "provider-reported" | "estimated" | undefined,
 ): string | undefined {
   if (measurement === "provider-reported") {
+    if (before > 0 && (after ?? 0) > 0) {
+      return `${before.toLocaleString("en-US")} tokens → ${(after ?? 0).toLocaleString("en-US")} tokens`;
+    }
     return before > 0
       ? `${before.toLocaleString("en-US")} provider-reported tokens before`
       : undefined;

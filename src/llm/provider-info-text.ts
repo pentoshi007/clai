@@ -23,6 +23,7 @@ MODELS
   /model lists the live catalogs from both gateways (each cached for up to
   30 minutes), namespaced by source:
     free-2/kilo-auto/free                      (clai default)
+    free-1/mimo-v2.6-flash-free
     free-1/mimo-v2.5-free
     free-1/deepseek-v4-flash-free
     free-1/nemotron-3.5-lightning-free
@@ -763,6 +764,49 @@ SETUP
   3. clai use kimi
 
 Docs: https://platform.kimi.ai/docs`,
+  mimo: `Xiaomi MiMo — open-weight frontier models with deep thinking and omni-modal input
+
+WHAT IT IS
+  Direct API access to Xiaomi's MiMo series (mimo-v2.6-pro/flash, mimo-v2.5-pro,
+  mimo-v2.5 omni, mimo-v2.5-asr/tts). OpenAI-compatible chat completions with
+  SSE streaming, function tool calling, web search, JSON mode, and deep thinking.
+
+  Base URL   https://api.xiaomimimo.com/v1
+  Auth       Authorization: Bearer <key>  (or api-key: <key>)
+  Endpoints  /models · /chat/completions · /responses · /anthropic/v1/messages
+
+MODELS
+  mimo-v2.6-pro               Flagship multimodal reasoning model (default), 1M ctx
+  mimo-v2.6-pro-ultraspeed    mimo-v2.6-pro at up to 20x inference speed
+  mimo-v2.6-flash             Fast multimodal reasoning model, 1M ctx
+  mimo-v2.5-pro               Text/reasoning/agent model, 1M ctx, 128K max output
+  mimo-v2.5                   Native omni-modal (text+image+audio+video in), 1M ctx
+  mimo-v2.5-asr               Speech recognition (wav/mp3)
+  mimo-v2.5-tts               Text-to-speech (+ voiceclone / voicedesign variants)
+
+CAPABILITIES
+  - Deep Thinking: thinking.type enabled/disabled; chain-of-thought streams in
+    reasoning_content and folds into the usual thinking block, so /think and
+    /effort behave normally. Enabled by default on v2.6 and v2.5 chat models.
+  - Automatic prefix caching: hits reported in
+    usage.prompt_tokens_details.cached_tokens; cache writes are free.
+  - Tool Calling: standard OpenAI function calling (tool_choice: auto).
+  - Web Search: built-in web_search tool; cited sources arrive as message
+    annotations. Activate the plugin in the console first.
+  - Structured Output: response_format json_object mode.
+  - Multimodal: image_url, input_audio (URL or base64), and video_url content
+    parts on mimo-v2.5 / v2.6 models.
+  - Multi-API: OpenAI Chat Completions, OpenAI Responses, and Anthropic
+    Messages compatible endpoints.
+
+SETUP
+  1. Create an API key at https://platform.xiaomimimo.com (pay-as-you-go keys
+     start with sk-; Token Plan keys start with tp- and use the Token Plan
+     base URL shown on the Token Plan page)
+  2. clai set mimo <key>
+  3. clai use mimo
+
+Docs: https://mimo.mi.com/docs`,
   glm: `GLM (Zhipu AI / Z.AI) — bilingual frontier models with thinking mode
 
 WHAT IT IS

@@ -384,6 +384,17 @@ export const knownModels: Record<string, string[]> = {
     "deepseek-v4-flash",
     "qwen3.8-27b",
   ],
+  mimo: [
+    "mimo-v2.6-pro",
+    "mimo-v2.6-pro-ultraspeed",
+    "mimo-v2.6-flash",
+    "mimo-v2.5-pro",
+    "mimo-v2.5",
+    "mimo-v2.5-asr",
+    "mimo-v2.5-tts",
+    "mimo-v2.5-tts-voiceclone",
+    "mimo-v2.5-tts-voicedesign",
+  ],
   codex: [
     "gpt-5.6-sol",
     "gpt-5.6-terra",

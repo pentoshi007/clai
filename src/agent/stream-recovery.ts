@@ -60,6 +60,16 @@ export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxDelayMs: 60_000,
 };
 
+export const FREE_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
+  ...DEFAULT_STREAM_RECOVERY_LIMITS,
+  maxServer: 0,
+  maxServerAttempts: 0,
+  maxRateLimit: 0,
+  maxNetwork: 1,
+  maxStall: 1,
+  maxTotal: 1,
+};
+
 export interface StreamRecoveryPlan {
   readonly action: "retry" | "give-up";
   readonly kind: StreamFailureKind;

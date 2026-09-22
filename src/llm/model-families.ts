@@ -226,6 +226,15 @@ export const MODEL_FAMILIES: readonly ModelFamilyContract[] = [
     disableForm: "effort-none",
     finalTurnPreservation: "unknown",
   },
+  {
+    id: "mimo-v2",
+    pattern: /mimo[-./]?v2(?:\.\d+)?(?:[-.]?(?:pro|flash|pro-ultraspeed))?/,
+    generation: "default-on",
+    dialect: "deepseek-thinking",
+    acceptedEfforts: [],
+    disableForm: "thinking-disabled",
+    finalTurnPreservation: "required",
+  },
 ];
 
 export function bareModelId(model: string): string {

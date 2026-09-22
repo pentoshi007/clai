@@ -41,6 +41,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   vercel: "paid-cloud",
   deepseek: "paid-cloud",
   kimi: "paid-cloud",
+  mimo: "paid-cloud",
   glm: "paid-cloud",
   minimax: "paid-cloud",
   cline: "free-cloud",

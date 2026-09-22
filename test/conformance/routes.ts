@@ -212,6 +212,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "mimo",
+    provider: "mimo",
+    family: "chat_completions",
+    model: "mimo-v2.6-pro",
+    auth: { apiKey: "sk-conformance000000" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "glm",
     provider: "glm",
     family: "chat_completions",

@@ -132,6 +132,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   ],
   deepseek: [/deepseek/i, /reasoner/i, /r1/i],
   kimi: [/kimi/i, /moonshot/i],
+  mimo: [/^mimo-v/i],
   glm: [/glm/i],
   minimax: [/minimax/i],
   cline: [

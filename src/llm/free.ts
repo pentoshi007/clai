@@ -41,6 +41,7 @@ const CURATED_ZEN_MODELS: readonly string[] = [
   "muse-spark-1.2-contributor-free",
   "deepseek-v4-flash-free",
   "big-pickle",
+  "mimo-v2.6-flash-free",
   "mimo-v2.5-free",
   "nemotron-3-ultra-free",
 ];
@@ -70,7 +71,7 @@ function catalogEntries(payload: unknown): unknown[] {
 
 let kiloDynamicFreeIds = new Set<string>();
 
-const OPENCODE_USER_AGENT = "opencode/latest/2.0.8/cli";
+const OPENCODE_USER_AGENT = "opencode/2.0.8";
 
 const ID_CHARS =
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -96,9 +97,11 @@ function createSessionId(descending = true, timestamp = Date.now()): string {
 
 const gatewayIdentity = {
   session: createSessionId(),
-  request: randomUUID(),
-  project: randomUUID(),
 };
+
+function createRequestId(): string {
+  return `msg_${randomUUID().replaceAll("-", "")}`;
+}
 
 const zenSessionMap = new Map<string, string>();
 
@@ -119,11 +122,8 @@ function zenClientHeaders(apiKey = ""): Record<string, string> {
   return {
     "user-agent": OPENCODE_USER_AGENT,
     "x-opencode-session": session,
-    "x-opencode-request": gatewayIdentity.request,
-    "x-session-affinity": session,
-    "x-session-id": session,
+    "x-opencode-request": createRequestId(),
     "x-opencode-client": "cli",
-    "x-opencode-project": gatewayIdentity.project,
     authorization: `Bearer ${apiKey || "public"}`,
   };
 }
@@ -403,11 +403,12 @@ export const freeProvider: LlmProvider = {
     const effective = source.requiredTools
       ? ensureRequiredTools(request, "chat")
       : request;
-    const payload = await openAiCompatibleComplete({
+    const headers = source.requestHeaders(apiKey);
+    const streamOptions = {
       responsesFirst: source.responsesApi,
-      headers: source.requestHeaders(apiKey),
-      provider: "Free",
-      providerId: "free",
+      headers,
+      provider: "Free" as const,
+      providerId: "free" as const,
       baseUrl: source.baseUrl,
       apiKey,
       model,
@@ -422,6 +423,27 @@ export const freeProvider: LlmProvider = {
       parallelToolCalls: effective.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
       ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+    };
+    if (source.id !== "free-1") {
+      const payload = await openAiCompatibleComplete(streamOptions);
+      const result = toCompletionResult("free", requested, payload);
+      if (result.reasoningArtifacts?.length) {
+        result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
+          ...art,
+          provenance: { ...art.provenance, model: requested },
+        }));
+      }
+      return result;
+    }
+    const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
+    const payload = await openAiCompatibleStream({
+      ...streamOptions,
+      onToken: () => undefined,
+      idleTimeoutMs: budgets.idleTimeoutMs,
+      initialIdleTimeoutMs: effective.thinking?.enabled
+        ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
+        : 60_000,
+      outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
     });
     const result = toCompletionResult("free", requested, payload);
     if (result.reasoningArtifacts?.length) {

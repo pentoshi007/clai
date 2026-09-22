@@ -35,6 +35,7 @@ import { tokenrouterProvider } from "../tokenrouter.js";
 import { vercelProvider } from "../vercel.js";
 import { deepseekProvider } from "../deepseek.js";
 import { kimiProvider } from "../kimi.js";
+import { mimoProvider } from "../mimo.js";
 import { glmProvider } from "../glm.js";
 import { minimaxProvider } from "../minimax.js";
 import { clineProvider } from "../cline.js";
@@ -65,6 +66,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   vercel: vercelProvider,
   deepseek: deepseekProvider,
   kimi: kimiProvider,
+  mimo: mimoProvider,
   glm: glmProvider,
   minimax: minimaxProvider,
   cline: clineProvider,
@@ -96,6 +98,7 @@ const fallbackOrder: ProviderId[] = [
   "vercel",
   "deepseek",
   "kimi",
+  "mimo",
   "glm",
   "minimax",
   "cline",

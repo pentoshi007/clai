@@ -2,6 +2,7 @@ import type { ChatMessage, ProviderId, TokenUsage } from "../../../types.js";
 import type { StreamRecoveryState } from "../../stream-recovery.js";
 import {
   classifyStreamFailure,
+  FREE_STREAM_RECOVERY_LIMITS,
   planStreamRecovery,
   recordRecoveryAttempt,
   recordServerErrorAttempts,
@@ -96,6 +97,7 @@ const INTERRUPTED_WITHOUT_OUTPUT =
 
 const DISCARDED_TOOL_CALL =
   "Incomplete tool call discarded after the provider stream was interrupted.";
+
 
 const showFreeTierAdvisories = (
   ports: StreamFailurePorts,
@@ -246,6 +248,9 @@ export const recoverFromStreamFailure = async (
     ...(input.error !== undefined ? { error: input.error } : {}),
     state: ports.recoveryState,
     progressed: meaningfulProgress,
+    ...(ports.provider === "free"
+      ? { limits: FREE_STREAM_RECOVERY_LIMITS }
+      : {}),
   });
   const terminalFailure = plan.action === "give-up";
 

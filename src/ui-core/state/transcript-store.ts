@@ -217,7 +217,13 @@ export class TranscriptStore {
       return items;
     }
     const fresh = items.filter((item) => !this.persistHydratedIds.has(item.id));
-    return [...this.persistBase, ...fresh];
+    if (this.persistBase.length === 0) {
+      return fresh;
+    }
+    const merged = [...this.persistBase, ...fresh];
+    this.persistBase = merged;
+    this.persistHydratedIds = new Set(merged.map((item) => item.id));
+    return merged;
   }
 
   private setState(next: TranscriptState): void {

@@ -191,96 +191,183 @@ export function hydrateSessionVisual(
   return fromClassic;
 }
 
+type AnyTranscriptItem =
+  | import("./transcript-types.js").TranscriptItem
+  | ClassicTranscriptItem;
+
+function serializeTranscriptItem(
+  item: AnyTranscriptItem,
+  resolveToolOutput: (item: AnyTranscriptItem) => string,
+): ClassicTranscriptItem | undefined {
+  switch (item.kind) {
+    case "user":
+      return { kind: "user", id: item.id, text: item.text, done: true };
+    case "assistant":
+      return {
+        kind: "assistant",
+        id: item.id,
+        text: item.text,
+        streaming: false,
+        done: true,
+      };
+    case "thinking":
+      return {
+        kind: "thinking",
+        id: item.id,
+        content: item.content,
+        done: true,
+        startedAt: item.startedAt,
+        endedAt: item.endedAt,
+      };
+    case "tool": {
+      const output = resolveToolOutput(item);
+      const durationMs =
+        item.endedAt !== undefined && item.timestamp !== undefined
+          ? Math.max(0, item.endedAt - item.timestamp)
+          : undefined;
+      return {
+        kind: "tool",
+        id: item.id,
+        name: item.name,
+        argsDisplay: item.argsDisplay,
+        output,
+        status:
+          item.status === "failed" || item.status === "fail"
+            ? "fail"
+            : item.status === "running" || item.status === "queued"
+              ? "ok"
+              : item.status,
+        exitCode: item.exitCode,
+        summary: item.summary,
+        artifactPath: item.artifactPath,
+        ...(item.fileChanges ? { fileChanges: item.fileChanges } : {}),
+        timestamp: item.timestamp,
+        endedAt: item.endedAt,
+        ...(durationMs !== undefined ? { durationMs } : {}),
+        done: true,
+      };
+    }
+    case "notice":
+      return undefined;
+    case "turn-summary":
+      return {
+        kind: "turn-summary",
+        id: item.id,
+        durationMs: item.durationMs,
+        status: item.status,
+        timestamp: item.timestamp,
+        done: true,
+      };
+    case "compacted":
+      return {
+        kind: "compacted",
+        id: item.id,
+        summary: item.summary,
+        originalItems: serializeOriginalItems(
+          item.originalItems,
+          resolveToolOutput,
+        ),
+        done: true,
+        beforeTokens: item.beforeTokens,
+        afterTokens: item.afterTokens,
+        ...(item.measurement ? { measurement: item.measurement } : {}),
+        startedAt: item.startedAt,
+        endedAt: item.endedAt,
+        ...(item.error ? { error: item.error } : {}),
+      };
+    default:
+      return undefined;
+  }
+}
+
+const ORIGINAL_ITEM_MAX_CHARS = 16_000;
+const ORIGINAL_TOTAL_MAX_CHARS = 2_000_000;
+
+function originalItemSize(item: ClassicTranscriptItem): number {
+  switch (item.kind) {
+    case "user":
+    case "assistant":
+    case "notice":
+      return item.text.length;
+    case "thinking":
+      return item.content.length;
+    case "tool":
+      return item.output.length + item.argsDisplay.length;
+    case "compacted":
+      return item.summary.length;
+    default:
+      return 0;
+  }
+}
+
+function capOriginalText(value: string): string {
+  return value.length <= ORIGINAL_ITEM_MAX_CHARS
+    ? value
+    : `${value.slice(0, ORIGINAL_ITEM_MAX_CHARS)}\n…[truncated in compacted history]`;
+}
+
+function capOriginalItem(item: ClassicTranscriptItem): ClassicTranscriptItem {
+  switch (item.kind) {
+    case "user":
+      return { ...item, text: capOriginalText(item.text) };
+    case "assistant":
+      return { ...item, text: capOriginalText(item.text) };
+    case "thinking":
+      return { ...item, content: capOriginalText(item.content) };
+    case "tool":
+      return {
+        ...item,
+        argsDisplay: capOriginalText(item.argsDisplay),
+        output: capOriginalText(item.output),
+      };
+    case "compacted":
+      return { ...item, summary: capOriginalText(item.summary) };
+    default:
+      return item;
+  }
+}
+
+function serializeOriginalItems(
+  originals: readonly AnyTranscriptItem[] | undefined,
+  resolveToolOutput: (item: AnyTranscriptItem) => string,
+): ClassicTranscriptItem[] {
+  if (!originals || originals.length === 0) return [];
+  const out: ClassicTranscriptItem[] = [];
+  let total = 0;
+  for (let index = originals.length - 1; index >= 0; index -= 1) {
+    const serialized = serializeTranscriptItem(originals[index]!, resolveToolOutput);
+    if (!serialized) continue;
+    const capped = capOriginalItem(serialized);
+    const size = originalItemSize(capped);
+    if (out.length > 0 && total + size > ORIGINAL_TOTAL_MAX_CHARS) break;
+    total += size;
+    out.push(capped);
+  }
+  out.reverse();
+  return out;
+}
+
 export function serializeForHistory(
   state: TranscriptState,
   toolOutput: (toolCallId: ToolCallId) => string,
 ): ClassicTranscriptItem[] {
+  const resolveToolOutput = (item: AnyTranscriptItem): string => {
+    if (item.kind !== "tool") return "";
+    const live =
+      "toolCallId" in item && typeof item.toolCallId === "string"
+        ? toolOutput(item.toolCallId as ToolCallId)
+        : "";
+    if (live) return live;
+    return typeof (item as { output?: unknown }).output === "string"
+      ? ((item as { output?: string }).output ?? "")
+      : "";
+  };
   const out: ClassicTranscriptItem[] = [];
   for (const id of state.order) {
     const item = state.byId.get(id);
     if (!item) continue;
-    switch (item.kind) {
-      case "user":
-        out.push({ kind: "user", id: item.id, text: item.text, done: true });
-        break;
-      case "assistant":
-        out.push({
-          kind: "assistant",
-          id: item.id,
-          text: item.text,
-          streaming: false,
-          done: true,
-        });
-        break;
-      case "thinking":
-        out.push({
-          kind: "thinking",
-          id: item.id,
-          content: item.content,
-          done: true,
-          startedAt: item.startedAt,
-          endedAt: item.endedAt,
-        });
-        break;
-      case "tool": {
-        const output = toolOutput(item.toolCallId);
-        const durationMs =
-          item.endedAt !== undefined && item.timestamp !== undefined
-            ? Math.max(0, item.endedAt - item.timestamp)
-            : undefined;
-        out.push({
-          kind: "tool",
-          id: item.id,
-          name: item.name,
-          argsDisplay: item.argsDisplay,
-          output,
-          status:
-            item.status === "failed"
-              ? "fail"
-              : item.status === "running" || item.status === "queued"
-                ? "ok"
-                : item.status,
-          exitCode: item.exitCode,
-          summary: item.summary,
-          artifactPath: item.artifactPath,
-          ...(item.fileChanges ? { fileChanges: item.fileChanges } : {}),
-          timestamp: item.timestamp,
-          endedAt: item.endedAt,
-          ...(durationMs !== undefined ? { durationMs } : {}),
-          done: true,
-        });
-        break;
-      }
-      case "notice":
-        break;
-      case "turn-summary":
-        out.push({
-          kind: "turn-summary",
-          id: item.id,
-          durationMs: item.durationMs,
-          status: item.status,
-          timestamp: item.timestamp,
-          done: true,
-        });
-        break;
-      case "compacted":
-        out.push({
-          kind: "compacted",
-          id: item.id,
-          summary: item.summary,
-          originalItems: [],
-          done: true,
-          beforeTokens: item.beforeTokens,
-          afterTokens: item.afterTokens,
-          ...(item.measurement ? { measurement: item.measurement } : {}),
-          startedAt: item.startedAt,
-          endedAt: item.endedAt,
-          ...(item.error ? { error: item.error } : {}),
-        });
-        break;
-      default:
-        break;
-    }
+    const serialized = serializeTranscriptItem(item, resolveToolOutput);
+    if (serialized) out.push(serialized);
   }
   return out;
 }

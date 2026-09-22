@@ -44,6 +44,10 @@ describe("free provider (zen + kilo)", () => {
       expect(isKeylessModel("Some-New-Model-FREE")).toBe(true);
     });
 
+    it("treats the MiMo 2.6 Flash free id as keyless", () => {
+      expect(isKeylessModel("free-1/mimo-v2.6-flash-free")).toBe(true);
+    });
+
     it("treats curated ids without the suffix as keyless", () => {
       expect(isKeylessModel("big-pickle")).toBe(true);
     });
@@ -200,6 +204,7 @@ describe("free provider (zen + kilo)", () => {
 
       const result = await freeProvider.listModels!({});
       expect(result).toContain("free-1/deepseek-v4-flash-free");
+      expect(result).toContain("free-1/mimo-v2.6-flash-free");
       expect(result).toContain("free-2/kilo-auto/free");
       expect(result).toContain(
         "free-2/nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -224,8 +229,20 @@ describe("free provider (zen + kilo)", () => {
       });
     }
 
+    function sseCompletionMock() {
+      return vi.fn(async (url: string | URL) => {
+        if (String(url).endsWith("/responses")) {
+          return new Response("not found", { status: 404 });
+        }
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      });
+    }
+
     it("sends no Authorization header for a keyless free model", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -246,7 +263,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("routes free-1/ models to the zen gateway with the prefix stripped", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -266,6 +283,102 @@ describe("free provider (zen + kilo)", () => {
       expect(request.headers).toMatchObject({
         authorization: "Bearer public",
       });
+    });
+
+    it("routes MiMo 2.6 Flash through free-1 with its upstream free id", async () => {
+      const fetchMock = sseCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.6-flash-free",
+          messages: [{ role: "user", content: "think" }],
+          thinking: { enabled: true, effort: "high" },
+        },
+        {},
+      );
+
+      expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
+        "https://opencode.ai/zen/v1/chat/completions",
+      );
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+      const body = JSON.parse(String(request.body)) as {
+        model?: string;
+        reasoning_effort?: string;
+      };
+      expect(body.model).toBe("mimo-v2.6-flash-free");
+      expect(body.reasoning_effort).toBeUndefined();
+    });
+
+    it.each(["xhigh", "max"] as const)(
+      "omits MiMo 2.6 Flash effort %s for the zen gateway",
+      async (effort) => {
+        const fetchMock = sseCompletionMock();
+        vi.stubGlobal("fetch", fetchMock);
+
+        await freeProvider.complete(
+          {
+            model: "free-1/mimo-v2.6-flash-free",
+            messages: [{ role: "user", content: "think" }],
+            thinking: { enabled: true, effort },
+          },
+          {},
+        );
+
+        const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+        const body = JSON.parse(String(request.body)) as {
+          model?: string;
+          reasoning_effort?: string;
+        };
+        expect(body.model).toBe("mimo-v2.6-flash-free");
+        expect(body.reasoning_effort).toBeUndefined();
+      },
+    );
+
+    it("still clamps xhigh to high for other zen models", async () => {
+      const fetchMock = sseCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/hy3-free",
+          messages: [{ role: "user", content: "think" }],
+          thinking: { enabled: true, effort: "xhigh" },
+        },
+        {},
+      );
+
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+      const body = JSON.parse(String(request.body)) as {
+        reasoning_effort?: string;
+      };
+      expect(body.reasoning_effort).toBe("high");
+    });
+
+    it("streams Free1 completions directly without a non-streaming attempt", async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        requests.push(body);
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await freeProvider.complete(
+        {
+          model: "free-1/future-model-free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      expect(result.text).toBe("ok");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.stream).toBe(true);
+      expect(requests[0]?.model).toBe("future-model-free");
     });
 
     it("routes free-2/ models to the kilo gateway with the prefix stripped", async () => {
@@ -330,7 +443,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("allows a premium model and sends the key when one is configured", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -348,7 +461,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("maps thinking onto an OpenAI-style reasoning_effort for deepseek", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -367,28 +480,35 @@ describe("free provider (zen + kilo)", () => {
       expect(body.reasoning_effort).toBe("high");
     });
 
-    it("presents zen requests as the opencode client", async () => {
-      const fetchMock = jsonCompletionMock();
+    it("presents zen requests as the opencode client with fresh request ids", async () => {
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
-      await freeProvider.complete(
-        {
-          model: "free-1/mimo-v2.5-free",
-          messages: [{ role: "user", content: "hi" }],
-        },
-        {},
-      );
+      const requestInput = {
+        model: "free-1/mimo-v2.5-free",
+        messages: [{ role: "user" as const, content: "hi" }],
+      };
+      await freeProvider.complete(requestInput, {});
+      await freeProvider.complete(requestInput, {});
 
-      const request = fetchMock.mock.calls.at(-1)![1] as Record<string, unknown>;
-      expect(request.headers).toMatchObject({
-        "user-agent": "opencode/latest/2.0.8/cli",
+      const first = fetchMock.mock.calls[0]![1] as Record<string, unknown>;
+      const second = fetchMock.mock.calls[1]![1] as Record<string, unknown>;
+      expect(first.headers).toMatchObject({
+        "user-agent": "opencode/2.0.8",
         "x-opencode-client": "cli",
         authorization: "Bearer public",
       });
-      const headers = request.headers as Record<string, string>;
-      expect(headers["x-opencode-session"]).toMatch(/^ses_[0-9a-fA-Za-z]+$/);
-      expect(headers["x-opencode-request"]).toMatch(/^[0-9a-f-]{36}$/);
-      expect(headers["x-opencode-project"]).toMatch(/^[0-9a-f-]{36}$/);
+      const firstHeaders = first.headers as Record<string, string>;
+      const secondHeaders = second.headers as Record<string, string>;
+      expect(firstHeaders["x-opencode-session"]).toMatch(/^ses_[0-9a-fA-Za-z]+$/);
+      expect(firstHeaders["x-opencode-request"]).toMatch(/^msg_[0-9a-f]{32}$/);
+      expect(firstHeaders).not.toHaveProperty("x-opencode-project");
+      expect(firstHeaders).not.toHaveProperty("x-session-affinity");
+      expect(firstHeaders).not.toHaveProperty("x-session-id");
+      expect(secondHeaders["x-opencode-request"]).toMatch(/^msg_[0-9a-f]{32}$/);
+      expect(secondHeaders["x-opencode-request"]).not.toBe(
+        firstHeaders["x-opencode-request"],
+      );
     });
 
     it("presents kilo requests as the kilocode client", async () => {
@@ -412,7 +532,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("injects read and shell tools into free-1 chat requests when none are provided", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -433,7 +553,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("keeps existing tools and appends read and shell for free-1 chat requests", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -493,10 +613,8 @@ describe("free provider (zen + kilo)", () => {
           );
         }
         return new Response(
-          JSON.stringify({
-            choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { status: 200, headers: { "content-type": "text/event-stream" } },
         );
       });
       vi.stubGlobal("fetch", fetchMock);

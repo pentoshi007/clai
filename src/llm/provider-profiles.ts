@@ -27,6 +27,7 @@ import { modelLayerFor } from "./provider-model-layers.js";
 import {
   FAMILY_LAYERS,
   FAMILYLESS_ENDPOINT_LAYERS,
+  GATEWAY_FAMILY_EXCLUDED_PROVIDERS,
   providerDoc,
 } from "./provider-profile-layers.js";
 
@@ -123,6 +124,11 @@ export function modelFamilyLayerFor(
 ): ProviderProfileLayer | undefined {
   const family = modelFamilyFor(model);
   if (!family) return undefined;
+  const providerExcluded = family.id === "mimo-v2" && provider !== "mimo";
+  const gatewayExcluded = GATEWAY_FAMILY_EXCLUDED_PROVIDERS[family.id]?.includes(
+    provider as ProviderId,
+  );
+  if (providerExcluded || gatewayExcluded) return undefined;
   const evidence: ProfileEvidence = {
     source: "family",
     confidence: "high",
