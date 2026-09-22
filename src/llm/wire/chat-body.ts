@@ -216,31 +216,48 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     options.providerId === "merge-gateway" ||
     options.providerId === "tokenrouter" ||
     options.providerId === "openai" ||
-    options.providerId === "explabs"
+    options.providerId === "explabs" ||
+    options.providerId === "cline"
       ? affinitySession
         ? sessionCacheAffinityKey(affinitySession)
         : cacheAffinityKey(options.providerId, options.model, options.messages)
       : undefined;
+  const rawMessages = toOpenAiMessages(
+    singleLeadingSystemMessages(options.messages),
+    options.supportsVision,
+    options.replayTarget
+      ? {
+          target: options.replayTarget,
+          observe: options.reasoningArtifactReplayObserver,
+          ...(options.forceReasoningReplay ? { forceScope: true } : {}),
+          ...(options.portableToolHistory
+            ? { portableToolHistory: options.portableToolHistory }
+            : {}),
+        }
+      : undefined,
+  );
+  if (options.providerId === "cline" && /claude|anthropic|qwen/i.test(options.model)) {
+    for (let i = rawMessages.length - 1; i >= 0; i--) {
+      if (rawMessages[i]?.role === "user") {
+        rawMessages[i] = {
+          ...rawMessages[i],
+          cache_control: { type: "ephemeral" },
+        };
+        break;
+      }
+    }
+  }
   const body: Record<string, unknown> = {
     ...options.cacheFields,
     model: options.model,
-    messages: toOpenAiMessages(
-      singleLeadingSystemMessages(options.messages),
-      options.supportsVision,
-      options.replayTarget
-        ? {
-            target: options.replayTarget,
-            observe: options.reasoningArtifactReplayObserver,
-            ...(options.forceReasoningReplay ? { forceScope: true } : {}),
-            ...(options.portableToolHistory
-              ? { portableToolHistory: options.portableToolHistory }
-              : {}),
-          }
-        : undefined,
-    ),
+    messages: rawMessages,
     stream: options.stream,
+    ...(options.providerId === "cline" && /claude|anthropic|qwen/i.test(options.model)
+      ? { cache_control: { type: "ephemeral" } }
+      : {}),
     ...((options.providerId === "openrouter" ||
-      options.providerId === "merge-gateway") &&
+      options.providerId === "merge-gateway" ||
+      options.providerId === "cline") &&
     affinityKey
       ? { session_id: affinityKey }
       : {}),
