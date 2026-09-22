@@ -296,4 +296,13 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
       },
     },
   ],
+  kiro: [
+    {
+      pattern: /claude-(?:opus|sonnet|haiku)|thinking/i,
+      layer: {
+        evidence: providerDoc("kiro-claude-thinking"),
+        reasoning: { generation: "optional" },
+      },
+    },
+  ],
 };

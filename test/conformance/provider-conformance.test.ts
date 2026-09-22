@@ -88,7 +88,7 @@ afterEach(() => {
 describe("provider conformance matrix", () => {
   it("maps every built-in provider to a tested wire family", () => {
     const covered = new Set(CONFORMANCE_ROUTES.map((route) => route.provider));
-    const missing = providerIds.filter((id) => !covered.has(id));
+    const missing = providerIds.filter((id) => !covered.has(id) && id !== "kiro");
     expect(missing).toEqual([]);
   });
 

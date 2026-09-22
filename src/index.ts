@@ -17,6 +17,7 @@ import {
   authCline,
   authCodex,
   authCopilot,
+  authKiro,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
 import {
@@ -468,8 +469,8 @@ async function main(): Promise<void> {
     .description(
       "authenticate a provider via browser/OAuth (Cline, Chatgpt Subscription, Github Copilot)",
     )
-    .argument("<provider>", "provider id (cline, chatgpt, copilot)")
-    .option("--import", "import an existing app sign-in (Cline/Chatgpt Subscription/Github Copilot)")
+    .argument("<provider>", "provider id (cline, chatgpt, copilot, kiro)")
+    .option("--import", "import an existing app sign-in (Cline/Chatgpt Subscription/Github Copilot/Kiro)")
     .option("--browser", "authenticate via browser (default for Chatgpt Subscription)")
     .option("--headless", "authenticate via headless/device code flow")
     .action(
@@ -503,6 +504,18 @@ async function main(): Promise<void> {
           id.includes("copilot")
         ) {
           await authCopilot("copilot", options);
+          return;
+        }
+        if (
+          id === "kiro" ||
+          id === "kr" ||
+          id === "kiro-ai" ||
+          id === "kiro.dev" ||
+          id === "kiro-desktop" ||
+          id === "aws-kiro" ||
+          id.includes("kiro")
+        ) {
+          await authKiro("kiro", options);
           return;
         }
         await authCline(provider, options);

@@ -47,6 +47,15 @@ import {
   pollCopilotDeviceAuth,
   startCopilotDeviceAuth,
 } from "../llm/copilot-auth.js";
+import {
+  encodeKiroKey,
+  importExistingKiroAuth,
+  pollKiroDeviceAuth,
+  startKiroDeviceAuth,
+  startKiroSocialAuth,
+  exchangeKiroSocialCode,
+} from "../llm/kiro-auth.js";
+import type { KiroCredential } from "../llm/kiro-auth.js";
 import type { ProviderId } from "../types.js";
 
 export interface SetKeyOptions {
@@ -145,6 +154,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Chatgpt Subscription uses ChatGPT sign-in — run `clai auth chatgpt` (or import with --import)";
   if (provider === "copilot")
     return "Github Copilot uses GitHub sign-in — run `clai auth copilot` (or import with --import)";
+  if (provider === "kiro")
+    return "Kiro AI uses AWS Builder ID or social sign-in — run `clai auth kiro` (or import with --import)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 
@@ -214,6 +225,14 @@ export async function setProviderKey(
       return;
     }
     secret = token;
+  }
+  if (!secret && provider === "kiro" && !options.fromEnv) {
+    const credential = await resolveKiroCredentialInteractive();
+    if (!credential) {
+      console.log("cancelled");
+      return;
+    }
+    secret = encodeKiroKey(credential);
   }
   if (!secret) {
     secret = await promptForSecret(provider);
@@ -460,6 +479,13 @@ export async function useProvider(providerValue: string): Promise<void> {
         return;
       }
       await appendProviderKey("copilot", token);
+    } else if (provider === "kiro") {
+      const credential = await resolveKiroCredentialInteractive();
+      if (!credential) {
+        console.log("provider unchanged");
+        return;
+      }
+      await appendProviderKey("kiro", encodeKiroKey(credential));
     } else {
       const entered = await promptForSecret(provider);
       if (!entered) {
@@ -750,6 +776,213 @@ export async function authCopilot(
   console.log(
     `authenticated Github Copilot ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
   );
+}
+
+export async function authKiro(
+  providerValue: string,
+  options: {
+    import?: boolean | undefined;
+    browser?: boolean | undefined;
+    headless?: boolean | undefined;
+  } = {},
+): Promise<void> {
+  const provider = assertProvider(providerValue);
+  const label = getProvider(provider).displayName;
+  if (provider !== "kiro") {
+    throw new Error(
+      `OAuth sign-in is only supported for the ${label} provider. Use \`clai set ${provider} <key>\` instead.`,
+    );
+  }
+
+  if (options.import) {
+    process.stderr.write("Looking for an existing Kiro CLI/Desktop or AWS SSO sign-in…\n");
+    const cred = await importExistingKiroAuth();
+    if (!cred) {
+      process.exitCode = 5;
+      throw new Error(
+        "No usable Kiro credential found. Sign in with `clai auth kiro` (no --import) or install Kiro CLI/Desktop and log in first.",
+      );
+    }
+    const key = encodeKiroKey(cred);
+    const storage = await appendProviderKey("kiro", key, {
+      ...(cred.refreshToken ? { refreshToken: cred.refreshToken } : {}),
+      ...(cred.expiresAt !== undefined ? { expiresAt: cred.expiresAt } : {}),
+    });
+    if (storage === "fallback") {
+      process.exitCode = 3;
+      console.warn(
+        chalk.yellow(
+          `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+        ),
+      );
+    }
+    const multi = await getProviderKeys("kiro");
+    console.log(
+      `imported Kiro AI ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    );
+    return;
+  }
+
+  let credential: KiroCredential | undefined;
+  if (options.headless) {
+    credential = await resolveKiroDeviceAuthInteractive({ authMethod: "builder-id" });
+  } else if (options.browser) {
+    credential = await resolveKiroSocialAuthInteractive("google");
+  } else {
+    const method = await askChoice<"builder-id" | "google" | "github" | "idc" | "import" | "apikey">(
+      "How do you want to sign in to Kiro AI?",
+      [
+        {
+          name: "Sign in with AWS Builder ID (recommended) — device code on any device",
+          value: "builder-id",
+        },
+        {
+          name: "Sign in with Google — opens browser authorization",
+          value: "google",
+        },
+        {
+          name: "Sign in with GitHub — opens browser authorization",
+          value: "github",
+        },
+        {
+          name: "Sign in with AWS IAM Identity Center (IDC) — enterprise SSO",
+          value: "idc",
+        },
+        {
+          name: "Import existing Kiro CLI / Desktop or AWS SSO sign-in",
+          value: "import",
+        },
+        {
+          name: "Manually enter an API key or access/refresh token",
+          value: "apikey",
+        },
+      ],
+    );
+
+    if (!method) {
+      console.log("cancelled");
+      return;
+    }
+
+    if (method === "builder-id") {
+      credential = await resolveKiroDeviceAuthInteractive({ authMethod: "builder-id" });
+    } else if (method === "google" || method === "github") {
+      credential = await resolveKiroSocialAuthInteractive(method);
+    } else if (method === "idc") {
+      const startUrl = await askLine(
+        "Enter AWS IAM Identity Center Start URL (e.g. https://my-org.awsapps.com/start):",
+      );
+      if (!startUrl) {
+        console.log("cancelled");
+        return;
+      }
+      const region = await askLine("Enter AWS region (default us-east-1):");
+      credential = await resolveKiroDeviceAuthInteractive({
+        authMethod: "idc",
+        startUrl: startUrl.trim(),
+        region: region?.trim() || "us-east-1",
+      });
+    } else if (method === "import") {
+      credential = await importExistingKiroAuth();
+      if (!credential) {
+        process.exitCode = 5;
+        throw new Error("No usable Kiro credential found to import.");
+      }
+    } else if (method === "apikey") {
+      const pasted = await askSecret(
+        "Paste a Kiro API key, access token, or refresh token:",
+      );
+      if (!pasted?.trim()) {
+        console.log("cancelled");
+        return;
+      }
+      const raw = pasted.trim();
+      if (raw.startsWith("aorAAAAAG")) {
+        const { refreshKiroToken } = await import("../llm/kiro-auth.js");
+        credential = await refreshKiroToken(raw);
+      } else {
+        credential = {
+          accessToken: raw,
+          apiKey: raw,
+          authMethod: "api_key",
+          region: "us-east-1",
+        };
+      }
+    }
+  }
+
+  if (!credential) {
+    process.exitCode = 5;
+    throw new Error("Kiro AI authentication failed or was cancelled.");
+  }
+
+  const key = encodeKiroKey(credential);
+  const storage = await appendProviderKey("kiro", key, {
+    ...(credential.refreshToken ? { refreshToken: credential.refreshToken } : {}),
+    ...(credential.expiresAt !== undefined ? { expiresAt: credential.expiresAt } : {}),
+  });
+  if (storage === "fallback") {
+    process.exitCode = 3;
+    console.warn(
+      chalk.yellow(
+        `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+      ),
+    );
+  }
+  const multi = await getProviderKeys("kiro");
+  console.log(
+    `authenticated Kiro AI ${maskSecret(key)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+  );
+}
+
+export async function resolveKiroDeviceAuthInteractive(
+  options: {
+    authMethod?: "builder-id" | "idc" | undefined;
+    startUrl?: string | undefined;
+    region?: string | undefined;
+  } = {},
+): Promise<KiroCredential | undefined> {
+  const start = await startKiroDeviceAuth(options);
+  console.log("To authenticate Kiro AI:");
+  console.log(
+    `  1. Open this link on any device:\n       ${start.verificationUriComplete || start.verificationUri}`,
+  );
+  console.log(`  2. Enter code: ${chalk.bold(start.userCode)}`);
+  console.log("");
+
+  const credential = await pollKiroDeviceAuth(start, {
+    onPending: (remaining) => {
+      const mm = Math.floor(remaining / 60);
+      const ss = String(remaining % 60).padStart(2, "0");
+      process.stderr.write(
+        `\rWaiting for Kiro approval… ${mm}:${ss} remaining (Ctrl-C to cancel)   `,
+      );
+    },
+  });
+  process.stderr.write("\n");
+  return credential;
+}
+
+export async function resolveKiroSocialAuthInteractive(
+  provider: "google" | "github",
+): Promise<KiroCredential | undefined> {
+  const { url, codeVerifier } = await startKiroSocialAuth(provider);
+  const label = provider === "google" ? "Google" : "GitHub";
+  console.log(`To authenticate Kiro AI with ${label}:`);
+  console.log(`  Opening browser link:\n       ${url}\n`);
+  await openSystemBrowser(url).catch(() => {});
+  console.log("After signing in, your browser will redirect to a kiro:// URL.");
+  const codeOrUrl = await askLine(
+    "Paste the redirect URL or code here (or leave blank to cancel):",
+  );
+  if (!codeOrUrl?.trim()) return undefined;
+  return exchangeKiroSocialCode(codeOrUrl.trim(), codeVerifier);
+}
+
+export async function resolveKiroCredentialInteractive(): Promise<
+  KiroCredential | undefined
+> {
+  return resolveKiroDeviceAuthInteractive({ authMethod: "builder-id" });
 }
 
 export async function resolveCodexCredentialInteractive(): Promise<

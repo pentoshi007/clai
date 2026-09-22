@@ -214,7 +214,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
   cline: {
     evidence: codeFact("cline-openai-compatible"),
     transport: { authType: "bearer", systemPolicy: "single-leading" },
-    capabilities: { tools: "supported", images: "unknown" },
+    capabilities: { tools: "supported", images: "supported" },
     reasoning: {
       control: {
         dialect: "openai-nested-reasoning",
@@ -231,6 +231,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         "tools",
         "tool_choice",
         "reasoning",
+        "cache_control",
       ],
     },
     usage: {
@@ -823,6 +824,34 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
     },
     terminal: { proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS, naturalEofAccepted: false },
+  },
+  kiro: {
+    evidence: providerDoc("kiro-eventstream"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: { tools: "supported", images: "supported" },
+    reasoning: {
+      control: {
+        dialect: "anthropic-thinking",
+        status: "supported",
+        evidence: providerDoc("kiro-reasoning"),
+      },
+      generation: "optional",
+      acceptedEfforts: ["none", "minimal", "low", "medium", "high", "max"],
+      outputShapes: ["reasoning-content"],
+      replayScope: "tool-turn",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools"],
+    },
+    usage: {
+      cachedInput: [
+        "usage.cachedTokens",
+        "usage.cachedPromptTokens",
+      ],
+      cacheWrite: ["usage.cacheCreationTokens"],
+    },
+    terminal: { proofs: ["message-stop"], naturalEofAccepted: false },
   },
 };
 

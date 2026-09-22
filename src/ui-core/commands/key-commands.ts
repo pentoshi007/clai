@@ -17,6 +17,7 @@ import type { PickerOption } from "../rendering/picker-filter.js";
 import type { KeysEditorAnswer } from "../controllers/overlay-controller.js";
 import {notice, openEndpointsEditor, openSearchKeysEditor, resolveEditorRowsDetailed} from "./keys/editors.js";
 import {
+  maybeRefreshClineToken,
   pollClineDeviceAuth,
   startClineDeviceAuth,
   type ClineOAuthTokens,
@@ -34,6 +35,16 @@ import {
   pollCopilotDeviceAuth,
   startCopilotDeviceAuth,
 } from "../../llm/copilot-auth.js";
+import {
+  encodeKiroKey,
+  pollKiroDeviceAuth,
+  startKiroDeviceAuth,
+  startKiroSocialAuth,
+  exchangeKiroSocialCode,
+  importExistingKiroAuth,
+  refreshKiroToken,
+  type KiroCredential,
+} from "../../llm/kiro-auth.js";
 import { appendProviderKey, replaceProviderKey, type ProviderKeySlot } from "../../store/keys.js";
 import { MAX_PROVIDER_KEYS } from "../../llm/key-rotation.js";
 
@@ -702,8 +713,27 @@ async function storeClineAccount(
 
 async function refreshClineAccount(
   services: AppServices,
-  oldValue: string,
+  slot: ProviderKeySlot,
 ): Promise<void> {
+  if (slot.refreshToken) {
+    notice(services, "info", "refreshing Cline account…");
+    const fresh = await maybeRefreshClineToken(slot.value, slot.refreshToken);
+    if (fresh?.accessToken) {
+      const replaced = await replaceProviderKey(
+        "cline",
+        slot.value,
+        fresh.accessToken,
+        {
+          ...(fresh.refreshToken ? { refreshToken: fresh.refreshToken } : {}),
+          ...(fresh.expiresAt !== undefined ? { expiresAt: fresh.expiresAt } : {}),
+        },
+      );
+      if (replaced) {
+        notice(services, "info", `refreshed Cline account ${maskSecret(fresh.accessToken)}`);
+        return;
+      }
+    }
+  }
   const tokens = await runClineAuthForUI(services);
   if (!tokens) {
     notice(services, "info", "cancelled");
@@ -711,7 +741,7 @@ async function refreshClineAccount(
   }
   const replaced = await replaceProviderKey(
     "cline",
-    oldValue,
+    slot.value,
     tokens.accessToken,
     {
       ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
@@ -801,7 +831,7 @@ async function openClineKeysFlow(services: AppServices): Promise<void> {
     if (answer.action === "refresh") {
       const selected = keys.find((key) => key.id === answer.slotId);
       if (selected) {
-        await refreshClineAccount(services, selected.value);
+        await refreshClineAccount(services, selected);
       } else {
         notice(services, "warn", "Cline account was not found");
       }
@@ -814,7 +844,7 @@ async function openClineKeysFlow(services: AppServices): Promise<void> {
 }
 
 async function loadOAuthKeys(
-  provider: "codex" | "copilot",
+  provider: "codex" | "copilot" | "kiro",
 ): Promise<{ keys: ProviderKeySlot[]; activeIndex: number }> {
   const multi = await getProviderKeys(provider);
   return {
@@ -824,7 +854,7 @@ async function loadOAuthKeys(
 }
 
 async function savePickerDraft(
-  provider: "cline" | "codex" | "copilot",
+  provider: "cline" | "codex" | "copilot" | "kiro",
   answer: Extract<KeysEditorAnswer, { action: "pick" }>,
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
@@ -848,7 +878,7 @@ async function savePickerDraft(
 
 async function saveOAuthKeys(
   services: AppServices,
-  provider: "codex" | "copilot",
+  provider: "codex" | "copilot" | "kiro",
   answer: Extract<KeysEditorAnswer, { action: "save" }>,
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
@@ -1018,6 +1048,299 @@ async function openCopilotKeysFlow(services: AppServices): Promise<void> {
   }
 }
 
+function pickKiroAuthMethod(
+  services: AppServices,
+): Promise<"builder-id" | "google" | "github" | "idc" | "import" | "apikey" | undefined> {
+  return new Promise((resolve) => {
+    const opened = services.overlay.openPicker(
+      {
+        title: "Kiro AI sign-in method",
+        options: [
+          {
+            value: "builder-id",
+            label: "Sign in with AWS Builder ID (recommended)",
+            description: "device code — works on any device or terminal",
+          },
+          {
+            value: "google",
+            label: "Sign in with Google",
+            description: "opens browser authentication",
+          },
+          {
+            value: "github",
+            label: "Sign in with GitHub",
+            description: "opens browser authentication",
+          },
+          {
+            value: "idc",
+            label: "Sign in with AWS IAM Identity Center (IDC)",
+            description: "enterprise SSO start URL",
+          },
+          {
+            value: "import",
+            label: "Import existing Kiro CLI / Desktop sign-in",
+            description: "reads local Kiro or AWS SSO credentials",
+          },
+          {
+            value: "apikey",
+            label: "Manually enter API key / token",
+            description: "paste an API key or token",
+          },
+        ],
+      },
+      (value) => {
+        services.overlay.close();
+        resolve(value as "builder-id" | "google" | "github" | "idc" | "import" | "apikey");
+      },
+    );
+    if (!opened) resolve(undefined);
+  });
+}
+
+export async function runKiroDeviceAuthForUI(
+  services: AppServices,
+  options: {
+    authMethod?: "builder-id" | "idc" | undefined;
+    startUrl?: string | undefined;
+    region?: string | undefined;
+  } = {},
+): Promise<KiroCredential | undefined> {
+  let start;
+  try {
+    start = await startKiroDeviceAuth(options);
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `could not start Kiro sign-in: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+
+  services.overlay.openPager(
+    "Kiro AI sign-in",
+    [
+      "Authenticate Kiro AI on any device:",
+      "",
+      `  ${start.verificationUriComplete || start.verificationUri}`,
+      "",
+      `  Code: ${start.userCode}`,
+      "",
+      "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const waiting = services.toast.info("waiting for Kiro approval…", {
+    sticky: true,
+  });
+  try {
+    const credential = await pollKiroDeviceAuth(start);
+    services.toast.dismiss(waiting);
+    notice(services, "info", "Kiro AI authenticated");
+    return credential;
+  } catch (error) {
+    services.toast.dismiss(waiting);
+    notice(
+      services,
+      "warn",
+      `Kiro AI sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+}
+
+export async function runKiroSocialAuthForUI(
+  services: AppServices,
+  provider: "google" | "github",
+): Promise<KiroCredential | undefined> {
+  const { url, codeVerifier } = await startKiroSocialAuth(provider);
+  const label = provider === "google" ? "Google" : "GitHub";
+
+  services.overlay.openPager(
+    `Kiro AI (${label}) sign-in`,
+    [
+      `Opening ${label} sign-in in your browser…`,
+      "",
+      `  ${url}`,
+      "",
+      "Log in with your account in the browser.",
+      "Afterwards, copy the redirected kiro:// URL and paste it in the prompt.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  await openSystemBrowser(url).catch(() => {});
+  const pasted = await services.overlay.openSecret({
+    title: "Kiro Callback URL / Code",
+    prompt: "Paste the redirect kiro:// URL or code:",
+    reveal: true,
+  });
+  if (!pasted?.trim()) return undefined;
+
+  try {
+    const cred = await exchangeKiroSocialCode(pasted.trim(), codeVerifier);
+    notice(services, "info", "Kiro AI authenticated");
+    return cred;
+  } catch (err) {
+    notice(
+      services,
+      "warn",
+      `Kiro exchange failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  }
+}
+
+export async function runKiroAuthForUI(
+  services: AppServices,
+): Promise<KiroCredential | undefined> {
+  const method = await pickKiroAuthMethod(services);
+  if (!method) return undefined;
+
+  if (method === "builder-id") {
+    return runKiroDeviceAuthForUI(services, { authMethod: "builder-id" });
+  }
+
+  if (method === "google" || method === "github") {
+    return runKiroSocialAuthForUI(services, method);
+  }
+
+  if (method === "idc") {
+    const startUrl = await services.overlay.openSecret({
+      title: "AWS IAM Identity Center Start URL",
+      prompt: "Enter AWS IDC Start URL (e.g. https://my-org.awsapps.com/start):",
+      reveal: true,
+    });
+    if (!startUrl?.trim()) return undefined;
+    const region = await services.overlay.openSecret({
+      title: "AWS Region",
+      prompt: "Enter AWS Region (default: us-east-1):",
+      reveal: true,
+    });
+    return runKiroDeviceAuthForUI(services, {
+      authMethod: "idc",
+      startUrl: startUrl.trim(),
+      region: region?.trim() || "us-east-1",
+    });
+  }
+
+  if (method === "import") {
+    const imported = await importExistingKiroAuth();
+    if (!imported) {
+      notice(services, "warn", "no existing Kiro credential found to import");
+      return undefined;
+    }
+    return imported;
+  }
+
+  if (method === "apikey") {
+    const answer = await services.overlay.openSecret({
+      title: "Kiro API Key or Token",
+      prompt: "Paste Kiro API key, access token, or refresh token:",
+    });
+    const raw = answer?.trim();
+    if (!raw) return undefined;
+    if (raw.startsWith("aorAAAAAG")) {
+      try {
+        return await refreshKiroToken(raw);
+      } catch (err) {
+        notice(
+          services,
+          "warn",
+          `failed to validate refresh token: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return undefined;
+      }
+    }
+    return {
+      accessToken: raw,
+      apiKey: raw,
+      authMethod: "api_key",
+      region: "us-east-1",
+    };
+  }
+
+  return undefined;
+}
+
+async function openKiroKeysFlow(services: AppServices): Promise<void> {
+  let { keys, activeIndex } = await loadOAuthKeys("kiro");
+  for (;;) {
+    services.overlay.close();
+    const answer = await services.overlay.openKeysEditor({
+      provider: "kiro",
+      heading: "KIRO AI ACCOUNTS",
+      itemLabel: "account",
+      addViaPicker: true,
+      refreshable: true,
+      initialKeys: keys.map((key) => ({
+        id: key.id,
+        masked: maskSecret(key.value),
+        disabled: key.disabled === true,
+      })),
+      activeIndex,
+    });
+    if (!answer) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    if (answer.action === "reset") {
+      await unsetProviderSecret("kiro");
+      notice(services, "info", "unset all keys for Kiro AI");
+      return;
+    }
+    if (answer.action === "pick") {
+      await savePickerDraft("kiro", answer, keys, activeIndex);
+      const credential = await runKiroAuthForUI(services);
+      if (credential) {
+        const key = encodeKiroKey(credential);
+        await appendProviderKey("kiro", key, {
+          ...(credential.refreshToken ? { refreshToken: credential.refreshToken } : {}),
+          ...(credential.expiresAt !== undefined ? { expiresAt: credential.expiresAt } : {}),
+        });
+        notice(services, "info", `added Kiro account ${maskSecret(key)}`);
+      } else {
+        notice(services, "info", "cancelled");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("kiro"));
+      continue;
+    }
+    if (answer.action === "refresh") {
+      const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected) {
+        const credential = await runKiroAuthForUI(services);
+        if (credential) {
+          const key = encodeKiroKey(credential);
+          const replaced = await replaceProviderKey("kiro", selected.value, key, {
+            ...(credential.refreshToken ? { refreshToken: credential.refreshToken } : {}),
+            ...(credential.expiresAt !== undefined ? { expiresAt: credential.expiresAt } : {}),
+          });
+          if (!replaced) {
+            notice(services, "warn", "Kiro account was not found");
+          } else {
+            notice(services, "info", `refreshed Kiro account ${maskSecret(key)}`);
+          }
+        } else {
+          notice(services, "info", "cancelled");
+        }
+      } else {
+        notice(services, "warn", "Kiro account was not found");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("kiro"));
+      continue;
+    }
+    await saveOAuthKeys(services, "kiro", answer, keys, activeIndex);
+    return;
+  }
+}
+
 export async function openLlmKeysEditor(
   services: AppServices,
   id: ProviderId,
@@ -1049,6 +1372,11 @@ export async function openLlmKeysEditor(
 
   if (id === "copilot") {
     await openCopilotKeysFlow(services);
+    return;
+  }
+
+  if (id === "kiro") {
+    await openKiroKeysFlow(services);
     return;
   }
 

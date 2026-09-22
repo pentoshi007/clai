@@ -34,6 +34,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   cline: "openai",
   codex: "openai",
   copilot: "openai",
+  kiro: "openai",
 };
 
 const nativeToolsDenylist: RegExp[] = [

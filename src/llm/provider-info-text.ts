@@ -1,6 +1,7 @@
 import {
   CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
   GITHUB_COPILOT_DISPLAY_NAME,
+  KIRO_DISPLAY_NAME,
 } from "./provider-identity.js";
 
 export const providerInfo: Record<string, string> = {
@@ -964,4 +965,46 @@ SETUP (pick one)
   with automatic rotation on auth/quota errors.
 
 Docs: https://docs.github.com/copilot`,
+  kiro: `${KIRO_DISPLAY_NAME} — AWS CodeWhisperer / Kiro AI gateway with frontier Claude & GPT models
+
+WHAT IT IS
+  Kiro AI inference gateway backed by AWS CodeWhisperer and Amazon Q.
+  Supports AWS Builder ID, AWS IAM Identity Center (IDC), Google/GitHub social
+  login, manual API keys, and imported refresh tokens. Features AWS EventStream
+  binary streaming, native tool calling, multi-modal vision, reasoning/thinking,
+  agentic chunked file write modes, dynamic model discovery, and prompt caching.
+
+  Base URL   https://runtime.us-east-1.kiro.dev/generateAssistantResponse
+  Failover   https://codewhisperer.us-east-1.amazonaws.com · https://q.us-east-1.amazonaws.com
+  Auth       AWS Builder ID (device code), IDC (SSO), Google/GitHub OAuth, API Key, or Import
+  Transport  AWS EventStream binary frames over HTTPS
+
+MODELS
+  /model dynamically discovers available models from the account catalog, including:
+    claude-sonnet-4.5                  frontier default
+    claude-sonnet-4.5-thinking         reasoning enabled
+    claude-sonnet-4.5-agentic          chunked file edit mode
+    claude-sonnet-4.5-thinking-agentic reasoning + agentic
+    claude-opus-5                      high intelligence
+    claude-haiku-4.5                   fast & lightweight
+
+SETUP (pick one)
+  1. Sign in with AWS Builder ID (recommended, works on headless/SSH too):
+       clai auth kiro
+     then approve the device code in your browser.
+  2. Sign in with Google or GitHub:
+       clai auth kiro
+     and select Google or GitHub social login.
+  3. Sign in with AWS IAM Identity Center (enterprise SSO):
+       clai auth kiro
+     and select AWS IAM Identity Center.
+  4. Import existing Kiro CLI / Desktop sign-in:
+       clai auth kiro --import
+  5. Manually enter an API key or refresh token:
+       clai set kiro <key-or-token>
+
+  Multi-account: run "clai auth kiro" again to add more accounts (up to 10),
+  with automatic failover and token refresh on expiration.
+
+Docs: https://kiro.dev`,
 };

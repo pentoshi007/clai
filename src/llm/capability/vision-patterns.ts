@@ -210,6 +210,7 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
   cline: [/vision/i, /vl$/i, /glm-.*v/i, /gpt/i, /claude/i, /grok/i, /muse-spark/i],
   codex: [/gpt/i, /codex/i, /o[34]/i, /vision/i],
   copilot: [/gpt/i, /claude/i, /gemini/i, /vision/i, /o[34]/i],
+  kiro: [/claude/i, /gpt/i, /vision/i],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
@@ -238,6 +239,7 @@ export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   mimo: "mimo-v2.6-pro",
   glm: "glm-4v-plus",
   minimax: "MiniMax-Text-01",
+  kiro: "claude-sonnet-4.5",
 };
 
 function matchesPattern(patterns: readonly RegExp[], model: string): boolean {
