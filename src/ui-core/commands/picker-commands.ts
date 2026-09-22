@@ -346,6 +346,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   cline: "https://api.cline.bot/api/v1",
   codex: "https://chatgpt.com/backend-api/codex",
   copilot: "https://api.githubcopilot.com",
+  kiro: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
 };
 
 function providerBaseUrl(provider: ProviderId): string | undefined {
@@ -463,6 +464,21 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
           return;
         }
         await appendProviderKey(next, token);
+      } else if (next === "kiro") {
+        services.overlay.close();
+        const { runKiroAuthForUI } = await import("./key-commands.js");
+        const { encodeKiroKey } = await import("../../llm/kiro-auth.js");
+        const credential = await runKiroAuthForUI(services);
+        if (!credential) {
+          services.overlay.close();
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        const key = encodeKiroKey(credential);
+        await appendProviderKey(next, key, {
+          ...(credential.refreshToken ? { refreshToken: credential.refreshToken } : {}),
+          ...(credential.expiresAt !== undefined ? { expiresAt: credential.expiresAt } : {}),
+        });
       } else {
         services.overlay.close();
         const label = getProvider(next).displayName;

@@ -41,6 +41,7 @@ import { minimaxProvider } from "../minimax.js";
 import { clineProvider } from "../cline.js";
 import { codexProvider } from "../codex.js";
 import { copilotProvider } from "../copilot.js";
+import { kiroProvider } from "../kiro.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -72,6 +73,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   cline: clineProvider,
   codex: codexProvider,
   copilot: copilotProvider,
+  kiro: kiroProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -104,6 +106,7 @@ const fallbackOrder: ProviderId[] = [
   "cline",
   "codex",
   "copilot",
+  "kiro",
 ];
 
 function allFallbackIds(): ProviderId[] {

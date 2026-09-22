@@ -412,6 +412,20 @@ export const knownModels: Record<string, string[]> = {
     "o1",
     "o3-mini",
   ],
+  kiro: [
+    "claude-sonnet-4.5",
+    "claude-sonnet-4.5-thinking",
+    "claude-sonnet-4.5-agentic",
+    "claude-sonnet-4.5-thinking-agentic",
+    "claude-opus-5",
+    "claude-opus-5-thinking",
+    "claude-opus-5-agentic",
+    "claude-opus-5-thinking-agentic",
+    "claude-haiku-4.5",
+    "claude-haiku-4.5-thinking",
+    "claude-haiku-4.5-agentic",
+    "claude-haiku-4.5-thinking-agentic",
+  ],
 };
 
 export function getKnownModels(provider: string): string[] {
@@ -431,6 +445,14 @@ export function getKnownModels(provider: string): string[] {
     normalized === "gh-copilot"
   ) {
     return [...(knownModels.copilot ?? [])];
+  }
+  if (
+    normalized === "kiro" ||
+    normalized === "kr" ||
+    normalized === "kiro-ai" ||
+    normalized.startsWith("kiro-")
+  ) {
+    return [...(knownModels.kiro ?? [])];
   }
   return [];
 }

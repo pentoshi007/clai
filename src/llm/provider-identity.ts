@@ -2,6 +2,7 @@ import type { ProviderId } from "../types.js";
 
 export const CHATGPT_SUBSCRIPTION_DISPLAY_NAME = "Chatgpt Subscription(free/go/plus/pro)";
 export const GITHUB_COPILOT_DISPLAY_NAME = "Github Copilot";
+export const KIRO_DISPLAY_NAME = "Kiro AI";
 
 export const providerAliases: Record<string, ProviderId> = {
   free: "free",
@@ -113,6 +114,12 @@ export const providerAliases: Record<string, ProviderId> = {
   "copilot-chat": "copilot",
   github: "copilot",
   "github copilot": "copilot",
+  kiro: "kiro",
+  kr: "kiro",
+  "kiro-ai": "kiro",
+  "kiro.dev": "kiro",
+  "kiro-desktop": "kiro",
+  "aws-kiro": "kiro",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -145,6 +152,7 @@ export const defaultModels: Record<ProviderId, string> = {
   cline: "cline-free/deepseek-v4.1-flash",
   codex: "gpt-5.6-luna",
   copilot: "gpt-4o",
+  kiro: "claude-sonnet-4.5",
 };
 
 export const retiredModelReplacements: Partial<
@@ -213,4 +221,5 @@ export const envVars: Record<ProviderId, string | undefined> = {
   cline: "CLINE_API_KEY",
   codex: "CODEX_API_KEY",
   copilot: "COPILOT_API_KEY",
+  kiro: "KIRO_API_KEY",
 };

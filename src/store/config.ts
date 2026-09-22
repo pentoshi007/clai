@@ -47,6 +47,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   cline: "free-cloud",
   codex: "free-cloud",
   copilot: "free-cloud",
+  kiro: "free-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {
