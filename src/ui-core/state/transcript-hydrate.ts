@@ -220,7 +220,7 @@ function serializeTranscriptItem(
         endedAt: item.endedAt,
       };
     case "tool": {
-      const output = resolveToolOutput(item);
+      const output = persistedToolOutput(item, resolveToolOutput(item));
       const durationMs =
         item.endedAt !== undefined && item.timestamp !== undefined
           ? Math.max(0, item.endedAt - item.timestamp)
@@ -282,6 +282,20 @@ function serializeTranscriptItem(
 
 const ORIGINAL_ITEM_MAX_CHARS = 16_000;
 const ORIGINAL_TOTAL_MAX_CHARS = 2_000_000;
+const ARTIFACT_TOOL_OUTPUT_TAIL_CHARS = 4_000;
+
+function persistedToolOutput(item: AnyTranscriptItem, output: string): string {
+  if (item.kind !== "tool") return output;
+  const artifactPath = (item as { artifactPath?: unknown }).artifactPath;
+  if (
+    typeof artifactPath !== "string" ||
+    artifactPath.length === 0 ||
+    output.length <= ARTIFACT_TOOL_OUTPUT_TAIL_CHARS
+  ) {
+    return output;
+  }
+  return output.slice(output.length - ARTIFACT_TOOL_OUTPUT_TAIL_CHARS);
+}
 
 function originalItemSize(item: ClassicTranscriptItem): number {
   switch (item.kind) {

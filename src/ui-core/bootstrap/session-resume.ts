@@ -1,3 +1,4 @@
+import { statSync, openSync, readSync, closeSync } from "node:fs";
 import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import {
   getSession,
@@ -38,6 +39,54 @@ export interface ResumeOutcome {
 }
 
 const CANDIDATE_LIMIT = 500;
+
+const MAX_RESTORED_ARTIFACT_OUTPUT_CHARS = 256 * 1024;
+const MAX_RESTORED_ARTIFACT_TOOLS = 256;
+
+function readArtifactTail(path: string): string | undefined {
+  let fd: number | undefined;
+  try {
+    const size = statSync(path).size;
+    if (size <= 0) return undefined;
+    const bytesToRead = Math.min(size, MAX_RESTORED_ARTIFACT_OUTPUT_CHARS * 4);
+    fd = openSync(path, "r");
+    const buffer = Buffer.allocUnsafe(bytesToRead);
+    const start = size - bytesToRead;
+    const bytesRead = readSync(fd, buffer, 0, bytesToRead, start);
+    let text = buffer.subarray(0, bytesRead).toString("utf8");
+    if (start > 0) {
+      const newline = text.indexOf("\n");
+      if (newline >= 0) text = text.slice(newline + 1);
+    }
+    if (text.length > MAX_RESTORED_ARTIFACT_OUTPUT_CHARS) {
+      text = text.slice(text.length - MAX_RESTORED_ARTIFACT_OUTPUT_CHARS);
+    }
+    return text;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+export function restoreArtifactOutputs(
+  state: import("../state/transcript-types.js").TranscriptState,
+  spool: { replace: (toolCallId: import("../../app/events/app-event.js").ToolCallId, text: string) => unknown },
+): void {
+  let restored = 0;
+  for (const id of state.order) {
+    if (restored >= MAX_RESTORED_ARTIFACT_TOOLS) break;
+    const item = state.byId.get(id);
+    if (item?.kind !== "tool") continue;
+    const artifactPath = item.artifactPath;
+    if (typeof artifactPath !== "string" || artifactPath.length === 0) continue;
+    const text = readArtifactTail(artifactPath);
+    if (text !== undefined && text.trim().length > 0) {
+      spool.replace(item.toolCallId, text);
+      restored += 1;
+    }
+  }
+}
 
 function sameDirectory(left: string, right: string): boolean {
   if (left === right) return true;
@@ -161,6 +210,7 @@ export async function applySessionResume(
   for (const [toolCallId, output] of hydrated.toolOutputs) {
     services.session.spool.replace(toolCallId, output);
   }
+  restoreArtifactOutputs(hydrated.state, services.session.spool);
 
   const plan = await services.plan.load(record.id).catch(() => undefined);
   services.session.setPlanApproved(
