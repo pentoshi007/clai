@@ -2082,6 +2082,7 @@ exports[`serialized request snapshots > cline / images 1`] = `
     "reasoning": {
       "enabled": false,
     },
+    "session_id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "stream": false,
   },
   "headers": {
@@ -2092,6 +2093,7 @@ exports[`serialized request snapshots > cline / images 1`] = `
     "user-agent": "Cline/3.0.52",
     "x-client-type": "cline-desktop",
     "x-is-multiroot": "false",
+    "x-task-id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "x-title": "Cline",
   },
   "method": "POST",
@@ -2125,6 +2127,7 @@ exports[`serialized request snapshots > cline / minimal 1`] = `
     "reasoning": {
       "enabled": false,
     },
+    "session_id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "stream": false,
   },
   "headers": {
@@ -2135,6 +2138,7 @@ exports[`serialized request snapshots > cline / minimal 1`] = `
     "user-agent": "Cline/3.0.52",
     "x-client-type": "cline-desktop",
     "x-is-multiroot": "false",
+    "x-task-id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "x-title": "Cline",
   },
   "method": "POST",
@@ -2169,6 +2173,7 @@ exports[`serialized request snapshots > cline / reasoning-control 1`] = `
       "effort": "high",
       "enabled": true,
     },
+    "session_id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "stream": false,
   },
   "headers": {
@@ -2179,6 +2184,7 @@ exports[`serialized request snapshots > cline / reasoning-control 1`] = `
     "user-agent": "Cline/3.0.52",
     "x-client-type": "cline-desktop",
     "x-is-multiroot": "false",
+    "x-task-id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "x-title": "Cline",
   },
   "method": "POST",
@@ -2234,6 +2240,7 @@ exports[`serialized request snapshots > cline / tool-loop-replay 1`] = `
       "effort": "high",
       "enabled": true,
     },
+    "session_id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -2287,6 +2294,7 @@ exports[`serialized request snapshots > cline / tool-loop-replay 1`] = `
     "user-agent": "Cline/3.0.52",
     "x-client-type": "cline-desktop",
     "x-is-multiroot": "false",
+    "x-task-id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "x-title": "Cline",
   },
   "method": "POST",
@@ -2342,6 +2350,7 @@ exports[`serialized request snapshots > cline / tool-loop-replay-unsigned 1`] = 
       "effort": "high",
       "enabled": true,
     },
+    "session_id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -2395,6 +2404,7 @@ exports[`serialized request snapshots > cline / tool-loop-replay-unsigned 1`] = 
     "user-agent": "Cline/3.0.52",
     "x-client-type": "cline-desktop",
     "x-is-multiroot": "false",
+    "x-task-id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "x-title": "Cline",
   },
   "method": "POST",
@@ -2428,6 +2438,7 @@ exports[`serialized request snapshots > cline / tools 1`] = `
     "reasoning": {
       "enabled": false,
     },
+    "session_id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -2481,6 +2492,7 @@ exports[`serialized request snapshots > cline / tools 1`] = `
     "user-agent": "Cline/3.0.52",
     "x-client-type": "cline-desktop",
     "x-is-multiroot": "false",
+    "x-task-id": "clai-168404c8386aa787d59aac159ab383a3820fb5f1",
     "x-title": "Cline",
   },
   "method": "POST",

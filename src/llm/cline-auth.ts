@@ -1,4 +1,3 @@
-
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -28,13 +27,25 @@ export interface ClineDeviceAuthStart {
 export interface ClineOAuthTokens {
   accessToken: string;
   refreshToken?: string | undefined;
-  expiresAt?: number | undefined; // ms epoch
+  expiresAt?: number | undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function parseExpiresAt(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return undefined;
+    return value > 1e11 ? value : value * 1000;
+  }
+  if (typeof value === "string") {
+    const epoch = Date.parse(value);
+    if (!Number.isNaN(epoch)) return epoch;
+  }
+  return undefined;
 }
 
 export async function startClineDeviceAuth(): Promise<ClineDeviceAuthStart> {
@@ -74,9 +85,67 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function registerWorkOSTokensWithCline(
+  accessToken: string,
+  refreshToken: string,
+): Promise<ClineOAuthTokens | undefined> {
+  try {
+    const response = await fetch(`${CLINE_API_BASE_URL}/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...CLINE_REQUEST_HEADERS,
+      },
+      body: JSON.stringify({ accessToken, refreshToken }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) return undefined;
+    const json = asRecord(await response.json().catch(() => ({})));
+    const data = asRecord(json?.data);
+    if (!data || typeof data.accessToken !== "string") return undefined;
+    const expiresAt = parseExpiresAt(data.expiresAt) ?? (Date.now() + 3600 * 1000);
+    return {
+      accessToken: toClineAccessToken(data.accessToken),
+      refreshToken: typeof data.refreshToken === "string" ? data.refreshToken : refreshToken,
+      expiresAt,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function refreshClineToken(
   refreshToken: string,
 ): Promise<ClineOAuthTokens> {
+  try {
+    const response = await fetch(`${CLINE_API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...CLINE_REQUEST_HEADERS,
+      },
+      body: JSON.stringify({
+        refreshToken,
+        grantType: "refresh_token",
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.ok) {
+      const json = asRecord(await response.json().catch(() => ({})));
+      const data = asRecord(json?.data);
+      if (data && typeof data.accessToken === "string") {
+        const expiresAt = parseExpiresAt(data.expiresAt) ?? (Date.now() + 3600 * 1000);
+        return {
+          accessToken: toClineAccessToken(data.accessToken),
+          refreshToken:
+            typeof data.refreshToken === "string" ? data.refreshToken : refreshToken,
+          expiresAt,
+        };
+      }
+    }
+  } catch {
+  }
+
   const response = await fetch(
     `${CLINE_WORKOS_API_BASE_URL}/user_management/authenticate`,
     {
@@ -103,10 +172,16 @@ export async function refreshClineToken(
     );
   }
   const expiresIn = typeof json.expires_in === "number" ? json.expires_in : 3600;
+  const newRefreshToken =
+    typeof json.refresh_token === "string" ? json.refresh_token : refreshToken;
+  const registered = await registerWorkOSTokensWithCline(
+    json.access_token,
+    newRefreshToken,
+  );
+  if (registered) return registered;
   return {
     accessToken: toClineAccessToken(json.access_token),
-    refreshToken:
-      typeof json.refresh_token === "string" ? json.refresh_token : refreshToken,
+    refreshToken: newRefreshToken,
     expiresAt: Date.now() + expiresIn * 1000,
   };
 }
@@ -145,10 +220,18 @@ export async function pollClineDeviceAuth(
     const json = asRecord(await response.json().catch(() => ({})));
     if (response.ok && typeof json?.access_token === "string") {
       const expiresIn = typeof json.expires_in === "number" ? json.expires_in : 3600;
+      const rawRefreshToken =
+        typeof json.refresh_token === "string" ? json.refresh_token : undefined;
+      if (rawRefreshToken) {
+        const registered = await registerWorkOSTokensWithCline(
+          json.access_token,
+          rawRefreshToken,
+        );
+        if (registered) return registered;
+      }
       return {
         accessToken: toClineAccessToken(json.access_token),
-        refreshToken:
-          typeof json.refresh_token === "string" ? json.refresh_token : undefined,
+        refreshToken: rawRefreshToken,
         expiresAt: Date.now() + expiresIn * 1000,
       };
     }
@@ -178,7 +261,7 @@ export async function pollClineDeviceAuth(
 }
 
 export function isClineOAuthToken(value: string): boolean {
-  return value.startsWith("workos:");
+  return value.startsWith("workos:") || value.length >= 40;
 }
 
 function toClineAccessToken(value: string): string {
@@ -195,19 +278,18 @@ export async function readClineStoredAuth(): Promise<
     } catch {
       continue;
     }
-    const auth = asRecord(
-      asRecord(asRecord(asRecord(parsed)?.providers)?.cline)?.settings,
-    )?.auth;
-    const rec = asRecord(auth);
-    if (!rec) continue;
+    const providers = asRecord(asRecord(parsed)?.providers);
+    const clineEntry = asRecord(providers?.cline ?? providers?.["cline-pass"]);
+    const authRec = asRecord(asRecord(clineEntry?.settings)?.auth ?? clineEntry?.auth);
+    if (!authRec) continue;
     const accessToken =
-      typeof rec.accessToken === "string" ? rec.accessToken : "";
+      typeof authRec.accessToken === "string" ? authRec.accessToken : "";
     if (!accessToken) continue;
     return {
       accessToken,
       refreshToken:
-        typeof rec.refreshToken === "string" ? rec.refreshToken : undefined,
-      expiresAt: typeof rec.expiresAt === "number" ? rec.expiresAt : undefined,
+        typeof authRec.refreshToken === "string" ? authRec.refreshToken : undefined,
+      expiresAt: parseExpiresAt(authRec.expiresAt),
     };
   }
   return undefined;
@@ -218,7 +300,6 @@ export async function maybeRefreshClineToken(
   refreshToken?: string,
   onError?: ((message: string) => void) | undefined,
 ): Promise<ClineOAuthTokens | undefined> {
-  if (!isClineOAuthToken(currentKey)) return undefined;
   let token = refreshToken;
   if (!token) {
     const stored = await readClineStoredAuth();
@@ -251,7 +332,11 @@ export async function verifyClineToken(token: string): Promise<boolean> {
 export function candidateClineCredentialPaths(): string[] {
   const home = homedir();
   const os = platform();
-  const paths = [join(home, ".cline", "data", "settings", "providers.json")];
+  const paths: string[] = [];
+  if (process.env.CLINE_DATA_DIR) {
+    paths.push(join(process.env.CLINE_DATA_DIR, "settings", "providers.json"));
+  }
+  paths.push(join(home, ".cline", "data", "settings", "providers.json"));
   if (os === "darwin") {
     paths.push(
       join(home, "Library", "Application Support", "Cline", "providers.json"),
@@ -273,16 +358,15 @@ export async function importExistingClineAuth(): Promise<ClineOAuthTokens | unde
     } catch {
       continue;
     }
-    const authRec = asRecord(
-      asRecord(asRecord(asRecord(parsed)?.providers)?.cline)?.settings,
-    )?.auth;
-    const auth = asRecord(authRec);
-    if (!auth) continue;
-    let accessToken = typeof auth.accessToken === "string" ? auth.accessToken : "";
+    const providers = asRecord(asRecord(parsed)?.providers);
+    const clineEntry = asRecord(providers?.cline ?? providers?.["cline-pass"]);
+    const authRec = asRecord(asRecord(clineEntry?.settings)?.auth ?? clineEntry?.auth);
+    if (!authRec) continue;
+    let accessToken = typeof authRec.accessToken === "string" ? authRec.accessToken : "";
     if (!accessToken) continue;
     let refreshToken =
-      typeof auth.refreshToken === "string" ? auth.refreshToken : undefined;
-    let expiresAt = typeof auth.expiresAt === "number" ? auth.expiresAt : undefined;
+      typeof authRec.refreshToken === "string" ? authRec.refreshToken : undefined;
+    let expiresAt = parseExpiresAt(authRec.expiresAt);
     if (expiresAt !== undefined && expiresAt < Date.now() && refreshToken) {
       try {
         const refreshed = await refreshClineToken(refreshToken);
