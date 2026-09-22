@@ -150,6 +150,23 @@ describe("codex /set auth flow", () => {
     expect(h.setProviderKeys).toHaveBeenCalled();
   });
 
+  it("commits removed accounts before adding a new authenticated account", async () => {
+    const oldKey = encodeCodexKey(credential("acc-expired-aaaaaaaaaaaaaaaa", "acct-expired"));
+    h.stored.push({ id: "k0", value: oldKey, createdAt: 0 });
+    const { services } = makeServices([
+      { action: "pick", rows: [], activeIndex: 0 },
+      { action: "save", rows: [{ value: NEW_KEY }], activeIndex: 0 },
+    ]);
+
+    const { openLlmKeysEditor } = await import(
+      "../src/ui-core/commands/key-commands.js"
+    );
+    await openLlmKeysEditor(services as never, "codex");
+
+    expect(h.stored.map((key) => key.value)).toEqual([NEW_KEY]);
+    expect(h.setProviderKeys.mock.calls[0]?.[1]).toEqual([]);
+  });
+
   it("does not leave the sign-in pager blocking the editor", async () => {
     const { services, events } = makeServices([
       { action: "pick", rows: [], activeIndex: 0 },

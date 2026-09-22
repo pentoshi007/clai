@@ -901,6 +901,39 @@ describe("transcript reducer (V2-050)", () => {
     );
   });
 
+  it("does not leave a completed compaction marked as pending", () => {
+    const seq = buildSequencer();
+    let state = applyAppEvent(
+      EMPTY_TRANSCRIPT_STATE,
+      seq.build(
+        "compaction-started",
+        {
+          compactionId: "c-pending",
+          beforeTokens: 900,
+          measurement: "provider-reported",
+        },
+        undefined,
+      ),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "compaction-completed",
+        {
+          compactionId: "c-pending",
+          summary: "completed memory",
+          beforeTokens: 900,
+          measurement: "provider-reported",
+        },
+        undefined,
+      ),
+    );
+
+    const item = transcriptItems(state)[0] as CompactedItem;
+    expect(item.streaming).toBe(false);
+    expect(compactionTokenLabel(item)).not.toContain("pending");
+  });
+
   it("marks a failed compaction as retaining the original context", () => {
     const seq = buildSequencer();
     let state = applyAppEvent(

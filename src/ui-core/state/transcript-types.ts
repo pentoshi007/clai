@@ -100,8 +100,8 @@ export function compactionTokenLabel(
       return `${before} tokens → ${item.afterTokens!.toLocaleString()} tokens`;
     }
     return item.beforeTokens > 0
-      ? `${before} provider-reported tokens before · next report pending`
-      : "next report pending";
+      ? `${before} provider-reported tokens before`
+      : "";
   }
   return item.beforeTokens > 0 || (item.afterTokens ?? 0) > 0
     ? `~${before} → ~${(item.afterTokens ?? 0).toLocaleString()} tokens`
