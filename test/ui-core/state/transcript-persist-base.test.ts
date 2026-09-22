@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { asSessionId, asToolCallId } from "../../../src/app/events/app-event.js";
 import { EventSequencer } from "../../../src/app/events/sequencer.js";
@@ -7,6 +10,8 @@ import {
   serializeForHistory,
 } from "../../../src/ui-core/state/transcript-hydrate.js";
 import { TranscriptStore } from "../../../src/ui-core/state/transcript-store.js";
+import { OutputSpool } from "../../../src/app/events/event-buffer.js";
+import { restoreArtifactOutputs } from "../../../src/ui-core/bootstrap/session-resume.js";
 
 function user(id: string, text: string): ClassicTranscriptItem {
   return { kind: "user", id, text, done: true };
@@ -241,6 +246,61 @@ describe("transcript persist base", () => {
       const bytes = JSON.stringify(compacted.originalItems).length;
       expect(bytes).toBeLessThanOrEqual(2_100_000);
       expect(compacted.originalItems.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("persists only a tail for artifact-backed tools and restores full output on resume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-artifact-"));
+    try {
+      const fullOutput = "line\n".repeat(40_000); // ~200KB
+      const artifactPath = join(dir, "tool-output.txt");
+      await writeFile(artifactPath, fullOutput, "utf8");
+
+      const store = new TranscriptStore(100000, 0);
+      const seq = new EventSequencer(asSessionId("s1"));
+      const toolCallId = asToolCallId("tool-big");
+      store.dispatch(
+        seq.build(
+          "tool-call",
+          { toolCallId, name: "shell.exec", argsDisplay: "big-cmd" },
+          undefined,
+        ),
+      );
+      store.dispatch(
+        seq.build(
+          "tool-result",
+          { toolCallId, ok: true, exitCode: 0, artifactPath },
+          undefined,
+        ),
+      );
+
+      const persisted = store.mergePersistSnapshot(
+        serializeForHistory(store.getState(), () => fullOutput),
+      );
+      const tool = persisted.find((item) => item.kind === "tool");
+      expect(tool && tool.kind === "tool" ? tool.artifactPath : undefined).toBe(
+        artifactPath,
+      );
+      const storedOutput =
+        tool && tool.kind === "tool" ? tool.output : "";
+      expect(storedOutput.length).toBeLessThanOrEqual(4_100);
+      expect(JSON.stringify(persisted).length).toBeLessThan(20_000);
+
+      const hydrated = hydrateFromClassicTranscript(persisted);
+      const spool = new OutputSpool();
+      restoreArtifactOutputs(hydrated.state, spool);
+      const restoredItem = [...hydrated.state.byId.values()].find(
+        (item) => item.kind === "tool",
+      );
+      expect(restoredItem).toBeDefined();
+      const restored =
+        restoredItem && restoredItem.kind === "tool"
+          ? spool.tail(restoredItem.toolCallId)
+          : "";
+      expect(restored.length).toBe(fullOutput.length);
+      expect(restored).toBe(fullOutput);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
