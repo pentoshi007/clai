@@ -3,7 +3,10 @@ import type { ProviderAuth } from "./provider.js";
 import { ProviderError } from "./http.js";
 import { markResponsesEmptyOutput } from "./responses-empty-output.js";
 import { withReasoningObservation } from "./token-usage.js";
-import type { ResponsesDialectConfig } from "./responses-config.js";
+import type {
+  ResponsesBodyExtrasContext,
+  ResponsesDialectConfig,
+} from "./responses-config.js";
 import {
   buildResponsesRequestBody,
   postResponses,
@@ -24,6 +27,12 @@ export async function responsesComplete(
   model: string,
   validate?: (data: unknown) => void,
 ): Promise<CompletionResult> {
+  const context: ResponsesBodyExtrasContext = {
+    model,
+    messages: request.messages,
+    purpose: request.purpose,
+    reasoningEnabled: Boolean(request.thinking?.enabled),
+  };
   const body = buildResponsesRequestBody(config, request, model, false);
   const response = await postResponses(
     config,
@@ -31,6 +40,7 @@ export async function responsesComplete(
     body,
     request.signal ?? null,
     "application/json",
+    context,
   );
   const data = await readResponsesJson(config, model, response, request.signal);
   validate?.(data);

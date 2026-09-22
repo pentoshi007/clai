@@ -10,6 +10,7 @@ import {
   CODEX_API_BASE_URL,
   CODEX_CLIENT_VERSION,
   accountIdFromIdToken,
+  codexPromptCacheKey,
   codexRequestHeaders,
   decodeCodexKey,
   extractResidency,
@@ -19,7 +20,6 @@ import {
 } from "./codex-auth.js";
 import { currentRequestPurpose } from "./request-purpose.js";
 import { getProviderKeys, setProviderKeys } from "../store/keys.js";
-import { cacheAffinityKey, sessionCacheAffinityKey } from "./cache-affinity.js";
 import { currentSessionAffinity } from "./session-affinity.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import {
@@ -80,7 +80,18 @@ async function withCodexCredential<T>(
   auth: ProviderAuth,
   run: (credential: ReturnType<typeof credentialFor>) => Promise<T>,
 ): Promise<T> {
-  const credential = credentialFor(auth);
+  let credential = credentialFor(auth);
+  if (
+    credential.refreshToken &&
+    credential.expiresAt !== undefined &&
+    credential.expiresAt <= Date.now() + 60_000
+  ) {
+    const fresh = await maybeRefreshCodexCredential(auth.apiKey ?? "").catch(() => undefined);
+    if (fresh && fresh !== auth.apiKey) {
+      await replaceCodexKey(auth.apiKey ?? "", fresh).catch(() => undefined);
+      credential = credentialFor({ ...auth, apiKey: fresh });
+    }
+  }
   try {
     return await run(credential);
   } catch (error) {
@@ -122,11 +133,7 @@ function settingsFor(credential: ReturnType<typeof credentialFor>) {
 }
 
 function codexCacheKey(context: ResponsesBodyExtrasContext): string {
-  const affinity = currentSessionAffinity();
-  const key = affinity
-    ? sessionCacheAffinityKey(affinity)
-    : cacheAffinityKey("codex", context.model, context.messages);
-  return `${context.purpose === "auxiliary" ? "aux-" : ""}${key}`;
+  return codexPromptCacheKey(context);
 }
 
 function codexConfigFor(credential: CodexCredential): ResponsesDialectConfig {
@@ -141,14 +148,14 @@ function codexConfigFor(credential: CodexCredential): ResponsesDialectConfig {
     omitParallelToolCalls: true,
     instructionsField: "instructions",
     systemRole: "developer",
-    buildHeaders(auth, accept) {
-      const sessionId = currentSessionAffinity();
+    buildHeaders(auth, accept, context) {
+      const cacheKey = codexPromptCacheKey(context);
       return {
         "content-type": "application/json",
         accept,
         ...(auth.apiKey ? { authorization: `Bearer ${auth.apiKey}` } : {}),
-        ...codexRequestHeaders(credential.accountId, {}, credential.residency),
-        ...(sessionId ? { "session-id": sessionId } : {}),
+        ...codexRequestHeaders(credential.accountId, {}, credential.residency, cacheKey),
+        "session-id": cacheKey,
       };
     },
     reasoningPayload(reasoning) {
@@ -159,7 +166,7 @@ function codexConfigFor(credential: CodexCredential): ResponsesDialectConfig {
       return {
         store: false,
         include: ["reasoning.encrypted_content"],
-        prompt_cache_key: codexCacheKey(context),
+        prompt_cache_key: codexPromptCacheKey(context),
       };
     },
   };

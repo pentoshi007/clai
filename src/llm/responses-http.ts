@@ -6,6 +6,7 @@ import { isOperationPolicyError } from "./operation-ledger.js";
 import {
   resolveResponsesUrl,
   type ResponsesAccept,
+  type ResponsesBodyExtrasContext,
   type ResponsesDialectConfig,
 } from "./responses-config.js";
 import { buildResponsesBody } from "./responses-request.js";
@@ -64,12 +65,13 @@ export async function postResponses(
   body: string,
   signal: AbortSignal | null,
   accept: ResponsesAccept,
+  context?: ResponsesBodyExtrasContext | undefined,
 ): Promise<Response> {
   try {
     return await generationFetch(resolveResponsesUrl(config.baseUrl), {
       method: "POST",
       signal,
-      headers: config.buildHeaders(auth, accept),
+      headers: config.buildHeaders(auth, accept, context),
       body,
       verbose: process.env.CLAI_VERBOSE === "true",
     } as unknown as RequestInit);
