@@ -175,6 +175,9 @@ export class SessionController implements Disposable {
   private contextSnapshot: ContextSnapshotV1 | undefined;
   private preserveCompactionEstimate = false;
   private lastContextCompactionId: string | undefined;
+  private compactionTokenTransition:
+    | { readonly beforeTokens: number; readonly afterTokens: number }
+    | undefined;
   private readonly contextLimits = new SessionContextLimits();
   private readonly usageLedger = new SessionUsageLedger();
   private lifecycleGeneration = 0;
@@ -322,7 +325,13 @@ export class SessionController implements Disposable {
   }
 
   private contextUsageProjection(): ContextProjection {
-    return this.projectContext(this.usageTarget, this.contextSnapshot);
+    const projection = this.projectContext(this.usageTarget, this.contextSnapshot);
+    const transition = this.compactionTokenTransition;
+    if (!transition) return projection;
+    return {
+      ...projection,
+      contextChip: `${transition.beforeTokens.toLocaleString("en-US")} tokens → ${transition.afterTokens.toLocaleString("en-US")} tokens`,
+    };
   }
 
   private get contextLimitTokens(): number | undefined {
@@ -402,6 +411,7 @@ export class SessionController implements Disposable {
     );
     if (usage.exact && usage.promptTokensKnown !== false) {
       this.preserveCompactionEstimate = false;
+      this.compactionTokenTransition = undefined;
     }
     this.notifyState();
   }
@@ -417,8 +427,21 @@ export class SessionController implements Disposable {
     measurement?: "provider-reported" | "estimated" | undefined,
   ): void {
     if (compactionId && compactionId === this.lastContextCompactionId) return;
+    const beforeContextTokens = this.contextSnapshot?.contextTokens;
+    const hasTransition =
+      measurement === "provider-reported" &&
+      typeof beforeContextTokens === "number" &&
+      beforeContextTokens > 0 &&
+      typeof afterTokens === "number" &&
+      Number.isFinite(afterTokens) &&
+      afterTokens > 0;
+    this.compactionTokenTransition =
+      hasTransition &&
+      beforeContextTokens !== undefined &&
+      afterTokens !== undefined
+        ? { beforeTokens: beforeContextTokens, afterTokens }
+        : undefined;
     if (
-      afterTokens === undefined &&
       measurement === "provider-reported" &&
       this.contextSnapshot?.precision === "provider-exact"
     ) {

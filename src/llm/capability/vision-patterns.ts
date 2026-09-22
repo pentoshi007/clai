@@ -2,6 +2,7 @@ import type { ProviderId } from "../../types.js";
 
 export const textOnlyPatterns: RegExp[] = [
   /(?:^|\/)glm-?5(?:(?:\.|p)[123])?(?:-fast)?$/i,
+  /mimo-v?\d(?:\.\d+)?-(?:asr|tts)/i,
 ];
 
 export const universalVisionPatterns: RegExp[] = [
@@ -203,6 +204,7 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
   ],
   deepseek: [/vl/i, /vision/i, /deepseek-vl/i],
   kimi: [/kimi/i, /moonshot/i],
+  mimo: [/^mimo-v2\.5$/i, /^mimo-v2\.6/i],
   glm: [/glm-4.*v/i, /glm-5.*v/i, /vision/i, /vl$/i],
   minimax: [/minimax-m3/i, /vision/i, /vl/i],
   cline: [/vision/i, /vl$/i, /glm-.*v/i, /gpt/i, /claude/i, /grok/i, /muse-spark/i],
@@ -233,6 +235,7 @@ export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   vercel: "openai/gpt-4o",
   deepseek: "deepseek-chat",
   kimi: "kimi-k3",
+  mimo: "mimo-v2.6-pro",
   glm: "glm-4v-plus",
   minimax: "MiniMax-Text-01",
 };

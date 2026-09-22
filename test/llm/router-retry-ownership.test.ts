@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderError } from "../../src/llm/http.js";
-import { SERVER_ERROR_MAX_ATTEMPTS } from "../../src/llm/routing/error-classification.js";
+import {
+  SERVER_ERROR_MAX_ATTEMPTS,
+  networkRetryWaitMs,
+} from "../../src/llm/routing/error-classification.js";
 import { streamWithProvider, providers } from "../../src/llm/router.js";
 import type { LlmProvider } from "../../src/llm/provider.js";
 
@@ -25,6 +28,7 @@ vi.mock("../../src/store/keys.js", async (importOriginal) => {
 });
 
 const originalHetzner = providers.hetzner;
+const originalFree = providers.free;
 const messages = [{ role: "user" as const, content: "hi" }];
 
 function hetznerAlwaysRateLimited() {
@@ -61,6 +65,23 @@ function hetznerAlwaysUnavailable() {
   return () => calls;
 }
 
+function freeAlwaysUnavailable() {
+  let calls = 0;
+  providers.free = {
+    ...originalFree,
+    async stream() {
+      calls += 1;
+      throw new ProviderError(
+        "Free (model=mimo-v2.6-flash-free): upstream error (retry after 0.001s)",
+        503,
+        "",
+        0.001,
+      );
+    },
+  } as LlmProvider;
+  return () => calls;
+}
+
 const request = {
   provider: "hetzner" as const,
   model: "test-model",
@@ -69,6 +90,7 @@ const request = {
 
 afterEach(() => {
   providers.hetzner = originalHetzner;
+  providers.free = originalFree;
   hetznerKeyCount = 1;
   vi.unstubAllGlobals();
 });
@@ -103,5 +125,23 @@ describe("router retry ownership for agent streams", () => {
     const calls = hetznerAlwaysRateLimited();
     await expect(streamWithProvider(request, () => {})).rejects.toThrow(/429/);
     expect(calls()).toBe(5);
+  });
+
+  it("retries Free server errors three times with 1s, 2s, 4s waits, then fails", async () => {
+    expect(networkRetryWaitMs(0)).toBe(1_000);
+    expect(networkRetryWaitMs(1)).toBe(2_000);
+    expect(networkRetryWaitMs(2)).toBe(4_000);
+    const calls = freeAlwaysUnavailable();
+    await expect(
+      streamWithProvider(
+        {
+          provider: "free",
+          model: "free-1/mimo-v2.6-flash-free",
+          messages,
+        },
+        () => {},
+      ),
+    ).rejects.toThrow(/503/);
+    expect(calls()).toBe(4);
   });
 });

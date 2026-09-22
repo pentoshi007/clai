@@ -675,6 +675,40 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  mimo: {
+    evidence: providerDoc("xiaomi-mimo-api"),
+    transport: { authType: "bearer", systemPolicy: "single-leading" },
+    capabilities: {
+      tools: "supported",
+      images: "supported",
+      structuredOutput: "supported",
+    },
+    reasoning: {
+      control: {
+        dialect: "deepseek-thinking",
+        status: "supported",
+        evidence: providerDoc("mimo-deep-thinking"),
+      },
+      acceptedEfforts: [],
+      disable: "supported",
+      disableForm: "thinking-disabled",
+      outputShapes: ["reasoning-content"],
+      replayScope: "all-history",
+      finalTurnPreservation: "required",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools", "thinking"],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
   glm: {
     evidence: providerDoc("zhipu-glm-api"),
     transport: { authType: "bearer", systemPolicy: "single-leading" },
@@ -824,6 +858,12 @@ export const FAMILYLESS_ENDPOINT_LAYERS: Partial<
 > = {
   free: freeGatewayEffortLayer,
   tokenrouter: FAMILY_LAYERS.tokenrouter!,
+};
+
+export const GATEWAY_FAMILY_EXCLUDED_PROVIDERS: Readonly<
+  Record<string, readonly ProviderId[]>
+> = {
+  "mimo-v2": ["free", "bynara"],
 };
 
 export const kimiMandatoryLayer: ProviderProfileLayer = {  evidence: viaGateway("kimi-k3-k2p7-official-contract"),

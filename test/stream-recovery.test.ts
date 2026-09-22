@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ProviderError } from "../src/llm/http.js";
 import {
   DEFAULT_STREAM_RECOVERY_LIMITS,
+  FREE_STREAM_RECOVERY_LIMITS,
   classifyStreamFailure,
   createStreamRecoveryState,
   planStreamRecovery,
@@ -319,5 +320,26 @@ describe("server error attempt budget", () => {
     resetStreamRecoveryState(state);
     expect(state.serverAttempts).toBe(0);
     expect(planStreamRecovery({ kind: "server", state }).action).toBe("retry");
+  });
+
+  it("gives up immediately on Free server and rate-limit failures", () => {
+    const serverState = createStreamRecoveryState();
+    recordServerErrorAttempts(serverState, 1);
+    expect(
+      planStreamRecovery({
+        kind: "server",
+        state: serverState,
+        limits: FREE_STREAM_RECOVERY_LIMITS,
+      }).action,
+    ).toBe("give-up");
+
+    const rateState = createStreamRecoveryState();
+    expect(
+      planStreamRecovery({
+        kind: "rate-limit",
+        state: rateState,
+        limits: FREE_STREAM_RECOVERY_LIMITS,
+      }).action,
+    ).toBe("give-up");
   });
 });

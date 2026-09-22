@@ -22,6 +22,7 @@ export const providerIds = [
   "vercel",
   "deepseek",
   "kimi",
+  "mimo",
   "glm",
   "minimax",
   "cline",

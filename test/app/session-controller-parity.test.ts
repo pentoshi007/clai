@@ -500,9 +500,10 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     });
     if (completed?.type === "compaction-completed") {
-      expect(completed.payload.afterTokens).toBeUndefined();
+      expect(completed.payload.afterTokens).toBe(115_030);
     }
     expect(session.getState().contextSnapshot?.precision).toBe("provider-exact");
+    expect(session.getState().contextChip).toBe("115,000 tokens → 115,030 tokens");
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );

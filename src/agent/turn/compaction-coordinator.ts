@@ -257,12 +257,12 @@ const runAdmittedCompaction = async (
     compactionId,
     compactionSummaryText(summaryBodyOf(ports.messages)),
     beforeTokens,
-    measurement === "estimated" ? afterTokens : undefined,
+    afterTokens,
     measurement,
   );
   const tokenLabel =
     measurement === "provider-reported"
-      ? `${beforeTokens.toLocaleString()} provider-reported tokens before`
+      ? `${beforeTokens.toLocaleString()} tokens → ${afterTokens.toLocaleString()} tokens`
       : `~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens`;
   ports.notify(
     "info",

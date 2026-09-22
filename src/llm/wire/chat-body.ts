@@ -155,7 +155,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     control === undefined &&
     options.providerId !== undefined &&
     isReasoningUnsupported(options.providerId, options.model);
-  const reasoning =
+  const reasoning: Record<string, unknown> =
     legacyControlDenied ||
     capabilityDeniesThinking ||
     control?.suppressed === true
@@ -167,6 +167,22 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
           options.providerId,
           control,
         );
+  if (options.providerId === "free") {
+    if (/mimo/i.test(options.model)) {
+      delete reasoning.reasoning_effort;
+      const nested = reasoning.reasoning as Record<string, unknown> | undefined;
+      if (nested) delete nested.effort;
+    } else {
+      const effort = reasoning.reasoning_effort;
+      if (effort === "xhigh" || effort === "max") {
+        reasoning.reasoning_effort = "high";
+      }
+      const nested = reasoning.reasoning as Record<string, unknown> | undefined;
+      if (nested && (nested.effort === "xhigh" || nested.effort === "max")) {
+        nested.effort = "high";
+      }
+    }
+  }
 
   const reasoningOn = Boolean(options.reasoning?.enabled);
   const isMinimaxM3 = /minimax-m3/i.test(options.model);

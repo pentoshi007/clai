@@ -51,6 +51,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /minimax-m3/i, tokens: 1_000_000 },
   { pattern: /minimax-m2\.7/i, tokens: 204_800 },
   { pattern: /minimax/i, tokens: 128_000 },
+  { pattern: /mimo-v2\.[56]/i, tokens: 1_000_000 },
   { pattern: /mimo/i, tokens: 128_000 },
   { pattern: /gpt-oss/i, tokens: 128_000 },
   { pattern: /nemotron/i, tokens: 128_000 },
@@ -62,6 +63,11 @@ const DEFAULT_CONTEXT_WINDOW = 250_000;
 const PROVIDER_CONTEXT_OVERRIDES: Partial<
   Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
 > = {
+  mimo: [
+    { pattern: /-asr$/i, tokens: 32_768 },
+    { pattern: /-tts/i, tokens: 32_768 },
+    { pattern: /^mimo-v2\.[56]/i, tokens: 1_000_000 },
+  ],
   tokenrouter: [
     { pattern: /^(?:[a-z0-9-]+\/)?deepseek-v4-(?:pro|flash)$/i, tokens: 1_000_000 },
     { pattern: /^(?:[a-z0-9-]+\/)?minimax-m3$/i, tokens: 524_288 },

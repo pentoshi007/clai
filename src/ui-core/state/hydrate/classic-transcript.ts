@@ -130,6 +130,9 @@ export function hydrateFromClassicTranscript(
           typeof raw.endedAt === "number" && Number.isFinite(raw.endedAt)
             ? raw.endedAt
             : undefined;
+        const rawOriginals = Array.isArray(raw.originalItems)
+          ? raw.originalItems
+          : [];
         const item: CompactedItem = {
           ...base,
           ...(startedAt !== undefined ? { timestamp: startedAt, startedAt } : {}),
@@ -140,6 +143,7 @@ export function hydrateFromClassicTranscript(
           ...(raw.measurement ? { measurement: raw.measurement } : {}),
           ...(raw.error ? { error: raw.error } : {}),
           ...(endedAt !== undefined ? { endedAt } : {}),
+          ...(rawOriginals.length > 0 ? { originalItems: rawOriginals } : {}),
         };
         byId.set(id, item);
         order.push(id);

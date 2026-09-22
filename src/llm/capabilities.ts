@@ -7,6 +7,7 @@ import type { ToolCallingMode } from "./tool-protocol.js";
 import { EFFORT_SCALE } from "./reasoning-controls.js";
 import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
+import { GATEWAY_FAMILY_EXCLUDED_PROVIDERS } from "./provider-profile-layers.js";
 import {
   endpointAcceptedEfforts,
   REASONING_PATTERNS,
@@ -339,6 +340,16 @@ export function learnModelEmitsReasoning(
 export type ReasoningEvidence =
   "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
+function familyForProvider(provider: ProviderId, model: string) {
+  const family = modelFamilyFor(model);
+  const providerExcluded =
+    family?.id === "mimo-v2" && provider !== "mimo";
+  const gatewayExcluded = GATEWAY_FAMILY_EXCLUDED_PROVIDERS[
+    family?.id ?? ""
+  ]?.includes(provider);
+  return providerExcluded || gatewayExcluded ? undefined : family;
+}
+
 export function modelReasoningEvidence(
   provider: ProviderId,
   model: string,
@@ -355,7 +366,7 @@ export function modelReasoningEvidence(
   if (catalogAdvertisedEfforts(provider, model) !== undefined) return "catalog";
   const patterns = REASONING_PATTERNS[provider] ?? [];
   if (patterns.some((pattern) => pattern.test(model))) return "pattern";
-  if (modelFamilyFor(model)) return "family";
+  if (familyForProvider(provider, model)) return "family";
   return endpointAcceptedEfforts(provider) ? "endpoint" : "unknown";
 }
 
@@ -380,7 +391,7 @@ function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
   const facts = catalogFactsByRoute.get(key);
   if (facts?.reasoning?.supported !== undefined) return facts.reasoning.supported;
   if (catalogAdvertisedEfforts(provider, model) !== undefined) return true;
-  if (modelFamilyFor(model)) return true;
+  if (familyForProvider(provider, model)) return true;
   const patterns = REASONING_PATTERNS[provider];
   if (patterns === undefined) return true;
   if (patterns.some((pattern) => pattern.test(model))) return true;
@@ -469,7 +480,7 @@ export function modelReasoningEfforts(
   loadLearnedCapabilities();
   const advertised = catalogAdvertisedEfforts(provider, model);
   if (advertised !== undefined) return advertised;
-  const family = modelFamilyFor(model);
+  const family = familyForProvider(provider, model);
   return family && family.acceptedEfforts.length > 0
     ? family.acceptedEfforts
     : undefined;

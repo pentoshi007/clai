@@ -4713,7 +4713,10 @@ exports[`serialized request snapshots > free / images 1`] = `
       },
     ],
     "model": "deepseek-v4-flash-free",
-    "stream": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
     "thinking": {
       "type": "disabled",
     },
@@ -4744,16 +4747,13 @@ exports[`serialized request snapshots > free / images 1`] = `
     ],
   },
   "headers": {
-    "accept": "application/json",
+    "accept": "text/event-stream",
     "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/latest/2.0.8/cli",
+    "user-agent": "opencode/2.0.8",
     "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
-    "x-session-affinity": "<generated>",
-    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -4783,7 +4783,10 @@ exports[`serialized request snapshots > free / minimal 1`] = `
       },
     ],
     "model": "deepseek-v4-flash-free",
-    "stream": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
     "thinking": {
       "type": "disabled",
     },
@@ -4814,16 +4817,13 @@ exports[`serialized request snapshots > free / minimal 1`] = `
     ],
   },
   "headers": {
-    "accept": "application/json",
+    "accept": "text/event-stream",
     "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/latest/2.0.8/cli",
+    "user-agent": "opencode/2.0.8",
     "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
-    "x-session-affinity": "<generated>",
-    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -4854,7 +4854,10 @@ exports[`serialized request snapshots > free / reasoning-control 1`] = `
     ],
     "model": "deepseek-v4-flash-free",
     "reasoning_effort": "high",
-    "stream": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
     "thinking": {
       "type": "enabled",
     },
@@ -4885,16 +4888,13 @@ exports[`serialized request snapshots > free / reasoning-control 1`] = `
     ],
   },
   "headers": {
-    "accept": "application/json",
+    "accept": "text/event-stream",
     "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/latest/2.0.8/cli",
+    "user-agent": "opencode/2.0.8",
     "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
-    "x-session-affinity": "<generated>",
-    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -4946,7 +4946,10 @@ exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
     ],
     "model": "deepseek-v4-flash-free",
     "reasoning_effort": "high",
-    "stream": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
     "thinking": {
       "type": "enabled",
     },
@@ -5017,16 +5020,13 @@ exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
     ],
   },
   "headers": {
-    "accept": "application/json",
+    "accept": "text/event-stream",
     "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/latest/2.0.8/cli",
+    "user-agent": "opencode/2.0.8",
     "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
-    "x-session-affinity": "<generated>",
-    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -5078,7 +5078,10 @@ exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
     ],
     "model": "deepseek-v4-flash-free",
     "reasoning_effort": "high",
-    "stream": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
     "thinking": {
       "type": "enabled",
     },
@@ -5149,16 +5152,13 @@ exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
     ],
   },
   "headers": {
-    "accept": "application/json",
+    "accept": "text/event-stream",
     "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/latest/2.0.8/cli",
+    "user-agent": "opencode/2.0.8",
     "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
-    "x-session-affinity": "<generated>",
-    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -5188,7 +5188,10 @@ exports[`serialized request snapshots > free / tools 1`] = `
       },
     ],
     "model": "deepseek-v4-flash-free",
-    "stream": false,
+    "stream": true,
+    "stream_options": {
+      "include_usage": true,
+    },
     "thinking": {
       "type": "disabled",
     },
@@ -5259,16 +5262,13 @@ exports[`serialized request snapshots > free / tools 1`] = `
     ],
   },
   "headers": {
-    "accept": "application/json",
+    "accept": "text/event-stream",
     "authorization": "<redacted>",
     "content-type": "application/json",
-    "user-agent": "opencode/latest/2.0.8/cli",
+    "user-agent": "opencode/2.0.8",
     "x-opencode-client": "cli",
-    "x-opencode-project": "<generated>",
     "x-opencode-request": "<generated>",
     "x-opencode-session": "<generated>",
-    "x-session-affinity": "<generated>",
-    "x-session-id": "<generated>",
   },
   "method": "POST",
   "url": "https://opencode.ai/zen/v1/chat/completions",
@@ -8469,6 +8469,425 @@ exports[`serialized request snapshots > meta / tools 1`] = `
   },
   "method": "POST",
   "url": "https://api.meta.ai/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > mimo / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "mimo-v2.6-pro",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > mimo / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "mimo-v2.6-pro",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > mimo / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "mimo-v2.6-pro",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
+    "top_p": 0.95,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > mimo / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "mimo-v2.6-pro",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+    "top_p": 0.95,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > mimo / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "mimo-v2.6-pro",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+    "top_p": 0.95,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > mimo / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "mimo-v2.6-pro",
+    "stream": false,
+    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.xiaomimimo.com/v1/chat/completions",
 }
 `;
 

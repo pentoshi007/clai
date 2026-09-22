@@ -164,4 +164,55 @@ describe("history JSONL sidecar index", () => {
     expect(materialized[0]?.images?.[0]?.dataBase64).toBeTruthy();
     expect(selected?.messages[0]?.images?.[0]?.dataBase64).toBe("");
   });
+
+  it("serializes concurrent sessions without losing or corrupting records", async () => {
+    const dir = await tempDir();
+    process.env.CLAI_HISTORY_DIR = dir;
+    vi.resetModules();
+    const { upsertSession, listSessionSummaries, getSession } = await import(
+      "../src/store/history.js"
+    );
+
+    const sessionIds = Array.from({ length: 12 }, (_, i) => `concurrent-${i}`);
+    await Promise.all(
+      sessionIds.map((id, i) =>
+        upsertSession(
+          id,
+          [
+            { role: "user", content: `prompt ${i}` },
+            { role: "assistant", content: `answer ${i}` },
+          ],
+          `Concurrent ${i}`,
+          [
+            { kind: "user", id: `u-${i}`, text: `prompt ${i}`, done: true },
+            {
+              kind: "compacted",
+              id: `c-${i}`,
+              summary: `memory ${i}`,
+              originalItems: [
+                { kind: "user", id: `orig-${i}`, text: `earlier ${i}`, done: true },
+              ],
+              done: true,
+              beforeTokens: 1000 + i,
+              afterTokens: 100 + i,
+            },
+          ],
+        ),
+      ),
+    );
+
+    const summaries = await listSessionSummaries(50, { recovery: "blocking" });
+    const found = new Set(summaries.map((s) => s.id));
+    for (const id of sessionIds) expect(found.has(id)).toBe(true);
+
+    for (const [i, id] of sessionIds.entries()) {
+      const rec = await getSession(id);
+      expect(rec?.messages[1]?.content).toBe(`answer ${i}`);
+      const compacted = rec?.transcript?.find((t) => t.kind === "compacted");
+      expect(compacted && compacted.kind === "compacted"
+        ? compacted.originalItems[0]
+        : undefined,
+      ).toMatchObject({ id: `orig-${i}` });
+    }
+  }, 30_000);
 });

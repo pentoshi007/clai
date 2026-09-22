@@ -30,6 +30,12 @@ const SAMPLING_RULES: SamplingRule[] = [
     reasoningOnly: true,
     defaults: { temperature: 0.6, topP: 0.95 },
   },
+  {
+    pattern: /^mimo-v/i,
+    providers: ["mimo"],
+    reasoningOnly: true,
+    defaults: { temperature: 1.0, topP: 0.95 },
+  },
 ];
 
 export function samplingDefaults(input: {

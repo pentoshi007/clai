@@ -99,6 +99,22 @@ function withRequestAffinity<T>(request: CompletionRequest, run: () => T): T {
   return withSessionAffinity(`${affinity}:auxiliary`, run);
 }
 
+function retryOptionsForProvider(
+  providerId: ProviderId,
+  options: StreamWithProviderOptions,
+): Pick<StreamWithProviderOptions, "maxRetries" | "retryRateLimits"> {
+  return {
+    ...(options.maxRetries !== undefined
+      ? { maxRetries: options.maxRetries }
+      : providerId === "free"
+        ? { maxRetries: 3 }
+        : {}),
+    ...(providerId === "free" || options.retryRateLimits === false
+      ? { retryRateLimits: false }
+      : {}),
+  };
+}
+
 async function completeWithProviderOperation(
   request: CompletionRequest,
   options: StreamWithProviderOptions,
@@ -156,12 +172,7 @@ async function completeWithProviderOperation(
         mode: "complete",
         initialAttemptReason: providerId === requested ? "initial" : "fallback",
         ...(options?.onStatus ? { onStatus: options.onStatus } : {}),
-        ...(options?.maxRetries !== undefined
-          ? { maxRetries: options.maxRetries }
-          : {}),
-        ...(options?.retryRateLimits === false
-          ? { retryRateLimits: false }
-          : {}),
+        ...retryOptionsForProvider(providerId, options),
         ...(singleDispatch ? { singleDispatch: true } : {}),
       });
       if (providerId !== requested) {
@@ -338,12 +349,7 @@ async function streamWithProviderOperation(
         initialAttemptReason: providerId === requested ? "initial" : "fallback",
         onToken: relayToken,
         onStatus: emitStatus,
-        ...(options.maxRetries !== undefined
-          ? { maxRetries: options.maxRetries }
-          : {}),
-        ...(options.retryRateLimits === false
-          ? { retryRateLimits: false }
-          : {}),
+        ...retryOptionsForProvider(providerId, options),
         ...(singleDispatch ? { singleDispatch: true } : {}),
         ...(options.onSuccessfulRequest
           ? { onSuccessfulRequest: options.onSuccessfulRequest }

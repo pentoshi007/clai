@@ -159,7 +159,7 @@ describe("effort ladder entry for opaque gateway rejections", () => {
 });
 
 describe("zen free model rejecting extended efforts", () => {
-  it("recovers the turn through the ladder and learns the route", async () => {
+  it("omits the effort for MiMo models so the turn succeeds without the ladder", async () => {
     const transport = zenGatewayRejectingExtendedEfforts();
     const statuses: string[] = [];
 
@@ -175,12 +175,11 @@ describe("zen free model rejecting extended efforts", () => {
     );
 
     expect(result.text).toContain("ok");
-    expect(effortsOf(transport)).toEqual(["xhigh", "high"]);
-    expect(statuses.some((message) => /retrying with high/.test(message))).toBe(true);
-    expect(displayReasoningEfforts("free", MODEL)).not.toContain("xhigh");
+    expect(effortsOf(transport)).toEqual([undefined]);
+    expect(statuses.some((message) => /retrying with high/.test(message))).toBe(false);
   });
 
-  it("maps the rejected effort before the wire on later turns", async () => {
+  it("keeps omitting the effort on later turns", async () => {
     zenGatewayRejectingExtendedEfforts();
     await streamWithProvider(
       {
@@ -204,10 +203,10 @@ describe("zen free model rejecting extended efforts", () => {
     );
 
     expect(result.text).toContain("ok");
-    expect(effortsOf(second)).toEqual(["high"]);
+    expect(effortsOf(second)).toEqual([undefined]);
   });
 
-  it("falls back to disabling reasoning when no lower effort exists", async () => {
+  it("omits the minimal effort too instead of stepping down the ladder", async () => {
     const transport = zenGatewayRejectingExtendedEfforts();
 
     const result = await streamWithProvider(
@@ -221,7 +220,6 @@ describe("zen free model rejecting extended efforts", () => {
     );
 
     expect(result.text).toContain("ok");
-    expect(effortsOf(transport)).toEqual(["minimal", "none"]);
-    expect(displayReasoningEfforts("free", MODEL)).not.toContain("minimal");
+    expect(effortsOf(transport)).toEqual([undefined]);
   });
 });

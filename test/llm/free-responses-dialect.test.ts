@@ -179,7 +179,14 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
   });
 
   it("uses /chat/completions directly for a non-muse-spark zen model without probing /responses", async () => {
-    const fetchMock = chatCompletionsMock();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/responses")) {
+        return new Response("not found", { status: 404 });
+      }
+      return sseResponse([
+        { choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] },
+      ]);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await freeProvider.complete(
