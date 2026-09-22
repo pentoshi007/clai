@@ -387,15 +387,36 @@ export async function startKiroSocialAuth(
 export async function exchangeKiroSocialCode(
   codeOrUrl: string,
   codeVerifier: string,
+  provider: "google" | "github" = "google",
 ): Promise<KiroCredential> {
-  let code = codeOrUrl.trim();
+  let code = codeOrUrl.trim().replace(/^['"]|['"]$/g, "");
+  if (code.includes("error=")) {
+    try {
+      const parsedUrl = new URL(code);
+      const desc = parsedUrl.searchParams.get("error_description") || parsedUrl.searchParams.get("error");
+      if (desc) throw new Error(desc);
+    } catch (e) {
+      if (e instanceof Error && !e.message.includes("Invalid URL")) throw e;
+    }
+    const errorMatch = /[?&]error=([^&#\s]+)/.exec(code);
+    const descMatch = /[?&]error_description=([^&#\s]+)/.exec(code);
+    const err = errorMatch?.[1] ? decodeURIComponent(errorMatch[1].replace(/\+/g, " ")) : "authentication_failed";
+    const desc = descMatch?.[1] ? decodeURIComponent(descMatch[1].replace(/\+/g, " ")) : err;
+    throw new Error(desc);
+  }
   if (code.includes("code=")) {
     try {
       const parsedUrl = new URL(code);
-      code = parsedUrl.searchParams.get("code") || code;
+      const c = parsedUrl.searchParams.get("code");
+      if (c) code = c.trim();
     } catch {
-      const match = /[?&]code=([^&]+)/.exec(code);
-      if (match?.[1]) code = decodeURIComponent(match[1]);
+      const match = /[?&]code=([^&#\s]+)/.exec(code);
+      if (match?.[1]) {
+        code = decodeURIComponent(match[1]).trim();
+      } else {
+        const direct = /^code=([^&#\s]+)/.exec(code);
+        if (direct?.[1]) code = decodeURIComponent(direct[1]).trim();
+      }
     }
   }
 
@@ -437,9 +458,125 @@ export async function exchangeKiroSocialCode(
     refreshToken,
     profileArn,
     expiresAt: Date.now() + expiresIn * 1000,
-    authMethod: "google",
+    authMethod: provider,
     region: KIRO_DEFAULT_REGION,
   };
+}
+
+export interface KiroSocialCallbackHandle {
+  readonly port: number;
+  close(): void;
+}
+
+export async function listenForKiroSocialCallback(options: {
+  onCode: (urlOrCode: string) => void;
+  signal?: AbortSignal | undefined;
+}): Promise<KiroSocialCallbackHandle> {
+  const { createServer } = await import("node:http");
+  const { writeFile, unlink, mkdir } = await import("node:fs/promises");
+  const home = homedir();
+  const claiDir = join(home, ".clai");
+  await mkdir(claiDir, { recursive: true }).catch(() => {});
+  const portFile = join(claiDir, "kiro-pending-callback.json");
+
+  let closed = false;
+  const server = createServer((req, res) => {
+    const host = req.headers.host || "127.0.0.1";
+    const parsed = new URL(req.url || "/", `http://${host}`);
+    if (parsed.pathname === "/callback" || parsed.pathname === "/kiro-callback") {
+      const urlParam = parsed.searchParams.get("url") || parsed.searchParams.get("code");
+      if (urlParam) {
+        options.onCode(urlParam);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(
+          `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;padding:32px;background:#27272a;border-radius:12px;border:1px solid #3f3f46;box-shadow:0 10px 25px rgba(0,0,0,0.5);max-width:400px;"><h2 style="color:#22c55e;margin-top:0;">Kiro AI Authenticated</h2><p style="color:#a1a1aa;line-height:1.5;">You can close this tab and return to clai.</p></div></body></html>`,
+        );
+        return;
+      }
+    }
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not found");
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.once("error", reject);
+  });
+
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+
+  await writeFile(
+    portFile,
+    JSON.stringify({ port, pid: process.pid, createdAt: Date.now() }),
+    "utf8",
+  ).catch(() => {});
+
+  if (platform() === "linux") {
+    try {
+      await ensureLinuxSchemeHandler();
+    } catch {}
+  }
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    server.close();
+    unlink(portFile).catch(() => {});
+  };
+
+  if (options.signal) {
+    options.signal.addEventListener("abort", close, { once: true });
+  }
+
+  return { port, close };
+}
+
+async function ensureLinuxSchemeHandler(): Promise<void> {
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  const { execFile } = await import("node:child_process");
+  const home = homedir();
+  const binDir = join(home, ".local", "bin");
+  const appDir = join(home, ".local", "share", "applications");
+  await mkdir(binDir, { recursive: true }).catch(() => {});
+  await mkdir(appDir, { recursive: true }).catch(() => {});
+
+  const scriptPath = join(binDir, "clai-kiro-auth");
+  const desktopPath = join(appDir, "kiro-scheme-handler.desktop");
+
+  const scriptContent = [
+    "#!/bin/sh",
+    'FILE="$HOME/.clai/kiro-pending-callback.json"',
+    'if [ -f "$FILE" ]; then',
+    '  PORT=$(grep -o \'"port":[0-9]*\' "$FILE" | cut -d: -f2)',
+    '  if [ -n "$PORT" ]; then',
+    '    ARG="$1"',
+    '    node -e \'const http = require("node:http"); const u = new URL("http://127.0.0.1:" + process.argv[1] + "/callback?url=" + encodeURIComponent(process.argv[2])); http.get(u, () => process.exit(0)).on("error", () => process.exit(0));\' "$PORT" "$ARG" 2>/dev/null || curl -s -m 3 "http://127.0.0.1:${PORT}/callback?url=$(node -e \'console.log(encodeURIComponent(process.argv[1]))\' "$ARG" 2>/dev/null || echo "$ARG")" >/dev/null 2>&1',
+    "  fi",
+    "fi",
+  ].join("\n") + "\n";
+
+  await writeFile(scriptPath, scriptContent, { mode: 0o755 });
+
+  const desktopContent = [
+    "[Desktop Entry]",
+    "Type=Application",
+    "Name=Kiro Scheme Handler",
+    `Exec=${scriptPath} %u`,
+    "StartupNotify=false",
+    "NoDisplay=true",
+    "MimeType=x-scheme-handler/kiro;",
+  ].join("\n") + "\n";
+
+  await writeFile(desktopPath, desktopContent, "utf8");
+
+  await new Promise<void>((resolve) => {
+    execFile(
+      "gio",
+      ["mime", "x-scheme-handler/kiro", "kiro-scheme-handler.desktop"],
+      () => resolve(),
+    );
+  }).catch(() => {});
 }
 
 export async function refreshKiroToken(
@@ -759,6 +896,87 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
       authMethod: clientId && clientSecret ? "builder-id" : "imported",
     };
   }
+
+  const home = homedir();
+  const os = platform();
+  const sqlitePaths: string[] = [
+    join(home, ".local", "share", "kiro-cli", "data.sqlite3"),
+    join(home, ".config", "kiro-cli", "data.sqlite3"),
+    join(home, ".config", "kiro", "data.sqlite3"),
+    join(home, ".kiro", "data.sqlite3"),
+  ];
+  if (os === "darwin") {
+    sqlitePaths.push(
+      join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3"),
+      join(home, "Library", "Application Support", "Kiro", "data.sqlite3"),
+    );
+  } else if (os === "win32") {
+    const appData = process.env.APPDATA ?? join(home, "AppData", "Roaming");
+    sqlitePaths.push(
+      join(appData, "kiro-cli", "data.sqlite3"),
+      join(appData, "Kiro", "data.sqlite3"),
+    );
+  }
+
+  for (const dbPath of sqlitePaths) {
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        const rows = db.prepare("SELECT key, value FROM auth_kv").all() as { key: string; value: string }[];
+        for (const row of rows) {
+          if (!row.value) continue;
+          try {
+            const parsed = JSON.parse(row.value) as Record<string, unknown>;
+            const accessToken =
+              typeof parsed.access_token === "string"
+                ? parsed.access_token
+                : typeof parsed.accessToken === "string"
+                  ? parsed.accessToken
+                  : "";
+            const refreshToken =
+              typeof parsed.refresh_token === "string"
+                ? parsed.refresh_token
+                : typeof parsed.refreshToken === "string"
+                  ? parsed.refreshToken
+                  : undefined;
+            if (!accessToken && !refreshToken) continue;
+
+            let expiresAt: number | undefined;
+            if (typeof parsed.expires_at === "number") expiresAt = parsed.expires_at;
+            else if (typeof parsed.expiresAt === "number") expiresAt = parsed.expiresAt;
+            else if (typeof parsed.expires_at === "string") expiresAt = Date.parse(parsed.expires_at);
+
+            const profileArn =
+              typeof parsed.profile_arn === "string"
+                ? parsed.profile_arn
+                : typeof parsed.profileArn === "string"
+                  ? parsed.profileArn
+                  : undefined;
+
+            const provider =
+              typeof parsed.provider === "string"
+                ? parsed.provider.toLowerCase()
+                : undefined;
+            const authMethod =
+              provider === "google" || provider === "github" ? provider : "imported";
+
+            return {
+              accessToken,
+              refreshToken,
+              expiresAt,
+              profileArn,
+              authMethod,
+              region: KIRO_DEFAULT_REGION,
+            };
+          } catch {}
+        }
+      } finally {
+        db.close();
+      }
+    } catch {}
+  }
+
   return undefined;
 }
 

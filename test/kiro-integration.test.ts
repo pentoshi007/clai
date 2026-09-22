@@ -9,6 +9,8 @@ import {
   startKiroSocialAuth,
   exchangeKiroSocialCode,
   refreshKiroToken,
+  listenForKiroSocialCallback,
+  readKiroStoredAuth,
   type KiroCredential,
 } from "../src/llm/kiro-auth.js";
 import { getProvider } from "../src/llm/router.js";
@@ -370,5 +372,83 @@ describe("Kiro provider integration", () => {
     expect(convState?.conversationId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
+  });
+
+  it("extracts code and exchanges social token from kiro:// redirect URL", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          accessToken: "mock-social-access-token",
+          refreshToken: "mock-social-refresh-token",
+          expiresIn: 3600,
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cred = await exchangeKiroSocialCode(
+      "kiro://kiro.kiroAgent/authenticate-success?code=social_test_code_123&state=abc",
+      "verifier_456",
+      "google",
+    );
+
+    expect(capturedBody?.code).toBe("social_test_code_123");
+    expect(capturedBody?.code_verifier).toBe("verifier_456");
+    expect(cred.accessToken).toBe("mock-social-access-token");
+    expect(cred.authMethod).toBe("google");
+  });
+
+  it("extracts code from query string and rejects redirect errors", async () => {
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          accessToken: `token-for-${String(body.code)}`,
+          expiresIn: 3600,
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cred = await exchangeKiroSocialCode(
+      "?code=extracted_query_code&state=xyz",
+      "verifier_789",
+      "github",
+    );
+    expect(cred.accessToken).toBe("token-for-extracted_query_code");
+    expect(cred.authMethod).toBe("github");
+
+    await expect(
+      exchangeKiroSocialCode(
+        "kiro://kiro.kiroAgent/authenticate-success?error=access_denied&error_description=User+denied+access",
+        "verifier",
+      ),
+    ).rejects.toThrow("User denied access");
+  });
+
+  it("handles loopback callback server lifecycle and receives code", async () => {
+    let receivedCode: string | undefined;
+    const handle = await listenForKiroSocialCallback({
+      onCode: (code) => {
+        receivedCode = code;
+      },
+    });
+
+    expect(handle.port).toBeGreaterThan(0);
+
+    const res = await fetch(
+      `http://127.0.0.1:${handle.port}/callback?url=${encodeURIComponent("kiro://kiro.kiroAgent/authenticate-success?code=loopback_code_ok")}`,
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Kiro AI Authenticated");
+    expect(receivedCode).toBe("kiro://kiro.kiroAgent/authenticate-success?code=loopback_code_ok");
+
+    handle.close();
   });
 });

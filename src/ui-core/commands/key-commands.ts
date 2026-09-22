@@ -37,12 +37,17 @@ import {
 } from "../../llm/copilot-auth.js";
 import {
   encodeKiroKey,
+  decodeKiroKey,
+  isKiroOAuthToken,
+  maybeRefreshKiroCredential,
   pollKiroDeviceAuth,
   startKiroDeviceAuth,
   startKiroSocialAuth,
   exchangeKiroSocialCode,
   importExistingKiroAuth,
   refreshKiroToken,
+  listenForKiroSocialCallback,
+  KIRO_KEY_PREFIX,
   type KiroCredential,
 } from "../../llm/kiro-auth.js";
 import { appendProviderKey, replaceProviderKey, type ProviderKeySlot } from "../../store/keys.js";
@@ -428,6 +433,8 @@ export async function runClineAuthForUI(
     return undefined;
   }
 
+  void openSystemBrowser(start.verificationUrl).catch(() => {});
+
   services.overlay.openPager(
     "Cline sign-in",
     [
@@ -445,22 +452,34 @@ export async function runClineAuthForUI(
     "plain",
   );
 
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
   const waiting = services.toast.info("waiting for Cline approval…", {
     sticky: true,
   });
   try {
-    const tokens = await pollClineDeviceAuth(start);
-    services.toast.dismiss(waiting);
+    const tokens = await pollClineDeviceAuth(start, {
+      signal: abortController.signal,
+    });
     notice(services, "info", "Cline authenticated");
     return tokens;
   } catch (error) {
-    services.toast.dismiss(waiting);
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
     notice(
       services,
       "warn",
       `Cline sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
   }
 }
 
@@ -563,23 +582,40 @@ export async function runCodexAuthForUI(
     "plain",
   );
 
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
   const waiting = services.toast.info("waiting for ChatGPT approval…", {
     sticky: true,
   });
   try {
     await openSystemBrowser(handle.url).catch(() => {});
-    const credential = await handle.waitForCredential();
-    services.toast.dismiss(waiting);
+    const credential = await Promise.race([
+      handle.waitForCredential(),
+      new Promise<never>((_, reject) => {
+        if (abortController.signal.aborted) reject(new Error("ChatGPT authentication cancelled"));
+        abortController.signal.addEventListener("abort", () => reject(new Error("ChatGPT authentication cancelled")));
+      }),
+    ]);
     notice(services, "info", "ChatGPT Subscription authenticated");
     return credential;
   } catch (error) {
-    services.toast.dismiss(waiting);
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
     notice(
       services,
       "warn",
       `ChatGPT Subscription sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
+    handle.close();
   }
 }
 
@@ -598,6 +634,8 @@ export async function runCodexDeviceAuthForUI(
     return undefined;
   }
 
+  void openSystemBrowser(start.verificationUrl).catch(() => {});
+
   services.overlay.openPager(
     "ChatGPT Subscription sign-in",
     [
@@ -615,22 +653,34 @@ export async function runCodexDeviceAuthForUI(
     "plain",
   );
 
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
   const waiting = services.toast.info("waiting for ChatGPT approval…", {
     sticky: true,
   });
   try {
-    const credential = await pollCodexDeviceAuth(start);
-    services.toast.dismiss(waiting);
+    const credential = await pollCodexDeviceAuth(start, {
+      signal: abortController.signal,
+    });
     notice(services, "info", "ChatGPT Subscription authenticated");
     return credential;
   } catch (error) {
-    services.toast.dismiss(waiting);
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
     notice(
       services,
       "warn",
       `ChatGPT Subscription sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
   }
 }
 
@@ -666,22 +716,34 @@ export async function runCopilotAuthForUI(
     "plain",
   );
 
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
   const waiting = services.toast.info("waiting for Github Copilot approval…", {
     sticky: true,
   });
   try {
-    const token = await pollCopilotDeviceAuth(start);
-    services.toast.dismiss(waiting);
+    const token = await pollCopilotDeviceAuth(start, {
+      signal: abortController.signal,
+    });
     notice(services, "info", "Github Copilot authenticated");
     return token;
   } catch (error) {
-    services.toast.dismiss(waiting);
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
     notice(
       services,
       "warn",
       `Github Copilot sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
   }
 }
 
@@ -1117,12 +1179,15 @@ export async function runKiroDeviceAuthForUI(
     return undefined;
   }
 
+  const completeUrl = start.verificationUriComplete || start.verificationUri;
+  void openSystemBrowser(completeUrl).catch(() => {});
+
   services.overlay.openPager(
     "Kiro AI sign-in",
     [
       "Authenticate Kiro AI on any device:",
       "",
-      `  ${start.verificationUriComplete || start.verificationUri}`,
+      `  ${completeUrl}`,
       "",
       `  Code: ${start.userCode}`,
       "",
@@ -1134,22 +1199,34 @@ export async function runKiroDeviceAuthForUI(
     "plain",
   );
 
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
   const waiting = services.toast.info("waiting for Kiro approval…", {
     sticky: true,
   });
   try {
-    const credential = await pollKiroDeviceAuth(start);
-    services.toast.dismiss(waiting);
+    const credential = await pollKiroDeviceAuth(start, {
+      signal: abortController.signal,
+    });
     notice(services, "info", "Kiro AI authenticated");
     return credential;
   } catch (error) {
-    services.toast.dismiss(waiting);
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
     notice(
       services,
       "warn",
       `Kiro AI sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
   }
 }
 
@@ -1160,41 +1237,43 @@ export async function runKiroSocialAuthForUI(
   const { url, codeVerifier } = await startKiroSocialAuth(provider);
   const label = provider === "google" ? "Google" : "GitHub";
 
-  services.overlay.openPager(
-    `Kiro AI (${label}) sign-in`,
-    [
-      `Opening ${label} sign-in in your browser…`,
-      "",
-      `  ${url}`,
-      "",
-      "Log in with your account in the browser.",
-      "Afterwards, copy the redirected kiro:// URL and paste it in the prompt.",
-      "(close this and press Ctrl-C to cancel)",
-    ].join("\n"),
-    undefined,
-    undefined,
-    "plain",
-  );
+  let callbackHandle: { close: () => void } | undefined;
+  try {
+    callbackHandle = await listenForKiroSocialCallback({
+      onCode: (urlOrCode) => {
+        services.overlay.answerSecret(urlOrCode);
+      },
+    });
+  } catch {}
 
   await openSystemBrowser(url).catch(() => {});
-  const pasted = await services.overlay.openSecret({
-    title: "Kiro Callback URL / Code",
-    prompt: "Paste the redirect kiro:// URL or code:",
-    reveal: true,
+
+  const waiting = services.toast.info(`waiting for Kiro (${label}) sign-in…`, {
+    sticky: true,
   });
-  if (!pasted?.trim()) return undefined;
 
   try {
-    const cred = await exchangeKiroSocialCode(pasted.trim(), codeVerifier);
-    notice(services, "info", "Kiro AI authenticated");
+    const pasted = await services.overlay.openSecret({
+      title: `Kiro AI (${label}) sign-in`,
+      prompt: `Sign in with ${label} in your browser.\nWhen prompted "Open Kiro", click Open (or paste the redirect URL / code below):`,
+      reveal: true,
+    });
+
+    if (!pasted?.trim()) return undefined;
+
+    const cred = await exchangeKiroSocialCode(pasted.trim(), codeVerifier, provider);
+    notice(services, "info", `Kiro AI (${label}) authenticated`);
     return cred;
   } catch (err) {
     notice(
       services,
       "warn",
-      `Kiro exchange failed: ${err instanceof Error ? err.message : String(err)}`,
+      `Kiro sign-in failed: ${err instanceof Error ? err.message : String(err)}`,
     );
     return undefined;
+  } finally {
+    services.toast.dismiss(waiting);
+    callbackHandle?.close();
   }
 }
 
@@ -1237,6 +1316,7 @@ export async function runKiroAuthForUI(
       notice(services, "warn", "no existing Kiro credential found to import");
       return undefined;
     }
+    notice(services, "info", "imported existing Kiro credentials");
     return imported;
   }
 
@@ -1247,6 +1327,10 @@ export async function runKiroAuthForUI(
     });
     const raw = answer?.trim();
     if (!raw) return undefined;
+    if (raw.startsWith(KIRO_KEY_PREFIX)) {
+      const decoded = decodeKiroKey(raw);
+      if (decoded) return decoded;
+    }
     if (raw.startsWith("aorAAAAAG")) {
       try {
         return await refreshKiroToken(raw);
@@ -1315,6 +1399,25 @@ async function openKiroKeysFlow(services: AppServices): Promise<void> {
     if (answer.action === "refresh") {
       const selected = keys.find((key) => key.id === answer.slotId);
       if (selected) {
+        if (selected.refreshToken || isKiroOAuthToken(selected.value)) {
+          notice(services, "info", "refreshing Kiro account…");
+          const refreshedKey = await maybeRefreshKiroCredential(
+            selected.value,
+            selected.refreshToken,
+          );
+          if (refreshedKey) {
+            const decoded = decodeKiroKey(refreshedKey);
+            const replaced = await replaceProviderKey("kiro", selected.value, refreshedKey, {
+              ...(decoded?.refreshToken ? { refreshToken: decoded.refreshToken } : {}),
+              ...(decoded?.expiresAt !== undefined ? { expiresAt: decoded.expiresAt } : {}),
+            });
+            if (replaced) {
+              notice(services, "info", `refreshed Kiro account ${maskSecret(refreshedKey)}`);
+              ({ keys, activeIndex } = await loadOAuthKeys("kiro"));
+              continue;
+            }
+          }
+        }
         const credential = await runKiroAuthForUI(services);
         if (credential) {
           const key = encodeKiroKey(credential);
