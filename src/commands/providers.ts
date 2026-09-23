@@ -54,8 +54,13 @@ import {
   startKiroDeviceAuth,
   startKiroSocialAuth,
   exchangeKiroSocialCode,
+  createKiroCliAuthorizationFlow,
+  exchangeKiroPortalCode,
+  listenForKiroCliCallback,
+  parseKiroCliCallback,
+  isHeadlessEnvironment,
 } from "../llm/kiro-auth.js";
-import type { KiroCredential } from "../llm/kiro-auth.js";
+import type { KiroCliCallbackServer, KiroCredential } from "../llm/kiro-auth.js";
 import type { ProviderId } from "../types.js";
 
 export interface SetKeyOptions {
@@ -827,22 +832,18 @@ export async function authKiro(
   if (options.headless) {
     credential = await resolveKiroDeviceAuthInteractive({ authMethod: "builder-id" });
   } else if (options.browser) {
-    credential = await resolveKiroSocialAuthInteractive("google");
+    credential = await resolveKiroPortalAuthInteractive();
   } else {
-    const method = await askChoice<"builder-id" | "google" | "github" | "idc" | "import" | "apikey">(
+    const method = await askChoice<"kiro-cli" | "builder-id" | "idc" | "import" | "apikey">(
       "How do you want to sign in to Kiro AI?",
       [
         {
-          name: "Sign in with AWS Builder ID (recommended) — device code on any device",
+          name: "Sign in with Kiro (recommended) — Google, GitHub, or Builder ID in browser",
+          value: "kiro-cli",
+        },
+        {
+          name: "Sign in with AWS Builder ID — device code on any device",
           value: "builder-id",
-        },
-        {
-          name: "Sign in with Google — opens browser authorization",
-          value: "google",
-        },
-        {
-          name: "Sign in with GitHub — opens browser authorization",
-          value: "github",
         },
         {
           name: "Sign in with AWS IAM Identity Center (IDC) — enterprise SSO",
@@ -864,10 +865,10 @@ export async function authKiro(
       return;
     }
 
-    if (method === "builder-id") {
+    if (method === "kiro-cli") {
+      credential = await resolveKiroPortalAuthInteractive();
+    } else if (method === "builder-id") {
       credential = await resolveKiroDeviceAuthInteractive({ authMethod: "builder-id" });
-    } else if (method === "google" || method === "github") {
-      credential = await resolveKiroSocialAuthInteractive(method);
     } else if (method === "idc") {
       const startUrl = await askLine(
         "Enter AWS IAM Identity Center Start URL (e.g. https://my-org.awsapps.com/start):",
@@ -961,6 +962,68 @@ export async function resolveKiroDeviceAuthInteractive(
   });
   process.stderr.write("\n");
   return credential;
+}
+
+export async function resolveKiroPortalAuthInteractive(): Promise<
+  KiroCredential | undefined
+> {
+  if (isHeadlessEnvironment()) {
+    return resolveKiroDeviceAuthInteractive({ authMethod: "builder-id" });
+  }
+
+  const { authorizeUrl, codeVerifier, state } = createKiroCliAuthorizationFlow();
+
+  let server: KiroCliCallbackServer | undefined;
+  try {
+    server = listenForKiroCliCallback({ expectedState: state });
+  } catch {
+    server = undefined;
+  }
+
+  console.log("To authenticate Kiro AI:");
+  console.log(`  Opening browser link:\n       ${authorizeUrl}\n`);
+  await openSystemBrowser(authorizeUrl).catch(() => {});
+  if (server) {
+    console.log(
+      "Waiting for browser sign-in (Google / GitHub / Builder ID)… clai will continue automatically.",
+    );
+    console.log("Or paste the redirect URL / code below.");
+  } else {
+    console.log(
+      "Could not listen on localhost:3128. Sign in, then paste the final redirect URL / code below.",
+    );
+  }
+
+  const codeOrUrlPromise = askLine(
+    "Paste the redirect URL or code here (or leave blank to cancel):",
+  );
+
+  if (!server) {
+    const pasted = await codeOrUrlPromise;
+    if (!pasted?.trim()) return undefined;
+    const cb = parseKiroCliCallback(pasted.trim());
+    return exchangeKiroPortalCode(cb, codeVerifier);
+  }
+
+  const result = await Promise.race([
+    server.promise.then((cb) => ({ kind: "callback" as const, cb })),
+    codeOrUrlPromise.then((pasted) => ({ kind: "paste" as const, pasted })),
+  ]);
+
+  if (result.kind === "callback") {
+    server.close();
+    await codeOrUrlPromise.catch(() => {});
+    return exchangeKiroPortalCode(result.cb, codeVerifier);
+  }
+
+  const pasted = result.pasted;
+  if (!pasted?.trim()) {
+    server.close();
+    return undefined;
+  }
+  const cb = parseKiroCliCallback(pasted.trim());
+  server.close();
+  return exchangeKiroPortalCode(cb, codeVerifier);
 }
 
 export async function resolveKiroSocialAuthInteractive(

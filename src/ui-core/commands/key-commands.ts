@@ -47,7 +47,13 @@ import {
   importExistingKiroAuth,
   refreshKiroToken,
   listenForKiroSocialCallback,
+  createKiroCliAuthorizationFlow,
+  exchangeKiroPortalCode,
+  listenForKiroCliCallback,
+  parseKiroCliCallback,
+  isHeadlessEnvironment,
   KIRO_KEY_PREFIX,
+  type KiroCliCallbackServer,
   type KiroCredential,
 } from "../../llm/kiro-auth.js";
 import { appendProviderKey, replaceProviderKey, type ProviderKeySlot } from "../../store/keys.js";
@@ -1112,26 +1118,21 @@ async function openCopilotKeysFlow(services: AppServices): Promise<void> {
 
 function pickKiroAuthMethod(
   services: AppServices,
-): Promise<"builder-id" | "google" | "github" | "idc" | "import" | "apikey" | undefined> {
+): Promise<"kiro-cli" | "builder-id" | "idc" | "import" | "apikey" | undefined> {
   return new Promise((resolve) => {
     const opened = services.overlay.openPicker(
       {
         title: "Kiro AI sign-in method",
         options: [
           {
+            value: "kiro-cli",
+            label: "Sign in with Kiro (recommended)",
+            description: "Google, GitHub, or Builder ID — browser sign-in",
+          },
+          {
             value: "builder-id",
-            label: "Sign in with AWS Builder ID (recommended)",
+            label: "Sign in with AWS Builder ID",
             description: "device code — works on any device or terminal",
-          },
-          {
-            value: "google",
-            label: "Sign in with Google",
-            description: "opens browser authentication",
-          },
-          {
-            value: "github",
-            label: "Sign in with GitHub",
-            description: "opens browser authentication",
           },
           {
             value: "idc",
@@ -1152,7 +1153,7 @@ function pickKiroAuthMethod(
       },
       (value) => {
         services.overlay.close();
-        resolve(value as "builder-id" | "google" | "github" | "idc" | "import" | "apikey");
+        resolve(value as "kiro-cli" | "builder-id" | "idc" | "import" | "apikey");
       },
     );
     if (!opened) resolve(undefined);
@@ -1230,6 +1231,63 @@ export async function runKiroDeviceAuthForUI(
   }
 }
 
+export async function runKiroPortalAuthForUI(
+  services: AppServices,
+): Promise<KiroCredential | undefined> {
+  if (isHeadlessEnvironment()) {
+    return runKiroDeviceAuthForUI(services, { authMethod: "builder-id" });
+  }
+
+  const { authorizeUrl, codeVerifier, state } = createKiroCliAuthorizationFlow();
+
+  let server: KiroCliCallbackServer | undefined;
+  try {
+    server = listenForKiroCliCallback({ expectedState: state });
+  } catch {
+    server = undefined;
+  }
+
+  if (server) {
+    server.promise
+      .then((cb) => services.overlay.answerSecret(`${cb.path}?code=${cb.code}&login_option=${cb.loginOption}${cb.state ? `&state=${cb.state}` : ""}`))
+      .catch(() => {});
+  }
+
+  await openSystemBrowser(authorizeUrl).catch(() => {});
+
+  const waiting = services.toast.info("waiting for Kiro sign-in…", {
+    sticky: true,
+  });
+
+  const prompt =
+    "Sign in with Google, GitHub, or Builder ID in your browser.\nclai will continue automatically — or paste the redirect URL / code below:";
+
+  try {
+    const pasted = await services.overlay.openSecret({
+      title: "Kiro AI sign-in",
+      prompt,
+      reveal: true,
+    });
+
+    if (!pasted?.trim()) return undefined;
+
+    const cb = parseKiroCliCallback(pasted.trim());
+    const cred = await exchangeKiroPortalCode(cb, codeVerifier);
+    notice(services, "info", "Kiro AI authenticated");
+    return cred;
+  } catch (err) {
+    notice(
+      services,
+      "warn",
+      `Kiro sign-in failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  } finally {
+    services.toast.dismiss(waiting);
+    server?.close();
+  }
+}
+
 export async function runKiroSocialAuthForUI(
   services: AppServices,
   provider: "google" | "github",
@@ -1283,12 +1341,12 @@ export async function runKiroAuthForUI(
   const method = await pickKiroAuthMethod(services);
   if (!method) return undefined;
 
-  if (method === "builder-id") {
-    return runKiroDeviceAuthForUI(services, { authMethod: "builder-id" });
+  if (method === "kiro-cli") {
+    return runKiroPortalAuthForUI(services);
   }
 
-  if (method === "google" || method === "github") {
-    return runKiroSocialAuthForUI(services, method);
+  if (method === "builder-id") {
+    return runKiroDeviceAuthForUI(services, { authMethod: "builder-id" });
   }
 
   if (method === "idc") {

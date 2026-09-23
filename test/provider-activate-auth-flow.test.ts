@@ -111,6 +111,8 @@ function makeServices(answers?: {
       secrets.push(request);
       return answers?.secret;
     },
+    isOpen: () => true,
+    subscribe: () => () => undefined,
   };
   const services = {
     overlay,

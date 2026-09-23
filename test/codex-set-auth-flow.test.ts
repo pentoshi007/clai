@@ -74,6 +74,8 @@ function makeServices(answers: Array<unknown>) {
       return true;
     },
     openSecret: async () => undefined,
+    isOpen: () => true,
+    subscribe: () => () => undefined,
     openKeysEditor: async () => {
       if (busy !== null) return undefined;
       busy = "editor";
