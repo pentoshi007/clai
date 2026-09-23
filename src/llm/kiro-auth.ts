@@ -2,12 +2,21 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { readFile, readdir } from "node:fs/promises";
 import { randomBytes, createHash } from "node:crypto";
+import { createServer } from "node:http";
 
 export const KIRO_DEFAULT_REGION = "us-east-1";
 export const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
 export const KIRO_START_URL = "https://view.awsapps.com/start";
 export const KIRO_REDIRECT_URI = "kiro://kiro.kiroAgent/authenticate-success";
 export const KIRO_KEY_PREFIX = "kiro:";
+
+export const KIRO_CLI_PORTAL_URL = "https://app.kiro.dev/signin";
+export const KIRO_CLI_REDIRECT_URI = "http://localhost:3128";
+export const KIRO_CLI_REDIRECT_FROM = "kirocli";
+export const KIRO_CLI_CALLBACK_PORT = 3128;
+export const KIRO_CLI_CALLBACK_PATH = "/oauth/callback";
+export const KIRO_CLI_SIGNIN_CALLBACK_PATH = "/signin/callback";
+export const KIRO_DESKTOP_UA_VERSION = "0.7.45";
 
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
 
@@ -426,6 +435,7 @@ export async function exchangeKiroSocialCode(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "User-Agent": kiroDesktopUserAgent(),
     },
     body: JSON.stringify({
       code,
@@ -579,6 +589,288 @@ async function ensureLinuxSchemeHandler(): Promise<void> {
   }).catch(() => {});
 }
 
+function kiroMachineFingerprint(): string {
+  const seed =
+    process.env.USER || process.env.USERNAME || process.env.HOME || "clai";
+  return createHash("sha256").update(seed, "utf8").digest("hex").slice(0, 16);
+}
+
+export function kiroDesktopUserAgent(): string {
+  return `KiroIDE-${KIRO_DESKTOP_UA_VERSION}-${kiroMachineFingerprint()}`;
+}
+
+export function isHeadlessEnvironment(): boolean {
+  if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY) {
+    return true;
+  }
+  if (platform() === "linux") {
+    return !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
+  }
+  return false;
+}
+
+export interface KiroCliAuthorizationFlow {
+  authorizeUrl: string;
+  codeVerifier: string;
+  state: string;
+}
+
+export function createKiroCliAuthorizationFlow(): KiroCliAuthorizationFlow {
+  const codeVerifier = base64UrlEncode(randomBytes(32));
+  const codeChallenge = sha256Base64Url(codeVerifier);
+  const state = randomBytes(16).toString("hex");
+
+  const params = new URLSearchParams({
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
+    redirect_uri: KIRO_CLI_REDIRECT_URI,
+    redirect_from: KIRO_CLI_REDIRECT_FROM,
+  });
+
+  return {
+    authorizeUrl: `${KIRO_CLI_PORTAL_URL}?${params.toString()}`,
+    codeVerifier,
+    state,
+  };
+}
+
+export interface KiroCliCallback {
+  code: string;
+  loginOption: string;
+  state?: string | undefined;
+  path: string;
+}
+
+export function parseKiroCliCallback(input: string): KiroCliCallback {
+  const value = input.trim();
+  if (!value) {
+    throw new Error("missing Kiro callback URL");
+  }
+
+  let path = KIRO_CLI_CALLBACK_PATH;
+  let query = value;
+
+  const urlMatch = /^https?:\/\/[^/]+(\/[^?]*)?(\?.*)?$/i.exec(value);
+  const bareHostMatch = /^(?:localhost|127\.0\.0\.1)(?::\d+)?(\/[^?]*)?(\?.*)?$/i.exec(
+    value,
+  );
+
+  if (urlMatch) {
+    path = urlMatch[1] || KIRO_CLI_CALLBACK_PATH;
+    query = (urlMatch[2] || "").replace(/^\?/, "");
+  } else if (bareHostMatch) {
+    path = bareHostMatch[1] || KIRO_CLI_CALLBACK_PATH;
+    query = (bareHostMatch[2] || "").replace(/^\?/, "");
+  } else if (value.includes("?")) {
+    const idx = value.indexOf("?");
+    path = value.slice(0, idx) || KIRO_CLI_CALLBACK_PATH;
+    query = value.slice(idx + 1);
+  }
+
+  const queryNoHash = query.split("#")[0] ?? "";
+  const pairs = new URLSearchParams(queryNoHash);
+
+  const error = pairs.get("error");
+  if (error) {
+    const desc = pairs.get("error_description") || error;
+    throw new Error(`Kiro login failed: ${desc}`);
+  }
+
+  const code = pairs.get("code");
+  if (!code) {
+    throw new Error("missing Kiro authorization code");
+  }
+
+  const loginOption = pairs.get("login_option");
+  if (!loginOption) {
+    throw new Error("missing Kiro login_option");
+  }
+
+  const state = pairs.get("state") || undefined;
+
+  return { code, loginOption, state, path };
+}
+
+export async function exchangeKiroPortalCode(
+  callback: KiroCliCallback,
+  codeVerifier: string,
+): Promise<KiroCredential> {
+  const redirectUri = `${KIRO_CLI_REDIRECT_URI}${callback.path}?login_option=${callback.loginOption}`;
+  const endpoint = `${KIRO_AUTH_SERVICE}/oauth/token`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": kiroDesktopUserAgent(),
+    },
+    body: JSON.stringify({
+      code: callback.code,
+      code_verifier: codeVerifier,
+      redirect_uri: redirectUri,
+      invitation_code: null,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Kiro portal token exchange failed (${response.status}): ${errorText}`,
+    );
+  }
+
+  const json = asRecord(await response.json().catch(() => ({})));
+  const accessToken =
+    typeof json?.accessToken === "string" ? json.accessToken : "";
+  if (!accessToken) {
+    throw new Error("Invalid token response from Kiro auth service");
+  }
+
+  const refreshToken =
+    typeof json?.refreshToken === "string" ? json.refreshToken : undefined;
+  const profileArn =
+    typeof json?.profileArn === "string" ? json.profileArn : undefined;
+  const expiresIn = typeof json?.expiresIn === "number" ? json.expiresIn : 3600;
+
+  return {
+    accessToken,
+    refreshToken,
+    profileArn,
+    expiresAt: Date.now() + expiresIn * 1000,
+    authMethod: callback.loginOption === "google" || callback.loginOption === "github"
+      ? callback.loginOption
+      : "imported",
+    region: KIRO_DEFAULT_REGION,
+  };
+}
+
+export interface KiroCliCallbackServer {
+  readonly port: number;
+  readonly promise: Promise<KiroCliCallback>;
+  close(): void;
+}
+
+export function listenForKiroCliCallback(options: {
+  expectedState: string;
+  timeoutMs?: number | undefined;
+  signal?: AbortSignal | undefined;
+}): KiroCliCallbackServer {
+  const timeoutMs = options.timeoutMs ?? 300_000;
+
+  let resolvePromise!: (cb: KiroCliCallback) => void;
+  let rejectPromise!: (err: Error) => void;
+  const promise = new Promise<KiroCliCallback>((res, rej) => {
+    resolvePromise = res;
+    rejectPromise = rej;
+  });
+
+  let settled = false;
+  let server: ReturnType<typeof createServer> | undefined;
+
+  const finish = (err?: Error, cb?: KiroCliCallback): void => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    server?.close();
+    if (err) rejectPromise(err);
+    else if (cb) resolvePromise(cb);
+  };
+
+  const timer = setTimeout(() => {
+    finish(new Error("Kiro login timed out waiting for browser callback"));
+  }, timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+
+  server = createServer((req, res) => {
+    const host = req.headers.host || `localhost:${KIRO_CLI_CALLBACK_PORT}`;
+    let parsed: URL;
+    try {
+      parsed = new URL(req.url || "/", `http://${host}`);
+    } catch {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("Bad request");
+      return;
+    }
+
+    const pathname = parsed.pathname;
+    if (
+      pathname !== KIRO_CLI_CALLBACK_PATH &&
+      pathname !== KIRO_CLI_SIGNIN_CALLBACK_PATH &&
+      pathname !== "/"
+    ) {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
+      return;
+    }
+
+    const fullInput = `${pathname}${parsed.search}`;
+
+    let callback: KiroCliCallback;
+    try {
+      callback = parseKiroCliCallback(fullInput);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;padding:32px;background:#27272a;border-radius:12px;border:1px solid #3f3f46;max-width:420px;"><h2 style="color:#ef4444;margin-top:0;">Kiro login failed</h2><p style="color:#a1a1aa;line-height:1.5;">${msg.replace(/</g, "&lt;")}</p><p style="color:#71717a;font-size:13px;">Return to clai and try again.</p></div></body></html>`,
+      );
+      finish(err instanceof Error ? err : new Error(msg));
+      return;
+    }
+
+    if (options.expectedState && callback.state && callback.state !== options.expectedState) {
+      const err = new Error(
+        "Kiro login state mismatch (possible CSRF). Please try again.",
+      );
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;padding:32px;background:#27272a;border-radius:12px;border:1px solid #3f3f46;max-width:420px;"><h2 style="color:#ef4444;margin-top:0;">Kiro login failed</h2><p style="color:#a1a1aa;line-height:1.5;">State mismatch. Return to clai and try again.</p></div></body></html>`,
+      );
+      finish(err);
+      return;
+    }
+
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(
+      `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;padding:32px;background:#27272a;border-radius:12px;border:1px solid #3f3f46;max-width:420px;"><h2 style="color:#22c55e;margin-top:0;">Kiro AI Authenticated</h2><p style="color:#a1a1aa;line-height:1.5;">You can close this tab and return to clai.</p></div></body></html>`,
+    );
+    finish(undefined, callback);
+  });
+
+  server.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      finish(
+        new Error(
+          `Port ${KIRO_CLI_CALLBACK_PORT} is in use — close the other app or use device-code sign-in instead.`,
+        ),
+      );
+    } else {
+      finish(err);
+    }
+  });
+
+  server.listen(KIRO_CLI_CALLBACK_PORT, "127.0.0.1");
+
+  if (options.signal) {
+    options.signal.addEventListener(
+      "abort",
+      () => finish(new Error("Kiro authentication cancelled")),
+      { once: true },
+    );
+  }
+
+  return {
+    port: KIRO_CLI_CALLBACK_PORT,
+    promise,
+    close() {
+      finish(new Error("Kiro authentication cancelled"));
+    },
+  };
+}
+
 export async function refreshKiroToken(
   refreshToken: string,
   options: {
@@ -657,6 +949,7 @@ export async function refreshKiroToken(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "User-Agent": kiroDesktopUserAgent(),
     },
     body: JSON.stringify({ refreshToken }),
     signal: AbortSignal.timeout(30_000),
@@ -924,53 +1217,93 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
       const db = new DatabaseSync(dbPath, { readOnly: true });
       try {
         const rows = db.prepare("SELECT key, value FROM auth_kv").all() as { key: string; value: string }[];
-        for (const row of rows) {
-          if (!row.value) continue;
-          try {
-            const parsed = JSON.parse(row.value) as Record<string, unknown>;
-            const accessToken =
-              typeof parsed.access_token === "string"
-                ? parsed.access_token
-                : typeof parsed.accessToken === "string"
-                  ? parsed.accessToken
-                  : "";
-            const refreshToken =
-              typeof parsed.refresh_token === "string"
-                ? parsed.refresh_token
-                : typeof parsed.refreshToken === "string"
-                  ? parsed.refreshToken
-                  : undefined;
-            if (!accessToken && !refreshToken) continue;
+        const byKey = new Map(rows.map((r) => [r.key, r.value]));
 
-            let expiresAt: number | undefined;
-            if (typeof parsed.expires_at === "number") expiresAt = parsed.expires_at;
-            else if (typeof parsed.expiresAt === "number") expiresAt = parsed.expiresAt;
-            else if (typeof parsed.expires_at === "string") expiresAt = Date.parse(parsed.expires_at);
+        const tokenKeys = [
+          "kirocli:social:token",
+          "kirocli:oidc:token",
+          "kirocli:odic:token",
+          "codewhisperer:oidc:token",
+          "codewhisperer:odic:token",
+        ];
+        const deviceKeys = [
+          "kirocli:oidc:device-registration",
+          "kirocli:odic:device-registration",
+          "codewhisperer:oidc:device-registration",
+          "codewhisperer:odic:device-registration",
+        ];
 
-            const profileArn =
-              typeof parsed.profile_arn === "string"
-                ? parsed.profile_arn
-                : typeof parsed.profileArn === "string"
-                  ? parsed.profileArn
-                  : undefined;
+        const tokenRaw = tokenKeys.map((k) => byKey.get(k)).find((v) => v);
+        if (!tokenRaw) continue;
+        const deviceRaw = deviceKeys.map((k) => byKey.get(k)).find((v) => v);
 
-            const provider =
-              typeof parsed.provider === "string"
-                ? parsed.provider.toLowerCase()
+        try {
+          const parsed = JSON.parse(tokenRaw) as Record<string, unknown>;
+          const device = deviceRaw
+            ? (JSON.parse(deviceRaw) as Record<string, unknown>)
+            : undefined;
+
+          const accessToken =
+            typeof parsed.access_token === "string"
+              ? parsed.access_token
+              : typeof parsed.accessToken === "string"
+                ? parsed.accessToken
+                : "";
+          const refreshToken =
+            typeof parsed.refresh_token === "string"
+              ? parsed.refresh_token
+              : typeof parsed.refreshToken === "string"
+                ? parsed.refreshToken
                 : undefined;
-            const authMethod =
-              provider === "google" || provider === "github" ? provider : "imported";
+          if (!accessToken && !refreshToken) continue;
 
-            return {
-              accessToken,
-              refreshToken,
-              expiresAt,
-              profileArn,
-              authMethod,
-              region: KIRO_DEFAULT_REGION,
-            };
-          } catch {}
-        }
+          let expiresAt: number | undefined;
+          if (typeof parsed.expires_at === "number") expiresAt = parsed.expires_at;
+          else if (typeof parsed.expiresAt === "number") expiresAt = parsed.expiresAt;
+          else if (typeof parsed.expires_at === "string") expiresAt = Date.parse(parsed.expires_at);
+
+          const profileArn =
+            typeof parsed.profile_arn === "string"
+              ? parsed.profile_arn
+              : typeof parsed.profileArn === "string"
+                ? parsed.profileArn
+                : undefined;
+
+          const clientId =
+            (typeof parsed.clientId === "string" && parsed.clientId) ||
+            (typeof parsed.client_id === "string" && parsed.client_id) ||
+            (typeof device?.clientId === "string" && device.clientId) ||
+            (typeof device?.client_id === "string" && device.client_id) ||
+            undefined;
+          const clientSecret =
+            (typeof parsed.clientSecret === "string" && parsed.clientSecret) ||
+            (typeof parsed.client_secret === "string" && parsed.client_secret) ||
+            (typeof device?.clientSecret === "string" && device.clientSecret) ||
+            (typeof device?.client_secret === "string" && device.client_secret) ||
+            undefined;
+
+          const provider =
+            typeof parsed.provider === "string"
+              ? parsed.provider.toLowerCase()
+              : undefined;
+          const authMethod: KiroAuthMethod =
+            provider === "google" || provider === "github"
+              ? provider
+              : clientId && clientSecret
+                ? "builder-id"
+                : "imported";
+
+          return {
+            accessToken,
+            refreshToken,
+            expiresAt,
+            profileArn,
+            authMethod,
+            region: KIRO_DEFAULT_REGION,
+            clientId,
+            clientSecret,
+          };
+        } catch {}
       } finally {
         db.close();
       }

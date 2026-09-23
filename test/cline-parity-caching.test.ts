@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CLINE_API_BASE_URL,
+  CLINE_AUTH_HEADERS,
+  CLINE_REQUEST_HEADERS,
   CLINE_WORKOS_API_BASE_URL,
   pollClineDeviceAuth,
   refreshClineToken,
@@ -57,6 +59,12 @@ describe("Cline parity and prompt caching", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]![0]).toBe(`${CLINE_WORKOS_API_BASE_URL}/user_management/authenticate`);
     expect(fetchMock.mock.calls[1]![0]).toBe(`${CLINE_API_BASE_URL}/auth/register`);
+    const registration = fetchMock.mock.calls[1]![1] as RequestInit;
+    expect(JSON.parse(String(registration.body))).toEqual({
+      accessToken: "workos_access_123",
+      refreshToken: "workos_refresh_123",
+    });
+    expect(registration.headers).toMatchObject(CLINE_AUTH_HEADERS);
   });
 
   it("refreshes tokens via Cline /auth/refresh endpoint first", async () => {
@@ -87,46 +95,66 @@ describe("Cline parity and prompt caching", () => {
     });
   });
 
-  it("falls back to WorkOS authenticate when Cline /auth/refresh fails and re-registers", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: "invalid_grant" }), {
-          status: 400,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            access_token: "workos_fresh_access",
-            refresh_token: "workos_fresh_refresh",
-            expires_in: 3600,
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            success: true,
-            data: {
-              accessToken: "cline_reregistered_access",
-              refreshToken: "cline_reregistered_refresh",
-              expiresAt: "2030-01-01T00:00:00.000Z",
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      );
+  it("does not fall back to WorkOS when Cline refresh rejects an invalid grant", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "invalid_grant" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await refreshClineToken("workos_refresh_token");
-    expect(result.accessToken).toBe("workos:cline_reregistered_access");
-    expect(result.refreshToken).toBe("cline_reregistered_refresh");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await expect(refreshClineToken("workos_refresh_token")).rejects.toMatchObject({
+      errorCode: "invalid_grant",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]![0]).toBe(`${CLINE_API_BASE_URL}/auth/refresh`);
-    expect(fetchMock.mock.calls[1]![0]).toBe(`${CLINE_WORKOS_API_BASE_URL}/user_management/authenticate`);
-    expect(fetchMock.mock.calls[2]![0]).toBe(`${CLINE_API_BASE_URL}/auth/register`);
+  });
+
+  it("does not expose WorkOS credentials when Cline registration fails", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: "workos_access_123",
+        refresh_token: "workos_refresh_123",
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "policy_denied" }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(pollClineDeviceAuth({
+      deviceCode: "code-2",
+      userCode: "USER-2",
+      verificationUrl: "https://auth.cline.bot",
+      expiresInSeconds: 30,
+      pollIntervalSeconds: 1,
+    })).rejects.toMatchObject({ errorCode: "policy_denied" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]![0]).toBe(`${CLINE_API_BASE_URL}/auth/register`);
+  });
+
+  it("surfaces a WorkOS policy denial without attempting Cline registration", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "policy_denied" }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(pollClineDeviceAuth({
+      deviceCode: "code-3",
+      userCode: "USER-3",
+      verificationUrl: "https://auth.cline.bot",
+      expiresInSeconds: 30,
+      pollIntervalSeconds: 1,
+    })).rejects.toMatchObject({
+      errorCode: "policy_denied",
+      message: expect.stringContaining("policy_denied"),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe(`${CLINE_WORKOS_API_BASE_URL}/user_management/authenticate`);
   });
 
   it("refreshes keys regardless of whether they have a workos: prefix", async () => {

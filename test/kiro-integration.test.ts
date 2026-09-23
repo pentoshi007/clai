@@ -11,6 +11,13 @@ import {
   refreshKiroToken,
   listenForKiroSocialCallback,
   readKiroStoredAuth,
+  createKiroCliAuthorizationFlow,
+  parseKiroCliCallback,
+  exchangeKiroPortalCode,
+  listenForKiroCliCallback,
+  kiroDesktopUserAgent,
+  isHeadlessEnvironment,
+  KIRO_CLI_CALLBACK_PORT,
   type KiroCredential,
 } from "../src/llm/kiro-auth.js";
 import { getProvider } from "../src/llm/router.js";
@@ -163,6 +170,35 @@ describe("Kiro provider integration", () => {
     });
   });
 
+  it("maps pseudo-models like auto to a real upstream kiro model", () => {
+    expect(resolveKiroModel("auto").upstream).toBe(defaultModels.kiro);
+    expect(resolveKiroModel("").upstream).toBe(defaultModels.kiro);
+    expect(resolveKiroModel("  ").upstream).toBe(defaultModels.kiro);
+    expect(resolveKiroModel("auto-thinking")).toEqual({
+      upstream: defaultModels.kiro,
+      agentic: false,
+      thinking: true,
+    });
+    expect(resolveKiroModel("auto-agentic")).toEqual({
+      upstream: defaultModels.kiro,
+      agentic: true,
+      thinking: false,
+    });
+    expect(resolveKiroModel("some-unknown-alias").upstream).toBe(defaultModels.kiro);
+  });
+
+  it("passes through newer and non-Claude upstream model families", () => {
+    expect(resolveKiroModel("claude-opus-5").upstream).toBe("claude-opus-5");
+    expect(resolveKiroModel("gpt-6").upstream).toBe("gpt-6");
+    expect(resolveKiroModel("gpt-6-thinking").upstream).toBe("gpt-6");
+    expect(resolveKiroModel("gpt-6-thinking").thinking).toBe(true);
+    expect(resolveKiroModel("o3").upstream).toBe("o3");
+    expect(resolveKiroModel("minimax-m2").upstream).toBe("minimax-m2");
+    expect(resolveKiroModel("glm-5").upstream).toBe("glm-5");
+    expect(resolveKiroModel("qwen3-coder-next").upstream).toBe("qwen3-coder-next");
+    expect(resolveKiroModel("deepseek-v4").upstream).toBe("deepseek-v4");
+  });
+
   it("supports vision models", () => {
     expect(isKnownPatternVisionModel("kiro", "claude-sonnet-4.5")).toBe(true);
     expect(isKnownPatternVisionModel("kiro", "claude-opus-5")).toBe(true);
@@ -288,6 +324,60 @@ describe("Kiro provider integration", () => {
     expect(deltas.length).toBeGreaterThan(0);
   });
 
+  it("pairs prior toolUses with their toolResults across a tool round-trip", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchMock = vi.fn(async (_i: unknown, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const frame = encodeFrame(
+        { ":event-type": "assistantResponseEvent" },
+        { content: "done" },
+      );
+      return createStreamResponse([frame]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    await kiroProvider.complete(
+      {
+        model: "claude-sonnet-4.5",
+        messages: [
+          { role: "user", content: "find all info about this computer" },
+          {
+            role: "assistant",
+            content: "I'll gather information.",
+            toolCalls: [
+              { id: "tu_1", name: "shell.exec", args: { command: "system_profiler SPHardwareDataType" } },
+              { id: "tu_2", name: "shell.exec", args: { command: "sysctl -a" } },
+            ],
+          },
+          { role: "tool", toolCallId: "tu_1", content: "hw ok" },
+          { role: "tool", toolCallId: "tu_2", content: "sysctl ok" },
+        ],
+      },
+      { apiKey: cred },
+    );
+
+    const conv = capturedBody?.conversationState as Record<string, unknown>;
+    const history = conv?.history as Array<Record<string, unknown>>;
+    const current = conv?.currentMessage as Record<string, unknown>;
+
+    const assistantTurn = history.find((h) => h.assistantResponseMessage) as
+      | Record<string, unknown>
+      | undefined;
+    const arm = assistantTurn?.assistantResponseMessage as Record<string, unknown>;
+    const toolUses = arm?.toolUses as Array<{ toolUseId: string }> | undefined;
+    expect(toolUses?.map((t) => t.toolUseId)).toEqual(["tu_1", "tu_2"]);
+
+    const resultsUser =
+      (history[history.length - 1] as Record<string, unknown>)?.userInputMessage ??
+      current.userInputMessage;
+    const ctx = (resultsUser as Record<string, unknown>)
+      .userInputMessageContext as Record<string, unknown>;
+    const toolResults = ctx?.toolResults as Array<{ toolUseId: string }> | undefined;
+    expect(toolResults?.map((t) => t.toolUseId)).toEqual(["tu_1", "tu_2"]);
+  });
+
   it("handles automatic token refresh on 401 error", async () => {
     let callCount = 0;
     const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
@@ -374,6 +464,121 @@ describe("Kiro provider integration", () => {
     );
   });
 
+  it("derives a content-stable conversation ID when no session affinity is set", async () => {
+    const ids: string[] = [];
+    const fetchMock = vi.fn(async (_i: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      ids.push(String((body.conversationState as Record<string, unknown>).conversationId));
+      const frame = encodeFrame(
+        { ":event-type": "assistantResponseEvent" },
+        { content: "ok" },
+      );
+      return createStreamResponse([frame]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    const msgs = [{ role: "user" as const, content: "same first message" }];
+    await kiroProvider.complete({ model: "claude-sonnet-4.5", messages: msgs }, { apiKey: cred });
+    await kiroProvider.complete({ model: "claude-sonnet-4.5", messages: msgs }, { apiKey: cred });
+    await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "different message" }] },
+      { apiKey: cred },
+    );
+
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).not.toBe(ids[2]);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("emits adaptive-thinking fields for Claude and native reasoning for GPT", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (_i: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      const frame = encodeFrame(
+        { ":event-type": "assistantResponseEvent" },
+        { content: "ok" },
+      );
+      return createStreamResponse([frame]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    await kiroProvider.complete(
+      {
+        model: "claude-sonnet-4.5",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "high" },
+      },
+      { apiKey: cred },
+    );
+    await kiroProvider.complete(
+      {
+        model: "gpt-6",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "medium" },
+      },
+      { apiKey: cred },
+    );
+    await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hi" }] },
+      { apiKey: cred },
+    );
+
+    const claude = bodies[0]!;
+    const claudeMsg = (claude.conversationState as Record<string, unknown>)
+      .currentMessage as Record<string, unknown>;
+    const claudeUim = claudeMsg.userInputMessage as Record<string, unknown>;
+    expect(String(claudeUim.content)).toContain("<thinking_mode>enabled</thinking_mode>");
+    expect(claude.additionalModelRequestFields).toEqual({
+      output_config: { effort: "high" },
+      thinking: { type: "adaptive", display: "summarized" },
+    });
+
+    const gpt = bodies[1]!;
+    const gptMsg = (gpt.conversationState as Record<string, unknown>)
+      .currentMessage as Record<string, unknown>;
+    expect(String((gptMsg.userInputMessage as Record<string, unknown>).content)).not.toContain(
+      "thinking_mode",
+    );
+    expect(gpt.additionalModelRequestFields).toEqual({ reasoning: { effort: "medium" } });
+
+    const plain = bodies[2]!;
+    expect(plain.additionalModelRequestFields).toBeUndefined();
+  });
+
+  it("reads cacheRead/cacheWrite input tokens from metering events", async () => {
+    const frame1 = encodeFrame(
+      { ":event-type": "assistantResponseEvent" },
+      { content: "cached" },
+    );
+    const frame2 = encodeFrame(
+      { ":event-type": "meteringEvent" },
+      {
+        inputTokens: 1000,
+        outputTokens: 50,
+        cacheReadInputTokens: 700,
+        cacheWriteInputTokens: 300,
+      },
+    );
+    const fetchMock = vi.fn(async () => createStreamResponse([frame1, frame2]));
+    vi.stubGlobal("fetch", fetchMock);
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    const result = await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hi" }] },
+      { apiKey: cred },
+    );
+
+    expect(result.usage).toMatchObject({
+      promptTokens: 1000,
+      completionTokens: 50,
+      cachedPromptTokens: 700,
+      cacheCreationTokens: 300,
+      uncachedPromptTokens: 300,
+    });
+  });
+
   it("extracts code and exchanges social token from kiro:// redirect URL", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 
@@ -450,5 +655,188 @@ describe("Kiro provider integration", () => {
     expect(receivedCode).toBe("kiro://kiro.kiroAgent/authenticate-success?code=loopback_code_ok");
 
     handle.close();
+  });
+
+  describe("kiro-cli portal flow", () => {
+    it("builds an authorization flow matching kiro-cli's portal URL", () => {
+      const flow = createKiroCliAuthorizationFlow();
+      const url = new URL(flow.authorizeUrl);
+
+      expect(url.origin + url.pathname).toBe("https://app.kiro.dev/signin");
+      expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3128");
+      expect(url.searchParams.get("redirect_from")).toBe("kirocli");
+      expect(url.searchParams.get("state")).toBe(flow.state);
+      expect(url.searchParams.get("state")).toMatch(/^[0-9a-f]{32}$/);
+      expect(url.searchParams.get("code_challenge")).toBeTruthy();
+      expect(url.searchParams.has("idp")).toBe(false);
+      expect(url.searchParams.has("prompt")).toBe(false);
+      expect(flow.codeVerifier).toBeTruthy();
+    });
+
+    it("parses the kiro-cli portal callback URL", () => {
+      const cb = parseKiroCliCallback(
+        "http://localhost:3128/oauth/callback?login_option=google&code=abc123&state=deadbeef",
+      );
+      expect(cb).toEqual({
+        code: "abc123",
+        loginOption: "google",
+        state: "deadbeef",
+        path: "/oauth/callback",
+      });
+    });
+
+    it("parses signin/callback path and bare query strings", () => {
+      const a = parseKiroCliCallback(
+        "http://localhost:3128/signin/callback?login_option=github&code=gh_code",
+      );
+      expect(a.path).toBe("/signin/callback");
+      expect(a.loginOption).toBe("github");
+      expect(a.code).toBe("gh_code");
+      expect(a.state).toBeUndefined();
+
+      const b = parseKiroCliCallback("code=plain_code&login_option=google");
+      expect(b.code).toBe("plain_code");
+      expect(b.loginOption).toBe("google");
+    });
+
+    it("rejects error callbacks and missing fields", () => {
+      expect(() =>
+        parseKiroCliCallback(
+          "http://localhost:3128/oauth/callback?error=access_denied&error_description=denied",
+        ),
+      ).toThrow("denied");
+      expect(() =>
+        parseKiroCliCallback("http://localhost:3128/oauth/callback?login_option=google"),
+      ).toThrow("code");
+      expect(() =>
+        parseKiroCliCallback("http://localhost:3128/oauth/callback?code=only"),
+      ).toThrow("login_option");
+    });
+
+    it("exchanges a portal code with kiro-cli's token body and UA", async () => {
+      let capturedBody: Record<string, unknown> | undefined;
+      let capturedHeaders: Headers | undefined;
+      const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        capturedHeaders = new Headers(init?.headers);
+        return new Response(
+          JSON.stringify({
+            accessToken: "portal-access-token",
+            refreshToken: "portal-refresh-token",
+            expiresIn: 3600,
+            profileArn: "arn:aws:codewhisperer:us-east-1:123:profile/p-9",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const cred = await exchangeKiroPortalCode(
+        {
+          code: "portal_code",
+          loginOption: "google",
+          path: "/oauth/callback",
+        },
+        "portal_verifier",
+      );
+
+      expect(capturedBody).toMatchObject({
+        code: "portal_code",
+        code_verifier: "portal_verifier",
+        redirect_uri:
+          "http://localhost:3128/oauth/callback?login_option=google",
+        invitation_code: null,
+      });
+      expect(capturedHeaders?.get("user-agent")).toMatch(/^KiroIDE-\d+\.\d+\.\d+-[0-9a-f]{16}$/);
+      expect(cred.accessToken).toBe("portal-access-token");
+      expect(cred.refreshToken).toBe("portal-refresh-token");
+      expect(cred.authMethod).toBe("google");
+      expect(cred.profileArn).toContain("us-east-1");
+    });
+
+    it("listens on port 3128 and resolves on the portal callback", async () => {
+      const state = "0123456789abcdef0123456789abcdef";
+      const server = listenForKiroCliCallback({ expectedState: state, timeoutMs: 10_000 });
+      expect(server.port).toBe(KIRO_CLI_CALLBACK_PORT);
+
+      const res = await fetch(
+        `http://127.0.0.1:${KIRO_CLI_CALLBACK_PORT}/oauth/callback?login_option=github&code=loop_code&state=${state}`,
+      );
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("Kiro AI Authenticated");
+
+      const cb = await server.promise;
+      expect(cb).toMatchObject({
+        code: "loop_code",
+        loginOption: "github",
+        state,
+        path: "/oauth/callback",
+      });
+
+      server.close();
+    });
+
+    it("rejects on state mismatch", async () => {
+      const server = listenForKiroCliCallback({
+        expectedState: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        timeoutMs: 10_000,
+      });
+
+      const expectation = expect(server.promise).rejects.toThrow(/state/i);
+
+      const res = await fetch(
+        `http://127.0.0.1:${KIRO_CLI_CALLBACK_PORT}/oauth/callback?login_option=google&code=x&state=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`,
+      );
+      expect(res.status).toBe(400);
+      await expectation;
+      server.close();
+    });
+
+    it("produces a desktop user agent with a stable machine fingerprint", () => {
+      const ua = kiroDesktopUserAgent();
+      expect(ua).toMatch(/^KiroIDE-\d+\.\d+\.\d+-[0-9a-f]{16}$/);
+      expect(kiroDesktopUserAgent()).toBe(ua);
+    });
+
+    it("detects headless SSH and headless Linux environments", () => {
+      const saved = {
+        SSH_CONNECTION: process.env.SSH_CONNECTION,
+        SSH_CLIENT: process.env.SSH_CLIENT,
+        SSH_TTY: process.env.SSH_TTY,
+        DISPLAY: process.env.DISPLAY,
+        WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY,
+      };
+      const restore = () => {
+        for (const [k, v] of Object.entries(saved)) {
+          if (v === undefined) delete (process.env as Record<string, string | undefined>)[k];
+          else (process.env as Record<string, string | undefined>)[k] = v;
+        }
+      };
+
+      try {
+        delete process.env.SSH_CONNECTION;
+        delete process.env.SSH_CLIENT;
+        delete process.env.SSH_TTY;
+
+        process.env.SSH_CONNECTION = "10.0.0.1 22 10.0.0.2 22";
+        expect(isHeadlessEnvironment()).toBe(true);
+        delete process.env.SSH_CONNECTION;
+
+        process.env.SSH_TTY = "/dev/pts/0";
+        expect(isHeadlessEnvironment()).toBe(true);
+        delete process.env.SSH_TTY;
+
+        if (process.platform === "linux") {
+          delete process.env.DISPLAY;
+          delete process.env.WAYLAND_DISPLAY;
+          expect(isHeadlessEnvironment()).toBe(true);
+          process.env.DISPLAY = ":0";
+          expect(isHeadlessEnvironment()).toBe(false);
+        }
+      } finally {
+        restore();
+      }
+    });
   });
 });

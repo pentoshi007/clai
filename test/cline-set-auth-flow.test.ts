@@ -48,6 +48,8 @@ function makeServices(answers: Array<unknown>) {
   const notices: string[] = [];
   const events: string[] = [];
   const overlay = {
+    subscribe: (_listener: () => void) => () => undefined,
+    isOpen: () => busy !== null,
     close: () => {
       if (busy === "pager") events.push("close:pager");
       else if (busy === "editor") events.push("close:editor");

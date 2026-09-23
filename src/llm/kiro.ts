@@ -4,6 +4,7 @@ import type {
   CompletionRequest,
   CompletionResult,
   NativeToolCall,
+  ReasoningEffort,
   TokenUsage,
   ToolCallStreamDelta,
   ToolDefinition,
@@ -183,12 +184,15 @@ export function isAgenticModel(model: string): boolean {
   return model.endsWith("-agentic");
 }
 
+const KIRO_UPSTREAM_MODEL_PATTERN =
+  /^(claude|gpt|o\d|amazon|nova|titan|deepseek|meta|mistral|qwen|minimax|glm|kimi|llama)/i;
+
 export function resolveKiroModel(model: string): {
   upstream: string;
   agentic: boolean;
   thinking: boolean;
 } {
-  let upstream = model;
+  let upstream = model.trim();
   let agentic = false;
   let thinking = false;
 
@@ -201,8 +205,33 @@ export function resolveKiroModel(model: string): {
     upstream = upstream.slice(0, -"-thinking".length);
   }
 
+  if (!KIRO_UPSTREAM_MODEL_PATTERN.test(upstream)) {
+    upstream = defaultModels.kiro;
+  }
+
   return { upstream, agentic, thinking };
 }
+
+function isNativeReasoningModel(model: string): boolean {
+  return /^(gpt|o\d)/i.test(model);
+}
+
+function isAdaptiveThinkingModel(model: string): boolean {
+  return /^claude/i.test(model);
+}
+
+function kiroEffortString(effort: ReasoningEffort | undefined): string {
+  if (!effort || effort === "none") return "";
+  if (effort === "minimal" || effort === "low") return "low";
+  if (effort === "medium") return "medium";
+  return "high";
+}
+
+const KIRO_THINKING_BUDGET: Record<string, number> = {
+  low: 4000,
+  medium: 8000,
+  high: 16000,
+};
 
 function resolveKiroCredential(auth: ProviderAuth): KiroCredential {
   const raw = auth.apiKey?.trim();
@@ -284,11 +313,20 @@ function getCandidateEndpoints(
   return [cwUrl, rtUrl, qUrl];
 }
 
-function kiroConversationId(): string {
+function uuidFromHex(hex: string): string {
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+function kiroConversationId(seedContent: string): string {
   const affinity = currentSessionAffinity();
   if (affinity) {
-    const hash = createHash("md5").update(`kiro-${affinity}`).digest("hex");
-    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+    return uuidFromHex(createHash("md5").update(`kiro-${affinity}`).digest("hex"));
+  }
+  const seed = seedContent.trim();
+  if (seed) {
+    return uuidFromHex(
+      createHash("md5").update(`kiro-${seed.slice(0, 4000)}`).digest("hex"),
+    );
   }
   return randomUUID();
 }
@@ -336,22 +374,8 @@ function buildKiroRequestBody(
     ? "When modifying or creating files, keep writes concise:\n- Maximum 350 lines per file write/tool call (recommended 300 lines or fewer).\n- Prefer targeted, incremental edits instead of rewriting entire files.\n- For large files, write or append in chunks across multiple tool calls."
     : "";
 
-  let thinkingPrefix = "";
-  if (thinking || request.thinking?.enabled) {
-    const budget =
-      request.thinking?.effort === "minimal"
-        ? 2000
-        : request.thinking?.effort === "low"
-          ? 4000
-          : request.thinking?.effort === "medium"
-            ? 8000
-            : 16000;
-    thinkingPrefix = `<thinking_mode>enabled</thinking_mode>\n<max_thinking_length>${budget}</max_thinking_length>\n\n`;
-  }
-
   const systemParts: string[] = [];
   if (agenticInstruction) systemParts.push(agenticInstruction);
-  if (thinkingPrefix) systemParts.push(thinkingPrefix);
 
   const nonSystemMessages: ChatMessage[] = [];
   for (const msg of request.messages) {
@@ -371,6 +395,11 @@ function buildKiroRequestBody(
       toolUseId: string;
       content: Array<{ text: string }>;
       status: "success" | "error";
+    }> | undefined;
+    toolUses?: Array<{
+      toolUseId: string;
+      name: string;
+      input: Record<string, unknown>;
     }> | undefined;
     images?: Array<{
       format: string;
@@ -405,6 +434,14 @@ function buildKiroRequestBody(
         });
       }
     } else if (msg.role === "assistant") {
+      const toolUses = (msg.toolCalls ?? [])
+        .filter((tc) => tc.id)
+        .map((tc) => ({
+          toolUseId: tc.id,
+          name: sanitizeToolName(tc.name),
+          input: tc.args ?? {},
+        }));
+
       const last = turns[turns.length - 1];
       if (last && last.role === "assistant") {
         if (msg.content) {
@@ -412,10 +449,14 @@ function buildKiroRequestBody(
             ? `${last.content}\n\n${msg.content}`
             : msg.content;
         }
+        if (toolUses.length > 0) {
+          last.toolUses = [...(last.toolUses ?? []), ...toolUses];
+        }
       } else {
         turns.push({
           role: "assistant",
           content: msg.content || "",
+          toolUses: toolUses.length > 0 ? toolUses : undefined,
         });
       }
     } else if (msg.role === "tool") {
@@ -475,9 +516,8 @@ function buildKiroRequestBody(
         userInputMessage: {
           content: turn.content,
           modelId: upstreamModel,
-          ...(Object.keys(userContext).length > 0
-            ? { userInputMessageContext: userContext }
-            : {}),
+          origin: "AI_EDITOR",
+          userInputMessageContext: userContext,
           ...(turn.images && turn.images.length > 0
             ? { images: turn.images }
             : {}),
@@ -487,6 +527,9 @@ function buildKiroRequestBody(
       history.push({
         assistantResponseMessage: {
           content: turn.content,
+          ...(turn.toolUses && turn.toolUses.length > 0
+            ? { toolUses: turn.toolUses }
+            : {}),
         },
       });
     }
@@ -505,20 +548,22 @@ function buildKiroRequestBody(
     userInputMessage: {
       content: lastTurn.content,
       modelId: upstreamModel,
-      ...(Object.keys(currentContext).length > 0
-        ? { userInputMessageContext: currentContext }
-        : {}),
+      origin: "AI_EDITOR",
+      userInputMessageContext: currentContext,
       ...(lastTurn.images && lastTurn.images.length > 0
         ? { images: lastTurn.images }
         : {}),
     },
   };
 
-  const conversationId = kiroConversationId();
+  const firstUserContent =
+    turns.find((t) => t.role === "user" && t.content.trim())?.content ?? "";
+  const conversationId = kiroConversationId(firstUserContent);
 
   const payload: Record<string, unknown> = {
     conversationState: {
       conversationId,
+      chatTriggerType: "MANUAL",
       history,
       currentMessage,
     },
@@ -526,6 +571,23 @@ function buildKiroRequestBody(
 
   if (credential.profileArn) {
     payload.profileArn = credential.profileArn;
+  }
+
+  const wantsThinking = thinking || request.thinking?.enabled === true;
+  const effort = kiroEffortString(request.thinking?.effort) || "high";
+  if (wantsThinking && isNativeReasoningModel(upstreamModel)) {
+    payload.additionalModelRequestFields = { reasoning: { effort } };
+  } else if (wantsThinking && isAdaptiveThinkingModel(upstreamModel)) {
+    const budget = KIRO_THINKING_BUDGET[effort] ?? 16000;
+    const directive = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`;
+    const uim = (payload.conversationState as Record<string, unknown>)
+      .currentMessage as Record<string, unknown>;
+    const msg = uim.userInputMessage as Record<string, unknown>;
+    msg.content = `${directive}\n\n${String(msg.content ?? "")}`;
+    payload.additionalModelRequestFields = {
+      output_config: { effort },
+      thinking: { type: "adaptive", display: "summarized" },
+    };
   }
 
   return payload;
@@ -756,6 +818,7 @@ export const kiroProvider: LlmProvider = {
             let promptTokens = 0;
             let completionTokens = 0;
             let cachedTokens = 0;
+            let cacheCreationTokens = 0;
 
             for await (const frame of parseEventStream(response.body)) {
               const eventType =
@@ -893,6 +956,12 @@ export const kiroProvider: LlmProvider = {
                 if (typeof eventPayload.cachedTokens === "number") {
                   cachedTokens = eventPayload.cachedTokens;
                 }
+                if (typeof eventPayload.cacheReadInputTokens === "number") {
+                  cachedTokens = Math.max(cachedTokens, eventPayload.cacheReadInputTokens);
+                }
+                if (typeof eventPayload.cacheWriteInputTokens === "number") {
+                  cacheCreationTokens = eventPayload.cacheWriteInputTokens;
+                }
               }
             }
 
@@ -923,6 +992,8 @@ export const kiroProvider: LlmProvider = {
                     totalTokens: promptTokens + completionTokens,
                     exact: true,
                     cachedPromptTokens: cachedTokens > 0 ? cachedTokens : undefined,
+                    cacheCreationTokens:
+                      cacheCreationTokens > 0 ? cacheCreationTokens : undefined,
                     uncachedPromptTokens:
                       cachedTokens > 0
                         ? Math.max(0, promptTokens - cachedTokens)

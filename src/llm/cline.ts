@@ -1,4 +1,4 @@
-import type { ChatMessage, CompletionRequest, CompletionResult } from "../types.js";
+import type { CompletionRequest, CompletionResult } from "../types.js";
 import {
   defaultModels,
   type LlmProvider,
@@ -15,12 +15,13 @@ import {
 import {
   CLINE_API_BASE_URL,
   CLINE_REQUEST_HEADERS,
-  maybeRefreshClineToken,
+  ClineAuthError,
+  getClineRefreshToken,
+  refreshClineToken,
   type ClineOAuthTokens,
 } from "./cline-auth.js";
 import { getProviderKeys, replaceProviderKey } from "../store/keys.js";
 import { currentSessionAffinity } from "./session-affinity.js";
-import { cacheAffinityKey, sessionCacheAffinityKey } from "./cache-affinity.js";
 
 const baseUrl = CLINE_API_BASE_URL;
 const headers = CLINE_REQUEST_HEADERS;
@@ -38,17 +39,125 @@ function requireKey(auth: ProviderAuth): string {
   return auth.apiKey;
 }
 
-function getClineHeaders(model?: string, messages?: ChatMessage[]): Record<string, string> {
-  const session = currentSessionAffinity();
-  const taskId = session
-    ? sessionCacheAffinityKey(session)
-    : messages && model
-      ? cacheAffinityKey("cline", model, messages)
-      : undefined;
+function getClineHeaders(): Record<string, string> {
   return {
     ...headers,
-    ...(taskId ? { "X-Task-ID": taskId } : {}),
+    "X-Task-ID": currentSessionAffinity() ?? "",
   };
+}
+
+const CLINE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const CLINE_REFRESH_GRACE_MS = 30 * 1000;
+
+class ClineCredentialStoreError extends Error {}
+
+function matchesClineKey(storedKey: string, currentKey: string): boolean {
+  return storedKey.replace(/^workos:/i, "") === currentKey.replace(/^workos:/i, "");
+}
+
+function isClineAuthFailure(error: unknown): boolean {
+  const status = error instanceof ProviderError ? error.status : undefined;
+  const message = error instanceof Error ? error.message : "";
+  return status === 401 || (status === 403 && /expired|invalid|unauthorized/i.test(message));
+}
+
+async function findClineRefreshToken(
+  currentKey: string,
+  auth: ProviderAuth,
+): Promise<string | undefined> {
+  if (auth.refreshToken) return auth.refreshToken;
+  const keys = await getProviderKeys("cline").catch(() => undefined);
+  const slot = keys?.keys.find((candidate) => matchesClineKey(candidate.value, currentKey));
+  if (slot?.refreshToken) return slot.refreshToken;
+  return getClineRefreshToken(currentKey);
+}
+
+async function replaceClineKey(oldKey: string, fresh: ClineOAuthTokens): Promise<void> {
+  const metadata = {
+    ...(fresh.refreshToken ? { refreshToken: fresh.refreshToken } : {}),
+    ...(fresh.expiresAt !== undefined ? { expiresAt: fresh.expiresAt } : {}),
+  };
+  const alternateKey = oldKey.startsWith("workos:")
+    ? oldKey.slice(7)
+    : `workos:${oldKey}`;
+  try {
+    if (await replaceProviderKey("cline", oldKey, fresh.accessToken, metadata)) return;
+    if (await replaceProviderKey("cline", alternateKey, fresh.accessToken, metadata)) return;
+    const keys = await getProviderKeys("cline");
+    if (keys.keys.some((key) => key.value === fresh.accessToken && key.refreshToken === fresh.refreshToken)) {
+      return;
+    }
+  } catch {
+    throw new ClineCredentialStoreError(
+      "Cline refreshed its credentials, but clai could not save the rotated tokens.",
+    );
+  }
+  throw new ClineCredentialStoreError(
+    "Cline refreshed its credentials, but the matching clai account could not be found to save them.",
+  );
+}
+
+const credentialRefreshesInFlight = new Map<string, Promise<ClineOAuthTokens>>();
+
+async function refreshAndPersistClineCredential(
+  key: string,
+  auth: ProviderAuth,
+  refreshToken: string,
+): Promise<ClineOAuthTokens> {
+  const inFlight = credentialRefreshesInFlight.get(refreshToken);
+  if (inFlight) {
+    const fresh = await inFlight;
+    auth.apiKey = fresh.accessToken;
+    auth.refreshToken = fresh.refreshToken;
+    auth.expiresAt = fresh.expiresAt;
+    return fresh;
+  }
+  const refresh = (async () => {
+    const fresh = await refreshClineToken(refreshToken);
+    auth.apiKey = fresh.accessToken;
+    auth.refreshToken = fresh.refreshToken;
+    auth.expiresAt = fresh.expiresAt;
+    await replaceClineKey(key, fresh);
+    return fresh;
+  })();
+  credentialRefreshesInFlight.set(refreshToken, refresh);
+  try {
+    return await refresh;
+  } finally {
+    if (credentialRefreshesInFlight.get(refreshToken) === refresh) {
+      credentialRefreshesInFlight.delete(refreshToken);
+    }
+  }
+}
+
+async function refreshClineBeforeRequest(
+  key: string,
+  auth: ProviderAuth,
+  refreshToken: string | undefined,
+  onStatus?: ((message: string) => void) | undefined,
+): Promise<string> {
+  const expiresAt = auth.expiresAt;
+  if (!refreshToken) {
+    if (expiresAt !== undefined && expiresAt <= Date.now()) {
+      throw new ProviderError("Cline access token expired and no refresh token is available; sign in again.", 401);
+    }
+    return key;
+  }
+  if (expiresAt !== undefined && expiresAt > Date.now() + CLINE_REFRESH_BUFFER_MS) return key;
+  onStatus?.("ℹ Cline authentication expiring — refreshing token");
+  try {
+    const fresh = await refreshAndPersistClineCredential(key, auth, refreshToken);
+    onStatus?.("ℹ Cline token refreshed");
+    return fresh.accessToken;
+  } catch (error) {
+    if (error instanceof ClineCredentialStoreError) throw error;
+    if (error instanceof ClineAuthError && error.isLikelyInvalidGrant()) throw error;
+    if (expiresAt !== undefined && expiresAt - Date.now() > CLINE_REFRESH_GRACE_MS) {
+      onStatus?.("ℹ Cline refresh temporarily failed; using the current token until it expires");
+      return key;
+    }
+    throw error;
+  }
 }
 
 async function withClineCredential<T>(
@@ -57,84 +166,40 @@ async function withClineCredential<T>(
   onStatus?: ((message: string) => void) | undefined,
 ): Promise<T> {
   let key = requireKey(auth);
-  if (
-    auth.expiresAt !== undefined &&
-    auth.expiresAt <= Date.now() + 60_000 &&
-    auth.refreshToken
-  ) {
-    onStatus?.("ℹ Cline authentication expiring — refreshing token");
-    const fresh = await maybeRefreshClineToken(key, auth.refreshToken);
-    if (fresh?.accessToken && fresh.accessToken !== key) {
-      await replaceClineKey(key, fresh).catch(() => undefined);
-      key = fresh.accessToken;
-      auth.apiKey = fresh.accessToken;
-      if (fresh.refreshToken) auth.refreshToken = fresh.refreshToken;
-      if (fresh.expiresAt !== undefined) auth.expiresAt = fresh.expiresAt;
-      onStatus?.("ℹ Cline token refreshed");
-    }
-  }
+  let refreshToken = await findClineRefreshToken(key, auth);
+  key = await refreshClineBeforeRequest(key, auth, refreshToken, onStatus);
+  refreshToken = auth.refreshToken ?? refreshToken;
   try {
     return await run(key);
   } catch (error) {
-    const status = error instanceof ProviderError ? error.status : undefined;
-    const errorMsg = error instanceof Error ? error.message : "";
-    const isAuthFailure =
-      status === 401 ||
-      (status === 403 && /expired|invalid|unauthorized/i.test(errorMsg));
-    if (!isAuthFailure) throw error;
-    onStatus?.("ℹ Cline authentication expired — refreshing token");
-    let refreshError = "";
-    let refreshToken = auth.refreshToken;
-    if (!refreshToken) {
-      const allKeys = await getProviderKeys("cline").catch(() => undefined);
-      const matchingSlot = allKeys?.keys.find(
-        (k) =>
-          k.value === key ||
-          k.value === key.replace(/^workos:/, "") ||
-          `workos:${k.value}` === key,
-      );
-      if (matchingSlot?.refreshToken) {
-        refreshToken = matchingSlot.refreshToken;
-      }
-    }
-    const fresh = await maybeRefreshClineToken(
-      key,
-      refreshToken,
-      (message) => {
-        refreshError = message;
-      },
-    );
-    if (!fresh?.accessToken || fresh.accessToken === key) {
-      const detail = refreshError ? ` (${refreshError})` : "";
-      onStatus?.(
-        `ℹ Cline token refresh was unavailable${detail} — trying the next provider`,
-      );
-      throw error;
-    }
-    await replaceClineKey(key, fresh).catch(() => undefined);
-    auth.apiKey = fresh.accessToken;
-    if (fresh.refreshToken) auth.refreshToken = fresh.refreshToken;
-    if (fresh.expiresAt !== undefined) auth.expiresAt = fresh.expiresAt;
+    if (!isClineAuthFailure(error)) throw error;
+    if (!refreshToken) throw error;
+    onStatus?.("ℹ Cline authentication rejected — refreshing token");
+    const fresh = await refreshAndPersistClineCredential(key, auth, refreshToken);
     onStatus?.("ℹ Cline token refreshed — retrying request");
     return run(fresh.accessToken);
   }
 }
 
-async function replaceClineKey(
-  oldKey: string,
-  fresh: ClineOAuthTokens,
-): Promise<void> {
-  const meta = {
-    ...(fresh.refreshToken ? { refreshToken: fresh.refreshToken } : {}),
-    ...(fresh.expiresAt !== undefined ? { expiresAt: fresh.expiresAt } : {}),
+async function fetchClineModels(apiKey?: string): Promise<string[]> {
+  const reqHeaders = {
+    ...getClineHeaders(),
+    ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
   };
-  const ok = await replaceProviderKey("cline", oldKey, fresh.accessToken, meta);
-  if (!ok) {
-    const altKey = oldKey.startsWith("workos:")
-      ? oldKey.slice(7)
-      : `workos:${oldKey}`;
-    await replaceProviderKey("cline", altKey, fresh.accessToken, meta).catch(() => undefined);
-  }
+  const response = await fetch(`${baseUrl}/ai/cline/recommended-models`, {
+    headers: reqHeaders,
+  });
+  const payload = await readJson<{
+    recommended?: unknown[];
+    free?: unknown[];
+    clinePass?: unknown[];
+  }>(response);
+  const entries = [
+    ...(Array.isArray(payload.recommended) ? payload.recommended : []),
+    ...(Array.isArray(payload.free) ? payload.free : []),
+    ...(Array.isArray(payload.clinePass) ? payload.clinePass : []),
+  ];
+  return ingestModelCatalogEntries("cline", entries);
 }
 
 export const clineProvider: LlmProvider = {
@@ -146,27 +211,10 @@ export const clineProvider: LlmProvider = {
   validateKey: (key: string) => key.trim().length >= 20,
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
-    const reqHeaders: Record<string, string> = { ...headers };
-    if (auth.apiKey) {
-      reqHeaders["authorization"] = `Bearer ${auth.apiKey}`;
-    }
-    const response = await fetch(`${baseUrl}/ai/cline/recommended-models`, {
-      headers: reqHeaders,
-    });
-    const payload = await readJson<{
-      recommended?: unknown[];
-      free?: unknown[];
-      clinePass?: unknown[];
-    }>(response);
-    const entries = [
-      ...(Array.isArray(payload.recommended) ? payload.recommended : []),
-      ...(Array.isArray(payload.free) ? payload.free : []),
-      ...(Array.isArray(payload.clinePass) ? payload.clinePass : []),
-    ];
-    const models = ingestModelCatalogEntries("cline", entries);
+    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
+    const models = auth.apiKey
+      ? await withClineCredential(auth, fetchClineModels)
+      : await fetchClineModels();
     if (models.length > 0) {
       cachedModels = models;
       lastFetchTime = now;
@@ -174,16 +222,17 @@ export const clineProvider: LlmProvider = {
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {
-    const key = requireKey(auth);
-    const response = await fetch(`${baseUrl}/users/me`, {
-      headers: { authorization: `Bearer ${key}`, ...headers },
+    await withClineCredential(auth, async (key) => {
+      const response = await fetch(`${baseUrl}/users/me`, {
+        headers: { ...getClineHeaders(), authorization: `Bearer ${key}` },
+      });
+      if (!response.ok) {
+        throw new ProviderError(
+          `Cline authentication failed (HTTP ${response.status}). Run \`clai auth cline\` to sign in.`,
+          response.status,
+        );
+      }
     });
-    if (!response.ok) {
-      throw new ProviderError(
-        `Cline authentication failed (HTTP ${response.status}). Run \`clai auth cline\` to sign in.`,
-        response.status,
-      );
-    }
   },
   async complete(
     request: CompletionRequest,
@@ -191,7 +240,7 @@ export const clineProvider: LlmProvider = {
     onStatus?: ((message: string) => void) | undefined,
   ): Promise<CompletionResult> {
     const model = request.model ?? defaultModels.cline;
-    const reqHeaders = getClineHeaders(model, request.messages);
+    const reqHeaders = getClineHeaders();
     return withClineCredential(
       auth,
       async (key) => {
@@ -227,7 +276,7 @@ export const clineProvider: LlmProvider = {
     onStatus?: ((message: string) => void) | undefined,
   ): Promise<CompletionResult> {
     const model = request.model ?? defaultModels.cline;
-    const reqHeaders = getClineHeaders(model, request.messages);
+    const reqHeaders = getClineHeaders();
     return withClineCredential(
       auth,
       async (key) => {
