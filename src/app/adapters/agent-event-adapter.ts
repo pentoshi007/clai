@@ -92,6 +92,7 @@ export class AgentEventAdapter {
           ...(event.usage.reasoningTokens !== undefined
             ? { reasoningTokens: event.usage.reasoningTokens }
             : {}),
+          ...(event.usage.charges ? { charges: event.usage.charges } : {}),
           ...(event.model !== undefined ? { model: event.model } : {}),
           ...(event.provider !== undefined ? { provider: event.provider } : {}),
           ...(event.api !== undefined ? { api: event.api } : {}),

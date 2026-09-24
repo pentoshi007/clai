@@ -1347,3 +1347,221 @@ export async function maybeRefreshKiroCredential(
     return undefined;
   }
 }
+
+export interface KiroModelInfo {
+  readonly modelId: string;
+  readonly modelName?: string | undefined;
+  readonly description?: string | undefined;
+  readonly rateMultiplier?: number | undefined;
+  readonly maxInputTokens?: number | undefined;
+  readonly maxOutputTokens?: number | undefined;
+  readonly supportsImages?: boolean | undefined;
+}
+
+export interface KiroUsageBreakdown {
+  readonly resourceType?: string | undefined;
+  readonly displayName?: string | undefined;
+  readonly displayNamePlural?: string | undefined;
+  readonly unit?: string | undefined;
+  readonly currency?: string | undefined;
+  readonly currentUsage: number;
+  readonly usageLimit: number;
+  readonly currentOverages: number;
+  readonly overageCap?: number | undefined;
+  readonly overageRate?: number | undefined;
+  readonly nextDateReset?: number | undefined;
+}
+
+export interface KiroUsageLimits {
+  readonly subscriptionTitle?: string | undefined;
+  readonly subscriptionType?: string | undefined;
+  readonly overageStatus?: string | undefined;
+  readonly nextDateReset?: number | undefined;
+  readonly daysUntilReset?: number | undefined;
+  readonly breakdowns: readonly KiroUsageBreakdown[];
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function parseModelInfo(value: unknown): KiroModelInfo | undefined {
+  const rec = asRecord(value);
+  if (!rec) return undefined;
+  const modelId =
+    typeof rec.modelId === "string"
+      ? rec.modelId
+      : typeof rec.id === "string"
+        ? rec.id
+        : "";
+  if (!modelId) return undefined;
+  const tokenLimits = asRecord(rec.tokenLimits);
+  const inputTypes = Array.isArray(rec.supportedInputTypes)
+    ? rec.supportedInputTypes
+    : undefined;
+  return {
+    modelId,
+    modelName:
+      typeof rec.modelName === "string" ? rec.modelName : undefined,
+    description:
+      typeof rec.description === "string" ? rec.description : undefined,
+    rateMultiplier: optionalNumber(rec.rateMultiplier),
+    maxInputTokens: tokenLimits ? optionalNumber(tokenLimits.maxInputTokens) : undefined,
+    maxOutputTokens: tokenLimits ? optionalNumber(tokenLimits.maxOutputTokens) : undefined,
+    supportsImages: inputTypes
+      ? inputTypes.some((t) => typeof t === "string" && t.toUpperCase() === "IMAGE")
+      : undefined,
+  };
+}
+
+function kiroCatalogHeaders(credential: KiroCredential): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
+    "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+  };
+  if (credential.authMethod === "api_key" && credential.apiKey) {
+    headers["Authorization"] = `Bearer ${credential.apiKey}`;
+    headers["TokenType"] = "API_KEY";
+  } else if (credential.accessToken) {
+    headers["Authorization"] = `Bearer ${credential.accessToken}`;
+    if (credential.authMethod === "external_idp") {
+      headers["TokenType"] = "EXTERNAL_IDP";
+    }
+  }
+  return headers;
+}
+
+export async function listKiroModelsDetailed(
+  credential: KiroCredential,
+): Promise<KiroModelInfo[]> {
+  const region = assertValidAwsRegion(credential.region);
+  const params = new URLSearchParams({ origin: "AI_EDITOR" });
+  const response = await fetch(
+    `https://q.${region}.amazonaws.com/ListAvailableModels?${params.toString()}`,
+    {
+      method: "GET",
+      headers: kiroCatalogHeaders(credential),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`ListAvailableModels failed (HTTP ${response.status})`);
+  }
+  const json = asRecord(await response.json().catch(() => ({})));
+  const models = Array.isArray(json?.models) ? json.models : [];
+  return models
+    .map(parseModelInfo)
+    .filter((info): info is KiroModelInfo => info !== undefined);
+}
+
+export async function getKiroUsageLimits(
+  credential: KiroCredential,
+): Promise<KiroUsageLimits> {
+  const region = assertValidAwsRegion(credential.region);
+  const body: Record<string, unknown> = {
+    origin: "AI_EDITOR",
+    resourceType: "AGENTIC_REQUEST",
+    isEmailRequired: false,
+  };
+  if (credential.profileArn) body.profileArn = credential.profileArn;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-amz-json-1.0",
+    "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
+    Accept: "application/json",
+    ...(credential.authMethod === "api_key" && credential.apiKey
+      ? { Authorization: `Bearer ${credential.apiKey}`, TokenType: "API_KEY" }
+      : { Authorization: `Bearer ${credential.accessToken}` }),
+  };
+
+  const endpoints = [
+    `https://q.${region}.amazonaws.com/`,
+    `https://codewhisperer.${region}.amazonaws.com/`,
+    `https://runtime.${region}.kiro.dev/`,
+  ];
+
+  let lastError: Error | undefined;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        lastError = new Error(
+          `GetUsageLimits failed (HTTP ${response.status})${text ? `: ${text.slice(0, 200)}` : ""}`,
+        );
+        continue;
+      }
+      const json = asRecord(await response.json().catch(() => ({})));
+      if (!json) {
+        lastError = new Error("GetUsageLimits returned an invalid payload");
+        continue;
+      }
+      const subscription = asRecord(json.subscriptionInfo);
+      const overage = asRecord(json.overageConfiguration);
+      const list = Array.isArray(json.usageBreakdownList)
+        ? json.usageBreakdownList
+        : [];
+      const breakdowns: KiroUsageBreakdown[] = [];
+      for (const entry of list) {
+        const rec = asRecord(entry);
+        if (!rec) continue;
+        const used =
+          optionalNumber(rec.currentUsageWithPrecision) ??
+          optionalNumber(rec.currentUsage);
+        const limit =
+          optionalNumber(rec.usageLimitWithPrecision) ??
+          optionalNumber(rec.usageLimit);
+        if (used === undefined || limit === undefined) continue;
+        breakdowns.push({
+          resourceType:
+            typeof rec.resourceType === "string" ? rec.resourceType : undefined,
+          displayName:
+            typeof rec.displayName === "string" ? rec.displayName : undefined,
+          displayNamePlural:
+            typeof rec.displayNamePlural === "string"
+              ? rec.displayNamePlural
+              : undefined,
+          unit: typeof rec.unit === "string" ? rec.unit : undefined,
+          currency:
+            typeof rec.currency === "string" ? rec.currency : undefined,
+          currentUsage: used,
+          usageLimit: limit,
+          currentOverages:
+            optionalNumber(rec.currentOveragesWithPrecision) ??
+            optionalNumber(rec.currentOverages) ??
+            0,
+          overageCap:
+            optionalNumber(rec.overageCapWithPrecision) ??
+            optionalNumber(rec.overageCap),
+          overageRate: optionalNumber(rec.overageRate),
+          nextDateReset: optionalNumber(rec.nextDateReset),
+        });
+      }
+      return {
+        subscriptionTitle:
+          typeof subscription?.subscriptionTitle === "string"
+            ? subscription.subscriptionTitle
+            : undefined,
+        subscriptionType:
+          typeof subscription?.type === "string" ? subscription.type : undefined,
+        overageStatus:
+          typeof overage?.overageStatus === "string"
+            ? overage.overageStatus
+            : undefined,
+        nextDateReset: optionalNumber(json.nextDateReset),
+        daysUntilReset: optionalNumber(json.daysUntilReset),
+        breakdowns,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("GetUsageLimits failed on all Kiro endpoints");
+}

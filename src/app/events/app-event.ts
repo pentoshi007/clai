@@ -1,6 +1,6 @@
 import type { ContextAttemptReference, ContextSnapshotScope } from "../../llm/context-snapshot.js";
 import type { SessionPlan } from "../../store/plan.js";
-import type { ProviderId } from "../../types.js";
+import type { ProviderId, UsageCharge } from "../../types.js";
 
 
 export type Brand<T, B extends string> = T & { readonly __brand: B };
@@ -135,6 +135,7 @@ export interface AppEventPayloads {
     readonly cacheCreationTokens?: number | undefined;
     readonly uncachedPromptTokens?: number | undefined;
     readonly reasoningTokens?: number | undefined;
+    readonly charges?: readonly UsageCharge[] | undefined;
     readonly model?: string | undefined;
     readonly provider?: ProviderId | undefined;
     readonly api?: string | undefined;

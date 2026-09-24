@@ -1,4 +1,9 @@
-import { providerIds, type ProviderId, type TokenUsage } from "../../types.js";
+import {
+  providerIds,
+  type ProviderId,
+  type TokenUsage,
+  type UsageCharge,
+} from "../../types.js";
 
 export interface SessionUsageRoute {
   readonly provider: ProviderId | undefined;
@@ -8,6 +13,7 @@ export interface SessionUsageRoute {
   readonly requests: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  readonly completionTokensKnown?: false | undefined;
   readonly totalTokens: number;
   readonly cachedPromptTokens: number | undefined;
   readonly cacheCreationTokens: number | undefined;
@@ -17,6 +23,7 @@ export interface SessionUsageRoute {
   readonly cacheBasePromptTokens: number | undefined;
   readonly estimatedRequests: number;
   readonly unmeasuredPromptRequests: number;
+  readonly charges: readonly UsageCharge[];
 }
 
 export interface SessionUsageTotals {
@@ -24,6 +31,7 @@ export interface SessionUsageTotals {
   readonly requests: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  readonly completionTokensKnown?: false | undefined;
   readonly totalTokens: number;
   readonly cachedPromptTokens: number | undefined;
   readonly cacheCreationTokens: number | undefined;
@@ -34,6 +42,7 @@ export interface SessionUsageTotals {
   readonly estimatedRequests: number;
   readonly unmeasuredPromptRequests: number;
   readonly apis: readonly string[];
+  readonly charges: readonly UsageCharge[];
 }
 
 export interface SessionUsageReport {
@@ -49,6 +58,7 @@ export interface PersistedRouteUsage {
   readonly requests: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  readonly completionTokensKnown?: false | undefined;
   readonly totalTokens: number;
   readonly cachedPromptTokens?: number | undefined;
   readonly cacheCreationTokens?: number | undefined;
@@ -58,6 +68,7 @@ export interface PersistedRouteUsage {
   readonly cacheBasePromptTokens?: number | undefined;
   readonly estimatedRequests?: number | undefined;
   readonly unmeasuredPromptRequests?: number | undefined;
+  readonly charges?: readonly UsageCharge[] | undefined;
 }
 
 interface MutableRoute {
@@ -68,6 +79,7 @@ interface MutableRoute {
   requests: number;
   promptTokens: number;
   completionTokens: number;
+  completionKnown: boolean;
   totalTokens: number;
   cachedPromptTokens: number | undefined;
   cacheCreationTokens: number | undefined;
@@ -77,6 +89,7 @@ interface MutableRoute {
   cacheBasePromptTokens: number | undefined;
   estimatedRequests: number;
   unmeasuredPromptRequests: number;
+  charges: Map<string, UsageCharge>;
 }
 
 const KNOWN_PROVIDERS: ReadonlySet<string> = new Set(providerIds);
@@ -136,6 +149,7 @@ function toRoute(entry: MutableRoute): SessionUsageRoute {
     requests: entry.requests,
     promptTokens: entry.promptTokens,
     completionTokens: entry.completionTokens,
+    ...(entry.completionKnown ? {} : { completionTokensKnown: false as const }),
     totalTokens: entry.totalTokens,
     cachedPromptTokens: entry.cachedPromptTokens,
     cacheCreationTokens: entry.cacheCreationTokens,
@@ -145,11 +159,79 @@ function toRoute(entry: MutableRoute): SessionUsageRoute {
     cacheBasePromptTokens: entry.cacheBasePromptTokens,
     estimatedRequests: entry.estimatedRequests,
     unmeasuredPromptRequests: entry.unmeasuredPromptRequests,
+    charges: Object.freeze([...entry.charges.values()]),
   });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizedCharge(value: unknown): UsageCharge | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    typeof value.amount !== "number" ||
+    !Number.isFinite(value.amount) ||
+    value.amount < 0 ||
+    typeof value.unit !== "string" ||
+    !value.unit.trim()
+  ) {
+    return undefined;
+  }
+  const currency = typeof value.currency === "string" ? value.currency.trim() : "";
+  const label = typeof value.label === "string" ? value.label.trim() : "";
+  return {
+    amount: value.amount,
+    unit: value.unit.trim(),
+    ...(currency ? { currency } : {}),
+    ...(label ? { label } : {}),
+  };
+}
+
+function chargeKey(charge: UsageCharge): string {
+  return [charge.unit, charge.currency ?? "", charge.label ?? ""]
+    .map((part) => part.toLowerCase())
+    .join("\u0000");
+}
+
+function mergeCharges(
+  current: readonly UsageCharge[],
+  incoming: readonly UsageCharge[],
+): UsageCharge[] {
+  const merged = new Map(current.map((charge) => [chargeKey(charge), charge]));
+  for (const charge of incoming) {
+    const key = chargeKey(charge);
+    const prior = merged.get(key);
+    merged.set(key, {
+      ...charge,
+      amount: (prior?.amount ?? 0) + charge.amount,
+    });
+  }
+  return [...merged.values()].sort(
+    (left, right) => chargeKey(left).localeCompare(chargeKey(right)),
+  );
+}
+
+function recordCharges(
+  target: Map<string, UsageCharge>,
+  rawCharges: readonly unknown[] | undefined,
+): void {
+  for (const raw of rawCharges ?? []) {
+    const charge = normalizedCharge(raw);
+    if (!charge) continue;
+    const key = chargeKey(charge);
+    const prior = target.get(key);
+    target.set(key, {
+      ...charge,
+      amount: (prior?.amount ?? 0) + charge.amount,
+    });
+  }
+}
+
+function restoredCharges(value: unknown): Map<string, UsageCharge> {
+  const charges = new Map<string, UsageCharge>();
+  if (Array.isArray(value)) recordCharges(charges, value);
+  return charges;
 }
 
 export function usageCacheHitRate(input: {
@@ -184,6 +266,7 @@ export class SessionUsageLedger {
         requests: 0,
         promptTokens: 0,
         completionTokens: 0,
+        completionKnown: true,
         totalTokens: 0,
         cachedPromptTokens: undefined,
         cacheCreationTokens: undefined,
@@ -193,6 +276,7 @@ export class SessionUsageLedger {
         cacheBasePromptTokens: undefined,
         estimatedRequests: 0,
         unmeasuredPromptRequests: 0,
+        charges: new Map(),
       };
       this.entries.set(key, entry);
     }
@@ -200,14 +284,16 @@ export class SessionUsageLedger {
     if (normalizedApi) entry.apis.add(normalizedApi);
 
     const promptMeasured = usage.promptTokensKnown !== false;
+    const completionMeasured = usage.exact !== false;
     const promptTokens = promptMeasured ? nonNegativeInteger(usage.promptTokens) : 0;
-    const completionTokens = nonNegativeInteger(usage.completionTokens);
+    const completionTokens = completionMeasured ? nonNegativeInteger(usage.completionTokens) : 0;
     const cached = optionalNonNegativeInteger(usage.cachedPromptTokens);
     const rawCached = cached !== undefined && promptMeasured ? Math.min(cached, promptTokens) : cached;
 
     entry.requests += 1;
     entry.promptTokens += promptTokens;
     entry.completionTokens += completionTokens;
+    entry.completionKnown &&= completionMeasured;
     entry.totalTokens += nonNegativeInteger(usage.totalTokens);
     entry.cachedPromptTokens = addOptional(entry.cachedPromptTokens, rawCached);
     entry.cacheCreationTokens = addOptional(
@@ -229,6 +315,7 @@ export class SessionUsageLedger {
     }
     if (!usage.exact) entry.estimatedRequests += 1;
     if (!promptMeasured) entry.unmeasuredPromptRequests += 1;
+    recordCharges(entry.charges, usage.charges);
   }
 
   isEmpty(): boolean {
@@ -251,6 +338,7 @@ export class SessionUsageLedger {
     let requests = 0;
     let promptTokens = 0;
     let completionTokens = 0;
+    let completionKnown = routes.length > 0;
     let totalTokens = 0;
     let cachedPromptTokens: number | undefined;
     let cacheCreationTokens: number | undefined;
@@ -260,11 +348,13 @@ export class SessionUsageLedger {
     let cacheBasePromptTokens: number | undefined;
     let estimatedRequests = 0;
     let unmeasuredPromptRequests = 0;
+    let charges: UsageCharge[] = [];
     const totalsApis = new Set<string>();
     for (const route of routes) {
       requests += route.requests;
       promptTokens += route.promptTokens;
       completionTokens += route.completionTokens;
+      completionKnown &&= route.completionTokensKnown !== false;
       totalTokens += route.totalTokens;
       cachedPromptTokens = addOptional(cachedPromptTokens, route.cachedPromptTokens);
       cacheCreationTokens = addOptional(
@@ -283,6 +373,7 @@ export class SessionUsageLedger {
       );
       estimatedRequests += route.estimatedRequests;
       unmeasuredPromptRequests += route.unmeasuredPromptRequests;
+      charges = mergeCharges(charges, route.charges);
       for (const api of route.apis) totalsApis.add(api);
     }
 
@@ -293,6 +384,7 @@ export class SessionUsageLedger {
         requests,
         promptTokens,
         completionTokens,
+        ...(completionKnown ? {} : { completionTokensKnown: false as const }),
         totalTokens,
         cachedPromptTokens,
         cacheCreationTokens,
@@ -303,6 +395,7 @@ export class SessionUsageLedger {
         estimatedRequests,
         unmeasuredPromptRequests,
         apis: Object.freeze([...totalsApis].sort()),
+        charges: Object.freeze(charges),
       }),
     });
   }
@@ -320,6 +413,7 @@ export class SessionUsageLedger {
         requests: entry.requests,
         promptTokens: entry.promptTokens,
         completionTokens: entry.completionTokens,
+        ...(entry.completionKnown ? {} : { completionTokensKnown: false as const }),
         totalTokens: entry.totalTokens,
         ...(entry.cachedPromptTokens !== undefined
           ? { cachedPromptTokens: entry.cachedPromptTokens }
@@ -342,6 +436,9 @@ export class SessionUsageLedger {
           : {}),
         ...(entry.unmeasuredPromptRequests > 0
           ? { unmeasuredPromptRequests: entry.unmeasuredPromptRequests }
+          : {}),
+        ...(entry.charges.size > 0
+          ? { charges: [...entry.charges.values()] }
           : {}),
       }));
     return rows.length > 0 ? rows : undefined;
@@ -384,6 +481,7 @@ export class SessionUsageLedger {
         requests,
         promptTokens,
         completionTokens,
+        completionKnown: (raw as Record<string, unknown>).completionTokensKnown !== false,
         totalTokens: totalTokens || promptTokens + completionTokens,
         cachedPromptTokens: optionalNonNegativeInteger(raw.cachedPromptTokens),
         cacheCreationTokens: optionalNonNegativeInteger(raw.cacheCreationTokens),
@@ -395,6 +493,7 @@ export class SessionUsageLedger {
         ),
         estimatedRequests: nonNegativeInteger(raw.estimatedRequests),
         unmeasuredPromptRequests: nonNegativeInteger(raw.unmeasuredPromptRequests),
+        charges: restoredCharges(raw.charges),
       });
     }
   }

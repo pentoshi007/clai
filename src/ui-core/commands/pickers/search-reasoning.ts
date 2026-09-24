@@ -135,7 +135,7 @@ export function handleReasoning(services: AppServices, invocation: CommandInvoca
   );
 }
 
-function reasoningOptionValues(
+export function reasoningOptionValues(
   provider: ProviderId,
   model: string,
 ): readonly string[] {

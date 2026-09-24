@@ -16,10 +16,11 @@ const HEADERS = [
   "OUT",
   "TOTAL",
   "CACHED",
-  "RATE",
+  "CACHE HIT",
+  "BILLED",
 ] as const;
 
-const ALIGNS = ["---", "---", "---:", "---:", "---:", "---:", "---:", "---:"] as const;
+const ALIGNS = ["---", "---", "---:", "---:", "---:", "---:", "---:", "---:", "---:"] as const;
 
 export interface SessionUsageContext {
   readonly sessionId: string;
@@ -65,18 +66,37 @@ function apiLabel(entry: { apis?: readonly string[] | undefined; api?: string | 
   return apis.join(", ");
 }
 
+function billed(charges: SessionUsageRoute["charges"]): string {
+  if (charges.length === 0) return MISSING;
+  return charges
+    .map((charge) => {
+      const amount = charge.amount.toLocaleString("en-US", {
+        maximumFractionDigits: 6,
+      });
+      const unit = charge.label ?? charge.unit;
+      return charge.currency
+        ? `${charge.currency} ${amount}${unit.toLowerCase() === charge.currency.toLowerCase() ? "" : ` ${unit}`}`
+        : `${amount} ${unit}`;
+    })
+    .join(", ");
+}
+
 function metrics(entry: SessionUsageRoute | SessionUsageTotals): readonly string[] {
-  const total = entry.promptTokens + entry.completionTokens;
+  const completionKnown = entry.completionTokensKnown !== false;
+  const total = completionKnown
+    ? entry.promptTokens + entry.completionTokens
+    : entry.totalTokens;
   const cached = entry.cachedPromptTokens !== undefined && entry.cacheBasePromptTokens !== undefined
     ? Math.min(entry.cachedPromptTokens, entry.cacheBasePromptTokens)
     : entry.cachedPromptTokens;
   return [
     count(entry.requests),
     count(entry.promptTokens),
-    count(entry.completionTokens),
-    count(total),
+    completionKnown ? count(entry.completionTokens) : MISSING,
+    completionKnown ? count(total) : optionalCount(entry.totalTokens > 0 ? total : undefined),
     optionalCount(cached),
     percent(usageCacheHitRate(entry)),
+    billed(entry.charges),
   ];
 }
 
@@ -172,8 +192,13 @@ export function formatSessionUsage(
   lines.push(
     "",
     `> ${code(MISSING)} = not reported by the provider`,
-    "> cache rate = cached input ÷ measured input, counted only over requests that reported caching",
+    "> cache hit = cached input ÷ measured input, counted only over requests that reported caching",
     "> every number is scoped to this session and comes from provider usage reports",
   );
+  if (totals.charges.length > 0) {
+    lines.push(
+      "> billed = provider-reported credits/cost; clai does not estimate prices",
+    );
+  }
   return lines.join("\n");
 }

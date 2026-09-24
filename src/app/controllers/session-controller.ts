@@ -459,6 +459,10 @@ export class SessionController implements Disposable {
     return () => this.stateListeners.delete(listener);
   }
 
+  notifyExternalUpdate(): void {
+    this.notifyState();
+  }
+
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
     this.lastMainRequestSnapshot = undefined;

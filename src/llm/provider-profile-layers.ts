@@ -836,7 +836,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         evidence: providerDoc("kiro-reasoning"),
       },
       generation: "optional",
-      acceptedEfforts: ["none", "minimal", "low", "medium", "high", "max"],
+      acceptedEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
       outputShapes: ["reasoning-content"],
       replayScope: "tool-turn",
     },

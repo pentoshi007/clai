@@ -298,7 +298,28 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
   ],
   kiro: [
     {
-      pattern: /claude-(?:opus|sonnet|haiku)|thinking/i,
+      pattern: /^auto$|deepseek[-./]?(?:3|v3)|minimax[-./]?m2|qwen[-./]?3[-./]?coder/i,
+      layer: {
+        evidence: codeFact("kiro-text-only-model"),
+        reasoning: {
+          generation: "none",
+          control: {
+            dialect: "none",
+            status: "unsupported",
+            evidence: codeFact("kiro-text-only-model"),
+          },
+        },
+      },
+    },
+    {
+      pattern: /claude/i,
+      layer: {
+        evidence: providerDoc("kiro-claude-thinking"),
+        reasoning: { generation: "optional" },
+      },
+    },
+    {
+      pattern: /thinking/i,
       layer: {
         evidence: providerDoc("kiro-claude-thinking"),
         reasoning: { generation: "optional" },

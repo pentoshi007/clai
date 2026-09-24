@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { kiroProvider, resolveKiroModel, kiroFallbackModels } from "../src/llm/kiro.js";
+import { kiroProvider, resolveKiroModel, kiroFallbackModels, fetchKiroUsageLimits, resetKiroModelCacheForTesting } from "../src/llm/kiro.js";
+import { formatKiroQuotaSection } from "../src/ui-core/commands/session-commands.js";
 import {
   encodeKiroKey,
   decodeKiroKey,
@@ -21,6 +22,7 @@ import {
   type KiroCredential,
 } from "../src/llm/kiro-auth.js";
 import { getProvider } from "../src/llm/router.js";
+import { needsEffortPreflight } from "../src/llm/wire/effort-preflight.js";
 import { normalizeProvider, defaultModels, envVars } from "../src/llm/provider.js";
 import { isKnownPatternVisionModel } from "../src/llm/capability/vision-patterns.js";
 import { withSessionAffinity } from "../src/llm/session-affinity.js";
@@ -92,6 +94,7 @@ describe("Kiro provider integration", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    resetKiroModelCacheForTesting();
   });
 
   it("exposes expected display name, default model, and aliases", () => {
@@ -204,13 +207,41 @@ describe("Kiro provider integration", () => {
     expect(isKnownPatternVisionModel("kiro", "claude-opus-5")).toBe(true);
   });
 
+  it("fallback catalog spans free and paid tiers with only resolvable model ids", () => {
+    expect(kiroFallbackModels).toContain("auto");
+    expect(kiroFallbackModels).toContain("claude-sonnet-4.5");
+    expect(kiroFallbackModels).toContain("claude-sonnet-4.5-thinking");
+    expect(kiroFallbackModels).toContain("deepseek-3.2");
+    expect(kiroFallbackModels).toContain("glm-5");
+    expect(kiroFallbackModels).toContain("qwen3-coder-next");
+    for (const id of kiroFallbackModels) {
+      expect(id.startsWith("-")).toBe(false);
+      const resolved = resolveKiroModel(id);
+      expect(resolved.upstream.length).toBeGreaterThan(0);
+    }
+  });
+
   it("dynamically fetches models and generates thinking/agentic variants", async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(
         JSON.stringify({
           models: [
-            { modelId: "claude-sonnet-4.5" },
-            { modelId: "claude-opus-5" },
+            {
+              modelId: "auto",
+              modelName: "Auto",
+              tokenLimits: { maxInputTokens: 1000000, maxOutputTokens: 64000 },
+              supportedInputTypes: ["TEXT", "IMAGE"],
+            },
+            {
+              modelId: "claude-sonnet-4.5",
+              tokenLimits: { maxInputTokens: 200000, maxOutputTokens: 64000 },
+              supportedInputTypes: ["TEXT", "IMAGE"],
+            },
+            {
+              modelId: "glm-5",
+              tokenLimits: { maxInputTokens: 200000, maxOutputTokens: 64000 },
+              supportedInputTypes: ["TEXT"],
+            },
           ],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -222,12 +253,109 @@ describe("Kiro provider integration", () => {
       apiKey: "test-api-key-long",
     });
 
+    expect(models).toContain("auto");
+    expect(models).not.toContain("auto-thinking");
     expect(models).toContain("claude-sonnet-4.5");
     expect(models).toContain("claude-sonnet-4.5-thinking");
     expect(models).toContain("claude-sonnet-4.5-agentic");
     expect(models).toContain("claude-sonnet-4.5-thinking-agentic");
-    expect(models).toContain("claude-opus-5");
-    expect(models).toContain("claude-opus-5-thinking");
+    expect(models).toContain("glm-5");
+    expect(models).toContain("glm-5-thinking-agentic");
+  });
+
+  it("falls back to the real current catalog when discovery fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("boom", { status: 500 })),
+    );
+    const models = await kiroProvider.listModels!({ apiKey: "key-that-fails" });
+
+    expect(models).toContain("auto");
+    expect(models).toContain("claude-sonnet-4.5");
+    expect(models).toContain("deepseek-3.2");
+    expect(models).toContain("qwen3-coder-next");
+    expect(models).not.toContain("claude-opus-5");
+    expect(models).toEqual([...kiroFallbackModels]);
+  });
+
+  it("fetches live account quota via GetUsageLimits", async () => {
+    let captured: { url: string; target: string; body: Record<string, unknown> } | undefined;
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      captured = {
+        url: String(input),
+        target: String(
+          new Headers(init?.headers).get("x-amz-target") ?? "",
+        ),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      };
+      return new Response(
+        JSON.stringify({
+          nextDateReset: 1790812800,
+          subscriptionInfo: {
+            subscriptionTitle: "KIRO FREE",
+            type: "Q_DEVELOPER_STANDALONE_FREE",
+          },
+          usageBreakdownList: [
+            {
+              resourceType: "CREDIT",
+              displayName: "Credit",
+              displayNamePlural: "Credits",
+              currentUsageWithPrecision: 0.15,
+              usageLimitWithPrecision: 50,
+              overageRate: 0.04,
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cred = encodeKiroKey({
+      accessToken: "token-abc",
+      authMethod: "builder-id",
+    });
+
+    const quota = await fetchKiroUsageLimits({ apiKey: cred });
+
+    expect(captured?.target).toBe(
+      "AmazonCodeWhispererService.GetUsageLimits",
+    );
+    expect(captured?.body.origin).toBe("AI_EDITOR");
+    expect(captured?.body.resourceType).toBe("AGENTIC_REQUEST");
+    expect(quota.subscriptionTitle).toBe("KIRO FREE");
+    expect(quota.nextDateReset).toBe(1790812800);
+    expect(quota.breakdowns).toHaveLength(1);
+    expect(quota.breakdowns[0]).toMatchObject({
+      resourceType: "CREDIT",
+      currentUsage: 0.15,
+      usageLimit: 50,
+    });
+  });
+
+  it("formats the kiro quota section for /usage", () => {
+    const free = formatKiroQuotaSection({
+      subscriptionTitle: "KIRO FREE",
+      nextDateReset: 1790812800,
+      breakdowns: [
+        {
+          resourceType: "CREDIT",
+          displayNamePlural: "Credits",
+          currentUsage: 12.5,
+          usageLimit: 50,
+          currentOverages: 0,
+        },
+      ],
+    });
+    expect(free).toContain("KIRO FREE");
+    expect(free).toContain("12.5 / 50");
+    expect(free).toContain("(25.0% used)");
+    expect(free).toContain("37.5 remaining");
+    expect(free).toContain("next reset:");
+    expect(free).toContain("Kiro AI balance");
+
+    expect(formatKiroQuotaSection("loading")).toContain("fetching live balance");
+    expect(formatKiroQuotaSection("unavailable")).toContain("balance unavailable");
   });
 
   it("streams responses with AWS EventStream parsing and handles thinking and tokens", async () => {
@@ -237,7 +365,14 @@ describe("Kiro provider integration", () => {
     );
     const frame2 = encodeFrame(
       { ":event-type": "metricsEvent" },
-      { inputTokens: 42, outputTokens: 28, cachedTokens: 10 },
+      {
+        inputTokens: 42,
+        outputTokens: 28,
+        cachedTokens: 10,
+        usage: 0.003005,
+        unit: "credit",
+        unitPlural: "credits",
+      },
     );
     const frame3 = encodeFrame(
       { ":event-type": "messageStopEvent" },
@@ -248,6 +383,7 @@ describe("Kiro provider integration", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const tokens: string[] = [];
+    const statuses: string[] = [];
     const request: CompletionRequest = {
       model: "claude-sonnet-4.5-thinking",
       messages: [{ role: "user", content: "Write a test" }],
@@ -262,6 +398,7 @@ describe("Kiro provider integration", () => {
       request,
       { apiKey: cred },
       (t) => tokens.push(t),
+      (message) => statuses.push(message),
     );
 
     expect(tokens.join("")).toBe("Hello! Let's write code.");
@@ -272,7 +409,48 @@ describe("Kiro provider integration", () => {
       promptTokens: 42,
       completionTokens: 28,
       cachedPromptTokens: 10,
+      charges: [{ amount: 0.003005, unit: "credits" }],
     });
+    expect(statuses.some((message) => message.includes("charged"))).toBe(false);
+  });
+
+  it("streams reasoning deltas live for thinking tags and reasoningContentEvent", async () => {
+    const frame1 = encodeFrame(
+      { ":event-type": "assistantResponseEvent" },
+      { content: "Hello! <thinking>step one" },
+    );
+    const frame2 = encodeFrame(
+      { ":event-type": "assistantResponseEvent" },
+      { content: " step two</thinking>visible" },
+    );
+    const frame3 = encodeFrame(
+      { ":event-type": "reasoningContentEvent" },
+      { content: "extra reasoning" },
+    );
+    const frame4 = encodeFrame(
+      { ":event-type": "messageStopEvent" },
+      { stopReason: "stop" },
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => createStreamResponse([frame1, frame2, frame3, frame4])));
+
+    const events: Array<{ type: string; text?: string }> = [];
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+    const result = await kiroProvider.stream!(
+      {
+        model: "claude-sonnet-4.5-thinking",
+        messages: [{ role: "user", content: "hi" }],
+        onStreamEvent: (event) => events.push(event),
+      },
+      { apiKey: cred },
+      () => {},
+    );
+
+    const reasoningDeltas = events
+      .filter((e) => e.type === "reasoning_delta")
+      .map((e) => e.text);
+    expect(reasoningDeltas).toEqual(["step one", " step two", "extra reasoning"]);
+    expect(result.reasoningBlock?.text).toBe("step one step twoextra reasoning");
+    expect(result.text).toBe("Hello! visible");
   });
 
   it("supports tool calls streamed via EventStream", async () => {
@@ -428,6 +606,166 @@ describe("Kiro provider integration", () => {
     expect(statuses.some((s) => s.includes("refresh"))).toBe(true);
   });
 
+  it("sends the required chatTriggerType/origin fields in the request body", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const frame = encodeFrame(
+        { ":event-type": "assistantResponseEvent" },
+        { content: "ok" },
+      );
+      return createStreamResponse([frame]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cred = encodeKiroKey({
+      accessToken: "token-abc",
+      authMethod: "builder-id",
+    });
+
+    await kiroProvider.complete(
+      {
+        model: "claude-haiku-4.5",
+        messages: [{ role: "user", content: "hello" }],
+      },
+      { apiKey: cred },
+    );
+
+    const convState = capturedBody?.conversationState as Record<string, unknown>;
+    expect(convState?.chatTriggerType).toBe("MANUAL");
+    const current = convState?.currentMessage as Record<string, unknown>;
+    const uim = current?.userInputMessage as Record<string, unknown>;
+    expect(uim?.origin).toBe("AI_EDITOR");
+    expect(uim?.modelId).toBe("claude-haiku-4.5");
+  });
+
+  it("passes every effort through with a distinct budget (no collapse to high)", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_i: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(new ReadableStream({ start(c) { c.close(); } }), { status: 200 });
+    }));
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+    for (const effort of ["max", "xhigh", "high", "low"] as const) {
+      await kiroProvider.complete(
+        { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hi" }], thinking: { enabled: true, effort } },
+        { apiKey: cred },
+      ).catch(() => {});
+    }
+    const budgets = bodies.map((b) => {
+      const conv = b.conversationState as Record<string, unknown>;
+      const cur = conv.currentMessage as Record<string, unknown>;
+      const c = String((cur.userInputMessage as Record<string, unknown>).content ?? "");
+      return /max_thinking_length>(\d+)</.exec(c)?.[1];
+    });
+    expect(budgets).toEqual(["64000", "32000", "16000", "4000"]);
+    expect(new Set(budgets).size).toBe(4);
+  });
+
+  it("narrows the picker to the discovered vocabulary after preflight learning", async () => {
+    const { registerWireRejectionEfforts, resetReasoningKnowledge } = await import("../src/llm/capabilities.js");
+    const { reasoningOptionValues } = await import("../src/ui-core/commands/pickers/search-reasoning.js");
+    resetReasoningKnowledge();
+    registerWireRejectionEfforts("kiro", "claude-haiku-4.5", ["none", "low", "medium", "high"]);
+    expect(reasoningOptionValues("kiro", "claude-haiku-4.5")).toEqual(["off", "low", "medium", "high"]);
+    resetReasoningKnowledge();
+  });
+
+  it("discovers full per-model efforts via the ladder after a successful probe", async () => {
+    const { runEffortPreflight, resetEffortPreflightForTesting } = await import(
+      "../src/llm/wire/effort-preflight.js"
+    );
+    const { learnedRouteEfforts, resetReasoningKnowledge } = await import(
+      "../src/llm/capabilities.js"
+    );
+    resetEffortPreflightForTesting();
+    resetReasoningKnowledge();
+
+    const route = {
+      providerId: "kiro" as const,
+      model: "claude-sonnet-4.5",
+      requested: "high" as const,
+    };
+    await runEffortPreflight(route, async () => "accepted");
+
+    expect(learnedRouteEfforts("kiro", "claude-sonnet-4.5")).toEqual([
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    resetEffortPreflightForTesting();
+    resetReasoningKnowledge();
+  });
+
+  it("uses the effort preflight ladder to discover per-model efforts", async () => {
+    expect(
+      needsEffortPreflight({
+        providerId: "kiro",
+        model: "claude-sonnet-4.5-thinking",
+        requested: "high",
+      }),
+    ).toBe(true);
+    expect(
+      needsEffortPreflight({
+        providerId: "kiro",
+        model: "claude-sonnet-4.5-thinking",
+        requested: "high",
+        purpose: "auxiliary",
+      }),
+    ).toBe(false);
+  });
+
+  it("sorts kiro models with auto first and claude before cheaper text models", async () => {
+    const sorted = kiroProvider.sortModels!([
+      "glm-5",
+      "claude-sonnet-4.5",
+      "auto",
+      "qwen3-coder-next",
+      "deepseek-3.2",
+      "claude-haiku-4.5",
+      "minimax-m2.5",
+    ]);
+    expect(sorted[0]).toBe("auto");
+    expect(sorted.indexOf("claude-sonnet-4.5")).toBeLessThan(sorted.indexOf("glm-5"));
+    expect(sorted.indexOf("claude-haiku-4.5")).toBeLessThan(sorted.indexOf("glm-5"));
+    expect(sorted.indexOf("auto-thinking")).toBe(-1);
+  });
+
+  it("builds a stable system prefix across identical thinking configs", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return createStreamResponse([
+        encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    const sys = (b: Record<string, unknown>) => {
+      const cs = b.conversationState as Record<string, unknown>;
+      const cur = cs.currentMessage as Record<string, unknown>;
+      return String((cur.userInputMessage as Record<string, unknown>).content);
+    };
+
+    await kiroProvider.complete(
+      { model: "claude-sonnet-4.5-thinking", messages: [{ role: "system", content: "S" }, { role: "user", content: "hi" }] },
+      { apiKey: cred },
+    );
+    await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", thinking: { enabled: true, effort: "high" }, messages: [{ role: "system", content: "S" }, { role: "user", content: "hi" }] },
+      { apiKey: cred },
+    );
+    expect(bodies).toHaveLength(2);
+    expect(sys(bodies[0]!)).toBe(sys(bodies[1]!));
+    expect(sys(bodies[0]!)).toContain("<thinking_mode>enabled</thinking_mode>");
+    expect(sys(bodies[0]!)).toContain("<max_thinking_length>16000</max_thinking_length>");
+  });
+
   it("derives deterministic conversation ID when session affinity is present", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 
@@ -530,10 +868,7 @@ describe("Kiro provider integration", () => {
       .currentMessage as Record<string, unknown>;
     const claudeUim = claudeMsg.userInputMessage as Record<string, unknown>;
     expect(String(claudeUim.content)).toContain("<thinking_mode>enabled</thinking_mode>");
-    expect(claude.additionalModelRequestFields).toEqual({
-      output_config: { effort: "high" },
-      thinking: { type: "adaptive", display: "summarized" },
-    });
+    expect(claude.additionalModelRequestFields).toBeUndefined();
 
     const gpt = bodies[1]!;
     const gptMsg = (gpt.conversationState as Record<string, unknown>)
@@ -541,10 +876,213 @@ describe("Kiro provider integration", () => {
     expect(String((gptMsg.userInputMessage as Record<string, unknown>).content)).not.toContain(
       "thinking_mode",
     );
-    expect(gpt.additionalModelRequestFields).toEqual({ reasoning: { effort: "medium" } });
+    expect(gpt.additionalModelRequestFields).toBeUndefined();
 
     const plain = bodies[2]!;
     expect(plain.additionalModelRequestFields).toBeUndefined();
+  });
+
+  it("retries without reasoning options when the wire rejects additionalModelRequestFields", async () => {
+    const serverError =
+      '{"message":"additionalModelRequestFields is not supported\nfor this model","reason":"REQUEST_BODY_INVALID"}';
+    const bodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if ("additionalModelRequestFields" in body) {
+        return new Response(serverError, { status: 400 });
+      }
+      return createStreamResponse([
+        encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    const { tryStreamOnce } = await import("../src/llm/routing/attempt-stream.js");
+    const provider = getProvider("kiro")!;
+    const result = await tryStreamOnce(
+      provider,
+      "kiro",
+      {
+        model: "claude-sonnet-4.5",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "high" },
+      },
+      "claude-sonnet-4.5",
+      { apiKey: cred },
+      () => {},
+      undefined,
+      "initial",
+      false,
+    );
+    expect(result.text).toBe("ok");
+    expect(bodies.length).toBeGreaterThanOrEqual(1);
+    expect(bodies.every((b) => !("additionalModelRequestFields" in b))).toBe(true);
+  });
+
+  it("shows dynamic per-model reasoning efforts via the picker", async () => {
+    const { publishRouteReasoningVocabulary } = await import("../src/llm/route-vocabulary.js");
+    const { reasoningOptionValues } = await import("../src/ui-core/commands/pickers/search-reasoning.js");
+    const { modelSupportsThinking, effectiveThinkingEffort, resetReasoningKnowledge } = await import("../src/llm/capabilities.js");
+
+    resetReasoningKnowledge();
+    for (const model of ["claude-sonnet-4.5", "gpt-6", "deepseek-3.2", "minimax-m3", "auto"]) {
+      publishRouteReasoningVocabulary("kiro", model);
+    }
+
+    expect(reasoningOptionValues("kiro", "claude-sonnet-4.5")).toEqual(["off", "low", "medium", "high", "xhigh", "max"]);
+    expect(reasoningOptionValues("kiro", "gpt-6")).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+    expect(reasoningOptionValues("kiro", "minimax-m3")).toEqual(["off", "minimal", "low", "medium", "high"]);
+    expect(reasoningOptionValues("kiro", "deepseek-3.2")).toEqual(["off"]);
+    expect(reasoningOptionValues("kiro", "auto")).toEqual(["off"]);
+
+    expect(modelSupportsThinking("kiro", "claude-opus-5")).toBe(true);
+    expect(effectiveThinkingEffort("kiro", "claude-sonnet-4.5", { enabled: true, effort: "high" })).toBe("high");
+    expect(effectiveThinkingEffort("kiro", "deepseek-3.2", { enabled: true, effort: "high" })).toBeUndefined();
+  });
+
+  it("keeps history prefix stable when thinking toggles between turns", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(
+          new ReadableStream({ start(c) { c.close(); } }),
+          { status: 200, headers: { "content-type": "application/vnd.amazon.eventstream" } },
+        );
+      }),
+    );
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    await kiroProvider.stream(
+      {
+        model: "claude-sonnet-4.5",
+        messages: [
+          { role: "system", content: "S" },
+          { role: "user", content: "hi" },
+        ],
+        thinking: { enabled: true, effort: "high" },
+      },
+      { apiKey: cred },
+      () => {},
+    ).catch(() => {});
+    await kiroProvider.stream(
+      {
+        model: "claude-sonnet-4.5",
+        messages: [
+          { role: "system", content: "S" },
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "hello there" },
+          { role: "user", content: "next" },
+        ],
+      },
+      { apiKey: cred },
+      () => {},
+    ).catch(() => {});
+
+    expect(bodies).toHaveLength(2);
+    const currentOf = (b: Record<string, unknown>) => {
+      const conv = b.conversationState as Record<string, unknown>;
+      const cur = conv.currentMessage as Record<string, unknown>;
+      return String((cur.userInputMessage as Record<string, unknown>).content ?? "");
+    };
+    const firstHistoryOf = (b: Record<string, unknown>) => {
+      const conv = b.conversationState as Record<string, unknown>;
+      const history = conv.history as Array<Record<string, unknown>>;
+      return String((history[0]?.userInputMessage as Record<string, unknown> | undefined)?.content ?? "");
+    };
+    const asCurrent = currentOf(bodies[0]!);
+    const asHistory = firstHistoryOf(bodies[1]!);
+    expect(asCurrent).toContain("<thinking_mode>enabled</thinking_mode>");
+    expect(asHistory).not.toContain("thinking_mode");
+    expect(asHistory).toBe(
+      asCurrent.replace(/<thinking_mode>enabled<\/thinking_mode><max_thinking_length>\d+<\/max_thinking_length>\n\n/, ""),
+    );
+  });
+
+  it("keeps history byte-identical across effort and model-suffix changes", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(
+          new ReadableStream({ start(c) { c.close(); } }),
+          { status: 200, headers: { "content-type": "application/vnd.amazon.eventstream" } },
+        );
+      }),
+    );
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+    const base = [
+      { role: "system" as const, content: "S" },
+      { role: "user" as const, content: "hi" },
+      { role: "assistant" as const, content: "A1" },
+      { role: "user" as const, content: "next" },
+    ];
+    await kiroProvider.stream(
+      { model: "claude-sonnet-4.5-thinking", messages: base },
+      { apiKey: cred },
+      () => {},
+    ).catch(() => {});
+    await kiroProvider.stream(
+      { model: "claude-sonnet-4.5", messages: base, thinking: { enabled: true, effort: "low" } },
+      { apiKey: cred },
+      () => {},
+    ).catch(() => {});
+    expect(bodies).toHaveLength(2);
+    const historyOf = (b: Record<string, unknown>) =>
+      JSON.stringify((b.conversationState as Record<string, unknown>).history);
+    expect(historyOf(bodies[1]!)).toBe(historyOf(bodies[0]!));
+  });
+
+  it("sends clean requests for paid-tier new model families and free-tier text models", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return createStreamResponse([
+          encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
+        ]);
+      }),
+    );
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+    const cases: Array<[string, boolean]> = [
+      ["gpt-6-thinking", false],
+      ["deepseek-v4", false],
+      ["minimax-m3", false],
+      ["glm-5", false],
+      ["deepseek-3.2", false],
+      ["minimax-m2.5", false],
+    ];
+    for (const [model] of cases) {
+      await kiroProvider.complete(
+        {
+          model,
+          messages: [{ role: "user", content: "hi" }],
+          thinking: { enabled: true, effort: "high" },
+        },
+        { apiKey: cred },
+      );
+    }
+    expect(bodies).toHaveLength(cases.length);
+    const contentOf = (b: Record<string, unknown>) => {
+      const conv = b.conversationState as Record<string, unknown>;
+      const cur = conv.currentMessage as Record<string, unknown>;
+      return String((cur.userInputMessage as Record<string, unknown>).content ?? "");
+    };
+    for (let i = 0; i < cases.length; i++) {
+      const [, expectDirective] = cases[i]!;
+      const body = bodies[i]!;
+      expect("additionalModelRequestFields" in body).toBe(false);
+      if (expectDirective) {
+        expect(contentOf(body)).toContain("<thinking_mode>enabled</thinking_mode>");
+      } else {
+        expect(contentOf(body)).not.toContain("thinking_mode");
+      }
+    }
   });
 
   it("reads cacheRead/cacheWrite input tokens from metering events", async () => {
@@ -576,6 +1114,38 @@ describe("Kiro provider integration", () => {
       cachedPromptTokens: 700,
       cacheCreationTokens: 300,
       uncachedPromptTokens: 300,
+    });
+  });
+
+  it("merges split cache metrics across metricsEvent and meteringEvent frames", async () => {
+    const frame1 = encodeFrame(
+      { ":event-type": "assistantResponseEvent" },
+      { content: "cached" },
+    );
+    const frame2 = encodeFrame(
+      { ":event-type": "metricsEvent" },
+      { inputTokens: 1000, outputTokens: 50, cachedTokens: 500 },
+    );
+    const frame3 = encodeFrame(
+      { ":event-type": "meteringEvent" },
+      { cacheReadInputTokens: 700, cacheWriteInputTokens: 200 },
+    );
+    const fetchMock = vi.fn(async () => createStreamResponse([frame1, frame2, frame3]));
+    vi.stubGlobal("fetch", fetchMock);
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+
+    const result = await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hi" }] },
+      { apiKey: cred },
+    );
+
+    expect(result.usage).toMatchObject({
+      promptTokens: 1000,
+      completionTokens: 50,
+      cachedPromptTokens: 700,
+      cacheCreationTokens: 200,
+      uncachedPromptTokens: 300,
+      exact: true,
     });
   });
 

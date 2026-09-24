@@ -42,6 +42,59 @@ describe("SessionUsageLedger accumulation", () => {
     expect(report.totals).toMatchObject({ routes: 1, requests: 2, totalTokens: 175 });
   });
 
+  it("renders - for output when the provider does not report completion tokens", () => {
+    const ledger = new SessionUsageLedger();
+    ledger.record(
+      usage({ promptTokens: 4113, completionTokens: 0, totalTokens: 4113, exact: false }),
+      "kiro",
+      "claude-sonnet-4.5",
+      "kiro-eventstream",
+    );
+    const report = ledger.report();
+    expect(report.routes[0]?.completionTokensKnown).toBe(false);
+    const body = formatSessionUsage(report, { sessionId: "s" });
+    expect(body).toContain("| `Kiro AI / claude-sonnet-4.5` | kiro-eventstream | 1 | 4,113 | — |");
+    expect(body).not.toContain("| 4,113 | 0 |");
+  });
+
+  it("shows real output when the provider reports exact tokens", () => {
+    const ledger = new SessionUsageLedger();
+    ledger.record(usage({ promptTokens: 100, completionTokens: 20, totalTokens: 120, exact: true }), "openai", "gpt-5.4-mini");
+    const body = formatSessionUsage(ledger.report(), { sessionId: "s" });
+    expect(body).toContain("| `OpenAI / gpt-5.4-mini` | — | 1 | 100 | 20 | 120 |");
+  });
+
+  it("aggregates provider-reported charges into persisted /usage rows", () => {
+    const ledger = new SessionUsageLedger();
+    ledger.record(
+      usage({ charges: [{ amount: 0.003005, unit: "credits" }] }),
+      "kiro",
+      "claude-haiku-4.5",
+      "kiro-eventstream",
+    );
+    ledger.record(
+      usage({ charges: [{ amount: 0.00125, unit: "credits" }] }),
+      "kiro",
+      "claude-haiku-4.5",
+      "kiro-eventstream",
+    );
+
+    const report = ledger.report();
+    expect(report.routes[0]?.charges).toEqual([
+      { amount: 0.004255, unit: "credits" },
+    ]);
+    expect(report.totals.charges).toEqual([
+      { amount: 0.004255, unit: "credits" },
+    ]);
+    const formatted = formatSessionUsage(report, { sessionId: "usage-test" });
+    expect(formatted).toContain("BILLED");
+    expect(formatted).toContain("0.004255 credits");
+
+    const restored = new SessionUsageLedger();
+    restored.restore(JSON.parse(JSON.stringify(ledger.persist())));
+    expect(restored.report().totals.charges).toEqual(report.totals.charges);
+  });
+
   it("keys routes by provider and model together", () => {
     const ledger = new SessionUsageLedger();
     ledger.record(usage(), "openai", "gpt-5.4-mini");
@@ -254,14 +307,14 @@ describe("formatSessionUsage markdown", () => {
     const lines = body.split("\n");
 
     expect(lines[0]).toBe("# Session usage");
-    expect(body).toContain("| PROVIDER / MODEL | API | REQ | IN | OUT | TOTAL | CACHED | RATE |");
-    expect(body).toContain("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
-    expect(body).toContain("| `Anthropic / claude-opus-4-7` | anthropic-messages | 1 | 32,704 | 1,312 | 34,016 | 28,928 | 88.5% |");
-    expect(body).toContain("| `Ollama / llama3.1:8b` | ollama-chat | 1 | 640 | 96 | 736 | — | — |");
+    expect(body).toContain("| PROVIDER / MODEL | API | REQ | IN | OUT | TOTAL | CACHED | CACHE HIT | BILLED |");
+    expect(body).toContain("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+    expect(body).toContain("| `Anthropic / claude-opus-4-7` | anthropic-messages | 1 | 32,704 | 1,312 | 34,016 | 28,928 | 88.5% | — |");
+    expect(body).toContain("| `Ollama / llama3.1:8b` | ollama-chat | 1 | 640 | 96 | 736 | — | — | — |");
 
     const tableRows = lines.filter((line) => line.startsWith("|"));
     expect(tableRows[tableRows.length - 1]).toBe(
-      "| **TOTAL · 2 routes** | anthropic-messages, ollama-chat | **2** | **33,344** | **1,408** | **34,752** | **28,928** | **88.5%** |",
+      "| **TOTAL · 2 routes** | anthropic-messages, ollama-chat | **2** | **33,344** | **1,408** | **34,752** | **28,928** | **88.5%** | **—** |",
     );
   });
 
@@ -269,7 +322,7 @@ describe("formatSessionUsage markdown", () => {
     const ledger = new SessionUsageLedger();
     ledger.record(usage(), "ollama", "llama3.1:8b");
     const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1" });
-    expect(body).toContain("| `Ollama / llama3.1:8b` | — | 1 | 100 | 20 | 120 | — | — |");
+    expect(body).toContain("| `Ollama / llama3.1:8b` | — | 1 | 100 | 20 | 120 | — | — | — |");
     expect(body).not.toContain("0.0%");
   });
 
@@ -286,7 +339,7 @@ describe("formatSessionUsage markdown", () => {
       "qwen3.8-flash-free",
     );
     const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1" });
-    expect(body).toContain("| `Bynara / qwen3.8-flash-free` | — | 2 | 239,733 | 647 | 240,380 | 118,272 | 98.4% |");
+    expect(body).toContain("| `Bynara / qwen3.8-flash-free` | — | 2 | 239,733 | 647 | 240,380 | 118,272 | 98.4% | — |");
     expect(body).toContain("cache measured input 120,195");
   });
 
@@ -327,7 +380,7 @@ describe("formatSessionUsage markdown", () => {
     expect(body).toContain("weird\\|model");
     expect(body).toContain("sess\\|1");
     for (const row of body.split("\n").filter((line) => line.startsWith("|"))) {
-      expect(row.replace(/\\\|/g, "").split("|")).toHaveLength(10);
+      expect(row.replace(/\\\|/g, "").split("|")).toHaveLength(11);
     }
   });
 

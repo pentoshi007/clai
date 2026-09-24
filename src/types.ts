@@ -321,6 +321,13 @@ export interface CompletionRequest {
   onStreamEvent?: import("./llm/stream-events.js").ProviderStreamEventSink | undefined;
 }
 
+export interface UsageCharge {
+  readonly amount: number;
+  readonly unit: string;
+  readonly currency?: string | undefined;
+  readonly label?: string | undefined;
+}
+
 export interface TokenUsage {
   readonly promptTokens: number;
   readonly promptTokensKnown?: false | undefined;
@@ -332,6 +339,7 @@ export interface TokenUsage {
   readonly uncachedPromptTokens?: number | undefined;
   readonly reasoningTokens?: number | undefined;
   readonly reasoningObserved?: true | undefined;
+  readonly charges?: readonly UsageCharge[] | undefined;
 }
 
 export interface CompletionResult {

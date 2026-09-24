@@ -8,6 +8,7 @@ import type {
   TokenUsage,
   ToolCallStreamDelta,
   ToolDefinition,
+  UsageCharge,
 } from "../types.js";
 import {
   defaultModels,
@@ -19,27 +20,47 @@ import {
   assertValidAwsRegion,
   decodeKiroKey,
   encodeKiroKey,
+  getKiroUsageLimits,
   isKiroOAuthToken,
+  listKiroModelsDetailed,
   maybeRefreshKiroCredential,
   type KiroCredential,
+  type KiroModelInfo,
+  type KiroUsageLimits,
 } from "./kiro-auth.js";
 import { currentSessionAffinity } from "./session-affinity.js";
+import { generationFetch } from "./operation-usage.js";
+import { learnModelVisionCapability } from "./capability/vision-registry.js";
+import { emitStreamReasoningDelta } from "./stream-events.js";
 import { replaceProviderKey } from "../store/keys.js";
 
-export const kiroFallbackModels: readonly string[] = [
+const KIRO_FALLBACK_BASE_MODELS: readonly string[] = [
+  "auto",
   "claude-sonnet-4.5",
-  "claude-sonnet-4.5-thinking",
-  "claude-sonnet-4.5-agentic",
-  "claude-sonnet-4.5-thinking-agentic",
-  "claude-opus-5",
-  "claude-opus-5-thinking",
-  "claude-opus-5-agentic",
-  "claude-opus-5-thinking-agentic",
+  "claude-sonnet-4",
   "claude-haiku-4.5",
-  "claude-haiku-4.5-thinking",
-  "claude-haiku-4.5-agentic",
-  "claude-haiku-4.5-thinking-agentic",
+  "deepseek-3.2",
+  "minimax-m2.5",
+  "minimax-m2.1",
+  "glm-5",
+  "qwen3-coder-next",
 ];
+
+function withKiroVariants(baseIds: readonly string[]): string[] {
+  const variants: string[] = [];
+  for (const id of baseIds) {
+    variants.push(id);
+    if (id === "auto") continue;
+    variants.push(`${id}-thinking`);
+    variants.push(`${id}-agentic`);
+    variants.push(`${id}-thinking-agentic`);
+  }
+  return variants;
+}
+
+export const kiroFallbackModels: readonly string[] = withKiroVariants(
+  KIRO_FALLBACK_BASE_MODELS,
+);
 
 const CRC32_TABLE = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
@@ -212,25 +233,26 @@ export function resolveKiroModel(model: string): {
   return { upstream, agentic, thinking };
 }
 
-function isNativeReasoningModel(model: string): boolean {
-  return /^(gpt|o\d)/i.test(model);
-}
-
 function isAdaptiveThinkingModel(model: string): boolean {
   return /^claude/i.test(model);
 }
 
 function kiroEffortString(effort: ReasoningEffort | undefined): string {
   if (!effort || effort === "none") return "";
-  if (effort === "minimal" || effort === "low") return "low";
+  if (effort === "minimal") return "low";
+  if (effort === "low") return "low";
   if (effort === "medium") return "medium";
-  return "high";
+  if (effort === "high") return "high";
+  if (effort === "xhigh") return "xhigh";
+  return "max";
 }
 
 const KIRO_THINKING_BUDGET: Record<string, number> = {
   low: 4000,
   medium: 8000,
   high: 16000,
+  xhigh: 32000,
+  max: 64000,
 };
 
 function resolveKiroCredential(auth: ProviderAuth): KiroCredential {
@@ -391,6 +413,7 @@ function buildKiroRequestBody(
   interface NormalizedTurn {
     role: "user" | "assistant";
     content: string;
+    toolCalls?: NativeToolCall[] | undefined;
     toolResults?: Array<{
       toolUseId: string;
       content: Array<{ text: string }>;
@@ -575,33 +598,59 @@ function buildKiroRequestBody(
 
   const wantsThinking = thinking || request.thinking?.enabled === true;
   const effort = kiroEffortString(request.thinking?.effort) || "high";
-  if (wantsThinking && isNativeReasoningModel(upstreamModel)) {
-    payload.additionalModelRequestFields = { reasoning: { effort } };
-  } else if (wantsThinking && isAdaptiveThinkingModel(upstreamModel)) {
+  if (wantsThinking && isAdaptiveThinkingModel(upstreamModel)) {
     const budget = KIRO_THINKING_BUDGET[effort] ?? 16000;
     const directive = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`;
     const uim = (payload.conversationState as Record<string, unknown>)
       .currentMessage as Record<string, unknown>;
     const msg = uim.userInputMessage as Record<string, unknown>;
     msg.content = `${directive}\n\n${String(msg.content ?? "")}`;
-    payload.additionalModelRequestFields = {
-      output_config: { effort },
-      thinking: { type: "adaptive", display: "summarized" },
-    };
   }
 
   return payload;
 }
 
 let cachedKiroModels: string[] | null = null;
+let cachedKiroModelInfo: readonly KiroModelInfo[] = [];
 let lastKiroModelFetch = 0;
 const MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
+
+export function kiroModelCatalog(): readonly KiroModelInfo[] {
+  return cachedKiroModelInfo;
+}
+
+export function resetKiroModelCacheForTesting(): void {
+  cachedKiroModels = null;
+  cachedKiroModelInfo = [];
+  lastKiroModelFetch = 0;
+}
+
+export async function fetchKiroUsageLimits(
+  auth: ProviderAuth,
+  onStatus?: ((message: string) => void) | undefined,
+): Promise<KiroUsageLimits> {
+  return withKiroCredential(auth, getKiroUsageLimits, onStatus);
+}
+
+const KIRO_MODEL_RANK = (id: string): number => {
+  const base = resolveKiroModel(id).upstream;
+  if (base === "auto") return 0;
+  if (/^claude-/.test(base)) return 1;
+  return 2;
+};
 
 export const kiroProvider: LlmProvider = {
   id: "kiro",
   displayName: "Kiro AI",
   defaultModel: defaultModels.kiro,
   envVar: "KIRO_API_KEY",
+
+  sortModels(models: string[]): string[] {
+    return [...models].sort(
+      (a, b) =>
+        KIRO_MODEL_RANK(a) - KIRO_MODEL_RANK(b) || a.localeCompare(b),
+    );
+  },
 
   validateKey(key: string): boolean {
     const trimmed = key.trim();
@@ -620,53 +669,18 @@ export const kiroProvider: LlmProvider = {
 
     try {
       const credential = resolveKiroCredential(auth);
-      const region = assertValidAwsRegion(credential.region);
-      const params = new URLSearchParams({ origin: "AI_EDITOR" });
-      const endpoint = `https://q.${region}.amazonaws.com/ListAvailableModels?${params.toString()}`;
-
-      const headers: Record<string, string> = {
-        Accept: "application/json",
-        "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-        "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
-      };
-
-      if (credential.authMethod === "api_key" && credential.apiKey) {
-        headers["Authorization"] = `Bearer ${credential.apiKey}`;
-        headers["TokenType"] = "API_KEY";
-      } else if (credential.accessToken) {
-        headers["Authorization"] = `Bearer ${credential.accessToken}`;
-        if (credential.authMethod === "external_idp") {
-          headers["TokenType"] = "EXTERNAL_IDP";
-        }
-      }
-
-      const response = await fetch(endpoint, {
-        method: "GET",
-        headers,
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (response.ok) {
-        const json = (await response.json()) as {
-          models?: Array<{ modelId?: string; id?: string }>;
-        };
-        const models = Array.isArray(json?.models) ? json.models : [];
-        const baseIds = models
-          .map((m) => m.modelId || m.id || "")
-          .filter(Boolean);
-
-        if (baseIds.length > 0) {
-          const variants: string[] = [];
-          for (const id of baseIds) {
-            variants.push(id);
-            variants.push(`${id}-thinking`);
-            variants.push(`${id}-agentic`);
-            variants.push(`${id}-thinking-agentic`);
+      const infos = await listKiroModelsDetailed(credential);
+      if (infos.length > 0) {
+        cachedKiroModelInfo = infos;
+        for (const info of infos) {
+          if (info.supportsImages !== undefined) {
+            learnModelVisionCapability("kiro", info.modelId, info.supportsImages);
           }
-          cachedKiroModels = variants;
-          lastKiroModelFetch = now;
-          return variants;
         }
+        const variants = withKiroVariants(infos.map((info) => info.modelId));
+        cachedKiroModels = variants;
+        lastKiroModelFetch = now;
+        return variants;
       }
     } catch {}
 
@@ -747,7 +761,10 @@ export const kiroProvider: LlmProvider = {
               Accept: "application/vnd.amazon.eventstream",
               "Amz-Sdk-Request": "attempt=1; max=3",
               "Amz-Sdk-Invocation-Id": randomUUID(),
-              "x-amzn-kiro-agent-mode": "spec",
+              "User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+              "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+              "x-amzn-kiro-agent-mode": "vibe",
+              "x-amzn-codewhisperer-optout": "true",
               "x-amzn-codewhisperer-machine-id": "kiro-desktop",
             };
 
@@ -770,7 +787,7 @@ export const kiroProvider: LlmProvider = {
               }
             }
 
-            const response = await fetch(endpoint, {
+            const response = await generationFetch(endpoint, {
               method: "POST",
               headers,
               body: JSON.stringify(body),
@@ -789,6 +806,7 @@ export const kiroProvider: LlmProvider = {
                 throw new ProviderError(
                   `Kiro request invalid (${response.status}): ${errorText}`,
                   response.status,
+                  errorText,
                 );
               }
               lastError = new ProviderError(
@@ -819,6 +837,8 @@ export const kiroProvider: LlmProvider = {
             let completionTokens = 0;
             let cachedTokens = 0;
             let cacheCreationTokens = 0;
+            const usageCharges: UsageCharge[] = [];
+            let contextUsagePercentage: number | undefined;
 
             for await (const frame of parseEventStream(response.body)) {
               const eventType =
@@ -833,15 +853,39 @@ export const kiroProvider: LlmProvider = {
                 frame.payload;
 
               if (
+                typeof eventPayload.usage === "number" &&
+                Number.isFinite(eventPayload.usage) &&
+                eventPayload.usage >= 0 &&
+                typeof eventPayload.unit === "string" &&
+                eventPayload.unit.trim()
+              ) {
+                usageCharges.push({
+                  amount: eventPayload.usage,
+                  unit:
+                    typeof eventPayload.unitPlural === "string" &&
+                    eventPayload.unitPlural.trim()
+                      ? eventPayload.unitPlural.trim()
+                      : eventPayload.unit.trim(),
+                  ...(typeof eventPayload.currency === "string"
+                    ? { currency: eventPayload.currency }
+                    : {}),
+                });
+              }
+
+              if (
                 eventType === "assistantResponseEvent" ||
                 eventType.includes("Response")
               ) {
+                if (typeof eventPayload.contextUsagePercentage === "number") {
+                  contextUsagePercentage = eventPayload.contextUsagePercentage;
+                }
                 const chunk =
                   typeof eventPayload.content === "string"
                     ? eventPayload.content
                     : "";
                 if (chunk) {
                   let visibleChunk = "";
+                  let reasoningChunk = "";
                   let i = 0;
                   while (i < chunk.length) {
                     if (!insideThinkingTag) {
@@ -857,16 +901,20 @@ export const kiroProvider: LlmProvider = {
                     } else {
                       const tagEnd = chunk.indexOf("</thinking>", i);
                       if (tagEnd !== -1) {
-                        reasoningText += chunk.slice(i, tagEnd);
+                        reasoningChunk += chunk.slice(i, tagEnd);
                         insideThinkingTag = false;
                         i = tagEnd + 11;
                       } else {
-                        reasoningText += chunk.slice(i);
+                        reasoningChunk += chunk.slice(i);
                         break;
                       }
                     }
                   }
 
+                  if (reasoningChunk) {
+                    reasoningText += reasoningChunk;
+                    emitStreamReasoningDelta(request.onStreamEvent, reasoningChunk);
+                  }
                   if (visibleChunk) {
                     fullText += visibleChunk;
                     onToken(visibleChunk);
@@ -882,6 +930,7 @@ export const kiroProvider: LlmProvider = {
                     : "";
                 if (chunk) {
                   reasoningText += chunk;
+                  emitStreamReasoningDelta(request.onStreamEvent, chunk);
                 }
               } else if (eventType === "codeEvent") {
                 const chunk =
@@ -942,9 +991,12 @@ export const kiroProvider: LlmProvider = {
                         ? "length"
                         : "stop";
                 }
+              } else if (eventType === "contextUsageEvent") {
+                if (typeof eventPayload.contextUsagePercentage === "number") {
+                  contextUsagePercentage = eventPayload.contextUsagePercentage;
+                }
               } else if (
                 eventType === "metricsEvent" ||
-                eventType === "contextUsageEvent" ||
                 eventType === "meteringEvent"
               ) {
                 if (typeof eventPayload.inputTokens === "number") {
@@ -984,7 +1036,11 @@ export const kiroProvider: LlmProvider = {
               finishReason = "tool_calls";
             }
 
-            const usage: TokenUsage | undefined =
+            const catalogWindow =
+              kiroModelCatalog().find((info) => info.modelId === upstream)
+                ?.maxInputTokens ?? 200_000;
+
+            const tokenUsage: TokenUsage | undefined =
               promptTokens > 0 || completionTokens > 0
                 ? {
                     promptTokens,
@@ -998,6 +1054,32 @@ export const kiroProvider: LlmProvider = {
                       cachedTokens > 0
                         ? Math.max(0, promptTokens - cachedTokens)
                         : promptTokens,
+                  }
+                : contextUsagePercentage !== undefined
+                  ? {
+                      promptTokens: Math.round(
+                        (contextUsagePercentage / 100) * catalogWindow,
+                      ),
+                      completionTokens: 0,
+                      totalTokens: Math.round(
+                        (contextUsagePercentage / 100) * catalogWindow,
+                      ),
+                      exact: false,
+                    }
+                  : undefined;
+            const usage: TokenUsage | undefined = tokenUsage
+              ? {
+                  ...tokenUsage,
+                  ...(usageCharges.length > 0 ? { charges: usageCharges } : {}),
+                }
+              : usageCharges.length > 0
+                ? {
+                    promptTokens: 0,
+                    promptTokensKnown: false,
+                    completionTokens: 0,
+                    totalTokens: 0,
+                    exact: false,
+                    charges: usageCharges,
                   }
                 : undefined;
 

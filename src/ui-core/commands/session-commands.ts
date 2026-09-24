@@ -21,6 +21,17 @@ import type { CommandInvocation } from "../../app/commands/command.js";
 import type { Mode } from "../../types.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import { usageCacheHitRate } from "../../app/controllers/session-usage-ledger.js";
+import { getProviderSecret } from "../../store/keys.js";
+import { fetchKiroUsageLimits } from "../../llm/kiro.js";
+import type { KiroUsageLimits } from "../../llm/kiro-auth.js";
+import {
+  ensureProviderBalancePolling,
+  getProviderBalanceSnapshot,
+  kiroBalanceFromLimits,
+  subscribeProviderBalances,
+  type BalanceSnapshot,
+  type ProviderBalance,
+} from "../../llm/provider-balance.js";
 import { formatSessionUsage } from "../rendering/format-usage.js";
 import { createUsagePagerSource } from "../rendering/usage-pager-source.js";
 import { serializeTranscriptForCompaction } from "../state/transcript-compaction.js";
@@ -233,13 +244,98 @@ export function handleContext(services: AppServices): void {
   notice(services, "info", text);
 }
 
+function formatCredits(value: number): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function relativeAge(fetchedAt: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - fetchedAt) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function balanceBody(balance: ProviderBalance): string[] {
+  const lines: string[] = [];
+  if (balance.plan) lines.push(`plan: **${balance.plan}**`);
+  const shown =
+    balance.breakdowns.find((b) => b.label.toLowerCase().includes("credit")) ??
+    balance.breakdowns[0];
+  if (shown) {
+    const remaining = Math.max(0, shown.limit - shown.used);
+    const pct = shown.limit > 0 ? ` (${((shown.used / shown.limit) * 100).toFixed(1)}% used)` : "";
+    lines.push(
+      `${shown.label.toLowerCase()}: **${formatCredits(shown.used)} / ${formatCredits(shown.limit)}**${pct} · ${formatCredits(remaining)} remaining`,
+    );
+    if (shown.overages > 0) {
+      lines.push(`overages: ${formatCredits(shown.overages)} ${shown.currency ?? "USD"}`);
+    } else if (balance.overageStatus) {
+      lines.push(`overages: ${balance.overageStatus.toLowerCase()}`);
+    }
+  }
+  if (balance.nextResetAt !== undefined && balance.nextResetAt > 0) {
+    const date = new Date(balance.nextResetAt);
+    const inDays = Math.max(0, Math.ceil((balance.nextResetAt - Date.now()) / 86_400_000));
+    lines.push(`next reset: ${date.toISOString().slice(0, 10)} (in ${inDays} day${inDays === 1 ? "" : "s"})`);
+  }
+  return lines;
+}
+
+export function formatProviderBalanceSection(
+  title: string,
+  snapshot: BalanceSnapshot,
+): string {
+  const lines: string[] = ["", `## ${title} balance`, ""];
+  const status = snapshot.state === "loading" && !snapshot.balance
+    ? "fetching live balance…"
+    : snapshot.state === "error" && !snapshot.balance
+      ? "balance unavailable — will retry automatically"
+      : undefined;
+  if (status) {
+    lines.push(status);
+    return lines.join("\n");
+  }
+  if (snapshot.balance) {
+    lines.push(...balanceBody(snapshot.balance));
+    const staleNote = snapshot.state === "error" ? " (stale — refreshing)" : "";
+    lines.push(`_updated ${relativeAge(snapshot.balance.fetchedAt)}${staleNote} · refreshes automatically_`);
+  }
+  return lines.join("\n");
+}
+
+export function formatKiroQuotaSection(
+  state: "loading" | "unavailable" | KiroUsageLimits,
+): string {
+  if (state === "loading") {
+    return ["", "## Kiro AI balance", "", "fetching live balance…"].join("\n");
+  }
+  if (state === "unavailable") {
+    return ["", "## Kiro AI balance", "", "balance unavailable — will retry automatically"].join("\n");
+  }
+  const balance = kiroBalanceFromLimits(state);
+  return formatProviderBalanceSection("Kiro AI", { state: "ready", balance });
+}
+
+let balanceNotifyWired = false;
+
 export function handleUsage(services: AppServices): void {
+  if (!balanceNotifyWired) {
+    balanceNotifyWired = true;
+    subscribeProviderBalances(() => services.session.notifyExternalUpdate());
+  }
   const renderUsageBody = (): string => {
     const state = services.session.getState();
-    return formatSessionUsage(services.session.usageReport(), {
+    const body = formatSessionUsage(services.session.usageReport(), {
       sessionId: state.sessionId,
       ...(state.title ? { title: state.title } : {}),
     });
+    if (state.provider !== "kiro") return body;
+    const snapshot = getProviderBalanceSnapshot("kiro");
+    if (snapshot.state === "idle") return body;
+    return `${body}\n${formatProviderBalanceSection("Kiro AI", snapshot)}`;
   };
   const report = services.session.usageReport();
   const opened = services.overlay.openPager(
@@ -252,7 +348,18 @@ export function handleUsage(services: AppServices): void {
     undefined,
     "force",
   );
-  if (opened) return;
+  if (opened) {
+    const kiroActive = services.session.getState().provider === "kiro";
+    if (kiroActive) {
+      ensureProviderBalancePolling("kiro", async () => {
+        const secret = await getProviderSecret("kiro");
+        if (!secret.value) return undefined;
+        const limits = await fetchKiroUsageLimits({ apiKey: secret.value });
+        return kiroBalanceFromLimits(limits);
+      });
+    }
+    return;
+  }
   const { totals } = report;
   if (totals.requests === 0) {
     notice(services, "info", "usage: no provider token usage recorded yet in this session");
