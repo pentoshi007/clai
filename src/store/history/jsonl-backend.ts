@@ -25,7 +25,7 @@ export function queueJsonlWrite<T>(
         invalidateSessionListCache();
       }
     } catch (err: any) {
-      handlePermissionError(err);
+      if (err?.code === "EACCES") handlePermissionError(err);
       return fallback();
     }
   });

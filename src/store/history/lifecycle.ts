@@ -32,8 +32,9 @@ export async function clearAllHistory(): Promise<{
     );
   }
 
-  const releaseLock = await acquireJsonlWriteLock();
+  let releaseLock: (() => Promise<void>) | undefined;
   try {
+    releaseLock = await acquireJsonlWriteLock();
     const names = await readdir(historyDirPath()).catch(() => [] as string[]);
     const removable = names.filter(
       (name) =>
@@ -56,7 +57,7 @@ export async function clearAllHistory(): Promise<{
       `history file error: ${error instanceof Error ? error.message : String(error)}`,
     );
   } finally {
-    await releaseLock();
+    await releaseLock?.();
   }
 
   try {

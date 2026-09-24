@@ -16,7 +16,24 @@ function jsonlLockReaperPath(): string {
 
 const JSONL_LOCK_STALE_MS = 60_000;
 
-const JSONL_LOCK_RETRIES = 200;
+const JSONL_LOCK_RETRIES = 400;
+
+const JSONL_LOCK_TIMEOUT_MS = 20_000;
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: any) {
+    return error?.code === "EPERM";
+  }
+}
+
+function lockHolderIsGone(token: string | undefined): boolean {
+  const pid = Number(token?.split("-")[0]);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  return !isPidAlive(pid);
+}
 
 async function reapStaleJsonlLock(): Promise<void> {
   let reaper: Awaited<ReturnType<typeof open>>;
@@ -55,7 +72,9 @@ async function reapStaleJsonlLock(): Promise<void> {
       () => undefined,
     );
     const lockStat = await stat(jsonlLockFilePath()).catch(() => undefined);
-    if (!lockStat || Date.now() - lockStat.mtimeMs <= JSONL_LOCK_STALE_MS) {
+    const staleByAge =
+      lockStat && Date.now() - lockStat.mtimeMs > JSONL_LOCK_STALE_MS;
+    if (!lockStat || (!staleByAge && !lockHolderIsGone(token))) {
       return;
     }
     const confirmed = await readFile(jsonlLockFilePath(), "utf8").catch(
@@ -77,6 +96,7 @@ async function reapStaleJsonlLock(): Promise<void> {
 
 export async function acquireJsonlWriteLock(): Promise<() => Promise<void>> {
   await mkdir(historyDirPath(), { recursive: true });
+  const deadline = Date.now() + JSONL_LOCK_TIMEOUT_MS;
   for (let attempt = 0; attempt < JSONL_LOCK_RETRIES; attempt += 1) {
     try {
       const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -105,8 +125,11 @@ export async function acquireJsonlWriteLock(): Promise<() => Promise<void>> {
       };
     } catch (error: any) {
       if (error?.code !== "EEXIST") throw error;
+      if (attempt + 1 >= JSONL_LOCK_RETRIES || Date.now() >= deadline) break;
       await reapStaleJsonlLock();
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) =>
+        setTimeout(resolve, 25 + Math.floor(Math.random() * 50)),
+      );
     }
   }
   throw new Error("timed out waiting for history write lock");
