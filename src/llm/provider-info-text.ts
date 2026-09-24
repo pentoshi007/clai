@@ -980,13 +980,25 @@ WHAT IT IS
   Transport  AWS EventStream binary frames over HTTPS
 
 MODELS
-  /model dynamically discovers available models from the account catalog, including:
-    claude-sonnet-4.5                  frontier default
-    claude-sonnet-4.5-thinking         reasoning enabled
-    claude-sonnet-4.5-agentic          chunked file edit mode
-    claude-sonnet-4.5-thinking-agentic reasoning + agentic
-    claude-opus-5                      high intelligence
-    claude-haiku-4.5                   fast & lightweight
+  /model dynamically discovers the models your account actually has, e.g.:
+    auto                   Kiro picks the best model per task (1M context)
+    claude-sonnet-4.5      frontier default (1.3× credits)
+    claude-sonnet-4        hybrid reasoning, regular use (1.3×)
+    claude-haiku-4.5       fast & lightweight (0.4×)
+    glm-5                  GLM 5 (0.5×)
+    deepseek-3.2           DeepSeek v3.2 preview (0.25×)
+    minimax-m2.5           MiniMax M2.5 (0.25×)
+    minimax-m2.1           MiniMax M2.1 preview (0.15×)
+    qwen3-coder-next       Qwen3 Coder Next preview (0.05×)
+  Every non-auto model also has -thinking, -agentic, and -thinking-agentic
+  variants. Paid subscriptions unlock additional frontier models in the same
+  catalog automatically (discovered live, no clai update needed).
+
+QUOTA
+  /usage shows your live Kiro plan (e.g. KIRO FREE) and credit balance from
+  the account's own GetUsageLimits API: used / limit, next reset date, and
+  overage status. Free tier: 50 credits/month; subscription tiers (e.g.
+  KIRO POWER, KIRO PRO+) raise the limit and unlock more models.
 
 SETUP (pick one)
   1. Sign in with AWS Builder ID (recommended, works on headless/SSH too):

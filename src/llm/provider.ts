@@ -43,6 +43,7 @@ export interface LlmProvider {
     onStatus?: ((message: string) => void) | undefined,
   ): Promise<CompletionResult>;
   listModels?(auth: ProviderAuth): Promise<string[]>;
+  sortModels?(models: string[]): string[];
 }
 
 export interface ProviderAuth {

@@ -139,7 +139,7 @@ export const slashCommands: SlashCommand[] = [
   { command: "/context", description: "show estimated context size" },
   {
     command: "/usage",
-    description: "show token usage per provider/model and API",
+    description: "show token usage per provider/model and API (plus live Kiro plan/credit quota when kiro is active)",
   },
   {
     command: "/plan",

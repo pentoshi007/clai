@@ -43,6 +43,9 @@ export async function resolveModelsForProvider(
     models = getKnownModels(provider);
     source = "known";
   }
+  if (providerImpl.sortModels && models.length > 0) {
+    models = providerImpl.sortModels(models);
+  }
 
   if (source === "known" && currentModel && !models.includes(currentModel) && currentModel === getProviderModel(provider)) {
     const isFreeModel = currentModel.startsWith("free-1/") || currentModel.startsWith("free-2/");

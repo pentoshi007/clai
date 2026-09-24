@@ -241,6 +241,7 @@ export function createCompositionRoot(
           ...(event.payload.reasoningTokens !== undefined
             ? { reasoningTokens: event.payload.reasoningTokens }
             : {}),
+          ...(event.payload.charges ? { charges: event.payload.charges } : {}),
         },
         event.payload.model,
         event.payload.provider,

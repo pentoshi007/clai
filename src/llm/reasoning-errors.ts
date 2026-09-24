@@ -33,14 +33,24 @@ export function isInvalidReasoningContentError(error: unknown): boolean {
 }
 
 export function mentionsReasoning(error: unknown): boolean {
-  return /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning[_ ]?(?:content|text)|思考|推理|\breasoning\b|\bthinking\b/i.test(
+  return /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning[_ ]?(?:content|text)|additionalmodelrequestfields|output_config|思考|推理|\breasoning\b|\bthinking\b/i.test(
     errorHaystack(error),
   );
+}
+
+const REASONING_KNOB_REJECTION_RE =
+  /(?:additionalmodelrequestfields|output_config|reasoning|thinking)[^\n]{0,80}not supported/i;
+
+export function isReasoningKnobRejection(error: unknown): boolean {
+  const status = errorStatus(error);
+  if (status !== 400 && status !== 422) return false;
+  return REASONING_KNOB_REJECTION_RE.test(errorHaystack(error));
 }
 
 export function isUnattributableRequestBodyError(error: unknown): boolean {
   const status = errorStatus(error);
   if (status !== 400 && status !== 422) return false;
+  if (isReasoningKnobRejection(error)) return true;
   return !mentionsReasoning(error);
 }
 
