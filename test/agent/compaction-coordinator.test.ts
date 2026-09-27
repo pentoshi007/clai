@@ -6,6 +6,10 @@ import {
   createCompactionCoordinator,
   type CompactionCoordinatorPorts,
 } from "../../src/agent/turn/compaction-coordinator.js";
+import {
+  projectMeasuredTokens,
+  providerContextMeasurement,
+} from "../../src/agent/turn/provider-measurement.js";
 
 const messages = (): ChatMessage[] => [
   { role: "user", content: "u1" },
@@ -32,7 +36,7 @@ const ports = (
   newCompactionId: () => "compact-test",
   lastSuccessfulRequestSnapshot: () => undefined,
   clearSuccessfulRequestSnapshot: () => undefined,
-  clearProviderPromptTokens: () => undefined,
+  clearProviderMeasurement: () => undefined,
   summarize: async () => "summary",
   loadPlan: async () => undefined,
   instructionsBlock: () => undefined,
@@ -179,13 +183,13 @@ it("re-arms once after success and admits a later estimate crossing", async () =
     })),
   ];
   let crossed = true;
-  let providerTruth: number | undefined = 100_000;
+  let providerMeasurement = providerContextMeasurement(100_000, 100_000);
   const writeStarted = vi.fn();
   const writeCompleted = vi.fn(() => {
     crossed = false;
   });
-  const clearProviderPromptTokens = vi.fn(() => {
-    providerTruth = undefined;
+  const clearProviderMeasurement = vi.fn(() => {
+    providerMeasurement = undefined;
   });
   const summarize = vi.fn(async () =>
     [
@@ -200,8 +204,9 @@ it("re-arms once after success and admits a later estimate crossing", async () =
       messages: liveMessages,
       estimateRequestTokens: (candidate) =>
         candidate === liveMessages && crossed ? 210_000 : 50_000,
-      providerPromptTokens: () => providerTruth,
-      clearProviderPromptTokens,
+      measureRequestTokens: (estimate) =>
+        providerMeasurement ? projectMeasuredTokens(providerMeasurement, estimate) : undefined,
+      clearProviderMeasurement,
       summarize,
       writeStarted,
       writeCompleted,
@@ -211,7 +216,7 @@ it("re-arms once after success and admits a later estimate crossing", async () =
   await coordinator("auto-token-budget");
   await coordinator("auto-token-budget");
   expect(writeStarted).toHaveBeenCalledTimes(1);
-  expect(clearProviderPromptTokens).toHaveBeenCalledTimes(1);
+  expect(clearProviderMeasurement).toHaveBeenCalledTimes(1);
   expect(liveMessages[0]?.content).toBe(stablePrefix);
 
   liveMessages.push({ role: "user", content: "new threshold crossing" });
@@ -221,9 +226,61 @@ it("re-arms once after success and admits a later estimate crossing", async () =
   expect(writeStarted).toHaveBeenCalledTimes(2);
   expect(writeCompleted).toHaveBeenCalledTimes(2);
   expect(summarize).toHaveBeenCalledTimes(2);
-  expect(clearProviderPromptTokens).toHaveBeenCalledTimes(2);
+  expect(clearProviderMeasurement).toHaveBeenCalledTimes(2);
   expect(liveMessages[0]?.content).toBe(stablePrefix);
   expect(
     liveMessages.some((message) => message.content === "new threshold crossing"),
   ).toBe(true);
+});
+
+
+it("projects the post-compaction size from the provider measurement before releasing it", async () => {
+  const liveMessages: ChatMessage[] = [
+    { role: "system", content: "stable cache prefix" },
+    ...messages().map((message) => ({
+      ...message,
+      content: `${message.content} ${"x".repeat(50_000)}`,
+    })),
+  ];
+  let summarized = false;
+  let providerMeasurement = providerContextMeasurement(400_000, 200_000);
+  const writeCompleted = vi.fn();
+  const notify = vi.fn();
+  const coordinator = createCompactionCoordinator(
+    ports({
+      messages: liveMessages,
+      estimateRequestTokens: () => (summarized ? 5_000 : 200_000),
+      measureRequestTokens: (estimate) =>
+        providerMeasurement ? projectMeasuredTokens(providerMeasurement, estimate) : undefined,
+      clearProviderMeasurement: () => {
+        providerMeasurement = undefined;
+      },
+      summarize: async () => {
+        summarized = true;
+        return [
+          "## Current state",
+          "The active work and exact durable state were preserved.",
+          "## Remaining work",
+          "Continue the next task from the retained recent turn.",
+        ].join("\n");
+      },
+      writeCompleted,
+      notify,
+    }),
+  );
+
+  await coordinator("auto-token-budget");
+
+  expect(writeCompleted).toHaveBeenCalledWith(
+    "compact-test",
+    expect.any(String),
+    400_000,
+    10_000,
+    "provider-reported",
+  );
+  expect(providerMeasurement).toBeUndefined();
+  expect(notify).toHaveBeenCalledWith(
+    "info",
+    expect.stringContaining("400,000 tokens → ~10,000 tokens"),
+  );
 });

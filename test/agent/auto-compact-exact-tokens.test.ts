@@ -186,11 +186,11 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
         outcome: "success",
       },
     });
-    const estimates = events
-      .filter((event) => event.type === "context-estimate")
-      .map((event) => event.estimatedTokens);
-    expect(estimates.length).toBeGreaterThan(0);
-    expect(Math.max(...estimates)).toBeLessThan(122_500);
+    const completed = events.find((event) => event.type === "compaction-completed");
+    expect(completed).toMatchObject({ measurement: "provider-reported" });
+    expect(
+      completed?.type === "compaction-completed" ? completed.beforeTokens : 0,
+    ).toBeGreaterThanOrEqual(180_000);
   });
 
   it("picks up session context-limit changes against the current request on the next round", async () => {

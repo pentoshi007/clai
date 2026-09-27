@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resolveRequestBudget } from "../../src/agent/request-budget.js";
 import {
   contextSnapshotForRoute,
-  estimatedContextSnapshot,
   recordContextUsageSnapshot,
 } from "../../src/app/controllers/session-context-usage.js";
 import {
@@ -86,7 +85,7 @@ describe("provider context windows", () => {
     ).toMatchObject({ source: "model-table", tokens: 200_000 });
     expect(
       resolveContextWindow({ provider: "openai", model: "unknown-model" }),
-    ).toMatchObject({ source: "default", tokens: 250_000 });
+    ).toMatchObject({ source: "default", tokens: 200_000 });
   });
 });
 
@@ -116,23 +115,14 @@ describe("provider ratio usage", () => {
 });
 
 describe("provider-window compaction and display", () => {
-  it("uses 70% unless an explicit global budget is present", () => {
+  it("compacts at 70% of the provider-advertised window", () => {
     registerWindow();
-    expect(
-      resolveRequestBudget({ provider: "kiro", model, budgetExplicit: false }),
-    ).toMatchObject({
+    expect(resolveRequestBudget({ provider: "kiro", model })).toMatchObject({
+      windowTokens: 1_000_000,
+      windowSource: "provider",
       configured: 700_000,
       effectiveTrigger: 700_000,
-      source: "provider",
     });
-    expect(
-      resolveRequestBudget({
-        provider: "kiro",
-        model,
-        overrideTokens: 180_000,
-        budgetExplicit: true,
-      }),
-    ).toMatchObject({ configured: 180_000, effectiveTrigger: 180_000 });
   });
 
   it("uses 70% of a custom window after provider clamping", () => {
@@ -202,15 +192,6 @@ describe("provider-window compaction and display", () => {
     expect(
       formatContextChip(toLegacyContextUsage(customSnapshot), { compact: true }),
     ).toBe("ctx:~125k/500k 25%");
-    expect(
-      estimatedContextSnapshot(
-        { provider: "kiro", model },
-        providerSnapshot,
-        300_000,
-        () => 3,
-        true,
-      ),
-    ).toBe(providerSnapshot);
     expect(
       contextSnapshotForRoute(
         { provider: "kiro", model: "other-model" },

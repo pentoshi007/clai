@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { geminiProvider } from "../src/llm/gemini.js";
+import { modelCatalogFacts } from "../src/llm/capabilities.js";
+import { modelContextWindow, modelMaxOutputTokens } from "../src/llm/context-windows.js";
 
 describe("Gemini key validation", () => {
   it("accepts classic AIza and newer AQ. API keys", () => {
@@ -50,6 +52,26 @@ describe("Gemini model discovery", () => {
     const fetchCallArgs = fetchMock.mock.calls[0];
     expect(String(fetchCallArgs[0])).toContain("https://generativelanguage.googleapis.com/v1beta/models");
     expect(String(fetchCallArgs[0])).toContain("key=AIzaTestKey");
+  });
+
+  it("registers each model's official input and output token limits", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      models: [
+        {
+          name: "models/gemini-9-pro",
+          supportedGenerationMethods: ["generateContent"],
+          inputTokenLimit: 2_097_152,
+          outputTokenLimit: 65_536,
+          temperature: 1,
+        },
+      ],
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+
+    await geminiProvider.listModels!({ apiKey: "AIzaTestKey" });
+
+    expect(modelContextWindow("gemini-9-pro", "gemini")).toBe(2_097_152);
+    expect(modelMaxOutputTokens("gemini", "gemini-9-pro")).toBe(65_536);
+    expect(modelCatalogFacts("gemini", "gemini-9-pro")?.defaultSampling).toBeUndefined();
   });
 
   it("throws when no API key is configured", async () => {

@@ -144,24 +144,6 @@ function applyLearnedRouteEntry(key: string, entry: LearnedRouteEntry): void {
         .filter(Boolean),
     );
   }
-  if (
-    entry.contextTokens === undefined &&
-    entry.maxOutputTokens === undefined
-  ) {
-    return;
-  }
-  if (!model) return;
-  const existing = catalogFactsByRoute.get(key);
-  catalogFactsByRoute.set(key, {
-    ...existing,
-    id: existing?.id ?? model,
-    ...(entry.contextTokens !== undefined
-      ? { contextTokens: entry.contextTokens }
-      : {}),
-    ...(entry.maxOutputTokens !== undefined
-      ? { maxOutputTokens: entry.maxOutputTokens }
-      : {}),
-  });
 }
 
 export function reloadLearnedCapabilities(): void {

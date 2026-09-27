@@ -14,10 +14,8 @@ import {
 import { estimateMessagesTokens } from "../../src/agent/context-manager.js";
 import { composeAgentSystemPrompt } from "../../src/agent/prompt-composer.js";
 import { renderAgentSystemPrompt } from "../../src/prompts/index.js";
-import {
-  autoCompactTriggerTokens,
-  getReliabilityPolicy,
-} from "../../src/agent/reliability-policy.js";
+import { getReliabilityPolicy } from "../../src/agent/reliability-policy.js";
+import { autoCompactTriggerTokens } from "../../src/agent/request-budget.js";
 
 /** Scenario classes from the reliability audit. */
 export type QualityScenarioId =
@@ -207,9 +205,7 @@ export interface QualityRunRecord {
 export function activeExperimentTags(): string[] {
   const p = getReliabilityPolicy();
   const tags: string[] = [];
-  if (p.softEarlyCompact) {
-    tags.push(`E1:soft-compact@${autoCompactTriggerTokens(p)}`);
-  }
+  tags.push(`E1:auto-compact@${autoCompactTriggerTokens()}`);
   tags.push(`E2:fs-cap=${p.fsPassthroughCapChars}`);
   if (p.adaptiveMaxTokens) tags.push("E3:adaptive-maxTokens");
   if (p.freeTierContextGuard) tags.push("E4:free-tier-guard");

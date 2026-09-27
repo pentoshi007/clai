@@ -188,7 +188,7 @@ export function formatContextChip(
 ): string {
   const compact = opts?.compact ?? false;
   const used = formatTokenCount(snapshot.contextTokens, compact);
-  const approx = snapshot.exact ? "" : "~";
+  const approx = snapshot.exact || snapshot.contextTokens <= 0 ? "" : "~";
   const limit = snapshot.contextLimit;
   if (!limit || limit <= 0) return `ctx:${approx}${used}`;
   const percent = Math.min(

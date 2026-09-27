@@ -7,9 +7,8 @@ import type { ExaSearchType, SearchProviderId } from "../../tools/web/types.js";
 import { providerIds } from "../../types.js";
 import type { Mode, ProviderId, ReasoningPreference } from "../../types.js";
 import Conf from "conf";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { statSync } from "node:fs";
 import { dirname } from "node:path";
-import { DEFAULT_AUTO_COMPACT_REQUEST_TOKENS } from "./compaction.js";
 
 export interface ProviderEndpoints {
   urls: string[];
@@ -52,8 +51,6 @@ export interface LearnedRouteEntry {
   readonly reasoningMandatory?: boolean | undefined;
   readonly acceptedEfforts?: readonly string[] | undefined;
   readonly rejectedFields?: readonly string[] | undefined;
-  readonly contextTokens?: number | undefined;
-  readonly maxOutputTokens?: number | undefined;
 }
 
 export interface ClaiConfig {
@@ -92,12 +89,6 @@ export interface ClaiConfig {
   learnedVisionCapabilities: Record<string, LearnedVisionEntry>;
   learnedRouteCapabilities?: Record<string, LearnedRouteEntry>;
   toolCalling?: "auto" | "native" | "text";
-
-
-  softEarlyCompact?: boolean;
-  /** @deprecated Legacy soft trigger; migrated to autoCompactRequestTokens. */
-  softCompactTokenBudget?: number;
-  autoCompactRequestTokens?: number;
   fsPassthroughCapChars?: number;
   adaptiveMaxTokens?: boolean;
   freeTierContextGuard?: boolean;
@@ -134,8 +125,6 @@ const defaults: ClaiConfig = {
   disableKeychain: false,
   permissions: "allow-all",
   toolCalling: "auto",
-  softEarlyCompact: true,
-  autoCompactRequestTokens: DEFAULT_AUTO_COMPACT_REQUEST_TOKENS,
   fsPassthroughCapChars: 64_000,
   adaptiveMaxTokens: true,
   freeTierContextGuard: true,
@@ -209,40 +198,11 @@ function cloneConfig(config: ClaiConfig): ClaiConfig {
   };
 }
 
-function migrateCompactionBudgetKeys(): void {
-  let raw: Record<string, unknown>;
-  try {
-    raw = JSON.parse(readFileSync(store.path, "utf8")) as Record<string, unknown>;
-  } catch {
-    return;
-  }
-  const stale = (value: unknown): value is number =>
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value <= 180_000;
-  const auto = raw.autoCompactRequestTokens;
-  const legacy = raw.softCompactTokenBudget;
-  if (!stale(auto) && !stale(legacy)) return;
-  const next: Record<string, unknown> = { ...raw };
-  if (stale(auto) || (auto === undefined && stale(legacy))) {
-    next.autoCompactRequestTokens = DEFAULT_AUTO_COMPACT_REQUEST_TOKENS;
-  }
-  if (stale(legacy)) delete next.softCompactTokenBudget;
-  try {
-    writeFileSync(store.path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-    fixOwnerSync(store.path);
-    invalidateConfigCache();
-  } catch (err: any) {
-    handlePermissionError(err);
-  }
-}
-
 export function getConfig(): ClaiConfig {
   const key = configFileKey();
   if (key !== undefined && cachedConfig?.key === key) {
     return cloneConfig(cachedConfig.value);
   }
-  migrateCompactionBudgetKeys();
   const resolved = readConfigFromStore();
   const freshKey = configFileKey();
   if (freshKey !== undefined) cachedConfig = { key: freshKey, value: resolved };

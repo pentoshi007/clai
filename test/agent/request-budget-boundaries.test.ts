@@ -6,7 +6,7 @@ import { assembleRequest } from "../../src/agent/turn/loop/request-assembly.js";
 
 describe("default and custom compaction targets", () => {
   it.each([
-    { contextLimitTokens: undefined, trigger: 200_000 },
+    { contextLimitTokens: undefined, trigger: 280_000 },
     { contextLimitTokens: 253_000, trigger: 177_100 },
     { contextLimitTokens: 1_000_000, trigger: 700_000 },
   ].flatMap((window) => [-1, 0, 1].map((offset) => ({
@@ -35,10 +35,10 @@ describe("default and custom compaction targets", () => {
     expect(buildDurableEnvelope).toHaveBeenCalledTimes(tokens >= trigger ? 1 : 0);
   });
 
-  it("uses the Kiro Opus default and custom thresholds exactly", () => {
+  it("uses the Kiro Opus window and custom thresholds exactly", () => {
     expect(
       resolveRequestBudget({ provider: "kiro", model: "claude-opus-5.5-thinking" }),
-    ).toMatchObject({ configured: 200_000, effectiveTrigger: 200_000 });
+    ).toMatchObject({ windowTokens: 1_000_000, configured: 700_000, effectiveTrigger: 700_000 });
     expect(
       resolveRequestBudget({
         provider: "kiro",
@@ -48,23 +48,28 @@ describe("default and custom compaction targets", () => {
     ).toMatchObject({
       configured: 280_000,
       effectiveTrigger: 280_000,
-      source: "session",
+      windowSource: "session-override",
     });
   });
 
-  it("retains the safety reserve on a 200k model", () => {
+  it("compacts a 200k model at 70%, inside the safety reserve", () => {
     expect(resolveRequestBudget({ provider: "anthropic", model: "claude-sonnet-4" }))
-      .toMatchObject({ configured: 200_000, effectiveTrigger: 156_992, clampedByModel: true });
+      .toMatchObject({ configured: 140_000, effectiveTrigger: 140_000, clampedByModel: false });
   });
 
-  it("gives the custom session window's 70% target precedence over the global budget", () => {
-    expect(resolveRequestBudget({ overrideTokens: 60_000, contextLimitTokens: 253_000 }))
-      .toMatchObject({ configured: 177_100, effectiveTrigger: 177_100, source: "session" });
+  it("falls back to the 200k default window when nothing better is known", () => {
+    expect(resolveRequestBudget({ provider: "tokenrouter", model: "unlisted-model-xyz" }))
+      .toMatchObject({ windowTokens: 200_000, windowSource: "default", effectiveTrigger: 140_000 });
   });
 
-  it.each([NaN, Infinity, -Infinity])("keeps invalid budgets finite: %s", (overrideTokens) => {
-    expect(resolveRequestBudget({ overrideTokens }).effectiveTrigger)
-      .toBe(200_000);
+  it("clamps small windows below 70% so output and compaction headroom still fit", () => {
+    expect(resolveRequestBudget({ contextLimitTokens: 32_768 }))
+      .toMatchObject({ configured: 22_937, effectiveTrigger: 16_896, clampedByModel: true });
+  });
+
+  it.each([NaN, Infinity, -Infinity])("ignores invalid custom limits: %s", (contextLimitTokens) => {
+    expect(resolveRequestBudget({ contextLimitTokens }).effectiveTrigger)
+      .toBe(140_000);
   });
 });
 
@@ -85,7 +90,6 @@ describe("dispatch output headroom", () => {
       estimateRequestTokens: () => 6,
       selectTools: () => undefined,
       notify: vi.fn(),
-      emitContextEstimate: vi.fn(),
       audit: vi.fn(async () => {}),
     }, {
       freeTierConsecutiveFailures: 0,
@@ -110,7 +114,6 @@ describe("dispatch output headroom", () => {
       estimateRequestTokens: () => 140_000,
       selectTools: () => undefined,
       notify: vi.fn(),
-      emitContextEstimate: vi.fn(),
       audit: vi.fn(async () => {}),
     };
     const state = {
@@ -129,8 +132,7 @@ describe("dispatch output headroom", () => {
     expect(messages[0]!.content).toHaveLength(460_000);
   });
 
-  it("does not replace provider context with an assembled-request estimate", async () => {
-    const emitContextEstimate = vi.fn();
+  it("dispatches on the provider-grounded measurement when the raw estimate overshoots", async () => {
     const assembled = await assembleRequest({
       messages: [{ role: "user", content: "x".repeat(460_000) }],
       provider: "openai",
@@ -140,11 +142,10 @@ describe("dispatch output headroom", () => {
       thinking: undefined,
       step: 1,
       contextLimitTokens: 200_000,
-      providerReportedContextTokens: 64_000,
+      measureRequestTokens: () => 64_000,
       estimateRequestTokens: () => 254_000,
       selectTools: () => undefined,
       notify: vi.fn(),
-      emitContextEstimate,
       audit: vi.fn(async () => {}),
     }, {
       freeTierConsecutiveFailures: 0,
@@ -154,6 +155,34 @@ describe("dispatch output headroom", () => {
     });
 
     expect(assembled.stepMaxTokens).toBe(24_576);
-    expect(emitContextEstimate).not.toHaveBeenCalled();
+  });
+
+  it("blocks dispatch when the provider-grounded measurement exceeds the safe window", async () => {
+    const audit = vi.fn(async () => {});
+    await expect(assembleRequest({
+      messages: [{ role: "user", content: "hello" }],
+      provider: "openai",
+      model: "gpt-5",
+      dialect: "openai",
+      nativeToolsActive: true,
+      thinking: undefined,
+      step: 1,
+      contextLimitTokens: 200_000,
+      measureRequestTokens: () => 190_000,
+      estimateRequestTokens: () => 10,
+      selectTools: () => undefined,
+      notify: vi.fn(),
+      audit,
+    }, {
+      freeTierConsecutiveFailures: 0,
+      truncatedBudgetRounds: 0,
+      continuationBudgetFloor: 0,
+      retryWithoutThinking: false,
+    })).rejects.toBeInstanceOf(RequestOverLimitError);
+    expect(audit).toHaveBeenCalledWith("agent.request.over-limit-blocked", expect.objectContaining({
+      requestTokens: 190_000,
+      tokenMeasurement: "provider-reported",
+      effectiveSafeTokens: 173_376,
+    }));
   });
 });

@@ -1,10 +1,7 @@
 import type { CompletionResult, ProviderId, TokenUsage } from "../../../types.js";
 import { stripThinking } from "../../../ui/thinking.js";
 import { trimExactContinuationOverlap } from "../continuation-overlap.js";
-import {
-  calibratedRequestTokens,
-  recordRequestTokenObservation,
-} from "../../../llm/token-estimate-calibration.js";
+import { recordRequestTokenObservation } from "../../../llm/token-estimate-calibration.js";
 import { effectivePromptTokens } from "../../../llm/token-usage.js";
 import { contextAttemptFromOperationUsage } from "../../../llm/context-snapshot.js";
 
@@ -20,7 +17,6 @@ export interface CompletionUsagePorts {
     api?: string | undefined;
     attempt?: ReturnType<typeof contextAttemptFromOperationUsage> | undefined;
   }) => void;
-  readonly emitContextFallback: (estimatedTokens: number) => void;
   readonly audit: (
     event: string,
     payload: Readonly<Record<string, string | number | boolean | undefined>>,
@@ -32,18 +28,7 @@ export const accountCompletionUsage = async (
   completion: CompletionResult,
 ): Promise<void> => {
   const usage = completion.usage;
-  const reportFallback = () =>
-    ports.emitContextFallback(
-      calibratedRequestTokens(
-        completion.provider,
-        completion.model,
-        ports.dispatchedRawRequestTokens,
-      ),
-    );
-  if (!usage) {
-    reportFallback();
-    return;
-  }
+  if (!usage) return;
   const requestRouteMatched =
     ports.dispatchedRequestRoute?.provider === completion.provider &&
     ports.dispatchedRequestRoute.model === completion.model;
@@ -64,7 +49,6 @@ export const accountCompletionUsage = async (
     ...(completion.api ? { api: completion.api } : {}),
     ...(attempt.kind === "generation" ? { attempt } : {}),
   });
-  if (usage.promptTokensKnown === false) reportFallback();
 
   const cacheRead = usage.cachedPromptTokens ?? 0;
   const cacheCreated = usage.cacheCreationTokens ?? 0;

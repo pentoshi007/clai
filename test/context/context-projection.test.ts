@@ -8,7 +8,7 @@ import {
 import { reasoningArtifactTokensForMessage } from "../../src/llm/reasoning-artifacts.js";
 import {
   compactedContextSnapshot,
-  estimatedContextSnapshot,
+  recordAuxiliaryUsageSnapshot,
   recordContextUsageSnapshot,
   resolveContextSnapshot,
   type ContextUsageTarget,
@@ -355,25 +355,7 @@ describe("exactness lifetime", () => {
     });
   });
 
-  it("replaces an exact snapshot with a newer assembled-request estimate", () => {
-    const previous = createContextSnapshot({
-      contextTokens: 120_000,
-      lastCompletionTokens: 900,
-      sessionPromptTokens: 120_000,
-      sessionCompletionTokens: 900,
-      scope: "unknown",
-      precision: "estimate",
-      limit: { source: "session-override", tokens: CONTEXT_LIMIT },
-      observedAt: 1,
-    });
-
-    const refreshed = estimatedContextSnapshot(target, previous, 250_000, () => 2)!;
-
-    expect(refreshed.contextTokens).toBe(250_000);
-    expect(refreshed.scope).toBe("assembled-request");
-  });
-
-  it("keeps a provider-exact snapshot when the next request is not larger", () => {
+  it("keeps the conversation context when auxiliary usage arrives", () => {
     const previous = createContextSnapshot({
       contextTokens: 78_200,
       lastCompletionTokens: 100,
@@ -385,81 +367,32 @@ describe("exactness lifetime", () => {
       observedAt: 1,
     });
 
-    const refreshed = estimatedContextSnapshot(
+    const refreshed = recordAuxiliaryUsageSnapshot(
       { ...target, contextLimitTokens: 300_000 },
       previous,
-      70_000,
-      () => 2,
+      { promptTokens: 150_000, completionTokens: 2_000, totalTokens: 152_000, exact: true },
     );
 
     expect(refreshed).toMatchObject({
       contextTokens: 78_200,
+      lastCompletionTokens: 100,
+      sessionPromptTokens: 228_200,
+      sessionCompletionTokens: 2_100,
       scope: "provider-request",
       precision: "provider-exact",
       observedAt: 1,
     });
   });
 
-  it("retains the provider measurement when a local estimate grows", () => {
-    const previous = createContextSnapshot({
-      contextTokens: 78_200,
-      lastCompletionTokens: 100,
-      sessionPromptTokens: 78_200,
-      sessionCompletionTokens: 100,
-      scope: "provider-request",
-      precision: "provider-exact",
-      limit: { source: "session-override", tokens: 300_000 },
-      observedAt: 1,
-    });
-
-    const refreshed = estimatedContextSnapshot(
-      { ...target, contextLimitTokens: 300_000 },
-      previous,
-      229_182,
-      () => 2,
-    )!;
-
-    expect(refreshed).toMatchObject({
-      contextTokens: 78_200,
-      scope: "provider-request",
-      precision: "provider-exact",
-      observedAt: 1,
-    });
-  });
-
-  it("keeps a provider-exact measurement when the route changes", () => {
-    const previous = createContextSnapshot({
-      contextTokens: 200_000,
-      lastCompletionTokens: 100,
-      sessionPromptTokens: 200_000,
-      sessionCompletionTokens: 100,
-      scope: "provider-request",
-      precision: "provider-exact",
-      limit: { source: "session-override", tokens: 300_000 },
-      attempt: {
-        kind: "generation",
-        sequence: 1,
-        provider: "openai",
-        model: "gpt-5.4-mini",
-        mode: "stream",
-        reason: "initial",
-        outcome: "success",
-      },
-      observedAt: 1,
-    });
-
-    const refreshed = estimatedContextSnapshot(
-      { ...target, contextLimitTokens: 300_000 },
-      previous,
-      90_000,
-      () => 2,
-    )!;
-
-    expect(refreshed).toMatchObject({
-      contextTokens: 200_000,
-      scope: "provider-request",
-      precision: "provider-exact",
-    });
+  it("does not invent a context snapshot from auxiliary usage alone", () => {
+    expect(
+      recordAuxiliaryUsageSnapshot(target, undefined, {
+        promptTokens: 150_000,
+        completionTokens: 2_000,
+        totalTokens: 152_000,
+        exact: true,
+      }),
+    ).toBeUndefined();
   });
 
   it("uses reported after-tokens after compaction instead of the stale measurement", () => {

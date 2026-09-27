@@ -155,7 +155,7 @@ describe("token-usage format + context window", () => {
     );
     expect(modelContextWindow("qwen3.7-plus")).toBe(1_000_000);
     expect(modelContextWindow("kimi-k2.6", "tokenrouter")).toBe(262_144);
-    expect(modelContextWindow("unknown-model-xyz")).toBe(250_000);
+    expect(modelContextWindow("unknown-model-xyz")).toBe(200_000);
   });
 
   it("accumulates session totals and latest context fill", () => {
