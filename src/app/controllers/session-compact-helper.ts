@@ -25,7 +25,7 @@ import {
 import { projectToolHistory } from "../../agent/tool-history.js";
 import { buildContextBreakdown } from "../../agent/context-breakdown.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
-import { modelContextWindow } from "../../llm/token-usage.js";
+import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../../llm/context-snapshot.js";
 import {
   OperationLedger,
@@ -147,12 +147,11 @@ export async function runSessionCompaction(
       ? undefined
       : successfulRequest
     : undefined;
-  const contextLimitTokens =
-    options.contextLimitTokens ??
-    modelContextWindow(
-      successfulRequest?.model ?? options.model,
-      successfulRequest?.provider ?? options.provider,
-    );
+  const contextLimitTokens = effectiveContextWindowTokens(
+    successfulRequest?.provider ?? options.provider,
+    successfulRequest?.model ?? options.model,
+    options.contextLimitTokens,
+  );
   const instruction = buildDirectCompactionPrompt({
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });

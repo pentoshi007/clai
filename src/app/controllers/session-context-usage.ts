@@ -1,8 +1,5 @@
 import { estimateMessagesTokens } from "../../agent/context-manager.js";
-import {
-  MIN_AUTO_COMPACT_REQUEST_TOKENS,
-  autoCompactTriggerTokens,
-} from "../../agent/request-budget.js";
+import { autoCompactTriggerTokens } from "../../agent/request-budget.js";
 import { resolveEffectiveContextLimit } from "../../agent/request-accounting.js";
 import {
   resolveContextWindow,
@@ -57,7 +54,6 @@ function limitFor(target: ContextUsageTarget): ContextSnapshotLimit {
     provider: target.provider,
     model: target.model,
     contextLimitTokens: contextUsageLimit(target) || undefined,
-    minOverrideTokens: MIN_AUTO_COMPACT_REQUEST_TOKENS,
   });
   return {
     source: LIMIT_SOURCE_BY_WINDOW[window.source],

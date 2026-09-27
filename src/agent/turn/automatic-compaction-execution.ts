@@ -1,5 +1,5 @@
 import type { ChatMessage, ProviderId, ToolDefinition } from "../../types.js";
-import { modelContextWindow } from "../../llm/token-usage.js";
+import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
 import {
   compactMessagesWithSummary,
   type CompactResult,
@@ -31,8 +31,11 @@ export const executeAutomaticCompaction = (
     [],
     input.tools,
   ).estimatedTotalTokens;
-  const contextLimit =
-    input.contextLimitTokens ?? modelContextWindow(input.model, input.provider);
+  const contextLimit = effectiveContextWindowTokens(
+    input.provider,
+    input.model,
+    input.contextLimitTokens,
+  );
   const calibratedInputBudget = calibratedCompactionSinglePassInputBudget(
     contextLimit,
     input.provider,

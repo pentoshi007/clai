@@ -22,6 +22,7 @@ import {
   ProviderError,
   type ReasoningStyle,
 } from "./http.js";
+import { parseCatalogFacts } from "./catalog-facts.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import {
   mapResponsesEffort,
@@ -67,6 +68,10 @@ function catalogEntries(payload: unknown): unknown[] {
   if (Array.isArray(container?.data)) return container.data;
   if (Array.isArray(container?.models)) return container.models;
   return [];
+}
+
+function catalogEntryId(entry: unknown): string {
+  return parseCatalogFacts(entry)?.id ?? "";
 }
 
 let kiloDynamicFreeIds = new Set<string>();
@@ -144,7 +149,7 @@ interface FreeSource {
   responsesApi: boolean;
   requiredTools?: boolean;
   requestHeaders(apiKey?: string): Record<string, string>;
-  catalogFreeIds(payload: unknown): string[];
+  catalogFreeEntries(payload: unknown): unknown[];
   keylessId(id: string): boolean;
   fallbackModels(): string[];
 }
@@ -157,10 +162,8 @@ const zenSource: FreeSource = {
   responsesApi: false,
   requiredTools: true,
   requestHeaders: zenClientHeaders,
-  catalogFreeIds(payload) {
-    return ingestModelCatalogEntries("free", catalogEntries(payload)).filter(
-      (id) => /free/i.test(id),
-    );
+  catalogFreeEntries(payload) {
+    return catalogEntries(payload).filter((entry) => /free/i.test(catalogEntryId(entry)));
   },
   keylessId(id) {
     return id.endsWith("-free") || CURATED_ZEN_MODELS.includes(id);
@@ -177,16 +180,16 @@ const kiloSource: FreeSource = {
   curated: CURATED_KILO_MODELS,
   responsesApi: true,
   requestHeaders: kiloClientHeaders,
-  catalogFreeIds(payload) {
+  catalogFreeEntries(payload) {
     const freeEntries = catalogEntries(payload).filter((entry) => {
-      const raw = entry as { id?: unknown; isFree?: unknown };
-      return raw.isFree === true || String(raw.id ?? "").includes(":free");
+      const raw = entry as { isFree?: unknown };
+      return raw.isFree === true || catalogEntryId(entry).includes(":free");
     });
-    const ids = ingestModelCatalogEntries("free", freeEntries);
+    const ids = freeEntries.map(catalogEntryId).filter(Boolean);
     if (ids.length > 0) {
       kiloDynamicFreeIds = new Set(ids.map((id) => id.toLowerCase()));
     }
-    return ids;
+    return freeEntries;
   },
   keylessId(id) {
     return (
@@ -319,35 +322,43 @@ const ZEN_RESPONSES_CONFIG: ResponsesDialectConfig = {
 };
 
 interface ModelCache {
-  models: string[];
+  entries: readonly unknown[];
   fetchedAt: number;
 }
 const modelCache = new Map<string, ModelCache>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
-async function listSourceModels(
+function sourceScopedEntry(source: FreeSource, entry: unknown): unknown {
+  const id = `${source.id}/${catalogEntryId(entry)}`;
+  return entry && typeof entry === "object" ? { ...entry, id } : id;
+}
+
+async function listSourceEntries(
   source: FreeSource,
   key: string,
-): Promise<string[]> {
+): Promise<readonly unknown[]> {
   const cacheKey = `${source.id}:${key}`;
   const now = Date.now();
   const cached = modelCache.get(cacheKey);
   if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-    return cached.models;
+    return cached.entries;
   }
   try {
     const resp = await fetch(`${source.baseUrl}/models`, {
       headers: key ? { authorization: `Bearer ${key}` } : {},
     });
     const data = await readJson<unknown>(resp);
-    const models = source.catalogFreeIds(data);
-    if (models.length > 0) {
-      modelCache.set(cacheKey, { models, fetchedAt: now });
-      return models;
+    const entries = source
+      .catalogFreeEntries(data)
+      .filter((entry) => catalogEntryId(entry).length > 0)
+      .map((entry) => sourceScopedEntry(source, entry));
+    if (entries.length > 0) {
+      modelCache.set(cacheKey, { entries, fetchedAt: now });
+      return entries;
     }
   } catch {
   }
-  return source.fallbackModels();
+  return source.fallbackModels().map((id) => sourceScopedEntry(source, id));
 }
 
 export const freeProvider: LlmProvider = {
@@ -360,12 +371,9 @@ export const freeProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const key = auth.apiKey ?? "";
     const perSource = await Promise.all(
-      sources.map((source) => listSourceModels(source, key)),
+      sources.map((source) => listSourceEntries(source, key)),
     );
-    return perSource.flatMap((ids, index) => {
-      const source = sources[index]!;
-      return ids.map((id) => `${source.id}/${id}`);
-    });
+    return ingestModelCatalogEntries("free", perSource.flat());
   },
   async ping(auth: ProviderAuth): Promise<void> {
     const key = auth.apiKey ?? "";
