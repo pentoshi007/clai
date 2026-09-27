@@ -520,7 +520,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "plan-cleared":
     case "confirm-requested":
     case "token-usage":
-    case "context-estimate":
       return withSeq;
 
     default: {

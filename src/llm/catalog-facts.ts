@@ -267,29 +267,63 @@ function parseDefaultSampling(
   return Object.keys(sampling).length > 0 ? sampling : undefined;
 }
 
+const NOMINAL_CONTEXT_FIELDS = [
+  "context_length",
+  "context_window",
+  "max_input_tokens",
+  "max_context_length",
+  "max_model_len",
+  "max_seq_len",
+  "inputTokenLimit",
+  "contextWindow",
+  "contextLength",
+  "maxInputTokens",
+] as const;
+
+const OUTPUT_LIMIT_FIELDS = [
+  "max_output_tokens",
+  "max_completion_tokens",
+  "max_output_length",
+  "outputTokenLimit",
+  "maxOutputTokens",
+  "max_tokens",
+  "maxTokens",
+] as const;
+
+function firstPositive(
+  record: Record<string, unknown> | undefined,
+  fields: readonly string[],
+): number | undefined {
+  if (!record) return undefined;
+  for (const field of fields) {
+    const value = positiveInteger(record[field]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 function parseLimits(entry: Record<string, unknown>): {
   contextTokens?: number;
   nominalContextTokens?: number;
   maxOutputTokens?: number;
 } {
   const topProvider = asRecord(entry.top_provider);
-  const caps = asRecord(entry.capabilities);
-  const capsLimits = asRecord(caps?.limits);
+  const capsLimits = asRecord(asRecord(entry.capabilities)?.limits);
+  const declaredLimits = asRecord(entry.limit) ?? asRecord(entry.limits);
   const nominal =
     positiveInteger(capsLimits?.max_context_window_tokens) ??
+    firstPositive(entry, NOMINAL_CONTEXT_FIELDS) ??
+    positiveInteger(declaredLimits?.context) ??
+    positiveInteger(capsLimits?.max_prompt_tokens);
+  const served =
+    positiveInteger(topProvider?.context_length) ??
     positiveInteger(capsLimits?.max_prompt_tokens) ??
-    positiveInteger(entry.context_length) ??
-    positiveInteger(entry.context_window) ??
-    positiveInteger(entry.max_model_len) ??
-    positiveInteger(entry.inputTokenLimit);
-  const served = positiveInteger(topProvider?.context_length) ?? nominal;
+    nominal;
   const maxOutput =
     positiveInteger(capsLimits?.max_output_tokens) ??
     positiveInteger(topProvider?.max_completion_tokens) ??
-    positiveInteger(entry.max_completion_tokens) ??
-    positiveInteger(entry.max_output_length) ??
-    positiveInteger(entry.outputTokenLimit) ??
-    positiveInteger(entry.max_tokens);
+    firstPositive(entry, OUTPUT_LIMIT_FIELDS) ??
+    positiveInteger(declaredLimits?.output);
   return {
     ...(served !== undefined ? { contextTokens: served } : {}),
     ...(nominal !== undefined ? { nominalContextTokens: nominal } : {}),

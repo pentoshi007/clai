@@ -1,14 +1,15 @@
 import { estimateMessagesTokens } from "../../agent/context-manager.js";
-import { MIN_AUTO_COMPACT_REQUEST_TOKENS } from "../../agent/request-budget.js";
+import {
+  MIN_AUTO_COMPACT_REQUEST_TOKENS,
+  autoCompactTriggerTokens,
+} from "../../agent/request-budget.js";
 import { resolveEffectiveContextLimit } from "../../agent/request-accounting.js";
 import {
-  autoCompactTriggerTokens,
-  getReliabilityPolicy,
-} from "../../agent/reliability-policy.js";
-import { resolveContextWindow } from "../../llm/context-windows.js";
+  resolveContextWindow,
+  type ContextWindowSource,
+} from "../../llm/context-windows.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import {
-  contextLimitFromSessionOverride,
   contextSnapshotFromLegacy,
   createContextSnapshot,
   isContextSnapshotV1,
@@ -16,6 +17,7 @@ import {
   toLegacyContextUsage,
   withContextSnapshotLimit,
   type ContextAttemptReference,
+  type ContextLimitSource,
   type ContextSnapshotCache,
   type ContextSnapshotLimit,
   type ContextSnapshotPrecision,
@@ -43,6 +45,13 @@ export function contextUsageLimit(target: ContextUsageTarget): number {
     : 0;
 }
 
+const LIMIT_SOURCE_BY_WINDOW: Readonly<Record<ContextWindowSource, ContextLimitSource>> = {
+  "session-override": "session-override",
+  provider: "model-catalog",
+  "model-table": "model-table",
+  default: "default",
+};
+
 function limitFor(target: ContextUsageTarget): ContextSnapshotLimit {
   const window = resolveContextWindow({
     provider: target.provider,
@@ -50,11 +59,8 @@ function limitFor(target: ContextUsageTarget): ContextSnapshotLimit {
     contextLimitTokens: contextUsageLimit(target) || undefined,
     minOverrideTokens: MIN_AUTO_COMPACT_REQUEST_TOKENS,
   });
-  if (window.source !== "session-override" && window.source !== "provider") {
-    return contextLimitFromSessionOverride(undefined);
-  }
   return {
-    source: window.source === "session-override" ? "session-override" : "model-catalog",
+    source: LIMIT_SOURCE_BY_WINDOW[window.source],
     tokens: window.tokens,
     ...(window.providerTokens !== undefined
       ? { providerTokens: window.providerTokens }
@@ -62,11 +68,7 @@ function limitFor(target: ContextUsageTarget): ContextSnapshotLimit {
     ...(window.overrideTokens !== undefined
       ? { requestedTokens: window.overrideTokens }
       : {}),
-    compactTriggerTokens: autoCompactTriggerTokens(getReliabilityPolicy(), {
-      provider: target.provider,
-      model: target.model,
-      contextLimitTokens: target.contextLimitTokens,
-    }),
+    compactTriggerTokens: autoCompactTriggerTokens(target),
   };
 }
 
@@ -176,6 +178,40 @@ export function contextSnapshotForRoute(
   });
 }
 
+function accumulatedSessionTokens(
+  current: ContextSnapshotV1 | undefined,
+  usage: TokenUsage,
+): { sessionPromptTokens: number; sessionCompletionTokens: number } {
+  return {
+    sessionPromptTokens:
+      (current?.sessionPromptTokens ?? 0) +
+      (usage.exact && hasPromptMeasurement(usage) ? usage.promptTokens : 0),
+    sessionCompletionTokens:
+      (current?.sessionCompletionTokens ?? 0) +
+      (usage.exact ? usage.completionTokens : 0),
+  };
+}
+
+export function recordAuxiliaryUsageSnapshot(
+  target: ContextUsageTarget,
+  current: ContextSnapshotV1 | undefined,
+  usage: TokenUsage,
+): ContextSnapshotV1 | undefined {
+  if (!current) return undefined;
+  return createContextSnapshot({
+    contextTokens: current.contextTokens,
+    lastCompletionTokens: current.lastCompletionTokens,
+    ...accumulatedSessionTokens(current, usage),
+    scope: current.scope,
+    precision: current.precision,
+    limit: limitFor(target),
+    cache: current.cache,
+    reasoning: current.reasoning,
+    attempt: current.attempt,
+    observedAt: current.observedAt,
+  });
+}
+
 export function recordContextUsageSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -183,14 +219,11 @@ export function recordContextUsageSnapshot(
   attempt: ContextAttemptReference | undefined,
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 {
-  const promptMeasured = hasPromptMeasurement(usage);
   const consumedPromptTokens = effectivePromptTokens(usage);
-  const sessionPromptTokens =
-    (current?.sessionPromptTokens ?? 0) +
-    (usage.exact && promptMeasured ? usage.promptTokens : 0);
-  const sessionCompletionTokens =
-    (current?.sessionCompletionTokens ?? 0) +
-    (usage.exact ? usage.completionTokens : 0);
+  const { sessionPromptTokens, sessionCompletionTokens } = accumulatedSessionTokens(
+    current,
+    usage,
+  );
   const cache = reportedCache(usage);
   const reasoning = reportedReasoning(usage);
   if (consumedPromptTokens === undefined) {
@@ -247,35 +280,11 @@ export function compactedContextSnapshot(
   });
 }
 
-export function estimatedContextSnapshot(
-  target: ContextUsageTarget,
-  current: ContextSnapshotV1 | undefined,
-  estimatedTokens: number,
-  now: ContextClock = systemNow,
-  promptUsageMissing = false,
-): ContextSnapshotV1 | undefined {
-  if (!current && !promptUsageMissing) return undefined;
-  if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
-  if (current && isProviderMeasuredPrecision(current.precision)) {
-    return resolveContextSnapshot(target, current);
-  }
-  const tokens = Math.floor(estimatedTokens);
-  return createContextSnapshot({
-    contextTokens: tokens,
-    lastCompletionTokens: current?.lastCompletionTokens,
-    sessionPromptTokens: current?.sessionPromptTokens,
-    sessionCompletionTokens: current?.sessionCompletionTokens,
-    scope: "assembled-request",
-    precision: "estimate",
-    limit: limitFor(target),
-    observedAt: now(),
-  });
-}
-
 export interface ContextProjection {
   readonly contextSnapshot: ContextSnapshotV1 | undefined;
-  readonly contextUsage: ContextUsageSnapshot | undefined;
-  readonly contextChip: string | undefined;
+  readonly contextUsage: ContextUsageSnapshot;
+  readonly contextChip: string;
+  readonly contextLimit: ContextSnapshotLimit;
 }
 
 export function createContextProjector(
@@ -286,13 +295,20 @@ export function createContextProjector(
 ) => ContextProjection {
   return (target, current) => {
     const contextSnapshot = resolveContextSnapshot(target, current);
-    const contextUsage = contextSnapshot
-      ? toLegacyContextUsage(contextSnapshot)
-      : undefined;
+    const view =
+      contextSnapshot ??
+      createContextSnapshot({
+        contextTokens: 0,
+        scope: "unknown",
+        precision: "unknown",
+        limit: limitFor(target),
+      });
+    const contextUsage = toLegacyContextUsage(view);
     return {
       contextSnapshot,
       contextUsage,
-      contextChip: contextUsage ? formatChip(contextUsage) : undefined,
+      contextChip: formatChip(contextUsage),
+      contextLimit: view.limit,
     };
   };
 }

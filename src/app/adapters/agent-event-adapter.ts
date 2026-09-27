@@ -105,13 +105,7 @@ export class AgentEventAdapter {
           ...(event.attempt?.kind === "generation"
             ? { attempt: event.attempt }
             : {}),
-        });
-        return;
-      case "context-estimate":
-        this.push("context-estimate", {
-          estimatedTokens: event.estimatedTokens,
-          ...(event.model !== undefined ? { model: event.model } : {}),
-          ...(event.promptUsageMissing ? { promptUsageMissing: true } : {}),
+          ...(event.auxiliary ? { auxiliary: true as const } : {}),
         });
         return;
       case "thinking-delta":

@@ -22,8 +22,8 @@ import { resolveSampling } from "./sampling.js";
 import { compileRequestPlan } from "./request-plan.js";
 import { OLLAMA_STREAM_TERMINAL, PartialStreamError } from "./stream-terminal.js";
 import type { TokenUsage } from "../types.js";
+import { OLLAMA_MAX_NUM_CTX, registerOllamaModelLimits } from "./ollama-model-limits.js";
 
-const OLLAMA_MAX_NUM_CTX = 32_768;
 const OLLAMA_DEFAULT_NUM_PREDICT = 4_096;
 const OLLAMA_KEEP_ALIVE = "5m";
 
@@ -119,6 +119,7 @@ export const ollamaProvider: LlmProvider = {
     }
     const data = await readJson<unknown>(response);
     const models = ingestOpenAiModelCatalog("ollama", data);
+    await registerOllamaModelLimits(endpoint, data);
     if (models.length > 0) {
       cachedOllamaModels = models;
       cachedOllamaBase = endpoint;

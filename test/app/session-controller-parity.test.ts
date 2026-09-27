@@ -174,7 +174,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(session.estimateContext().tokens).toBe(1_234);
   });
 
-  it("passes the latest provider context into a steered turn", async () => {
+  it("passes the latest provider context, including the visible reply, into a steered turn", async () => {
     let request: RunTurnRequest | undefined;
     const agent: AgentPort = {
       async runTurn(nextRequest, handlers) {
@@ -220,7 +220,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     await session.submit("steered");
 
-    expect(request?.providerReportedContextTokens).toBe(64_000);
+    expect(request?.providerReportedContextTokens).toBe(64_100);
   });
 
   it("keeps context tokens but downgrades cross-model precision across persistence", async () => {
@@ -355,17 +355,12 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     );
 
-    session.noteContextCompacted(
-      4_354,
-      "assembled-request",
-      "compaction-1",
-      "provider-reported",
-    );
+    session.noteContextCompacted(4_354, "assembled-request", "compaction-1");
     expect(session.getState().contextSnapshot).toMatchObject({
       contextTokens: 4_354,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe("ctx:~4,354");
+    expect(session.getState().contextChip).toBe("ctx ~4,354/200k 2%");
 
     await session.persistNow();
     const reopened = new SessionController({
@@ -384,10 +379,10 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextTokens: 4_354,
       precision: "estimate",
     });
-    expect(reopened.getState().contextChip).toBe("ctx:~4,354");
+    expect(reopened.getState().contextChip).toBe("ctx ~4,354/200k 2%");
   });
 
-  it("waits for provider telemetry before displaying context", () => {
+  it("shows only the resolved window before provider telemetry arrives", () => {
     const session = new SessionController({
       agent: fakeAgent(),
       persistence: fakePersistence(),
@@ -396,8 +391,10 @@ describe("SessionController parity helpers (V2-080)", () => {
       model: "moonshotai/Kimi-K3",
     });
     const state = session.getState();
-    expect(state.contextUsage).toBeUndefined();
-    expect(state.contextChip).toBeUndefined();
+    expect(state.contextSnapshot).toBeUndefined();
+    expect(state.contextUsage).toMatchObject({ contextTokens: 0, contextLimit: 1_000_000 });
+    expect(state.contextLimit).toMatchObject({ source: "model-table", tokens: 1_000_000 });
+    expect(state.contextChip).toBe("ctx 0/1M 0%");
   });
 
   it("setPlanApproved is readable via isPlanApproved", () => {
@@ -566,7 +563,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(completeWithProvider).toHaveBeenCalledOnce();
     expect(events.filter((event) => event.type === "token-usage")).toEqual([
       expect.objectContaining({
-        payload: { ...usage, provider: "nvidia", model: "test-model" },
+        payload: { ...usage, provider: "nvidia", model: "test-model", auxiliary: true },
       }),
     ]);
     const completed = events.find((event) => event.type === "compaction-completed");
@@ -584,7 +581,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextTokens: 115_030,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe("ctx:~115,030");
+    expect(session.getState().contextChip).toBe("ctx ~115,030/200k 58%");
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );

@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe("catalog-published limits", () => {
   it("reports the catalog number for a model absent from the regex table", () => {
-    expect(nominalModelContextWindow(UNKNOWN_MODEL)).toBe(250_000);
+    expect(nominalModelContextWindow(UNKNOWN_MODEL)).toBe(200_000);
     registerModelCatalogFacts(
       "tokenrouter",
       parseCatalogFacts({ id: UNKNOWN_MODEL, context_length: 393_216 })!,
@@ -36,8 +36,8 @@ describe("catalog-published limits", () => {
       "tokenrouter",
       parseCatalogFacts({ id: UNKNOWN_MODEL, context_length: 393_216 })!,
     );
-    expect(modelContextWindow(UNKNOWN_MODEL, "fireworks")).toBe(250_000);
-    expect(modelContextWindow(UNKNOWN_MODEL)).toBe(250_000);
+    expect(modelContextWindow(UNKNOWN_MODEL, "fireworks")).toBe(200_000);
+    expect(modelContextWindow(UNKNOWN_MODEL)).toBe(200_000);
   });
 
   it("keeps a gateway-served override above the published window", () => {
@@ -73,5 +73,38 @@ describe("catalog-published limits", () => {
     expect(modelMaxOutputTokens("openrouter", "deepseek/deepseek-v4-pro")).toBe(384_000);
     expect(modelMaxOutputTokens("openrouter", UNKNOWN_MODEL)).toBeUndefined();
     expect(modelMaxOutputTokens("openrouter", UNKNOWN_MODEL, 65_536)).toBe(65_536);
+  });
+});
+
+describe("provider catalog limit fields", () => {
+  it.each([
+    ["Anthropic models API", { id: "claude-x", max_input_tokens: 1_000_000, max_tokens: 128_000 }, 1_000_000, 128_000],
+    ["Codex models endpoint", { slug: "gpt-x", id: "gpt-x", context_window: 272_000, max_context_window: 1_000_000 }, 272_000, undefined],
+    ["Gemini models API", { id: "gemini-x", inputTokenLimit: 1_048_576, outputTokenLimit: 65_536 }, 1_048_576, 65_536],
+    ["Mistral models API", { id: "mistral-x", max_context_length: 131_072 }, 131_072, undefined],
+    ["models.dev style limits", { id: "model-x", limit: { context: 400_000, output: 128_000 } }, 400_000, 128_000],
+    ["camel-case gateways", { id: "model-y", contextWindow: 200_000, maxTokens: 64_000 }, 200_000, 64_000],
+  ])("reads the %s", (_label, entry, contextTokens, maxOutputTokens) => {
+    const facts = parseCatalogFacts(entry)!;
+    expect(facts.contextTokens).toBe(contextTokens);
+    expect(facts.maxOutputTokens).toBe(maxOutputTokens);
+  });
+
+  it("uses Copilot's enforced prompt limit as the served window", () => {
+    const facts = parseCatalogFacts({
+      id: "copilot-model",
+      capabilities: {
+        limits: {
+          max_context_window_tokens: 200_000,
+          max_prompt_tokens: 128_000,
+          max_output_tokens: 64_000,
+        },
+      },
+    })!;
+    expect(facts).toMatchObject({
+      contextTokens: 128_000,
+      nominalContextTokens: 200_000,
+      maxOutputTokens: 64_000,
+    });
   });
 });

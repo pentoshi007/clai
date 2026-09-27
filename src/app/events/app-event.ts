@@ -142,11 +142,7 @@ export interface AppEventPayloads {
     readonly provider?: ProviderId | undefined;
     readonly api?: string | undefined;
     readonly attempt?: ContextAttemptReference | undefined;
-  };
-  "context-estimate": {
-    readonly estimatedTokens: number;
-    readonly model?: string | undefined;
-    readonly promptUsageMissing?: boolean | undefined;
+    readonly auxiliary?: true | undefined;
   };
   "turn-ended": { readonly finalAnswer: string; readonly steps: number };
   "turn-aborted": { readonly reason?: string | undefined };

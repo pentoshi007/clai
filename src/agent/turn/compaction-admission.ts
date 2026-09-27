@@ -2,10 +2,7 @@ import type { ChatMessage, ProviderId, ToolDefinition } from "../../types.js";
 import type { resolveToolDialect } from "../../llm/capabilities.js";
 import { compactionAttemptKey } from "../compaction-attempt.js";
 import { toolSchemaHash } from "../context-breakdown.js";
-import {
-  autoCompactTriggerTokens,
-  getReliabilityPolicy,
-} from "../reliability-policy.js";
+import { autoCompactTriggerTokens } from "../request-budget.js";
 import { requestTokenCalibration } from "../../llm/token-estimate-calibration.js";
 
 export type CompactionMeasurement = "provider-reported" | "estimated";
@@ -23,7 +20,9 @@ export interface CompactionAdmissionPorts {
   readonly prepareMessages?: (() => void) | undefined;
   readonly isSuppressed: (attemptKey: string) => boolean;
   readonly isExhausted?: ((attemptKey: string) => boolean) | undefined;
-  readonly providerPromptTokens?: (() => number | undefined) | undefined;
+  readonly measureRequestTokens?:
+    | ((estimatedTokens: number) => number | undefined)
+    | undefined;
   readonly audit?: CompactionAuditFn | undefined;
 }
 
@@ -56,43 +55,33 @@ export const planCompactionAdmission = async (
 ): Promise<CompactionAdmission> => {
   const bypassThreshold = options.bypassThreshold === true;
   const retrySuppressed = options.retrySuppressed === true;
-  const providerPromptTokens = ports.providerPromptTokens?.();
   const estimatedTokens = ports.estimateRequestTokens(ports.messages);
-  const compactTrigger = autoCompactTriggerTokens(getReliabilityPolicy(), {
+  const providerMeasuredTokens = ports.measureRequestTokens?.(estimatedTokens);
+  const measurement: CompactionMeasurement =
+    providerMeasuredTokens === undefined ? "estimated" : "provider-reported";
+  const beforeTokens = providerMeasuredTokens ?? estimatedTokens;
+  const compactTrigger = autoCompactTriggerTokens({
     provider: ports.provider,
     model: ports.model,
-    ...(ports.contextLimitTokens !== undefined
-      ? { contextLimitTokens: ports.contextLimitTokens }
-      : {}),
+    contextLimitTokens: ports.contextLimitTokens,
   });
-  const estimateCrossed = estimatedTokens >= compactTrigger;
-  const providerCrossed =
-    providerPromptTokens !== undefined && providerPromptTokens >= compactTrigger;
-  if (!bypassThreshold && !estimateCrossed && !providerCrossed) {
+  const measured = providerMeasuredTokens !== undefined ? { providerMeasuredTokens } : {};
+  if (!bypassThreshold && beforeTokens < compactTrigger) {
     ports.audit?.("agent.compact.skip-threshold", {
       estimatedTokens,
       triggerTokens: compactTrigger,
-      ...(providerPromptTokens !== undefined ? { providerPromptTokens } : {}),
+      ...measured,
     });
     return REJECTED;
   }
-  const useProviderMeasurement =
-    providerCrossed &&
-    (!estimateCrossed || providerPromptTokens >= estimatedTokens);
-  const measurement: CompactionMeasurement = useProviderMeasurement
-    ? "provider-reported"
-    : "estimated";
-  const beforeTokens = useProviderMeasurement
-    ? providerPromptTokens
-    : estimatedTokens;
   const calibration = requestTokenCalibration(ports.provider, ports.model);
   ports.audit?.("agent.compact.admission", {
     reason: bypassThreshold ? "forced" : "threshold",
-    admissionSignal: useProviderMeasurement ? "provider" : "estimate",
+    admissionSignal: providerMeasuredTokens === undefined ? "estimate" : "provider",
     estimatedTokens,
     tokenMeasurement: measurement,
     triggerTokens: compactTrigger,
-    ...(providerPromptTokens !== undefined ? { providerPromptTokens } : {}),
+    ...measured,
     ...(calibration
       ? { calibrationRatio: calibration.ratio, calibrationSamples: calibration.samples }
       : {}),

@@ -390,7 +390,6 @@ describe("tool-history", () => {
           estimateRequestTokens: () => 0,
           selectTools: () => undefined,
           notify: () => {},
-          emitContextEstimate: () => {},
           audit: async () => {},
         },
         {
@@ -628,7 +627,6 @@ describe("tool-history", () => {
           estimateRequestTokens: () => 0,
           selectTools: () => undefined,
           notify: () => {},
-          emitContextEstimate: () => {},
           audit: async () => {},
         },
         {

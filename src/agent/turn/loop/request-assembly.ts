@@ -11,11 +11,10 @@ import {
   contextBreakdownAuditPayload,
 } from "../../context-breakdown.js";
 import {
-  autoCompactTriggerTokens,
   freeTierGuardNotices,
-  getReliabilityPolicy,
   resolveStepMaxTokens,
 } from "../../reliability-policy.js";
+import { autoCompactTriggerTokens } from "../../request-budget.js";
 import {
   assertValidToolProtocol,
   repairToolProtocol,
@@ -41,11 +40,10 @@ export interface RequestAssemblyPorts {
   readonly thinking: ReasoningPreference | undefined;
   readonly step: number;
   readonly contextLimitTokens: number | undefined;
-  readonly providerReportedContextTokens?: number | undefined;
+  readonly measureRequestTokens?: ((estimatedTokens: number) => number | undefined) | undefined;
   readonly estimateRequestTokens: (messages: readonly ChatMessage[]) => number;
   readonly selectTools: () => ToolDefinition[] | undefined;
   readonly notify: (level: "info" | "warn", message: string) => void;
-  readonly emitContextEstimate: (estimatedTokens: number) => void;
   readonly audit: (
     event: string,
     payload: Readonly<Record<string, string | number | boolean | undefined>>,
@@ -74,9 +72,9 @@ const showFreeTierAdvisories = (
 
 const overLimitMessage = (
   requestTokens: number,
-  safeTokens: number | undefined,
+  safeTokens: number,
 ): string =>
-  `estimated request (~${requestTokens.toLocaleString()} tokens) exceeds the model's safe context window (~${safeTokens?.toLocaleString()} tokens) — run /compact, trim large outputs, or raise the session context limit`;
+  `request (~${requestTokens.toLocaleString()} tokens) exceeds the model's safe context window (~${safeTokens.toLocaleString()} tokens) — run /compact, trim large outputs, or raise the session context limit`;
 
 export const assembleRequest = async (
   ports: RequestAssemblyPorts,
@@ -129,7 +127,7 @@ export const assembleRequest = async (
     dialect: ports.dialect,
     step: ports.step,
     ...contextBreakdownAuditPayload(contextBreakdown),
-    compactTriggerTokens: autoCompactTriggerTokens(getReliabilityPolicy(), {
+    compactTriggerTokens: autoCompactTriggerTokens({
       provider: ports.provider,
       model: ports.model,
       ...(ports.contextLimitTokens !== undefined
@@ -159,29 +157,24 @@ export const assembleRequest = async (
       ? { contextLimitTokens: ports.contextLimitTokens }
       : {}),
   }).accounting;
-  if (ports.providerReportedContextTokens === undefined) {
-    ports.emitContextEstimate(finalAccounting.requestTokens);
-  }
-
-  if (finalAccounting.overLimit && ports.providerReportedContextTokens === undefined) {
+  const measuredTokens = ports.measureRequestTokens?.(estimatedInputTokens);
+  const requestTokens = measuredTokens ?? finalAccounting.requestTokens;
+  const effectiveSafeTokens = finalAccounting.limit.effectiveSafeTokens;
+  if (effectiveSafeTokens !== undefined && requestTokens > effectiveSafeTokens) {
     await ports.audit("agent.request.over-limit-blocked", {
       provider: ports.provider,
       model: ports.model,
+      requestTokens,
+      tokenMeasurement: measuredTokens === undefined ? "estimated" : "provider-reported",
       estimatedTokens: finalAccounting.requestTokens,
-      effectiveSafeTokens: finalAccounting.limit.effectiveSafeTokens,
+      effectiveSafeTokens,
       limitSource: finalAccounting.limit.source,
       reservedOutputTokens: finalAccounting.limit.reservedOutputTokens,
       safetyMarginTokens: finalAccounting.limit.safetyMarginTokens,
     });
-    ports.notify(
-      "warn",
-      overLimitMessage(
-        finalAccounting.requestTokens,
-        finalAccounting.limit.effectiveSafeTokens,
-      ),
-    );
+    ports.notify("warn", overLimitMessage(requestTokens, effectiveSafeTokens));
     throw new RequestOverLimitError(
-      `estimated request (~${finalAccounting.requestTokens.toLocaleString()} tokens) exceeds the effective safe context limit (~${finalAccounting.limit.effectiveSafeTokens?.toLocaleString()} tokens); dispatch blocked`,
+      `request (~${requestTokens.toLocaleString()} tokens) exceeds the effective safe context limit (~${effectiveSafeTokens.toLocaleString()} tokens); dispatch blocked`,
     );
   }
 

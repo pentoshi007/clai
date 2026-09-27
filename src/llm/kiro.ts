@@ -55,9 +55,10 @@ import {
   sentKiroReasoningEffort,
 } from "./kiro-reasoning.js";
 import {
-  registerModelCatalogFacts,
+  registerModelCatalogLimits,
   registerModelReasoningEfforts,
 } from "./capabilities.js";
+import type { CatalogFacts } from "./catalog-facts.js";
 import { modelContextWindow } from "./context-windows.js";
 import {
   providerRatioPromptTokens,
@@ -986,14 +987,14 @@ function hasFreshKiroCatalog(credentialId: string): boolean {
   );
 }
 
-function registerKiroCatalogLimits(modelId: string, info: KiroModelInfo): void {
-  if (info.maxInputTokens === undefined && info.maxOutputTokens === undefined) return;
-  registerModelCatalogFacts("kiro", {
+function kiroCatalogLimits(modelId: string, info: KiroModelInfo): CatalogFacts[] {
+  if (info.maxInputTokens === undefined && info.maxOutputTokens === undefined) return [];
+  return [{
     id: modelId,
     ...(info.maxInputTokens !== undefined ? { contextTokens: info.maxInputTokens } : {}),
     ...(info.maxOutputTokens !== undefined ? { maxOutputTokens: info.maxOutputTokens } : {}),
     ...(info.supportsImages !== undefined ? { vision: info.supportsImages } : {}),
-  });
+  }];
 }
 
 async function ensureKiroModelCatalog(credential: KiroCredential): Promise<void> {
@@ -1005,6 +1006,7 @@ async function ensureKiroModelCatalog(credential: KiroCredential): Promise<void>
   cachedKiroApiGeneration = catalog.generation;
   cachedKiroModels = withKiroVariants(catalog.models.map((info) => info.modelId));
   lastKiroModelFetch = Date.now();
+  const limits: CatalogFacts[] = [];
   for (const info of catalog.models) {
     if (info.supportsImages !== undefined) {
       learnModelVisionCapability("kiro", info.modelId, info.supportsImages);
@@ -1012,9 +1014,10 @@ async function ensureKiroModelCatalog(credential: KiroCredential): Promise<void>
     const efforts = kiroCatalogEfforts(info.additionalModelRequestFieldsSchema);
     for (const variant of withKiroVariants([info.modelId])) {
       registerModelReasoningEfforts("kiro", variant, efforts);
-      registerKiroCatalogLimits(variant, info);
+      limits.push(...kiroCatalogLimits(variant, info));
     }
   }
+  registerModelCatalogLimits("kiro", limits);
 }
 
 export function kiroModelCatalog(): readonly KiroModelInfo[] {
