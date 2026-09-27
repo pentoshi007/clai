@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentPort, RunTurnRequest } from "../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
+import { providerIds, type ProviderId } from "../../src/types.js";
 
 type Modules = {
   readonly SessionController: typeof import("../../src/app/controllers/session-controller.js").SessionController;
@@ -31,7 +32,11 @@ const persistence = (): PersistencePort => ({
   async deletePlan() {},
 });
 
-function session(agent?: AgentPort) {
+function session(
+  agent?: AgentPort,
+  provider: ProviderId = PROVIDER,
+  model: string = MODEL,
+) {
   return new modules.SessionController({
     agent: agent ?? {
       async runTurn() {
@@ -40,8 +45,8 @@ function session(agent?: AgentPort) {
     },
     persistence: persistence(),
     emit: () => {},
-    provider: PROVIDER,
-    model: MODEL,
+    provider,
+    model,
   });
 }
 
@@ -163,5 +168,79 @@ describe("auto-compaction trigger follows custom context limits", () => {
     controller.setContextLimitTokens(undefined);
     expect(request?.getContextLimitTokens?.(PROVIDER, MODEL)).toBeUndefined();
     controller.dispose();
+  });
+
+  it("shows route-specific custom limits for every built-in provider", () => {
+    const model = "custom-context-route";
+    for (const provider of providerIds) {
+      const controller = session(undefined, provider, model);
+      controller.setContextLimitTokens(120_000);
+      expect(controller.getState()).toMatchObject({
+        contextLimit: {
+          source: "session-override",
+          tokens: 120_000,
+          compactTriggerTokens: modules.autoCompactTriggerTokens({
+            provider,
+            model,
+            contextLimitTokens: 120_000,
+          }),
+        },
+        contextUsage: { contextLimit: 120_000 },
+        contextChip: "ctx 0/120k 0%",
+      });
+
+      controller.setContextLimitTokens(undefined);
+      expect(controller.getState()).toMatchObject({
+        contextLimit: {
+          source: "default",
+          tokens: 200_000,
+          compactTriggerTokens: modules.autoCompactTriggerTokens({ provider, model }),
+        },
+        contextUsage: { contextLimit: 200_000 },
+        contextChip: "ctx 0/200k 0%",
+      });
+      controller.dispose();
+    }
+  });
+
+  it("keeps free-1 and free-2 custom limits independent and resets each trigger", () => {
+    const modelOne = "free-1/custom-free-route";
+    const modelTwo = "free-2/custom-free-route";
+    const freeOne = session(undefined, "free", modelOne);
+    const freeTwo = session(undefined, "free", modelTwo);
+    freeOne.setContextLimitTokens(80_000);
+    freeTwo.setContextLimitTokens(130_000);
+
+    expect(freeOne.getState().contextChip).toBe("ctx 0/80k 0%");
+    expect(freeOne.getState().contextLimit?.compactTriggerTokens).toBe(
+      modules.autoCompactTriggerTokens({
+        provider: "free",
+        model: modelOne,
+        contextLimitTokens: 80_000,
+      }),
+    );
+    expect(freeTwo.getState().contextChip).toBe("ctx 0/130k 0%");
+    expect(freeTwo.getState().contextLimit?.compactTriggerTokens).toBe(
+      modules.autoCompactTriggerTokens({
+        provider: "free",
+        model: modelTwo,
+        contextLimitTokens: 130_000,
+      }),
+    );
+
+    freeOne.setContextLimitTokens(undefined);
+    expect(freeOne.getState().contextUsage?.contextLimit).toBe(200_000);
+    expect(freeOne.getState().contextLimit?.compactTriggerTokens).toBe(
+      modules.autoCompactTriggerTokens({ provider: "free", model: modelOne }),
+    );
+    expect(freeTwo.getState().contextUsage?.contextLimit).toBe(130_000);
+    freeTwo.setContextLimitTokens(undefined);
+    expect(freeTwo.getState().contextLimit).toMatchObject({
+      source: "default",
+      tokens: 200_000,
+      compactTriggerTokens: modules.autoCompactTriggerTokens({ provider: "free", model: modelTwo }),
+    });
+    freeOne.dispose();
+    freeTwo.dispose();
   });
 });

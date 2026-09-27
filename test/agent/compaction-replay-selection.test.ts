@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MIN_CUSTOM_CONTEXT_LIMIT_TOKENS } from "../../src/llm/context-windows.js";
 import type { SuccessfulRequestSnapshot } from "../../src/types.js";
 import { selectCompactionReplaySnapshot } from "../../src/agent/turn/compaction-replay-selection.js";
 
@@ -41,8 +42,14 @@ const select = (
 
 describe("compaction replay selection", () => {
   it("returns the identical snapshot only when its replay fits", () => {
+    const oversizedHistory = [
+      ...snapshot.messages,
+      { role: "assistant" as const, content: "x".repeat(50_000) },
+    ];
     expect(select(snapshot, 1_000_000)).toBe(snapshot);
-    expect(select(snapshot, 8)).toBeUndefined();
+    expect(
+      select(snapshot, MIN_CUSTOM_CONTEXT_LIMIT_TOKENS, oversizedHistory),
+    ).toBeUndefined();
   });
 
   it("rejects absent and non-prefix snapshots", () => {

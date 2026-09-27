@@ -423,6 +423,36 @@ describe('custom providers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('ingests paginated context limits for custom Anthropic Messages providers', async () => {
+    vi.stubEnv('CLAI_DATA_DIR', configDir);
+    const { config, router } = await loadModules();
+    const capabilities = await import('../src/llm/capabilities.js');
+    const contextWindows = await import('../src/llm/context-windows.js');
+    capabilities.resetReasoningKnowledge();
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = new URL(String(input));
+      const secondPage = url.searchParams.has('after_id');
+      const body = secondPage
+        ? { data: [{ id: 'custom-claude-page-two', max_input_tokens: 444_444 }], has_more: false, last_id: 'custom-claude-page-two' }
+        : { data: [{ id: 'custom-claude-page-one', max_input_tokens: 200_000 }], has_more: true, last_id: 'custom-claude-page-one' };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    config.addCustomProvider({
+      id: 'anthropic-catalog', displayName: 'Anthropic catalog',
+      baseUrl: 'https://anthropic-catalog.example/v1', defaultModel: 'custom-claude-page-one', api: 'anthropic-messages',
+    });
+
+    await router.getProvider('anthropic-catalog' as never).listModels?.({ apiKey: 'synthetic-test-key' });
+
+    expect(contextWindows.modelContextWindow('custom-claude-page-two', 'anthropic-catalog' as never)).toBe(444_444);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    capabilities.resetReasoningKnowledge();
+  });
+
   it('does not issue a second request when stream_options support was declared', async () => {
     const { config, router } = await loadModules();
     const fetchMock = vi.fn(async () =>

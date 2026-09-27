@@ -1,17 +1,28 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { nvidiaProvider, nvidiaFallbackModels } from "../src/llm/nvidia.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { modelContextWindow } from "../src/llm/context-windows.js";
+import {
+  nvidiaProvider,
+  nvidiaFallbackModels,
+  resetNvidiaModelCatalogCache,
+} from "../src/llm/nvidia.js";
 
 describe("NVIDIA NIM model discovery", () => {
+  beforeEach(() => resetNvidiaModelCatalogCache());
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    resetNvidiaModelCatalogCache();
   });
 
   const baseTime = Date.now();
 
   it("calls fetch on the models endpoint and parses model ids", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      data: [{ id: "meta/llama-3.3-70b-instruct" }, { id: "deepseek-ai/deepseek-v4-pro" }],
+      data: [
+        { id: "meta/llama-3.3-70b-instruct", max_model_len: 77_777 },
+        { id: "deepseek-ai/deepseek-v4-pro" },
+      ],
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -23,6 +34,7 @@ describe("NVIDIA NIM model discovery", () => {
       "deepseek-ai/deepseek-v4-pro",
       "meta/llama-3.3-70b-instruct",
     ]);
+    expect(modelContextWindow("meta/llama-3.3-70b-instruct", "nvidia")).toBe(77_777);
 
     expect(fetchMock).toHaveBeenCalled();
     const fetchCallArgs = fetchMock.mock.calls[0];
