@@ -11,7 +11,6 @@ export const MAX_OUTPUT_BUDGET_CONTINUATIONS = 1;
 export interface OutputBudgetState {
   truncatedBudgetRounds: number;
   continuationBudgetFloor: number;
-  retryWithoutThinking: boolean;
   interruptedVisible: string;
   interruptedReasoning: string;
   lowYieldResumptions: number;
@@ -66,16 +65,13 @@ export const outputBudgetExhausted = (input: {
 
 const continuationNudge = (
   hasVisible: boolean,
-  retryWithoutThinking: boolean,
   reasoning: string,
 ): string =>
   [
     hasVisible
       ? "Your previous response was cut off by the output token limit. Continue from the exact stopping point without repeating any prior text."
       : "Your previous response spent the output budget before producing a visible answer. Do not restart the analysis; use the preserved conclusions and answer now.",
-    retryWithoutThinking
-      ? "Optional reasoning is disabled for this continuation. Emit the next tool call or final answer directly and briefly."
-      : "Finish the reasoning briefly, then emit the next tool call or final answer directly.",
+    "Finish the reasoning briefly, then emit the next tool call or final answer directly.",
     interruptedReasoningBrief(reasoning),
   ]
     .filter((part): part is string => Boolean(part))
@@ -100,7 +96,6 @@ const preserveAndContinue = (
     profile.limits.outputTokens === undefined
       ? desired
       : Math.min(desired, profile.limits.outputTokens);
-  state.retryWithoutThinking = profile.reasoning.generation !== "mandatory";
   if (input.hasThinking) {
     state.interruptedReasoning = appendInterruptedReasoning(
       state.interruptedReasoning,
@@ -120,15 +115,12 @@ const preserveAndContinue = (
   }
   ports.notify(
     "warn",
-    state.retryWithoutThinking
-      ? "response used the whole output budget — preserving it and continuing once with optional reasoning disabled"
-      : "response used the whole output budget — preserving it and continuing once at the route limit",
+    "response used the whole output budget — preserving it and continuing once with a larger output budget at the same reasoning effort",
   );
   ports.messages.push(
     ports.recoveryUserMessage(
       continuationNudge(
         hasVisible,
-        state.retryWithoutThinking,
         state.interruptedReasoning,
       ),
     ),

@@ -25,6 +25,7 @@ import { getActiveProjectRoot } from "../../project-root.js";
 import { groupToolCallsForExecution } from "../../tool-call-parser.js";
 import { handleEmptyResponse } from "./empty-response.js";
 import { handleOutputBudgetExhaustion } from "./output-budget.js";
+import { isProviderMeasuredPrompt } from "../../../llm/provider-context-usage.js";
 import { loadPlan } from "../../../store/plan.js";
 import { loadScopeForSession } from "../../../store/scope.js";
 import { looksLikeTruncatedToolCall } from "../../tool-call-parser.js";
@@ -153,8 +154,12 @@ export const runTurnRounds = async (
           jobManager.releaseResponderNotificationClaim(responderDelivery.id);
         }
       }
+      const routeChanged =
+        deps.loop.provider !== completion.provider ||
+        deps.loop.model !== completion.model;
       deps.loop.provider = completion.provider;
       deps.loop.model = completion.model;
+      if (routeChanged) deps.loop.lastProviderPromptTokens = undefined;
       await accountCompletionUsage(
         {
           dispatchedRawRequestTokens: deps.loop.dispatchedRawRequestTokens,
@@ -167,9 +172,7 @@ export const runTurnRounds = async (
           }),
           emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, api, attempt }) => {
             if (
-              usage.exact &&
-              usage.promptTokensKnown !== false &&
-              usage.promptTokens > 0 &&
+              isProviderMeasuredPrompt(usage) &&
               usageProvider === deps.loop.provider &&
               usageModel === deps.loop.model
             ) {
@@ -360,7 +363,6 @@ export const runTurnRounds = async (
         const budgetState: OutputBudgetState = {
           truncatedBudgetRounds: deps.loop.truncatedBudgetRounds,
           continuationBudgetFloor: deps.loop.continuationBudgetFloor,
-          retryWithoutThinking: deps.loop.retryWithoutThinking,
           interruptedVisible: deps.loop.interruptedVisible,
           interruptedReasoning: deps.loop.interruptedReasoning,
           lowYieldResumptions: deps.loop.lowYieldResumptions,
@@ -391,7 +393,6 @@ export const runTurnRounds = async (
         );
         deps.loop.truncatedBudgetRounds = budgetState.truncatedBudgetRounds;
         deps.loop.continuationBudgetFloor = budgetState.continuationBudgetFloor;
-        deps.loop.retryWithoutThinking = budgetState.retryWithoutThinking;
         deps.loop.interruptedVisible = budgetState.interruptedVisible;
         deps.loop.interruptedReasoning = budgetState.interruptedReasoning;
         deps.loop.lowYieldResumptions = budgetState.lowYieldResumptions;
@@ -424,7 +425,6 @@ export const runTurnRounds = async (
         }
         const emptyState: EmptyResponseState = {
           emptyVisibleRetries: deps.loop.emptyVisibleRetries,
-          retryWithoutThinking: deps.loop.retryWithoutThinking,
           interruptedReasoning: deps.loop.interruptedReasoning,
         };
         const emptyDecision = handleEmptyResponse(
@@ -432,6 +432,7 @@ export const runTurnRounds = async (
             messages: deps.messages,
             toolsAttached,
             planModeWithoutPlan: deps.isPlanMode && !deps.activePlan,
+            maxRetries: deps.loop.provider === "kiro" ? 4 : undefined,
             notify: deps.writeNotice,
             commitAssistantRetry,
             recoveryUserMessage: deps.recoveryUserMessage,
@@ -445,7 +446,6 @@ export const runTurnRounds = async (
           },
         );
         deps.loop.emptyVisibleRetries = emptyState.emptyVisibleRetries;
-        deps.loop.retryWithoutThinking = emptyState.retryWithoutThinking;
         deps.loop.interruptedReasoning = emptyState.interruptedReasoning;
         if (emptyDecision === "continue-round") continue;
         return deps.finishTurn("Model returned an empty response after retries.", deps.loop.step + 1);
@@ -453,7 +453,6 @@ export const runTurnRounds = async (
         deps.loop.emptyVisibleRetries = 0;
         deps.loop.truncatedBudgetRounds = 0;
         deps.loop.continuationBudgetFloor = 0;
-        deps.loop.retryWithoutThinking = false;
         deps.loop.interruptedReasoning = "";
       }
 

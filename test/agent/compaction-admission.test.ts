@@ -145,7 +145,7 @@ describe("compaction admission", () => {
     expect(isExhausted).not.toHaveBeenCalled();
   });
 
-  it("skips threshold-triggered admission when provider-reported tokens are far below the trigger", async () => {
+  it("admits a crossed estimate when provider truth is stale and lower", async () => {
     const audit = vi.fn();
     const buildDurableEnvelope = vi.fn(async () => "durable state");
     const admission = await planCompactionAdmission(
@@ -156,22 +156,30 @@ describe("compaction admission", () => {
         audit,
       }),
     );
-    expect(admission).toEqual({ admitted: false, skippedByProviderTruth: true });
-    expect(buildDurableEnvelope).not.toHaveBeenCalled();
+    expect(admission).toMatchObject({
+      admitted: true,
+      beforeTokens: trigger,
+      measurement: "estimated",
+    });
+    expect(buildDurableEnvelope).toHaveBeenCalledTimes(1);
     expect(audit).toHaveBeenCalledWith(
-      "agent.compact.skip-provider-truth",
-      expect.objectContaining({ providerPromptTokens: Math.floor(trigger / 4) }),
+      "agent.compact.admission",
+      expect.objectContaining({ admissionSignal: "estimate" }),
     );
   });
 
-  it("does not compact when provider-reported tokens are below the trigger", async () => {
+  it("admits crossed provider truth when the estimate is lower", async () => {
     const admission = await planCompactionAdmission(
       ports({
-        estimateRequestTokens: () => trigger,
-        providerPromptTokens: () => Math.floor(trigger * 0.8),
+        estimateRequestTokens: () => Math.floor(trigger * 0.8),
+        providerPromptTokens: () => trigger,
       }),
     );
-    expect(admission).toEqual({ admitted: false, skippedByProviderTruth: true });
+    expect(admission).toMatchObject({
+      admitted: true,
+      beforeTokens: trigger,
+      measurement: "provider-reported",
+    });
   });
 
   it("admits when provider-reported tokens reach the trigger", async () => {

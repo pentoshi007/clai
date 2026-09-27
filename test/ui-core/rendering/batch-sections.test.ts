@@ -68,7 +68,7 @@ describe("presentBatchSection / summary", () => {
     const body = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join("\n");
     const section = {
       index: 1,
-      name: "fs.read",
+      name: "shell.exec",
       ok: true,
       status: "ok" as const,
       exitCode: 0,
@@ -76,14 +76,54 @@ describe("presentBatchSection / summary", () => {
     };
     const collapsed = presentBatchSection(section, false);
     expect(collapsed.glyph).toBe("✓");
-    expect(collapsed.name).toBe("fs.read");
+    expect(collapsed.name).toBe("shell.exec");
     expect(collapsed.lines[0]).toBe("line 1");
     expect(collapsed.lines.some((l) => l.startsWith("···"))).toBe(true);
+    expect(collapsed.lines.length).toBeLessThanOrEqual(7);
     expect(collapsed.hiddenAboveCount).toBeGreaterThan(0);
 
     const expanded = presentBatchSection(section, true);
     expect(expanded.lines).toHaveLength(12);
     expect(expanded.hiddenAboveCount).toBe(0);
+  });
+
+  it("renders a collapsed fs.read sub-call as its compact read header only", () => {
+    const body = [
+      "# fs.read path=/repo/src/app.ts lines=1-400 of 900 bytes=31000",
+      ...Array.from({ length: 400 }, (_, i) => `${i + 1}: const value${i} = ${i};`),
+    ].join("\n");
+    const section = {
+      index: 2,
+      name: "fs.read",
+      ok: true,
+      status: "ok" as const,
+      exitCode: 0,
+      body,
+    };
+    const collapsed = presentBatchSection(section, false);
+    expect(collapsed.lines).toEqual([
+      "# fs.read path=/repo/src/app.ts lines=1-400 of 900 bytes=31000",
+    ]);
+    expect(collapsed.hiddenAboveCount).toBe(400);
+    expect(collapsed.hasBody).toBe(true);
+
+    const expanded = presentBatchSection(section, true);
+    expect(expanded.lines.length).toBe(401);
+  });
+
+  it("applies per-tool evidence previews to batch sub-calls", () => {
+    const body = [
+      "# web.search query=\"kiro context\"",
+      "1. First result",
+      "https://example.com/one",
+      ...Array.from({ length: 40 }, (_, i) => `snippet line ${i}`),
+    ].join("\n");
+    const collapsed = presentBatchSection(
+      { index: 3, name: "web.search", ok: true, status: "ok", exitCode: 0, body },
+      false,
+    );
+    expect(collapsed.lines.length).toBeLessThanOrEqual(7);
+    expect(collapsed.lines).toContain("https://example.com/one");
   });
 
   it("marks failed sections with ✗ and failed label", () => {

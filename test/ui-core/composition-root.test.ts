@@ -9,6 +9,10 @@ import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { handleContext } from "../../src/ui-core/commands/session-commands.js";
+import {
+  clearModelCatalogFacts,
+  registerModelCatalogFacts,
+} from "../../src/llm/capabilities.js";
 import { createTurnOutcome, type TurnOutcome } from "../../src/agent/turn-outcome.js";
 
 class StubAgent implements AgentPort {
@@ -56,6 +60,38 @@ class UsageAgent implements AgentPort {
       { role: "user", content: "usage" },
       { role: "assistant", content: "usage" },
     ]);
+    return outcome;
+  }
+}
+
+class RatioUsageAgent implements AgentPort {
+  async runTurn(
+    _req: RunTurnRequest,
+    handlers: RunTurnHandlers,
+  ): Promise<TurnOutcome> {
+    const outcome = createTurnOutcome({
+      status: "succeeded",
+      answer: "usage",
+      steps: 1,
+      remainingCriteria: [],
+    });
+    handlers.onEvent({ type: "turn-start", prompt: "usage" });
+    handlers.onEvent({
+      type: "token-usage",
+      provider: "kiro",
+      model: "provider-ratio-ui-model",
+      usage: {
+        promptTokens: 125_000,
+        completionTokens: 0,
+        totalTokens: 125_000,
+        exact: false,
+        promptTokensSource: "provider-ratio",
+        contextWindowTokens: 1_000_000,
+      },
+    });
+    handlers.onEvent({ type: "assistant-message", text: "usage" });
+    handlers.onEvent({ type: "turn-end", outcome, finalAnswer: "usage", steps: 1 });
+    handlers.onMessages?.([{ role: "assistant", content: "usage" }]);
     return outcome;
   }
 }
@@ -300,6 +336,44 @@ describe("createCompositionRoot", () => {
     ).toContain("reasoning output 12");
     services.dispose();
   });
+
+  it("reports provider-ratio usage against the advertised window", async () => {
+    registerModelCatalogFacts("kiro", {
+      id: "provider-ratio-ui-model",
+      contextTokens: 1_000_000,
+    });
+    const services = createCompositionRoot({
+      agent: new RatioUsageAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+      captureEvents: true,
+    });
+    try {
+      await services.session.submit("usage");
+      expect(services.session.getState()).toMatchObject({
+        contextChip: "ctx ~125,000/1M 13%",
+        contextSnapshot: {
+          precision: "provider-ratio",
+          limit: {
+            source: "model-catalog",
+            tokens: 1_000_000,
+            compactTriggerTokens: 700_000,
+          },
+        },
+      });
+
+      handleContext(services);
+      const notice = services.recordedEvents.at(-1);
+      const text = notice?.type === "notice" ? notice.payload.text : "";
+      expect(text).toContain("provider-reported ~125,000 tokens");
+      expect(text).toContain("limit 1,000,000 (provider)");
+      expect(text).toContain("auto-compact at 700,000 (70%)");
+    } finally {
+      services.dispose();
+      clearModelCatalogFacts();
+    }
+  });
+
   it("shows the compacted estimate until exact provider usage arrives", async () => {
     const observed: Array<[string, number | undefined]> = [];
     const estimates: number[] = [];

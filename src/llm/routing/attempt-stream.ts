@@ -23,6 +23,7 @@ import {
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 import { withRequestOptionFallback } from "./request-option-fallback.js";
 import {
+  isInvalidReasoningContentError,
   isMissingReasoningContentError,
   isUnattributableRequestBodyError,
 } from "../reasoning-errors.js";
@@ -44,6 +45,7 @@ import {
   successfulRequestSnapshot,
   withoutImages,
   withoutReasoning,
+  withoutReasoningReplay,
 } from "./attempt-request.js";
 import {
   effortCandidatesFor,
@@ -264,6 +266,27 @@ export async function tryStreamOnce(
       };
       try {
         return await runAttempt(textRequest, "adaptation");
+      } catch (retryError) {
+        throw markStreamEmittedBytes(
+          preservedFailure(retryError, error),
+          emittedBytes,
+        );
+      }
+    }
+    if (
+      emittedBytes === 0 &&
+      isInvalidReasoningContentError(error) &&
+      activeRequest.forceReasoningReplay !== false
+    ) {
+      if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected replayed reasoning — retrying without it`,
+      );
+      try {
+        return await runAttempt(
+          withoutReasoningReplay(activeRequest),
+          "adaptation",
+        );
       } catch (retryError) {
         throw markStreamEmittedBytes(
           preservedFailure(retryError, error),

@@ -146,15 +146,27 @@ export async function handleTaskAdd(
         modelNote: `task.add failed: ${validation.reason}.`,
       };
     }
-    await mutatePlan(plan.sessionId, (draft) => {
+    const committed = await mutatePlan(plan.sessionId, (draft) => {
       applyForegroundSnapshot(draft, plan);
       return true;
-    }).catch(() => undefined);
+    });
+    if (!committed.ok || !committed.plan) {
+      const reason = committed.reason ?? "persist-failed";
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.red(`  ✗ task.add: durable commit failed (${reason})\n`),
+        modelNote:
+          `task.add failed: the new task was not durably committed (${reason}). ` +
+          "Reload the active plan before retrying.",
+      };
+    }
+    const committedPlan = committed.plan;
     return {
       handled: true,
       ok: true,
-      plan,
-      display: renderPlanForTerminal(plan) + "\n",
+      plan: committedPlan,
+      display: renderPlanForTerminal(committedPlan) + "\n",
       modelNote:
         `Added [${task.id}] "${task.title}"${parentTaskId ? ` under [${parentTaskId}]` : ""} without rewriting existing tasks.${reportDeferral} ` +
         `Open it with task.update when it becomes ready. Preserve completed work and continue the current task unless this new task is the immediate evidence-driven next action.`,

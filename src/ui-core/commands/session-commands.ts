@@ -197,27 +197,54 @@ export function handleContext(services: AppServices): void {
   const state = services.session.getState();
   const legacy = state.contextUsage;
   const snapshot = state.contextSnapshot;
+  const formatTokens = (value: number): string => value.toLocaleString("en-US");
   const exact = legacy?.exact === true;
+  const providerRatio = snapshot?.precision === "provider-ratio";
   const usedLabel = !legacy || tokens <= 0
     ? "size unknown until the model reports usage"
-    : exact
-      ? `${tokens.toLocaleString()} tokens`
-      : `~${tokens.toLocaleString()} tokens (estimate)`;
+    : providerRatio
+      ? `provider-reported ~${formatTokens(tokens)} tokens`
+      : exact
+        ? `${formatTokens(tokens)} tokens`
+        : `~${formatTokens(tokens)} tokens (estimate)`;
   const sessionBits =
     legacy && (legacy.sessionPromptTokens > 0 || legacy.sessionCompletionTokens > 0)
-      ? ` · session in ${legacy.sessionPromptTokens.toLocaleString()} / out ${legacy.sessionCompletionTokens.toLocaleString()}`
+      ? ` · session in ${formatTokens(legacy.sessionPromptTokens)} / out ${formatTokens(legacy.sessionCompletionTokens)}`
       : "";
   const details: string[] = [];
+  const limit = snapshot?.limit;
+  if (
+    limit?.tokens !== undefined &&
+    (limit.source === "session-override" || limit.source === "model-catalog")
+  ) {
+    const source = limit.source === "session-override" ? "custom" : "provider";
+    details.push(`limit ${formatTokens(limit.tokens)} (${source})`);
+    if (
+      limit.requestedTokens !== undefined &&
+      limit.providerTokens !== undefined &&
+      limit.requestedTokens > limit.tokens
+    ) {
+      details.push(
+        `custom ${formatTokens(limit.requestedTokens)} exceeds provider window ${formatTokens(limit.providerTokens)}; using ${formatTokens(limit.tokens)}`,
+      );
+    }
+    if (limit.compactTriggerTokens !== undefined) {
+      const ratio = Math.round((limit.compactTriggerTokens / limit.tokens) * 100);
+      details.push(
+        `auto-compact at ${formatTokens(limit.compactTriggerTokens)} (${ratio}%)`,
+      );
+    }
+  }
   if (snapshot?.cache.kind === "reported") {
     const cache = [
       snapshot.cache.readTokens !== undefined
-        ? `read ${snapshot.cache.readTokens.toLocaleString()}`
+        ? `read ${formatTokens(snapshot.cache.readTokens)}`
         : undefined,
       snapshot.cache.creationTokens !== undefined
-        ? `write ${snapshot.cache.creationTokens.toLocaleString()}`
+        ? `write ${formatTokens(snapshot.cache.creationTokens)}`
         : undefined,
       snapshot.cache.uncachedTokens !== undefined
-        ? `uncached ${snapshot.cache.uncachedTokens.toLocaleString()}`
+        ? `uncached ${formatTokens(snapshot.cache.uncachedTokens)}`
         : undefined,
     ].filter((value): value is string => value !== undefined);
     details.push(cache.length > 0 ? `cache ${cache.join(" / ")}` : "cache unavailable");
@@ -227,10 +254,10 @@ export function handleContext(services: AppServices): void {
   if (snapshot?.reasoning.kind === "reported") {
     const reasoning = [
       snapshot.reasoning.outputTokens !== undefined
-        ? `output ${snapshot.reasoning.outputTokens.toLocaleString()}`
+        ? `output ${formatTokens(snapshot.reasoning.outputTokens)}`
         : undefined,
       snapshot.reasoning.inputArtifactTokens !== undefined
-        ? `input ${snapshot.reasoning.inputArtifactTokens.toLocaleString()}`
+        ? `input ${formatTokens(snapshot.reasoning.inputArtifactTokens)}`
         : undefined,
     ].filter((value): value is string => value !== undefined);
     details.push(

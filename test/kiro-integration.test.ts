@@ -26,6 +26,10 @@ import { needsEffortPreflight } from "../src/llm/wire/effort-preflight.js";
 import { normalizeProvider, defaultModels, envVars } from "../src/llm/provider.js";
 import { isKnownPatternVisionModel } from "../src/llm/capability/vision-patterns.js";
 import { withSessionAffinity } from "../src/llm/session-affinity.js";
+import {
+  OperationUsageRecorder,
+  runGenerationAttempt,
+} from "../src/llm/operation-usage.js";
 import type { CompletionRequest, ToolDefinition } from "../src/types.js";
 
 const CRC32_TABLE = new Uint32Array(256);
@@ -88,6 +92,34 @@ function createStreamResponse(frames: Buffer[]) {
       "content-type": "application/vnd.amazon.eventstream",
     },
   });
+}
+
+function isKiroModelCatalogRequest(input: unknown, init?: RequestInit): boolean {
+  const target = new Headers(init?.headers).get("x-amz-target");
+  return (
+    String(input).includes("ListAvailableModels") ||
+    target === "AmazonCodeWhispererService.ListAvailableModels"
+  );
+}
+
+function emptyKiroModelCatalogResponse(): Response {
+  return new Response(JSON.stringify({ models: [] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function stubKiroGeneration(
+  handler: (input: unknown, init?: RequestInit) => Response | Promise<Response>,
+) {
+  const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+    if (isKiroModelCatalogRequest(input, init)) {
+      return emptyKiroModelCatalogResponse();
+    }
+    return handler(input, init);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("Kiro provider integration", () => {
@@ -556,10 +588,85 @@ describe("Kiro provider integration", () => {
     expect(toolResults?.map((t) => t.toolUseId)).toEqual(["tu_1", "tu_2"]);
   });
 
+  it("settles a failed post-200 admission before endpoint fallback", async () => {
+    const generationBodies: string[] = [];
+    let generationCount = 0;
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (isKiroModelCatalogRequest(input, init)) {
+        return emptyKiroModelCatalogResponse();
+      }
+
+      generationBodies.push(String(init?.body));
+      generationCount += 1;
+      if (generationCount === 1) {
+        return createStreamResponse([
+          encodeFrame(
+            { ":event-type": "reasoningContentEvent" },
+            { text: "I should answer." },
+          ),
+          encodeFrame(
+            {
+              ":message-type": "exception",
+              ":exception-type": "serviceUnavailableException",
+            },
+            { message: "temporary stream failure" },
+          ),
+        ]);
+      }
+      return createStreamResponse([
+        encodeFrame(
+          { ":event-type": "assistantResponseEvent" },
+          { content: "Recovered answer" },
+        ),
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const recorder = new OperationUsageRecorder();
+    const request: CompletionRequest = {
+      model: "claude-opus-5.5-thinking",
+      messages: [{ role: "user", content: "answer once" }],
+      thinking: { enabled: true, effort: "high" },
+      attemptUsage: recorder,
+    };
+    const cred = encodeKiroKey({
+      accessToken: "token-abc",
+      authMethod: "builder-id",
+    });
+
+    const result = await runGenerationAttempt(
+      request,
+      {
+        provider: "kiro",
+        model: request.model!,
+        mode: "complete",
+        reason: "initial",
+      },
+      () => kiroProvider.complete(request, { apiKey: cred }),
+    );
+
+    expect(result.text).toBe("Recovered answer");
+    expect(generationBodies).toHaveLength(2);
+    expect(generationBodies[1]).toBe(generationBodies[0]);
+    expect(
+      recorder.snapshot().attempts.map(({ reason, outcome, statusCode }) => ({
+        reason,
+        outcome,
+        statusCode,
+      })),
+    ).toEqual([
+      { reason: "initial", outcome: "failure", statusCode: 502 },
+      { reason: "provider-retry", outcome: "success", statusCode: undefined },
+    ]);
+  });
+
   it("handles automatic token refresh on 401 error", async () => {
     let callCount = 0;
     const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
+      if (isKiroModelCatalogRequest(input, init)) {
+        return emptyKiroModelCatalogResponse();
+      }
       if (url.includes("/token")) {
         return new Response(
           JSON.stringify({
@@ -641,10 +748,10 @@ describe("Kiro provider integration", () => {
 
   it("passes every effort through with a distinct budget (no collapse to high)", async () => {
     const bodies: Record<string, unknown>[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (_i: unknown, init?: RequestInit) => {
+    stubKiroGeneration(async (_i: unknown, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return new Response(new ReadableStream({ start(c) { c.close(); } }), { status: 200 });
-    }));
+    });
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
     for (const effort of ["max", "xhigh", "high", "low"] as const) {
       await kiroProvider.complete(
@@ -737,13 +844,12 @@ describe("Kiro provider integration", () => {
 
   it("builds a stable system prefix across identical thinking configs", async () => {
     const bodies: Record<string, unknown>[] = [];
-    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    stubKiroGeneration(async (_input: unknown, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return createStreamResponse([
         encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
       ]);
     });
-    vi.stubGlobal("fetch", fetchMock);
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
 
     const sys = (b: Record<string, unknown>) => {
@@ -831,7 +937,7 @@ describe("Kiro provider integration", () => {
 
   it("emits adaptive-thinking fields for Claude and native reasoning for GPT", async () => {
     const bodies: Record<string, unknown>[] = [];
-    const fetchMock = vi.fn(async (_i: unknown, init?: RequestInit) => {
+    stubKiroGeneration(async (_i: unknown, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const frame = encodeFrame(
         { ":event-type": "assistantResponseEvent" },
@@ -839,7 +945,6 @@ describe("Kiro provider integration", () => {
       );
       return createStreamResponse([frame]);
     });
-    vi.stubGlobal("fetch", fetchMock);
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
 
     await kiroProvider.complete(
@@ -944,16 +1049,13 @@ describe("Kiro provider integration", () => {
 
   it("keeps history prefix stable when thinking toggles between turns", async () => {
     const bodies: Record<string, unknown>[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_input: unknown, init?: RequestInit) => {
-        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        return new Response(
-          new ReadableStream({ start(c) { c.close(); } }),
-          { status: 200, headers: { "content-type": "application/vnd.amazon.eventstream" } },
-        );
-      }),
-    );
+    stubKiroGeneration(async (_input: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        new ReadableStream({ start(c) { c.close(); } }),
+        { status: 200, headers: { "content-type": "application/vnd.amazon.eventstream" } },
+      );
+    });
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
 
     await kiroProvider.stream(
@@ -1002,18 +1104,15 @@ describe("Kiro provider integration", () => {
     );
   });
 
-  it("keeps history byte-identical across effort and model-suffix changes", async () => {
+  it("keeps history byte-identical across model-suffix changes and moves the thinking directive with each turn", async () => {
     const bodies: Record<string, unknown>[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_input: unknown, init?: RequestInit) => {
-        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        return new Response(
-          new ReadableStream({ start(c) { c.close(); } }),
-          { status: 200, headers: { "content-type": "application/vnd.amazon.eventstream" } },
-        );
-      }),
-    );
+    stubKiroGeneration(async (_input: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        new ReadableStream({ start(c) { c.close(); } }),
+        { status: 200, headers: { "content-type": "application/vnd.amazon.eventstream" } },
+      );
+    });
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
     const base = [
       { role: "system" as const, content: "S" },
@@ -1027,7 +1126,7 @@ describe("Kiro provider integration", () => {
       () => {},
     ).catch(() => {});
     await kiroProvider.stream(
-      { model: "claude-sonnet-4.5", messages: base, thinking: { enabled: true, effort: "low" } },
+      { model: "claude-sonnet-4.5", messages: base, thinking: { enabled: true, effort: "high" } },
       { apiKey: cred },
       () => {},
     ).catch(() => {});
@@ -1035,19 +1134,86 @@ describe("Kiro provider integration", () => {
     const historyOf = (b: Record<string, unknown>) =>
       JSON.stringify((b.conversationState as Record<string, unknown>).history);
     expect(historyOf(bodies[1]!)).toBe(historyOf(bodies[0]!));
+    const state = bodies[0]!.conversationState as {
+      history: Array<{ userInputMessage?: { content: string } }>;
+      currentMessage: { userInputMessage: { content: string } };
+    };
+    const directive = "<thinking_mode>enabled</thinking_mode><max_thinking_length>16000</max_thinking_length>";
+    expect(state.history[0]!.userInputMessage!.content.startsWith(directive)).toBe(true);
+    expect(state.currentMessage.userInputMessage.content.startsWith(directive)).toBe(true);
+  });
+
+  it("keeps live plan and session blocks in the current-message suffix", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    stubKiroGeneration(async (_input: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return createStreamResponse([
+        encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
+      ]);
+    });
+    const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
+    const messages = (revision: number) => [
+      { role: "system" as const, content: "STABLE SYSTEM" },
+      { role: "user" as const, content: "old request" },
+      { role: "assistant" as const, content: "old response" },
+      {
+        role: "system" as const,
+        content: `ACTIVE PLAN for this session\nrevision ${revision}\nt1 done\nt2 in_progress`,
+      },
+      {
+        role: "system" as const,
+        content: "SESSION STATE / WORKING MEMORY\nopen_task=t2",
+      },
+      { role: "user" as const, content: "continue implementation" },
+    ];
+
+    await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: messages(1) },
+      { apiKey: cred },
+    );
+    await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: messages(2) },
+      { apiKey: cred },
+    );
+
+    const conversationOf = (body: Record<string, unknown>) =>
+      body.conversationState as Record<string, unknown>;
+    const historyOf = (body: Record<string, unknown>) =>
+      conversationOf(body).history as Array<Record<string, unknown>>;
+    const currentContentOf = (body: Record<string, unknown>) => {
+      const current = conversationOf(body).currentMessage as Record<string, unknown>;
+      return String((current.userInputMessage as Record<string, unknown>).content ?? "");
+    };
+
+    expect(bodies).toHaveLength(2);
+    expect(JSON.stringify(historyOf(bodies[1]!))).toBe(
+      JSON.stringify(historyOf(bodies[0]!)),
+    );
+    const historicalContent = JSON.stringify(historyOf(bodies[0]!));
+    expect(historicalContent).toContain("STABLE SYSTEM");
+    expect(historicalContent).not.toContain("ACTIVE PLAN");
+    expect(historicalContent).not.toContain("SESSION STATE");
+
+    const current = currentContentOf(bodies[1]!);
+    expect(current).toContain("[SYSTEM]\nACTIVE PLAN");
+    expect(current).toContain("revision 2");
+    expect(current).not.toContain("revision 1");
+    expect(current.indexOf("ACTIVE PLAN")).toBeLessThan(
+      current.indexOf("SESSION STATE / WORKING MEMORY"),
+    );
+    expect(current.indexOf("SESSION STATE / WORKING MEMORY")).toBeLessThan(
+      current.indexOf("continue implementation"),
+    );
   });
 
   it("sends clean requests for paid-tier new model families and free-tier text models", async () => {
     const bodies: Record<string, unknown>[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_input: unknown, init?: RequestInit) => {
-        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        return createStreamResponse([
-          encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
-        ]);
-      }),
-    );
+    stubKiroGeneration(async (_input: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return createStreamResponse([
+        encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
+      ]);
+    });
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
     const cases: Array<[string, boolean]> = [
       ["gpt-6-thinking", false],
@@ -1408,5 +1574,148 @@ describe("Kiro provider integration", () => {
         restore();
       }
     });
+  });
+});
+
+
+describe("Kiro 9router parity hardening", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    resetKiroModelCacheForTesting();
+  });
+
+  it.each([401, 403])("falls through an HTTP %i auth-surface mismatch", async (status) => {
+    const urls: string[] = [];
+    stubKiroGeneration((input) => {
+      urls.push(String(input));
+      if (urls.length === 1) return new Response("wrong surface", { status });
+      return createStreamResponse([
+        encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "recovered" }),
+      ]);
+    });
+
+    const result = await kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hello" }] },
+      { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
+    );
+
+    expect(result.text).toBe("recovered");
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toContain("runtime.us-east-1.kiro.dev");
+    expect(urls[1]).toContain("codewhisperer.us-east-1.amazonaws.com");
+  });
+
+  it("rejects an EventStream frame whose advertised size exceeds the protocol bound", async () => {
+    const prelude = Buffer.alloc(12);
+    prelude.writeUInt32BE(24 * 1024 * 1024 + 1, 0);
+    prelude.writeUInt32BE(0, 4);
+    prelude.writeUInt32BE(crc32(prelude, 0, 8), 8);
+    stubKiroGeneration(() => createStreamResponse([prelude]));
+
+    await expect(kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hello" }] },
+      { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
+    )).rejects.toThrow(/frame length exceeds.*bound/i);
+  });
+
+  it("rejects duplicate EventStream headers", async () => {
+    const header = (name: string, value: string) => {
+      const nameBytes = Buffer.from(name);
+      const valueBytes = Buffer.from(value);
+      const bytes = Buffer.alloc(4 + nameBytes.length + valueBytes.length);
+      bytes.writeUInt8(nameBytes.length, 0);
+      nameBytes.copy(bytes, 1);
+      bytes.writeUInt8(7, 1 + nameBytes.length);
+      bytes.writeUInt16BE(valueBytes.length, 2 + nameBytes.length);
+      valueBytes.copy(bytes, 4 + nameBytes.length);
+      return bytes;
+    };
+    const repeated = header(":event-type", "assistantResponseEvent");
+    const headers = Buffer.concat([repeated, repeated]);
+    const payload = Buffer.from(JSON.stringify({ content: "must not be accepted" }));
+    const frame = Buffer.alloc(12 + headers.length + payload.length + 4);
+    frame.writeUInt32BE(frame.length, 0);
+    frame.writeUInt32BE(headers.length, 4);
+    frame.writeUInt32BE(crc32(frame, 0, 8), 8);
+    headers.copy(frame, 12);
+    payload.copy(frame, 12 + headers.length);
+    frame.writeUInt32BE(crc32(frame, 0, frame.length - 4), frame.length - 4);
+    stubKiroGeneration(() => createStreamResponse([frame]));
+
+    await expect(kiroProvider.complete(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hello" }] },
+      { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
+    )).rejects.toThrow(/duplicate.*header/i);
+  });
+
+  it("fails closed on a filtered terminal reason without publishing partial output", async () => {
+    const tokens: string[] = [];
+    stubKiroGeneration(() => createStreamResponse([
+      encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "private partial" }),
+      encodeFrame({ ":event-type": "metadataEvent" }, { stopReason: "content_filtered" }),
+      encodeFrame({ ":event-type": "messageStopEvent" }, { stopReason: "end_turn" }),
+    ]));
+
+    await expect(kiroProvider.stream(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hello" }] },
+      { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
+      (token) => tokens.push(token),
+    )).rejects.toThrow(/content safety policy.*content_filtered/i);
+    expect(tokens).toEqual([]);
+  });
+
+  it("treats an ellipsis-only final as empty without publishing it", async () => {
+    const tokens: string[] = [];
+    stubKiroGeneration(() => createStreamResponse([
+      encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "..." }),
+    ]));
+
+    await expect(kiroProvider.stream(
+      { model: "claude-sonnet-4.5", messages: [{ role: "user", content: "hello" }] },
+      { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
+      (token) => tokens.push(token),
+    )).rejects.toThrow(/without a visible answer/i);
+    expect(tokens).toEqual([]);
+  });
+
+  it("forwards deferred tool-result images with the paired result turn", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    stubKiroGeneration((_input, init) => {
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return createStreamResponse([
+        encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "done" }),
+      ]);
+    });
+
+    await kiroProvider.complete({
+      model: "claude-sonnet-4.5",
+      tools: [{ name: "image.view", description: "View image", parameters: { type: "object", properties: {} } }],
+      messages: [
+        { role: "user", content: "inspect it" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "image_1", name: "image.view", args: {} }],
+        },
+        { role: "tool", toolCallId: "image_1", content: "image attached" },
+        {
+          role: "user",
+          content: "Judge it from the pixels.",
+          images: [{ mediaType: "image/png", dataBase64: "aW1hZ2U=" }],
+        },
+      ],
+    }, { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) });
+
+    const state = capturedBody?.conversationState as Record<string, unknown>;
+    const current = state.currentMessage as Record<string, unknown>;
+    const message = current.userInputMessage as Record<string, unknown>;
+    const context = message.userInputMessageContext as Record<string, unknown>;
+    expect(context.toolResults).toEqual([
+      { toolUseId: "image_1", content: [{ text: "image attached" }], status: "success" },
+    ]);
+    expect(message.images).toEqual([
+      { format: "png", source: { bytes: "aW1hZ2U=" } },
+    ]);
   });
 });

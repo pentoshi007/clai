@@ -7,7 +7,6 @@ import { toolNudge } from "../../../prompts/index.js";
 
 export interface EmptyResponseState {
   emptyVisibleRetries: number;
-  retryWithoutThinking: boolean;
   interruptedReasoning: string;
 }
 
@@ -15,6 +14,7 @@ export interface EmptyResponsePorts {
   readonly messages: ChatMessage[];
   readonly toolsAttached: boolean;
   readonly planModeWithoutPlan: boolean;
+  readonly maxRetries?: number | undefined;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly commitAssistantRetry: (text: string) => void;
   readonly recoveryUserMessage: (content: string) => ChatMessage;
@@ -56,7 +56,8 @@ export const handleEmptyResponse = (
   input: EmptyResponseInput,
 ): EmptyResponseDecision => {
   state.emptyVisibleRetries += 1;
-  if (state.emptyVisibleRetries > MAX_EMPTY_RETRIES) {
+  const maxRetries = ports.maxRetries ?? MAX_EMPTY_RETRIES;
+  if (state.emptyVisibleRetries > maxRetries) {
     ports.notify(
       "warn",
       "model returned an empty response after retries — no answer produced",
@@ -77,9 +78,6 @@ export const handleEmptyResponse = (
     );
   }
   const preservedReasoning = state.interruptedReasoning;
-  if (input.hasThinking && state.emptyVisibleRetries >= 2) {
-    state.retryWithoutThinking = true;
-  }
   ports.commitAssistantRetry(input.assistantVisible);
   state.interruptedReasoning = preservedReasoning;
 

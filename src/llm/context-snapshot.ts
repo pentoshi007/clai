@@ -18,8 +18,15 @@ export type ContextSnapshotScope =
 
 export type ContextSnapshotPrecision =
   | "provider-exact"
+  | "provider-ratio"
   | "estimate"
   | "unknown";
+
+export function isProviderMeasuredPrecision(
+  precision: ContextSnapshotPrecision,
+): boolean {
+  return precision === "provider-exact" || precision === "provider-ratio";
+}
 
 export type ContextLimitSource =
   | "session-override"
@@ -31,6 +38,15 @@ export type ContextLimitSource =
 export interface ContextSnapshotLimit {
   readonly source: ContextLimitSource;
   readonly tokens?: number | undefined;
+  readonly providerTokens?: number | undefined;
+  readonly requestedTokens?: number | undefined;
+  readonly compactTriggerTokens?: number | undefined;
+}
+
+export function knownWindowTokens(limit: ContextSnapshotLimit): number | undefined {
+  return limit.source === "session-override" || limit.source === "model-catalog"
+    ? limit.tokens
+    : undefined;
 }
 
 export type ContextSnapshotHeadroom =
@@ -120,6 +136,7 @@ const SCOPES = new Set<ContextSnapshotScope>([
 
 const PRECISIONS = new Set<ContextSnapshotPrecision>([
   "provider-exact",
+  "provider-ratio",
   "estimate",
   "unknown",
 ]);
@@ -159,9 +176,15 @@ function normalizeLimit(
     return Object.freeze({ source: "unknown" as const });
   }
   const tokens = positiveInteger(limit.tokens);
+  const providerTokens = positiveInteger(limit.providerTokens);
+  const requestedTokens = positiveInteger(limit.requestedTokens);
+  const compactTriggerTokens = positiveInteger(limit.compactTriggerTokens);
   return Object.freeze({
     source: limit.source,
     ...(tokens !== undefined ? { tokens } : {}),
+    ...(providerTokens !== undefined ? { providerTokens } : {}),
+    ...(requestedTokens !== undefined ? { requestedTokens } : {}),
+    ...(compactTriggerTokens !== undefined ? { compactTriggerTokens } : {}),
   });
 }
 
@@ -210,17 +233,20 @@ function derivedHeadroom(
   scope: ContextSnapshotScope,
   limit: ContextSnapshotLimit,
 ): ContextSnapshotHeadroom {
+  const windowTokens = knownWindowTokens(limit);
   if (
     scope === "message-history" ||
     scope === "unknown" ||
-    limit.source !== "session-override" ||
-    limit.tokens === undefined
+    windowTokens === undefined
   ) {
     return UNKNOWN_HEADROOM;
   }
   return Object.freeze({
     kind: "known" as const,
-    remainingTokens: Math.max(0, limit.tokens - contextTokens),
+    remainingTokens: Math.max(0, windowTokens - contextTokens),
+    ...(limit.compactTriggerTokens !== undefined
+      ? { effectiveTriggerTokens: limit.compactTriggerTokens }
+      : {}),
   });
 }
 
@@ -256,10 +282,7 @@ export function toLegacyContextUsage(
 ): ContextUsageSnapshot {
   return Object.freeze({
     contextTokens: snapshot.contextTokens,
-    contextLimit:
-      snapshot.limit.source === "session-override" && snapshot.limit.tokens
-        ? snapshot.limit.tokens
-        : 0,
+    contextLimit: knownWindowTokens(snapshot.limit) ?? 0,
     lastCompletionTokens: snapshot.lastCompletionTokens,
     sessionPromptTokens: snapshot.sessionPromptTokens,
     sessionCompletionTokens: snapshot.sessionCompletionTokens,
@@ -327,12 +350,18 @@ function hasOptionalNonNegativeInteger(value: unknown): boolean {
   return value === undefined || isNonNegativeIntegerValue(value);
 }
 
+function isOptionalPositiveInteger(value: unknown): boolean {
+  return value === undefined || (isNonNegativeIntegerValue(value) && value > 0);
+}
+
 function isContextLimit(value: unknown): value is ContextSnapshotLimit {
   return (
     isRecord(value) &&
     LIMIT_SOURCES.has(value.source as ContextLimitSource) &&
-    (value.tokens === undefined ||
-      (isNonNegativeIntegerValue(value.tokens) && value.tokens > 0))
+    isOptionalPositiveInteger(value.tokens) &&
+    isOptionalPositiveInteger(value.providerTokens) &&
+    isOptionalPositiveInteger(value.requestedTokens) &&
+    isOptionalPositiveInteger(value.compactTriggerTokens)
   );
 }
 

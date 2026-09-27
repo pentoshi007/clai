@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAgent } from "../src/modes/agent.js";
 import { geminiBody } from "../src/llm/gemini.js";
 import { samplingDefaults } from "../src/llm/sampling.js";
-import { estimateTokens } from "../src/agent/context-manager.js";
 import { getConfig, updateConfig } from "../src/store/config.js";
 import type { CompletionRequest } from "../src/types.js";
 
@@ -105,7 +104,117 @@ describe("agent recovery request shaping", () => {
     expect(thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
   });
 
-  it("disables thinking only after repeated thinking-only replies", async () => {
+  it("recovers a Kiro reasoning-only turn without forcing compaction", async () => {
+    updateConfig({ thinking: { enabled: true, effort: "medium" } });
+    const reasoning =
+      "I traced the Kiro tool execution state, checked the pending task, and preserved the exact next action so the retry can continue without restarting the analysis or duplicating the original request.";
+    const prompt = "Continue the current task.";
+    const requests: CompletionRequest[] = [];
+    stream
+      .mockImplementationOnce(
+        (request: CompletionRequest, onToken: (token: string) => void) => {
+          requests.push(request);
+          return reply(`<think>${reasoning}</think>`)(request, onToken);
+        },
+      )
+      .mockImplementationOnce(
+        (request: CompletionRequest, onToken: (token: string) => void) => {
+          requests.push(request);
+          return reply("Visible Kiro recovery answer.")(request, onToken);
+        },
+      );
+
+    await runAgent(prompt, {
+      provider: "kiro",
+      model: "claude-opus-5.5-thinking",
+      session: session("agent-recovery-kiro-thinking"),
+      maxSteps: 1,
+    });
+
+    expect(requests.map((request) => request.purpose)).toEqual([
+      "turn",
+      "turn",
+    ]);
+    expect(requests).toHaveLength(2);
+    expect(requests.every((request) => request.purpose === "turn")).toBe(true);
+    expect(requests[1]!.thinking).toEqual(requests[0]!.thinking);
+    expect(
+      requests[1]!.messages.filter(
+        (message) =>
+          message.role === "user" && message.content === prompt,
+      ),
+    ).toHaveLength(1);
+    expect(requests[1]!.messages.at(-1)?.content).toContain(
+      "Your previous response contained only reasoning",
+    );
+  });
+
+  it("recovers Kiro after repeated same-effort reasoning-only replies", async () => {
+    updateConfig({ thinking: { enabled: true, effort: "medium" } });
+    const requests: CompletionRequest[] = [];
+    const reasoning =
+      "I retained the complete Kiro recovery state and the next action, but this simulated generation still did not emit a visible answer or tool call.";
+    stream.mockImplementation(
+      (request: CompletionRequest, onToken: (token: string) => void) => {
+        requests.push(request);
+        return requests.length <= 4
+          ? reply(`<think>${reasoning}</think>`)(request, onToken)
+          : reply("Visible answer after repeated Kiro reasoning.")(request, onToken);
+      },
+    );
+
+    await runAgent("Continue once.", {
+      provider: "kiro",
+      model: "claude-opus-5.5-thinking",
+      session: session("agent-recovery-kiro-bounded"),
+      maxSteps: 1,
+    });
+
+    expect(requests).toHaveLength(5);
+    expect(requests.every((request) => request.thinking?.effort === "medium")).toBe(true);
+    expect(
+      requests[4]!.messages.filter(
+        (message) => message.role === "user" && message.content === "Continue once.",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("recovers Kiro after repeated true-empty stream errors", async () => {
+    updateConfig({ thinking: { enabled: true, effort: "medium" } });
+    const requests: CompletionRequest[] = [];
+    stream.mockImplementation(
+      (request: CompletionRequest, onToken: (token: string) => void) => {
+        requests.push(request);
+        if (requests.length <= 2) {
+          return Promise.reject(
+            new Error(
+              "No provider could stream the request. — kiro: Kiro completed without a visible answer.",
+            ),
+          );
+        }
+        return reply("Visible answer after repeated Kiro empty streams.")(request, onToken);
+      },
+    );
+
+    await runAgent("Continue after an empty stream.", {
+      provider: "kiro",
+      model: "claude-opus-5.5-thinking",
+      session: session("agent-recovery-kiro-empty-bounded"),
+      maxSteps: 1,
+    });
+
+    expect(requests).toHaveLength(3);
+    expect(requests.every((request) => request.purpose === "turn")).toBe(true);
+    expect(requests.every((request) => request.thinking?.effort === "medium")).toBe(true);
+    expect(
+      requests[2]!.messages.filter(
+        (message) =>
+          message.role === "user" && message.content === "Continue after an empty stream.",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the selected reasoning effort across repeated thinking-only replies", async () => {
     const firstReasoning =
       "First long reasoning pass: I mapped the xray opacity rules per system and concluded external parts drop to 0.10 when xray is on and the part belongs to the current system selection.";
     const secondReasoning =
@@ -134,7 +243,7 @@ describe("agent recovery request shaping", () => {
 
     expect(requests).toHaveLength(3);
     expect(requests[1]!.thinking).toEqual({ enabled: true, effort: "low" });
-    expect(requests[2]!.thinking).toEqual({ enabled: false, effort: "low" });
+    expect(requests[2]!.thinking).toEqual({ enabled: true, effort: "low" });
     const firstNudge = requests[1]!.messages.at(-1)?.content ?? "";
     const secondNudge = requests[2]!.messages.at(-1)?.content ?? "";
     expect(firstNudge).toContain("xray opacity rules");

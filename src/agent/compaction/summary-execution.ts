@@ -3,6 +3,7 @@ import { completeWithProvider, streamWithProvider } from "../../llm/router.js";
 import { modelMaxOutputTokens } from "../../llm/context-windows.js";
 import { effortReasoningBudgetTokens } from "../../llm/reasoning-controls.js";
 import { streamAlreadyEmitted } from "../../llm/stream-progress.js";
+import { isEmptyCompletionError } from "../../llm/routing/error-classification.js";
 import type { ChatMessage, CompletionRequest, CompletionResult, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
 import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
 import { buildCompactionRetryPrompt, COMPACTION_INPUT_SAFETY_TOKENS, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
@@ -588,7 +589,12 @@ export async function executeCompactionSummary(
   };
 
   const sizedRequest = withReasoningHeadroom(request);
-  const first = await runAttempt(sizedRequest);
+  const first = await runAttempt(sizedRequest).catch((error: unknown) => {
+    if (execution.qualityRetry === false || !isEmptyCompletionError(error)) {
+      throw error;
+    }
+    return { text: "", toolCalls: undefined, finishReason: "stop" };
+  });
   let visible = normalizeCompactionSummary(
     stripThinking(first.text).visible,
   );
@@ -635,6 +641,10 @@ export async function executeCompactionSummary(
               `${execution.systemContent}${RETRY_SYSTEM_SUFFIX}`,
             ),
             temperature: 0,
+            ...(retryReason === "reasoning-only" &&
+            sizedRequest.thinking?.enabled === true
+              ? { thinking: COMPACTION_THINKING }
+              : {}),
           };
     if (!retryRequest) {
       const salvaged = salvageTruncatedSummary(visible);

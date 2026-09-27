@@ -49,6 +49,7 @@ const PREVIEW_LINES = 20;
 
 export class SessionResponder {
   private leaseId: string | undefined;
+  private deactivatedAt = Date.now();
   private generation = 0;
   private wakeRequested = false;
   private wakeDrain: Promise<void> | undefined;
@@ -65,6 +66,7 @@ export class SessionResponder {
   deactivate(): void {
     const leaseId = this.leaseId;
     this.leaseId = undefined;
+    this.deactivatedAt = Date.now();
     this.generation += 1;
     this.wakeRequested = false;
     if (leaseId) {
@@ -82,8 +84,21 @@ export class SessionResponder {
   }
 
   handleChange(change: JobManagerChange): void {
+    if (change.type === "job" && this.isNewOwnedResponderJob(change.jobId)) {
+      this.activate();
+      return;
+    }
     this.deps.notifyState();
     if (change.type === "notification") this.scheduleWake();
+  }
+
+  private isNewOwnedResponderJob(jobId: string): boolean {
+    if (this.leaseId) return false;
+    const job = this.deps.jobs.get(jobId);
+    if (!job?.responder) return false;
+    if (job.ownerSessionId !== this.deps.sessionId()) return false;
+    if (job.status !== "starting" && job.status !== "running") return false;
+    return Date.parse(job.startedAt) > this.deactivatedAt;
   }
 
   getState(): ResponderRuntimeState {

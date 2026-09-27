@@ -21,6 +21,7 @@ import {
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 import { withRequestOptionFallback } from "./request-option-fallback.js";
 import {
+  isInvalidReasoningContentError,
   isMissingReasoningContentError,
   isUnattributableRequestBodyError,
 } from "../reasoning-errors.js";
@@ -37,6 +38,7 @@ import {
   runRecordedProviderAttempt,
   withoutImages,
   withoutReasoning,
+  withoutReasoningReplay,
 } from "./attempt-request.js";
 import {
   effortCandidatesFor,
@@ -130,6 +132,19 @@ export async function tryCompleteOnce(
         parallelToolCalls: undefined,
       };
       return await runAttempt(textRequest, "adaptation");
+    }
+    if (
+      isInvalidReasoningContentError(error) &&
+      activeRequest.forceReasoningReplay !== false
+    ) {
+      if (singleDispatch) throw error;
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected replayed reasoning — retrying without it`,
+      );
+      return await runAttempt(
+        withoutReasoningReplay(activeRequest),
+        "adaptation",
+      );
     }
     if (
       isMissingReasoningContentError(error) &&

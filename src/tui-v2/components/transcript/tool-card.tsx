@@ -239,7 +239,7 @@ export function ToolCard(props: {
     isBatchName && tail ? buildBatchCardsFromSpool(tail) : [];
   const isBatch = isBatchName && batchSections.length > 0;
   const isBatchLive = isBatchName && item.status === "running";
-  const batchExpanded = expanded || isBatchLive;
+  const batchExpanded = expanded;
 
   const { width: termWidth } = useTerminalDimensionsContext();
   const diffPaneWidth = Math.max(20, contentWidth ?? termWidth - 6);

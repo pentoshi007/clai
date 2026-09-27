@@ -324,7 +324,7 @@ describe("exactness lifetime", () => {
     expect(next.exact).toBe(false);
   });
 
-  it("keeps a legacy estimate unchanged instead of re-estimating from history", () => {
+  it("keeps legacy estimate tokens while enriching current limit metadata", () => {
     const previous = createContextSnapshot({
       contextTokens: 120_000,
       lastCompletionTokens: 900,
@@ -343,9 +343,16 @@ describe("exactness lifetime", () => {
     const resolved = resolveContextSnapshot(target, previous);
 
     expect(estimateMessagesTokens(grown)).toBeGreaterThan(240_000);
-    expect(resolved).toBe(previous);
-    expect(resolved?.contextTokens).toBe(120_000);
-    expect(resolved?.precision).toBe("estimate");
+    expect(resolved).toMatchObject({
+      contextTokens: 120_000,
+      precision: "estimate",
+      limit: {
+        source: "session-override",
+        tokens: 1_000_000,
+        requestedTokens: 1_000_000,
+        compactTriggerTokens: 700_000,
+      },
+    });
   });
 
   it("replaces an exact snapshot with a newer assembled-request estimate", () => {

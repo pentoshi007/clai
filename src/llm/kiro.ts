@@ -17,21 +17,53 @@ import {
 } from "./provider.js";
 import { ProviderError } from "./http.js";
 import {
-  assertValidAwsRegion,
   decodeKiroKey,
+  discoverKiroModelsDetailed,
   encodeKiroKey,
   getKiroUsageLimits,
   isKiroOAuthToken,
-  listKiroModelsDetailed,
+  KiroRefreshError,
+  kiroCredentialNeedsRefresh,
   maybeRefreshKiroCredential,
+  resolveKiroRuntimeRegion,
+  type KiroApiGeneration,
   type KiroCredential,
   type KiroModelInfo,
   type KiroUsageLimits,
 } from "./kiro-auth.js";
 import { currentSessionAffinity } from "./session-affinity.js";
-import { generationFetch } from "./operation-usage.js";
+import { nearestAcceptedEffort } from "./reasoning-controls.js";
+import {
+  completeGenerationAttempt,
+  generationFetch,
+} from "./operation-usage.js";
 import { learnModelVisionCapability } from "./capability/vision-registry.js";
 import { emitStreamReasoningDelta } from "./stream-events.js";
+import {
+  createReasoningArtifactProvenance,
+  createReasoningArtifactReplayTarget,
+  reasoningArtifactSignature,
+  reasoningArtifactText,
+  reasoningArtifactsForMessage,
+  selectReasoningArtifactsForReplay,
+} from "./reasoning-artifacts.js";
+import {
+  createKiroReasoningAccumulator,
+  kiroPrivateReasoningNote,
+  kiroCatalogEfforts,
+  kiroReasoningResult,
+  sentKiroReasoningEffort,
+} from "./kiro-reasoning.js";
+import {
+  registerModelCatalogFacts,
+  registerModelReasoningEfforts,
+} from "./capabilities.js";
+import { modelContextWindow } from "./context-windows.js";
+import {
+  providerRatioPromptTokens,
+  providerRatioUsage,
+} from "./provider-context-usage.js";
+import { inBandBadRequestStatus } from "./reasoning-errors.js";
 import { replaceProviderKey } from "../store/keys.js";
 
 const KIRO_FALLBACK_BASE_MODELS: readonly string[] = [
@@ -71,6 +103,9 @@ for (let i = 0; i < 256; i++) {
   CRC32_TABLE[i] = c >>> 0;
 }
 
+const KIRO_EVENTSTREAM_MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
+const KIRO_EVENTSTREAM_MAX_HEADERS_BYTES = 128 * 1024;
+
 function crc32(buf: Buffer | Uint8Array, start = 0, end = buf.length): number {
   let crc = 0xffffffff;
   for (let i = start; i < end; i++) {
@@ -81,49 +116,75 @@ function crc32(buf: Buffer | Uint8Array, start = 0, end = buf.length): number {
 
 function parseHeaders(buf: Buffer): Record<string, unknown> {
   const headers: Record<string, unknown> = {};
+  const names = new Set<string>();
   let offset = 0;
+  const requireBytes = (count: number): void => {
+    if (offset + count > buf.length) {
+      throw new ProviderError("Kiro event-stream header exceeds its declared bounds", 502);
+    }
+  };
+
   while (offset < buf.length) {
+    requireBytes(1);
     const nameLen = buf.readUInt8(offset);
     offset += 1;
+    requireBytes(nameLen + 1);
     const name = buf.toString("utf8", offset, offset + nameLen);
     offset += nameLen;
+    if (names.has(name)) {
+      throw new ProviderError(`Duplicate Kiro event-stream header: ${name}`, 502);
+    }
+    names.add(name);
     const type = buf.readUInt8(offset);
     offset += 1;
-    if (type === 0) {
-      headers[name] = true;
-    } else if (type === 1) {
-      headers[name] = false;
-    } else if (type === 2) {
+
+    if (type === 0 || type === 1) {
+      headers[name] = type === 0;
+      continue;
+    }
+    if (type === 2) {
+      requireBytes(1);
       headers[name] = buf.readInt8(offset);
       offset += 1;
-    } else if (type === 3) {
+      continue;
+    }
+    if (type === 3) {
+      requireBytes(2);
       headers[name] = buf.readInt16BE(offset);
       offset += 2;
-    } else if (type === 4) {
+      continue;
+    }
+    if (type === 4) {
+      requireBytes(4);
       headers[name] = buf.readInt32BE(offset);
       offset += 4;
-    } else if (type === 5) {
-      headers[name] = buf.readBigInt64BE(offset);
+      continue;
+    }
+    if (type === 5 || type === 8) {
+      requireBytes(8);
+      const value = buf.readBigInt64BE(offset);
+      headers[name] = type === 5 ? value : new Date(Number(value));
       offset += 8;
-    } else if (type === 6) {
+      continue;
+    }
+    if (type === 6 || type === 7) {
+      requireBytes(2);
       const len = buf.readUInt16BE(offset);
       offset += 2;
-      headers[name] = buf.subarray(offset, offset + len);
+      requireBytes(len);
+      headers[name] = type === 7
+        ? buf.toString("utf8", offset, offset + len)
+        : buf.subarray(offset, offset + len);
       offset += len;
-    } else if (type === 7) {
-      const len = buf.readUInt16BE(offset);
-      offset += 2;
-      headers[name] = buf.toString("utf8", offset, offset + len);
-      offset += len;
-    } else if (type === 8) {
-      headers[name] = new Date(Number(buf.readBigInt64BE(offset)));
-      offset += 8;
-    } else if (type === 9) {
+      continue;
+    }
+    if (type === 9) {
+      requireBytes(16);
       headers[name] = buf.subarray(offset, offset + 16).toString("hex");
       offset += 16;
-    } else {
-      break;
+      continue;
     }
+    throw new ProviderError(`Unknown Kiro event-stream header type ${type}`, 502);
   }
   return headers;
 }
@@ -150,17 +211,27 @@ async function* parseEventStream(
       while (buffer.length >= 12) {
         const totalLength = buffer.readUInt32BE(0);
         if (totalLength < 16) {
-          buffer = buffer.subarray(1);
-          continue;
+          throw new ProviderError("Invalid Kiro event-stream frame length", 502);
+        }
+        if (totalLength > KIRO_EVENTSTREAM_MAX_MESSAGE_BYTES) {
+          throw new ProviderError(
+            `Kiro event-stream frame length exceeds the ${KIRO_EVENTSTREAM_MAX_MESSAGE_BYTES}-byte protocol bound`,
+            502,
+          );
         }
 
         const headersLength = buffer.readUInt32BE(4);
+        if (
+          headersLength > KIRO_EVENTSTREAM_MAX_HEADERS_BYTES ||
+          headersLength > totalLength - 16
+        ) {
+          throw new ProviderError("Invalid Kiro event-stream header length", 502);
+        }
         const preludeCrc = buffer.readUInt32BE(8);
         const expectedPreludeCrc = crc32(buffer, 0, 8);
 
         if (preludeCrc !== expectedPreludeCrc) {
-          buffer = buffer.subarray(1);
-          continue;
+          throw new ProviderError("Kiro event-stream prelude checksum failed", 502);
         }
 
         if (buffer.length < totalLength) {
@@ -170,8 +241,7 @@ async function* parseEventStream(
         const messageCrc = buffer.readUInt32BE(totalLength - 4);
         const expectedMessageCrc = crc32(buffer, 0, totalLength - 4);
         if (messageCrc !== expectedMessageCrc) {
-          buffer = buffer.subarray(totalLength);
-          continue;
+          throw new ProviderError("Kiro event-stream message checksum failed", 502);
         }
 
         const headersBuffer = buffer.subarray(12, 12 + headersLength);
@@ -182,16 +252,26 @@ async function* parseEventStream(
         let payload: Record<string, unknown> = {};
         if (payloadBuffer.length > 0) {
           try {
-            const raw = payloadBuffer.toString("utf8");
-            payload = JSON.parse(raw);
-          } catch {
-            payload = { raw: payloadBuffer.toString("utf8") };
+            const decoded: unknown = JSON.parse(payloadBuffer.toString("utf8"));
+            if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+              throw new Error("payload is not an object");
+            }
+            payload = decoded as Record<string, unknown>;
+          } catch (error) {
+            const detail = error instanceof Error ? `: ${error.message}` : "";
+            throw new ProviderError(`Invalid Kiro event-stream JSON payload${detail}`, 502);
           }
         }
 
         yield { headers, payload };
       }
     }
+    if (buffer.length > 0) {
+      throw new ProviderError("Kiro event stream ended with a partial frame", 502);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
   } finally {
     reader.releaseLock();
   }
@@ -233,8 +313,8 @@ export function resolveKiroModel(model: string): {
   return { upstream, agentic, thinking };
 }
 
-function isAdaptiveThinkingModel(model: string): boolean {
-  return /^claude/i.test(model);
+function isLegacyThinkingDirectiveModel(model: string): boolean {
+  return /^claude-(?:opus-4\.5|sonnet-4(?:\.5)?|haiku-4\.5)$/i.test(model);
 }
 
 function kiroEffortString(effort: ReasoningEffort | undefined): string {
@@ -245,6 +325,175 @@ function kiroEffortString(effort: ReasoningEffort | undefined): string {
   if (effort === "high") return "high";
   if (effort === "xhigh") return "xhigh";
   return "max";
+}
+
+function asKiroRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+type KiroStopDisposition =
+  | "complete"
+  | "tool_calls"
+  | "length"
+  | "retryable"
+  | "blocked"
+  | "incomplete"
+  | "unknown";
+
+function normalizeKiroStopReason(value: unknown): string {
+  const reason = typeof value === "string" ? value.trim() : "";
+  const normalized = reason
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (["endturn", "end_turn", "stop", "stop_sequence", "completed"].includes(normalized)) {
+    return "end_turn";
+  }
+  if (["tooluse", "tool_use", "tool_calls"].includes(normalized)) return "tool_use";
+  if (["maxtokens", "max_tokens", "max_output_tokens", "length"].includes(normalized)) {
+    return "max_tokens";
+  }
+  return normalized;
+}
+
+function kiroStopDisposition(reason: string, hasToolCalls: boolean): KiroStopDisposition {
+  if (["malformed_model_output", "invalid_model_output"].includes(reason)) return "retryable";
+  if (reason === "refusal" || /(?:content.*filter|guardrail|safety|policy|blocked)/u.test(reason)) {
+    return "blocked";
+  }
+  if (["cancelled", "pause_turn"].includes(reason)) return "incomplete";
+  if (["max_tokens", "model_context_window_exceeded"].includes(reason)) {
+    return hasToolCalls ? "incomplete" : "length";
+  }
+  if (hasToolCalls || reason === "tool_use") return "tool_calls";
+  if (!reason || reason === "end_turn") return "complete";
+  return "unknown";
+}
+
+function mergeKiroStopReason(current: string, incoming: string): string {
+  if (!incoming) return current;
+  if (!current) return incoming;
+  const severity = (reason: string): number => {
+    const disposition = kiroStopDisposition(reason, false);
+    if (disposition === "blocked") return 6;
+    if (disposition === "incomplete" || disposition === "unknown") return 5;
+    if (disposition === "retryable") return 4;
+    if (disposition === "length") return 3;
+    if (disposition === "tool_calls") return 2;
+    return 1;
+  };
+  return severity(incoming) > severity(current) ? incoming : current;
+}
+
+function firstKiroMetric(
+  sources: readonly Record<string, unknown>[],
+  names: readonly string[],
+): number | undefined {
+  for (const source of sources) {
+    for (const name of names) {
+      const value = source[name];
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+function schemaEnum(schema: Record<string, unknown> | undefined): string[] {
+  return Array.isArray(schema?.enum)
+    ? schema.enum.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
+function schemaProperty(
+  schema: Record<string, unknown> | undefined,
+  name: string,
+): Record<string, unknown> | undefined {
+  return asKiroRecord(asKiroRecord(schema?.properties)?.[name]);
+}
+
+function supportedEffort(
+  requested: ReasoningEffort,
+  schema: Record<string, unknown> | undefined,
+): string | undefined {
+  const efforts = schemaEnum(schema);
+  if (efforts.length === 0) return undefined;
+  const normalized = requested === "minimal" ? "low" : requested;
+  return nearestAcceptedEffort(normalized, efforts);
+}
+
+function schemaEffortFields(
+  schema: Record<string, unknown> | undefined,
+): {
+  key: "output_config" | "reasoning";
+  schema: Record<string, unknown>;
+} | undefined {
+  const output = schemaProperty(schema, "output_config");
+  const outputEffort = schemaProperty(output, "effort");
+  if (outputEffort) return { key: "output_config", schema: outputEffort };
+  const reasoning = schemaProperty(schema, "reasoning");
+  const reasoningEffort = schemaProperty(reasoning, "effort");
+  return reasoningEffort
+    ? { key: "reasoning", schema: reasoningEffort }
+    : undefined;
+}
+
+function kiroAdditionalModelFields(
+  request: CompletionRequest,
+  info: KiroModelInfo | undefined,
+  wantsThinking: boolean,
+): Record<string, unknown> | undefined {
+  const schema = info?.additionalModelRequestFieldsSchema as Record<string, unknown> | undefined;
+  const thinkingSchema = schemaProperty(schema, "thinking");
+  const effortFields = schemaEffortFields(schema);
+  if (!wantsThinking && !request.thinking) return undefined;
+  const requestedEffort: ReasoningEffort = wantsThinking
+    ? request.thinking?.effort ?? "high"
+    : "none";
+
+  if (!thinkingSchema && !effortFields) return undefined;
+
+  const fields: Record<string, unknown> = {};
+  if (thinkingSchema) {
+    const types = schemaEnum(schemaProperty(thinkingSchema, "type"));
+    if (!wantsThinking && types.includes("disabled")) {
+      return { thinking: { type: "disabled" } };
+    }
+    if (types.includes("adaptive")) {
+      fields.thinking = { type: "adaptive", display: "summarized" };
+    } else if (wantsThinking) {
+      return undefined;
+    }
+  }
+
+  if (effortFields) {
+    const effort = supportedEffort(requestedEffort, effortFields.schema);
+    if (effort) fields[effortFields.key] = { effort };
+  }
+
+  const maxTokensSchema = schemaProperty(schema, "max_tokens");
+  if (wantsThinking && request.maxTokens && maxTokensSchema) {
+    const minimum =
+      typeof maxTokensSchema.minimum === "number" ? maxTokensSchema.minimum : 1;
+    const maximum =
+      typeof maxTokensSchema.maximum === "number"
+        ? maxTokensSchema.maximum
+        : info?.maxOutputTokens ?? request.maxTokens;
+    fields.max_tokens = Math.min(
+      maximum,
+      Math.max(minimum, request.maxTokens),
+    );
+  }
+
+  return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
+function legacyThinkingDirective(effort: ReasoningEffort | undefined): string {
+  const budget = KIRO_THINKING_BUDGET[kiroEffortString(effort) || "high"] ?? 16000;
+  return `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`;
 }
 
 const KIRO_THINKING_BUDGET: Record<string, number> = {
@@ -296,7 +545,11 @@ async function withKiroCredential<T>(
   run: (credential: KiroCredential) => Promise<T>,
   onStatus?: ((message: string) => void) | undefined,
 ): Promise<T> {
-  const credential = resolveKiroCredential(auth);
+  let credential = resolveKiroCredential(auth);
+  if (credential.refreshToken && kiroCredentialNeedsRefresh(credential)) {
+    const refreshed = await refreshStoredKiroKey(auth).catch(() => undefined);
+    if (refreshed) credential = refreshed;
+  }
   try {
     return await run(credential);
   } catch (error) {
@@ -304,35 +557,60 @@ async function withKiroCredential<T>(
     if (status !== 401 && status !== 403) throw error;
 
     onStatus?.("ℹ Kiro authentication expired — attempting token refresh");
-    const oldKey = auth.apiKey ?? "";
-    const refreshedKey = await maybeRefreshKiroCredential(
-      oldKey,
-      auth.refreshToken,
-    );
-    if (!refreshedKey || refreshedKey === oldKey) {
+    let newCredential: KiroCredential | undefined;
+    try {
+      newCredential = await refreshStoredKiroKey(auth);
+    } catch (refreshError) {
+      if (refreshError instanceof KiroRefreshError) {
+        throw new ProviderError(refreshError.message, status);
+      }
       throw error;
     }
-
-    await replaceProviderKey("kiro", oldKey, refreshedKey).catch(() => {});
-    auth.apiKey = refreshedKey;
-    const newCredential = resolveKiroCredential({ ...auth, apiKey: refreshedKey });
+    if (!newCredential) throw error;
     onStatus?.("ℹ Kiro token refreshed — retrying request");
     return run(newCredential);
   }
 }
 
+async function refreshStoredKiroKey(
+  auth: ProviderAuth,
+): Promise<KiroCredential | undefined> {
+  const oldKey = auth.apiKey ?? "";
+  const refreshedKey = await maybeRefreshKiroCredential(oldKey, auth.refreshToken);
+  if (!refreshedKey || refreshedKey === oldKey) return undefined;
+  await replaceProviderKey("kiro", oldKey, refreshedKey).catch(() => {});
+  auth.apiKey = refreshedKey;
+  return resolveKiroCredential({ ...auth, apiKey: refreshedKey });
+}
+
+interface KiroEndpoint {
+  readonly url: string;
+  readonly awsTarget: boolean;
+}
+
 function getCandidateEndpoints(
   credential: KiroCredential,
-): string[] {
-  const region = assertValidAwsRegion(credential.region);
-  const qUrl = `https://q.${region}.amazonaws.com/generateAssistantResponse`;
-  const cwUrl = `https://codewhisperer.${region}.amazonaws.com/generateAssistantResponse`;
-  const rtUrl = `https://runtime.${region}.kiro.dev/generateAssistantResponse`;
-
-  if (credential.authMethod === "api_key") {
-    return [qUrl, cwUrl, rtUrl];
+  generation?: KiroApiGeneration,
+): KiroEndpoint[] {
+  const region = resolveKiroRuntimeRegion(credential);
+  const apiRegion = region;
+  const modern = { url: `https://runtime.${apiRegion}.kiro.dev/`, awsTarget: true };
+  const q = {
+    url: `https://q.${region}.amazonaws.com/generateAssistantResponse`,
+    awsTarget: false,
+  };
+  const codewhisperer = {
+    url: `https://codewhisperer.${region}.amazonaws.com/generateAssistantResponse`,
+    awsTarget: true,
+  };
+  if (generation === "modern") {
+    return credential.authMethod === "api_key"
+      ? [modern, q, codewhisperer]
+      : [modern, codewhisperer, q];
   }
-  return [cwUrl, rtUrl, qUrl];
+  return credential.authMethod === "api_key"
+    ? [q, modern, codewhisperer]
+    : [codewhisperer, modern, q];
 }
 
 function uuidFromHex(hex: string): string {
@@ -365,12 +643,12 @@ function formatKiroTools(tools?: ToolDefinition[]): Array<{
   };
 }> {
   if (!tools || tools.length === 0) return [];
-  return tools.map((t) => ({
+  return tools.map((tool) => ({
     toolSpecification: {
-      name: sanitizeToolName(t.wireName || t.name),
-      description: (t.description || "").slice(0, 10237),
+      name: sanitizeToolName(tool.wireName || tool.name),
+      description: (tool.description || `Tool: ${tool.name}`).slice(0, 10237),
       inputSchema: {
-        json: t.parameters as unknown as Record<string, unknown>,
+        json: tool.parameters as unknown as Record<string, unknown>,
       },
     },
   }));
@@ -385,7 +663,7 @@ function imageFormatFromMediaType(mediaType: string): string {
   return "png";
 }
 
-function buildKiroRequestBody(
+export function buildKiroRequestBody(
   request: CompletionRequest,
   credential: KiroCredential,
   upstreamModel: string,
@@ -399,12 +677,26 @@ function buildKiroRequestBody(
   const systemParts: string[] = [];
   if (agenticInstruction) systemParts.push(agenticInstruction);
 
+  let sawLeadingSystem = false;
   const nonSystemMessages: ChatMessage[] = [];
   for (const msg of request.messages) {
-    if (msg.role === "system") {
-      if (msg.content.trim()) systemParts.push(msg.content.trim());
-    } else {
+    if (msg.role !== "system") {
       nonSystemMessages.push(msg);
+      continue;
+    }
+    if (!sawLeadingSystem) {
+      sawLeadingSystem = true;
+      if (msg.content.trim()) systemParts.push(msg.content.trim());
+      continue;
+    }
+    if (msg.content.trim()) {
+      nonSystemMessages.push({
+        ...msg,
+        role: "user",
+        content: msg.content.startsWith("[SYSTEM]")
+          ? msg.content
+          : `[SYSTEM]\n${msg.content}`,
+      });
     }
   }
 
@@ -413,6 +705,10 @@ function buildKiroRequestBody(
   interface NormalizedTurn {
     role: "user" | "assistant";
     content: string;
+    reasoningContent?:
+      | { reasoningText: { text: string; signature: string } }
+      | { redactedContent: string }
+      | undefined;
     toolCalls?: NativeToolCall[] | undefined;
     toolResults?: Array<{
       toolUseId: string;
@@ -457,6 +753,42 @@ function buildKiroRequestBody(
         });
       }
     } else if (msg.role === "assistant") {
+      const replayTarget = createReasoningArtifactReplayTarget({
+        provider: "kiro",
+        model: upstreamModel,
+        dialect: "kiro-eventstream",
+      });
+      const replayedReasoning = request.forceReasoningReplay === false
+        ? []
+        : selectReasoningArtifactsForReplay({
+            artifacts: reasoningArtifactsForMessage(msg),
+            target: replayTarget,
+            context: {
+              hasToolCalls: Boolean(msg.toolCalls?.length),
+              forceScope: request.forceReasoningReplay === true,
+            },
+            observe: request.onReasoningArtifactReplayDecision,
+          });
+      const signedReasoning = replayedReasoning.find((artifact) =>
+        reasoningArtifactText(artifact) && reasoningArtifactSignature(artifact)
+      );
+      const redactedReasoning = replayedReasoning.find((artifact) => {
+        const raw = asKiroRecord(artifact.raw);
+        return artifact.kind === "encrypted" && typeof raw?.redactedContent === "string";
+      });
+      const redactedRaw = redactedReasoning
+        ? asKiroRecord(redactedReasoning.raw)
+        : undefined;
+      const reasoningContent = signedReasoning
+        ? {
+            reasoningText: {
+              text: reasoningArtifactText(signedReasoning)!,
+              signature: reasoningArtifactSignature(signedReasoning)!,
+            },
+          }
+        : typeof redactedRaw?.redactedContent === "string"
+          ? { redactedContent: redactedRaw.redactedContent }
+          : undefined;
       const toolUses = (msg.toolCalls ?? [])
         .filter((tc) => tc.id)
         .map((tc) => ({
@@ -472,6 +804,9 @@ function buildKiroRequestBody(
             ? `${last.content}\n\n${msg.content}`
             : msg.content;
         }
+        if (reasoningContent && !last.reasoningContent) {
+          last.reasoningContent = reasoningContent;
+        }
         if (toolUses.length > 0) {
           last.toolUses = [...(last.toolUses ?? []), ...toolUses];
         }
@@ -479,6 +814,7 @@ function buildKiroRequestBody(
         turns.push({
           role: "assistant",
           content: msg.content || "",
+          reasoningContent,
           toolUses: toolUses.length > 0 ? toolUses : undefined,
         });
       }
@@ -525,7 +861,30 @@ function buildKiroRequestBody(
     }
   }
 
+  const modelInfo = kiroModelCatalog().find((info) => info.modelId === upstreamModel);
   const kiroTools = formatKiroTools(request.tools);
+  const wantsThinking =
+    (request.thinking?.enabled ?? thinking) &&
+    request.thinking?.effort !== "none";
+  const additionalFields = kiroAdditionalModelFields(
+    request,
+    modelInfo,
+    wantsThinking,
+  );
+  const thinkingDirective =
+    !additionalFields &&
+    wantsThinking &&
+    isLegacyThinkingDirectiveModel(upstreamModel) &&
+    !modelInfo?.additionalModelRequestFieldsSchema
+      ? legacyThinkingDirective(request.thinking?.effort)
+      : "";
+  if (thinkingDirective) {
+    for (const turn of turns) {
+      if (turn.role === "user") {
+        turn.content = `${thinkingDirective}\n\n${turn.content}`;
+      }
+    }
+  }
 
   const history: Array<Record<string, unknown>> = [];
   for (let i = 0; i < turns.length - 1; i++) {
@@ -550,6 +909,9 @@ function buildKiroRequestBody(
       history.push({
         assistantResponseMessage: {
           content: turn.content,
+          ...(turn.reasoningContent
+            ? { reasoningContent: turn.reasoningContent }
+            : {}),
           ...(turn.toolUses && turn.toolUses.length > 0
             ? { toolUses: turn.toolUses }
             : {}),
@@ -596,15 +958,8 @@ function buildKiroRequestBody(
     payload.profileArn = credential.profileArn;
   }
 
-  const wantsThinking = thinking || request.thinking?.enabled === true;
-  const effort = kiroEffortString(request.thinking?.effort) || "high";
-  if (wantsThinking && isAdaptiveThinkingModel(upstreamModel)) {
-    const budget = KIRO_THINKING_BUDGET[effort] ?? 16000;
-    const directive = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`;
-    const uim = (payload.conversationState as Record<string, unknown>)
-      .currentMessage as Record<string, unknown>;
-    const msg = uim.userInputMessage as Record<string, unknown>;
-    msg.content = `${directive}\n\n${String(msg.content ?? "")}`;
+  if (additionalFields) {
+    payload.additionalModelRequestFields = additionalFields;
   }
 
   return payload;
@@ -612,8 +967,55 @@ function buildKiroRequestBody(
 
 let cachedKiroModels: string[] | null = null;
 let cachedKiroModelInfo: readonly KiroModelInfo[] = [];
+let cachedKiroApiGeneration: KiroApiGeneration | undefined;
+let cachedKiroCredentialId = "";
 let lastKiroModelFetch = 0;
 const MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function kiroCredentialId(credential: KiroCredential): string {
+  return createHash("sha256")
+    .update(credential.apiKey || credential.accessToken || credential.refreshToken || "")
+    .digest("hex");
+}
+
+function hasFreshKiroCatalog(credentialId: string): boolean {
+  return (
+    cachedKiroCredentialId === credentialId &&
+    cachedKiroModels !== null &&
+    Date.now() - lastKiroModelFetch < MODEL_CACHE_TTL_MS
+  );
+}
+
+function registerKiroCatalogLimits(modelId: string, info: KiroModelInfo): void {
+  if (info.maxInputTokens === undefined && info.maxOutputTokens === undefined) return;
+  registerModelCatalogFacts("kiro", {
+    id: modelId,
+    ...(info.maxInputTokens !== undefined ? { contextTokens: info.maxInputTokens } : {}),
+    ...(info.maxOutputTokens !== undefined ? { maxOutputTokens: info.maxOutputTokens } : {}),
+    ...(info.supportsImages !== undefined ? { vision: info.supportsImages } : {}),
+  });
+}
+
+async function ensureKiroModelCatalog(credential: KiroCredential): Promise<void> {
+  const credentialId = kiroCredentialId(credential);
+  if (hasFreshKiroCatalog(credentialId)) return;
+  const catalog = await discoverKiroModelsDetailed(credential);
+  cachedKiroCredentialId = credentialId;
+  cachedKiroModelInfo = catalog.models;
+  cachedKiroApiGeneration = catalog.generation;
+  cachedKiroModels = withKiroVariants(catalog.models.map((info) => info.modelId));
+  lastKiroModelFetch = Date.now();
+  for (const info of catalog.models) {
+    if (info.supportsImages !== undefined) {
+      learnModelVisionCapability("kiro", info.modelId, info.supportsImages);
+    }
+    const efforts = kiroCatalogEfforts(info.additionalModelRequestFieldsSchema);
+    for (const variant of withKiroVariants([info.modelId])) {
+      registerModelReasoningEfforts("kiro", variant, efforts);
+      registerKiroCatalogLimits(variant, info);
+    }
+  }
+}
 
 export function kiroModelCatalog(): readonly KiroModelInfo[] {
   return cachedKiroModelInfo;
@@ -622,6 +1024,8 @@ export function kiroModelCatalog(): readonly KiroModelInfo[] {
 export function resetKiroModelCacheForTesting(): void {
   cachedKiroModels = null;
   cachedKiroModelInfo = [];
+  cachedKiroApiGeneration = undefined;
+  cachedKiroCredentialId = "";
   lastKiroModelFetch = 0;
 }
 
@@ -662,63 +1066,39 @@ export const kiroProvider: LlmProvider = {
   },
 
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    const now = Date.now();
-    if (cachedKiroModels && now - lastKiroModelFetch < MODEL_CACHE_TTL_MS) {
-      return cachedKiroModels;
-    }
+    const credential = resolveKiroCredential(auth);
+    const credentialId = kiroCredentialId(credential);
+    const cacheIsFresh =
+      cachedKiroCredentialId === credentialId &&
+      cachedKiroModels !== null &&
+      Date.now() - lastKiroModelFetch < MODEL_CACHE_TTL_MS;
+    if (cacheIsFresh) return cachedKiroModels!;
 
     try {
-      const credential = resolveKiroCredential(auth);
-      const infos = await listKiroModelsDetailed(credential);
-      if (infos.length > 0) {
-        cachedKiroModelInfo = infos;
-        for (const info of infos) {
-          if (info.supportsImages !== undefined) {
-            learnModelVisionCapability("kiro", info.modelId, info.supportsImages);
-          }
-        }
-        const variants = withKiroVariants(infos.map((info) => info.modelId));
-        cachedKiroModels = variants;
-        lastKiroModelFetch = now;
-        return variants;
+      const refreshedId = await withKiroCredential(auth, async (current) => {
+        await ensureKiroModelCatalog(current);
+        return kiroCredentialId(current);
+      });
+      if (
+        (cachedKiroCredentialId === credentialId ||
+          cachedKiroCredentialId === refreshedId) &&
+        cachedKiroModels
+      ) {
+        return cachedKiroModels;
       }
     } catch {}
 
-    return cachedKiroModels ?? [...kiroFallbackModels];
+    return [...kiroFallbackModels];
   },
 
   async ping(auth: ProviderAuth): Promise<void> {
     const credential = resolveKiroCredential(auth);
-    const region = assertValidAwsRegion(credential.region);
-    const params = new URLSearchParams({ origin: "AI_EDITOR" });
-    const endpoint = `https://q.${region}.amazonaws.com/ListAvailableModels?${params.toString()}`;
-
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-      "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
-    };
-
-    if (credential.authMethod === "api_key" && credential.apiKey) {
-      headers["Authorization"] = `Bearer ${credential.apiKey}`;
-      headers["TokenType"] = "API_KEY";
-    } else if (credential.accessToken) {
-      headers["Authorization"] = `Bearer ${credential.accessToken}`;
-      if (credential.authMethod === "external_idp") {
-        headers["TokenType"] = "EXTERNAL_IDP";
-      }
-    }
-
-    const response = await fetch(endpoint, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(15_000),
-    });
-
-    if (!response.ok) {
+    try {
+      await discoverKiroModelsDetailed(credential);
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : "";
       throw new ProviderError(
-        `Kiro AI ping failed (HTTP ${response.status}). Run \`clai auth kiro\` to sign in.`,
-        response.status,
+        `Kiro AI ping failed${detail}. Run \`clai auth kiro\` to sign in.`,
       );
     }
   },
@@ -743,6 +1123,7 @@ export const kiroProvider: LlmProvider = {
     return withKiroCredential(
       auth,
       async (credential) => {
+        await ensureKiroModelCatalog(credential).catch(() => {});
         const body = buildKiroRequestBody(
           request,
           credential,
@@ -750,14 +1131,20 @@ export const kiroProvider: LlmProvider = {
           agentic,
           thinking,
         );
-        const endpoints = getCandidateEndpoints(credential);
+        const catalogIsFresh = hasFreshKiroCatalog(kiroCredentialId(credential));
+        const endpoints = getCandidateEndpoints(
+          credential,
+          catalogIsFresh ? cachedKiroApiGeneration : undefined,
+        );
 
         let lastError: Error | undefined;
 
         for (const endpoint of endpoints) {
           try {
             const headers: Record<string, string> = {
-              "Content-Type": "application/json",
+              "Content-Type": endpoint.awsTarget
+                ? "application/x-amz-json-1.0"
+                : "application/json",
               Accept: "application/vnd.amazon.eventstream",
               "Amz-Sdk-Request": "attempt=1; max=3",
               "Amz-Sdk-Invocation-Id": randomUUID(),
@@ -768,7 +1155,7 @@ export const kiroProvider: LlmProvider = {
               "x-amzn-codewhisperer-machine-id": "kiro-desktop",
             };
 
-            if (endpoint.includes("codewhisperer")) {
+            if (endpoint.awsTarget) {
               headers["X-Amz-Target"] =
                 "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
             }
@@ -787,7 +1174,7 @@ export const kiroProvider: LlmProvider = {
               }
             }
 
-            const response = await generationFetch(endpoint, {
+            const response = await generationFetch(endpoint.url, {
               method: "POST",
               headers,
               body: JSON.stringify(body),
@@ -797,10 +1184,15 @@ export const kiroProvider: LlmProvider = {
             if (!response.ok) {
               const errorText = await response.text().catch(() => "");
               if (response.status === 401 || response.status === 403) {
-                throw new ProviderError(
+                const authError = new ProviderError(
                   `Kiro authentication failed (${response.status}): ${errorText}`,
                   response.status,
                 );
+                if (response.status === 401 && credential.refreshToken) {
+                  throw authError;
+                }
+                lastError = authError;
+                continue;
               }
               if (response.status === 400) {
                 throw new ProviderError(
@@ -821,14 +1213,23 @@ export const kiroProvider: LlmProvider = {
             }
 
             let fullText = "";
-            let reasoningText = "";
+            type PendingKiroStreamEvent =
+              | { kind: "token"; text: string }
+              | { kind: "reasoning"; text: string }
+              | { kind: "tool"; delta: ToolCallStreamDelta };
+            const pendingStreamEvents: PendingKiroStreamEvent[] = [];
+            const reasoning = createKiroReasoningAccumulator((text) =>
+              pendingStreamEvents.push({ kind: "reasoning", text })
+            );
             let insideThinkingTag = false;
             let finishReason: string = "stop";
+            let stopReason = "";
 
             interface PartialToolCall {
               id: string;
               name: string;
               rawArgs: string;
+              syntheticId: boolean;
             }
             const accumulatedTools: PartialToolCall[] = [];
             let currentToolIndex = -1;
@@ -841,16 +1242,48 @@ export const kiroProvider: LlmProvider = {
             let contextUsagePercentage: number | undefined;
 
             for await (const frame of parseEventStream(response.body)) {
+              const messageType =
+                typeof frame.headers[":message-type"] === "string"
+                  ? frame.headers[":message-type"]
+                  : "event";
+              const headerExceptionType =
+                typeof frame.headers[":exception-type"] === "string"
+                  ? frame.headers[":exception-type"]
+                  : "";
               const eventType =
                 (typeof frame.headers[":event-type"] === "string"
                   ? frame.headers[":event-type"]
                   : undefined) ||
-                Object.keys(frame.payload).find((k) => k.endsWith("Event")) ||
+                headerExceptionType ||
+                Object.keys(frame.payload).find((key) =>
+                  key.endsWith("Event") || key.endsWith("Exception")
+                ) ||
                 "";
 
-              const eventPayload =
-                (frame.payload[eventType] as Record<string, unknown> | undefined) ||
-                frame.payload;
+              const nestedPayload = asKiroRecord(frame.payload[eventType]);
+              const eventPayload = nestedPayload ?? frame.payload;
+              if (messageType === "exception" || headerExceptionType || eventType.endsWith("Exception")) {
+                const message =
+                  typeof eventPayload.message === "string"
+                    ? eventPayload.message
+                    : typeof eventPayload.reason === "string"
+                      ? eventPayload.reason
+                      : "Kiro stream exception";
+                throw new ProviderError(
+                  `${headerExceptionType || eventType || "Kiro stream exception"}: ${message}`,
+                  inBandBadRequestStatus({
+                    type: headerExceptionType || eventType,
+                    code: eventPayload.code,
+                    message,
+                  }) ??
+                    (/THINKING_SIGNATURE_INVALID|THINKING_SIGNATURE_MISMATCH/i.test(
+                      `${headerExceptionType} ${eventType} ${message}`,
+                    )
+                      ? 400
+                      : 502),
+                  JSON.stringify(eventPayload),
+                );
+              }
 
               if (
                 typeof eventPayload.usage === "number" &&
@@ -911,27 +1344,47 @@ export const kiroProvider: LlmProvider = {
                     }
                   }
 
-                  if (reasoningChunk) {
-                    reasoningText += reasoningChunk;
-                    emitStreamReasoningDelta(request.onStreamEvent, reasoningChunk);
-                  }
+                  reasoning.push(reasoningChunk);
                   if (visibleChunk) {
                     fullText += visibleChunk;
-                    onToken(visibleChunk);
+                    pendingStreamEvents.push({ kind: "token", text: visibleChunk });
                   }
                 }
               } else if (
                 eventType === "reasoningContentEvent" ||
-                eventType.includes("Reasoning")
+                /reasoning/i.test(eventType) ||
+                eventPayload.reasoningText !== undefined
               ) {
+                const reasoningPayload = asKiroRecord(eventPayload.reasoningText);
                 const chunk =
-                  typeof eventPayload.content === "string"
-                    ? eventPayload.content
-                    : "";
-                if (chunk) {
-                  reasoningText += chunk;
-                  emitStreamReasoningDelta(request.onStreamEvent, chunk);
-                }
+                  typeof eventPayload.text === "string"
+                    ? eventPayload.text
+                    : typeof eventPayload.content === "string"
+                      ? eventPayload.content
+                      : typeof eventPayload.reasoningText === "string"
+                        ? eventPayload.reasoningText
+                        : typeof reasoningPayload?.text === "string"
+                          ? reasoningPayload.text
+                          : typeof reasoningPayload?.Text === "string"
+                            ? reasoningPayload.Text
+                            : "";
+                reasoning.sign(
+                  typeof eventPayload.signature === "string"
+                    ? eventPayload.signature
+                    : typeof eventPayload.Signature === "string"
+                      ? eventPayload.Signature
+                      : typeof reasoningPayload?.signature === "string"
+                        ? reasoningPayload.signature
+                        : typeof reasoningPayload?.Signature === "string"
+                          ? reasoningPayload.Signature
+                          : "",
+                );
+                reasoning.redact(
+                  typeof eventPayload.redactedContent === "string"
+                    ? eventPayload.redactedContent
+                    : "",
+                );
+                reasoning.push(chunk);
               } else if (eventType === "codeEvent") {
                 const chunk =
                   typeof eventPayload.content === "string"
@@ -939,80 +1392,135 @@ export const kiroProvider: LlmProvider = {
                     : "";
                 if (chunk) {
                   fullText += chunk;
-                  onToken(chunk);
+                  pendingStreamEvents.push({ kind: "token", text: chunk });
                 }
               } else if (eventType === "toolUseEvent") {
-                const toolId =
+                const explicitToolId =
                   typeof eventPayload.toolUseId === "string"
                     ? eventPayload.toolUseId
-                    : `tool_${accumulatedTools.length + 1}`;
+                    : typeof eventPayload.tool_use_id === "string"
+                      ? eventPayload.tool_use_id
+                      : undefined;
                 const name =
                   typeof eventPayload.name === "string" ? eventPayload.name : "";
                 const input = eventPayload.input;
+                const stopped = eventPayload.stop === true;
+                let existing = explicitToolId
+                  ? accumulatedTools.find((tool) => tool.id === explicitToolId)
+                  : accumulatedTools[currentToolIndex];
 
-                let existing = accumulatedTools.find((t) => t.id === toolId);
-                if (!existing) {
-                  existing = { id: toolId, name, rawArgs: "" };
+                if (
+                  explicitToolId &&
+                  !existing &&
+                  currentToolIndex >= 0 &&
+                  accumulatedTools[currentToolIndex]?.syntheticId
+                ) {
+                  const activeTool = accumulatedTools[currentToolIndex]!;
+                  activeTool.id = explicitToolId;
+                  activeTool.syntheticId = false;
+                  existing = activeTool;
+                }
+                if (!existing && (explicitToolId || name || input !== undefined)) {
+                  existing = {
+                    id: explicitToolId ?? `tool_${accumulatedTools.length + 1}`,
+                    name,
+                    rawArgs: "",
+                    syntheticId: explicitToolId === undefined,
+                  };
                   accumulatedTools.push(existing);
-                  currentToolIndex = accumulatedTools.length - 1;
+                }
+                if (!existing) {
+                  if (stopped) currentToolIndex = -1;
+                  continue;
                 }
 
-                let chunkBytes = 0;
                 if (typeof input === "string") {
                   existing.rawArgs += input;
-                  chunkBytes = Buffer.byteLength(input, "utf8");
                 } else if (input && typeof input === "object") {
                   existing.rawArgs = JSON.stringify(input);
-                  chunkBytes = Buffer.byteLength(existing.rawArgs, "utf8");
                 }
-
-                if (name && !existing.name) {
-                  existing.name = name;
-                }
-
+                if (name && !existing.name) existing.name = name;
+                currentToolIndex = accumulatedTools.indexOf(existing);
+                const argumentsBytes = Buffer.byteLength(existing.rawArgs, "utf8");
                 const delta: ToolCallStreamDelta = {
                   index: currentToolIndex,
                   id: existing.id,
                   name: existing.name,
-                  argumentsBytes: chunkBytes,
+                  argumentsBytes,
                 };
-                request.onToolCallDelta?.(delta);
+                pendingStreamEvents.push({ kind: "tool", delta });
                 finishReason = "tool_calls";
+                if (stopped) currentToolIndex = -1;
               } else if (eventType === "messageStopEvent") {
-                const stop =
-                  typeof eventPayload.stopReason === "string"
-                    ? eventPayload.stopReason
-                    : "";
-                if (stop) {
-                  finishReason =
-                    stop === "tool_use" || stop === "tool_calls"
-                      ? "tool_calls"
-                      : stop === "max_tokens" || stop === "length"
-                        ? "length"
-                        : "stop";
-                }
+                stopReason = mergeKiroStopReason(
+                  stopReason,
+                  normalizeKiroStopReason(
+                    eventPayload.stopReason ?? eventPayload.stop_reason,
+                  ),
+                );
               } else if (eventType === "contextUsageEvent") {
                 if (typeof eventPayload.contextUsagePercentage === "number") {
                   contextUsagePercentage = eventPayload.contextUsagePercentage;
                 }
               } else if (
                 eventType === "metricsEvent" ||
-                eventType === "meteringEvent"
+                eventType === "meteringEvent" ||
+                eventType === "metadataEvent" ||
+                eventType === "MetadataEvent"
               ) {
-                if (typeof eventPayload.inputTokens === "number") {
-                  promptTokens = eventPayload.inputTokens;
+                const usagePayload = asKiroRecord(eventPayload.usage);
+                const tokenUsagePayload = asKiroRecord(eventPayload.tokenUsage);
+                const usageSources = [
+                  eventPayload,
+                  ...(usagePayload ? [usagePayload] : []),
+                  ...(tokenUsagePayload ? [tokenUsagePayload] : []),
+                ];
+                const inputTokens = firstKiroMetric(usageSources, [
+                  "inputTokens",
+                  "input_tokens",
+                  "promptTokens",
+                  "prompt_tokens",
+                ]);
+                const outputTokens = firstKiroMetric(usageSources, [
+                  "outputTokens",
+                  "output_tokens",
+                  "completionTokens",
+                  "completion_tokens",
+                ]);
+                const cacheReadTokens = firstKiroMetric(usageSources, [
+                  "cacheReadTokens",
+                  "cache_read_tokens",
+                  "cacheReadInputTokens",
+                  "cache_read_input_tokens",
+                  "cachedTokens",
+                ]);
+                const cacheWriteTokens = firstKiroMetric(usageSources, [
+                  "cacheCreationTokens",
+                  "cache_creation_tokens",
+                  "cacheWriteTokens",
+                  "cache_write_tokens",
+                  "cacheWriteInputTokens",
+                  "cacheCreationInputTokens",
+                  "cache_creation_input_tokens",
+                ]);
+                if (inputTokens !== undefined) promptTokens = inputTokens;
+                if (outputTokens !== undefined) completionTokens = outputTokens;
+                if (cacheReadTokens !== undefined) {
+                  cachedTokens = Math.max(cachedTokens, cacheReadTokens);
                 }
-                if (typeof eventPayload.outputTokens === "number") {
-                  completionTokens = eventPayload.outputTokens;
+                if (cacheWriteTokens !== undefined) {
+                  cacheCreationTokens = Math.max(
+                    cacheCreationTokens,
+                    cacheWriteTokens,
+                  );
                 }
-                if (typeof eventPayload.cachedTokens === "number") {
-                  cachedTokens = eventPayload.cachedTokens;
-                }
-                if (typeof eventPayload.cacheReadInputTokens === "number") {
-                  cachedTokens = Math.max(cachedTokens, eventPayload.cacheReadInputTokens);
-                }
-                if (typeof eventPayload.cacheWriteInputTokens === "number") {
-                  cacheCreationTokens = eventPayload.cacheWriteInputTokens;
+                if (/^metadataevent$/i.test(eventType)) {
+                  stopReason = mergeKiroStopReason(
+                    stopReason,
+                    normalizeKiroStopReason(
+                      eventPayload.stopReason ?? eventPayload.stop_reason,
+                    ),
+                  );
                 }
               }
             }
@@ -1032,13 +1540,66 @@ export const kiroProvider: LlmProvider = {
               };
             });
 
-            if (toolCalls.length > 0) {
+            reasoning.finish();
+            const hasReasoningEvidence = Boolean(
+              reasoning.text.trim() || reasoning.signature || reasoning.redactedContent,
+            );
+            const stopDisposition = kiroStopDisposition(stopReason, toolCalls.length > 0);
+            if (stopDisposition === "blocked") {
+              throw new ProviderError(
+                `Kiro blocked the response under its content safety policy (${stopReason})`,
+                400,
+              );
+            }
+            if (
+              stopDisposition === "retryable" ||
+              stopDisposition === "incomplete" ||
+              stopDisposition === "unknown"
+            ) {
+              throw new ProviderError(`Kiro ended with non-success stop reason: ${stopReason}`, 502);
+            }
+            if (
+              !fullText.trim() &&
+              !hasReasoningEvidence &&
+              toolCalls.length === 0
+            ) {
+              throw new ProviderError("Kiro completed without a visible answer.");
+            }
+            if (toolCalls.length === 0 && ["...", "…"].includes(fullText.trim())) {
+              throw new ProviderError("Kiro completed without a visible answer.");
+            }
+            if (reasoning.opaque && (fullText.trim() || toolCalls.length > 0)) {
+              pendingStreamEvents.push({
+                kind: "reasoning",
+                text: kiroPrivateReasoningNote({
+                  model: upstream,
+                  effort: sentKiroReasoningEffort(
+                    asKiroRecord(body.additionalModelRequestFields),
+                  ),
+                  signatureChars: reasoning.signature.length,
+                }),
+              });
+            }
+
+            if (stopDisposition === "length") {
+              finishReason = "length";
+            } else if (toolCalls.length > 0) {
               finishReason = "tool_calls";
             }
 
-            const catalogWindow =
+            const advertisedWindow =
               kiroModelCatalog().find((info) => info.modelId === upstream)
-                ?.maxInputTokens ?? 200_000;
+                ?.maxInputTokens;
+            const catalogWindow =
+              advertisedWindow !== undefined &&
+              Number.isFinite(advertisedWindow) &&
+              advertisedWindow > 0
+                ? Math.floor(advertisedWindow)
+                : undefined;
+            const estimatedPromptTokens = providerRatioPromptTokens(
+              contextUsagePercentage,
+              catalogWindow ?? modelContextWindow(upstream, "kiro"),
+            );
 
             const tokenUsage: TokenUsage | undefined =
               promptTokens > 0 || completionTokens > 0
@@ -1055,18 +1616,19 @@ export const kiroProvider: LlmProvider = {
                         ? Math.max(0, promptTokens - cachedTokens)
                         : promptTokens,
                   }
-                : contextUsagePercentage !== undefined
-                  ? {
-                      promptTokens: Math.round(
-                        (contextUsagePercentage / 100) * catalogWindow,
-                      ),
-                      completionTokens: 0,
-                      totalTokens: Math.round(
-                        (contextUsagePercentage / 100) * catalogWindow,
-                      ),
-                      exact: false,
-                    }
-                  : undefined;
+                : catalogWindow !== undefined
+                  ? providerRatioUsage({
+                      percentUsed: contextUsagePercentage,
+                      windowTokens: catalogWindow,
+                    })
+                  : estimatedPromptTokens !== undefined
+                    ? {
+                        promptTokens: estimatedPromptTokens,
+                        completionTokens: 0,
+                        totalTokens: estimatedPromptTokens,
+                        exact: false,
+                      }
+                    : undefined;
             const usage: TokenUsage | undefined = tokenUsage
               ? {
                   ...tokenUsage,
@@ -1082,6 +1644,25 @@ export const kiroProvider: LlmProvider = {
                     charges: usageCharges,
                   }
                 : undefined;
+            const reasoningResult = kiroReasoningResult({
+              reasoning,
+              provenance: createReasoningArtifactProvenance({
+                provider: "kiro",
+                model: upstream,
+                dialect: "kiro-eventstream",
+              }),
+              hasToolCalls: toolCalls.length > 0,
+            });
+
+            for (const event of pendingStreamEvents) {
+              if (event.kind === "token") {
+                onToken(event.text);
+              } else if (event.kind === "reasoning") {
+                emitStreamReasoningDelta(request.onStreamEvent, event.text);
+              } else {
+                request.onToolCallDelta?.(event.delta);
+              }
+            }
 
             return {
               text: fullText,
@@ -1091,12 +1672,26 @@ export const kiroProvider: LlmProvider = {
               finishReason,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
               usage,
-              reasoningBlock: reasoningText.trim()
-                ? { text: reasoningText.trim() }
+              reasoningArtifacts: reasoningResult.artifacts.length > 0
+                ? reasoningResult.artifacts
                 : undefined,
+              reasoningBlock: reasoningResult.block,
             };
           } catch (err) {
-            if (err instanceof ProviderError && (err.status === 401 || err.status === 403 || err.status === 400)) {
+            if (request.signal?.aborted) {
+              completeGenerationAttempt("cancelled");
+              throw err;
+            }
+            const status = err instanceof ProviderError ? err.status : undefined;
+            completeGenerationAttempt("failure", undefined, status);
+            if (
+              err instanceof ProviderError &&
+              (
+                status === 400 ||
+                status === undefined ||
+                (status === 401 && Boolean(credential.refreshToken))
+              )
+            ) {
               throw err;
             }
             lastError = err instanceof Error ? err : new Error(String(err));

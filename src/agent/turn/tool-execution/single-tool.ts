@@ -230,7 +230,7 @@ export const runSingleTool = async (
       releaseClaim: (id) => deps.responderClaims.delete(id),
       queueResponderLedger: (notification) =>
         deps.deferredResponderLedgerNotifications.push(notification),
-      loadPlan: () => loadPlan(deps.session.sessionId).catch(() => undefined),
+      loadPlan: () => loadPlan(deps.session.sessionId),
       handlePlanTool: (planCall) =>
         handlePlanTool(planCall, deps.session, {
           loopGuard: deps.loopGuard,
@@ -286,9 +286,7 @@ export const runSingleTool = async (
     scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
   });
 
-  const livePlanForPreGate = await loadPlan(deps.session.sessionId).catch(
-    () => undefined,
-  );
+  const livePlanForPreGate = await loadPlan(deps.session.sessionId);
 
   const gateDecision = await runToolGates(
     {
@@ -297,7 +295,7 @@ export const runSingleTool = async (
       scratchDir,
       mcpSafe: (gatedCall) =>
         deps.mcpRuntime?.classify(gatedCall.name)?.level === "safe",
-      loadPlan: () => loadPlan(deps.session.sessionId).catch(() => undefined),
+      loadPlan: () => loadPlan(deps.session.sessionId),
       notify: deps.writeNotice,
       showCall: (shownCall) => {
         if (deps.alreadyPrintedIds.has(toolEventId)) return;
@@ -315,13 +313,11 @@ export const runSingleTool = async (
   if (gateDecision.kind === "stop") return gateDecision.result;
 
   if (deps.session.planApproved.value) {
-    const livePlanForGate = await loadPlan(deps.session.sessionId).catch(
-      () => undefined,
-    );
+    const livePlanForGate = await loadPlan(deps.session.sessionId);
     if (livePlanForGate) {
-      await autostartPlanTask(livePlanForGate, call, {
+      const autostartedPlan = await autostartPlanTask(livePlanForGate, call, {
         openTask: async (taskId) => {
-          await mutatePlan(deps.session.sessionId, (draft) => {
+          const committed = await mutatePlan(deps.session.sessionId, (draft) => {
             const target = draft.tasks.find(
               (candidate) => candidate.id === taskId,
             );
@@ -331,7 +327,13 @@ export const runSingleTool = async (
               draft.status = "in_progress";
             }
             return true;
-          }).catch(() => undefined);
+          });
+          if (!committed.ok || !committed.plan) {
+            throw new Error(
+              `Task autostart was not durably committed (${committed.reason ?? "persist-failed"})`,
+            );
+          }
+          return committed.plan;
         },
         renderPlan: deps.writePlanUpdate,
         notify: (message) => deps.writeNotice("info", message),
@@ -340,6 +342,9 @@ export const runSingleTool = async (
           deps.toolState.taskWorkLedger = ledger;
         },
       });
+      if (autostartedPlan) {
+        deps.toolState.pendingSessionStatePlan = autostartedPlan;
+      }
     }
   }
 
@@ -355,7 +360,10 @@ export const runSingleTool = async (
       scaffoldPreflight.target &&
       setActiveProjectRootIfValid(scaffoldPreflight.target, { force: true })
     ) {
-      await deps.persistProjectRootOnPlan(scaffoldPreflight.target);
+      const rootPlan = await deps.persistProjectRootOnPlan(
+        scaffoldPreflight.target,
+      );
+      if (rootPlan) deps.toolState.pendingSessionStatePlan = rootPlan;
     }
     const message = scaffoldPreflight.message;
     deps.writeNotice("info", message);
@@ -420,9 +428,7 @@ export const runSingleTool = async (
   if (authorization.kind === "stop") return authorization.result;
 
   parentSignal.throwIfAborted();
-  const planAtDispatch = await loadPlan(deps.session.sessionId).catch(
-    () => undefined,
-  );
+  const planAtDispatch = await loadPlan(deps.session.sessionId);
   const dispatch = await resolveToolDispatch(
     {
       mutatePlan: (mutator) => mutatePlan(deps.session.sessionId, mutator),
@@ -613,7 +619,8 @@ export const runSingleTool = async (
   result = scaffoldOutcome.result;
   if (scaffoldOutcome.adoptRoot) {
     setActiveProjectRootIfValid(scaffoldOutcome.adoptRoot, { force: true });
-    await deps.persistProjectRootOnPlan(scaffoldOutcome.adoptRoot);
+    const rootPlan = await deps.persistProjectRootOnPlan(scaffoldOutcome.adoptRoot);
+    if (rootPlan) deps.toolState.pendingSessionStatePlan = rootPlan;
   }
   if (scaffoldOutcome.notice) {
     deps.writeNotice("info", scaffoldOutcome.notice);
@@ -632,11 +639,14 @@ export const runSingleTool = async (
         ? `toolState.delegation=${delegationId} ran in the foreground; no durable job was created`
         : `toolState.delegation=${delegationId} failed to launch`;
       return true;
-    }).catch(() => undefined);
-    if (settlement?.ok && settlement.plan) {
-      deps.toolState.pendingSessionStatePlan = settlement.plan;
-      deps.writePlanUpdate(settlement.plan);
+    });
+    if (!settlement.ok || !settlement.plan) {
+      throw new Error(
+        `Delegation settlement was not durably committed (${settlement.reason ?? "persist-failed"})`,
+      );
     }
+    deps.toolState.pendingSessionStatePlan = settlement.plan;
+    deps.writePlanUpdate(settlement.plan);
     deps.toolState.delegation = undefined;
   }
 
@@ -646,7 +656,7 @@ export const runSingleTool = async (
       result = await linkResponderJobToPlan(
         {
           loadPlan: () =>
-            loadPlan(deps.session.sessionId).catch(() => undefined),
+            loadPlan(deps.session.sessionId),
           mutatePlan: (mutator) => mutatePlan(deps.session.sessionId, mutator),
           linkJob: (jobIdToLink, patch) =>
             jobManager.linkJob(jobIdToLink, patch),
@@ -758,7 +768,7 @@ export const runSingleTool = async (
       },
       bankLooseWork: (receipt) => deps.sessionLooseWork.push(receipt),
       persistTaskEvidence: deps.persistTaskEvidence,
-      loadPlan: () => loadPlan(deps.session.sessionId).catch(() => undefined),
+      loadPlan: () => loadPlan(deps.session.sessionId),
       creditId: () => deps.toolState.dispatchedTaskId,
     },
     call,

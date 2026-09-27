@@ -1,6 +1,9 @@
 import type { ChatMessage } from "../../types.js";
-import type { SessionPlan } from "../../store/plan.js";
-import type { TaskEvidence } from "../../store/plan.js";
+import type {
+  PlanMutationResult,
+  SessionPlan,
+  TaskEvidence,
+} from "../../store/plan.js";
 import { patchPlanMeta } from "../../store/plan.js";
 import { detectPackageManager } from "../workspace-orient.js";
 import {
@@ -17,31 +20,44 @@ import { buildTurnSessionStateSnapshot } from "./session-state-projection.js";
 
 export type PlanMutator = (
   mutator: (draft: SessionPlan) => boolean | void,
-) => Promise<unknown>;
+) => Promise<PlanMutationResult>;
+
+const committedPlan = (
+  result: PlanMutationResult,
+  operation: string,
+): SessionPlan => {
+  if (result.ok && result.plan) return result.plan;
+  throw new Error(
+    `${operation} was not durably committed (${result.reason ?? "persist-failed"})`,
+  );
+};
 
 export const persistProjectRootOnPlan = async (
   mutatePlan: PlanMutator,
   root: string,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const packageManager = detectPackageManager(root);
-  await mutatePlan((draft) => {
+  const result = await mutatePlan((draft) => {
     patchPlanMeta(draft, {
       projectRoot: root,
       ...(packageManager ? { packageManager } : {}),
     });
-  }).catch(() => undefined);
+  });
+  if (!result.ok && result.reason === "missing-plan") return undefined;
+  return committedPlan(result, "Plan project-root update");
 };
 
 export const persistTaskEvidence = async (
   mutatePlan: PlanMutator,
   taskId: string,
   evidence: TaskEvidence,
-): Promise<void> => {
-  await mutatePlan((draft) => {
+): Promise<SessionPlan> => {
+  const result = await mutatePlan((draft) => {
     const task = draft.tasks.find((candidate) => candidate.id === taskId);
     if (!task) return false;
     task.evidence = evidence;
-  }).catch(() => undefined);
+  });
+  return committedPlan(result, `Evidence update for task ${taskId}`);
 };
 
 export interface SessionStateRefreshPorts {

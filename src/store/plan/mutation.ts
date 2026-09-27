@@ -206,7 +206,7 @@ function healBareIdTasks(plan: SessionPlan): {
   return { plan: { ...plan, tasks: cleaned }, healed: true };
 }
 
-export async function loadPlan(sessionId: string): Promise<SessionPlan | undefined> {
+async function loadPlanOnce(sessionId: string): Promise<SessionPlan | undefined> {
   const db = await loadDatabase();
   if (db) {
     const row = db
@@ -266,6 +266,44 @@ export async function loadPlan(sessionId: string): Promise<SessionPlan | undefin
   const repairs = enforcePlanInvariants(healed);
   if (dirty || needsNormalization || repairs.length > 0) await savePlan(healed);
   return healed;
+}
+
+const TRANSIENT_PLAN_READ_CODES = new Set([
+  "EAGAIN",
+  "EBUSY",
+  "EMFILE",
+  "ENFILE",
+  "EPERM",
+  "SQLITE_BUSY",
+  "SQLITE_LOCKED",
+]);
+
+function transientPlanReadError(error: unknown): boolean {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  return TRANSIENT_PLAN_READ_CODES.has(code);
+}
+
+export async function loadPlan(
+  sessionId: string,
+): Promise<SessionPlan | undefined> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await loadPlanOnce(sessionId);
+    } catch (error) {
+      if (attempt < 2 && transientPlanReadError(error)) {
+        await new Promise((resolve) => setTimeout(resolve, 20 * 2 ** attempt));
+        continue;
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to read durable plan for session ${sessionId}; refusing to treat it as missing: ${detail}`,
+        { cause: error },
+      );
+    }
+  }
 }
 
 const toDomainStatus = (state: TaskState): VersionedPlanStep["status"] =>
