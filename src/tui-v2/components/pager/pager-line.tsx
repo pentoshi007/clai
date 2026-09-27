@@ -13,7 +13,7 @@ import {
   highlightLineForPath,
 } from "../../../ui-core/rendering/syntax-highlight.js";
 import type { PagerDisplayLine } from "../../rendering/pager-markdown.js";
-import { subagentLineSpans } from "../../../ui-core/rendering/subagent-presentation.js";
+import type { SubagentSpan } from "../../../ui-core/rendering/subagent-presentation.js";
 
 const DIFF_SPLIT_RE = /^(?<gutter>[\d ]{0,8}) │ (?<rest>.*)$/;
 
@@ -88,6 +88,7 @@ export function PagerLine(props: {
   markdownMode?: boolean | undefined;
   diffGutters?: boolean | undefined;
   subagent?: boolean | undefined;
+  subagentSpans?: readonly SubagentSpan[] | undefined;
 }): ReactNode {
   const {
     line,
@@ -106,7 +107,7 @@ export function PagerLine(props: {
     activeMatchIndex >= 0 &&
     matches[activeMatchIndex]?.line === index;
 
-  const subagentSpans = props.subagent && !hasQuery ? subagentLineSpans(line) : undefined;
+  const subagentSpans = hasQuery ? undefined : props.subagentSpans;
   if (subagentSpans) {
     return (
       <text

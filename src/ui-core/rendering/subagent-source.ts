@@ -5,21 +5,30 @@ import {
   DEFAULT_ARTIFACT_PAGE_BYTES,
   type ArtifactPagerSource,
 } from "./artifact-pager-source.js";
+import { SUBAGENT_TOOL_CONTINUATION_INDENT } from "./subagent-presentation.js";
 
 function assistantText(text: string): string {
   return text.replace(/```tool\b[^\n]*\n?[\s\S]*?(?:```|$)/gi, "").trim();
 }
 
-function toolCall(text: string): string | undefined {
-  const match = /^Calling ([\w.-]+):\s*([\s\S]*)$/.exec(text);
-  if (!match) return undefined;
+function indentContinuation(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(/\n/g, `\n${SUBAGENT_TOOL_CONTINUATION_INDENT}`);
+}
+
+function describeToolCall(name: string, rawArgs: string): string {
   let args: unknown;
-  try { args = JSON.parse(match[2]!); } catch { return `→ ${match[1]} ${match[2]}`; }
-  if (!args || typeof args !== "object" || Array.isArray(args)) return `→ ${match[1]} ${match[2]}`;
+  try { args = JSON.parse(rawArgs); } catch { return `→ ${name} ${rawArgs}`; }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return `→ ${name} ${rawArgs}`;
   const fields = Object.entries(args);
   const target = fields.find(([key]) => key === "path" || key === "url" || key === "command");
   const options = fields.filter(([key]) => key !== target?.[0]).map(([key, value]) => `${key}=${JSON.stringify(value)}`);
-  return `→ ${match[1]}${target ? ` ${String(target[1])}` : ""}${options.length ? ` (${options.join(", ")})` : ""}`;
+  return `→ ${name}${target ? ` ${String(target[1])}` : ""}${options.length ? ` (${options.join(", ")})` : ""}`;
+}
+
+function toolCall(text: string): string | undefined {
+  const match = /^Calling ([\w.-]+):\s*([\s\S]*)$/.exec(text);
+  if (!match) return undefined;
+  return indentContinuation(describeToolCall(match[1]!, match[2]!));
 }
 
 function activity(run: SubagentRun): string[] {

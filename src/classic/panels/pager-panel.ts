@@ -2,7 +2,7 @@ import { renderMarkdownLines } from "../../ui-core/rendering/render-markdown-lin
 import { defaultPagerMarkdownMode } from "../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "../../ui-core/rendering/pager-source.js";
 import { wrapPagerLine } from "../../ui-core/rendering/pager-chrome.js";
-import { subagentLineSpans } from "../../ui-core/rendering/subagent-presentation.js";
+import { subagentBodySpans } from "../../ui-core/rendering/subagent-presentation.js";
 import {
   findPagerMatches,
   nextPagerMatch,
@@ -270,13 +270,14 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
   const searchLines = input.searchLines ?? pagerSearchLines(input.lines);
   const matches = state.query === "" ? [] : findPagerMatches(searchLines, state.query);
   const top = clampTop(state.caret, state.top, Math.max(1, height), count);
+  const subagentSpans = input.subagent ? subagentBodySpans(searchLines) : undefined;
   const body: string[] = [];
   for (let offset = 0; offset < height; offset += 1) {
     const index = top + offset;
     if (index >= count) break;
     const raw = input.lines[index] ?? "";
     const plain = searchLines[index] ?? "";
-    const spans = input.subagent ? subagentLineSpans(plain) : undefined;
+    const spans = subagentSpans?.[index];
     const styled = spans ? spans.map((span) => ink.style(span.text, span)).join("") : raw;
     const painted =
       state.query === ""

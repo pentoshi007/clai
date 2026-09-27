@@ -12,8 +12,17 @@ function statusColor(status: string): keyof Theme {
   return "activity";
 }
 
+export const SUBAGENT_TOOL_CONTINUATION_INDENT = "  ";
+
+const TOOL_CALL_RE = /^(\s*)([→✓✗])(\s+)([\w-]+\.[\w.-]+)(.*)$/;
+const TOOL_OUTCOME_RE = /^\s*(?:✗\s|In progress\b|No result recorded)/;
+
+function isToolContinuation(line: string): boolean {
+  return line.startsWith(SUBAGENT_TOOL_CONTINUATION_INDENT) && !TOOL_OUTCOME_RE.test(line);
+}
+
 export function subagentLineSpans(line: string): readonly SubagentSpan[] | undefined {
-  const tool = /^(\s*)([→✓✗])(\s+)([\w-]+\.[\w.-]+)(.*)$/.exec(line);
+  const tool = TOOL_CALL_RE.exec(line);
   if (tool) {
     return [
       { text: `${tool[1]}${tool[2]}${tool[3]}`, fg: statusColor(tool[2]!) },
@@ -58,14 +67,23 @@ export function subagentLineSpans(line: string): readonly SubagentSpan[] | undef
   return undefined;
 }
 
+export function subagentBodySpans(
+  lines: readonly string[],
+): readonly (readonly SubagentSpan[] | undefined)[] {
+  let inToolCall = false;
+  return lines.map((line) => {
+    if (inToolCall && isToolContinuation(line)) return [{ text: line, fg: "muted" }];
+    inToolCall = TOOL_CALL_RE.test(line);
+    return subagentLineSpans(line);
+  });
+}
+
 export type SubagentSpanPaint = (span: SubagentSpan) => string;
 
 export function styleSubagentBody(body: string, paint: SubagentSpanPaint): string {
-  return body
-    .split("\n")
-    .map((line) => {
-      const spans = subagentLineSpans(line);
-      return spans ? spans.map(paint).join("") : line;
-    })
+  const lines = body.split("\n");
+  const spans = subagentBodySpans(lines);
+  return lines
+    .map((line, index) => spans[index]?.map(paint).join("") ?? line)
     .join("\n");
 }

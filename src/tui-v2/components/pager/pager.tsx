@@ -28,6 +28,7 @@ import {
   type PagerMarkdownMode,
 } from "../../rendering/pager-markdown.js";
 import { subagentAnsiPaint } from "../../rendering/subagent-ansi.js";
+import { subagentBodySpans } from "../../../ui-core/rendering/subagent-presentation.js";
 import {
   extractFsReadFileBody,
   stripPagerLineGutters,
@@ -131,6 +132,10 @@ export function Pager(props: PagerProps): ReactNode {
   const lines = useMemo(
     () => display.lines.map((l) => l.plain),
     [display.lines],
+  );
+  const subagentSpans = useMemo(
+    () => (isSubagent ? subagentBodySpans(lines) : undefined),
+    [isSubagent, lines],
   );
   const pathForHighlight =
     viewMode === "raw" && highlightPath ? highlightPath : title;
@@ -648,6 +653,7 @@ export function Pager(props: PagerProps): ReactNode {
               carry={syntaxCarry}
               styled={row?.styled}
               subagent={isSubagent}
+              subagentSpans={subagentSpans?.[index]}
               markdownMode
             />,
           ];
@@ -704,6 +710,7 @@ export function Pager(props: PagerProps): ReactNode {
               carry={syntaxCarry}
               diffGutters={false}
               subagent
+              subagentSpans={subagentSpans?.[index]}
             />,
           ];
         }
@@ -735,6 +742,7 @@ export function Pager(props: PagerProps): ReactNode {
       theme,
       useDiffGutters,
       isSubagent,
+      subagentSpans,
     ],
   );
 
