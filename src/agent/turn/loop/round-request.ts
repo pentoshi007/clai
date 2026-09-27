@@ -69,7 +69,6 @@ export const requestRound = async (
       freeTierConsecutiveFailures: deps.loop.freeTierConsecutiveFailures,
       truncatedBudgetRounds: deps.loop.truncatedBudgetRounds,
       continuationBudgetFloor: deps.loop.continuationBudgetFloor,
-      retryWithoutThinking: deps.loop.retryWithoutThinking,
     };
     const contextLimitTokens = deps.currentContextLimitTokens();
     try {
@@ -124,7 +123,6 @@ export const requestRound = async (
         maxTokens: deps.loop.stepMaxTokens,
         signal: deps.options.signal,
         thinking: deps.thinking,
-        retryWithoutThinking: deps.loop.retryWithoutThinking,
         toolsAttached,
         tools: turnTools,
         onToolCallDelta: streamSession.onToolCallDelta,
@@ -160,7 +158,6 @@ export const requestRound = async (
         interruptedReasoning: deps.loop.interruptedReasoning,
         allowModelFallback: deps.loop.allowModelFallback,
         preferModelFallback: deps.loop.preferModelFallback,
-        retryWithoutThinking: deps.loop.retryWithoutThinking,
         visibleCommitted: deps.outputState.visibleCommitted,
       };
       const decision = await recoverFromStreamFailure(
@@ -218,7 +215,6 @@ export const requestRound = async (
       deps.loop.interruptedReasoning = failureState.interruptedReasoning;
       deps.loop.allowModelFallback = failureState.allowModelFallback;
       deps.loop.preferModelFallback = failureState.preferModelFallback;
-      deps.loop.retryWithoutThinking = failureState.retryWithoutThinking;
       deps.outputState.visibleCommitted = failureState.visibleCommitted;
       if (decision === "rethrow") throw streamError;
       return { kind: "continue" };

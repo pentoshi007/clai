@@ -47,7 +47,7 @@ export interface MetaToolPorts {
   readonly persistTaskEvidence: (
     taskId: string,
     evidence: TaskEvidence,
-  ) => Promise<void>;
+  ) => Promise<SessionPlan>;
 }
 
 export type MetaToolOutcome =
@@ -117,28 +117,30 @@ const applyPlanResult = async (
   planResult: MetaToolPlanResult,
 ): Promise<SingleToolResult> => {
   if (!planResult.reminder) ports.recordAttempt(call, planResult.ok);
+  let livePlan = planResult.plan;
   if (planResult.ok && call.name === "task.update") {
-    await applyTaskUpdateLedgerTransition(
-      {
-        getLedger: ports.getLedger,
-        setLedger: ports.setLedger,
-        looseWork: ports.looseWork,
-        persistTaskEvidence: ports.persistTaskEvidence,
-      },
-      call,
-      planResult.plan,
-    );
+    livePlan =
+      (await applyTaskUpdateLedgerTransition(
+        {
+          getLedger: ports.getLedger,
+          setLedger: ports.setLedger,
+          looseWork: ports.looseWork,
+          persistTaskEvidence: ports.persistTaskEvidence,
+        },
+        call,
+        planResult.plan,
+      )) ?? livePlan;
   }
-  if (planResult.ok && planResult.plan) {
-    ports.setPendingSessionStatePlan(planResult.plan);
+  if (planResult.ok && livePlan) {
+    ports.setPendingSessionStatePlan(livePlan);
   }
   ports.showCall(call);
   if (planResult.reminder && planResult.toast) {
     ports.notify("warn", planResult.toast);
   }
-  if (planResult.plan) {
-    ports.renderPlan(planResult.plan);
-    ports.adoptProjectRoot(planResult.plan);
+  if (livePlan) {
+    ports.renderPlan(livePlan);
+    ports.adoptProjectRoot(livePlan);
   }
   if (planResult.ok && planResult.cleared) {
     ports.setPendingSessionStatePlan(null);

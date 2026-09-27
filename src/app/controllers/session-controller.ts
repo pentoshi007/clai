@@ -17,14 +17,17 @@ import {
   formatContextChip,
   type ContextUsageSnapshot,
 } from "../../llm/token-usage.js";
-import type {
-  ContextAttemptReference,
-  ContextSnapshotV1,
+import {
+  isProviderMeasuredPrecision,
+  type ContextAttemptReference,
+  type ContextSnapshotV1,
 } from "../../llm/context-snapshot.js";
+import { isProviderMeasuredPrompt } from "../../llm/provider-context-usage.js";
 import {
   compactedContextSnapshot,
   recordContextUsageSnapshot,
   resolveContextSnapshot as resolveSnapshot,
+  contextSnapshotForRoute,
   restoredContextSnapshot,
   createContextProjector,
   estimatedContextSnapshot,
@@ -137,7 +140,6 @@ export interface SessionControllerDeps {
   readonly titleCompleter?: ((messages: ChatMessage[]) => Promise<string>) | undefined;
 }
 
-
 export type TurnEndListener = (result: TurnResult) => void;
 export type SessionStateListener = () => void;
 
@@ -196,7 +198,7 @@ export class SessionController implements Disposable {
     this.policy.subagents = this.subagentsValue;
     void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     beginSessionWorkspace();
-    void prefetchProviderCatalog(this.provider);
+    this.refreshProviderCatalog();
     publishRouteReasoningVocabulary(this.provider, this.model);
     this.sequencer = new EventSequencer(
       this.sessionIdValue,
@@ -330,10 +332,13 @@ export class SessionController implements Disposable {
   }
 
   private get usageTarget(): ContextUsageTarget {
-    const contextLimitTokens = this.contextLimitTokens;
+    const config = getConfig();
+    const provider = this.provider ?? config.defaultProvider;
+    const model = this.model ?? getProviderModel(provider);
+    const contextLimitTokens = this.contextLimits.get(provider, model);
     return {
-      provider: this.provider,
-      model: this.model,
+      provider,
+      model,
       ...(contextLimitTokens ? { contextLimitTokens } : {}),
     };
   }
@@ -359,7 +364,7 @@ export class SessionController implements Disposable {
   private requestScopedContextMeasurement(): "provider-reported" | "estimated" | undefined {
     const snapshot = this.contextSnapshot;
     if (!snapshot || snapshot.contextTokens <= 0) return undefined;
-    return snapshot.precision === "provider-exact"
+    return isProviderMeasuredPrecision(snapshot.precision)
       ? "provider-reported"
       : "estimated";
   }
@@ -369,7 +374,7 @@ export class SessionController implements Disposable {
     const attempt = snapshot?.attempt;
     if (
       !snapshot ||
-      snapshot.precision !== "provider-exact" ||
+      !isProviderMeasuredPrecision(snapshot.precision) ||
       snapshot.scope !== "provider-request" ||
       snapshot.contextTokens <= 0 ||
       attempt?.kind !== "generation" ||
@@ -400,7 +405,7 @@ export class SessionController implements Disposable {
         () => this.contextTimestamp(),
       ),
     );
-    if (usage.exact && usage.promptTokensKnown !== false) {
+    if (isProviderMeasuredPrompt(usage)) {
       this.preserveCompactionEstimate = false;
     }
     this.notifyState();
@@ -466,9 +471,9 @@ export class SessionController implements Disposable {
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
     this.lastMainRequestSnapshot = undefined;
-    this.setContextSnapshot(this.resolveContextSnapshot());
+    this.setContextSnapshot(contextSnapshotForRoute(this.usageTarget, this.contextSnapshot));
     clearTextOnlyModels();
-    void prefetchProviderCatalog(provider);
+    this.refreshProviderCatalog();
     publishRouteReasoningVocabulary(provider, this.model);
     this.notifyState();
   }
@@ -482,10 +487,22 @@ export class SessionController implements Disposable {
   setModel(model: string | undefined): void {
     this.model = model;
     this.lastMainRequestSnapshot = undefined;
-    this.setContextSnapshot(this.resolveContextSnapshot());
+    this.setContextSnapshot(contextSnapshotForRoute(this.usageTarget, this.contextSnapshot));
     clearTextOnlyModels();
+    this.refreshProviderCatalog();
     publishRouteReasoningVocabulary(this.provider, model);
     this.notifyState();
+  }
+
+  private refreshProviderCatalog(): void {
+    const provider = this.provider ?? getConfig().defaultProvider;
+    const generation = this.lifecycleGeneration;
+    void prefetchProviderCatalog(provider).then(() => {
+      const currentProvider = this.provider ?? getConfig().defaultProvider;
+      if (generation !== this.lifecycleGeneration || provider !== currentProvider) return;
+      this.setContextSnapshot(this.resolveContextSnapshot());
+      this.notifyState();
+    });
   }
 
   setMode(mode: Mode): void {
@@ -560,7 +577,7 @@ export class SessionController implements Disposable {
     this.model = model;
     this.lastMainRequestSnapshot = undefined;
     clearTextOnlyModels();
-    void prefetchProviderCatalog(this.provider);
+    this.refreshProviderCatalog();
     publishRouteReasoningVocabulary(this.provider, this.model);
   }
 
@@ -906,6 +923,7 @@ export class SessionController implements Disposable {
     const config = getConfig();
     const provider = this.provider ?? config.defaultProvider;
     const model = this.model ?? getProviderModel(provider);
+    this.setContextSnapshot(this.resolveContextSnapshot());
     const providerReportedContextTokens = this.providerReportedContextTokens();
     const checkpoint = this.continuationCheckpoint();
     const built = buildTurnRequest({

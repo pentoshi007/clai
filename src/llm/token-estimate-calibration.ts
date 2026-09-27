@@ -143,10 +143,7 @@ export function requestTokenCalibration(
   loadCalibrations();
   return (
     trustedCalibration(calibrations.get(calibrationKey(provider, model))) ??
-    trustedCalibration(
-      aggregateCalibration(`${provider ?? "unknown"}::`),
-    ) ??
-    trustedCalibration(aggregateCalibration(undefined))
+    trustedCalibration(aggregateCalibration(`${provider ?? "unknown"}::`))
   );
 }
 

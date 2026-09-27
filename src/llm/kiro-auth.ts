@@ -3,6 +3,14 @@ import { join } from "node:path";
 import { readFile, readdir } from "node:fs/promises";
 import { randomBytes, createHash } from "node:crypto";
 import { createServer } from "node:http";
+import {
+  linkedSsoClientRegistration,
+  normalizeIdpScope,
+  parseStoredExpiry,
+  preferKiroSsoTokenFiles,
+  readKiroIdeProfileArn,
+  validateExternalIdpTokenEndpoint,
+} from "./kiro-import-sources.js";
 
 export const KIRO_DEFAULT_REGION = "us-east-1";
 export const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
@@ -20,12 +28,43 @@ export const KIRO_DESKTOP_UA_VERSION = "0.7.45";
 
 export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
 
+const KIRO_API_REGION_MAP: Readonly<Record<string, string>> = {
+  "us-west-1": "us-east-1",
+  "us-west-2": "us-east-1",
+  "us-east-2": "us-east-1",
+  "ap-southeast-1": "us-east-1",
+  "ap-southeast-2": "us-east-1",
+  "ap-northeast-1": "us-east-1",
+  "ap-south-1": "us-east-1",
+  "eu-west-1": "eu-central-1",
+  "eu-west-2": "eu-central-1",
+  "eu-west-3": "eu-central-1",
+  "eu-north-1": "eu-central-1",
+  "eu-south-1": "eu-central-1",
+  "eu-south-2": "eu-central-1",
+  "eu-central-2": "eu-central-1",
+};
+
 export function assertValidAwsRegion(region?: string): string {
   const value = (region ?? KIRO_DEFAULT_REGION).trim().toLowerCase();
   if (!AWS_REGION_PATTERN.test(value)) {
     throw new Error(`Invalid AWS region: "${value}"`);
   }
   return value;
+}
+
+export function resolveKiroApiRegion(region?: string): string {
+  const value = assertValidAwsRegion(region);
+  return KIRO_API_REGION_MAP[value] ?? value;
+}
+
+export function resolveKiroRuntimeRegion(credential: {
+  readonly region?: string | undefined;
+  readonly profileArn?: string | undefined;
+}): string {
+  const arnRegion = credential.profileArn?.split(":")[3];
+  if (arnRegion && AWS_REGION_PATTERN.test(arnRegion)) return arnRegion;
+  return resolveKiroApiRegion(credential.region);
 }
 
 export type KiroAuthMethod =
@@ -48,6 +87,8 @@ export interface KiroCredential {
   clientSecret?: string | undefined;
   startUrl?: string | undefined;
   apiKey?: string | undefined;
+  tokenEndpoint?: string | undefined;
+  scope?: string | undefined;
 }
 
 export interface KiroDeviceAuthStart {
@@ -106,6 +147,8 @@ export function encodeKiroKey(credential: KiroCredential): string {
     s: credential.clientSecret ?? "",
     u: credential.startUrl ?? "",
     k: credential.apiKey ?? "",
+    ...(credential.tokenEndpoint ? { t: credential.tokenEndpoint } : {}),
+    ...(credential.scope ? { o: credential.scope } : {}),
   };
   return (
     KIRO_KEY_PREFIX +
@@ -131,6 +174,8 @@ export function decodeKiroKey(value: string): KiroCredential | undefined {
       s?: unknown;
       u?: unknown;
       k?: unknown;
+      t?: unknown;
+      o?: unknown;
     };
     if (typeof json?.a !== "string" && typeof json?.k !== "string") return undefined;
     return {
@@ -145,6 +190,8 @@ export function decodeKiroKey(value: string): KiroCredential | undefined {
       clientSecret: typeof json?.s === "string" && json.s ? json.s : undefined,
       startUrl: typeof json?.u === "string" && json.u ? json.u : undefined,
       apiKey: typeof json?.k === "string" && json.k ? json.k : undefined,
+      ...(typeof json?.t === "string" && json.t ? { tokenEndpoint: json.t } : {}),
+      ...(typeof json?.o === "string" && json.o ? { scope: json.o } : {}),
     };
   } catch {
     return undefined;
@@ -324,7 +371,7 @@ export async function pollKiroDeviceAuth(
 
       let profileArn: string | undefined;
       try {
-        profileArn = await listAvailableProfiles(accessToken, start.region);
+        profileArn = await discoverKiroProfileArn(accessToken, start.region);
       } catch {
         profileArn = undefined;
       }
@@ -600,6 +647,7 @@ export function kiroDesktopUserAgent(): string {
 }
 
 export function isHeadlessEnvironment(): boolean {
+  if (process.env.CLAI_NO_BROWSER || process.env.BROWSER === "none") return true;
   if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY) {
     return true;
   }
@@ -684,7 +732,9 @@ export function parseKiroCliCallback(input: string): KiroCliCallback {
 
   const loginOption = pairs.get("login_option");
   if (!loginOption) {
-    throw new Error("missing Kiro login_option");
+    throw new Error(
+      "missing Kiro login_option — paste the complete redirect URL from the browser address bar",
+    );
   }
 
   const state = pairs.get("state") || undefined;
@@ -871,80 +921,97 @@ export function listenForKiroCliCallback(options: {
   };
 }
 
-export async function refreshKiroToken(
-  refreshToken: string,
-  options: {
-    clientId?: string | undefined;
-    clientSecret?: string | undefined;
-    region?: string | undefined;
-    profileArn?: string | undefined;
-    startUrl?: string | undefined;
-    authMethod?: KiroAuthMethod | undefined;
-  } = {},
-): Promise<KiroCredential> {
-  const { clientId, clientSecret, region } = options;
+export interface KiroRefreshOptions {
+  clientId?: string | undefined;
+  clientSecret?: string | undefined;
+  region?: string | undefined;
+  profileArn?: string | undefined;
+  startUrl?: string | undefined;
+  authMethod?: KiroAuthMethod | undefined;
+  tokenEndpoint?: string | undefined;
+  scope?: string | undefined;
+}
 
-  if (clientId && clientSecret) {
-    const safeRegion = assertValidAwsRegion(region);
-    const endpoint = `https://oidc.${safeRegion}.amazonaws.com/token`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        clientId,
-        clientSecret,
-        refreshToken,
-        grantType: "refresh_token",
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Kiro token refresh failed (${response.status}): ${errorText}`);
-    }
-
-    const json = asRecord(await response.json().catch(() => ({})));
-    const accessToken =
-      typeof json?.accessToken === "string" ? json.accessToken : "";
-    if (!accessToken) {
-      throw new Error("Invalid token refresh response from AWS OIDC");
-    }
-
-    const newRefreshToken =
-      typeof json?.refreshToken === "string"
-        ? json.refreshToken
-        : refreshToken;
-    const expiresIn =
-      typeof json?.expiresIn === "number" ? json.expiresIn : 3600;
-
-    let profileArn = options.profileArn;
-    if (!profileArn) {
-      try {
-        profileArn = await listAvailableProfiles(accessToken, safeRegion);
-      } catch {
-        profileArn = undefined;
-      }
-    }
-
-    return {
-      accessToken,
-      refreshToken: newRefreshToken,
-      profileArn,
-      expiresAt: Date.now() + expiresIn * 1000,
-      authMethod: options.authMethod ?? "builder-id",
-      region: safeRegion,
-      clientId,
-      clientSecret,
-      startUrl: options.startUrl,
-    };
+export class KiroRefreshError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly reauthRequired: boolean,
+  ) {
+    super(message);
+    this.name = "KiroRefreshError";
   }
+}
 
-  const endpoint = `${KIRO_AUTH_SERVICE}/refreshToken`;
-  const response = await fetch(endpoint, {
+const UNRECOVERABLE_REFRESH =
+  /invalid_grant|InvalidGrantException|ExpiredTokenException|invalid_client|InvalidClientException|UnauthorizedClientException/i;
+
+async function refreshFailure(response: Response): Promise<KiroRefreshError> {
+  const errorText = await response.text().catch(() => "");
+  const reauthRequired =
+    UNRECOVERABLE_REFRESH.test(errorText) ||
+    response.status === 400 ||
+    response.status === 401;
+  const hint = reauthRequired ? " — run `clai auth kiro` to sign in again" : "";
+  return new KiroRefreshError(
+    `Kiro token refresh failed (${response.status})${hint}: ${errorText.slice(0, 300)}`,
+    response.status,
+    reauthRequired,
+  );
+}
+
+async function refreshViaOidc(
+  refreshToken: string,
+  options: KiroRefreshOptions & { clientId: string; clientSecret: string },
+): Promise<KiroCredential> {
+  const safeRegion = assertValidAwsRegion(options.region);
+  const response = await fetch(`https://oidc.${safeRegion}.amazonaws.com/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      clientId: options.clientId,
+      clientSecret: options.clientSecret,
+      refreshToken,
+      grantType: "refresh_token",
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw await refreshFailure(response);
+
+  const json = asRecord(await response.json().catch(() => ({})));
+  const accessToken =
+    typeof json?.accessToken === "string" ? json.accessToken : "";
+  if (!accessToken) {
+    throw new Error("Invalid token refresh response from AWS OIDC");
+  }
+  const expiresIn =
+    typeof json?.expiresIn === "number" ? json.expiresIn : 3600;
+  const profileArn =
+    options.profileArn ??
+    await discoverKiroProfileArn(accessToken, safeRegion).catch(() => undefined);
+
+  return {
+    accessToken,
+    refreshToken:
+      typeof json?.refreshToken === "string" ? json.refreshToken : refreshToken,
+    profileArn,
+    expiresAt: Date.now() + expiresIn * 1000,
+    authMethod: options.authMethod ?? "builder-id",
+    region: safeRegion,
+    clientId: options.clientId,
+    clientSecret: options.clientSecret,
+    startUrl: options.startUrl,
+  };
+}
+
+async function refreshViaSocial(
+  refreshToken: string,
+  options: KiroRefreshOptions,
+): Promise<KiroCredential> {
+  const response = await fetch(`${KIRO_AUTH_SERVICE}/refreshToken`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -954,11 +1021,7 @@ export async function refreshKiroToken(
     body: JSON.stringify({ refreshToken }),
     signal: AbortSignal.timeout(30_000),
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Kiro token refresh failed (${response.status}): ${errorText}`);
-  }
+  if (!response.ok) throw await refreshFailure(response);
 
   const json = asRecord(await response.json().catch(() => ({})));
   const accessToken =
@@ -966,23 +1029,112 @@ export async function refreshKiroToken(
   if (!accessToken) {
     throw new Error("Invalid token refresh response from Kiro service");
   }
-
-  const newRefreshToken =
-    typeof json?.refreshToken === "string" ? json.refreshToken : refreshToken;
-  const profileArn =
-    typeof json?.profileArn === "string"
-      ? json.profileArn
-      : options.profileArn;
   const expiresIn = typeof json?.expiresIn === "number" ? json.expiresIn : 3600;
 
   return {
     accessToken,
-    refreshToken: newRefreshToken,
-    profileArn,
+    refreshToken:
+      typeof json?.refreshToken === "string" ? json.refreshToken : refreshToken,
+    profileArn:
+      typeof json?.profileArn === "string" ? json.profileArn : options.profileArn,
     expiresAt: Date.now() + expiresIn * 1000,
     authMethod: options.authMethod ?? "imported",
     region: options.region ?? KIRO_DEFAULT_REGION,
   };
+}
+
+function usesSocialRefresh(authMethod: KiroAuthMethod | undefined): boolean {
+  return authMethod === "google" || authMethod === "github";
+}
+
+async function refreshViaExternalIdp(
+  refreshToken: string,
+  options: KiroRefreshOptions,
+): Promise<KiroCredential> {
+  if (!options.clientId || !options.tokenEndpoint) {
+    throw new KiroRefreshError(
+      "Kiro external IdP credential is missing clientId or tokenEndpoint — sign in again in Kiro and re-import",
+      400,
+      true,
+    );
+  }
+  const endpoint = validateExternalIdpTokenEndpoint(options.tokenEndpoint);
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: options.clientId,
+    refresh_token: refreshToken,
+    ...(options.scope ? { scope: options.scope } : {}),
+  });
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: body.toString(),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw await refreshFailure(response);
+  const json = asRecord(await response.json().catch(() => ({})));
+  const accessToken =
+    typeof json?.access_token === "string" ? json.access_token : "";
+  if (!accessToken) {
+    throw new Error("Invalid token refresh response from external identity provider");
+  }
+  const expiresIn = typeof json?.expires_in === "number" ? json.expires_in : 3600;
+  return {
+    accessToken,
+    refreshToken:
+      typeof json?.refresh_token === "string" ? json.refresh_token : refreshToken,
+    profileArn: options.profileArn,
+    expiresAt: Date.now() + expiresIn * 1000,
+    authMethod: "external_idp",
+    region: options.region ?? KIRO_DEFAULT_REGION,
+    clientId: options.clientId,
+    tokenEndpoint: endpoint,
+    scope: options.scope,
+  };
+}
+
+export async function refreshKiroToken(
+  refreshToken: string,
+  options: KiroRefreshOptions = {},
+): Promise<KiroCredential> {
+  if (options.authMethod === "external_idp") {
+    return refreshViaExternalIdp(refreshToken, options);
+  }
+  const { clientId, clientSecret } = options;
+  if (!clientId || !clientSecret || usesSocialRefresh(options.authMethod)) {
+    return refreshViaSocial(refreshToken, options);
+  }
+  try {
+    return await refreshViaOidc(refreshToken, { ...options, clientId, clientSecret });
+  } catch (error) {
+    const canTrySocial =
+      options.authMethod === "imported" &&
+      error instanceof KiroRefreshError &&
+      error.reauthRequired;
+    if (!canTrySocial) throw error;
+    return refreshViaSocial(refreshToken, options);
+  }
+}
+
+const KIRO_PROFILE_REGIONS = ["us-east-1", "eu-central-1"] as const;
+
+export async function discoverKiroProfileArn(
+  accessToken: string,
+  region: string | undefined,
+): Promise<string | undefined> {
+  const regions = [...new Set([
+    ...(region && AWS_REGION_PATTERN.test(region) ? [region] : []),
+    ...KIRO_PROFILE_REGIONS,
+  ])];
+  for (const candidate of regions) {
+    const profileArn = await listAvailableProfiles(accessToken, candidate)
+      .catch(() => undefined);
+    if (profileArn) return profileArn;
+  }
+  return undefined;
 }
 
 export async function listAvailableProfiles(
@@ -1028,39 +1180,13 @@ export async function listAvailableApiKeyModels(
   apiKey: string,
   region = KIRO_DEFAULT_REGION,
 ): Promise<string[]> {
-  const safeRegion = assertValidAwsRegion(region);
-  const params = new URLSearchParams({ origin: "AI_EDITOR" });
-  const endpoint = `https://q.${safeRegion}.amazonaws.com/ListAvailableModels?${params.toString()}`;
-
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      TokenType: "API_KEY",
-      Accept: "application/json",
-      "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-      "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
-    },
-    signal: AbortSignal.timeout(20_000),
+  const models = await listKiroModelsDetailed({
+    accessToken: apiKey,
+    apiKey,
+    authMethod: "api_key",
+    region,
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to list API key models (${response.status}): ${errorText}`);
-  }
-
-  const json = asRecord(await response.json().catch(() => ({})));
-  const models = Array.isArray(json?.models) ? json.models : [];
-  return models
-    .map((m) => {
-      const rec = asRecord(m);
-      return typeof rec?.modelId === "string"
-        ? rec.modelId
-        : typeof rec?.id === "string"
-          ? rec.id
-          : "";
-    })
-    .filter(Boolean);
+  return models.map((model) => model.modelId);
 }
 
 export async function validateKiroApiKey(
@@ -1104,10 +1230,8 @@ export async function candidateKiroCredentialPaths(): Promise<string[]> {
   const ssoCacheDir = join(home, ".aws", "sso", "cache");
   try {
     const files = await readdir(ssoCacheDir);
-    for (const file of files) {
-      if (file.endsWith(".json")) {
-        paths.push(join(ssoCacheDir, file));
-      }
+    for (const file of preferKiroSsoTokenFiles(files)) {
+      paths.push(join(ssoCacheDir, file));
     }
   } catch {}
 
@@ -1141,28 +1265,42 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
 
     if (!accessToken && !refreshToken) continue;
 
+    const provider =
+      typeof rec.provider === "string" ? rec.provider.toLowerCase() : "";
+    const externalIdp =
+      provider === "externalidp" ||
+      (typeof rec.authMethod === "string" &&
+        rec.authMethod.toLowerCase() === "external_idp");
+    const socialProvider =
+      provider === "google" || provider === "github" ? provider : undefined;
+    const linked = externalIdp || socialProvider
+      ? undefined
+      : await linkedSsoClientRegistration(path, rec);
     const clientId =
-      typeof rec.clientId === "string"
+      linked?.clientId ??
+      (typeof rec.clientId === "string"
         ? rec.clientId
         : typeof rec.client_id === "string"
           ? rec.client_id
-          : undefined;
+          : undefined);
     const clientSecret =
-      typeof rec.clientSecret === "string"
+      linked?.clientSecret ??
+      (typeof rec.clientSecret === "string"
         ? rec.clientSecret
         : typeof rec.client_secret === "string"
           ? rec.client_secret
-          : undefined;
+          : undefined);
     const region =
-      typeof rec.region === "string" && rec.region
+      typeof rec.region === "string" && AWS_REGION_PATTERN.test(rec.region)
         ? rec.region
         : KIRO_DEFAULT_REGION;
-    const profileArn =
+    const storedProfileArn =
       typeof rec.profileArn === "string"
         ? rec.profileArn
         : typeof rec.profile_arn === "string"
           ? rec.profile_arn
           : undefined;
+    const profileArn = storedProfileArn ?? await readKiroIdeProfileArn();
     const startUrl =
       typeof rec.startUrl === "string"
         ? rec.startUrl
@@ -1170,12 +1308,11 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
           ? rec.start_url
           : undefined;
 
-    let expiresAt: number | undefined;
-    if (typeof rec.expiresAt === "number") {
-      expiresAt = rec.expiresAt;
-    } else if (typeof rec.expires_at === "string") {
-      expiresAt = Date.parse(rec.expires_at);
-    }
+    const expiresAt =
+      parseStoredExpiry(rec.expiresAt) ?? parseStoredExpiry(rec.expires_at);
+    const authMethod: KiroAuthMethod = externalIdp
+      ? "external_idp"
+      : socialProvider ?? (clientId && clientSecret ? "builder-id" : "imported");
 
     return {
       accessToken,
@@ -1184,9 +1321,13 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
       expiresAt,
       region,
       clientId,
-      clientSecret,
+      clientSecret: externalIdp ? undefined : clientSecret,
       startUrl,
-      authMethod: clientId && clientSecret ? "builder-id" : "imported",
+      authMethod,
+      ...(externalIdp && typeof rec.tokenEndpoint === "string"
+        ? { tokenEndpoint: rec.tokenEndpoint }
+        : {}),
+      ...(externalIdp ? { scope: normalizeIdpScope(rec.scopes ?? rec.scope) } : {}),
     };
   }
 
@@ -1233,9 +1374,13 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
           "codewhisperer:odic:device-registration",
         ];
 
-        const tokenRaw = tokenKeys.map((k) => byKey.get(k)).find((v) => v);
-        if (!tokenRaw) continue;
-        const deviceRaw = deviceKeys.map((k) => byKey.get(k)).find((v) => v);
+        const tokenKey = tokenKeys.find((k) => byKey.get(k));
+        if (!tokenKey) continue;
+        const tokenRaw = byKey.get(tokenKey)!;
+        const socialToken = tokenKey.includes(":social:");
+        const deviceRaw = socialToken
+          ? undefined
+          : deviceKeys.map((k) => byKey.get(k)).find((v) => v);
 
         try {
           const parsed = JSON.parse(tokenRaw) as Record<string, unknown>;
@@ -1293,13 +1438,18 @@ export async function readKiroStoredAuth(): Promise<KiroCredential | undefined> 
                 ? "builder-id"
                 : "imported";
 
+          const storedRegion = [parsed.region, device?.region].find(
+            (value): value is string =>
+              typeof value === "string" && AWS_REGION_PATTERN.test(value),
+          );
+
           return {
             accessToken,
             refreshToken,
             expiresAt,
             profileArn,
             authMethod,
-            region: KIRO_DEFAULT_REGION,
+            region: storedRegion ?? KIRO_DEFAULT_REGION,
             clientId,
             clientSecret,
           };
@@ -1317,11 +1467,7 @@ export async function importExistingKiroAuth(): Promise<KiroCredential | undefin
   const stored = await readKiroStoredAuth();
   if (!stored) return undefined;
 
-  if (
-    stored.refreshToken &&
-    stored.expiresAt !== undefined &&
-    stored.expiresAt < Date.now()
-  ) {
+  if (stored.refreshToken && kiroCredentialNeedsRefresh(stored)) {
     try {
       return await refreshKiroToken(stored.refreshToken, stored);
     } catch {
@@ -1332,20 +1478,54 @@ export async function importExistingKiroAuth(): Promise<KiroCredential | undefin
   return stored;
 }
 
-export async function maybeRefreshKiroCredential(
+export const KIRO_REFRESH_SKEW_MS = 5 * 60 * 1000;
+
+export function kiroCredentialNeedsRefresh(
+  credential: KiroCredential,
+  now = Date.now(),
+): boolean {
+  return (
+    credential.expiresAt !== undefined &&
+    Number.isFinite(credential.expiresAt) &&
+    credential.expiresAt - now < KIRO_REFRESH_SKEW_MS
+  );
+}
+
+const inflightKiroRefreshes = new Map<string, Promise<string | undefined>>();
+
+export function maybeRefreshKiroCredential(
   key: string,
   storedRefreshToken?: string,
 ): Promise<string | undefined> {
   const decoded = decodeKiroKey(key);
   const refreshToken = decoded?.refreshToken || storedRefreshToken;
-  if (!refreshToken) return undefined;
+  if (!refreshToken) return Promise.resolve(undefined);
+  const inflight = inflightKiroRefreshes.get(refreshToken);
+  if (inflight) return inflight;
+  const pending = refreshKiroKey(refreshToken, decoded).finally(() => {
+    inflightKiroRefreshes.delete(refreshToken);
+  });
+  inflightKiroRefreshes.set(refreshToken, pending);
+  return pending;
+}
 
+async function refreshKiroKey(
+  refreshToken: string,
+  decoded: KiroCredential | undefined,
+): Promise<string | undefined> {
   try {
     const refreshed = await refreshKiroToken(refreshToken, decoded);
     return encodeKiroKey(refreshed);
-  } catch {
+  } catch (error) {
+    if (error instanceof KiroRefreshError && error.reauthRequired) throw error;
     return undefined;
   }
+}
+
+export interface KiroPromptCachingInfo {
+  readonly supportsPromptCaching: boolean;
+  readonly maximumCacheCheckpointsPerRequest?: number | undefined;
+  readonly minimumTokensPerCacheCheckpoint?: number | undefined;
 }
 
 export interface KiroModelInfo {
@@ -1356,6 +1536,8 @@ export interface KiroModelInfo {
   readonly maxInputTokens?: number | undefined;
   readonly maxOutputTokens?: number | undefined;
   readonly supportsImages?: boolean | undefined;
+  readonly promptCaching?: KiroPromptCachingInfo | undefined;
+  readonly additionalModelRequestFieldsSchema?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export interface KiroUsageBreakdown {
@@ -1399,6 +1581,8 @@ function parseModelInfo(value: unknown): KiroModelInfo | undefined {
   const inputTypes = Array.isArray(rec.supportedInputTypes)
     ? rec.supportedInputTypes
     : undefined;
+  const promptCaching = asRecord(rec.promptCaching);
+  const requestFieldsSchema = asRecord(rec.additionalModelRequestFieldsSchema);
   return {
     modelId,
     modelName:
@@ -1411,6 +1595,18 @@ function parseModelInfo(value: unknown): KiroModelInfo | undefined {
     supportsImages: inputTypes
       ? inputTypes.some((t) => typeof t === "string" && t.toUpperCase() === "IMAGE")
       : undefined,
+    promptCaching: promptCaching && typeof promptCaching.supportsPromptCaching === "boolean"
+      ? {
+          supportsPromptCaching: promptCaching.supportsPromptCaching,
+          maximumCacheCheckpointsPerRequest: optionalNumber(
+            promptCaching.maximumCacheCheckpointsPerRequest,
+          ),
+          minimumTokensPerCacheCheckpoint: optionalNumber(
+            promptCaching.minimumTokensPerCacheCheckpoint,
+          ),
+        }
+      : undefined,
+    additionalModelRequestFieldsSchema: requestFieldsSchema ?? undefined,
   };
 }
 
@@ -1432,27 +1628,82 @@ function kiroCatalogHeaders(credential: KiroCredential): Record<string, string> 
   return headers;
 }
 
+export type KiroApiGeneration = "modern" | "legacy";
+
+export interface KiroModelCatalogResult {
+  readonly models: readonly KiroModelInfo[];
+  readonly generation: KiroApiGeneration;
+}
+
+export async function discoverKiroModelsDetailed(
+  credential: KiroCredential,
+): Promise<KiroModelCatalogResult> {
+  const legacyRegion = assertValidAwsRegion(credential.region);
+  const apiRegion = resolveKiroRuntimeRegion(credential);
+  const params = new URLSearchParams({ origin: "AI_EDITOR" });
+  if (credential.profileArn) params.set("profileArn", credential.profileArn);
+  const baseHeaders = kiroCatalogHeaders(credential);
+  const requests: Array<{
+    generation: KiroApiGeneration;
+    url: string;
+    init: RequestInit;
+  }> = [
+    {
+      generation: "modern",
+      url: `https://management.${apiRegion}.kiro.dev/`,
+      init: {
+        method: "POST",
+        headers: {
+          ...baseHeaders,
+          "Content-Type": "application/x-amz-json-1.0",
+          "X-Amz-Target": "AmazonCodeWhispererService.ListAvailableModels",
+        },
+        body: JSON.stringify({
+          origin: "KIRO_CLI",
+          ...(credential.profileArn ? { profileArn: credential.profileArn } : {}),
+        }),
+      },
+    },
+    {
+      generation: "legacy",
+      url: `https://q.${legacyRegion}.amazonaws.com/ListAvailableModels?${params.toString()}`,
+      init: { method: "GET", headers: baseHeaders },
+    },
+  ];
+  let lastStatus: number | undefined;
+  let lastError: unknown;
+  for (const request of requests) {
+    try {
+      const response = await fetch(request.url, {
+        ...request.init,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) {
+        lastStatus = response.status;
+        continue;
+      }
+      const json = asRecord(await response.json().catch(() => ({})));
+      const models = Array.isArray(json?.models) ? json.models : [];
+      return {
+        models: models
+          .map(parseModelInfo)
+          .filter((info): info is KiroModelInfo => info !== undefined),
+        generation: request.generation,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  const detail = lastError instanceof Error ? `: ${lastError.message}` : "";
+  throw new Error(
+    `ListAvailableModels failed${lastStatus ? ` (HTTP ${lastStatus})` : ""}${detail}`,
+  );
+}
+
 export async function listKiroModelsDetailed(
   credential: KiroCredential,
-): Promise<KiroModelInfo[]> {
-  const region = assertValidAwsRegion(credential.region);
-  const params = new URLSearchParams({ origin: "AI_EDITOR" });
-  const response = await fetch(
-    `https://q.${region}.amazonaws.com/ListAvailableModels?${params.toString()}`,
-    {
-      method: "GET",
-      headers: kiroCatalogHeaders(credential),
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`ListAvailableModels failed (HTTP ${response.status})`);
-  }
-  const json = asRecord(await response.json().catch(() => ({})));
-  const models = Array.isArray(json?.models) ? json.models : [];
-  return models
-    .map(parseModelInfo)
-    .filter((info): info is KiroModelInfo => info !== undefined);
+): Promise<readonly KiroModelInfo[]> {
+  return (await discoverKiroModelsDetailed(credential)).models;
 }
 
 export async function getKiroUsageLimits(

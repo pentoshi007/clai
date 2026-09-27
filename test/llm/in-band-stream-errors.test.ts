@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   inBandBadRequestStatus,
+  isContentPolicyError,
   isUnattributableRequestBodyError,
   mentionsReasoning,
 } from "../../src/llm/reasoning-errors.js";
@@ -43,6 +44,15 @@ describe("an in-band error frame is graded like the status it stands for", () =>
       }),
       "",
     );
+    expect(isUnattributableRequestBodyError(error)).toBe(false);
+  });
+
+  it("does not treat a content safety block as a request-body rejection", () => {
+    const error = new ProviderError(
+      "Kiro blocked the response under its content safety policy (content_filtered)",
+      400,
+    );
+    expect(isContentPolicyError(error)).toBe(true);
     expect(isUnattributableRequestBodyError(error)).toBe(false);
   });
 

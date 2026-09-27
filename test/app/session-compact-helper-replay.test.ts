@@ -76,7 +76,7 @@ describe("runSessionCompaction cache-preserving replay", () => {
     stream.mockReset();
   });
 
-  it("replays the last successful request verbatim and appends the instruction", async () => {
+  it("replays the last successful request prefix and appends the instruction", async () => {
     complete.mockResolvedValueOnce(okResult());
     const history: ChatMessage[] = [
       ...SNAPSHOT.messages,
@@ -92,15 +92,12 @@ describe("runSessionCompaction cache-preserving replay", () => {
       thinking?: unknown;
       messages: Array<{ role: string; content: string }>;
     };
-    // Every prior prompt token is a strict prefix of the compaction request.
     expect(sent.messages.slice(0, SNAPSHOT.messages.length)).toEqual(
       SNAPSHOT.messages,
     );
     const last = sent.messages.at(-1)!;
     expect(last.role).toBe("user");
     expect(last.content).toContain("entire conversation above this instruction");
-    // Sampling and reasoning mirror the captured request so the cached prefix
-    // identity is untouched.
     expect(sent.temperature).toBe(0.7);
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
   });

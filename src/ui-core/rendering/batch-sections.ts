@@ -81,6 +81,16 @@ export interface BatchSectionPresentation {
   readonly hasBody: boolean;
 }
 
+function presentFsReadSection(body: string): {
+  readonly lines: readonly string[];
+  readonly hiddenAboveCount: number;
+} {
+  const cleaned = cleanToolOutputLines(body);
+  const header = cleaned.find((line) => /^#\s*fs\.read\b/.test(line.trim()));
+  const lines = header ? [header] : cleaned.slice(0, 1);
+  return { lines, hiddenAboveCount: Math.max(0, cleaned.length - lines.length) };
+}
+
 export function presentBatchSection(
   section: BatchSection,
   expanded: boolean,
@@ -90,7 +100,10 @@ export function presentBatchSection(
     status === "running" && !section.body.trim()
       ? "running…"
       : section.body;
-  const presented = presentOutput(bodyForPresent, undefined, expanded);
+  const compactFsRead = section.name === "fs.read" && !expanded && status !== "running";
+  const presented = compactFsRead
+    ? presentFsReadSection(bodyForPresent)
+    : presentOutput(bodyForPresent, undefined, expanded, section.name);
   const hasBody = bodyForPresent.trim().length > 0;
   let glyph = "✗";
   let statusLabel = "failed";

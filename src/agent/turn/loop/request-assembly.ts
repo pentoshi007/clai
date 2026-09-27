@@ -30,7 +30,6 @@ export interface RequestAssemblyState {
   freeTierConsecutiveFailures: number;
   truncatedBudgetRounds: number;
   continuationBudgetFloor: number;
-  retryWithoutThinking: boolean;
 }
 
 export interface RequestAssemblyPorts {
@@ -99,10 +98,8 @@ export const assembleRequest = async (
   const requestedStepMaxTokens = resolveStepMaxTokens({
     nativeToolsActive: ports.nativeToolsActive,
     toolsAttached,
-    recoveryNudge: state.retryWithoutThinking,
     truncationDepth: state.truncatedBudgetRounds,
-    thinkingEnabled:
-      Boolean(ports.thinking?.enabled) && !state.retryWithoutThinking,
+    thinkingEnabled: Boolean(ports.thinking?.enabled),
     minimumTokens: state.continuationBudgetFloor,
     ...(routeOutputTokenLimit !== undefined
       ? { outputTokenLimit: routeOutputTokenLimit }
@@ -154,10 +151,7 @@ export const assembleRequest = async (
     messages: ports.messages,
     stream: true,
     reservedOutputTokens: stepMaxTokens,
-    reasoning:
-      state.retryWithoutThinking && ports.thinking
-        ? { ...ports.thinking, enabled: false, effort: "low" }
-        : ports.thinking,
+    reasoning: ports.thinking,
     ...(toolsAttached && tools?.length
       ? { tools, toolChoice: "auto" as const, parallelToolCalls: true }
       : {}),

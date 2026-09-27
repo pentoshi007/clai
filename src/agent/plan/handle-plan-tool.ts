@@ -57,7 +57,7 @@ export async function handlePlanTool(
     return handlePlanClear(call, session, autoApprove);
   }
 
-  const plan = await loadPlan(session.sessionId).catch(() => undefined);
+  let plan = await loadPlan(session.sessionId);
   if (!plan) {
     return {
       handled: true,
@@ -154,7 +154,8 @@ export async function handlePlanTool(
       { state: task.state, note: task.note },
     ]),
   );
-  await mutatePlan(plan.sessionId, (draft) => {
+  const desiredStatus = plan.status;
+  const committed = await mutatePlan(plan.sessionId, (draft) => {
     for (const task of draft.tasks) {
       const desired = committedStates.get(task.id);
       if (!desired) continue;
@@ -162,17 +163,31 @@ export async function handlePlanTool(
       task.state = desired.state;
       if (desired.note !== undefined) task.note = desired.note;
     }
-    draft.status = plan.status;
+    draft.status = desiredStatus;
     return true;
-  }).catch(() => undefined);
+  });
+  if (!committed.ok || !committed.plan) {
+    const reason = committed.reason ?? "persist-failed";
+    return {
+      handled: true,
+      ok: false,
+      display: chalk.red(`  ✗ task.update: durable commit failed (${reason})\n`),
+      modelNote:
+        `task.update failed: the plan change was not durably committed (${reason}). ` +
+        "Reload the active plan before retrying; do not claim the task state changed.",
+    };
+  }
+  plan = committed.plan;
+  const committedTerminal = isPlanTerminal(plan);
+  const committedSuccessful = isPlanSuccessful(plan);
   const checklist = renderPlanForTerminal(plan);
   const nextPending = readyPlanTasks(plan)[0];
   let modelNote: string;
-  if (successful) {
+  if (committedSuccessful) {
     modelNote =
       "Task updated. All required tasks succeeded or were explicitly skipped. Verify the result and give your final summary. " +
       "If a dev server was started: report URL, port, job id, and that it is still running.";
-  } else if (terminal) {
+  } else if (committedTerminal) {
     const failed = plan.tasks.filter((task) => task.state === "failed");
     modelNote =
       `Task updated. The plan is terminal but NOT successful: ${failed.length} task(s) failed. ` +

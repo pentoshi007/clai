@@ -16,7 +16,6 @@ export interface StreamRequestInput {
   readonly maxTokens: number | undefined;
   readonly signal: AbortSignal | undefined;
   readonly thinking: ReasoningPreference | undefined;
-  readonly retryWithoutThinking: boolean;
   readonly toolsAttached: boolean;
   readonly tools: ToolDefinition[] | undefined;
   readonly onToolCallDelta: (delta: ToolCallStreamDelta) => void;
@@ -33,10 +32,7 @@ export const buildStreamRequest = (
   messages: input.messages,
   maxTokens: input.maxTokens,
   signal: input.signal,
-  thinking:
-    input.retryWithoutThinking && input.thinking
-      ? { ...input.thinking, enabled: false, effort: "low" as const }
-      : input.thinking,
+  thinking: input.thinking,
   ...(input.toolsAttached
     ? {
         tools: input.tools,

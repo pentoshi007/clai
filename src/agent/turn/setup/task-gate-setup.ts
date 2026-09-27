@@ -1,4 +1,4 @@
-import type { TaskEvidence } from "../../../store/plan.js";
+import type { SessionPlan, TaskEvidence } from "../../../store/plan.js";
 import type { PlanMutator } from "../plan-persistence.js";
 import {
   persistProjectRootOnPlan,
@@ -6,11 +6,13 @@ import {
 } from "../plan-persistence.js";
 
 export interface TaskGateSetup {
-  readonly persistProjectRootOnPlan: (root: string) => Promise<void>;
+  readonly persistProjectRootOnPlan: (
+    root: string,
+  ) => Promise<SessionPlan | undefined>;
   readonly persistTaskEvidence: (
     taskId: string,
     evidence: TaskEvidence,
-  ) => Promise<void>;
+  ) => Promise<SessionPlan>;
 }
 
 export const setUpTaskGate = (input: {

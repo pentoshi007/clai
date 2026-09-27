@@ -29,6 +29,7 @@ export const MAX_OUTPUT_BUDGET_CONTINUATIONS = 1;
 export interface ReliabilityPolicy {
   readonly softEarlyCompact: boolean;
   readonly softCompactTokenBudget: number;
+  readonly compactBudgetExplicit?: boolean | undefined;
   readonly hardCompactTokenBudget: number;
   readonly fsPassthroughCapChars: number;
   readonly adaptiveMaxTokens: boolean;
@@ -59,6 +60,9 @@ export function getReliabilityPolicy(): ReliabilityPolicy {
     boolEnv("CLAI_SOFT_EARLY_COMPACT") ?? cfg.softEarlyCompact ?? true;
   let softBudget =
     intEnv("CLAI_SOFT_COMPACT_TOKENS") ?? configuredRequestTokens().tokens;
+  const compactBudgetExplicit =
+    intEnv("CLAI_SOFT_COMPACT_TOKENS") !== undefined ||
+    configuredRequestTokens().source !== "default";
   softBudget = Math.max(
     MIN_AUTO_COMPACT_REQUEST_TOKENS,
     Math.min(softBudget, HARD_COMPACT_TOKEN_BUDGET),
@@ -73,6 +77,7 @@ export function getReliabilityPolicy(): ReliabilityPolicy {
   return {
     softEarlyCompact: softEarly,
     softCompactTokenBudget: softBudget,
+    compactBudgetExplicit,
     hardCompactTokenBudget: HARD_COMPACT_TOKEN_BUDGET,
     fsPassthroughCapChars: fsCap,
     adaptiveMaxTokens:
@@ -108,6 +113,7 @@ export function autoCompactTriggerTokens(
       ? { contextLimitTokens: target.contextLimitTokens }
       : {}),
     overrideTokens: configured,
+    budgetExplicit: policy.compactBudgetExplicit !== false,
   }).effectiveTrigger;
 }
 

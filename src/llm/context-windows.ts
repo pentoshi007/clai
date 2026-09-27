@@ -84,17 +84,77 @@ export function modelContextWindow(
   provider?: ProviderId | undefined,
 ): number {
   if (!model) return DEFAULT_CONTEXT_WINDOW;
-  const overrides = provider ? PROVIDER_CONTEXT_OVERRIDES[provider] : undefined;
-  if (overrides) {
-    for (const rule of overrides) {
-      if (rule.pattern.test(model)) return rule.tokens;
-    }
+  return (
+    providerAdvertisedContextWindow(provider, model) ??
+    nominalModelContextWindow(model)
+  );
+}
+
+export function providerAdvertisedContextWindow(
+  provider: ProviderId | undefined,
+  model: string | undefined,
+): number | undefined {
+  if (!provider || !model) return undefined;
+  const override = providerContextOverrideTokens(provider, model);
+  if (override !== undefined) return override;
+  return positiveTokens(modelCatalogFacts(provider, model)?.contextTokens);
+}
+
+export type ContextWindowSource =
+  | "session-override"
+  | "provider"
+  | "model-table"
+  | "default";
+
+export interface ResolvedContextWindow {
+  readonly tokens: number;
+  readonly source: ContextWindowSource;
+  readonly providerTokens?: number | undefined;
+  readonly overrideTokens?: number | undefined;
+  readonly clampedToProvider: boolean;
+}
+
+export function resolveContextWindow(input: {
+  readonly provider?: ProviderId | undefined;
+  readonly model?: string | undefined;
+  readonly contextLimitTokens?: number | undefined;
+  readonly minOverrideTokens?: number | undefined;
+}): ResolvedContextWindow {
+  const providerTokens = providerAdvertisedContextWindow(input.provider, input.model);
+  const minimum = Math.max(1, input.minOverrideTokens ?? 1);
+  const override = positiveTokens(input.contextLimitTokens);
+  const withProvider = providerTokens !== undefined ? { providerTokens } : {};
+  if (override !== undefined && override >= minimum) {
+    const clamped = providerTokens !== undefined && override > providerTokens;
+    return {
+      tokens: clamped ? providerTokens : override,
+      source: "session-override",
+      ...withProvider,
+      overrideTokens: override,
+      clampedToProvider: clamped,
+    };
   }
-  const published = provider
-    ? modelCatalogFacts(provider, model)?.contextTokens
-    : undefined;
-  if (published !== undefined) return published;
-  return nominalModelContextWindow(model);
+  if (providerTokens !== undefined) {
+    return { tokens: providerTokens, source: "provider", providerTokens, clampedToProvider: false };
+  }
+  if (!input.model) {
+    return { tokens: DEFAULT_CONTEXT_WINDOW, source: "default", clampedToProvider: false };
+  }
+  const tableTokens = tableContextWindow(input.model);
+  return tableTokens === undefined
+    ? { tokens: DEFAULT_CONTEXT_WINDOW, source: "default", clampedToProvider: false }
+    : { tokens: tableTokens, source: "model-table", clampedToProvider: false };
+}
+
+function positiveTokens(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.floor(value);
+}
+
+function tableContextWindow(model: string): number | undefined {
+  return CONTEXT_WINDOW_RULES.find((rule) => rule.pattern.test(model))?.tokens;
 }
 
 export function modelMaxOutputTokens(
@@ -108,10 +168,7 @@ export function modelMaxOutputTokens(
 
 export function nominalModelContextWindow(model: string | undefined): number {
   if (!model) return DEFAULT_CONTEXT_WINDOW;
-  for (const rule of CONTEXT_WINDOW_RULES) {
-    if (rule.pattern.test(model)) return rule.tokens;
-  }
-  return DEFAULT_CONTEXT_WINDOW;
+  return tableContextWindow(model) ?? DEFAULT_CONTEXT_WINDOW;
 }
 
 export function providerContextOverrideTokens(

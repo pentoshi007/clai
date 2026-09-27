@@ -77,8 +77,16 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not compact a small current request because an older provider count was large", async () => {
+  it("compacts when exact provider truth crossed despite a lower local estimate", async () => {
     const history = smallHistory(12);
+    const compactionSummary = [
+      "## Work completed",
+      "The exact provider threshold was crossed.",
+      "## Current state",
+      "The retained context was compacted once.",
+      "## Remaining work",
+      "Continue the current task.",
+    ].join("\n");
     let call = 0;
     stream.mockImplementation(
       (
@@ -89,9 +97,9 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
         const compactionInstruction =
           req.messages?.at(-1)?.content.toLowerCase() ?? "";
         if (compactionInstruction.includes("continuation memory")) {
-          onToken("summary text");
+          onToken(compactionSummary);
           return Promise.resolve({
-            text: "summary text",
+            text: compactionSummary,
             provider: "nvidia",
             model: "test-model",
           });
@@ -163,8 +171,8 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
       onEvent: (e) => events.push(e),
     });
 
-    expect(events.some((e) => e.type === "compaction-start")).toBe(false);
-    expect(events.some((e) => e.type === "compaction-completed")).toBe(false);
+    expect(events.filter((e) => e.type === "compaction-start")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "compaction-completed")).toHaveLength(1);
     expect(
       events.find((event) => event.type === "token-usage"),
     ).toMatchObject({

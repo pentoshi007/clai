@@ -1,6 +1,7 @@
 
 import { ProviderError, STREAM_STALL_MARKER } from "../llm/http.js";
 import { rateLimitWaitMsFor } from "../llm/key-rotation.js";
+import { isContentPolicyError } from "../llm/reasoning-errors.js";
 import { isEmptyCompletionError } from "../llm/router.js";
 import {
   SERVER_ERROR_MAX_ATTEMPTS,
@@ -9,6 +10,7 @@ import {
 
 export type StreamFailureKind =
   | "aborted"
+  | "content-policy"
   | "empty"
   | "context-overflow"
   | "rate-limit"
@@ -75,7 +77,6 @@ export interface StreamRecoveryPlan {
   readonly kind: StreamFailureKind;
   readonly delayMs: number;
   readonly forceCompact: boolean;
-  readonly disableThinking: boolean;
   readonly allowModelFallback: boolean;
   readonly preferModelFallback?: boolean | undefined;
   readonly nudge?: string | undefined;
@@ -114,6 +115,8 @@ export function classifyStreamFailure(error: unknown): StreamFailureKind {
   if (/\babort(ed)?\b|operation was aborted|the operation was cancelled/.test(msg)) {
     return "aborted";
   }
+
+  if (isContentPolicyError(error)) return "content-policy";
 
   if (
     status === 413 ||
@@ -272,11 +275,10 @@ export function planStreamRecovery(input: {
     kind,
     delayMs: 0,
     forceCompact: false,
-    disableThinking: false,
     allowModelFallback: false,
   };
 
-  if (kind === "aborted") return giveUp;
+  if (kind === "aborted" || kind === "content-policy") return giveUp;
   if (state.total >= limits.maxTotal) return giveUp;
   if (progressed && state.progressed >= limits.maxProgressed) return giveUp;
 
@@ -290,8 +292,7 @@ export function planStreamRecovery(input: {
         action: "retry",
         kind,
         delayMs: pick([500, 1000, 1500, 2000], n, cap),
-        disableThinking: n >= 1,
-        forceCompact: n >= 2,
+        forceCompact: false,
         allowModelFallback: n >= 2,
         nudge: EMPTY_NUDGE,
         notice:
@@ -309,7 +310,6 @@ export function planStreamRecovery(input: {
         kind,
         delayMs,
         forceCompact: false,
-        disableThinking: false,
         allowModelFallback: true,
         notice:
           n === 0
@@ -326,7 +326,6 @@ export function planStreamRecovery(input: {
         kind,
         delayMs: pick([3_000, 8_000, 15_000], n, cap),
         forceCompact: false,
-        disableThinking: false,
         allowModelFallback: true,
         notice:
           n === 0
@@ -342,7 +341,6 @@ export function planStreamRecovery(input: {
         kind,
         delayMs: pick([2_000, 5_000, 10_000], n, cap),
         forceCompact: false,
-        disableThinking: false,
         allowModelFallback: n >= 1,
         notice: n === 0 ? "connection dropped — retrying" : undefined,
       };
@@ -355,7 +353,6 @@ export function planStreamRecovery(input: {
         kind,
         delayMs: pick([1_000, 3_000], n, cap),
         forceCompact: false,
-        disableThinking: n >= 1,
         allowModelFallback: true,
         preferModelFallback: true,
         nudge: STALL_NUDGE,
@@ -373,7 +370,6 @@ export function planStreamRecovery(input: {
         kind,
         delayMs: pick([500, 500], n, cap),
         forceCompact: true,
-        disableThinking: false,
         allowModelFallback: n >= 1,
         notice:
           n === 0
@@ -397,7 +393,6 @@ export function planStreamRecovery(input: {
         kind,
         delayMs: Math.min(kind === "unknown" ? 2_000 : 1_000, cap),
         forceCompact: false,
-        disableThinking: false,
         allowModelFallback: true,
         notice,
       };

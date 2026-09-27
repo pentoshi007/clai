@@ -70,6 +70,40 @@ export function withoutReasoning(
   return { ...request, thinking: undefined };
 }
 
+export function withoutReasoningReplay(
+  request: CompletionRequest,
+): CompletionRequest {
+  return {
+    ...request,
+    forceReasoningReplay: false,
+    messages: request.messages.map((message) => {
+      const hasToolSignatures = message.toolCalls?.some(
+        (call) => call.thoughtSignature !== undefined,
+      );
+      if (
+        !message.reasoningArtifacts?.length &&
+        !message.reasoningBlock &&
+        !hasToolSignatures
+      ) {
+        return message;
+      }
+      const {
+        reasoningArtifacts: _reasoningArtifacts,
+        reasoningBlock: _reasoningBlock,
+        ...rest
+      } = message;
+      const toolCalls = message.toolCalls?.map((call) => {
+        const { thoughtSignature: _thoughtSignature, ...unsignedCall } = call;
+        return unsignedCall;
+      });
+      return {
+        ...rest,
+        ...(toolCalls ? { toolCalls } : {}),
+      };
+    }),
+  };
+}
+
 export function reasoningWireKey(
   thinking: CompletionRequest["thinking"],
   style: ReasoningStyle,

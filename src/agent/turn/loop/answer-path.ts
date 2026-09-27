@@ -59,9 +59,7 @@ export const resolveAnswerPath = async (
   deps.counters.malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
   if (recoveryDecision === "retry") return { kind: "continue" };
 
-  const livePlanAtCompletion = await loadPlan(deps.session.sessionId).catch(
-    () => undefined,
-  );
+  const livePlanAtCompletion = await loadPlan(deps.session.sessionId);
   const assessment = assessCompletion({
     visible: assistantText.visible,
     canonicalVisible: canonicalAssistantVisible,
@@ -114,7 +112,7 @@ export const resolveAnswerPath = async (
       outcomeState: deps.outcomeState,
       planApproved: deps.session.planApproved.value,
       loadPlan: () =>
-        loadPlan(deps.session.sessionId).catch(() => undefined),
+        loadPlan(deps.session.sessionId),
       saveOutcomeState,
     },
     cleaned,

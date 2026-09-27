@@ -130,7 +130,7 @@ describe("compaction durable envelope builder", () => {
     expect(lookupOrder).toEqual(["unread", "running", "recent"]);
   });
 
-  it("uses the active root and tolerates plan-load failure", async () => {
+  it("propagates plan-load failure before building the envelope", async () => {
     const detectPackageManager = vi.fn(() => "npm");
     const buildEnvelope = createCompactionDurableEnvelopeBuilder({
       messages: [],
@@ -146,15 +146,7 @@ describe("compaction durable envelope builder", () => {
       getRecentJobs: () => [],
     });
 
-    await expect(buildEnvelope()).resolves.toBe(
-      buildDurableEnvelope({
-        outcome,
-        ledger: new WorkLedger(),
-        projectRoot: "/workspace/active",
-        packageManager: "npm",
-        responder: { unread: [], consumed: [] },
-      }),
-    );
-    expect(detectPackageManager).toHaveBeenCalledWith("/workspace/active");
+    await expect(buildEnvelope()).rejects.toThrow("store unavailable");
+    expect(detectPackageManager).not.toHaveBeenCalled();
   });
 });
