@@ -170,7 +170,6 @@ export async function applySessionResume(
 ): Promise<ResumeOutcome> {
   const plan = await services.plan.load(record.id);
   clearActiveProjectRoot();
-  services.plan.clear();
   const fallback = await loadModelForSession(record.id);
   const provider = record.provider ?? fallback.provider;
   const model =
