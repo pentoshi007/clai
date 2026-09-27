@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  mergeCatalogEntries,
   mergeGatewayProvider,
   resetMergeGatewayCatalogCache,
 } from "../src/llm/merge-gateway.js";
+import { modelContextWindow } from "../src/llm/context-windows.js";
+import { ingestModelCatalogEntries } from "../src/llm/wire/model-catalog.js";
 import {
   displayReasoningEfforts,
   modelSupportsThinking,
@@ -298,6 +301,16 @@ describe("Merge Gateway model catalog", () => {
     const facts = modelCatalogFacts("merge-gateway", "zai/glm-5.3-flash");
     expect(facts?.contextTokens).toBe(1_000_000);
     expect(facts?.maxOutputTokens).toBe(131_072);
+  });
+
+  it("preserves callable model limits when merging native facts", () => {
+    const entries = mergeCatalogEntries(
+      [{ id: "merge/raw-limit-model", context_length: 432_100 }],
+      new Map([["merge/raw-limit-model", { input_modalities: ["text"] }]]),
+    );
+    ingestModelCatalogEntries("merge-gateway", entries);
+
+    expect(modelContextWindow("merge/raw-limit-model", "merge-gateway")).toBe(432_100);
   });
 
   it("claims vision only when every routable vendor accepts images", async () => {

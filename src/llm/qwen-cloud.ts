@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CompletionRequest, CompletionResult } from "../types.js";
 import {
   defaultModels,
@@ -10,14 +11,45 @@ import {
   openAiCompatibleStream,
   toCompletionResult,
   readJson,
-  ingestOpenAiModelCatalog,
+  ingestModelCatalogEntries,
 } from "./http.js";
+import { fetchDashScopeModelCatalog } from "./wire/dashscope-model-catalog.js";
 
 const baseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
+const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
+
+function modelId(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function mergeModelMetadata(
+  models: readonly unknown[],
+  metadata: readonly Record<string, unknown>[],
+): unknown[] {
+  const availableIds = new Set(models.map(modelId).filter(Boolean).map((id) => id.toLowerCase()));
+  const metadataById = new Map(
+    metadata
+      .filter((entry) => availableIds.has(modelId(entry).toLowerCase()))
+      .map((entry) => [modelId(entry).toLowerCase(), entry]),
+  );
+  return models.map((entry) => {
+    const id = modelId(entry);
+    const facts = metadataById.get(id.toLowerCase());
+    if (!facts) return entry;
+    const raw = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? (entry as Record<string, unknown>)
+      : {};
+    return { ...raw, ...facts, id };
+  });
+}
+
+export function resetQwenCloudModelCatalogCache(): void {
+  modelCache.clear();
+}
 
 export const qwenCloudProvider: LlmProvider = {
   id: "qwen-cloud",
@@ -28,18 +60,26 @@ export const qwenCloudProvider: LlmProvider = {
   validateKey: (key: string) => /^sk-[A-Za-z0-9._-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
+    const cacheKey = createHash("sha256").update(auth.apiKey).digest("hex");
     const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
     const response = await fetch(`${baseUrl}/models`, {
       headers: { authorization: `Bearer ${auth.apiKey}` },
     });
-    const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
-    const models = ingestOpenAiModelCatalog("qwen-cloud", data);
+    const data = await readJson<{ data?: unknown[] }>(response);
+    const listedModels = data.data ?? [];
+    let metadata: Record<string, unknown>[] = [];
+    try {
+      metadata = await fetchDashScopeModelCatalog(auth.apiKey);
+    } catch {
+    }
+    const models = ingestModelCatalogEntries(
+      "qwen-cloud",
+      mergeModelMetadata(listedModels, metadata),
+    );
     if (models.length > 0) {
-      cachedModels = models;
-      lastFetchTime = now;
+      modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
     }
     return models;
   },

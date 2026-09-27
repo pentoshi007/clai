@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CompletionRequest, CompletionResult } from "../types.js";
 import {
   defaultModels,
@@ -205,6 +206,11 @@ export interface ExplabsCatalogIndex {
   readonly excluded: Set<string>;
 }
 
+interface ExplabsCallableEntry {
+  readonly id: string;
+  readonly entry: unknown;
+}
+
 export function explabsCatalogIndex(rows: readonly unknown[]): ExplabsCatalogIndex {
   const entries = new Map<string, Record<string, unknown>>();
   const excluded = new Set<string>();
@@ -214,19 +220,17 @@ export function explabsCatalogIndex(rows: readonly unknown[]): ExplabsCatalogInd
       ? (asRecord(row.model)!.slug as string).trim()
       : "";
     const parsed = catalogFactsEntry(row);
-    if (parsed) entries.set(parsed.id, parsed.entry);
-    else if (slug) excluded.add(slug);
+    if (parsed) entries.set(parsed.id.toLowerCase(), parsed.entry);
+    else if (slug) excluded.add(slug.toLowerCase());
   }
   return { entries, excluded };
 }
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
+const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export function resetExplabsCatalogCache(): void {
-  cachedModels = null;
-  lastFetchTime = 0;
+  modelCache.clear();
 }
 
 export function explabsAuthHeaders(apiKey: string): Record<string, string> {
@@ -273,23 +277,27 @@ async function fetchCatalogFacts(
   return explabsCatalogIndex(rows);
 }
 
-async function fetchCallableIds(
+function callableEntryId(entry: unknown): string {
+  if (typeof entry === "string") return entry.trim();
+  const id = asRecord(entry)?.id;
+  return typeof id === "string" ? id.trim() : "";
+}
+
+async function fetchCallableEntries(
   apiKey: string,
   signal?: AbortSignal,
-): Promise<string[]> {
+): Promise<ExplabsCallableEntry[]> {
   const data = await getJson<{ data?: unknown }>(
     `${explabsBaseUrl}/models`,
     apiKey,
     signal,
   );
   const entries = Array.isArray(data.data) ? data.data : [];
-  return entries
-    .map((entry) => {
-      if (typeof entry === "string") return entry.trim();
-      const id = asRecord(entry)?.id;
-      return typeof id === "string" ? id.trim() : "";
-    })
-    .filter((id) => id.length > 0 && !NON_CHAT_MODEL.test(id));
+  return entries.flatMap((entry) => {
+    const id = callableEntryId(entry);
+    if (!id || NON_CHAT_MODEL.test(id)) return [];
+    return [{ id, entry: typeof entry === "string" ? { id } : entry }];
+  });
 }
 
 async function fetchModels(
@@ -300,7 +308,7 @@ async function fetchModels(
     const catalog = await fetchCatalogFacts(undefined, signal);
     return ingestOpenAiModelCatalog("explabs", [...catalog.entries.values()]);
   }
-  const callable = await fetchCallableIds(apiKey, signal);
+  const callable = await fetchCallableEntries(apiKey, signal);
   let catalog: ExplabsCatalogIndex;
   try {
     catalog = await fetchCatalogFacts(apiKey, signal);
@@ -309,10 +317,15 @@ async function fetchModels(
   }
   const entries: unknown[] = [];
   const seen = new Set<string>();
-  for (const id of callable) {
-    if (seen.has(id) || catalog.excluded.has(id)) continue;
-    seen.add(id);
-    entries.push(catalog.entries.get(id) ?? { id });
+  for (const model of callable) {
+    const normalizedId = model.id.toLowerCase();
+    if (seen.has(normalizedId) || catalog.excluded.has(normalizedId)) continue;
+    seen.add(normalizedId);
+    entries.push({
+      ...(asRecord(model.entry) ?? { id: model.id }),
+      ...(catalog.entries.get(normalizedId) ?? {}),
+      id: model.id,
+    });
   }
   return ingestOpenAiModelCatalog("explabs", entries);
 }
@@ -369,18 +382,19 @@ export const explabsProvider: LlmProvider = {
   envVar: "EXPLABS_API_KEY",
   validateKey: (key: string) => /^xpl_[0-9a-f]{40,}$/i.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
+    const cacheKey = createHash("sha256").update(auth.apiKey ?? "").digest("hex");
     const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
+    const cached = modelCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
     try {
       const models = await fetchModels(auth.apiKey);
       if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
+        modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
         return models;
       }
-      return cachedModels ?? explabsFallbackModels;
+      return modelCache.get(cacheKey)?.models ?? explabsFallbackModels;
     } catch {
-      return cachedModels ?? explabsFallbackModels;
+      return modelCache.get(cacheKey)?.models ?? explabsFallbackModels;
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

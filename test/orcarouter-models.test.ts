@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { orcarouterProvider, orcarouterFallbackModels } from "../src/llm/orcarouter.js";
+import {
+  orcarouterProvider,
+  orcarouterFallbackModels,
+  resetOrcaRouterModelCatalogCache,
+} from "../src/llm/orcarouter.js";
+import {
+  modelContextWindow,
+  modelMaxOutputTokens,
+} from "../src/llm/context-windows.js";
 import {
   defaultModels,
   envVars,
@@ -42,6 +50,7 @@ describe("OrcaRouter model discovery", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    resetOrcaRouterModelCatalogCache();
   });
 
   const baseTime = Date.now();
@@ -108,6 +117,49 @@ describe("OrcaRouter model discovery", () => {
     });
   });
 
+  it("enriches missing model limits from OrcaRouter's public model cards", async () => {
+    const contextModel = "openai/orca-context-probe";
+    const zeroContextModel = "openai/orca-context-zero";
+    const unknownModel = "openai/orca-context-unavailable";
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url === "https://api.orcarouter.ai/v1/models") {
+        return new Response(JSON.stringify({
+          data: [
+            { id: contextModel, top_provider: { context_length: 0 } },
+            { id: zeroContextModel },
+            { id: unknownModel },
+          ],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url === "https://www.orcarouter.ai/api/public/models/openai/orca-context-probe") {
+        return new Response(JSON.stringify({
+          data: { context_window: 777_777, max_output: 65_536 },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url === "https://www.orcarouter.ai/api/public/models/openai/orca-context-zero") {
+        return new Response(JSON.stringify({
+          data: { context_window: 0, max_output: 100_000 },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url === "https://www.orcarouter.ai/api/public/models/openai/orca-context-unavailable") {
+        return new Response("not found", { status: 404 });
+      }
+      throw new Error("unexpected fetch");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(baseTime + 4 * 60 * 60 * 1000);
+
+    await orcarouterProvider.listModels!({ apiKey: "sk-orca-test12345" });
+
+    expect(modelContextWindow(contextModel, "orcarouter")).toBe(777_777);
+    expect(modelMaxOutputTokens("orcarouter", contextModel)).toBe(65_536);
+    expect(modelContextWindow(zeroContextModel, "orcarouter")).toBe(200_000);
+    expect(modelMaxOutputTokens("orcarouter", zeroContextModel)).toBe(100_000);
+    expect(modelContextWindow(unknownModel, "orcarouter")).toBe(200_000);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("caches the models list for the TTL window", async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -121,13 +173,13 @@ describe("OrcaRouter model discovery", () => {
     const time = baseTime + 5 * 60 * 60 * 1000;
     vi.spyOn(Date, "now").mockReturnValue(time);
     await orcarouterProvider.listModels!({ apiKey: "sk-orca-cache1234" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     vi.spyOn(Date, "now").mockReturnValue(time + 10_000);
     const result = await orcarouterProvider.listModels!({
       apiKey: "sk-orca-cache1234",
     });
     expect(result).toEqual(["openai/gpt-4o-mini"]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

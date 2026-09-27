@@ -74,6 +74,36 @@ describe("Gemini model discovery", () => {
     expect(modelCatalogFacts("gemini", "gemini-9-pro")?.defaultSampling).toBeUndefined();
   });
 
+  it("follows nextPageToken and keeps each page's complete model facts", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        models: [{
+          name: "models/gemini-page-one-unique",
+          supportedGenerationMethods: ["generateContent"],
+          inputTokenLimit: 100_000,
+          outputTokenLimit: 8_000,
+        }],
+        nextPageToken: "page-two-token",
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        models: [{
+          name: "models/gemini-page-two-unique",
+          supportedGenerationMethods: ["generateContent"],
+          inputTokenLimit: 777_777,
+          outputTokenLimit: 77_777,
+          max_context_length: 888_888,
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geminiProvider.listModels!({ apiKey: "AIzaTestKey" });
+
+    expect(modelContextWindow("gemini-page-two-unique", "gemini")).toBe(888_888);
+    expect(modelMaxOutputTokens("gemini", "gemini-page-two-unique")).toBe(77_777);
+    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).searchParams.get("pageToken"))
+      .toBe("page-two-token");
+  });
+
   it("throws when no API key is configured", async () => {
     await expect(geminiProvider.listModels!({})).rejects.toThrow(
       "Gemini API key is required"

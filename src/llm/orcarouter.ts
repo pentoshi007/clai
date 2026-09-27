@@ -13,6 +13,10 @@ import {
   readJson,
   toCompletionResult,
 } from "./http.js";
+import {
+  enrichOrcaRouterModelEntries,
+  resetOrcaRouterModelMetadataCache,
+} from "./wire/orcarouter-model-catalog.js";
 
 const baseUrl = "https://api.orcarouter.ai/v1";
 
@@ -71,6 +75,12 @@ let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
+export function resetOrcaRouterModelCatalogCache(): void {
+  cachedModels = null;
+  lastFetchTime = 0;
+  resetOrcaRouterModelMetadataCache();
+}
+
 export const orcarouterProvider: LlmProvider = {
   id: "orcarouter",
   reasoningStyle: "openai",
@@ -91,10 +101,8 @@ export const orcarouterProvider: LlmProvider = {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await readJson<{ data?: Array<OrcaModelEntry> }>(response);
-      const models = ingestOpenAiModelCatalog(
-        "orcarouter",
-        chatModelsFromCatalog(data),
-      );
+      const entries = await enrichOrcaRouterModelEntries(chatModelsFromCatalog(data));
+      const models = ingestOpenAiModelCatalog("orcarouter", entries);
       if (models.length > 0) {
         cachedModels = models;
         lastFetchTime = now;

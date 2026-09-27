@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CompletionRequest, CompletionResult } from "../types.js";
 import {
   defaultModels,
@@ -49,9 +50,12 @@ export const nvidiaFallbackModels = [
   "sarvamai/sarvam-m",
 ];
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
+const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
+
+export function resetNvidiaModelCatalogCache(): void {
+  modelCache.clear();
+}
 
 const NVIDIA_FIRST_BYTE_IDLE_TIMEOUT_MS = 120_000;
 
@@ -63,32 +67,24 @@ export const nvidiaProvider: LlmProvider = {
   envVar: "NVIDIA_API_KEY",
   validateKey: (key: string) => /^nvapi-[A-Za-z0-9_-]{16,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    if (!auth.apiKey) {
-      return nvidiaFallbackModels;
-    }
+    if (!auth.apiKey) return nvidiaFallbackModels;
+    const cacheKey = createHash("sha256").update(auth.apiKey).digest("hex");
     const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
     try {
       const response = await fetch(`${baseUrl}/models`, {
-        headers: {
-          authorization: `Bearer ${auth.apiKey}`,
-        },
+        headers: { authorization: `Bearer ${auth.apiKey}` },
       });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText}`);
-      }
-      const data = await readJson<{ data?: Array<{ id: string }> }>(response);
-      const models = ingestOpenAiModelCatalog("nvidia", data);
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      const models = ingestOpenAiModelCatalog("nvidia", await readJson<unknown>(response));
       if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
+        modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
         return models;
       }
       return nvidiaFallbackModels;
     } catch {
-      return nvidiaFallbackModels;
+      return modelCache.get(cacheKey)?.models ?? nvidiaFallbackModels;
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {
