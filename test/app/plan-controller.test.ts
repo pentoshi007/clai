@@ -137,3 +137,17 @@ describe("PlanController observability (V2-070)", () => {
     expect(notifications).toBe(0);
   });
 });
+
+
+it("does not synthesize approval when the durable mutation fails", async () => {
+  const persistence = fakePersistence();
+  persistence.saved.push(plan());
+  persistence.mutatePlan = async () => ({ ok: false });
+  const controller = new PlanController(persistence);
+  await controller.load("s1");
+
+  await expect(controller.approve()).rejects.toThrow(
+    "Plan approval was not durably committed",
+  );
+  expect(controller.current()?.status).toBe("draft");
+});

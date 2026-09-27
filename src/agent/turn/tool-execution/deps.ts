@@ -74,8 +74,10 @@ export interface SingleToolDeps extends TurnWriters {
   readonly persistTaskEvidence: (
     taskId: string,
     evidence: TaskEvidence,
-  ) => Promise<void>;
-  readonly persistProjectRootOnPlan: (root: string) => Promise<void>;
+  ) => Promise<SessionPlan>;
+  readonly persistProjectRootOnPlan: (
+    root: string,
+  ) => Promise<SessionPlan | undefined>;
   readonly matchesWakeRevision: (
     notification: ResponderNotification,
   ) => boolean;

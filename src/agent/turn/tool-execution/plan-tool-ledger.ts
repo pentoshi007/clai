@@ -16,14 +16,14 @@ export interface PlanToolLedgerPorts {
   readonly persistTaskEvidence: (
     taskId: string,
     evidence: TaskEvidence,
-  ) => Promise<void>;
+  ) => Promise<SessionPlan>;
 }
 
 const openTaskLedger = async (
   ports: PlanToolLedgerPorts,
   plan: SessionPlan | undefined,
   taskId: string,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const persisted = plan?.tasks.find((task) => task.id === taskId);
   const live = ports.getLedger();
   const base =
@@ -41,7 +41,7 @@ const openTaskLedger = async (
   ports.setLedger(ledger);
   if (plan && ledger && ledger.successWorkCount > 0 && persisted) {
     persisted.evidence = taskEvidenceFromLedger(ledger);
-    await ports.persistTaskEvidence(persisted.id, persisted.evidence);
+    return ports.persistTaskEvidence(persisted.id, persisted.evidence);
   }
 };
 
@@ -49,23 +49,25 @@ const completeTaskLedger = async (
   ports: PlanToolLedgerPorts,
   plan: SessionPlan | undefined,
   taskId: string,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const ledger = ports.getLedger();
+  let committed: SessionPlan | undefined;
   if (plan && ledger?.taskId === taskId) {
     const task = plan.tasks.find((candidate) => candidate.id === taskId);
     if (task) {
       task.evidence = taskEvidenceFromLedger(ledger);
-      await ports.persistTaskEvidence(task.id, task.evidence);
+      committed = await ports.persistTaskEvidence(task.id, task.evidence);
     }
   }
   ports.setLedger(null);
+  return committed;
 };
 
 export const applyTaskUpdateLedgerTransition = async (
   ports: PlanToolLedgerPorts,
   call: ToolCall,
   plan: SessionPlan | undefined,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const state = typeof call.args.state === "string" ? call.args.state : "";
   const requested =
     typeof call.args.taskId === "string"
@@ -77,12 +79,10 @@ export const applyTaskUpdateLedgerTransition = async (
     (plan ? resolvePlanTaskId(plan, requested) : undefined) ?? requested;
   if (!taskId) return;
   if (state === "in_progress") {
-    await openTaskLedger(ports, plan, taskId);
-    return;
+    return openTaskLedger(ports, plan, taskId);
   }
   if (state === "done") {
-    await completeTaskLedger(ports, plan, taskId);
-    return;
+    return completeTaskLedger(ports, plan, taskId);
   }
   if (state !== "failed" && state !== "skipped") return;
   if (ports.getLedger()?.taskId === taskId) ports.setLedger(null);

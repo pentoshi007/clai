@@ -9,7 +9,6 @@ export interface TurnLoopState {
   pendingCalls: ToolCall[];
   allowModelFallback: boolean;
   preferModelFallback: boolean;
-  retryWithoutThinking: boolean;
   stepMaxTokens: number;
   dispatchedRawRequestTokens: number;
   dispatchedRequestRoute:
@@ -43,7 +42,6 @@ export const createTurnLoopState = (input: {
   pendingCalls: [],
   allowModelFallback: false,
   preferModelFallback: false,
-  retryWithoutThinking: false,
   stepMaxTokens: 0,
   dispatchedRawRequestTokens: 0,
   dispatchedRequestRoute: undefined,

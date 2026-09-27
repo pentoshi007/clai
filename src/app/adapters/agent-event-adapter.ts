@@ -80,6 +80,12 @@ export class AgentEventAdapter {
           ...(event.usage.promptTokensKnown === false
             ? { promptTokensKnown: false }
             : {}),
+          ...(event.usage.promptTokensSource
+            ? { promptTokensSource: event.usage.promptTokensSource }
+            : {}),
+          ...(event.usage.contextWindowTokens !== undefined
+            ? { contextWindowTokens: event.usage.contextWindowTokens }
+            : {}),
           ...(event.usage.cachedPromptTokens !== undefined
             ? { cachedPromptTokens: event.usage.cachedPromptTokens }
             : {}),

@@ -69,7 +69,7 @@ const collectJobs = (
 const build = async (
   ports: CompactionDurableEnvelopePorts,
 ): Promise<string | undefined> => {
-  const plan = await ports.loadPlan().catch(() => undefined);
+  const plan = await ports.loadPlan();
   const root = ports.getProjectRoot() ?? plan?.meta?.projectRoot;
   const consumed = consumedNotificationIds(ports.messages);
   const unread = [...ports.getUnreadNotificationIds()];

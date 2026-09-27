@@ -1,6 +1,6 @@
 import type { ToolCall } from "../../types.js";
 import type { PlanTask, SessionPlan } from "../../store/plan.js";
-import { markTask, readyPlanTasks } from "../../store/plan.js";
+import { readyPlanTasks } from "../../store/plan.js";
 import {
   isPlanPreflightTool,
   isReadOnlyReconTool,
@@ -10,7 +10,7 @@ import {
 } from "../task-evidence.js";
 
 export interface TaskAutostartPorts {
-  readonly openTask: (taskId: string) => Promise<void>;
+  readonly openTask: (taskId: string) => Promise<SessionPlan>;
   readonly renderPlan: (plan: SessionPlan) => void;
   readonly notify: (message: string) => void;
   readonly getLedger: () => TaskWorkLedger | null;
@@ -53,18 +53,16 @@ export const autostartPlanTask = async (
   plan: SessionPlan,
   call: ToolCall,
   ports: TaskAutostartPorts,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const next = selectAutostartTask(plan, call);
-  if (!next) return;
-  markTask(plan, next.id, "in_progress");
-  if (plan.status === "draft" || plan.status === "approved") {
-    plan.status = "in_progress";
-  }
-  await ports.openTask(next.id);
+  if (!next) return undefined;
+  const committed = await ports.openTask(next.id);
+  const committedTask = committed.tasks.find((task) => task.id === next.id);
   const ledger = ports.getLedger();
   if (!ledger || ledger.taskId !== next.id) {
-    ports.setLedger(ledgerFromTaskEvidence(next.id, next.evidence));
+    ports.setLedger(ledgerFromTaskEvidence(next.id, committedTask?.evidence));
   }
-  ports.renderPlan(plan);
+  ports.renderPlan(committed);
   ports.notify(`auto-started [${next.id}] so work can continue`);
+  return committed;
 };

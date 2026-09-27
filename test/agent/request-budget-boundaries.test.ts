@@ -35,6 +35,23 @@ describe("default and custom compaction targets", () => {
     expect(buildDurableEnvelope).toHaveBeenCalledTimes(tokens >= trigger ? 1 : 0);
   });
 
+  it("uses the Kiro Opus default and custom thresholds exactly", () => {
+    expect(
+      resolveRequestBudget({ provider: "kiro", model: "claude-opus-5.5-thinking" }),
+    ).toMatchObject({ configured: 200_000, effectiveTrigger: 200_000 });
+    expect(
+      resolveRequestBudget({
+        provider: "kiro",
+        model: "claude-opus-5.5-thinking",
+        contextLimitTokens: 400_000,
+      }),
+    ).toMatchObject({
+      configured: 280_000,
+      effectiveTrigger: 280_000,
+      source: "session",
+    });
+  });
+
   it("retains the safety reserve on a 200k model", () => {
     expect(resolveRequestBudget({ provider: "anthropic", model: "claude-sonnet-4" }))
       .toMatchObject({ configured: 200_000, effectiveTrigger: 156_992, clampedByModel: true });

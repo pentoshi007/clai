@@ -97,8 +97,10 @@ export class PlanController implements Disposable {
           return true;
         },
       );
-      const next: SessionPlan =
-        result.plan ?? { ...this.plan, status: "approved" };
+      if (!result.ok || !result.plan) {
+        throw new Error("Plan approval was not durably committed");
+      }
+      const next = result.plan;
       this.plan = next;
       this.notify();
       return next;

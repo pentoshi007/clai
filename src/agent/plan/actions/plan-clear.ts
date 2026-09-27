@@ -18,7 +18,7 @@ export async function handlePlanClear(
   autoApprove: boolean,
 ): Promise<PlanToolResult> {
   void autoApprove;
-    const plan = await loadPlan(session.sessionId).catch(() => undefined);
+    const plan = await loadPlan(session.sessionId);
     if (!plan) {
       return {
         handled: true,

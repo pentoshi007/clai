@@ -32,6 +32,7 @@ const ports = (
   newCompactionId: () => "compact-test",
   lastSuccessfulRequestSnapshot: () => undefined,
   clearSuccessfulRequestSnapshot: () => undefined,
+  clearProviderPromptTokens: () => undefined,
   summarize: async () => "summary",
   loadPlan: async () => undefined,
   instructionsBlock: () => undefined,
@@ -137,4 +138,92 @@ it("falls back from an over-limit replay to one bounded prefix slice", async () 
   );
   expect(writeCompleted).toHaveBeenCalledTimes(1);
   expect(writeFailed).not.toHaveBeenCalled();
+});
+
+it("retains the exact transcript when durable-state refresh fails", async () => {
+  const original: ChatMessage[] = [
+    { role: "user", content: "before" },
+    { role: "tool", toolCallId: "orphan", content: "unmatched" },
+    { role: "user", content: "continue" },
+  ];
+  const snapshot = structuredClone(original);
+  const clearSuccessfulRequestSnapshot = vi.fn();
+  const writeStarted = vi.fn();
+  const coordinator = createCompactionCoordinator(
+    ports({
+      messages: original,
+      buildDurableEnvelope: async () => {
+        throw new Error("plan store unavailable");
+      },
+      clearSuccessfulRequestSnapshot,
+      writeStarted,
+    }),
+  );
+
+  await expect(
+    coordinator("auto-token-budget", { bypassThreshold: true }),
+  ).rejects.toThrow("plan store unavailable");
+  expect(original).toEqual(snapshot);
+  expect(clearSuccessfulRequestSnapshot).not.toHaveBeenCalled();
+  expect(writeStarted).not.toHaveBeenCalled();
+});
+
+
+it("re-arms once after success and admits a later estimate crossing", async () => {
+  const stablePrefix = "stable cache prefix";
+  const liveMessages: ChatMessage[] = [
+    { role: "system", content: stablePrefix },
+    ...messages().map((message) => ({
+      ...message,
+      content: `${message.content} ${"x".repeat(50_000)}`,
+    })),
+  ];
+  let crossed = true;
+  let providerTruth: number | undefined = 100_000;
+  const writeStarted = vi.fn();
+  const writeCompleted = vi.fn(() => {
+    crossed = false;
+  });
+  const clearProviderPromptTokens = vi.fn(() => {
+    providerTruth = undefined;
+  });
+  const summarize = vi.fn(async () =>
+    [
+      "## Current state",
+      "The active work and exact durable state were preserved.",
+      "## Remaining work",
+      "Continue the next task from the retained recent turn.",
+    ].join("\n"),
+  );
+  const coordinator = createCompactionCoordinator(
+    ports({
+      messages: liveMessages,
+      estimateRequestTokens: (candidate) =>
+        candidate === liveMessages && crossed ? 210_000 : 50_000,
+      providerPromptTokens: () => providerTruth,
+      clearProviderPromptTokens,
+      summarize,
+      writeStarted,
+      writeCompleted,
+    }),
+  );
+
+  await coordinator("auto-token-budget");
+  await coordinator("auto-token-budget");
+  expect(writeStarted).toHaveBeenCalledTimes(1);
+  expect(clearProviderPromptTokens).toHaveBeenCalledTimes(1);
+  expect(liveMessages[0]?.content).toBe(stablePrefix);
+
+  liveMessages.push({ role: "user", content: "new threshold crossing" });
+  crossed = true;
+  await coordinator("auto-token-budget");
+
+  expect(writeStarted).toHaveBeenCalledTimes(2);
+  expect(writeCompleted).toHaveBeenCalledTimes(2);
+  expect(summarize).toHaveBeenCalledTimes(2);
+  expect(clearProviderPromptTokens).toHaveBeenCalledTimes(2);
+  expect(liveMessages[0]?.content).toBe(stablePrefix);
+  expect(
+    liveMessages.some((message) => message.content === "new threshold crossing"),
+  ).toBe(true);
 });

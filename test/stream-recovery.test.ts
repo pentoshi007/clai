@@ -50,6 +50,29 @@ describe("classifyStreamFailure", () => {
     ).toBe("context-overflow");
   });
 
+  it("classifies content safety blocks and never retries them", () => {
+    const raw = new ProviderError(
+      "Kiro blocked the response under its content safety policy (content_filtered)",
+      400,
+    );
+    const wrapped = new Error(
+      "No provider could stream the request. — kiro: Kiro ended with non-success stop reason: content_filtered",
+    );
+    expect(classifyStreamFailure(raw)).toBe("content-policy");
+    expect(classifyStreamFailure(wrapped)).toBe("content-policy");
+    expect(
+      planStreamRecovery({
+        error: raw,
+        state: createStreamRecoveryState(),
+      }),
+    ).toMatchObject({
+      action: "give-up",
+      kind: "content-policy",
+      allowModelFallback: false,
+      delayMs: 0,
+    });
+  });
+
   it("classifies upstream 5xx as server", () => {
     expect(classifyStreamFailure(new ProviderError("bad gateway", 503))).toBe(
       "server",
@@ -132,25 +155,25 @@ describe("planStreamRecovery — bounded escalation", () => {
     expect(plan.action).toBe("give-up");
   });
 
-  it("escalates empty-response recovery: nudge → drop thinking → compact + fallback", () => {
+  it("escalates empty-response recovery: nudge → quiet retry → fallback without dropping reasoning", () => {
     const state = createStreamRecoveryState();
 
     const first = planStreamRecovery({ kind: "empty", state });
     expect(first.action).toBe("retry");
     expect(first.nudge).toBeTruthy();
     expect(first.notice).toBeTruthy(); // surfaced once
-    expect(first.disableThinking).toBe(false);
+    expect(first).not.toHaveProperty("disableThinking");
     recordRecoveryAttempt(state, "empty");
 
     const second = planStreamRecovery({ kind: "empty", state });
     expect(second.action).toBe("retry");
-    expect(second.disableThinking).toBe(true);
+    expect(second).not.toHaveProperty("disableThinking");
     expect(second.notice).toBeUndefined(); // quiet after the first
     recordRecoveryAttempt(state, "empty");
 
     const third = planStreamRecovery({ kind: "empty", state });
     expect(third.action).toBe("retry");
-    expect(third.forceCompact).toBe(true);
+    expect(third.forceCompact).toBe(false);
     expect(third.allowModelFallback).toBe(true);
     recordRecoveryAttempt(state, "empty");
 

@@ -82,6 +82,7 @@ export type ReasoningArtifactDialect =
   | "meta-responses"
   | "openai-compatible"
   | "ollama-chat"
+  | "kiro-eventstream"
   | "legacy";
 
 export type ReasoningArtifactReplayScope =
@@ -334,6 +335,8 @@ export interface TokenUsage {
   readonly completionTokens: number;
   readonly totalTokens: number;
   readonly exact: boolean;
+  readonly promptTokensSource?: "provider-ratio" | undefined;
+  readonly contextWindowTokens?: number | undefined;
   readonly cachedPromptTokens?: number | undefined;
   readonly cacheCreationTokens?: number | undefined;
   readonly uncachedPromptTokens?: number | undefined;

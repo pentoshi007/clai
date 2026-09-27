@@ -111,9 +111,6 @@ export async function readAllJsonl(): Promise<SessionPlan[]> {
         }
       });
   } catch (err: any) {
-    if (err && err.code === "EACCES") {
-      handlePermissionError(err);
-    }
-    return [];
+    handlePermissionError(err);
   }
 }

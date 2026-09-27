@@ -20,7 +20,7 @@ import type { TokenUsage } from "../../src/types.js";
 const target: ContextUsageTarget = {
   provider: "openai",
   model: "gpt-test",
-  contextLimitTokens: 1_000,
+  contextLimitTokens: 1_000_000,
 };
 
 const usage: TokenUsage = {
@@ -116,8 +116,17 @@ describe("ContextSnapshotV1", () => {
       sessionCompletionTokens: 50,
       scope: "provider-request",
       precision: "provider-exact",
-      limit: { source: "session-override", tokens: 1_000 },
-      headroom: { kind: "known", remainingTokens: 400 },
+      limit: {
+        source: "session-override",
+        tokens: 1_000_000,
+        requestedTokens: 1_000_000,
+        compactTriggerTokens: 700_000,
+      },
+      headroom: {
+        kind: "known",
+        remainingTokens: 999_400,
+        effectiveTriggerTokens: 700_000,
+      },
       cache: {
         kind: "reported",
         readTokens: 400,
@@ -138,7 +147,7 @@ describe("ContextSnapshotV1", () => {
     });
     expect(toLegacyContextUsage(snapshot)).toEqual({
       contextTokens: 600,
-      contextLimit: 1_000,
+      contextLimit: 1_000_000,
       lastCompletionTokens: 50,
       sessionPromptTokens: 600,
       sessionCompletionTokens: 50,
@@ -229,15 +238,24 @@ describe("ContextSnapshotV1", () => {
     });
 
     const restored = restoredContextSnapshot(
-      { ...target, contextLimitTokens: 800 },
+      { ...target, contextLimitTokens: 800_000 },
       persisted,
       () => 999,
     )!;
     expect(restored).toMatchObject({
       scope: "provider-request",
       precision: "provider-exact",
-      limit: { source: "session-override", tokens: 800 },
-      headroom: { kind: "known", remainingTokens: 200 },
+      limit: {
+        source: "session-override",
+        tokens: 800_000,
+        requestedTokens: 800_000,
+        compactTriggerTokens: 560_000,
+      },
+      headroom: {
+        kind: "known",
+        remainingTokens: 799_400,
+        effectiveTriggerTokens: 560_000,
+      },
       cache: {
         kind: "reported",
         readTokens: 400,
@@ -265,8 +283,17 @@ describe("ContextSnapshotV1", () => {
       contextTokens: 275,
       scope: "provider-request",
       precision: "provider-exact",
-      limit: { source: "session-override", tokens: 1_000 },
-      headroom: { kind: "known", remainingTokens: 725 },
+      limit: {
+        source: "session-override",
+        tokens: 1_000_000,
+        requestedTokens: 1_000_000,
+        compactTriggerTokens: 700_000,
+      },
+      headroom: {
+        kind: "known",
+        remainingTokens: 999_725,
+        effectiveTriggerTokens: 700_000,
+      },
       cache: { kind: "unknown" },
       reasoning: { kind: "unknown" },
       attempt: { kind: "unavailable" },

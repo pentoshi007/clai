@@ -168,6 +168,7 @@ export async function applySessionResume(
   services: AppServices,
   record: HistoryRecord,
 ): Promise<ResumeOutcome> {
+  const plan = await services.plan.load(record.id);
   clearActiveProjectRoot();
   services.plan.clear();
   const fallback = await loadModelForSession(record.id);
@@ -212,7 +213,6 @@ export async function applySessionResume(
   }
   restoreArtifactOutputs(hydrated.state, services.session.spool);
 
-  const plan = await services.plan.load(record.id).catch(() => undefined);
   services.session.setPlanApproved(
     plan?.status === "approved" || plan?.status === "in_progress",
   );

@@ -81,17 +81,15 @@ const createDelegationChild = async (
     })
     .catch(() => undefined);
 
-  if (!created?.ok || !delegation.taskId) {
+  if (!created?.ok || !created.plan || !delegation.taskId) {
     ports.notify(
       "warn",
       "Responder delegation record could not be persisted — the job will be linked after launch",
     );
     return undefined;
   }
-  if (created.plan) {
-    ports.setPendingSessionStatePlan(created.plan);
-    ports.renderPlan(created.plan);
-  }
+  ports.setPendingSessionStatePlan(created.plan);
+  ports.renderPlan(created.plan);
   return delegation;
 };
 

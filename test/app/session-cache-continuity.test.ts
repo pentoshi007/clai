@@ -6,6 +6,7 @@ import { createCurrentAgentPort } from "../../src/app/adapters/current-agent-ada
 import { SessionController } from "../../src/app/controllers/session-controller.js";
 import { buildChatBody } from "../../src/llm/http.js";
 import { buildResponsesBody } from "../../src/llm/responses-request.js";
+import { buildKiroRequestBody, resolveKiroModel } from "../../src/llm/kiro.js";
 import { META_STREAM_TERMINAL } from "../../src/llm/stream-terminal.js";
 import { currentSessionAffinity } from "../../src/llm/session-affinity.js";
 import { successfulRequestSnapshot } from "../../src/llm/routing/attempt-request.js";
@@ -48,7 +49,28 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-function wire(request: CompletionRequest, dialect: "chat" | "responses"): unknown[] {
+type WireDialect = "chat" | "responses" | "kiro";
+
+function kiroWire(request: CompletionRequest): unknown[] {
+  const route = resolveKiroModel(request.model!);
+  const body = buildKiroRequestBody(
+    request,
+    { accessToken: "fixture", authMethod: "social" },
+    route.upstream,
+    route.agentic,
+    route.thinking,
+  );
+  const state = body.conversationState as {
+    history: unknown[];
+    currentMessage: { userInputMessage: { userInputMessageContext: Record<string, unknown> } };
+  };
+  const current = structuredClone(state.currentMessage);
+  delete current.userInputMessage.userInputMessageContext.tools;
+  return [...state.history, current];
+}
+
+function wire(request: CompletionRequest, dialect: WireDialect): unknown[] {
+  if (dialect === "kiro") return kiroWire(request);
   const options = {
     model: request.model!,
     messages: request.messages,
@@ -74,7 +96,10 @@ function wire(request: CompletionRequest, dialect: "chat" | "responses"): unknow
 }
 
 describe("production session cache continuity", () => {
-  it.each<[ProviderId, string, "chat" | "responses", "manual" | "automatic"]>([
+  it.each<[ProviderId, string, WireDialect, "manual" | "automatic"]>([
+    ["kiro", "claude-opus-5.5-thinking", "kiro", "manual"],
+    ["kiro", "claude-sonnet-4.5-thinking", "kiro", "automatic"],
+    ["kiro", "gpt-5.6-sol-thinking-agentic", "kiro", "automatic"],
     ["explabs", "gpt-5.6-luna", "chat", "manual"],
     ["explabs", "gpt-5.6-luna", "responses", "manual"],
     ["openai", "gpt-5", "responses", "manual"],

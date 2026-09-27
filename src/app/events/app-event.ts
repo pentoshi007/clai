@@ -131,6 +131,8 @@ export interface AppEventPayloads {
     readonly totalTokens: number;
     readonly exact: boolean;
     readonly promptTokensKnown?: false | undefined;
+    readonly promptTokensSource?: "provider-ratio" | undefined;
+    readonly contextWindowTokens?: number | undefined;
     readonly cachedPromptTokens?: number | undefined;
     readonly cacheCreationTokens?: number | undefined;
     readonly uncachedPromptTokens?: number | undefined;

@@ -229,6 +229,12 @@ export function createCompositionRoot(
           ...(event.payload.promptTokensKnown === false
             ? { promptTokensKnown: false }
             : {}),
+          ...(event.payload.promptTokensSource
+            ? { promptTokensSource: event.payload.promptTokensSource }
+            : {}),
+          ...(event.payload.contextWindowTokens !== undefined
+            ? { contextWindowTokens: event.payload.contextWindowTokens }
+            : {}),
           ...(event.payload.cachedPromptTokens !== undefined
             ? { cachedPromptTokens: event.payload.cachedPromptTokens }
             : {}),

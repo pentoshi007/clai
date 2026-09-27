@@ -59,6 +59,7 @@ export interface CompactionServicesInput {
   readonly providerPromptTokens?: (() => number | undefined) | undefined;
   readonly thinking?: (() => ReasoningPreference | undefined) | undefined;
   readonly clearRequestSnapshot: () => void;
+  readonly clearProviderPromptTokens: () => void;
   readonly instructionsBlock: () => string | undefined;
   readonly skillsBlock: () => string | undefined;
   readonly planApproved: () => boolean;
@@ -166,6 +167,7 @@ export const createCompactionServices = (
     newCompactionId: () => `compact-${randomUUID().slice(0, 12)}`,
     lastSuccessfulRequestSnapshot: input.requestSnapshot,
     clearSuccessfulRequestSnapshot: input.clearRequestSnapshot,
+    clearProviderPromptTokens: input.clearProviderPromptTokens,
     providerPromptTokens: input.providerPromptTokens,
     summarize,
     loadPlan: input.loadPlan,

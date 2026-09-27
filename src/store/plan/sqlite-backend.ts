@@ -93,16 +93,37 @@ let cachedDb: DatabaseLike | undefined;
 
 let sqliteUnavailable = false;
 
+function missingSqliteDriver(error: unknown): boolean {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") &&
+    message.includes(sqliteModuleName)
+  );
+}
+
 export async function loadDatabase(): Promise<DatabaseLike | undefined> {
   if (process.env.CLAI_PLAN_FILE || process.env.VITEST_WORKER_ID) return undefined;
   if (cachedDb) return cachedDb;
   if (sqliteUnavailable) return undefined;
+  await mkdir(planDir, { recursive: true });
+  await fixOwner(planDir);
+
+  let imported: ({ default?: DatabaseCtor } & DatabaseCtor);
   try {
-    await mkdir(planDir, { recursive: true });
-    await fixOwner(planDir);
-    const imported = (await import(sqliteModuleName)) as {
+    imported = (await import(sqliteModuleName)) as {
       default?: DatabaseCtor;
     } & DatabaseCtor;
+  } catch (error) {
+    if (!missingSqliteDriver(error)) throw error;
+    sqliteUnavailable = true;
+    return undefined;
+  }
+
+  try {
     const Ctor = imported.default ?? imported;
     cachedDb = new Ctor(dbFile);
     fixOwnerSync(dbFile);
@@ -123,12 +144,13 @@ export async function loadDatabase(): Promise<DatabaseLike | undefined> {
     } catch {
     }
     return cachedDb;
-  } catch (err: any) {
-    if (err && err.code === "EACCES") {
-      handlePermissionError(err);
-    }
-    sqliteUnavailable = true;
-    return undefined;
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "")
+        : "";
+    if (code === "EACCES") handlePermissionError(error);
+    throw error;
   }
 }
 

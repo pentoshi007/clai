@@ -61,6 +61,7 @@ export interface CompactionCoordinatorPorts {
   readonly lastSuccessfulRequestSnapshot: () =>
     SuccessfulRequestSnapshot | undefined;
   readonly clearSuccessfulRequestSnapshot: () => void;
+  readonly clearProviderPromptTokens: () => void;
   readonly summarize: Parameters<
     typeof executeAutomaticCompaction
   >[0]["summarize"];
@@ -242,6 +243,7 @@ const runAdmittedCompaction = async (
   ports.attempts.recordSuccess(attemptKey);
   ports.resetReadOnlyGuard();
   ports.clearSuccessfulRequestSnapshot();
+  ports.clearProviderPromptTokens();
   ports.refreshSessionState(livePlan);
   ports.setLastCompactionMsgCount(ports.messages.length);
 
@@ -276,9 +278,6 @@ export const createCompactionCoordinator =
     reason: string,
     options: CompactionAdmissionOptions = {},
   ): Promise<void> => {
-    if (repairToolProtocol(ports.messages) > 0) {
-      ports.clearSuccessfulRequestSnapshot();
-    }
     const contextLimitTokens = ports.contextLimitTokens();
     const admission = await planCompactionAdmission(
       {
@@ -291,6 +290,11 @@ export const createCompactionCoordinator =
         estimateRequestTokens: ports.estimateRequestTokens,
         selectTools: ports.selectTools,
         buildDurableEnvelope: ports.buildDurableEnvelope,
+        prepareMessages: () => {
+          if (repairToolProtocol(ports.messages) > 0) {
+            ports.clearSuccessfulRequestSnapshot();
+          }
+        },
         isSuppressed: (key) => ports.attempts.isSuppressed(key),
         isExhausted: ports.attempts.isExhausted
           ? (key) => ports.attempts.isExhausted?.(key) === true

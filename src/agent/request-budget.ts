@@ -1,6 +1,7 @@
 import { getConfig, hasExplicitConfigKey } from "../store/config.js";
 import { DEFAULT_AUTO_COMPACT_REQUEST_TOKENS } from "../store/config/compaction.js";
 import { modelContextWindow } from "../llm/token-usage.js";
+import { resolveContextWindow } from "../llm/context-windows.js";
 import type { ProviderId } from "../types.js";
 import {
   RESERVED_OUTPUT_TOKENS,
@@ -22,7 +23,12 @@ export const CUSTOM_CONTEXT_COMPACTION_RATIO = 0.7;
 
 export const MIN_AUTO_COMPACT_REQUEST_TOKENS = 20_000;
 
-export type RequestBudgetSource = "explicit" | "legacy" | "default" | "session";
+export type RequestBudgetSource =
+  | "explicit"
+  | "legacy"
+  | "default"
+  | "session"
+  | "provider";
 
 export interface RequestBudget {
   readonly configured: number;
@@ -39,7 +45,8 @@ export function configuredRequestTokens(): {
   const config = getConfig();
   if (
     hasExplicitConfigKey("autoCompactRequestTokens") &&
-    typeof config.autoCompactRequestTokens === "number"
+    typeof config.autoCompactRequestTokens === "number" &&
+    config.autoCompactRequestTokens !== DEFAULT_AUTO_COMPACT_REQUEST_TOKENS
   ) {
     return { tokens: config.autoCompactRequestTokens, source: "explicit" };
   }
@@ -95,37 +102,55 @@ export function resolveRequestBudget(input?: {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly overrideTokens?: number | undefined;
+  readonly budgetExplicit?: boolean | undefined;
   readonly contextLimitTokens?: number | undefined;
 }): RequestBudget {
-  const customLimit = input?.contextLimitTokens;
-  if (
-    typeof customLimit === "number" &&
-    Number.isFinite(customLimit) &&
-    customLimit >= MIN_AUTO_COMPACT_REQUEST_TOKENS
-  ) {
-    const modelSafe = effectiveSafeTokensForWindow(customLimit);
-    const configured = Math.floor(customLimit * CUSTOM_CONTEXT_COMPACTION_RATIO);
-    const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
-    return {
-      configured,
-      modelSafe,
-      effectiveTrigger,
-      source: "session",
-      clampedByModel: effectiveTrigger < configured,
-    };
-  }
+  const window = resolveContextWindow({
+    provider: input?.provider,
+    model: input?.model,
+    contextLimitTokens: input?.contextLimitTokens,
+    minOverrideTokens: MIN_AUTO_COMPACT_REQUEST_TOKENS,
+  });
   const resolved = configuredRequestTokens();
+  const explicitBudget =
+    input?.budgetExplicit ??
+    (input?.overrideTokens !== undefined || resolved.source !== "default");
+  if (
+    window.source === "session-override" ||
+    (window.source === "provider" && !explicitBudget)
+  ) {
+    return windowRatioBudget(
+      window.tokens,
+      window.source === "session-override" ? "session" : "provider",
+    );
+  }
   const raw = input?.overrideTokens ?? resolved.tokens;
   const configured = Number.isFinite(raw)
     ? Math.max(MIN_AUTO_COMPACT_REQUEST_TOKENS, Math.floor(raw))
     : DEFAULT_AUTO_COMPACT_REQUEST_TOKENS;
-  const modelSafe = modelSafeRequestTokens(input?.provider, input?.model);
+  const modelSafe = effectiveSafeTokensForWindow(window.tokens);
   const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
   return {
     configured,
     modelSafe,
     effectiveTrigger,
     source: input?.overrideTokens === undefined ? resolved.source : "explicit",
+    clampedByModel: effectiveTrigger < configured,
+  };
+}
+
+function windowRatioBudget(
+  windowTokens: number,
+  source: Extract<RequestBudgetSource, "session" | "provider">,
+): RequestBudget {
+  const modelSafe = effectiveSafeTokensForWindow(windowTokens);
+  const configured = Math.floor(windowTokens * CUSTOM_CONTEXT_COMPACTION_RATIO);
+  const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
+  return {
+    configured,
+    modelSafe,
+    effectiveTrigger,
+    source,
     clampedByModel: effectiveTrigger < configured,
   };
 }

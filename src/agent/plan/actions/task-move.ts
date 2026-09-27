@@ -76,17 +76,29 @@ export async function handleTaskMove(
       stepId: taskId,
       index,
     });
-    await mutatePlan(plan.sessionId, (draft) => {
+    const committed = await mutatePlan(plan.sessionId, (draft) => {
       applyForegroundSnapshot(draft, updated);
       return true;
-    }).catch(() => undefined);
+    });
+    if (!committed.ok || !committed.plan) {
+      const reason = committed.reason ?? "persist-failed";
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.red(`  ✗ task.move: durable commit failed (${reason})\n`),
+        modelNote:
+          `task.move failed: the new order was not durably committed (${reason}). ` +
+          "Reload the active plan before retrying.",
+      };
+    }
+    const committedPlan = committed.plan;
     return {
       handled: true,
       ok: true,
-      plan: updated,
-      display: renderPlanForTerminal(updated) + "\n",
+      plan: committedPlan,
+      display: renderPlanForTerminal(committedPlan) + "\n",
       modelNote:
-        `Moved [${taskId}] to position ${updated.tasks.findIndex((task) => task.id === taskId) + 1}. ` +
+        `Moved [${taskId}] to position ${committedPlan.tasks.findIndex((task) => task.id === taskId) + 1}. ` +
         "Task id, state, evidence, dependencies, and responder linkage were preserved.",
     };
 }
