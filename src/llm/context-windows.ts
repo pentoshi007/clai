@@ -61,6 +61,8 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
+export const MIN_CUSTOM_CONTEXT_LIMIT_TOKENS = 20_000;
+
 const PROVIDER_CONTEXT_OVERRIDES: Partial<
   Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
 > = {
@@ -122,13 +124,11 @@ export function resolveContextWindow(input: {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly contextLimitTokens?: number | undefined;
-  readonly minOverrideTokens?: number | undefined;
 }): ResolvedContextWindow {
   const providerTokens = providerAdvertisedContextWindow(input.provider, input.model);
-  const minimum = Math.max(1, input.minOverrideTokens ?? 1);
   const override = positiveTokens(input.contextLimitTokens);
   const withProvider = providerTokens !== undefined ? { providerTokens } : {};
-  if (override !== undefined && override >= minimum) {
+  if (override !== undefined && override >= MIN_CUSTOM_CONTEXT_LIMIT_TOKENS) {
     const clamped = providerTokens !== undefined && override > providerTokens;
     return {
       tokens: clamped ? providerTokens : override,
@@ -148,6 +148,14 @@ export function resolveContextWindow(input: {
   return tableTokens === undefined
     ? { tokens: DEFAULT_CONTEXT_WINDOW, source: "default", clampedToProvider: false }
     : { tokens: tableTokens, source: "model-table", clampedToProvider: false };
+}
+
+export function effectiveContextWindowTokens(
+  provider: ProviderId | undefined,
+  model: string | undefined,
+  contextLimitTokens: number | undefined,
+): number {
+  return resolveContextWindow({ provider, model, contextLimitTokens }).tokens;
 }
 
 function positiveTokens(value: unknown): number | undefined {

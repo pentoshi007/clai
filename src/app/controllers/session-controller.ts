@@ -84,7 +84,7 @@ import {
   SessionResponder,
   type ResponderRuntimeState,
 } from "./session-responder.js";
-import { SessionContextLimits } from "./session-context-limits.js";
+import { customContextLimit, setCustomContextLimit } from "../../store/context-limits.js";
 import {
   SessionUsageLedger,
   type SessionUsageReport,
@@ -177,7 +177,6 @@ export class SessionController implements Disposable {
   private static readonly AUTOSAVE_MIN_MS = 15_000;
   private contextSnapshot: ContextSnapshotV1 | undefined;
   private lastContextCompactionId: string | undefined;
-  private readonly contextLimits = new SessionContextLimits();
   private readonly usageLedger = new SessionUsageLedger();
   private lifecycleGeneration = 0;
   private lastTurnResult: TurnResult | undefined;
@@ -329,14 +328,14 @@ export class SessionController implements Disposable {
   }
 
   private get contextLimitTokens(): number | undefined {
-    return this.contextLimits.get(this.provider, this.model);
+    return customContextLimit(this.provider, this.model);
   }
 
   private get usageTarget(): ContextUsageTarget {
     const config = getConfig();
     const provider = this.provider ?? config.defaultProvider;
     const model = this.model ?? getProviderModel(provider);
-    const contextLimitTokens = this.contextLimits.get(provider, model);
+    const contextLimitTokens = customContextLimit(provider, model);
     return {
       provider,
       model,
@@ -471,7 +470,7 @@ export class SessionController implements Disposable {
   }
 
   setContextLimitTokens(limit: number | undefined): void {
-    this.contextLimits.set(this.provider, this.model, limit);
+    setCustomContextLimit(this.provider, this.model, limit);
     this.setContextSnapshot(this.resolveContextSnapshot());
     this.notifyState();
   }
@@ -938,7 +937,7 @@ export class SessionController implements Disposable {
         ? { contextLimitTokens: this.contextLimitTokens }
         : {}),
       getContextLimitTokens: (routeProvider, routeModel) =>
-        this.contextLimits.get(routeProvider, routeModel),
+        customContextLimit(routeProvider, routeModel),
     });
     if (built.fallbackReason) this.notice("info", built.fallbackReason);
     for (const issue of built.imageIssues) this.notice("warn", issue);

@@ -8,15 +8,17 @@ import type { SubagentCheckpoint, SubagentRun, SubagentWorkerInput } from "../..
 vi.mock("../../src/llm/router.js", () => ({ streamWithProvider: vi.fn() }));
 vi.mock("../../src/tools/registry.js", () => ({ runToolCall: vi.fn() }));
 vi.mock("../../src/llm/capability/tool-dialect.js", () => ({ resolveToolDialect: vi.fn(() => "openai") }));
+vi.mock("../../src/store/context-limits.js", () => ({ customContextLimit: vi.fn(() => undefined) }));
 vi.mock("../../src/llm/context-windows.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../src/llm/context-windows.js")>(),
-  modelContextWindow: vi.fn(() => 128_000), modelMaxOutputTokens: vi.fn(() => 4096),
+  effectiveContextWindowTokens: vi.fn(() => 128_000), modelMaxOutputTokens: vi.fn(() => 4096),
 }));
 
 import { streamWithProvider } from "../../src/llm/router.js";
 import { runToolCall } from "../../src/tools/registry.js";
 import { resolveToolDialect } from "../../src/llm/capability/tool-dialect.js";
-import { modelContextWindow, modelMaxOutputTokens } from "../../src/llm/context-windows.js";
+import { effectiveContextWindowTokens, modelMaxOutputTokens } from "../../src/llm/context-windows.js";
+import { customContextLimit } from "../../src/store/context-limits.js";
 import { currentSessionAffinity, withSessionAffinity } from "../../src/llm/session-affinity.js";
 import { createReasoningArtifact } from "../../src/llm/reasoning-artifacts.js";
 import { runReadOnlySubagent } from "../../src/agent/subagents/worker.js";
@@ -54,7 +56,7 @@ describe("isolated read-only subagent worker", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.mocked(resolveToolDialect).mockReturnValue("openai");
-    vi.mocked(modelContextWindow).mockReturnValue(128_000);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(128_000);
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "src/example.ts:1: export const answer = 42;" });
     temporary = await mkdtemp(join(tmpdir(), "subagent-worker-"));
     cwd = join(temporary, "workspace");
@@ -243,7 +245,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("refuses additional tools when report context is all that remains", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(8192);
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
     let round = 0;
     vi.mocked(streamWithProvider).mockImplementation(async () => completion("", [call("web.search", { query: `query ${++round}` }, `call-${round}`)]));
@@ -286,7 +288,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it.each([8192, 16_384])("admits an initial file read with a %i-token context window", async (contextLimit) => {
-    vi.mocked(modelContextWindow).mockReturnValue(contextLimit);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(contextLimit);
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [call("fs.read", { path: "src/example.ts" })])).mockResolvedValueOnce(completion());
     expect(await runReadOnlySubagent(input)).toMatch(/^Status: (?:complete|partial)\n## Findings/);
     expect(runToolCall).toHaveBeenCalledOnce();
@@ -298,7 +300,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("enforces the model context limit before dispatch", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(10_000);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(10_000);
     await expect(runReadOnlySubagent({ ...input, run: { ...input.run, context: "x".repeat(40_000) } })).rejects.toThrow("context budget");
     expect(streamWithProvider).not.toHaveBeenCalled();
   });
@@ -444,7 +446,7 @@ describe("isolated read-only subagent worker", () => {
     REPORT.replace(/src\/example.ts:1/g, "the source file"),
     REPORT.slice(0, REPORT.indexOf("## Coverage gaps")) + "## Coverage gaps!",
   ])("fails closed when context runs out without a valid report", async (text) => {
-    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(8192);
     vi.mocked(streamWithProvider).mockResolvedValue(completion(text));
     await expect(runReadOnlySubagent(input)).rejects.toThrow("context budget exhausted");
     expect(checkpoint?.finished).not.toBe(true);
@@ -558,7 +560,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("retains context-triggered synthesis across a transient provider error", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(8192);
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
     let synthesis = 0;
     vi.mocked(streamWithProvider).mockImplementation(async (request) => {
@@ -723,7 +725,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("uses the provider context window beyond the former research cap", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(1_048_576);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(1_048_576);
     vi.mocked(modelMaxOutputTokens).mockReturnValue(32_768);
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
     await expect(runReadOnlySubagent({
@@ -752,7 +754,7 @@ describe("isolated read-only subagent worker", () => {
 
   it.each(["stop", "length", "tool_calls"] as const)("admits compaction after a response consumes its output allowance: %s", async (finishReason) => {
     const contextLimit = 16_384;
-    vi.mocked(modelContextWindow).mockReturnValue(contextLimit);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(contextLimit);
     vi.mocked(modelMaxOutputTokens).mockReturnValue(32_768);
     const partial = REPORT.replace("Status: complete", "Status: partial");
     vi.mocked(streamWithProvider).mockImplementationOnce(async (request) => ({
@@ -774,7 +776,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("keeps streamed compaction and spontaneous partial reports internal", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(16_384);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(16_384);
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
     const partial = REPORT.replace("Status: complete", "Status: partial");
     let compacted = false;
@@ -818,7 +820,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("recompacts an oversized checkpoint without retaining the context it replaces", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(8192);
     const partial = REPORT.replace("Status: complete", "Status: partial");
     const oversized = `${partial}\n${"Retained finding. ".repeat(800)}`;
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(oversized))
@@ -844,7 +846,7 @@ describe("isolated read-only subagent worker", () => {
   });
 
   it("fits serialized recovery history into a small provider window", async () => {
-    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    vi.mocked(effectiveContextWindowTokens).mockReturnValue(8192);
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
     const events = Array.from({ length: 12 }, (_, index) => ({
       sequence: index, kind: "tool" as const, timestamp: 1, text: `prior evidence ${index} ${'"\\\n'.repeat(10_000)}`,
@@ -903,6 +905,17 @@ describe("isolated read-only subagent worker", () => {
     expect(checkpoint?.finished).toBe(true);
   });
 
+  it("sizes its research budget from the custom limit stored for its route", async () => {
+    vi.mocked(customContextLimit).mockImplementation((provider, model) =>
+      provider === "openai" && model === "gpt-4.1" ? 50_000 : undefined,
+    );
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+
+    expect(effectiveContextWindowTokens).toHaveBeenCalledWith("openai", "gpt-4.1", 50_000);
+  });
+
   it("rotates the configured chain with per-route dialect and limit recomputation", async () => {
     const routes = [
       { provider: "openai" as const, model: "gpt-4.1" },
@@ -911,7 +924,7 @@ describe("isolated read-only subagent worker", () => {
     const requests: CompletionRequest[] = [];
     const noteRoute = vi.fn();
     vi.mocked(resolveToolDialect).mockImplementation((provider) => provider === "anthropic" ? "none" : "openai");
-    vi.mocked(modelContextWindow).mockImplementation((model) => model === "claude" ? 64_000 : 128_000);
+    vi.mocked(effectiveContextWindowTokens).mockImplementation((_provider, model) => model === "claude" ? 64_000 : 128_000);
     vi.mocked(modelMaxOutputTokens).mockImplementation((provider, model) => model === "claude" ? 2048 : 4096);
     vi.mocked(streamWithProvider).mockImplementation(async (request) => {
       requests.push(request);
@@ -925,7 +938,7 @@ describe("isolated read-only subagent worker", () => {
     expect(requests[2]!.tools).toBeUndefined();
     expect(requests[2]!.messages[0]!.content).toContain("Available tool schemas");
     expect(noteRoute).toHaveBeenCalledWith(routes[1]);
-    expect(modelContextWindow).toHaveBeenCalledWith("claude", "anthropic");
+    expect(effectiveContextWindowTokens).toHaveBeenCalledWith("anthropic", "claude", undefined);
     expect(modelMaxOutputTokens).toHaveBeenCalledWith("anthropic", "claude");
   });
 
