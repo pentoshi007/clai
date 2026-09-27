@@ -1,8 +1,7 @@
+import { MIN_CUSTOM_CONTEXT_LIMIT_TOKENS } from "../../llm/context-windows.js";
 import type { ContextUsageSnapshot } from "../../llm/token-usage.js";
 
 export type StatusDensity = "xs" | "sm" | "md" | "lg";
-
-export const MIN_CONTEXT_LIMIT_TOKENS = 20_000;
 
 export function formatContextK(n: number): string {
   const v = Math.max(0, Math.floor(n));
@@ -40,7 +39,7 @@ export function parseContextLimitInput(value: string): number | undefined | null
   const amount = Number(match[1]);
   const scale = match[2] === "m" ? 1_000_000 : match[2] === "k" ? 1_000 : 1;
   const tokens = Math.floor(amount * scale);
-  return Number.isFinite(tokens) && tokens >= MIN_CONTEXT_LIMIT_TOKENS ? tokens : null;
+  return Number.isFinite(tokens) && tokens >= MIN_CUSTOM_CONTEXT_LIMIT_TOKENS ? tokens : null;
 }
 
 export type ContextUsageSeverity = "normal" | "warn" | "critical";

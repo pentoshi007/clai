@@ -45,7 +45,6 @@ describe("provider context windows", () => {
         provider: "kiro",
         model,
         contextLimitTokens: 800_000,
-        minOverrideTokens: 20_000,
       }),
     ).toMatchObject({
       tokens: 800_000,
@@ -59,7 +58,6 @@ describe("provider context windows", () => {
         provider: "kiro",
         model,
         contextLimitTokens: 2_000_000,
-        minOverrideTokens: 20_000,
       }),
     ).toMatchObject({
       tokens: 1_000_000,
@@ -77,7 +75,6 @@ describe("provider context windows", () => {
         provider: "kiro",
         model,
         contextLimitTokens: 19_999,
-        minOverrideTokens: 20_000,
       }).source,
     ).toBe("provider");
     expect(

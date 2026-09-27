@@ -1,10 +1,11 @@
 import { realpath, stat } from "node:fs/promises";
 import { resolveToolDialect } from "../../llm/capability/tool-dialect.js";
-import { modelContextWindow, modelMaxOutputTokens } from "../../llm/context-windows.js";
+import { effectiveContextWindowTokens, modelMaxOutputTokens } from "../../llm/context-windows.js";
 import { lowestReasoningPreference } from "../../llm/lowest-reasoning.js";
 import { streamWithProvider } from "../../llm/router.js";
 import { markStreamEmittedBytes } from "../../llm/stream-progress.js";
 import { withSessionAffinity } from "../../llm/session-affinity.js";
+import { customContextLimit } from "../../store/context-limits.js";
 import { SUBAGENT_LIMITS } from "../../store/subagents.js";
 import { runToolCall } from "../../tools/registry.js";
 import type { ChatMessage, NativeToolCall, ToolCall, ToolResult } from "../../types.js";
@@ -122,7 +123,11 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
       if (pending) pending = { ...pending, native };
     }
     activeRouteIndex = index;
-    contextLimit = modelContextWindow(route.model, route.provider);
+    contextLimit = effectiveContextWindowTokens(
+      route.provider,
+      route.model,
+      customContextLimit(route.provider, route.model),
+    );
     outputLimit = modelMaxOutputTokens(route.provider, route.model) ?? RESERVED_OUTPUT_TOKENS;
     compactionReserve = Math.min(4096, outputLimit, Math.floor(contextLimit / 8));
     contextMargin = Math.min(2048, Math.floor(contextLimit / 16));

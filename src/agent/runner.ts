@@ -11,7 +11,7 @@ import type {
   ToolResult,
 } from "../types.js";
 import {
-  modelContextWindow,
+  effectiveContextWindowTokens,
   providerInputTokenBudget,
 } from "../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
@@ -367,8 +367,11 @@ export async function runAgentTurn(
       loop.provider,
       loop.model,
     );
-    const windowTokens = modelContextWindow(loop.model, loop.provider);
-    const effectiveLimit = currentContextLimitTokens() ?? windowTokens;
+    const effectiveLimit = effectiveContextWindowTokens(
+      loop.provider,
+      loop.model,
+      currentContextLimitTokens(),
+    );
     const useCompactSystemPrompt =
       inputTokenBudget !== undefined || effectiveLimit <= 65_536;
     const selectToolDefs = (

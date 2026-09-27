@@ -1,5 +1,5 @@
 import type { ChatMessage, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
-import { modelContextWindow } from "../../llm/token-usage.js";
+import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
 import { planCompactionReplay } from "../compaction-executor.js";
 import { projectToolHistory } from "../tool-history.js";
 import {
@@ -30,9 +30,11 @@ export const selectCompactionReplaySnapshot = (
         : {}),
     }),
     maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
-    contextLimitTokens:
-      input.contextLimitTokens ??
-      modelContextWindow(input.model, input.provider),
+    contextLimitTokens: effectiveContextWindowTokens(
+      input.provider,
+      input.model,
+      input.contextLimitTokens,
+    ),
     stream: true,
   });
   return replayPlan && !replayPlan.accounting.overLimit
