@@ -18,7 +18,7 @@ export interface TaskCreditPorts {
   readonly persistTaskEvidence: (
     taskId: string,
     evidence: TaskEvidence,
-  ) => Promise<void>;
+  ) => Promise<SessionPlan>;
 }
 
 const absorbIntoReadyTask = async (
@@ -26,7 +26,7 @@ const absorbIntoReadyTask = async (
   plan: SessionPlan,
   call: ToolCall,
   signals: TaskWorkSignals,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const ready = readyPlanTasks(plan)[0];
   if (!ready) return;
   const absorbed = absorbLooseWorkIntoLedger(
@@ -48,20 +48,20 @@ const absorbIntoReadyTask = async (
   ) {
     ports.setLedger(absorbed);
   }
-  await ports.persistTaskEvidence(task.id, task.evidence);
+  return ports.persistTaskEvidence(task.id, task.evidence);
 };
 
 const persistCreditedTask = async (
   ports: TaskCreditPorts,
   plan: SessionPlan,
   creditId: string,
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   const ledger = ports.getLedger();
   if (ledger?.taskId !== creditId) return;
   const task = plan.tasks.find((candidate) => candidate.id === creditId);
   if (!task) return;
   task.evidence = taskEvidenceFromLedger(ledger);
-  await ports.persistTaskEvidence(task.id, task.evidence);
+  return ports.persistTaskEvidence(task.id, task.evidence);
 };
 
 export const creditSuccessfulWork = async (
@@ -72,7 +72,7 @@ export const creditSuccessfulWork = async (
     readonly creditId: string | undefined;
     readonly plan: SessionPlan | undefined;
   },
-): Promise<void> => {
+): Promise<SessionPlan | undefined> => {
   ports.bankLooseWork({
     toolName: input.call.name,
     ...(Object.keys(input.signals).length > 0 ? { signals: input.signals } : {}),
@@ -85,14 +85,22 @@ export const creditSuccessfulWork = async (
       input.signals,
     ),
   );
-  if (!input.plan) return;
+  if (!input.plan) return undefined;
   const ledger = ports.getLedger();
   const creditedElsewhere =
     !input.creditId || !ledger || ledger.taskId !== input.creditId;
+  let committed: SessionPlan | undefined;
   if (creditedElsewhere) {
-    await absorbIntoReadyTask(ports, input.plan, input.call, input.signals);
+    committed = await absorbIntoReadyTask(
+      ports,
+      input.plan,
+      input.call,
+      input.signals,
+    );
   }
   if (input.creditId) {
-    await persistCreditedTask(ports, input.plan, input.creditId);
+    committed =
+      (await persistCreditedTask(ports, input.plan, input.creditId)) ?? committed;
   }
+  return committed;
 };

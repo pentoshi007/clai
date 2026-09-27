@@ -70,7 +70,7 @@ const summarize = async (
           }),
       ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
       ...(ports.state.activeLedger ? { operation: ports.state.activeLedger } : {}),
-      qualityRetry: false,
+      qualityRetry: true,
       retryOnServerError: false,
       retryOnTruncation: false,
       retryOnRequestShapeRejection: false,

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPACTION_MAX_COMPLETION_TOKENS } from "../../src/agent/compaction-summary.js";
-import { effortReasoningBudgetTokens } from "../../src/llm/reasoning-controls.js";
 import type { AgentPort, RunTurnRequest } from "../../src/app/ports/agent-port.js";
 import type { SuccessfulRequestSnapshot } from "../../src/types.js";
 import type {
@@ -224,7 +223,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(request?.providerReportedContextTokens).toBe(64_000);
   });
 
-  it("keeps the provider-reported context across model switch, persist, and reopen", async () => {
+  it("keeps context tokens but downgrades cross-model precision across persistence", async () => {
     const saved: Array<{
       messages: readonly { role: string; content: string }[];
       options: Parameters<PersistencePort["saveSession"]>[1];
@@ -287,11 +286,11 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     session.setModel("other-model");
     expect(session.getState().contextUsage?.contextTokens).toBe(200_000);
-    expect(session.getState().contextUsage?.exact).toBe(true);
+    expect(session.getState().contextUsage?.exact).toBe(false);
 
     await session.persistNow();
     expect(saved[0]?.options?.contextUsage?.contextTokens).toBe(200_000);
-    expect(saved[0]?.options?.contextUsage?.exact).toBe(true);
+    expect(saved[0]?.options?.contextUsage?.exact).toBe(false);
 
     const reopened = new SessionController({
       agent: fakeAgent(),
@@ -306,7 +305,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextUsage: saved[0]?.options?.contextUsage,
     });
     expect(reopened.getState().contextUsage?.contextTokens).toBe(200_000);
-    expect(reopened.getState().contextUsage?.exact).toBe(true);
+    expect(reopened.getState().contextUsage?.exact).toBe(false);
   });
 
   it("persists the computed post-compaction context for a later resume", async () => {
@@ -623,8 +622,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     expect(completeWithProvider).toHaveBeenCalledTimes(1);
     expect(completeWithProvider.mock.calls[0]?.[0]).toMatchObject({
-      maxTokens:
-        COMPACTION_MAX_COMPLETION_TOKENS + effortReasoningBudgetTokens("medium"),
+      maxTokens: 20_480,
       temperature: 0.2,
       thinking: { enabled: true, effort: "medium" },
       toolChoice: "auto",

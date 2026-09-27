@@ -2,13 +2,14 @@ import type { ProviderId } from "../types.js";
 import { getProvider, providerAuth } from "./router.js";
 
 const CATALOG_PREFETCH_TTL_MS = 30 * 60 * 1000;
+const CATALOG_PREFETCH_FAILURE_RETRY_MS = 60 * 1000;
 
-const lastPrefetchAt = new Map<string, number>();
+const nextPrefetchAt = new Map<string, number>();
 const inFlight = new Map<string, Promise<void>>();
 
 function isDue(provider: ProviderId, now: number): boolean {
-  const previous = lastPrefetchAt.get(provider);
-  return previous === undefined || now - previous >= CATALOG_PREFETCH_TTL_MS;
+  const next = nextPrefetchAt.get(provider);
+  return next === undefined || now >= next;
 }
 
 async function fetchCatalog(provider: ProviderId): Promise<void> {
@@ -27,9 +28,11 @@ export function prefetchProviderCatalog(
   const pending = inFlight.get(provider);
   if (pending) return pending;
   if (!isDue(provider, now)) return Promise.resolve();
-  lastPrefetchAt.set(provider, now);
+  nextPrefetchAt.set(provider, now + CATALOG_PREFETCH_TTL_MS);
   const task = fetchCatalog(provider)
-    .catch(() => undefined)
+    .catch(() => {
+      nextPrefetchAt.set(provider, now + CATALOG_PREFETCH_FAILURE_RETRY_MS);
+    })
     .then(() => {
       inFlight.delete(provider);
     });
@@ -38,6 +41,6 @@ export function prefetchProviderCatalog(
 }
 
 export function resetCatalogPrefetchState(): void {
-  lastPrefetchAt.clear();
+  nextPrefetchAt.clear();
   inFlight.clear();
 }

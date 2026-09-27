@@ -387,7 +387,7 @@ export async function runAgentTurn(
     }
 
     const counters = createTurnCounters();
-    const activePlan = await loadPlan(session.sessionId).catch(() => undefined);
+    const activePlan = await loadPlan(session.sessionId);
     const toolState = createToolExecutionState(
       activePlan,
       createGovernorState(),
@@ -705,7 +705,7 @@ export async function runAgentTurn(
           const { native } = resolveNativeTools(loop.provider, loop.model);
           return selectToolDefs(native, useCompactSystemPrompt);
         },
-        loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
+        loadPlan: () => loadPlan(session.sessionId),
         loadPlanStrict: () => loadPlan(session.sessionId),
         projectRoot: getActiveProjectRoot,
         detectPackageManager,
@@ -715,12 +715,12 @@ export async function runAgentTurn(
         recentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
         requestSnapshot: () => loop.lastSuccessfulRequestSnapshot,
         providerPromptTokens: () => loop.lastProviderPromptTokens,
-        thinking: () =>
-          loop.retryWithoutThinking && config.thinking
-            ? { ...config.thinking, enabled: false, effort: "low" }
-            : config.thinking,
+        thinking: () => config.thinking,
         clearRequestSnapshot: () => {
           loop.lastSuccessfulRequestSnapshot = undefined;
+        },
+        clearProviderPromptTokens: () => {
+          loop.lastProviderPromptTokens = undefined;
         },
         instructionsBlock: () => agentInstructionsBlock,
         skillsBlock: () => activeSkillsBlock,

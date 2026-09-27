@@ -134,4 +134,60 @@ describe("compaction request cache fidelity", () => {
     });
     expect(sent.messages.slice(0, sourceMessages.length)).toEqual(sourceMessages);
   });
+
+  it.each([
+    ["reasoning-only", () => ({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      text: "",
+      reasoningBlock: { text: "I should summarize the retained state." },
+    })],
+    ["empty-error", () => {
+      throw new Error("Kiro completed without a visible answer.");
+    }],
+  ])("keeps cache-identical controls first and lowers reasoning only for a %s retry", async (_label, firstAttempt) => {
+    const original = request();
+    const snapshot = successfulRequestSnapshot("anthropic", "claude-sonnet-4-5", original);
+    complete
+      .mockReset()
+      .mockImplementationOnce(async () => firstAttempt())
+      .mockResolvedValueOnce({
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        text: [
+          "## User goals",
+          "Continue the current implementation safely.",
+          "## Work completed",
+          "The relevant provider behavior was diagnosed.",
+          "## Current state",
+          "The original transcript remains retained.",
+          "## Remaining work",
+          "Run the focused regression suite.",
+        ].join("\n"),
+      });
+
+    const summary = await executeCompactionSummary({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      systemContent: "Summarize",
+      prompt: "Summarize the current session.",
+      maxTokens: 12_288,
+      requestSettings: snapshot,
+      sourceMessages: original.messages.slice(0, 3),
+      stream: false,
+      qualityRetry: true,
+      retryDelayMs: 0,
+      retryOnTruncation: false,
+      retryOnRequestShapeRejection: false,
+    });
+
+    expect(summary).toContain("## Current state");
+    expect(complete).toHaveBeenCalledTimes(2);
+    const [first, retry] = complete.mock.calls.map(
+      ([sent]) => sent as CompletionRequest,
+    );
+    expect(first!.thinking).toEqual(snapshot.thinking);
+    expect(first!.temperature).toBe(snapshot.temperature);
+    expect(retry!.thinking).toEqual({ enabled: false, effort: "low" });
+  });
 });

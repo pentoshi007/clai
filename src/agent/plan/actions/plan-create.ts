@@ -52,7 +52,7 @@ export async function handlePlanCreate(
       };
     }
 
-    const existingPlan = await loadPlan(session.sessionId).catch(() => undefined);
+    const existingPlan = await loadPlan(session.sessionId);
 
     if (
       existingPlan &&
@@ -125,9 +125,9 @@ export async function handlePlanCreate(
           changed = true;
         }
         return changed;
-      }).catch(() => undefined);
+      });
 
-      if (!appended?.ok || !appended.plan) {
+      if (!appended.ok || !appended.plan) {
         const reason = invalidDependency
           ? `unknown dependency "${invalidDependency}"`
           : "every proposed task already exists in ACTIVE PLAN";
@@ -392,26 +392,52 @@ export async function handlePlanCreate(
       }
     }
 
+    const nextPlanApproved = additiveOnly || autoApprove;
     if (additiveOnly) {
-      session.planApproved.value = true;
       plan.status = "in_progress";
     } else if (autoApprove) {
-      session.planApproved.value = true;
       plan.status = "approved";
-    } else {
-      session.planApproved.value = false;
     }
 
-    const revised = await mutatePlan(plan.sessionId, (draft) => {
-      applyForegroundSnapshot(draft, plan);
-      return true;
-    }).catch(() => undefined);
-    if (!revised?.ok) {
-      await savePlan(plan).catch(() => undefined);
-    } else if (revised.plan) {
-      plan.tasks = revised.plan.tasks;
-      plan.version = revised.plan.version;
+    let committedPlan: SessionPlan;
+    if (existingPlan) {
+      const revised = await mutatePlan(plan.sessionId, (draft) => {
+        applyForegroundSnapshot(draft, plan);
+        return true;
+      });
+      if (!revised.ok || !revised.plan) {
+        const reason = revised.reason ?? "persist-failed";
+        return {
+          handled: true,
+          ok: false,
+          display: chalk.red(
+            `  ✗ plan.create: durable revision failed (${reason})\n`,
+          ),
+          modelNote:
+            `plan.create failed: the revision was not durably committed (${reason}). ` +
+            "Reload the active plan before retrying; its existing state remains authoritative.",
+        };
+      }
+      committedPlan = revised.plan;
+    } else {
+      await savePlan(plan);
+      const created = await loadPlan(plan.sessionId);
+      if (!created) {
+        return {
+          handled: true,
+          ok: false,
+          display: chalk.red("  ✗ plan.create: durable plan verification failed\n"),
+          modelNote:
+            "plan.create failed: the new plan could not be read back after saving. Do not execute it as an active plan.",
+        };
+      }
+      committedPlan = created;
     }
+    plan.tasks = committedPlan.tasks;
+    plan.version = committedPlan.version;
+    plan.status = committedPlan.status;
+    plan.updatedAt = committedPlan.updatedAt;
+    session.planApproved.value = nextPlanApproved;
 
     const checklist = renderPlanForTerminal(plan);
     const display = additiveOnly

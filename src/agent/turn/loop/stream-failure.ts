@@ -1,5 +1,8 @@
 import type { ChatMessage, ProviderId, TokenUsage } from "../../../types.js";
-import type { StreamRecoveryState } from "../../stream-recovery.js";
+import type {
+  StreamRecoveryLimits,
+  StreamRecoveryState,
+} from "../../stream-recovery.js";
 import {
   classifyStreamFailure,
   FREE_STREAM_RECOVERY_LIMITS,
@@ -18,6 +21,12 @@ import { collapseRepeatedText, textBeforeToolCall } from "../../tool-call-parser
 import { stripThinking } from "../../../ui/thinking.js";
 import { trimExactContinuationOverlap } from "../continuation-overlap.js";
 
+function recoveryLimitsFor(
+  provider: ProviderId,
+): StreamRecoveryLimits | undefined {
+  return provider === "free" ? FREE_STREAM_RECOVERY_LIMITS : undefined;
+}
+
 export interface StreamFailureDeferredCall {
   readonly eventId: string;
   readonly call: { readonly name: string };
@@ -32,7 +41,6 @@ export interface StreamFailureState {
   interruptedReasoning: string;
   allowModelFallback: boolean;
   preferModelFallback: boolean;
-  retryWithoutThinking: boolean;
   visibleCommitted: boolean;
 }
 
@@ -243,14 +251,13 @@ export const recoverFromStreamFailure = async (
       serverErrorAttemptsFrom(input.error),
     );
   }
+  const recoveryLimits = recoveryLimitsFor(ports.provider);
   const plan = planStreamRecovery({
     kind: failureKind,
     ...(input.error !== undefined ? { error: input.error } : {}),
     state: ports.recoveryState,
     progressed: meaningfulProgress,
-    ...(ports.provider === "free"
-      ? { limits: FREE_STREAM_RECOVERY_LIMITS }
-      : {}),
+    ...(recoveryLimits ? { limits: recoveryLimits } : {}),
   });
   const terminalFailure = plan.action === "give-up";
 
@@ -266,7 +273,6 @@ export const recoverFromStreamFailure = async (
     state.preferModelFallback = true;
   }
   if (plan.notice) ports.notify("warn", plan.notice);
-  if (plan.disableThinking) state.retryWithoutThinking = true;
   if (plan.allowModelFallback) state.allowModelFallback = true;
   if (plan.preferModelFallback) state.preferModelFallback = true;
   if (plan.forceCompact) {

@@ -314,7 +314,46 @@ describe("a missing-reasoning_content rejection retries with the reasoning attac
     expect(wire.some((message) => message["role"] === "tool")).toBe(false);
   });
 
-  it("surfaces an invalid same-route continuation without degrading reasoning effort", async () => {
+  it("retries an invalid same-route continuation without replaying reasoning", async () => {
+    let calls = 0;
+    const transport = installTransport(() => {
+      calls += 1;
+      return calls === 1
+        ? jsonResponse(
+            { error: { message: "thinking signature verification failed" } },
+            400,
+          )
+        : jsonResponse({
+            choices: [{ message: { content: "summary" }, finish_reason: "stop" }],
+          });
+    });
+    const statuses: string[] = [];
+
+    const result = await completeWithProvider({
+      provider: "tokenrouter",
+      model: "deepseek/deepseek-v4-pro",
+      messages: messagesWithToolTurn("tokenrouter", "deepseek/deepseek-v4-pro"),
+      thinking: { enabled: true, effort: "high" },
+    }, {
+      onStatus: (message) => statuses.push(message),
+    });
+
+    expect(result.text).toBe("summary");
+    expect(transport.generations).toHaveLength(2);
+    const retry = transport.generations[1]?.body as Record<string, unknown>;
+    const retryMessages = retry["messages"] as Array<Record<string, unknown>>;
+    const retryAssistant = retryMessages.find(
+      (message) => message["role"] === "assistant" && message["tool_calls"] !== undefined,
+    );
+    expect(retryAssistant).not.toHaveProperty("reasoning_content");
+    expect(retry["reasoning_effort"]).toBeDefined();
+    expect(isReasoningUnsupported("tokenrouter", "deepseek/deepseek-v4-pro")).toBe(false);
+    expect(statuses).toContain(
+      "ℹ tokenrouter/deepseek/deepseek-v4-pro rejected replayed reasoning — retrying without it",
+    );
+  });
+
+  it("surfaces an invalid same-route continuation when replay is already disabled", async () => {
     const transport = installTransport(() =>
       jsonResponse(
         { error: { message: "thinking signature verification failed" } },
@@ -329,6 +368,8 @@ describe("a missing-reasoning_content rejection retries with the reasoning attac
         model: "deepseek/deepseek-v4-pro",
         messages: messagesWithToolTurn("tokenrouter", "deepseek/deepseek-v4-pro"),
         thinking: { enabled: true, effort: "high" },
+        forceReasoningReplay: false,
+      }, {
         onStatus: (message) => statuses.push(message),
       }),
     ).rejects.toThrow("thinking signature verification failed");

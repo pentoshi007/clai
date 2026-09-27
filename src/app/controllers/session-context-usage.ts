@@ -1,16 +1,24 @@
 import { estimateMessagesTokens } from "../../agent/context-manager.js";
+import { MIN_AUTO_COMPACT_REQUEST_TOKENS } from "../../agent/request-budget.js";
 import { resolveEffectiveContextLimit } from "../../agent/request-accounting.js";
+import {
+  autoCompactTriggerTokens,
+  getReliabilityPolicy,
+} from "../../agent/reliability-policy.js";
+import { resolveContextWindow } from "../../llm/context-windows.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import {
   contextLimitFromSessionOverride,
   contextSnapshotFromLegacy,
   createContextSnapshot,
   isContextSnapshotV1,
+  isProviderMeasuredPrecision,
   toLegacyContextUsage,
   withContextSnapshotLimit,
   type ContextAttemptReference,
   type ContextSnapshotCache,
   type ContextSnapshotLimit,
+  type ContextSnapshotPrecision,
   type ContextSnapshotReasoning,
   type ContextSnapshotScope,
   type ContextSnapshotV1,
@@ -36,14 +44,48 @@ export function contextUsageLimit(target: ContextUsageTarget): number {
 }
 
 function limitFor(target: ContextUsageTarget): ContextSnapshotLimit {
-  return contextLimitFromSessionOverride(contextUsageLimit(target));
+  const window = resolveContextWindow({
+    provider: target.provider,
+    model: target.model,
+    contextLimitTokens: contextUsageLimit(target) || undefined,
+    minOverrideTokens: MIN_AUTO_COMPACT_REQUEST_TOKENS,
+  });
+  if (window.source !== "session-override" && window.source !== "provider") {
+    return contextLimitFromSessionOverride(undefined);
+  }
+  return {
+    source: window.source === "session-override" ? "session-override" : "model-catalog",
+    tokens: window.tokens,
+    ...(window.providerTokens !== undefined
+      ? { providerTokens: window.providerTokens }
+      : {}),
+    ...(window.overrideTokens !== undefined
+      ? { requestedTokens: window.overrideTokens }
+      : {}),
+    compactTriggerTokens: autoCompactTriggerTokens(getReliabilityPolicy(), {
+      provider: target.provider,
+      model: target.model,
+      contextLimitTokens: target.contextLimitTokens,
+    }),
+  };
 }
 
 function sameLimit(
   left: ContextSnapshotLimit,
   right: ContextSnapshotLimit,
 ): boolean {
-  return left.source === right.source && left.tokens === right.tokens;
+  return (
+    left.source === right.source &&
+    left.tokens === right.tokens &&
+    left.providerTokens === right.providerTokens &&
+    left.requestedTokens === right.requestedTokens &&
+    left.compactTriggerTokens === right.compactTriggerTokens
+  );
+}
+
+function usagePrecision(usage: TokenUsage): ContextSnapshotPrecision {
+  if (usage.exact) return "provider-exact";
+  return usage.promptTokensSource === "provider-ratio" ? "provider-ratio" : "estimate";
 }
 
 function hasPromptMeasurement(usage: TokenUsage): boolean {
@@ -108,6 +150,32 @@ export function resolveContextSnapshot(
     : withContextSnapshotLimit(current, limitFor(target));
 }
 
+export function contextSnapshotForRoute(
+  target: ContextUsageTarget,
+  current: ContextSnapshotV1 | undefined,
+): ContextSnapshotV1 | undefined {
+  if (!current) return undefined;
+  const attempt = current.attempt;
+  const measuredOnOtherRoute =
+    isProviderMeasuredPrecision(current.precision) &&
+    attempt.kind === "generation" &&
+    (attempt.provider !== target.provider || attempt.model !== target.model);
+  if (!measuredOnOtherRoute) return resolveContextSnapshot(target, current);
+  return createContextSnapshot({
+    contextTokens: current.contextTokens,
+    lastCompletionTokens: current.lastCompletionTokens,
+    sessionPromptTokens: current.sessionPromptTokens,
+    sessionCompletionTokens: current.sessionCompletionTokens,
+    scope: current.scope,
+    precision: "estimate",
+    limit: limitFor(target),
+    cache: current.cache,
+    reasoning: current.reasoning,
+    attempt,
+    observedAt: current.observedAt,
+  });
+}
+
 export function recordContextUsageSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -146,7 +214,7 @@ export function recordContextUsageSnapshot(
     sessionPromptTokens,
     sessionCompletionTokens,
     scope: "provider-request",
-    precision: usage.exact ? "provider-exact" : "estimate",
+    precision: usagePrecision(usage),
     limit: limitFor(target),
     ...(cache ? { cache } : {}),
     ...(reasoning ? { reasoning } : {}),
@@ -188,7 +256,7 @@ export function estimatedContextSnapshot(
 ): ContextSnapshotV1 | undefined {
   if (!current && !promptUsageMissing) return undefined;
   if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
-  if (current?.precision === "provider-exact") {
+  if (current && isProviderMeasuredPrecision(current.precision)) {
     return resolveContextSnapshot(target, current);
   }
   const tokens = Math.floor(estimatedTokens);

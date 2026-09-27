@@ -139,14 +139,14 @@ const upsertResponderChild = async (
     })
     .catch(() => undefined);
 
-  if (!upsert?.ok || !childId) {
+  if (!upsert?.ok || !upsert.plan || !childId) {
     ports.notify(
       "warn",
       `Responder job ${job.id} started, but its plan subtask could not be persisted`,
     );
     return { childId: undefined, parentTaskId, plan: undefined };
   }
-  const rendered = upsert.plan ?? livePlan;
+  const rendered = upsert.plan;
   ports.setPendingSessionStatePlan(rendered);
   ports.renderPlan(rendered);
   return { childId, parentTaskId, plan: rendered };

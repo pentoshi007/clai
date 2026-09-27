@@ -36,9 +36,14 @@ const call: ToolCall = { name: "fs.write", args: { path: "src/app.ts" } };
 const recording = () => {
   const events: string[] = [];
   let ledger: TaskWorkLedger | null = null;
+  const committed = plan([task({ state: "in_progress" })], {
+    status: "in_progress",
+    version: 2,
+  });
   const ports: TaskAutostartPorts = {
     openTask: async (taskId) => {
       events.push(`open:${taskId}`);
+      return committed;
     },
     renderPlan: () => events.push("render"),
     notify: (message) => events.push(`notify:${message}`),
@@ -101,9 +106,10 @@ describe("task autostart", () => {
   it("opens the task, seeds the ledger, renders, then notifies", async () => {
     const harness = recording();
     const live = plan([task({})], { status: "approved" });
-    await autostartPlanTask(live, call, harness.ports);
-    expect(live.tasks[0]!.state).toBe("in_progress");
-    expect(live.status).toBe("in_progress");
+    const committed = await autostartPlanTask(live, call, harness.ports);
+    expect(committed?.tasks[0]!.state).toBe("in_progress");
+    expect(committed?.status).toBe("in_progress");
+    expect(committed?.version).toBe(2);
     expect(harness.events).toEqual([
       "open:t1",
       "ledger:t1",

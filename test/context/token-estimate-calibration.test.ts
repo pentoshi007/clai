@@ -93,7 +93,7 @@ describe("request token calibration persistence", () => {
     ).toBe(Math.floor(nominal / 1.5));
   });
 
-  it("prefers the exact route and inherits a prior for unseen routes", async () => {
+  it("prefers the exact route and inherits only a same-provider prior", async () => {
     const calibration = await import(
       "../../src/llm/token-estimate-calibration.js"
     );
@@ -121,11 +121,15 @@ describe("request token calibration persistence", () => {
       calibration.requestTokenCalibration("openai", "gpt-5.5")?.ratio,
     ).toBeCloseTo(0.5, 10);
     expect(
-      calibration.requestTokenCalibration("nvidia", "gpt-5.4")?.ratio,
-    ).toBeCloseTo(0.65, 10);
+      calibration.requestTokenCalibration("kiro", "claude-opus-5.5-thinking"),
+    ).toBeUndefined();
     expect(
-      calibration.calibratedRequestTokens("nvidia", "gpt-5.4", 300_000),
-    ).toBe(195_000);
+      calibration.calibratedRequestTokens(
+        "kiro",
+        "claude-opus-5.5-thinking",
+        300_000,
+      ),
+    ).toBe(300_000);
   });
 
   it("does not inherit anything before any observation", async () => {

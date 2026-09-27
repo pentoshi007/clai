@@ -475,6 +475,38 @@ describe("router retries without reasoning when a knob is rejected", () => {
     expect(isReasoningUnsupported("nvidia", "gpt-5.1")).toBe(true);
   });
 
+  it("does not retry a content safety block without reasoning", async () => {
+    const requests: CompletionRequest[] = [];
+    const statuses: string[] = [];
+    providers.nvidia = {
+      ...originalNvidia,
+      reasoningStyle: "openai",
+      async stream(request) {
+        requests.push(request);
+        throw new ProviderError(
+          "Kiro ended with non-success stop reason: content_filtered",
+          400,
+        );
+      },
+    } as LlmProvider;
+
+    await expect(
+      streamWithProvider(
+        {
+          provider: "nvidia",
+          model: "gpt-5.1",
+          thinking: { enabled: true, effort: "high" },
+          messages: userMessages,
+        },
+        () => undefined,
+        (message) => statuses.push(message),
+      ),
+    ).rejects.toThrow(/content_filtered/i);
+
+    expect(requests).toHaveLength(1);
+    expect(statuses.join(" ")).not.toMatch(/reasoning options|request body/i);
+  });
+
   it("emits status messages on the non-streaming path", async () => {
     const requests: CompletionRequest[] = [];
     providers.nvidia = {

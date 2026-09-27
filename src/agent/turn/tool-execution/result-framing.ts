@@ -75,7 +75,7 @@ export interface WorkCreditPorts {
   readonly persistTaskEvidence: (
     taskId: string,
     evidence: TaskEvidence,
-  ) => Promise<void>;
+  ) => Promise<SessionPlan>;
   readonly loadPlan: () => Promise<SessionPlan | undefined>;
   readonly creditId: () => string | undefined;
 }
@@ -87,7 +87,7 @@ export const creditToolWork = async (
 ): Promise<SessionPlan | undefined> => {
   if (!result.ok || !isEvidenceWorkTool(call.name)) return undefined;
   const plan = await ports.loadPlan();
-  await creditSuccessfulWork(
+  return creditSuccessfulWork(
     {
       getLedger: ports.getLedger,
       setLedger: ports.setLedger,
@@ -101,7 +101,6 @@ export const creditToolWork = async (
       plan,
     },
   );
-  return plan;
 };
 
 export interface FailureReflectionPorts {

@@ -102,12 +102,13 @@ async function startResponderJob(
 }
 
 describe("runtime responder listening lease", () => {
-  it("starts off, never wakes, and keeps the unleased completion claimable", async () => {
+  it("keeps a completion from a pre-existing job passive until activation adopts it", async () => {
     const { manager } = await fixture();
+    await startResponderJob(manager, "passive", undefined, "setTimeout(() => process.exit(0), 150)");
+    await sleep(5);
     const ctx = buildResponder(manager, "passive");
     expect(ctx.responder.getState().mode).toBe("off");
 
-    await startResponderJob(manager, "passive", undefined);
     await waitFor(() => manager.getPendingNotifications("passive").length === 1);
     ctx.responder.scheduleWake();
     await sleep(100);
@@ -116,12 +117,56 @@ describe("runtime responder listening lease", () => {
     const pending = manager.getPendingNotifications("passive")[0];
     expect(pending?.archivedAt).toBeUndefined();
 
-    // A later activation adopts the receipt the passive session accumulated.
     ctx.responder.activate();
     const leaseId = manager.getResponderLeaseId("passive")!;
     expect(
       manager.claimNextResponderNotification("passive", leaseId)?.id,
     ).toBe(pending?.id);
+    ctx.unsubscribe();
+  });
+
+  it("starts listening when the session launches an unleased responder job and wakes the idle model", async () => {
+    const { manager } = await fixture();
+    const ctx = buildResponder(manager, "launched");
+    await sleep(5);
+    expect(ctx.responder.getState().mode).toBe("off");
+
+    const started = await startResponderJob(
+      manager,
+      "launched",
+      undefined,
+      "setTimeout(() => process.exit(0), 300)",
+    );
+    const id = started.backgroundJob?.id;
+    expect(manager.getJob(id!)?.status).toBe("running");
+    await waitFor(() => ctx.responder.getState().mode === "listening");
+    expect(ctx.responder.getState().running).toBe(1);
+
+    await waitFor(() => ctx.runTurn.mock.calls.length === 1);
+    expect(ctx.runTurn.mock.calls[0]?.[0]).toContain(`job=${id}`);
+    await waitFor(() => manager.getPendingNotifications("launched").length === 0);
+    ctx.unsubscribe();
+  });
+
+  it("does not resurrect listening for a job that predates an abort", async () => {
+    const { manager } = await fixture();
+    const ctx = buildResponder(manager, "aborted");
+    await sleep(5);
+    ctx.responder.activate();
+    const started = await startResponderJob(
+      manager,
+      "aborted",
+      ctx.jobs.getResponderLeaseId("aborted"),
+      "setTimeout(() => process.exit(0), 300)",
+    );
+    const id = started.backgroundJob?.id;
+    await sleep(5);
+    ctx.responder.deactivate();
+    await waitFor(() => manager.getJob(id!)?.status === "exited");
+    await sleep(50);
+
+    expect(ctx.responder.getState().mode).toBe("off");
+    expect(ctx.runTurn).not.toHaveBeenCalled();
     ctx.unsubscribe();
   });
 

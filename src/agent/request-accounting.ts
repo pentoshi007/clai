@@ -15,7 +15,7 @@ import {
   calibratedRequestTokens,
   requestTokenCalibration,
 } from "../llm/token-estimate-calibration.js";
-import { modelContextWindow } from "../llm/context-windows.js";
+import { resolveContextWindow } from "../llm/context-windows.js";
 import { readImageDimensions } from "../attachments/image-content.js";
 import { measureToolCallsChars } from "./message-slim.js";
 
@@ -102,16 +102,14 @@ export function resolveEffectiveContextLimit(input?: {
 }): EffectiveContextLimit {
   const safetyMarginTokens =
     input?.safetyMarginTokens ?? SAFETY_MARGIN_TOKENS;
-  const custom = input?.contextLimitTokens;
-  const override =
-    typeof custom === "number" && Number.isFinite(custom) && custom > 0
-      ? Math.floor(custom)
-      : undefined;
-  const limitTokens =
-    override ??
-    (input?.model !== undefined || input?.provider !== undefined
-      ? modelContextWindow(input.model, input.provider)
-      : undefined);
+  const routed = input?.model !== undefined || input?.provider !== undefined;
+  const window = resolveContextWindow({
+    provider: input?.provider,
+    model: input?.model,
+    contextLimitTokens: input?.contextLimitTokens,
+  });
+  const override = window.source === "session-override";
+  const limitTokens = override || routed ? window.tokens : undefined;
   if (limitTokens === undefined) {
     return {
       source: "unknown",
@@ -124,7 +122,7 @@ export function resolveEffectiveContextLimit(input?: {
     Math.min(RESERVED_OUTPUT_TOKENS, Math.floor(limitTokens * 0.25));
   return {
     limitTokens,
-    source: override !== undefined ? "session-override" : "model-window",
+    source: override ? "session-override" : "model-window",
     reservedOutputTokens,
     safetyMarginTokens,
     effectiveSafeTokens: Math.max(

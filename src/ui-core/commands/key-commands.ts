@@ -56,6 +56,11 @@ import {
   type KiroCliCallbackServer,
   type KiroCredential,
 } from "../../llm/kiro-auth.js";
+import {
+  pollKiroSocialDeviceAuth,
+  startKiroSocialDeviceAuth,
+  type KiroSocialProvider,
+} from "../../llm/kiro-social-device.js";
 import { appendProviderKey, replaceProviderKey, type ProviderKeySlot } from "../../store/keys.js";
 import { MAX_PROVIDER_KEYS } from "../../llm/key-rotation.js";
 
@@ -1127,7 +1132,7 @@ function pickKiroAuthMethod(
           {
             value: "kiro-cli",
             label: "Sign in with Kiro (recommended)",
-            description: "Google, GitHub, or Builder ID — browser sign-in",
+            description: "Google, GitHub, or Builder ID — browser, or device code over SSH",
           },
           {
             value: "builder-id",
@@ -1160,6 +1165,66 @@ function pickKiroAuthMethod(
   });
 }
 
+async function runDeviceCodeForUI(
+  services: AppServices,
+  input: {
+    readonly url: string;
+    readonly code: string;
+    readonly successMessage: string;
+    readonly poll: (signal: AbortSignal) => Promise<KiroCredential>;
+  },
+): Promise<KiroCredential | undefined> {
+  const headless = isHeadlessEnvironment();
+  if (!headless) void openSystemBrowser(input.url).catch(() => {});
+
+  services.overlay.openPager(
+    "Kiro AI sign-in",
+    [
+      headless
+        ? "No local browser detected. Open this link on any device (phone or laptop):"
+        : "Authenticate Kiro AI on any device:",
+      "",
+      `  ${input.url}`,
+      "",
+      `  Code: ${input.code}`,
+      "",
+      "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
+  const waiting = services.toast.info("waiting for Kiro approval…", {
+    sticky: true,
+  });
+  try {
+    const credential = await input.poll(abortController.signal);
+    notice(services, "info", input.successMessage);
+    return credential;
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
+    notice(
+      services,
+      "warn",
+      `Kiro AI sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
+  }
+}
+
 export async function runKiroDeviceAuthForUI(
   services: AppServices,
   options: {
@@ -1179,63 +1244,71 @@ export async function runKiroDeviceAuthForUI(
     );
     return undefined;
   }
-
-  const completeUrl = start.verificationUriComplete || start.verificationUri;
-  void openSystemBrowser(completeUrl).catch(() => {});
-
-  services.overlay.openPager(
-    "Kiro AI sign-in",
-    [
-      "Authenticate Kiro AI on any device:",
-      "",
-      `  ${completeUrl}`,
-      "",
-      `  Code: ${start.userCode}`,
-      "",
-      "Approve in your browser — clai will continue automatically.",
-      "(close this and press Ctrl-C to cancel)",
-    ].join("\n"),
-    undefined,
-    undefined,
-    "plain",
-  );
-
-  const abortController = new AbortController();
-  const unsubscribe = services.overlay.subscribe(() => {
-    if (!services.overlay.isOpen()) abortController.abort();
+  const deviceStart = start;
+  return runDeviceCodeForUI(services, {
+    url: deviceStart.verificationUriComplete || deviceStart.verificationUri,
+    code: deviceStart.userCode,
+    successMessage: "Kiro AI authenticated",
+    poll: (signal) => pollKiroDeviceAuth(deviceStart, { signal }),
   });
+}
 
-  const waiting = services.toast.info("waiting for Kiro approval…", {
-    sticky: true,
-  });
+export async function runKiroSocialDeviceAuthForUI(
+  services: AppServices,
+  provider: KiroSocialProvider,
+): Promise<KiroCredential | undefined> {
+  let start;
   try {
-    const credential = await pollKiroDeviceAuth(start, {
-      signal: abortController.signal,
-    });
-    notice(services, "info", "Kiro AI authenticated");
-    return credential;
+    start = await startKiroSocialDeviceAuth(provider);
   } catch (error) {
-    if (abortController.signal.aborted) {
-      notice(services, "info", "cancelled");
-      return undefined;
-    }
     notice(
       services,
       "warn",
-      `Kiro AI sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+      `could not start Kiro sign-in: ${error instanceof Error ? error.message : String(error)}`,
     );
     return undefined;
-  } finally {
-    unsubscribe();
-    services.toast.dismiss(waiting);
   }
+  const deviceStart = start;
+  const label = provider === "google" ? "Google" : "GitHub";
+  return runDeviceCodeForUI(services, {
+    url: deviceStart.verificationUriComplete,
+    code: deviceStart.userCode,
+    successMessage: `Kiro AI (${label}) authenticated`,
+    poll: (signal) => pollKiroSocialDeviceAuth(deviceStart, { signal }),
+  });
+}
+
+function pickKiroHeadlessMethod(
+  services: AppServices,
+): Promise<"github" | "google" | "builder-id" | undefined> {
+  return new Promise((resolve) => {
+    const opened = services.overlay.openPicker(
+      {
+        title: "Kiro AI sign-in (no local browser)",
+        options: [
+          { value: "github", label: "GitHub", description: "approve with a code on any device" },
+          { value: "google", label: "Google", description: "approve with a code on any device" },
+          { value: "builder-id", label: "AWS Builder ID", description: "device code on any device" },
+        ],
+      },
+      (value) => {
+        services.overlay.close();
+        resolve(value as "github" | "google" | "builder-id");
+      },
+    );
+    if (!opened) resolve(undefined);
+  });
 }
 
 export async function runKiroPortalAuthForUI(
   services: AppServices,
 ): Promise<KiroCredential | undefined> {
   if (isHeadlessEnvironment()) {
-    return runKiroDeviceAuthForUI(services, { authMethod: "builder-id" });
+    const method = await pickKiroHeadlessMethod(services);
+    if (!method) return undefined;
+    return method === "builder-id"
+      ? runKiroDeviceAuthForUI(services, { authMethod: "builder-id" })
+      : runKiroSocialDeviceAuthForUI(services, method);
   }
 
   const { authorizeUrl, codeVerifier, state } = createKiroCliAuthorizationFlow();
@@ -1272,6 +1345,9 @@ export async function runKiroPortalAuthForUI(
     if (!pasted?.trim()) return undefined;
 
     const cb = parseKiroCliCallback(pasted.trim());
+    if (cb.state && cb.state !== state) {
+      throw new Error("Kiro sign-in state mismatch — start again");
+    }
     const cred = await exchangeKiroPortalCode(cb, codeVerifier);
     notice(services, "info", "Kiro AI authenticated");
     return cred;
@@ -1292,6 +1368,7 @@ export async function runKiroSocialAuthForUI(
   services: AppServices,
   provider: "google" | "github",
 ): Promise<KiroCredential | undefined> {
+  if (isHeadlessEnvironment()) return runKiroSocialDeviceAuthForUI(services, provider);
   const { url, codeVerifier } = await startKiroSocialAuth(provider);
   const label = provider === "google" ? "Google" : "GitHub";
 

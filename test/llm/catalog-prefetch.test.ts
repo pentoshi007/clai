@@ -67,6 +67,19 @@ describe("catalog prefetch stays off the turn path", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it("retries a failed catalog fetch after a short cooldown", async () => {
+    const spy = vi
+      .spyOn(providers[ROUTE.provider], "listModels" as never)
+      .mockRejectedValueOnce(new Error("models endpoint down"))
+      .mockResolvedValue([]);
+    const start = 1_000_000;
+    await prefetchProviderCatalog(ROUTE.provider, { now: start });
+    await prefetchProviderCatalog(ROUTE.provider, { now: start + 59_999 });
+    expect(spy).toHaveBeenCalledTimes(1);
+    await prefetchProviderCatalog(ROUTE.provider, { now: start + 60_000 });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it("is a no-op without a provider", async () => {
     await expect(prefetchProviderCatalog(undefined)).resolves.toBeUndefined();
   });

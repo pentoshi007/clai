@@ -19,6 +19,13 @@ function errorHaystack(error: unknown): string {
   return `${message}\n${body}`;
 }
 
+const CONTENT_POLICY_RE =
+  /content[_ -]?(?:filter(?:ed|ing)?|moderation)|(?:safety|content)[_ -]?(?:policy|guardrail)[^\n]{0,40}(?:block|filter|refus|violat)|(?:block|filter|refus|violat)[^\n]{0,40}(?:safety|content)[_ -]?(?:policy|guardrail)|(?:non-success stop reason|finish reason):\s*refusal/i;
+
+export function isContentPolicyError(error: unknown): boolean {
+  return CONTENT_POLICY_RE.test(errorHaystack(error));
+}
+
 export function isMissingReasoningContentError(error: unknown): boolean {
   const status = errorStatus(error);
   if (status !== undefined && status !== 400 && status !== 422) return false;
@@ -50,6 +57,7 @@ export function isReasoningKnobRejection(error: unknown): boolean {
 export function isUnattributableRequestBodyError(error: unknown): boolean {
   const status = errorStatus(error);
   if (status !== 400 && status !== 422) return false;
+  if (isContentPolicyError(error)) return false;
   if (isReasoningKnobRejection(error)) return true;
   return !mentionsReasoning(error);
 }
