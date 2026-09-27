@@ -57,6 +57,7 @@ import type { TurnLoopDeps } from "./deps.js";
 import { resolveAnswerPath } from "./answer-path.js";
 import { SubagentInbox, SubagentInboxCapacityError } from "../subagent-inbox.js";
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
+import { providerContextMeasurement } from "../provider-measurement.js";
 import { stripToolCallSurfaces } from "../../../ui-core/rendering/strip-tool-surfaces.js";
 
 export const runTurnRounds = async (
@@ -159,24 +160,21 @@ export const runTurnRounds = async (
         deps.loop.model !== completion.model;
       deps.loop.provider = completion.provider;
       deps.loop.model = completion.model;
-      if (routeChanged) deps.loop.lastProviderPromptTokens = undefined;
+      if (routeChanged) deps.loop.providerMeasurement = undefined;
       await accountCompletionUsage(
         {
           dispatchedRawRequestTokens: deps.loop.dispatchedRawRequestTokens,
           dispatchedRequestRoute: deps.loop.dispatchedRequestRoute,
-          emitContextFallback: (estimatedTokens) => deps.emit({
-            type: "context-estimate",
-            estimatedTokens,
-            model: completion.model,
-            promptUsageMissing: true,
-          }),
           emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, api, attempt }) => {
             if (
               isProviderMeasuredPrompt(usage) &&
               usageProvider === deps.loop.provider &&
               usageModel === deps.loop.model
             ) {
-              deps.loop.lastProviderPromptTokens = usage.promptTokens;
+              deps.loop.providerMeasurement = providerContextMeasurement(
+                usage.promptTokens,
+                deps.estimateNextRequestTokens(deps.messages),
+              );
             }
             deps.emit({
               type: "token-usage",

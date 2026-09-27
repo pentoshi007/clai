@@ -82,13 +82,11 @@ export const requestRound = async (
         thinking: deps.thinking,
         step: deps.loop.step,
         contextLimitTokens,
-        providerReportedContextTokens: deps.loop.lastProviderPromptTokens,
+        measureRequestTokens: deps.measureRequestTokens,
         estimateRequestTokens: deps.estimateNextRequestTokens,
         selectTools: () =>
           deps.selectToolDefs(deps.nativeToolsActive(), deps.useCompactSystemPrompt),
         notify: deps.writeNotice,
-        emitContextEstimate: (estimatedTokens) =>
-          deps.emit({ type: "context-estimate", estimatedTokens, model: deps.loop.model }),
         audit: (event, payload) => auditLog(event, payload),
       },
       assemblyState,

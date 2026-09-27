@@ -182,21 +182,21 @@ export async function runSessionCompaction(
     requestTokensBefore === undefined
       ? "message-history"
       : "assembled-request";
-  const beforeTokens = requestTokensBefore ?? historyTokensBefore;
+  const calibrationProvider = successfulRequest?.provider ?? options.provider;
+  const calibrationModel = successfulRequest?.model ?? options.model;
+  const calibrated = (tokens: number): number =>
+    calibratedRequestTokens(calibrationProvider, calibrationModel, Math.max(0, tokens));
+  const beforeTokens = requestTokensBefore ?? calibrated(historyTokensBefore);
   const reportedFor = (result: CompactResult): ReportedCompaction => {
-    const retainedHistoryTokens = Math.max(0, result.afterTokens);
+    const retainedHistoryTokens = calibrated(result.afterTokens);
     const overheadTokens = (assembledTokens: number): number =>
-      Math.max(0, assembledTokens - result.beforeTokens);
+      Math.max(0, assembledTokens - calibrated(result.beforeTokens));
     const measurement =
       options.requestTokensBeforeMeasurement ?? "estimated";
     const afterTokens =
       useContinuationAccounting && continuationAccounting
-        ? calibratedRequestTokens(
-            successfulRequest?.provider,
-            successfulRequest?.model,
-            retainedHistoryTokens +
-              overheadTokens(continuationAccounting.rawRequestTokens),
-          )
+        ? retainedHistoryTokens +
+          overheadTokens(calibrated(continuationAccounting.rawRequestTokens))
         : requestTokensBefore === undefined
           ? retainedHistoryTokens
           : retainedHistoryTokens + overheadTokens(requestTokensBefore);
@@ -256,6 +256,7 @@ export async function runSessionCompaction(
                 model: completion.model,
                 ...(completion.api ? { api: completion.api } : {}),
                 ...(attempt.kind === "generation" ? { attempt } : {}),
+                auxiliary: true,
               });
             },
             ...(options.persist && stage?.phase !== "map"

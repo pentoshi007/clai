@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_COMPACT_HEADROOM_TOKENS,
   autoCompactHeadroomTokens,
+  autoCompactTriggerTokens,
 } from "../src/agent/request-budget.js";
 import {
   resolveEffectiveContextLimit,
@@ -10,11 +11,8 @@ import {
   ADAPTIVE_MAX_TOKENS_LIGHT,
   ADAPTIVE_MAX_TOKENS_TOOL_STEP,
   DEFAULT_FS_PASSTHROUGH_CAP_CHARS,
-  DEFAULT_SOFT_COMPACT_TOKEN_BUDGET,
-  HARD_COMPACT_TOKEN_BUDGET,
   LEGACY_MAX_TOKENS,
   MAX_STEP_COMPLETION_TOKENS,
-  autoCompactTriggerTokens,
   dedupeToolContextOutput,
   freeTierGuardNotices,
   getReliabilityPolicy,
@@ -24,8 +22,6 @@ import {
 } from "../src/agent/reliability-policy.js";
 
 afterEach(() => {
-  delete process.env.CLAI_SOFT_EARLY_COMPACT;
-  delete process.env.CLAI_SOFT_COMPACT_TOKENS;
   delete process.env.CLAI_FS_PASSTHROUGH_CHARS;
   delete process.env.CLAI_ADAPTIVE_MAX_TOKENS;
   delete process.env.CLAI_FREE_TIER_GUARD;
@@ -34,35 +30,29 @@ afterEach(() => {
 });
 
 describe("reliability policy (E1–E6)", () => {
-  it("E1: soft early compact defaults to 200k, clamped to the model's safe window", () => {
-    const p = getReliabilityPolicy();
-    expect(p.softEarlyCompact).toBe(true);
-    expect(p.softCompactTokenBudget).toBe(DEFAULT_SOFT_COMPACT_TOKEN_BUDGET);
-    expect(DEFAULT_SOFT_COMPACT_TOKEN_BUDGET).toBe(200_000);
-    expect(autoCompactTriggerTokens(p)).toBe(200_000);
-    expect(autoCompactTriggerTokens(p)).toBe(HARD_COMPACT_TOKEN_BUDGET);
+  it("E1: auto compaction triggers at 70% of the effective window, within the safe headroom", () => {
+    expect(autoCompactTriggerTokens()).toBe(140_000);
     expect(
-      autoCompactTriggerTokens(p, {
+      autoCompactTriggerTokens({
         provider: "modal",
         model: "moonshotai/Kimi-K3",
       }),
-    ).toBe(200_000);
+    ).toBe(700_000);
     expect(
-      autoCompactTriggerTokens(p, {
+      autoCompactTriggerTokens({
         provider: "nvidia",
         model: "openai/gpt-oss-20b",
       }),
     ).toBe(128_000 - 24_576 - 2_048 - AUTO_COMPACT_HEADROOM_TOKENS);
     expect(
-      autoCompactTriggerTokens(p, {
+      autoCompactTriggerTokens({
         provider: "anthropic",
         model: "claude-sonnet-4",
       }),
-    ).toBe(200_000 - 24_576 - 2_048 - AUTO_COMPACT_HEADROOM_TOKENS);
+    ).toBe(140_000);
   });
 
   it("E1: trigger never exceeds the effective safe dispatch limit (no dead zone)", () => {
-    const p = getReliabilityPolicy();
     for (const [provider, model] of [
       ["anthropic", "claude-sonnet-4"],
       ["openai", "gpt-4o"],
@@ -71,7 +61,7 @@ describe("reliability policy (E1–E6)", () => {
       ["modal", "moonshotai/Kimi-K3"],
       ["tokenrouter", "minimax-m3"],
     ] as const) {
-      const trigger = autoCompactTriggerTokens(p, { provider, model });
+      const trigger = autoCompactTriggerTokens({ provider, model });
       const safe = resolveEffectiveContextLimit({ provider, model })
         .effectiveSafeTokens!;
       expect(trigger).toBeLessThanOrEqual(safe);
@@ -81,7 +71,7 @@ describe("reliability policy (E1–E6)", () => {
       expect(trigger).toBeGreaterThan(0);
     }
     for (const customLimit of [20_000, 25_000, 30_000, 100_000, 200_000, 253_000, 1_000_000]) {
-      const trigger = autoCompactTriggerTokens(p, {
+      const trigger = autoCompactTriggerTokens({
         provider: "tokenrouter",
         model: "custom-model",
         contextLimitTokens: customLimit,
@@ -105,35 +95,20 @@ describe("reliability policy (E1–E6)", () => {
   });
 
   it("E1: a session model window compacts at exactly 70%", () => {
-    const p = getReliabilityPolicy();
     expect(
-      autoCompactTriggerTokens(p, {
+      autoCompactTriggerTokens({
         provider: "tokenrouter",
         model: "custom-1m",
         contextLimitTokens: 1_000_000,
       }),
     ).toBe(700_000);
     expect(
-      autoCompactTriggerTokens(p, {
+      autoCompactTriggerTokens({
         provider: "tokenrouter",
         model: "custom-253k",
         contextLimitTokens: 253_000,
       }),
     ).toBe(177_100);
-  });
-
-  it("E1: soft compact trigger can be lowered via env", () => {
-    process.env.CLAI_SOFT_COMPACT_TOKENS = "60000";
-    const p = getReliabilityPolicy();
-    expect(autoCompactTriggerTokens(p)).toBe(60_000);
-    expect(autoCompactTriggerTokens(p)).toBeLessThan(HARD_COMPACT_TOKEN_BUDGET);
-  });
-
-  it("E1: soft early compact can be disabled → hard budget only", () => {
-    process.env.CLAI_SOFT_EARLY_COMPACT = "0";
-    const p = getReliabilityPolicy();
-    expect(p.softEarlyCompact).toBe(false);
-    expect(autoCompactTriggerTokens(p)).toBeLessThanOrEqual(HARD_COMPACT_TOKEN_BUDGET);
   });
 
   it("E2: fs passthrough default is tiered 64k not 400k", () => {

@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../src/types.js";
 import { compactionAttemptKey } from "../../src/agent/compaction-attempt.js";
 import { toolSchemaHash } from "../../src/agent/context-breakdown.js";
-import {
-  autoCompactTriggerTokens,
-  getReliabilityPolicy,
-} from "../../src/agent/reliability-policy.js";
+import { autoCompactTriggerTokens } from "../../src/agent/request-budget.js";
 import {
   planCompactionAdmission,
   type CompactionAdmissionPorts,
@@ -17,7 +14,7 @@ const history = (count: number): ChatMessage[] =>
     content: `turn ${index}`,
   }));
 
-const trigger = autoCompactTriggerTokens(getReliabilityPolicy(), {
+const trigger = autoCompactTriggerTokens({
   provider: "nvidia",
   model: "test-model",
   contextLimitTokens: 200_000,
@@ -145,26 +142,25 @@ describe("compaction admission", () => {
     expect(isExhausted).not.toHaveBeenCalled();
   });
 
-  it("admits a crossed estimate when provider truth is stale and lower", async () => {
+  it("trusts the provider-grounded measurement over a higher local estimate", async () => {
     const audit = vi.fn();
     const buildDurableEnvelope = vi.fn(async () => "durable state");
-    const admission = await planCompactionAdmission(
-      ports({
-        estimateRequestTokens: () => trigger,
-        providerPromptTokens: () => Math.floor(trigger / 4),
-        buildDurableEnvelope,
-        audit,
-      }),
-    );
-    expect(admission).toMatchObject({
-      admitted: true,
-      beforeTokens: trigger,
-      measurement: "estimated",
-    });
-    expect(buildDurableEnvelope).toHaveBeenCalledTimes(1);
+    const measureRequestTokens = vi.fn(() => Math.floor(trigger / 4));
+    await expect(
+      planCompactionAdmission(
+        ports({
+          estimateRequestTokens: () => trigger,
+          measureRequestTokens,
+          buildDurableEnvelope,
+          audit,
+        }),
+      ),
+    ).resolves.toEqual({ admitted: false });
+    expect(measureRequestTokens).toHaveBeenCalledWith(trigger);
+    expect(buildDurableEnvelope).not.toHaveBeenCalled();
     expect(audit).toHaveBeenCalledWith(
-      "agent.compact.admission",
-      expect.objectContaining({ admissionSignal: "estimate" }),
+      "agent.compact.skip-threshold",
+      expect.objectContaining({ providerMeasuredTokens: Math.floor(trigger / 4) }),
     );
   });
 
@@ -172,7 +168,7 @@ describe("compaction admission", () => {
     const admission = await planCompactionAdmission(
       ports({
         estimateRequestTokens: () => Math.floor(trigger * 0.8),
-        providerPromptTokens: () => trigger,
+        measureRequestTokens: () => trigger,
       }),
     );
     expect(admission).toMatchObject({
@@ -184,7 +180,7 @@ describe("compaction admission", () => {
 
   it("admits when provider-reported tokens reach the trigger", async () => {
     const admission = await planCompactionAdmission(
-      ports({ providerPromptTokens: () => trigger }),
+      ports({ measureRequestTokens: () => trigger }),
     );
     expect(admission).toMatchObject({
       admitted: true,
@@ -197,7 +193,7 @@ describe("compaction admission", () => {
     const admission = await planCompactionAdmission(
       ports({
         estimateRequestTokens: () => 1,
-        providerPromptTokens: () => 1,
+        measureRequestTokens: () => 1,
       }),
       { bypassThreshold: true },
     );
@@ -207,7 +203,7 @@ describe("compaction admission", () => {
   it("audits admission diagnostics with estimate, calibration, and provider truth", async () => {
     const audit = vi.fn();
     await planCompactionAdmission(
-      ports({ audit, providerPromptTokens: () => 150_000 }),
+      ports({ audit, measureRequestTokens: () => 150_000 }),
     );
     expect(audit).toHaveBeenCalledWith(
       "agent.compact.admission",
@@ -215,7 +211,7 @@ describe("compaction admission", () => {
         estimatedTokens: trigger,
         tokenMeasurement: "provider-reported",
         triggerTokens: trigger,
-        providerPromptTokens: 150_000,
+        providerMeasuredTokens: 150_000,
       }),
     );
   });

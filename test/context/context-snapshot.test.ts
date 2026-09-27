@@ -8,7 +8,6 @@ import {
 import type { OperationUsageSnapshot } from "../../src/llm/operation-usage.js";
 import {
   compactedContextSnapshot,
-  estimatedContextSnapshot,
   recordContextUsageSnapshot,
   restoredContextSnapshot,
   resolveContextSnapshot,
@@ -55,13 +54,8 @@ const operationUsage: OperationUsageSnapshot = {
 };
 
 describe("ContextSnapshotV1", () => {
-  it("waits for the first provider response before displaying a local estimate", () => {
+  it("waits for the first provider response before displaying any context size", () => {
     expect(resolveContextSnapshot(target, undefined)).toBeUndefined();
-    expect(estimatedContextSnapshot(target, undefined, 720)).toBeUndefined();
-    expect(estimatedContextSnapshot(target, undefined, 720, () => 1, true)).toMatchObject({
-      contextTokens: 720,
-      precision: "estimate",
-    });
   });
   it("preserves zero reported context without replacing it with history estimates", () => {
     const current = recordContextUsageSnapshot(
@@ -72,7 +66,6 @@ describe("ContextSnapshotV1", () => {
       () => 1,
     );
     expect(resolveContextSnapshot(target, current)).toBe(current);
-    expect(estimatedContextSnapshot(target, current, 200)).toBe(current);
     expect(restoredContextSnapshot(target, current)).toMatchObject({
       contextTokens: 0,
       precision: "provider-exact",
@@ -81,16 +74,20 @@ describe("ContextSnapshotV1", () => {
 
   it("keeps the provider measurement when a completed response omits prompt usage", () => {
     const current = recordContextUsageSnapshot(target, undefined, usage, undefined, () => 1);
-    const fallback = estimatedContextSnapshot(target, current, 720, () => 2, true);
-    expect(fallback).toBe(current);
-    expect(recordContextUsageSnapshot(target, current, usage, undefined).contextTokens).toBe(600);
+    const outputOnly = recordContextUsageSnapshot(
+      target,
+      current,
+      { promptTokens: 0, promptTokensKnown: false, completionTokens: 9, totalTokens: 9, exact: true },
+      undefined,
+      () => 2,
+    );
+    expect(outputOnly).toMatchObject({ contextTokens: 600, precision: "provider-exact" });
   });
 
   it.each(["message-history", "assembled-request"] as const)(
     "uses %s compaction estimates when no provider measurement exists",
     (scope) => {
-      const current = estimatedContextSnapshot(target, undefined, 720, () => 1, true);
-      expect(compactedContextSnapshot(target, current, [], 320, scope)).toMatchObject({
+      expect(compactedContextSnapshot(target, undefined, [], 320, scope)).toMatchObject({
         contextTokens: 320,
         precision: "estimate",
         scope,
@@ -301,68 +298,29 @@ describe("ContextSnapshotV1", () => {
     });
   });
 
-  it("ignores a larger in-flight estimate and updates on the next measurement", () => {
-    const current = recordContextUsageSnapshot(
+  it("moves only with provider measurements, up or down", () => {
+    const current = recordContextUsageSnapshot(target, undefined, usage, undefined, () => 1);
+    const grown = recordContextUsageSnapshot(
       target,
+      current,
+      { ...usage, promptTokens: 219_000, totalTokens: 219_100 },
       undefined,
-      usage,
-      undefined,
-      () => 1,
+      () => 2,
     );
-    const inFlight = estimatedContextSnapshot(target, current, 720, () => 2);
-    const completed = recordContextUsageSnapshot(
+    const shrunk = recordContextUsageSnapshot(
       target,
-      inFlight,
+      grown,
       { ...usage, promptTokens: 640, totalTokens: 690 },
       undefined,
       () => 3,
     );
 
-    expect(inFlight).toMatchObject({
-      contextTokens: 600,
-      scope: "provider-request",
-      precision: "provider-exact",
-      observedAt: 1,
-    });
-    expect(completed).toMatchObject({
+    expect(grown).toMatchObject({ contextTokens: 219_000, precision: "provider-exact" });
+    expect(shrunk).toMatchObject({
       contextTokens: 640,
       scope: "provider-request",
       precision: "provider-exact",
       observedAt: 3,
-    });
-  });
-
-  it("keeps provider-reported usage when the next request is not larger", () => {
-    const providerSnapshot = recordContextUsageSnapshot(
-      target,
-      undefined,
-      usage,
-      undefined,
-      () => 1,
-    );
-    const smaller = estimatedContextSnapshot(
-      target,
-      providerSnapshot,
-      420,
-      () => 2,
-    );
-    expect(smaller).toMatchObject({
-      contextTokens: 600,
-      scope: "provider-request",
-      precision: "provider-exact",
-      observedAt: 1,
-    });
-    const usageKnown = recordContextUsageSnapshot(
-      target,
-      smaller,
-      { ...usage, promptTokens: 219_000, totalTokens: 219_100 },
-      undefined,
-      () => 3,
-    );
-    expect(usageKnown).toMatchObject({
-      contextTokens: 219_000,
-      scope: "provider-request",
-      precision: "provider-exact",
     });
   });
 
@@ -389,7 +347,6 @@ describe("ContextSnapshotV1", () => {
       undefined,
       () => 2,
     );
-    const estimated = estimatedContextSnapshot(target, preserved, 720, () => 3, true)!;
 
     expect(preserved).toMatchObject({
       contextTokens: 600,
@@ -397,11 +354,6 @@ describe("ContextSnapshotV1", () => {
       precision: "provider-exact",
       cache: { kind: "unknown" },
       reasoning: { kind: "reported", outputTokens: 12 },
-    });
-    expect(estimated).toMatchObject({
-      contextTokens: 600,
-      scope: "provider-request",
-      precision: "provider-exact",
     });
   });
 });

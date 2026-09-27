@@ -97,7 +97,7 @@ export function compactionTokenLabel(
   }
   if (providerReported) {
     if (item.beforeTokens > 0 && (item.afterTokens ?? 0) > 0) {
-      return `${before} tokens → ${item.afterTokens!.toLocaleString()} tokens`;
+      return `${before} tokens → ~${item.afterTokens!.toLocaleString()} tokens`;
     }
     return item.beforeTokens > 0
       ? `${before} provider-reported tokens before`

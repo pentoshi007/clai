@@ -58,9 +58,7 @@ function learnedRouteIsLive(entry: LearnedRouteEntry): boolean {
   return (
     entry.vision === true ||
     entry.reasoning === true ||
-    Boolean(entry.acceptedEfforts?.length) ||
-    entry.contextTokens !== undefined ||
-    entry.maxOutputTokens !== undefined
+    Boolean(entry.acceptedEfforts?.length)
   );
 }
 

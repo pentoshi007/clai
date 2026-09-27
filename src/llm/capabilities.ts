@@ -46,6 +46,10 @@ import {
 import { registerModelVisionCapability } from "./capability/vision-registry.js";
 import { resolveToolDialect } from "./capability/tool-dialect.js";
 import { currentIsolatedSessionAffinity } from "./session-affinity.js";
+import {
+  rememberModelLimits,
+  resetRememberedModelLimits,
+} from "./model-limit-store.js";
 export { resolveToolDialect };
 
 export {
@@ -119,6 +123,7 @@ function scopedKnowledge(
 export function resetReasoningKnowledge(): void {
   scopedReasoningKnowledge.clear();
   resetReasoningKnowledgeFromState();
+  resetRememberedModelLimits();
 }
 
 export function markReasoningUnsupported(
@@ -445,8 +450,31 @@ export function modelCatalogFacts(
   return catalogFactsByRoute.get(`${provider}:${model.trim().toLowerCase()}`);
 }
 
+export function registerModelCatalogLimits(
+  provider: ProviderId,
+  facts: readonly CatalogFacts[],
+): void {
+  for (const entry of facts) registerModelCatalogFacts(provider, entry);
+  rememberCatalogLimits(provider, facts);
+}
+
+function rememberCatalogLimits(
+  provider: ProviderId,
+  facts: readonly CatalogFacts[],
+): void {
+  rememberModelLimits(
+    provider,
+    facts.map((entry) => ({
+      model: entry.id,
+      contextTokens: entry.contextTokens,
+      maxOutputTokens: entry.maxOutputTokens,
+    })),
+  );
+}
+
 export function clearModelCatalogFacts(): void {
   catalogFactsByRoute.clear();
+  resetRememberedModelLimits();
 }
 
 export function registerModelReasoningEfforts(
@@ -519,6 +547,10 @@ export function registerModelCatalog(
       source: "provider",
     });
   }
+  rememberCatalogLimits(
+    provider,
+    models.flatMap((model) => (model.id && model.facts ? [model.facts] : [])),
+  );
 }
 
 export function providerModelIsKnown(
@@ -583,30 +615,6 @@ export function learnRouteAcceptedEfforts(
   if (normalized.length === 0) return;
   persistLearnedRoute(reasoningKey(provider, model), {
     acceptedEfforts: normalized,
-  });
-}
-
-export function learnRouteLimits(
-  provider: ProviderId,
-  model: string,
-  limits: {
-    contextTokens?: number | undefined;
-    maxOutputTokens?: number | undefined;
-  },
-): void {
-  if (
-    limits.contextTokens === undefined &&
-    limits.maxOutputTokens === undefined
-  ) {
-    return;
-  }
-  persistLearnedRoute(reasoningKey(provider, model), {
-    ...(limits.contextTokens !== undefined
-      ? { contextTokens: limits.contextTokens }
-      : {}),
-    ...(limits.maxOutputTokens !== undefined
-      ? { maxOutputTokens: limits.maxOutputTokens }
-      : {}),
   });
 }
 

@@ -61,7 +61,7 @@ export interface CompactionCoordinatorPorts {
   readonly lastSuccessfulRequestSnapshot: () =>
     SuccessfulRequestSnapshot | undefined;
   readonly clearSuccessfulRequestSnapshot: () => void;
-  readonly clearProviderPromptTokens: () => void;
+  readonly clearProviderMeasurement: () => void;
   readonly summarize: Parameters<
     typeof executeAutomaticCompaction
   >[0]["summarize"];
@@ -92,7 +92,9 @@ export interface CompactionCoordinatorPorts {
   ) => void;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly audit: (event: string, payload: CompactionAuditPayload) => void;
-  readonly providerPromptTokens?: (() => number | undefined) | undefined;
+  readonly measureRequestTokens?:
+    | ((estimatedTokens: number) => number | undefined)
+    | undefined;
 }
 
 const summaryBodyOf = (messages: readonly ChatMessage[]): string =>
@@ -243,14 +245,16 @@ const runAdmittedCompaction = async (
   ports.attempts.recordSuccess(attemptKey);
   ports.resetReadOnlyGuard();
   ports.clearSuccessfulRequestSnapshot();
-  ports.clearProviderPromptTokens();
   ports.refreshSessionState(livePlan);
   ports.setLastCompactionMsgCount(ports.messages.length);
 
-  const afterTokens = ports.estimateRequestTokens(ports.messages);
+  const afterEstimate = ports.estimateRequestTokens(ports.messages);
+  const afterTokens = ports.measureRequestTokens?.(afterEstimate) ?? afterEstimate;
+  ports.clearProviderMeasurement();
   ports.audit("agent.compact", {
     newLength: ports.messages.length,
-    estimatedTokens: afterTokens,
+    estimatedTokens: afterEstimate,
+    afterTokens,
     reason,
     strategy: result.strategy ?? "single",
     compactionAdmissions: ledger.snapshot().attempts.length,
@@ -264,7 +268,7 @@ const runAdmittedCompaction = async (
   );
   const tokenLabel =
     measurement === "provider-reported"
-      ? `${beforeTokens.toLocaleString()} tokens → ${afterTokens.toLocaleString()} tokens`
+      ? `${beforeTokens.toLocaleString()} tokens → ~${afterTokens.toLocaleString()} tokens`
       : `~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens`;
   ports.notify(
     "info",
@@ -299,7 +303,7 @@ export const createCompactionCoordinator =
         isExhausted: ports.attempts.isExhausted
           ? (key) => ports.attempts.isExhausted?.(key) === true
           : undefined,
-        providerPromptTokens: ports.providerPromptTokens,
+        measureRequestTokens: ports.measureRequestTokens,
         audit: ports.audit,
       },
       options,

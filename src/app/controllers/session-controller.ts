@@ -20,17 +20,17 @@ import {
 import {
   isProviderMeasuredPrecision,
   type ContextAttemptReference,
+  type ContextSnapshotLimit,
   type ContextSnapshotV1,
 } from "../../llm/context-snapshot.js";
-import { isProviderMeasuredPrompt } from "../../llm/provider-context-usage.js";
 import {
   compactedContextSnapshot,
+  recordAuxiliaryUsageSnapshot,
   recordContextUsageSnapshot,
   resolveContextSnapshot as resolveSnapshot,
   contextSnapshotForRoute,
   restoredContextSnapshot,
   createContextProjector,
-  estimatedContextSnapshot,
   type PartialUsageSnapshot,
   type ContextProjection,
   type ContextUsageTarget,
@@ -114,6 +114,7 @@ export interface SessionState {
   readonly contextSnapshot: ContextSnapshotV1 | undefined;
   readonly contextUsage: ContextUsageSnapshot | undefined;
   readonly contextChip: string | undefined;
+  readonly contextLimit?: ContextSnapshotLimit | undefined;
 }
 
 export type NoticeLevel = "info" | "warn";
@@ -175,7 +176,6 @@ export class SessionController implements Disposable {
   private readonly persistence: SessionPersistenceQueue;
   private static readonly AUTOSAVE_MIN_MS = 15_000;
   private contextSnapshot: ContextSnapshotV1 | undefined;
-  private preserveCompactionEstimate = false;
   private lastContextCompactionId: string | undefined;
   private readonly contextLimits = new SessionContextLimits();
   private readonly usageLedger = new SessionUsageLedger();
@@ -291,7 +291,7 @@ export class SessionController implements Disposable {
   }
 
   getState(): SessionState {
-    const { contextSnapshot, contextUsage, contextChip } =
+    const { contextSnapshot, contextUsage, contextChip, contextLimit } =
       this.contextUsageProjection();
     const subagentRuns = this.subagentsValue.list();
     const subagents: SubagentsRuntimeState = {
@@ -320,6 +320,7 @@ export class SessionController implements Disposable {
       contextSnapshot,
       contextUsage,
       contextChip,
+      contextLimit,
     };
   }
 
@@ -383,7 +384,12 @@ export class SessionController implements Disposable {
     ) {
       return undefined;
     }
-    return snapshot.contextTokens;
+    const reasoningTokens =
+      snapshot.reasoning.kind === "reported" ? snapshot.reasoning.outputTokens ?? 0 : 0;
+    return (
+      snapshot.contextTokens +
+      Math.max(0, snapshot.lastCompletionTokens - reasoningTokens)
+    );
   }
 
   recordTokenUsage(
@@ -392,7 +398,16 @@ export class SessionController implements Disposable {
     provider?: ProviderId,
     attempt?: ContextAttemptReference,
     api?: string | undefined,
+    auxiliary = false,
   ): void {
+    if (auxiliary) {
+      this.usageLedger.record(usage, provider ?? this.provider, model ?? this.model, api);
+      this.setContextSnapshot(
+        recordAuxiliaryUsageSnapshot(this.usageTarget, this.contextSnapshot, usage),
+      );
+      this.notifyState();
+      return;
+    }
     if (provider !== undefined) this.provider = provider;
     if (model !== undefined) this.model = model;
     this.usageLedger.record(usage, this.provider, this.model, api);
@@ -405,9 +420,6 @@ export class SessionController implements Disposable {
         () => this.contextTimestamp(),
       ),
     );
-    if (isProviderMeasuredPrompt(usage)) {
-      this.preserveCompactionEstimate = false;
-    }
     this.notifyState();
   }
 
@@ -419,7 +431,6 @@ export class SessionController implements Disposable {
     afterTokens?: number,
     scope: "message-history" | "assembled-request" = "assembled-request",
     compactionId?: string,
-    measurement?: "provider-reported" | "estimated" | undefined,
   ): void {
     if (compactionId && compactionId === this.lastContextCompactionId) return;
     this.setContextSnapshot(
@@ -432,27 +443,8 @@ export class SessionController implements Disposable {
         () => this.contextTimestamp(),
       ),
     );
-    this.preserveCompactionEstimate =
-      typeof afterTokens === "number" &&
-      Number.isFinite(afterTokens) &&
-      afterTokens > 0;
     if (compactionId) this.lastContextCompactionId = compactionId;
     this.notifyState();
-  }
-
-  noteContextEstimate(estimatedTokens: number, promptUsageMissing = false): void {
-    if (this.preserveCompactionEstimate) return;
-    const next = estimatedContextSnapshot(
-      this.usageTarget,
-      this.contextSnapshot,
-      estimatedTokens,
-      () => this.contextTimestamp(),
-      promptUsageMissing,
-    );
-    if (next !== this.contextSnapshot) {
-      this.setContextSnapshot(next);
-      this.notifyState();
-    }
   }
 
   get messages(): readonly ChatMessage[] {
@@ -535,7 +527,6 @@ export class SessionController implements Disposable {
     this.sessionTitle = options.title;
     this.namer.restore(options.title);
     this.lastContextCompactionId = undefined;
-    this.preserveCompactionEstimate = false;
     const restored = restoredContextSnapshot(
       this.usageTarget,
       options.contextUsage,
@@ -739,7 +730,6 @@ export class SessionController implements Disposable {
                 reported.afterTokens,
                 reported.scope,
                 compactionId,
-                reported.measurement,
               );
             }
             this.notifyState();
@@ -923,6 +913,7 @@ export class SessionController implements Disposable {
     const config = getConfig();
     const provider = this.provider ?? config.defaultProvider;
     const model = this.model ?? getProviderModel(provider);
+    this.refreshProviderCatalog();
     this.setContextSnapshot(this.resolveContextSnapshot());
     const providerReportedContextTokens = this.providerReportedContextTokens();
     const checkpoint = this.continuationCheckpoint();
