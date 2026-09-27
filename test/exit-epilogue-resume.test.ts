@@ -217,6 +217,20 @@ describe("exit epilogue + session resume", () => {
     await services.session.submit("what is the plan?");
     expect(services.session.usageReport().totals.requests).toBe(1);
 
+    const { createPlan } = await import("../src/store/plan.js");
+    const livePlan = createPlan({
+      sessionId,
+      goal: "Keep tasks visible after restart",
+      detail: "Resume the same session with its active task pane",
+      kind: "bugfix",
+      taskTitles: ["Restore the active task pane"],
+    });
+    livePlan.status = "in_progress";
+    livePlan.tasks[0]!.state = "in_progress";
+    await services.ports.persistence.savePlan(livePlan);
+    await services.plan.load(sessionId);
+    expect(services.plan.current()?.sessionId).toBe(sessionId);
+
     await lifecycle.shutdownAndExit(0);
 
     expect(destroyed).toEqual(["destroy"]);
@@ -252,11 +266,23 @@ describe("exit epilogue + session resume", () => {
     const outcome = await applySessionResume(resumed, resolution.record!);
 
     expect(outcome.sessionId).toBe(sessionId);
+    expect(outcome.hasPlan).toBe(true);
     expect(resumed.session.sessionId).toBe(sessionId);
     expect(resumed.session.messages.map((m) => m.content)).toEqual([
       "what is the plan?",
       "the answer",
     ]);
+    expect(resumed.plan.current()).toMatchObject({
+      sessionId,
+      goal: "Keep tasks visible after restart",
+      status: "in_progress",
+      tasks: [
+        expect.objectContaining({
+          title: "Restore the active task pane",
+          state: "in_progress",
+        }),
+      ],
+    });
 
     const restoredUsage = resumed.session.usageReport();
     expect(restoredUsage.totals.requests).toBe(1);
