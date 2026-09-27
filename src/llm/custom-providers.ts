@@ -7,6 +7,7 @@ import {
   openAiCompatibleStream,
   toCompletionResult,
   readJson,
+  ingestModelCatalogEntries,
   ingestOpenAiModelCatalog,
   isStreamOptionsUnsupportedError,
 } from "./http.js";
@@ -31,6 +32,7 @@ import {
   type CustomProviderProfileSpec,
 } from "./custom-provider-profile.js";
 import { recordControlRejection } from "./provider-profile.js";
+import { fetchAnthropicModelEntries } from "./wire/anthropic-model-catalog.js";
 export type CustomProviderApi =
   | "chat-completions"
   | "responses"
@@ -158,9 +160,17 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
               "anthropic-version": "2023-06-01",
             }
           : authHeaders(def, auth.apiKey) ?? {};
-        const response = await fetch(`${baseUrl}/models`, { headers });
-        const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
-        const models = ingestOpenAiModelCatalog(providerId, data);
+        const models = def.api === "anthropic-messages"
+          ? ingestModelCatalogEntries(
+              providerId,
+              await fetchAnthropicModelEntries(baseUrl, headers),
+            )
+          : ingestOpenAiModelCatalog(
+              providerId,
+              await readJson<unknown>(
+                await fetch(`${baseUrl}/models`, { headers }),
+              ),
+            );
         if (models.length > 0) modelCache.set(cacheKey, { models, fetchedAt: now });
         return models;
       } catch {

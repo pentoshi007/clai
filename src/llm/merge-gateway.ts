@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CompletionRequest, CompletionResult } from "../types.js";
 import {
   defaultModels,
@@ -221,17 +222,19 @@ export function mergeCatalogEntries(
           ? ((entry as MergeModelEntry).id as string)
           : "";
     const facts = factsIndex.get(id.trim().toLowerCase());
-    return facts ? { id, ...facts } : (entry as unknown);
+    if (!facts) return entry as unknown;
+    const raw = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? (entry as Record<string, unknown>)
+      : {};
+    return { ...raw, ...facts, id };
   });
 }
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
+const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export function resetMergeGatewayCatalogCache(): void {
-  cachedModels = null;
-  lastFetchTime = 0;
+  modelCache.clear();
 }
 
 export function mergeGatewayAuthHeaders(apiKey: string): Record<string, string> {
@@ -303,19 +306,20 @@ export const mergeGatewayProvider: LlmProvider = {
   envVar: "MERGE_GATEWAY_API_KEY",
   validateKey: (key: string) => /^mg_[A-Za-z0-9_-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
+    if (!auth.apiKey) return mergeGatewayFallbackModels;
+    const cacheKey = createHash("sha256").update(auth.apiKey).digest("hex");
     const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
-    if (!auth.apiKey) return cachedModels ?? mergeGatewayFallbackModels;
+    const cached = modelCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
     try {
       const models = await fetchCatalog(auth.apiKey);
       if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
+        modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
         return models;
       }
-      return cachedModels ?? mergeGatewayFallbackModels;
+      return modelCache.get(cacheKey)?.models ?? mergeGatewayFallbackModels;
     } catch {
-      return cachedModels ?? mergeGatewayFallbackModels;
+      return modelCache.get(cacheKey)?.models ?? mergeGatewayFallbackModels;
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

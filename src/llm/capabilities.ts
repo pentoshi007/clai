@@ -366,7 +366,7 @@ export function modelReasoningEvidence(
   if (!scoped && reasoningUnsupportedModels.has(key)) return "rejected";
   if (!scoped && observedReasoningModels.has(key)) return "observed";
   if (catalogReasoningSupport.has(key)) return "catalog";
-  const facts = catalogFactsByRoute.get(key);
+  const facts = modelCatalogFacts(provider, model);
   if (facts?.reasoning?.supported !== undefined) return "catalog";
   if (catalogAdvertisedEfforts(provider, model) !== undefined) return "catalog";
   const patterns = REASONING_PATTERNS[provider] ?? [];
@@ -393,7 +393,7 @@ function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
   const key = reasoningKey(provider, model);
   const declared = catalogReasoningSupport.get(key);
   if (declared !== undefined) return declared;
-  const facts = catalogFactsByRoute.get(key);
+  const facts = modelCatalogFacts(provider, model);
   if (facts?.reasoning?.supported !== undefined) return facts.reasoning.supported;
   if (catalogAdvertisedEfforts(provider, model) !== undefined) return true;
   if (familyForProvider(provider, model)) return true;
@@ -435,19 +435,23 @@ export interface CatalogModel {
   readonly facts?: CatalogFacts | undefined;
 }
 
+function catalogFactsKey(provider: ProviderId | string, model: string): string {
+  return `${provider}:${model.trim().toLowerCase()}`;
+}
+
 export function registerModelCatalogFacts(
   provider: ProviderId,
   facts: CatalogFacts,
 ): void {
   if (!facts.id.trim()) return;
-  catalogFactsByRoute.set(reasoningKey(provider, facts.id), facts);
+  catalogFactsByRoute.set(catalogFactsKey(provider, facts.id), facts);
 }
 
 export function modelCatalogFacts(
   provider: ProviderId | string,
   model: string,
 ): CatalogFacts | undefined {
-  return catalogFactsByRoute.get(`${provider}:${model.trim().toLowerCase()}`);
+  return catalogFactsByRoute.get(catalogFactsKey(provider, model));
 }
 
 export function registerModelCatalogLimits(
@@ -496,7 +500,7 @@ export function catalogAdvertisedEfforts(
   const key = reasoningKey(provider, model);
   const registered = catalogReasoningEfforts.get(key);
   if (registered?.length) return registered;
-  const facts = catalogFactsByRoute.get(key);
+  const facts = modelCatalogFacts(provider, model);
   const efforts = catalogEffortList(facts?.reasoning?.supportedEfforts);
   return efforts?.length ? efforts : undefined;
 }

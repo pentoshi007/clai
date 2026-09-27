@@ -258,30 +258,35 @@ export const geminiProvider: LlmProvider = {
     /^AQ\.[A-Za-z0-9_-]{20,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("Gemini API key is required");
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(auth.apiKey)}`,
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to list Gemini models: HTTP ${response.status}`);
+    const entries: Array<Record<string, unknown>> = [];
+    const seenPageTokens = new Set<string>();
+    let pageToken: string | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+      url.searchParams.set("key", auth.apiKey);
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to list Gemini models: HTTP ${response.status}`);
+      }
+      const data = await readJson<{
+        models?: Array<{
+          name?: string;
+          supportedGenerationMethods?: string[];
+          [field: string]: unknown;
+        }>;
+        nextPageToken?: string;
+      }>(response);
+      for (const model of data.models ?? []) {
+        if (!model.name || !model.supportedGenerationMethods?.includes("generateContent")) continue;
+        entries.push({ ...model, id: model.name.replace(/^models\//, "") });
+      }
+      const nextPageToken = data.nextPageToken?.trim();
+      if (!nextPageToken || seenPageTokens.has(nextPageToken)) break;
+      seenPageTokens.add(nextPageToken);
+      pageToken = nextPageToken;
     }
-    const data = await readJson<{
-      models?: Array<{
-        name?: string;
-        supportedGenerationMethods?: string[];
-        inputTokenLimit?: number;
-        outputTokenLimit?: number;
-      }>;
-    }>(response);
-    return ingestModelCatalogEntries(
-      "gemini",
-      (data.models ?? [])
-        .filter((m) => m.name && m.supportedGenerationMethods?.includes("generateContent"))
-        .map((m) => ({
-          id: m.name!.replace(/^models\//, ""),
-          inputTokenLimit: m.inputTokenLimit,
-          outputTokenLimit: m.outputTokenLimit,
-        })),
-    );
+    return ingestModelCatalogEntries("gemini", entries);
   },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("Gemini API key is required");

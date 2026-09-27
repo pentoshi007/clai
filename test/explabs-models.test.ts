@@ -11,6 +11,7 @@ import {
   modelCatalogFacts,
   resetReasoningKnowledge,
 } from "../src/llm/capabilities.js";
+import { modelContextWindow } from "../src/llm/context-windows.js";
 
 // Shapes captured from api.experientiallabs.ai/api/models on 2026-09-07: each row
 // is {model, providers[]} and per-deployment capabilities carry the reasoning
@@ -166,6 +167,35 @@ describe("Experiential Labs model catalog", () => {
       "glm-5.3-flash",
       "gpt-5.6-sol",
     ]);
+  });
+
+  it("keeps callable-record limits and overlays richer catalog facts", async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      const body = url === `${explabsBaseUrl}/models`
+        ? {
+            data: [
+              { id: "catalog-limit-model", context_window: 64_000 },
+              { id: "raw-limit-model", max_model_len: 723_456 },
+            ],
+          }
+        : {
+            models: [row({ slug: "catalog-limit-model", context: 1_000_000 })],
+            total: 1,
+          };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await explabsProvider.listModels!({
+      apiKey: "xpl_0123456789abcdef0123456789abcdef01234567",
+    });
+
+    expect(modelContextWindow("catalog-limit-model", "explabs")).toBe(1_000_000);
+    expect(modelContextWindow("raw-limit-model", "explabs")).toBe(723_456);
   });
 
   it("publishes the exact effort ladder each model advertises", async () => {
