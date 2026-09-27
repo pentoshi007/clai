@@ -56,10 +56,12 @@ export interface CompactionServicesInput {
   readonly runningJobs: () => readonly BackgroundJob[];
   readonly recentJobs: () => readonly BackgroundJob[];
   readonly requestSnapshot: () => SuccessfulRequestSnapshot | undefined;
-  readonly providerPromptTokens?: (() => number | undefined) | undefined;
+  readonly measureRequestTokens?:
+    | ((estimatedTokens: number) => number | undefined)
+    | undefined;
   readonly thinking?: (() => ReasoningPreference | undefined) | undefined;
   readonly clearRequestSnapshot: () => void;
-  readonly clearProviderPromptTokens: () => void;
+  readonly clearProviderMeasurement: () => void;
   readonly instructionsBlock: () => string | undefined;
   readonly skillsBlock: () => string | undefined;
   readonly planApproved: () => boolean;
@@ -167,8 +169,8 @@ export const createCompactionServices = (
     newCompactionId: () => `compact-${randomUUID().slice(0, 12)}`,
     lastSuccessfulRequestSnapshot: input.requestSnapshot,
     clearSuccessfulRequestSnapshot: input.clearRequestSnapshot,
-    clearProviderPromptTokens: input.clearProviderPromptTokens,
-    providerPromptTokens: input.providerPromptTokens,
+    clearProviderMeasurement: input.clearProviderMeasurement,
+    measureRequestTokens: input.measureRequestTokens,
     summarize,
     loadPlan: input.loadPlan,
     instructionsBlock: input.instructionsBlock,

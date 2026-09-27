@@ -253,6 +253,7 @@ export function createCompositionRoot(
         event.payload.provider,
         event.payload.attempt,
         event.payload.api,
+        event.payload.auxiliary === true,
       );
     }
     if (event.type === "compaction-completed" && sessionRef) {
@@ -260,13 +261,6 @@ export function createCompositionRoot(
         event.payload.afterTokens,
         event.payload.contextScope,
         event.payload.compactionId,
-        event.payload.measurement,
-      );
-    }
-    if (event.type === "context-estimate" && sessionRef) {
-      sessionRef.noteContextEstimate(
-        event.payload.estimatedTokens,
-        event.payload.promptUsageMissing,
       );
     }
     if (event.type === "notice") {

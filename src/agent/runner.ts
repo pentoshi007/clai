@@ -48,6 +48,10 @@ import type { TurnLoopDeps } from "./turn/loop/deps.js";
 import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createTurnLoopState } from "./turn/loop/state.js";
+import {
+  projectMeasuredTokens,
+  providerContextMeasurement,
+} from "./turn/provider-measurement.js";
 import { classifyTurnPrompt } from "./turn/setup/prompt-classification.js";
 import { setUpResponderWake } from "./turn/setup/responder-wake.js";
 import { composeTurnMessages } from "./turn/setup/turn-messages.js";
@@ -335,9 +339,6 @@ export async function runAgentTurn(
       provider: initialProvider,
       model: initialModel,
       previousSuccessfulRequest: options.previousSuccessfulRequest,
-      ...(options.providerReportedContextTokens !== undefined
-        ? { providerReportedContextTokens: options.providerReportedContextTokens }
-        : {}),
     });
     const toolRouting = createToolRouting({
       mode: agentMode,
@@ -685,6 +686,10 @@ export async function runAgentTurn(
       { toolName: string; count: number }
     >();
 
+    const measureRequestTokens = (estimatedTokens: number): number | undefined =>
+      loop.providerMeasurement
+        ? projectMeasuredTokens(loop.providerMeasurement, estimatedTokens)
+        : undefined;
     const { estimateNextRequestTokens, maybeAutoCompact } =
       createCompactionServices({
         messages,
@@ -714,13 +719,13 @@ export async function runAgentTurn(
         runningJobs: () => jobManager.getRunningJobs(session.sessionId),
         recentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
         requestSnapshot: () => loop.lastSuccessfulRequestSnapshot,
-        providerPromptTokens: () => loop.lastProviderPromptTokens,
+        measureRequestTokens,
         thinking: () => config.thinking,
         clearRequestSnapshot: () => {
           loop.lastSuccessfulRequestSnapshot = undefined;
         },
-        clearProviderPromptTokens: () => {
-          loop.lastProviderPromptTokens = undefined;
+        clearProviderMeasurement: () => {
+          loop.providerMeasurement = undefined;
         },
         instructionsBlock: () => agentInstructionsBlock,
         skillsBlock: () => activeSkillsBlock,
@@ -743,6 +748,7 @@ export async function runAgentTurn(
             model: completion.model,
             ...(completion.api ? { api: completion.api } : {}),
             ...(attempt.kind === "generation" ? { attempt } : {}),
+            auxiliary: true,
           });
         },
         writeStarted: writeCompactionStarted,
@@ -753,6 +759,10 @@ export async function runAgentTurn(
           void auditLog(event, payload);
         },
       });
+    loop.providerMeasurement = providerContextMeasurement(
+      options.providerReportedContextTokens,
+      estimateNextRequestTokens(messages.slice(0, 1 + (options.history?.length ?? 0))),
+    );
 
     const loopDeps: TurnLoopDeps = {
       ...singleToolDeps,
@@ -786,6 +796,7 @@ export async function runAgentTurn(
       composeCurrentSystemPrompt,
       currentContextLimitTokens,
       estimateNextRequestTokens,
+      measureRequestTokens,
       selectToolDefs,
       maybeAutoCompact,
       resolveNativeTools,

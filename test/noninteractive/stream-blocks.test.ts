@@ -9,7 +9,6 @@ import {
   buildCompactionFailedLines,
   buildCompactionStartLines,
   buildConfirmRequestLines,
-  buildContextEstimateLines,
   buildNoticeLines,
   buildPlanUpdateLines,
   buildStatusLines,
@@ -184,10 +183,6 @@ const BUILDERS: readonly (readonly [string, (ctx: StreamContext) => readonly str
         model: "gpt-x",
       }),
   ],
-  [
-    "context-estimate",
-    (c) => buildContextEstimateLines(c, { type: "context-estimate", estimatedTokens: 42_000 }),
-  ],
 ];
 
 const ALWAYS_EMPTY = new Set([
@@ -199,7 +194,7 @@ const ALWAYS_EMPTY = new Set([
 ]);
 
 /** Diagnostics that only earn a row under `--verbose`. */
-const VERBOSE_ONLY = new Set(["turn-start", "status", "token-usage", "context-estimate"]);
+const VERBOSE_ONLY = new Set(["turn-start", "status", "token-usage"]);
 
 describe("stream-blocks", () => {
   for (const columns of WIDTHS) {

@@ -1,19 +1,6 @@
-
 import { createHash } from "node:crypto";
 import { getConfig, providerCategory } from "../store/config.js";
 import type { ProviderId } from "../types.js";
-import { AUTO_COMPACT_TOKEN_BUDGET } from "./context-manager.js";
-import {
-  DEFAULT_AUTO_COMPACT_REQUEST_TOKENS,
-  MIN_AUTO_COMPACT_REQUEST_TOKENS,
-  configuredRequestTokens,
-  resolveRequestBudget,
-} from "./request-budget.js";
-
-export const HARD_COMPACT_TOKEN_BUDGET = AUTO_COMPACT_TOKEN_BUDGET;
-
-export const DEFAULT_SOFT_COMPACT_TOKEN_BUDGET =
-  DEFAULT_AUTO_COMPACT_REQUEST_TOKENS;
 
 export const DEFAULT_FS_PASSTHROUGH_CAP_CHARS = 64_000;
 
@@ -27,10 +14,6 @@ export const MAX_STEP_COMPLETION_TOKENS = 65_536;
 export const MAX_OUTPUT_BUDGET_CONTINUATIONS = 1;
 
 export interface ReliabilityPolicy {
-  readonly softEarlyCompact: boolean;
-  readonly softCompactTokenBudget: number;
-  readonly compactBudgetExplicit?: boolean | undefined;
-  readonly hardCompactTokenBudget: number;
   readonly fsPassthroughCapChars: number;
   readonly adaptiveMaxTokens: boolean;
   readonly freeTierContextGuard: boolean;
@@ -56,29 +39,12 @@ function intEnv(name: string): number | undefined {
 
 export function getReliabilityPolicy(): ReliabilityPolicy {
   const cfg = getConfig();
-  const softEarly =
-    boolEnv("CLAI_SOFT_EARLY_COMPACT") ?? cfg.softEarlyCompact ?? true;
-  let softBudget =
-    intEnv("CLAI_SOFT_COMPACT_TOKENS") ?? configuredRequestTokens().tokens;
-  const compactBudgetExplicit =
-    intEnv("CLAI_SOFT_COMPACT_TOKENS") !== undefined ||
-    configuredRequestTokens().source !== "default";
-  softBudget = Math.max(
-    MIN_AUTO_COMPACT_REQUEST_TOKENS,
-    Math.min(softBudget, HARD_COMPACT_TOKEN_BUDGET),
-  );
-
   let fsCap =
     intEnv("CLAI_FS_PASSTHROUGH_CHARS") ??
     cfg.fsPassthroughCapChars ??
     DEFAULT_FS_PASSTHROUGH_CAP_CHARS;
   fsCap = Math.max(8_000, Math.min(fsCap, 400_000));
-
   return {
-    softEarlyCompact: softEarly,
-    softCompactTokenBudget: softBudget,
-    compactBudgetExplicit,
-    hardCompactTokenBudget: HARD_COMPACT_TOKEN_BUDGET,
     fsPassthroughCapChars: fsCap,
     adaptiveMaxTokens:
       boolEnv("CLAI_ADAPTIVE_MAX_TOKENS") ?? cfg.adaptiveMaxTokens ?? true,
@@ -93,28 +59,6 @@ export function getReliabilityPolicy(): ReliabilityPolicy {
     slimNativePrompt:
       boolEnv("CLAI_SLIM_NATIVE_PROMPT") ?? cfg.slimNativePrompt ?? true,
   };
-}
-
-export function autoCompactTriggerTokens(
-  policy = getReliabilityPolicy(),
-  target?: {
-    provider?: ProviderId | undefined;
-    model?: string | undefined;
-    contextLimitTokens?: number | undefined;
-  },
-): number {
-  const configured = policy.softEarlyCompact
-    ? Math.min(policy.softCompactTokenBudget, policy.hardCompactTokenBudget)
-    : policy.hardCompactTokenBudget;
-  return resolveRequestBudget({
-    ...(target?.provider ? { provider: target.provider } : {}),
-    ...(target?.model ? { model: target.model } : {}),
-    ...(target?.contextLimitTokens
-      ? { contextLimitTokens: target.contextLimitTokens }
-      : {}),
-    overrideTokens: configured,
-    budgetExplicit: policy.compactBudgetExplicit !== false,
-  }).effectiveTrigger;
 }
 
 export function resolveStepMaxTokens(input: {

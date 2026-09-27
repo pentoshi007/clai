@@ -42,7 +42,6 @@ it("retains exact AgentRouter wire prefixes across the former rolling limit and 
       estimateRequestTokens: () => 0,
       selectTools: () => tools,
       notify: () => {},
-      emitContextEstimate: () => {},
       audit: async () => {},
     }, {
       freeTierConsecutiveFailures: 0,

@@ -12,7 +12,6 @@ import {
   buildCompactionFailedLines,
   buildCompactionStartLines,
   buildConfirmRequestLines,
-  buildContextEstimateLines,
   buildNoticeLines,
   buildPlanUpdateLines,
   buildStatusLines,
@@ -144,9 +143,6 @@ export class StreamRenderer {
         return;
       case "token-usage":
         this.writeErr(buildTokenUsageLines(this.ctx, event));
-        return;
-      case "context-estimate":
-        this.writeErr(buildContextEstimateLines(this.ctx, event));
         return;
     }
   }

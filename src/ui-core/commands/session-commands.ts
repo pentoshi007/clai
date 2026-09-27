@@ -19,6 +19,7 @@ import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import { mintSessionId } from "../../app/controllers/session-persistence.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { Mode } from "../../types.js";
+import type { ContextLimitSource } from "../../llm/context-snapshot.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import { usageCacheHitRate } from "../../app/controllers/session-usage-ledger.js";
 import { getProviderSecret } from "../../store/keys.js";
@@ -192,6 +193,13 @@ export function handleThink(services: AppServices): void {
   });
 }
 
+const CONTEXT_LIMIT_SOURCE_LABELS: Partial<Record<ContextLimitSource, string>> = {
+  "session-override": "custom",
+  "model-catalog": "provider",
+  "model-table": "known model window",
+  default: "default",
+};
+
 export function handleContext(services: AppServices): void {
   const { messages, tokens } = services.session.estimateContext();
   const state = services.session.getState();
@@ -212,12 +220,9 @@ export function handleContext(services: AppServices): void {
       ? ` · session in ${formatTokens(legacy.sessionPromptTokens)} / out ${formatTokens(legacy.sessionCompletionTokens)}`
       : "";
   const details: string[] = [];
-  const limit = snapshot?.limit;
-  if (
-    limit?.tokens !== undefined &&
-    (limit.source === "session-override" || limit.source === "model-catalog")
-  ) {
-    const source = limit.source === "session-override" ? "custom" : "provider";
+  const limit = state.contextLimit;
+  const source = limit ? CONTEXT_LIMIT_SOURCE_LABELS[limit.source] : undefined;
+  if (limit?.tokens !== undefined && source !== undefined) {
     details.push(`limit ${formatTokens(limit.tokens)} (${source})`);
     if (
       limit.requestedTokens !== undefined &&

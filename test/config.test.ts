@@ -96,9 +96,6 @@ describe('config store', () => {
   it('defaults reliability experiment flags (E1–E6) to safe-on', async () => {
     const { getConfig } = await loadConfigStore();
     const c = getConfig();
-    expect(c.softEarlyCompact).toBe(true);
-    expect(c.softCompactTokenBudget).toBeUndefined();
-    expect(c.autoCompactRequestTokens).toBe(200_000);
     expect(c.fsPassthroughCapChars).toBe(64_000);
     expect(c.adaptiveMaxTokens).toBe(true);
     expect(c.freeTierContextGuard).toBe(true);
@@ -109,14 +106,12 @@ describe('config store', () => {
   it('allows disabling reliability experiments via updateConfig', async () => {
     const { getConfig, updateConfig } = await loadConfigStore();
     updateConfig({
-      softEarlyCompact: false,
       adaptiveMaxTokens: false,
       toolResultDedup: false,
       slimNativePrompt: false,
       freeTierContextGuard: false,
     });
     const c = getConfig();
-    expect(c.softEarlyCompact).toBe(false);
     expect(c.adaptiveMaxTokens).toBe(false);
     expect(c.toolResultDedup).toBe(false);
     expect(c.slimNativePrompt).toBe(false);

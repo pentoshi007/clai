@@ -7,7 +7,6 @@ function ports() {
     dispatchedRawRequestTokens: 1_000,
     dispatchedRequestRoute: { provider: "agentrouter" as const, model: "test-model" },
     emitTokenUsage: vi.fn(),
-    emitContextFallback: vi.fn(),
     audit: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -19,14 +18,13 @@ const response: CompletionResult = {
 };
 
 describe("completed request context accounting", () => {
-  it("uses a fallback after a response without usage rather than inventing reported tokens", async () => {
+  it("reports nothing after a response without usage rather than inventing tokens", async () => {
     const handlers = ports();
     await accountCompletionUsage(handlers, response);
     expect(handlers.emitTokenUsage).not.toHaveBeenCalled();
-    expect(handlers.emitContextFallback).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
   });
 
-  it("preserves exact output-only telemetry before falling back for context", async () => {
+  it("forwards exact output-only telemetry without an estimated prompt size", async () => {
     const handlers = ports();
     const usage = {
       promptTokens: 0,
@@ -36,11 +34,7 @@ describe("completed request context accounting", () => {
       exact: true,
     };
     await accountCompletionUsage(handlers, { ...response, usage });
-    expect(handlers.emitTokenUsage).toHaveBeenCalledWith(expect.objectContaining({ usage }));
-    expect(handlers.emitContextFallback).toHaveBeenCalledOnce();
-    expect(handlers.emitTokenUsage.mock.invocationCallOrder[0]).toBeLessThan(
-      handlers.emitContextFallback.mock.invocationCallOrder[0]!,
-    );
+    expect(handlers.emitTokenUsage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ usage }));
   });
 
   it.each([0, 115_000, 147_000])("prioritizes the reported %i tokens without forcing monotonic counts", async (promptTokens) => {
@@ -49,7 +43,6 @@ describe("completed request context accounting", () => {
       ...response,
       usage: { promptTokens, completionTokens: 12, totalTokens: promptTokens + 12, exact: true },
     });
-    expect(handlers.emitContextFallback).not.toHaveBeenCalled();
     expect(handlers.emitTokenUsage).toHaveBeenCalledWith(expect.objectContaining({
       usage: expect.objectContaining({ promptTokens }),
     }));

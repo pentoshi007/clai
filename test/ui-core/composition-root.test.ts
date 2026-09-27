@@ -132,7 +132,18 @@ class CompactionCountAgent implements AgentPort {
       afterTokens: 4_922,
       contextScope: "assembled-request",
     });
-    handlers.onEvent({ type: "context-estimate", estimatedTokens: 94_000 });
+    handlers.onEvent({
+      type: "token-usage",
+      provider: "openrouter",
+      model: "stealth/ox-alpha",
+      usage: {
+        promptTokens: 94_000,
+        completionTokens: 900,
+        totalTokens: 94_900,
+        exact: true,
+      },
+      auxiliary: true,
+    });
     handlers.onEvent({
       type: "token-usage",
       provider: "openrouter",
@@ -376,15 +387,15 @@ describe("createCompositionRoot", () => {
 
   it("shows the compacted estimate until exact provider usage arrives", async () => {
     const observed: Array<[string, number | undefined]> = [];
-    const estimates: number[] = [];
+    const afterAuxiliaryUsage: number[] = [];
     let services: ReturnType<typeof createCompositionRoot>;
     services = createCompositionRoot({
       agent: new CompactionCountAgent(),
       persistence: fakePersistence(),
       capabilities: caps,
       emit: (event) => {
-        if (event.type === "context-estimate") {
-          estimates.push(
+        if (event.type === "token-usage" && event.payload.auxiliary) {
+          afterAuxiliaryUsage.push(
             services.session.getState().contextSnapshot?.contextTokens ?? 0,
           );
         }
@@ -406,7 +417,7 @@ describe("createCompositionRoot", () => {
       ["compaction-started", 78_200],
       ["compaction-completed", 4_922],
     ]);
-    expect(estimates).toEqual([4_922]);
+    expect(afterAuxiliaryUsage).toEqual([4_922]);
     expect(services.session.getState().contextSnapshot).toMatchObject({
       contextTokens: 4_800,
       scope: "provider-request",
@@ -415,22 +426,18 @@ describe("createCompositionRoot", () => {
     services.dispose();
   });
 
-  it("does not preserve a fallback estimate without compacted after-tokens", () => {
+  it("shows the resolved window before any provider usage arrives", () => {
     const services = createCompositionRoot({
       agent: new StubAgent(),
       persistence: fakePersistence(),
       capabilities: caps,
     });
 
-    services.session.noteContextEstimate(100, true);
-    services.session.noteContextCompacted(undefined);
-    services.session.noteContextEstimate(200);
-
-    expect(services.session.getState().contextSnapshot).toMatchObject({
-      contextTokens: 200,
-      scope: "assembled-request",
-      precision: "estimate",
-    });
+    const state = services.session.getState();
+    expect(state.contextSnapshot).toBeUndefined();
+    expect(state.contextUsage).toMatchObject({ contextTokens: 0, exact: false });
+    expect(state.contextUsage?.contextLimit).toBeGreaterThan(0);
+    expect(state.contextLimit?.tokens).toBe(state.contextUsage?.contextLimit);
     services.dispose();
   });
 

@@ -1,5 +1,6 @@
 import type { ProviderId, ToolCall } from "../../../types.js";
 import type { SuccessfulRequestSnapshot } from "../../../types.js";
+import type { ProviderContextMeasurement } from "../provider-measurement.js";
 
 export interface TurnLoopState {
   provider: ProviderId;
@@ -25,7 +26,7 @@ export interface TurnLoopState {
   freeTierConsecutiveFailures: number;
   freeTierAdvisoryShown: boolean;
   lastSuccessfulRequestSnapshot: SuccessfulRequestSnapshot | undefined;
-  lastProviderPromptTokens: number | undefined;
+  providerMeasurement: ProviderContextMeasurement | undefined;
   codingSession: boolean;
 }
 
@@ -33,7 +34,6 @@ export const createTurnLoopState = (input: {
   readonly provider: ProviderId;
   readonly model: string;
   readonly previousSuccessfulRequest: SuccessfulRequestSnapshot | undefined;
-  readonly providerReportedContextTokens?: number | undefined;
 }): TurnLoopState => ({
   provider: input.provider,
   model: input.model,
@@ -56,6 +56,6 @@ export const createTurnLoopState = (input: {
   freeTierConsecutiveFailures: 0,
   freeTierAdvisoryShown: false,
   lastSuccessfulRequestSnapshot: input.previousSuccessfulRequest,
-  lastProviderPromptTokens: input.providerReportedContextTokens,
+  providerMeasurement: undefined,
   codingSession: false,
 });

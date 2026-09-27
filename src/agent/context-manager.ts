@@ -22,9 +22,6 @@ export type { CompactOptions, CompactResult, CompactionStrategy, CompactionSumma
 
 export { estimateImageTokens, estimateMessagesTokens, estimateTokens };
 
-
-export { DEFAULT_AUTO_COMPACT_REQUEST_TOKENS as AUTO_COMPACT_TOKEN_BUDGET } from "../store/config/compaction.js";
-
 export const POST_COMPACT_SOFT_GUIDANCE_TOKENS = 16_000;
 
 export const AUTO_COMPACT_STUB_MIN_CHARS = 120;

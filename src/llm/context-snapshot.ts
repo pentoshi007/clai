@@ -31,9 +31,18 @@ export function isProviderMeasuredPrecision(
 export type ContextLimitSource =
   | "session-override"
   | "model-catalog"
+  | "model-table"
+  | "default"
   | "configured-trigger"
   | "provider-reported"
   | "unknown";
+
+const WINDOW_LIMIT_SOURCES: ReadonlySet<ContextLimitSource> = new Set([
+  "session-override",
+  "model-catalog",
+  "model-table",
+  "default",
+]);
 
 export interface ContextSnapshotLimit {
   readonly source: ContextLimitSource;
@@ -44,9 +53,7 @@ export interface ContextSnapshotLimit {
 }
 
 export function knownWindowTokens(limit: ContextSnapshotLimit): number | undefined {
-  return limit.source === "session-override" || limit.source === "model-catalog"
-    ? limit.tokens
-    : undefined;
+  return WINDOW_LIMIT_SOURCES.has(limit.source) ? limit.tokens : undefined;
 }
 
 export type ContextSnapshotHeadroom =
@@ -122,6 +129,8 @@ export interface CreateContextSnapshotInput {
 const LIMIT_SOURCES = new Set<ContextLimitSource>([
   "session-override",
   "model-catalog",
+  "model-table",
+  "default",
   "configured-trigger",
   "provider-reported",
   "unknown",
@@ -288,17 +297,6 @@ export function toLegacyContextUsage(
     sessionCompletionTokens: snapshot.sessionCompletionTokens,
     exact: snapshot.precision === "provider-exact",
   });
-}
-
-export function contextLimitFromSessionOverride(
-  tokens: number | undefined,
-): ContextSnapshotLimit {
-  const normalized = positiveInteger(tokens);
-  return Object.freeze(
-    normalized === undefined
-      ? { source: "unknown" as const }
-      : { source: "session-override" as const, tokens: normalized },
-  );
 }
 
 export function withContextSnapshotLimit(

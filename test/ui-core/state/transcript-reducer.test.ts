@@ -897,7 +897,7 @@ describe("transcript reducer (V2-050)", () => {
       afterTokens: 300,
     });
     expect(compactionTokenLabel(transcriptItems(state)[0] as CompactedItem)).toBe(
-      "900 tokens → 300 tokens",
+      "900 tokens → ~300 tokens",
     );
   });
 

@@ -1,5 +1,6 @@
 import type { ProviderId } from "../types.js";
 import { modelCatalogFacts } from "./capabilities.js";
+import { rememberedModelLimits } from "./model-limit-store.js";
 
 const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   pattern: RegExp;
@@ -58,7 +59,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /muse-spark/i, tokens: 1_048_576 },
 ];
 
-const DEFAULT_CONTEXT_WINDOW = 250_000;
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 const PROVIDER_CONTEXT_OVERRIDES: Partial<
   Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
@@ -97,7 +98,10 @@ export function providerAdvertisedContextWindow(
   if (!provider || !model) return undefined;
   const override = providerContextOverrideTokens(provider, model);
   if (override !== undefined) return override;
-  return positiveTokens(modelCatalogFacts(provider, model)?.contextTokens);
+  return (
+    positiveTokens(modelCatalogFacts(provider, model)?.contextTokens) ??
+    positiveTokens(rememberedModelLimits(provider, model)?.contextTokens)
+  );
 }
 
 export type ContextWindowSource =
@@ -163,7 +167,11 @@ export function modelMaxOutputTokens(
   profileOutputTokens?: number | undefined,
 ): number | undefined {
   if (!provider || !model) return profileOutputTokens;
-  return modelCatalogFacts(provider, model)?.maxOutputTokens ?? profileOutputTokens;
+  return (
+    modelCatalogFacts(provider, model)?.maxOutputTokens ??
+    rememberedModelLimits(provider, model)?.maxOutputTokens ??
+    profileOutputTokens
+  );
 }
 
 export function nominalModelContextWindow(model: string | undefined): number {

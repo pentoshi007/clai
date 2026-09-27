@@ -14,12 +14,12 @@ import {
   ProviderError,
   createSseFrameAssembler,
   imageCapableMessages,
+  ingestModelCatalogEntries,
   readJson,
   readStreamLines,
   streamIdleBudgets,
 } from "./http.js";
 import { generationFetch } from "./operation-usage.js";
-import { registerProviderModels } from "./capabilities.js";
 import {
   geminiToolBodyFields,
   parseGeminiFunctionCalls,
@@ -268,15 +268,20 @@ export const geminiProvider: LlmProvider = {
       models?: Array<{
         name?: string;
         supportedGenerationMethods?: string[];
+        inputTokenLimit?: number;
+        outputTokenLimit?: number;
       }>;
     }>(response);
-    const models =
-      data.models
-        ?.filter((m) => m.name && m.supportedGenerationMethods?.includes("generateContent"))
-        .map((m) => m.name!.replace(/^models\//, ""))
-        .sort() ?? [];
-    registerProviderModels("gemini", models);
-    return models;
+    return ingestModelCatalogEntries(
+      "gemini",
+      (data.models ?? [])
+        .filter((m) => m.name && m.supportedGenerationMethods?.includes("generateContent"))
+        .map((m) => ({
+          id: m.name!.replace(/^models\//, ""),
+          inputTokenLimit: m.inputTokenLimit,
+          outputTokenLimit: m.outputTokenLimit,
+        })),
+    );
   },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("Gemini API key is required");

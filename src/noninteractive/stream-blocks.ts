@@ -332,15 +332,3 @@ export function buildTokenUsageLines(
   const body = meta(ctx, parts);
   return [row(ctx, styled(ctx, body, { fg: "muted" }))];
 }
-
-export function buildContextEstimateLines(
-  ctx: StreamContext,
-  event: Extract<AgentEvent, { type: "context-estimate" }>,
-): readonly string[] {
-  if (!verbose(ctx)) return [];
-  const body = meta(ctx, [
-    event.model,
-    `~${event.estimatedTokens.toLocaleString("en-US")} tokens assembled`,
-  ]);
-  return [row(ctx, styled(ctx, body, { fg: "muted" }))];
-}

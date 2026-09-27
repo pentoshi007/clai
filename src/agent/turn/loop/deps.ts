@@ -96,6 +96,7 @@ export interface TurnLoopDeps extends TurnWriters {
   readonly estimateNextRequestTokens: (
     messages: readonly ChatMessage[],
   ) => number;
+  readonly measureRequestTokens: (estimatedTokens: number) => number | undefined;
   readonly selectToolDefs: (
     native: boolean,
     compact: boolean,
