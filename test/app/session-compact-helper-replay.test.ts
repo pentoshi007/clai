@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MIN_CUSTOM_CONTEXT_LIMIT_TOKENS } from "../../src/llm/context-windows.js";
 import type { ChatMessage } from "../../src/types.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
 
@@ -235,7 +236,18 @@ describe("runSessionCompaction cache-preserving replay", () => {
       runSessionCompaction({
         ...options,
         successfulRequest: undefined,
-        contextLimitTokens: 64,
+        requestSettings: {
+          provider: "free",
+          model: "free-1/deepseek-v4-flash-free",
+          tools: [
+            {
+              name: "oversized-schema",
+              description: "x".repeat(50_000),
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+        },
+        contextLimitTokens: MIN_CUSTOM_CONTEXT_LIMIT_TOKENS,
         persist: true,
         emit: (event) => events.push(event),
       }),

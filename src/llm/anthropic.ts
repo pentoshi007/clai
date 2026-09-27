@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   CompletionRequest,
   CompletionResult,
@@ -12,7 +13,7 @@ import {
   ProviderError,
   createSseFrameAssembler,
   imageCapableMessages,
-  ingestOpenAiModelCatalog,
+  ingestModelCatalogEntries,
   readJson,
   readStreamLines,
   streamIdleBudgets,
@@ -31,6 +32,7 @@ import {
   withReasoningObservation,
 } from "./token-usage.js";
 import { generationFetch } from "./operation-usage.js";
+import { fetchAnthropicModelEntries } from "./wire/anthropic-model-catalog.js";
 import { firstSystemPrompt } from "./system-messages.js";
 import { resolveSampling } from "./sampling.js";
 import {
@@ -192,9 +194,12 @@ export function buildAnthropicBody(
   });
 }
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
+const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
+
+export function resetAnthropicModelCatalogCache(): void {
+  modelCache.clear();
+}
 
 export const anthropicProvider: LlmProvider = {
   id: "anthropic",
@@ -204,26 +209,19 @@ export const anthropicProvider: LlmProvider = {
   validateKey: (key: string) => /^sk-ant-[A-Za-z0-9_-]{12,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
+    const endpoint = (auth.baseUrl ?? baseUrl).replace(/\/+$/, "");
+    const cacheKey = createHash("sha256")
+      .update(`${endpoint}\0${auth.apiKey}`)
+      .digest("hex");
     const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
-    const endpoint = auth.baseUrl ?? baseUrl;
-    const response = await fetch(`${endpoint}/models`, {
-      headers: {
-        "x-api-key": auth.apiKey,
-        "anthropic-version": anthropicVersion,
-      },
+    const cached = modelCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+    const entries = await fetchAnthropicModelEntries(endpoint, {
+      "x-api-key": auth.apiKey,
+      "anthropic-version": anthropicVersion,
     });
-    if (!response.ok) {
-      throw new Error(`Failed to list Anthropic models: HTTP ${response.status}`);
-    }
-    const data = await readJson<unknown>(response);
-    const models = ingestOpenAiModelCatalog("anthropic", data);
-    if (models.length > 0) {
-      cachedModels = models;
-      lastFetchTime = now;
-    }
+    const models = ingestModelCatalogEntries("anthropic", entries);
+    if (models.length > 0) modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {

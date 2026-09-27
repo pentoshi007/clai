@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   freeProvider,
@@ -5,10 +8,13 @@ import {
   resolveFreeSource,
 } from "../src/llm/free.js";
 import { ProviderError } from "../src/llm/http.js";
+import { modelContextWindow } from "../src/llm/context-windows.js";
+import { modelCatalogFacts } from "../src/llm/capabilities.js";
 import { resetResponsesWireStatesForTesting } from "../src/llm/wire/responses-first.js";
 
 const ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const KILO_MODELS_URL = "https://api.kilo.ai/api/gateway/models";
+let isolatedDataDir: string | undefined;
 
 function catalogFetchMock(
   zenIds: string[],
@@ -30,9 +36,14 @@ function catalogFetchMock(
 }
 
 describe("free provider (zen + kilo)", () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    if (isolatedDataDir) {
+      await rm(isolatedDataDir, { recursive: true, force: true });
+      isolatedDataDir = undefined;
+    }
   });
 
   const baseTime = Date.now();
@@ -137,6 +148,32 @@ describe("free provider (zen + kilo)", () => {
         "free-2/openrouter/free",
         "free-2/stepfun/step-3.7-flash:free",
       ]);
+    });
+
+    it("keeps each source's context facts under its scoped model id", async () => {
+      isolatedDataDir = await mkdtemp(join(tmpdir(), "clai-free-context-limits-"));
+      vi.stubEnv("CLAI_DATA_DIR", isolatedDataDir);
+      const fetchMock = vi.fn(async (input: unknown) => {
+        const url = String(input);
+        const body = url === ZEN_MODELS_URL
+          ? { data: [{ id: "context-model-free", context_window: 777_777 }] }
+          : { data: [{ id: "context-model-free", isFree: true, context_window: 444_444 }] };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const models = await freeProvider.listModels!({ apiKey: "free-context-limit-test-key" });
+      expect(models).toEqual([
+        "free-1/context-model-free",
+        "free-2/context-model-free",
+      ]);
+      expect(modelCatalogFacts("free", "free-1/context-model-free")?.contextTokens).toBe(777_777);
+      expect(modelCatalogFacts("free", "free-2/context-model-free")?.contextTokens).toBe(444_444);
+      expect(modelContextWindow("free-1/context-model-free", "free")).toBe(777_777);
+      expect(modelContextWindow("free-2/context-model-free", "free")).toBe(444_444);
     });
 
     it("sends the Authorization header when a key is configured", async () => {

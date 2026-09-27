@@ -24,6 +24,9 @@ const { executeCompactionSummary, planCompactionReplay, CompactionOverLimitError
 const { effortReasoningBudgetTokens } = await import(
   "../../src/llm/reasoning-controls.js"
 );
+const { MIN_CUSTOM_CONTEXT_LIMIT_TOKENS } = await import(
+  "../../src/llm/context-windows.js"
+);
 
 const SYSTEM = "summarize the session";
 
@@ -470,12 +473,16 @@ describe("cache-preserving snapshot replay", () => {
   });
 
   it("fails closed with CompactionOverLimitError when the replay cannot fit", async () => {
+    const history = [
+      ...baseRequest.messages,
+      { role: "assistant" as const, content: "x".repeat(50_000) },
+    ];
     await expect(
       executeCompactionSummary(
         baseExecution({
           baseRequest,
-          history: baseRequest.messages,
-          contextLimitTokens: 8,
+          history,
+          contextLimitTokens: MIN_CUSTOM_CONTEXT_LIMIT_TOKENS,
         }),
       ),
     ).rejects.toBeInstanceOf(CompactionOverLimitError);
@@ -505,10 +512,13 @@ describe("cache-preserving snapshot replay", () => {
 
     const tight = planCompactionReplay({
       baseRequest,
-      history: baseRequest.messages,
+      history: [
+        ...baseRequest.messages,
+        { role: "assistant" as const, content: "x".repeat(50_000) },
+      ],
       prompt: "summarize this history",
       maxTokens: 4096,
-      contextLimitTokens: 8,
+      contextLimitTokens: MIN_CUSTOM_CONTEXT_LIMIT_TOKENS,
     });
     expect(tight!.accounting.overLimit).toBe(true);
 
@@ -564,6 +574,10 @@ describe("transient-error retry", () => {
   });
 
   it("does not retry the deterministic over-limit failure", async () => {
+    const messages = [
+      { role: "system" as const, content: "stable constitution" },
+      { role: "user" as const, content: "first user turn ".repeat(4_000) },
+    ];
     await expect(
       executeCompactionSummary(
         baseExecution({
@@ -572,16 +586,10 @@ describe("transient-error retry", () => {
           baseRequest: {
             provider: "nvidia",
             model: "test-model",
-            messages: [
-              { role: "system" as const, content: "stable constitution" },
-              { role: "user" as const, content: "first user turn" },
-            ],
+            messages,
           },
-          history: [
-            { role: "system" as const, content: "stable constitution" },
-            { role: "user" as const, content: "first user turn" },
-          ],
-          contextLimitTokens: 8,
+          history: messages,
+          contextLimitTokens: MIN_CUSTOM_CONTEXT_LIMIT_TOKENS,
         }),
       ),
     ).rejects.toBeInstanceOf(CompactionOverLimitError);
@@ -608,10 +616,10 @@ describe("non-replay compaction fit guard", () => {
       executeCompactionSummary(
         baseExecution({
           sourceMessages: [
-            { role: "user", content: "x".repeat(20_000) },
-            { role: "assistant", content: "y".repeat(20_000) },
+            { role: "user", content: "x".repeat(30_000) },
+            { role: "assistant", content: "y".repeat(30_000) },
           ],
-          contextLimitTokens: 8_000,
+          contextLimitTokens: MIN_CUSTOM_CONTEXT_LIMIT_TOKENS,
         }),
       ),
     ).rejects.toBeInstanceOf(CompactionOverLimitError);
