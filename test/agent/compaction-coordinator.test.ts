@@ -284,3 +284,58 @@ it("projects the post-compaction size from the provider measurement before relea
     expect.stringContaining("400,000 tokens → ~10,000 tokens"),
   );
 });
+
+
+describe("auto-compaction trigger follows the live context limit", () => {
+  const summary = [
+    "## Current state",
+    "The active work and exact durable state were preserved.",
+    "## Remaining work",
+    "Continue the next task from the retained recent turn.",
+  ].join("\n");
+
+  it("compacts once a custom limit lowers the trigger below the current request", async () => {
+    let limit: number | undefined;
+    const writeStarted = vi.fn();
+    const coordinator = createCompactionCoordinator(
+      ports({
+        contextLimitTokens: () => limit,
+        estimateRequestTokens: () => 100_000,
+        summarize: async () => summary,
+        writeStarted,
+      }),
+    );
+
+    await coordinator("auto-token-budget");
+    expect(writeStarted).not.toHaveBeenCalled();
+
+    limit = 120_000;
+    await coordinator("auto-token-budget");
+    expect(writeStarted).toHaveBeenCalledTimes(1);
+    expect(writeStarted.mock.calls[0]).toContain(100_000);
+  });
+
+  it("stops compacting once the custom limit is reset to the model window", async () => {
+    let limit: number | undefined = 120_000;
+    const audit = vi.fn();
+    const writeStarted = vi.fn();
+    const coordinator = createCompactionCoordinator(
+      ports({
+        contextLimitTokens: () => limit,
+        estimateRequestTokens: () => 100_000,
+        summarize: async () => summary,
+        writeStarted,
+        audit,
+      }),
+    );
+
+    limit = undefined;
+    await coordinator("auto-token-budget");
+
+    expect(writeStarted).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledWith(
+      "agent.compact.skip-threshold",
+      expect.objectContaining({ triggerTokens: 140_000 }),
+    );
+  });
+});

@@ -216,12 +216,25 @@ describe("serialized-request accounting service", () => {
       bounded.limit.effectiveSafeTokens! - bounded.requestTokens,
     );
 
-    const tiny = accountAssembledRequest({
+    const saturated = accountAssembledRequest({
       ...base,
+      contextLimitTokens: 20_000,
+      reservedOutputTokens: 19_000,
+    }).accounting;
+    expect(saturated.overLimit).toBe(true);
+    expect(saturated.headroomTokens).toBeLessThan(0);
+  });
+
+  it("ignores custom limits below the floor, exactly like the compaction trigger", () => {
+    const accounting = accountAssembledRequest({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      messages: HISTORY,
+      stream: true,
       contextLimitTokens: 600,
     }).accounting;
-    expect(tiny.overLimit).toBe(true);
-    expect(tiny.headroomTokens).toBeLessThan(0);
+    expect(accounting.limit).toMatchObject({ source: "model-window", limitTokens: 1_050_000 });
+    expect(accounting.overLimit).toBe(false);
   });
 
   it("accounts a compiled plan directly with identical totals", () => {

@@ -19,8 +19,6 @@ export const AUTO_COMPACT_HEADROOM_TOKENS =
 
 export const AUTO_COMPACT_CONTEXT_RATIO = 0.7;
 
-export const MIN_AUTO_COMPACT_REQUEST_TOKENS = 20_000;
-
 export interface RequestBudgetTarget {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
@@ -72,7 +70,6 @@ export function resolveRequestBudget(
     provider: target.provider,
     model: target.model,
     contextLimitTokens: target.contextLimitTokens,
-    minOverrideTokens: MIN_AUTO_COMPACT_REQUEST_TOKENS,
   });
   const configured = Math.floor(window.tokens * AUTO_COMPACT_CONTEXT_RATIO);
   const modelSafe = effectiveSafeTokensForWindow(window.tokens);

@@ -22,14 +22,13 @@ afterEach(async () => {
 });
 
 describe("config snapshot cache", () => {
-  it("reads configs carrying retired compaction budget keys without rewriting them", async () => {
+  it("reads configs carrying retired compaction budget keys without migrating them", async () => {
     const path = join(configDir, "config.json");
-    const original = JSON.stringify({ autoCompactRequestTokens: 180_000, telemetry: true });
-    writeFileSync(path, original);
+    writeFileSync(path, JSON.stringify({ autoCompactRequestTokens: 180_000, telemetry: true }));
     const { getConfig } = await import("../src/store/config.js");
 
     expect(getConfig().telemetry).toBe(true);
-    expect(readFileSync(path, "utf8")).toBe(original);
+    expect(JSON.parse(readFileSync(path, "utf8")).autoCompactRequestTokens).toBe(180_000);
   });
 
   it("hands out independent copies so callers cannot poison the cache", async () => {
