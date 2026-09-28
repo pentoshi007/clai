@@ -4,6 +4,7 @@ import {
   modelSupportsThinking,
 } from "../capabilities.js";
 import { classifyBynaraModel, classifyNvidiaModel } from "../model-families.js";
+import { metaReasoningEffort } from "../meta-effort.js";
 import { emitReasoningControls } from "../reasoning-controls.js";
 import type { ReasoningControlSurface } from "../reasoning-controls.js";
 
@@ -81,13 +82,8 @@ export function buildReasoningPayload(
 
   switch (style) {
     case "meta": {
-      const metaEffort = (e: string): string => {
-        if (e === "none" || e === "minimal") return "minimal";
-        if (e === "max" || e === "xhigh") return "xhigh";
-        return e;
-      };
       if (!enabled) return { reasoning_effort: "minimal" };
-      return { reasoning_effort: metaEffort(effort) };
+      return { reasoning_effort: metaReasoningEffort(effort, model ?? "") };
     }
     case "openai": {
       if (!enabled) {

@@ -341,8 +341,9 @@ MODELS
 
   Muse Spark is a reasoning-first model: it always thinks internally before
   answering. /effort maps clai's effort onto the API's reasoning_effort
-  (minimal/low/medium/high/xhigh; "off" degrades to minimal because Muse does
-  not support disabling reasoning — "none" returns HTTP 400).
+  (minimal/low/medium/high/xhigh, plus max on Standard-tier muse-spark-1.3;
+  max degrades to xhigh on Contributor-tier models). "off" degrades to minimal
+  because Muse does not support disabling reasoning — "none" returns HTTP 400.
 
 COST
   Pay-as-you-go per token. Cached input tokens bill at a lower rate than
