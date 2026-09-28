@@ -341,7 +341,7 @@ export function buildResponsesBody(
   });
   const reasoning = plan.controls.controlSuppression
     ? undefined
-    : config.reasoningPayload(plan.controls.reasoning);
+    : config.reasoningPayload(plan.controls.reasoning, options.model);
   const input = toResponsesInput(
     [...plan.timeline.messages],
     plan.images.visionAccepted,

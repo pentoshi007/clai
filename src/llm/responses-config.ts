@@ -35,6 +35,7 @@ export interface ResponsesDialectConfig {
   ): Record<string, string>;
   reasoningPayload(
     reasoning: ReasoningPreference | undefined,
+    model?: string,
   ): Record<string, unknown> | undefined;
   bodyExtras(context: ResponsesBodyExtrasContext): Record<string, unknown>;
 }

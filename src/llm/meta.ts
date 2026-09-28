@@ -6,12 +6,16 @@ import type {
 import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
 import { cachePolicyFields } from "./cache-policy-fields.js";
 import { readJson, ingestOpenAiModelCatalog } from "./http.js";
+import { registerModelReasoningEfforts } from "./capabilities.js";
 import { runGenerationAttempt } from "./operation-usage.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import {
-  mapResponsesEffort,
+  metaAcceptedEfforts,
+  metaReasoningEffort,
+  metaReasoningSummary,
+} from "./meta-effort.js";
+import {
   responsesComplete,
-  responsesReasoningSummary,
   responsesStream,
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
@@ -25,11 +29,12 @@ const CACHE_TTL_MS = 30 * 60 * 1000;
 
 function metaReasoningPayload(
   reasoning: ReasoningPreference | undefined,
+  model: string,
 ): Record<string, unknown> {
   const enabled = Boolean(reasoning?.enabled);
-  const eff = mapResponsesEffort(reasoning?.effort ?? "medium");
   if (!enabled) return { effort: "minimal" };
-  return { effort: eff, summary: responsesReasoningSummary(eff) };
+  const eff = metaReasoningEffort(reasoning?.effort ?? "medium", model);
+  return { effort: eff, summary: metaReasoningSummary(eff) };
 }
 
 const META_RESPONSES_CONFIG: ResponsesDialectConfig = {
@@ -45,8 +50,8 @@ const META_RESPONSES_CONFIG: ResponsesDialectConfig = {
       authorization: `Bearer ${auth.apiKey}`,
     };
   },
-  reasoningPayload(reasoning) {
-    return metaReasoningPayload(reasoning);
+  reasoningPayload(reasoning, model) {
+    return metaReasoningPayload(reasoning, model ?? defaultModels.meta);
   },
   bodyExtras(context) {
     return {
@@ -84,6 +89,11 @@ export const metaProvider: LlmProvider = {
       const response = await fetch(`${baseUrl}/models`, { headers });
       const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
       const models = ingestOpenAiModelCatalog("meta", data);
+      for (const model of models) {
+        registerModelReasoningEfforts("meta", model, [
+          ...metaAcceptedEfforts(model),
+        ]);
+      }
       if (models.length > 0) {
         modelCache.set(cacheKey, { models, fetchedAt: now });
       }
