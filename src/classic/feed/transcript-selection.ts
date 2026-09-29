@@ -2,6 +2,7 @@ import type { SelectionState } from "../../ui-core/controllers/selection-control
 import {
   compareSemanticAnchors,
   type SemanticAnchor,
+  type SemanticBlock,
   type SemanticDocument,
 } from "../../ui-core/state/semantic-document.js";
 import type { FeedBlock } from "./feed-blocks.js";
@@ -24,24 +25,55 @@ function displayLine(line: string): string {
   return plainText(line).replace(/[ \t]+$/, "");
 }
 
+interface BlockTextLayout {
+  readonly text: string;
+  readonly lineStarts: readonly number[];
+}
+
+const layouts = new WeakMap<readonly string[], BlockTextLayout>();
+const semanticBlocks = new WeakMap<FeedBlock, SemanticBlock>();
+
+function blockLayout(block: FeedBlock): BlockTextLayout {
+  const lines = block.lines ?? [];
+  let layout = layouts.get(lines);
+  if (!layout) {
+    const plain = lines.map(displayLine);
+    const lineStarts: number[] = [];
+    let offset = 0;
+    for (const line of plain) {
+      lineStarts.push(offset);
+      offset += line.length + 1;
+    }
+    layout = { text: plain.join("\n"), lineStarts };
+    layouts.set(lines, layout);
+  }
+  return layout;
+}
+
 function blockText(block: FeedBlock): string {
-  return (block.lines ?? []).map(displayLine).join("\n");
+  return blockLayout(block).text;
+}
+
+function semanticBlock(block: FeedBlock): SemanticBlock {
+  let semantic = semanticBlocks.get(block);
+  if (!semantic) {
+    semantic = { id: block.key ?? block.itemId, text: blockText(block) };
+    semanticBlocks.set(block, semantic);
+  }
+  return semantic;
 }
 
 export function classicTranscriptDocument(
   blocks: readonly FeedBlock[],
 ): SemanticDocument {
-  return {
-    blocks: blocks.map((block) => ({ id: block.key ?? block.itemId, text: blockText(block) })),
-  };
+  return { blocks: blocks.map(semanticBlock) };
 }
 
 function lineStart(block: FeedBlock, lineIndex: number): number {
-  let offset = 0;
-  for (let index = 0; index < lineIndex; index += 1) {
-    offset += displayLine(block.lines[index] ?? "").length + 1;
-  }
-  return offset;
+  const { lineStarts, text } = blockLayout(block);
+  if (lineIndex < lineStarts.length) return lineStarts[Math.max(0, lineIndex)]!;
+  const end = lineStarts.length > 0 ? text.length + 1 : 0;
+  return end + lineIndex - lineStarts.length;
 }
 
 function offsetAtColumn(text: string, column: number): number {

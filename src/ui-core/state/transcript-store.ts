@@ -32,10 +32,10 @@ export class TranscriptStore {
   private static readonly MAX_PENDING_EVENTS = 512;
 
   constructor(
-    private readonly maxItems = 2_000,
+    private readonly maxItems = Number.POSITIVE_INFINITY,
     private readonly coalesceMs = 16,
   ) {
-    if (!Number.isInteger(maxItems) || maxItems <= 0) {
+    if (!(Number.isInteger(maxItems) || maxItems === Number.POSITIVE_INFINITY) || maxItems <= 0) {
       throw new RangeError("maxItems must be positive");
     }
   }

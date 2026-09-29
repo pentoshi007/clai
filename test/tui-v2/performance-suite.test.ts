@@ -78,19 +78,36 @@ describe("V2-091 performance suite (Node pure paths)", () => {
     expect(presented.truncatedNotice).toBeDefined();
   });
 
-  it("uses finite production spool and transcript retention defaults", () => {
+  it("retains every tool output and transcript row by default", () => {
     const spool = new OutputSpool();
     for (let tool = 0; tool < 140; tool += 1) {
       spool.replace(asToolCallId(`tool-${tool}`), "x".repeat(300 * 1024));
     }
-    expect(spool.has(asToolCallId("tool-0"))).toBe(false);
+    expect(spool.has(asToolCallId("tool-0"))).toBe(true);
     const latest = spool.state(asToolCallId("tool-139"))!;
     expect(latest.tail.length).toBeLessThanOrEqual(256 * 1024);
     expect(latest.truncated).toBe(true);
 
+    const store = new TranscriptStore();
+    const seq = sequencer();
+    for (let i = 0; i < 3_000; i += 1) {
+      store.dispatch(
+        seq.build(
+          "assistant-message",
+          { messageId: seq.ids.message(), text: `event-${i}` },
+          undefined,
+        ),
+      );
+    }
+    const retained = store.getState();
+    expect(retained.order).toHaveLength(3_000);
+    expect(retained.byId.size).toBe(3_000);
+    expect(retained.byId.get(retained.order[0]!)).toMatchObject({ text: "event-0" });
+  });
+
+  it("keeps an explicit transcript retention cap when one is configured", () => {
     const store = new TranscriptStore(100);
     const seq = sequencer();
-    // Notices are toast-only and do not enter the store; use real conversation rows.
     for (let i = 0; i < 1_000; i += 1) {
       store.dispatch(
         seq.build(
@@ -101,9 +118,24 @@ describe("V2-091 performance suite (Node pure paths)", () => {
       );
     }
     const retained = store.getState();
-    expect(retained.order.length).toBeGreaterThanOrEqual(90);
     expect(retained.order.length).toBeLessThanOrEqual(100);
     expect(retained.byId.size).toBe(retained.order.length);
+  });
+
+  it("loads deferred tool output lazily and only once", () => {
+    const spool = new OutputSpool();
+    const id = asToolCallId("deferred");
+    spool.replace(id, "persisted");
+    let loads = 0;
+    spool.defer(id, () => {
+      loads += 1;
+      return "artifact tail";
+    });
+    expect(spool.peekTail(id)).toBe("persisted");
+    expect(loads).toBe(0);
+    expect(spool.tail(id)).toBe("artifact tail");
+    expect(spool.tail(id)).toBe("artifact tail");
+    expect(loads).toBe(1);
   });
 
   it(`coalesces a near-cap token burst within ${STORE_BURST_BUDGET_MS}ms`, () => {

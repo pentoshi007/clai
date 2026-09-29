@@ -167,17 +167,28 @@ export function useTranscriptSelection(
   return { onMouseDown, onMouseDrag, onMouseUp, onMouseDragEnd, handleKey };
 }
 
+function lastLines(text: string, count: number): string {
+  let start = text.length;
+  for (let found = 0; found < count; found += 1) {
+    if (start === 0) return text;
+    const newline = text.lastIndexOf("\n", start - 1);
+    if (newline < 0) return text;
+    start = newline;
+  }
+  return text.slice(start + 1);
+}
+
 function visibleToolOutput(
   state: TranscriptState,
   spool: OutputSpool,
   itemId: string,
   toolCallId: Parameters<OutputSpool["tail"]>[0],
 ): string | undefined {
-  const tail = spool.tail(toolCallId);
+  const tail = spool.peekTail(toolCallId);
   if (!tail) return undefined;
   const item = state.byId.get(itemId);
   if (item?.kind === "tool" && isItemExpanded(state, item)) return tail;
-  return tail.split("\n").slice(-4).join("\n");
+  return lastLines(tail, 4);
 }
 
 function anchorAtPointer(

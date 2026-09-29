@@ -13,8 +13,8 @@ import { redactSecretsCached } from "./redaction-cache.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
 import { getActiveSessionWorkspace } from "./session-workspace.js";
-import { type HistorySummary } from "./history-index.js";
-import { HistoryRecord, PersistedContextUsage, backupDirPath, compareHistoryFreshness, dedupeHistoryById, historyRevision, invalidateSessionListCache, jsonlFilePath, sortHistoryByUpdatedDesc } from "./history/recovery.js";
+import { historySummary, readValidatedHistoryIndex, type HistorySummary } from "./history-index.js";
+import { HistoryRecord, PersistedContextUsage, backupDirPath, compareHistoryFreshness, dedupeHistoryById, historyRevision, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, sortHistoryByUpdatedDesc } from "./history/recovery.js";
 import { SessionModelSelection, archiveFilePath, enforceSqliteRetention, loadDatabase, sessionModelFields, upsertSqlite } from "./history/sqlite-backend.js";
 import { upsertJsonl } from "./history/jsonl-backend.js";
 import { getSession } from "./history/session-queries.js";
@@ -242,6 +242,36 @@ export async function saveSession(
   return canonical;
 }
 
+interface WrittenHeader {
+  readonly fingerprint: string;
+  readonly header: HistoryRecord;
+}
+
+const writtenHeaders = new Map<string, WrittenHeader>();
+
+function summaryFingerprint(summary: HistorySummary): string {
+  return `${summary.writerGeneration ?? ""}\u0000${summary.revision ?? ""}\u0000${summary.updatedAt}`;
+}
+
+function rememberWrittenHeader(record: HistoryRecord): void {
+  const { transcript: _transcript, ...header } = record;
+  writtenHeaders.set(record.id, {
+    fingerprint: summaryFingerprint(historySummary(record)),
+    header: { ...header, messages: [] },
+  });
+}
+
+async function existingSessionHeader(id: string): Promise<HistoryRecord | undefined> {
+  const written = writtenHeaders.get(id);
+  if (written) {
+    const entries = await readValidatedHistoryIndex(jsonlFilePath(), jsonlIndexFilePath());
+    const entry = entries?.find((candidate) => candidate.id === id);
+    if (entry && summaryFingerprint(entry.summary) === written.fingerprint) return written.header;
+    writtenHeaders.delete(id);
+  }
+  return getSession(id);
+}
+
 export async function upsertSession(
   id: string,
   messages: ChatMessage[],
@@ -253,7 +283,7 @@ export async function upsertSession(
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
 ): Promise<HistoryRecord> {
-  const existing = await getSession(id);
+  const existing = await existingSessionHeader(id);
   const requestedRevision =
     typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0
       ? revision
@@ -296,7 +326,7 @@ export async function upsertSession(
     requestedRevision !== undefined &&
     compareHistoryFreshness(record, existing) <= 0
   ) {
-    return existing;
+    return existing.messages.length > 0 ? existing : ((await getSession(id)) ?? existing);
   }
   if (getConfig().privateMode) return record;
 
@@ -308,6 +338,8 @@ export async function upsertSession(
     await enforceSqliteRetention(db);
     invalidateSessionListCache();
   }
+  if (canonical === record) rememberWrittenHeader(canonical);
+  else writtenHeaders.delete(id);
   return canonical;
 }
 

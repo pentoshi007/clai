@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TranscriptItem as ClassicItem } from "../../../src/app/ports/transcript-item.js";
 import {
-  boundSessionVisualInput,
+  prepareSessionVisualInput,
   displayCompactSummary,
   hydrateFromClassicTranscript,
   hydrateFromMessages,
@@ -657,8 +657,8 @@ describe("displayCompactSummary", () => {
 });
 
 
-describe("boundSessionVisualInput", () => {
-  it("caps item counts, large fields, compacted sources, and tool arguments", () => {
+describe("prepareSessionVisualInput", () => {
+  it("keeps every item and full field without truncation while dropping heavy tool arguments", () => {
     const transcript: ClassicItem[] = Array.from({ length: 350 }, (_, index) =>
       index === 0
         ? {
@@ -692,16 +692,18 @@ describe("boundSessionVisualInput", () => {
       ],
     }));
 
-    const bounded = boundSessionVisualInput(transcript, messages);
+    const visual = prepareSessionVisualInput(transcript, messages);
 
-    expect(bounded.transcript!.length).toBeLessThanOrEqual(2_000);
-    expect(bounded.messages.length).toBeLessThanOrEqual(2_000);
-    expect(bounded.omittedItems).toBeGreaterThan(0);
-    expect(bounded.omittedMessages).toBeGreaterThan(0);
-    const tool = bounded.transcript!.find((item) => item.kind === "tool");
-    expect(tool?.kind === "tool" ? tool.output.length : 0).toBeLessThan(33_000);
-    expect(bounded.messages.at(-1)?.content.length).toBeLessThan(33_000);
-    expect(bounded.messages.at(-1)?.toolCalls?.[0]?.args).toEqual({
+    expect(visual.transcript).toHaveLength(transcript.length);
+    expect(visual.messages).toHaveLength(messages.length);
+    const tool = visual.transcript!.find((item) => item.kind === "tool");
+    expect(tool?.kind === "tool" ? tool.output.length : 0).toBe(80_000);
+    expect(tool?.kind === "tool" ? tool.argsDisplay.length : 0).toBe(80_000);
+    const compacted = visual.transcript![0]!;
+    expect(compacted.kind === "compacted" ? compacted.summary.length : 0).toBe(80_000);
+    expect(compacted.kind === "compacted" ? compacted.originalItems : undefined).toEqual([]);
+    expect(visual.messages.at(-1)?.content.length).toBe(80_000);
+    expect(visual.messages.at(-1)?.toolCalls?.[0]?.args).toEqual({
       restored: "Arguments available in the full session record",
     });
   });

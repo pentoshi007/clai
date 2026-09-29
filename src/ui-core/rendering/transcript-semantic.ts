@@ -5,7 +5,7 @@ import {
   type ToolItem,
   type TranscriptState,
 } from "../state/transcript-types.js";
-import type { SemanticDocument } from "../state/semantic-document.js";
+import type { SemanticBlock, SemanticDocument } from "../state/semantic-document.js";
 import { SEMANTIC_BLOCK_SEPARATOR } from "../state/semantic-document.js";
 import { presentTool } from "./tool-presenter.js";
 
@@ -21,12 +21,12 @@ export function extractTranscriptSemanticDocument(
   options: TranscriptSemanticOptions = {},
 ): SemanticDocument {
   const thinking = options.thinking ?? "visible";
-  const blocks = [] as Array<{ id: string; text: string }>;
+  const blocks: SemanticBlock[] = [];
 
   for (const item of transcriptItems(state)) {
     if (item.kind === "notice") continue;
     if (item.kind === "thinking" && !includeThinking(state, item.id, thinking)) continue;
-    blocks.push({ id: item.id, text: semanticTextForItem(item, options.toolOutput) });
+    blocks.push(semanticBlockForItem(item, options.toolOutput));
   }
   return { blocks };
 }
@@ -51,8 +51,27 @@ function includeThinking(
   return item?.kind === "thinking" && isItemExpanded(state, item);
 }
 
+type SemanticItem = ReturnType<typeof transcriptItems>[number];
+
+const semanticBlocks = new WeakMap<
+  SemanticItem,
+  { readonly output: string | undefined; readonly block: SemanticBlock }
+>();
+
+function semanticBlockForItem(
+  item: SemanticItem,
+  toolOutput: TranscriptSemanticOptions["toolOutput"],
+): SemanticBlock {
+  const output = item.kind === "tool" ? toolOutput?.(item) : undefined;
+  const cached = semanticBlocks.get(item);
+  if (cached && cached.output === output) return cached.block;
+  const block = { id: item.id, text: semanticTextForItem(item, () => output) };
+  semanticBlocks.set(item, { output, block });
+  return block;
+}
+
 function semanticTextForItem(
-  item: ReturnType<typeof transcriptItems>[number],
+  item: SemanticItem,
   toolOutput: TranscriptSemanticOptions["toolOutput"],
 ): string {
   switch (item.kind) {

@@ -7,12 +7,8 @@ import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import type { IntroBlockInput } from "../blocks/intro-lines.js";
 import type { BlockContext } from "../blocks/block-context.js";
-import { blockContextFor, buildFeedBlocks, type FeedBlock } from "../feed/feed-blocks.js";
-import {
-  flattenBlocks,
-  planTranscriptWindow,
-  type TranscriptWindow,
-} from "../feed/transcript-window.js";
+import { blockContextFor, buildFeedBlocks, FeedBlockCache, type FeedBlock } from "../feed/feed-blocks.js";
+import { planTranscriptWindow, type TranscriptWindow } from "../feed/transcript-window.js";
 import { createInkTheme, type InkTheme } from "../render/ink-theme.js";
 import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 
@@ -74,9 +70,25 @@ export interface UseFeedInput {
   readonly intro: IntroBlockInput | undefined;
 }
 
+function sameBlocks(left: readonly FeedBlock[], right: readonly FeedBlock[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function useStableBlocks(blocks: readonly FeedBlock[]): readonly FeedBlock[] {
+  const previous = useRef(blocks);
+  if (previous.current !== blocks && !sameBlocks(previous.current, blocks)) previous.current = blocks;
+  return previous.current;
+}
+
 export function useFeed(input: UseFeedInput): FeedSnapshot {
   const state = input.state;
   const ink = useInkTheme(input.services);
+  const cache = useRef<FeedBlockCache | undefined>(undefined);
+  cache.current ??= new FeedBlockCache();
 
   const view = useMemo(
     () => ({
@@ -90,11 +102,10 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
     [input.columns, input.generation, input.intro, input.now, input.services.session.spool, ink],
   );
   const context = useMemo(() => blockContextFor(state, view), [state, view]);
-  const blocks = useMemo(() => buildFeedBlocks(state, view), [state, view]);
-  const flat = useMemo(() => flattenBlocks(blocks), [blocks]);
+  const blocks = useStableBlocks(useMemo(() => buildFeedBlocks(state, view, cache.current), [state, view]));
   const window = useMemo(
-    () => planTranscriptWindow(flat, input.liveBudgetRows, input.liveOffset),
-    [flat, input.liveBudgetRows, input.liveOffset],
+    () => planTranscriptWindow(blocks, input.liveBudgetRows, input.liveOffset),
+    [blocks, input.liveBudgetRows, input.liveOffset],
   );
 
   return { ink, context, blocks, window, columns: input.columns, generation: input.generation };

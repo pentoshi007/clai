@@ -7,7 +7,7 @@ import {
   selectionSpanForRow,
 } from "../../../src/classic/feed/transcript-selection.js";
 import {
-  flattenBlocks,
+  totalTranscriptRows,
   planTranscriptWindow,
 } from "../../../src/classic/feed/transcript-window.js";
 
@@ -40,9 +40,8 @@ describe("classic transcript selection", () => {
 
   it("maps terminal geometry, source line indices, and wide columns to anchors", () => {
     const blocks = [block("0:a", "a", ["zero", "A界B"]), block("0:b", "b", ["last"])];
-    const flat = flattenBlocks(blocks);
-    expect(flat.map((row) => row.lineIndex)).toEqual([0, 1, undefined, 0]);
-    const window = planTranscriptWindow(flat, 4, 0);
+    const window = planTranscriptWindow(blocks, 4, 0);
+    expect(window.rows.map((row) => row.lineIndex)).toEqual([0, 1, undefined, 0]);
     expect(anchorAtTranscriptPointer(window, 5, 3, { left: 2, top: 2 })).toEqual({
       blockId: "0:a",
       offset: 7,
@@ -57,7 +56,7 @@ describe("classic transcript selection", () => {
   it("orders reversed ranges and returns visible row spans", () => {
     const blocks = [block("0:a", "a", ["alpha", "bravo"]), block("0:b", "b", ["charlie"])];
     const document = classicTranscriptDocument(blocks);
-    const rows = flattenBlocks(blocks);
+    const rows = planTranscriptWindow(blocks, totalTranscriptRows(blocks), 0).rows;
     const selection = state(
       { blockId: "0:b", offset: 3 },
       { blockId: "0:a", offset: 2 },
