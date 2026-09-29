@@ -1,7 +1,8 @@
 import { getConfig } from "../../store/config.js";
 import { hasStructuredReducer } from "../policies/output-policy.js";
 import { looksInteractiveStdin } from "../shell.js";
-import { detectRtk, forgetRtk, RTK_EXEC_ENV, runRtk } from "./binary.js";
+import { detectRtk, forgetRtk, RTK_EXEC_ENV, rtkPathEnv, runRtk } from "./binary.js";
+import { rtkMaintenance } from "./install.js";
 
 export interface RtkExecution {
   readonly command: string;
@@ -33,7 +34,7 @@ export async function prepareRtkExecution(
 ): Promise<RtkExecution> {
   const original = { command };
   const trimmed = command.trim();
-  if (!rtkEnabled() || !eligible(trimmed)) return original;
+  if (!rtkEnabled() || rtkMaintenance() || !eligible(trimmed)) return original;
   const status = await detectRtk();
   if (status.state !== "ready" || signal?.aborted) return original;
   const run = await runRtk(status.path, ["rewrite", trimmed], REWRITE_TIMEOUT_MS, signal);
@@ -52,5 +53,8 @@ export async function prepareRtkExecution(
     return original;
   }
   rewriteCount += 1;
-  return { command: rewritten, env: RTK_EXEC_ENV };
+  return {
+    command: rewritten,
+    env: status.pathEntry ? { ...RTK_EXEC_ENV, PATH: rtkPathEnv(status.pathEntry) } : RTK_EXEC_ENV,
+  };
 }

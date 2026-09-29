@@ -2,30 +2,41 @@ import type { CommandInvocation } from "../../app/commands/command.js";
 import { formatTokenCount } from "../../llm/token-usage.js";
 import { updateConfig } from "../../store/config.js";
 import { detectRtk, readRtkGain, type RtkGain, type RtkStatus } from "../../tools/rtk/binary.js";
+import {
+  RTK_INSTALL_HINT,
+  rtkMaintenance,
+  runRtkMaintenance,
+  type RtkMaintenanceAction,
+  type RtkMaintenanceResult,
+  type RtkMaintenanceState,
+} from "../../tools/rtk/install.js";
 import { rtkEnabled, rtkRewriteCount } from "../../tools/rtk/rewrite.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
 
-const USAGE = "usage: /rtk [on|off|status]";
-const INSTALL_HINT = "install with `brew install rtk` or `cargo install --git https://github.com/rtk-ai/rtk`";
+const USAGE = "usage: /rtk [on|off|status|install|update]";
 
 interface RtkView {
   readonly enabled: boolean;
   readonly status?: RtkStatus | undefined;
   readonly gain?: RtkGain | undefined;
+  readonly maintenance?: RtkMaintenanceState | undefined;
 }
 
 const plural = (count: number, noun: string): string =>
   `${count.toLocaleString("en-US")} ${noun}${count === 1 ? "" : "s"}`;
+
+const progressive = (action: RtkMaintenanceAction): string =>
+  action === "install" ? "Installing" : "Updating";
 
 const statusLine = (status: RtkStatus): string => {
   switch (status.state) {
     case "ready":
       return `rtk ${status.version} ready`;
     case "incompatible":
-      return `${status.path} is not rtk-ai/rtk ≥ 0.23 (needs \`rtk rewrite\`)`;
+      return `${status.path} is not rtk-ai/rtk ≥ 0.23 (needs \`rtk rewrite\`) — run /rtk install`;
     case "missing":
-      return `rtk not found on PATH — ${INSTALL_HINT}`;
+      return "rtk not found — run /rtk install";
   }
 };
 
@@ -39,14 +50,23 @@ const gainLine = (gain: RtkGain | undefined): string =>
     ? `${formatTokenCount(gain.savedTokens, true)} tokens saved overall (${Math.round(gain.savingsPct)}%)`
     : "no savings recorded yet";
 
-const statusOption = ({ status, gain }: RtkView): PickerOption => {
+const statusOption = ({ status, gain, maintenance }: RtkView): PickerOption => {
+  if (maintenance) {
+    return {
+      value: "refresh",
+      label: `${progressive(maintenance.action)} rtk…`,
+      icon: "⟳",
+      tone: "warn",
+      description: `${maintenance.installer ? `via ${maintenance.installer} · ` : ""}shell commands run unmodified until it finishes · select to refresh`,
+    };
+  }
   if (!status) {
     return {
       value: "refresh",
       label: "Detecting rtk…",
       icon: "◌",
       tone: "muted",
-      description: "looking for the rtk binary on PATH",
+      description: "looking for the rtk binary",
     };
   }
   switch (status.state) {
@@ -64,7 +84,7 @@ const statusOption = ({ status, gain }: RtkView): PickerOption => {
         label: `rtk ${status.version ?? ""} unsupported`.replace(/\s+/g, " "),
         icon: "✗",
         tone: "error",
-        description: `${statusLine(status)} · select to re-check`,
+        description: `${status.path} is not rtk-ai/rtk ≥ 0.23 · select to re-check`,
       };
     case "missing":
       return {
@@ -72,9 +92,32 @@ const statusOption = ({ status, gain }: RtkView): PickerOption => {
         label: "rtk not installed",
         icon: "!",
         tone: "warn",
-        description: `${INSTALL_HINT}, then select to re-check`,
+        description: "select to re-check after installing it yourself",
       };
   }
+};
+
+const maintenanceOption = ({ status, maintenance }: RtkView): PickerOption[] => {
+  if (maintenance || !status) return [];
+  return status.state === "ready"
+    ? [
+        {
+          value: "update",
+          label: "Update rtk",
+          icon: "↻",
+          tone: "accent",
+          description: "upgrade through the tool that installed it · clai stays usable meanwhile",
+        },
+      ]
+    : [
+        {
+          value: "install",
+          label: "Install rtk",
+          icon: "↓",
+          tone: "accent",
+          description: `${process.platform === "win32" ? "winget, else cargo" : "Homebrew, else the checksum-verified rtk installer, else cargo"} · clai stays usable meanwhile`,
+        },
+      ];
 };
 
 const rtkOptions = (view: RtkView): PickerOption[] => [
@@ -95,13 +138,45 @@ const rtkOptions = (view: RtkView): PickerOption[] => [
     description: "run shell commands exactly as written",
   },
   statusOption(view),
+  ...maintenanceOption(view),
 ];
 
 const loadView = async (): Promise<RtkView> => {
+  const maintenance = rtkMaintenance();
   const status = await detectRtk(true);
   const gain = status.state === "ready" ? await readRtkGain(status.path) : undefined;
-  return { enabled: rtkEnabled(), status, gain };
+  return { enabled: rtkEnabled(), status, gain, ...(maintenance ? { maintenance } : {}) };
 };
+
+const compressionHint = (): string => (rtkEnabled() ? "" : " · turn compression on with /rtk on");
+
+const maintenanceMessage = (result: RtkMaintenanceResult): string => {
+  if (!result.ok) {
+    const manual = result.status.state === "ready" ? "" : ` · install manually: ${RTK_INSTALL_HINT}`;
+    return `rtk ${result.action} failed · ${result.reason}${manual}`;
+  }
+  const { status, installer, previousVersion, action } = result;
+  if (!installer) return `rtk ${status.version} is already installed${compressionHint()}`;
+  if (action === "install") return `rtk ${status.version} installed via ${installer}${compressionHint()}`;
+  return previousVersion === status.version
+    ? `rtk ${status.version} is already the latest (${installer})`
+    : `rtk updated ${previousVersion ?? "?"} → ${status.version} via ${installer}`;
+};
+
+function startMaintenance(services: AppServices, action: RtkMaintenanceAction): void {
+  const running = rtkMaintenance();
+  if (running) {
+    services.session.notice(
+      "info",
+      `${progressive(running.action)} rtk is already in progress${running.installer ? ` via ${running.installer}` : ""}`,
+    );
+    return;
+  }
+  services.session.notice("info", `${progressive(action)} rtk… clai stays usable meanwhile`);
+  void runRtkMaintenance(action)
+    .then((result) => services.session.notice(result.ok ? "info" : "warn", maintenanceMessage(result)))
+    .catch(() => undefined);
+}
 
 async function announce(services: AppServices, enabled: boolean): Promise<void> {
   if (!enabled) {
@@ -127,8 +202,9 @@ function applyRtk(services: AppServices, enabled: boolean): Promise<void> {
 async function reportStatus(services: AppServices): Promise<void> {
   const view = await loadView();
   const status = view.status!;
-  const detail =
-    status.state === "ready"
+  const detail = view.maintenance
+    ? `${progressive(view.maintenance.action)} rtk${view.maintenance.installer ? ` via ${view.maintenance.installer}` : ""}…`
+    : status.state === "ready"
       ? `${statusLine(status)} · ${plural(rtkRewriteCount(), "command")} compressed this session · ${gainLine(view.gain)}`
       : statusLine(status);
   services.session.notice(
@@ -138,7 +214,10 @@ async function reportStatus(services: AppServices): Promise<void> {
 }
 
 function openRtkScreen(services: AppServices): void {
-  const pending = (): RtkView => ({ enabled: rtkEnabled() });
+  const pending = (): RtkView => {
+    const maintenance = rtkMaintenance();
+    return { enabled: rtkEnabled(), ...(maintenance ? { maintenance } : {}) };
+  };
   const isOpen = (): boolean => {
     const state = services.overlay.getState();
     return state.kind === "picker" && state.onSelect === onSelect;
@@ -156,7 +235,8 @@ function openRtkScreen(services: AppServices): void {
       return;
     }
     services.overlay.close();
-    void applyRtk(services, value === "on");
+    if (value === "install" || value === "update") startMaintenance(services, value);
+    else void applyRtk(services, value === "on");
   };
   const view = pending();
   services.overlay.openPicker(
@@ -175,6 +255,10 @@ export function handleRtk(services: AppServices, invocation: CommandInvocation):
   const action = invocation.args.trim().toLowerCase();
   if (action === "on" || action === "off") return applyRtk(services, action === "on");
   if (action === "status") return reportStatus(services);
+  if (action === "install" || action === "update") {
+    startMaintenance(services, action);
+    return;
+  }
   if (action !== "") {
     services.session.notice("warn", USAGE);
     return;
