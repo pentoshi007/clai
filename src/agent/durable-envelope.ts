@@ -6,14 +6,15 @@ import {
   foregroundActiveTask,
   foregroundRemaining,
   foregroundTasks,
-  responderOpenTasks,
   type SessionPlan,
 } from "../store/plan.js";
+import { renderUserCredentials } from "./context/user-credentials.js";
 
 export const DURABLE_ENVELOPE_PREFIX = "DURABLE WORK ENVELOPE";
 
 const MAX_LIST_ENTRIES = 20;
 const MAX_STATEMENT_CHARS = 180;
+const SUBAGENT_DIGEST_CHARS = 240;
 
 export type FileMutationKind = "created" | "modified" | "deleted";
 
@@ -61,14 +62,28 @@ export class WorkLedger {
 export interface ResponderEnvelopeState {
   readonly unread: readonly string[];
   readonly consumed: readonly string[];
+  readonly unreadJobs?: readonly string[] | undefined;
+  readonly consumedJobs?: readonly string[] | undefined;
 }
 
 export interface EnvelopeJobState {
   readonly id: string;
   readonly status: string;
   readonly command: string;
+  readonly name?: string | undefined;
   readonly taskId?: string | undefined;
   readonly artifact?: string | undefined;
+  readonly exitCode?: number | undefined;
+  readonly responder?: boolean | undefined;
+}
+
+export interface EnvelopeSubagentState {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly attempt: number;
+  readonly result: "running" | "read" | "unread" | "none";
+  readonly digest?: string | undefined;
 }
 
 export interface DurableEnvelopeInput {
@@ -81,6 +96,8 @@ export interface DurableEnvelopeInput {
   readonly projectRoot?: string | undefined;
   readonly packageManager?: string | undefined;
   readonly scopeSummary?: string | undefined;
+  readonly subagents?: readonly EnvelopeSubagentState[] | undefined;
+  readonly credentials?: readonly string[] | undefined;
 }
 
 function clip(text: string, max = MAX_STATEMENT_CHARS): string {
@@ -112,12 +129,56 @@ function planLines(plan: SessionPlan, lines: string[]): void {
   }
   const next = remaining.find((task) => task.id !== active?.id);
   if (next) lines.push(`Next foreground task: ${next.id} ${clip(next.title)}`);
-  const open = responderOpenTasks(plan);
-  if (open.length > 0) {
-    lines.push(
-      `Open responder children: ${open.map((task) => task.id).slice(0, MAX_LIST_ENTRIES).join(", ")}`,
-    );
-  }
+}
+
+function responderResult(
+  jobId: string,
+  responder: ResponderEnvelopeState | undefined,
+): string {
+  if (responder?.consumedJobs?.includes(jobId)) return ", result read";
+  if (responder?.unreadJobs?.includes(jobId)) return ", result unread";
+  return "";
+}
+
+function responderTaskLines(input: DurableEnvelopeInput, lines: string[]): void {
+  const delegated = (input.plan?.tasks ?? []).filter((task) => task.responderOwned);
+  if (delegated.length === 0) return;
+  const jobs = new Map(
+    [...(input.finishedJobs ?? []), ...(input.liveJobs ?? [])].map((job) => [job.id, job]),
+  );
+  const rendered = delegated.slice(-MAX_LIST_ENTRIES).map((task) => {
+    const parent = task.parentTaskId ? ` parent=${task.parentTaskId}` : "";
+    const job = task.jobId ? jobs.get(task.jobId) : undefined;
+    const exit = job?.exitCode !== undefined ? ` exit=${job.exitCode}` : "";
+    const linked = task.jobId
+      ? ` job=${task.jobId}${job ? ` ${job.status}${exit}` : ""}${responderResult(task.jobId, input.responder)}`
+      : "";
+    return `[${task.id}] ${clip(task.title, 90)} (${task.state})${parent}${linked}`;
+  });
+  lines.push(
+    `Responder-delegated tasks (results arrive in the inbox; job.read acknowledges one): ${rendered.join("; ")}`,
+  );
+}
+
+const SUBAGENT_RESULT_NOTE: Readonly<Record<EnvelopeSubagentState["result"], string>> = {
+  running: "",
+  read: ", result read",
+  unread: ", result pending delivery",
+  none: ", no usable result",
+};
+
+function subagentLines(
+  subagents: readonly EnvelopeSubagentState[] | undefined,
+  lines: string[],
+): void {
+  if (!subagents?.length) return;
+  lines.push(
+    'Subagents (subagent.read {id, view:"summary"} recovers a result; view:"report" pages the full report):',
+    ...subagents.slice(-MAX_LIST_ENTRIES).map((run) => {
+      const digest = run.digest ? ` — ${clip(run.digest, SUBAGENT_DIGEST_CHARS)}` : "";
+      return `- [${run.id}] ${clip(run.title, 90)} (${run.status}, attempt ${run.attempt}${SUBAGENT_RESULT_NOTE[run.result]})${digest}`;
+    }),
+  );
 }
 
 function outcomeLines(outcome: OutcomeEnvelope, lines: string[]): void {
@@ -169,9 +230,12 @@ function outcomeLines(outcome: OutcomeEnvelope, lines: string[]): void {
 }
 
 function renderJob(job: EnvelopeJobState): string {
+  const name = job.name ? ` "${clip(job.name, 60)}"` : "";
+  const responder = job.responder ? " responder" : "";
+  const exit = job.exitCode !== undefined ? ` exit=${job.exitCode}` : "";
   const task = job.taskId ? ` task=${job.taskId}` : "";
   const artifact = job.artifact ? ` artifact=${job.artifact}` : "";
-  return `[${job.id}] ${job.status}${task} — ${clip(job.command, 90)}${artifact}`;
+  return `[${job.id}]${name} ${job.status}${exit}${responder}${task} — ${clip(job.command, 90)}${artifact}`;
 }
 
 function jobLines(input: DurableEnvelopeInput, lines: string[]): void {
@@ -179,7 +243,7 @@ function jobLines(input: DurableEnvelopeInput, lines: string[]): void {
   const finished = input.finishedJobs ?? [];
   if (live.length > 0) {
     lines.push(
-      `Live background jobs (do not relaunch; use shell.tail): ${live
+      `Live background jobs (do not relaunch; shell.tail {id} reads a regular job, responder jobs report through the inbox): ${live
         .slice(0, MAX_LIST_ENTRIES)
         .map(renderJob)
         .join("; ")}`,
@@ -218,6 +282,8 @@ export function buildDurableEnvelope(
     }
   }
   jobLines(input, lines);
+  responderTaskLines(input, lines);
+  subagentLines(input.subagents, lines);
   const ledger = input.ledger;
   if (ledger && ledger.size > 0) {
     const created = ledger.pathsByKind("created");
@@ -237,6 +303,7 @@ export function buildDurableEnvelope(
       lines.push(`Artifacts on disk: ${renderList(artifacts)}`);
     }
   }
+  lines.push(...renderUserCredentials(input.credentials ?? []));
   if (lines.length === 0) return undefined;
   return [
     `${DURABLE_ENVELOPE_PREFIX} (canonical; authoritative over summarized narrative)`,
