@@ -1,15 +1,14 @@
+import { PersistentMap } from "./persistent-map.js";
 import type { TranscriptItem, TranscriptState } from "./transcript-types.js";
 
 export function appendItem(
   state: TranscriptState,
   item: TranscriptItem,
 ): TranscriptState {
-  const byId = new Map(state.byId);
-  byId.set(item.id, item);
   return {
     ...state,
     order: [...state.order, item.id],
-    byId,
+    byId: PersistentMap.from(state.byId).set(item.id, item),
   };
 }
 
@@ -20,9 +19,7 @@ export function updateItem(
 ): TranscriptState {
   const existing = state.byId.get(id);
   if (!existing) return state;
-  const byId = new Map(state.byId);
-  byId.set(id, update(existing));
-  return { ...state, byId };
+  return { ...state, byId: PersistentMap.from(state.byId).set(id, update(existing)) };
 }
 
 export function removeItem(
@@ -30,11 +27,9 @@ export function removeItem(
   id: string,
 ): TranscriptState {
   if (!state.byId.has(id)) return state;
-  const byId = new Map(state.byId);
-  byId.delete(id);
   return {
     ...state,
-    byId,
+    byId: PersistentMap.from(state.byId).delete(id),
     order: state.order.filter((entry) => entry !== id),
   };
 }

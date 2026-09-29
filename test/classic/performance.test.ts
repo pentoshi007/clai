@@ -4,7 +4,8 @@ import {
   asTurnId,
 } from "../../src/app/events/app-event.js";
 import { createCountingIdFactory, EventSequencer } from "../../src/app/events/sequencer.js";
-import { buildFeedBlocks, MAX_BLOCK_ROWS } from "../../src/classic/feed/feed-blocks.js";
+import { buildFeedBlocks, FeedBlockCache } from "../../src/classic/feed/feed-blocks.js";
+import { planTranscriptWindow } from "../../src/classic/feed/transcript-window.js";
 import { feedView, scriptedTurn } from "./feed/fixture.js";
 import { extractTranscriptSemanticDocument } from "../../src/ui-core/rendering/transcript-semantic.js";
 import { TranscriptStore } from "../../src/ui-core/state/transcript-store.js";
@@ -52,34 +53,17 @@ describe("classic performance safeguards", () => {
     }
   });
 
-  it("keeps 200 tool-output lines bounded in the classic feed", () => {
+  it("renders every row of a pathological block without truncation", () => {
     const turn = scriptedTurn();
-    const tool = transcriptItems(turn.state).find((item) => item.kind === "tool");
-    expect(tool?.kind).toBe("tool");
-    if (!tool || tool.kind !== "tool") return;
-    turn.spool.replace(
-      tool.toolCallId,
-      Array.from({ length: 200 }, (_, index) => `output line ${index}`).join("\n"),
-    );
-    const state: TranscriptState = { ...turn.state, expandOutputGlobal: true };
-    const block = buildFeedBlocks(state, feedView(turn, { columns: 80 })).find(
-      (candidate) => candidate.itemId === tool.id,
-    );
-
-    expect(block).toBeDefined();
-    expect(block!.lines.length).toBeLessThanOrEqual(MAX_BLOCK_ROWS);
-    expect(block!.lines.length).toBeLessThan(200);
-  });
-
-  it("keeps pathological feed blocks within MAX_BLOCK_ROWS", () => {
-    const turn = scriptedTurn();
+    const rows = 5_000;
     const item: TranscriptItem = {
       id: "classic-perf-huge",
-      kind: "user",
+      kind: "assistant",
+      streaming: false,
       sequence: 1,
       turnId: undefined,
       timestamp: 0,
-      text: Array.from({ length: MAX_BLOCK_ROWS + 200 }, (_, index) => `line ${index}`).join("\n"),
+      text: Array.from({ length: rows }, (_, index) => `line ${index}`).join("\n"),
     };
     const state: TranscriptState = {
       ...EMPTY_TRANSCRIPT_STATE,
@@ -89,7 +73,38 @@ describe("classic performance safeguards", () => {
     const blocks = buildFeedBlocks(state, feedView(turn, { columns: 80 }));
 
     expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.lines.length).toBeLessThanOrEqual(MAX_BLOCK_ROWS);
+    expect(blocks[0]!.lines.length).toBeGreaterThanOrEqual(rows);
+    expect(blocks[0]!.lines.some((line) => line.includes(`line ${rows - 1}`))).toBe(true);
+  });
+
+  it("reuses unchanged blocks and only rebuilds the changed item", () => {
+    const turn = scriptedTurn();
+    const cache = new FeedBlockCache();
+    const view = feedView(turn, { columns: 80 });
+    const first = buildFeedBlocks(turn.state, view, cache);
+    const again = buildFeedBlocks(turn.state, { ...view, now: view.now + 60_000 }, cache);
+    const closed = first.filter((block) => !block.open);
+    expect(closed.length).toBeGreaterThan(0);
+    for (const block of closed) {
+      expect(again.find((candidate) => candidate.itemId === block.itemId)).toBe(block);
+    }
+  });
+
+  it("plans a viewport over a very long feed without materialising every row", () => {
+    const blocks = Array.from({ length: 5_000 }, (_, index) => ({
+      key: `0:item-${index}`,
+      itemId: `item-${index}`,
+      kind: "assistant" as const,
+      open: false,
+      lines: Array.from({ length: 40 }, (_, line) => `row ${index}.${line}`),
+      turnId: undefined,
+      sequence: index,
+    }));
+    const started = performance.now();
+    const window = planTranscriptWindow(blocks, 40, 100_000);
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(window.rows).toHaveLength(40);
+    expect(window.totalRows).toBe(5_000 * 41 - 1);
   });
 
   it(`folds a ${SEMANTIC_ITEMS}-item semantic transcript within a generous budget`, () => {

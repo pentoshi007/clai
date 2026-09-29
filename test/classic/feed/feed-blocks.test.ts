@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { formatToolArgs } from "../../../src/agent/tool-call-parser.js";
 import {
   buildFeedBlocks,
-  MAX_BLOCK_ROWS,
   toolBlockKind,
   type BlockKind,
 } from "../../../src/classic/feed/feed-blocks.js";
@@ -14,7 +13,7 @@ import { buildToolLines, toolElapsed } from "../../../src/classic/blocks/tool-li
 import { buildBatchLines } from "../../../src/classic/blocks/batch-lines.js";
 import { buildCompactedLines } from "../../../src/classic/blocks/compacted-lines.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
-import type { ToolItem, UserItem } from "../../../src/ui-core/state/transcript-types.js";
+import type { ToolItem, AssistantItem, UserItem } from "../../../src/ui-core/state/transcript-types.js";
 import { transcriptItems } from "../../../src/ui-core/state/transcript-types.js";
 import { feedView, GOLDEN_COLOR_MODES, GOLDEN_WIDTHS, scriptedTurn } from "./fixture.js";
 
@@ -246,15 +245,16 @@ describe("buildFeedBlocks", () => {
     expect(buildFeedBlocks(withQuiet, view).length).toBe(before);
   });
 
-  it("bounds a pathological block to MAX_BLOCK_ROWS", () => {
+  it("renders every row of a very long block", () => {
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
-    const item: UserItem = {
+    const item: AssistantItem = {
       id: "huge",
-      kind: "user",
+      kind: "assistant",
+      streaming: false,
       sequence: 1,
       turnId: undefined,
       timestamp: 0,
-      text: Array.from({ length: MAX_BLOCK_ROWS + 200 }, (_, i) => `line ${i}`).join("\n"),
+      text: Array.from({ length: 600 }, (_, i) => `line ${i}`).join("\n"),
     };
     const state = {
       ...turn.state,
@@ -262,7 +262,8 @@ describe("buildFeedBlocks", () => {
       byId: new Map([["huge", item as never]]),
     };
     const blocks = buildFeedBlocks(state, feedView(turn, { columns: 80 }));
-    expect(blocks[0]!.lines.length).toBeLessThanOrEqual(MAX_BLOCK_ROWS);
+    expect(blocks[0]!.lines.join("\n")).toContain("line 599");
+    expect(blocks[0]!.lines.length).toBeGreaterThanOrEqual(600);
     expect(ctx.width).toBe(80);
   });
 });

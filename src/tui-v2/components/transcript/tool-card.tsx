@@ -35,10 +35,23 @@ import {
 import { LinkableText } from "./linkable-text.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 import { DiffActionButton, FileDiffBody } from "./file-diff-card.js";
-import { renderStyledMarkdownLines } from "../../rendering/styled-markdown.js";
+import {
+  renderStyledMarkdownLines,
+  styledLinesWeight,
+  type StyledLine,
+} from "../../rendering/styled-markdown.js";
+import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
 import { shouldDefaultFormattedView } from "../../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.js";
 import { selectableRowStyle } from "./selectable-line.js";
+
+const MARKDOWN_PREVIEWS = new ObjectRenderCache<ToolItem, StyledLine[]>(24 * 1024 * 1024);
+
+const EMPTY_OUTPUT = {
+  lines: [] as string[],
+  hiddenAboveCount: 0,
+  truncatedNotice: undefined as string | undefined,
+};
 
 const STATUS_COLOR: Record<ToolItem["status"], keyof Theme> = {
   queued: "muted",
@@ -228,15 +241,16 @@ export function ToolCard(props: {
   }, [item.status]);
   const elapsedLabel = toolElapsedLabel(item, now);
   const tail = spool.tail(item.toolCallId);
-  const spoolState = spool.state(item.toolCallId);
   const fileChanges = item.fileChanges;
   const fileChangeStats = fileChangeLineStats(fileChanges);
   const isWriteMany = item.name === "fs.writeMany";
   const isMutation = isFileMutationTool(item.name);
 
   const isBatchName = isBatchToolName(item.name);
-  const batchSections =
-    isBatchName && tail ? buildBatchCardsFromSpool(tail) : [];
+  const batchSections = useMemo(
+    () => (isBatchName && tail ? buildBatchCardsFromSpool(tail) : []),
+    [isBatchName, tail],
+  );
   const isBatch = isBatchName && batchSections.length > 0;
   const isBatchLive = isBatchName && item.status === "running";
   const batchExpanded = expanded;
@@ -245,29 +259,44 @@ export function ToolCard(props: {
   const diffPaneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
+  const tailFormatted = useMemo(
+    () =>
+      shouldDefaultFormattedView({
+        kind: "tool",
+        toolName: item.name,
+        path: readPath,
+        body: tail,
+      }),
+    [item.name, readPath, tail],
+  );
   const formatMdRead =
     !isFsRead &&
     !isBatch &&
     !isBatchLive &&
     !isFileDiff &&
     !isMutation &&
-    shouldDefaultFormattedView({
-      kind: "tool",
-      toolName: item.name,
-      path: readPath,
-      body: tail,
-    });
+    tailFormatted;
   const mdPreview = useMemo(() => {
     if (!formatMdRead || !tail.trim()) return null;
-    const clean = extractFsReadFileBody(tail);
-    if (!clean.trim()) return null;
-    const rendered = renderStyledMarkdownLines(clean, {
-      width: Math.max(24, termWidth - 12),
-      defaultFg: theme.toolOutput,
-      stripOuterIndent: true,
-      theme,
-      colorMode,
-    });
+    const width = Math.max(24, termWidth - 12);
+    const rendered = MARKDOWN_PREVIEWS.resolve(
+      item,
+      `${width}|${colorMode}|${objectIdentity(theme)}|${tail.length}`,
+      () => {
+        const clean = extractFsReadFileBody(tail);
+        return clean.trim()
+          ? renderStyledMarkdownLines(clean, {
+              width,
+              defaultFg: theme.toolOutput,
+              stripOuterIndent: true,
+              theme,
+              colorMode,
+            })
+          : [];
+      },
+      styledLinesWeight,
+    );
+    if (rendered.length === 0) return null;
     if (expanded) return rendered.slice(0, 60);
     const previewRows = TOOL_PREVIEW_HEAD_LINES + TOOL_PREVIEW_TAIL_LINES;
     if (rendered.length <= previewRows) return rendered;
@@ -275,16 +304,17 @@ export function ToolCard(props: {
       ...rendered.slice(0, TOOL_PREVIEW_HEAD_LINES),
       ...rendered.slice(-TOOL_PREVIEW_TAIL_LINES),
     ];
-  }, [formatMdRead, tail, expanded, termWidth, theme, colorMode]);
+  }, [formatMdRead, item, tail, expanded, termWidth, theme, colorMode]);
 
-  const { lines, hiddenAboveCount, truncatedNotice } =
-    isFsRead || isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead
-      ? {
-          lines: [] as string[],
-          hiddenAboveCount: 0,
-          truncatedNotice: undefined as string | undefined,
-        }
-      : presentOutput(tail, spoolState, expanded, item.name);
+  const presentsRawOutput =
+    !(isFsRead || isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead);
+  const { lines, hiddenAboveCount, truncatedNotice } = useMemo(
+    () =>
+      presentsRawOutput
+        ? presentOutput(tail, spool.state(item.toolCallId), expanded, item.name)
+        : EMPTY_OUTPUT,
+    [presentsRawOutput, tail, spool, item.toolCallId, item.outputBytes, expanded, item.name],
+  );
 
   const statusFg = theme[STATUS_COLOR[item.status]];
   const highlight = statusFg;

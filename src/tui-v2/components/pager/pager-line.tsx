@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
@@ -9,8 +9,8 @@ import {
 } from "../../../ui-core/state/pager-search.js";
 import { syntaxColor } from "../../../ui-core/rendering/file-diff-view.js";
 import {
-  emptyCarry,
   highlightLineForPath,
+  type SyntaxSpan,
 } from "../../../ui-core/rendering/syntax-highlight.js";
 import type { PagerDisplayLine } from "../../rendering/pager-markdown.js";
 import type { SubagentSpan } from "../../../ui-core/rendering/subagent-presentation.js";
@@ -75,7 +75,9 @@ export function bodyOnlyForCopy(full: string): string {
     .join("\n");
 }
 
-export function PagerLine(props: {
+export const PagerLine = memo(PagerLineImpl);
+
+function PagerLineImpl(props: {
   line: string;
   index: number;
   theme: Theme;
@@ -83,7 +85,7 @@ export function PagerLine(props: {
   activeMatchIndex: number;
   hasQuery: boolean;
   highlightPath: string;
-  carry: ReturnType<typeof emptyCarry>;
+  spans?: readonly SyntaxSpan[] | undefined;
   styled?: PagerDisplayLine["styled"];
   markdownMode?: boolean | undefined;
   diffGutters?: boolean | undefined;
@@ -98,7 +100,7 @@ export function PagerLine(props: {
     activeMatchIndex,
     hasQuery,
     highlightPath,
-    carry,
+    spans: precomputedSpans,
     styled,
     markdownMode,
   } = props;
@@ -178,7 +180,7 @@ export function PagerLine(props: {
     const spans =
       parsed.tone === "header"
         ? [{ kind: "plain" as const, text: parsed.code }]
-        : highlightLineForPath(parsed.code, highlightPath, carry);
+        : precomputedSpans ?? highlightLineForPath(parsed.code, highlightPath);
     const bodyForSearch = parsed.code;
     const segs =
       hasQuery && matches.length > 0

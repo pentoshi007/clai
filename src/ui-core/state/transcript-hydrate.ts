@@ -40,122 +40,36 @@ export function transcriptLooksIncomplete(
 }
 
 
-export interface BoundedSessionVisualInput {
+export interface SessionVisualInput {
   readonly transcript: ClassicTranscriptItem[] | undefined;
   readonly messages: ChatMessage[];
-  readonly omittedItems: number;
-  readonly omittedMessages: number;
 }
 
-const VISUAL_TRANSCRIPT_ITEMS = 2_000;
-const VISUAL_MESSAGE_ITEMS = 2_000;
-const VISUAL_FIELD_CHARS = 32_000;
-const VISUAL_TOTAL_CHARS = 8_000_000;
+const RESTORED_TOOL_ARGS = { restored: "Arguments available in the full session record" };
 
-function capVisualField(value: string): string {
-  if (value.length <= VISUAL_FIELD_CHARS) return value;
-  return `${value.slice(0, VISUAL_FIELD_CHARS)}\n…[older output omitted from initial history view]`;
+function visualTranscriptItem(item: ClassicTranscriptItem): ClassicTranscriptItem {
+  return item.kind === "compacted" ? { ...item, originalItems: [] } : item;
 }
 
-function boundedTranscriptItem(
-  item: ClassicTranscriptItem,
-): ClassicTranscriptItem {
-  switch (item.kind) {
-    case "user":
-    case "assistant":
-      return { ...item, text: capVisualField(item.text) };
-    case "thinking":
-      return { ...item, content: capVisualField(item.content) };
-    case "notice":
-      return { ...item, text: capVisualField(item.text) };
-    case "tool":
-      return {
-        ...item,
-        argsDisplay: capVisualField(item.argsDisplay),
-        output: capVisualField(item.output),
-        ...(item.summary
-          ? { summary: capVisualField(item.summary) }
-          : {}),
-        ...(item.fileChanges && item.fileChanges.length <= 20
-          ? { fileChanges: item.fileChanges }
-          : { fileChanges: undefined }),
-      };
-    case "compacted":
-      return {
-        ...item,
-        summary: capVisualField(item.summary),
-        originalItems: [],
-      };
-    default:
-      return item;
-  }
+function visualMessage(message: ChatMessage): ChatMessage {
+  if (!message.toolCalls) return message;
+  return {
+    ...message,
+    toolCalls: message.toolCalls.map((call) => ({
+      ...call,
+      args: RESTORED_TOOL_ARGS,
+      rawArguments: undefined,
+    })),
+  };
 }
 
-export function boundSessionVisualInput(
+export function prepareSessionVisualInput(
   transcript: readonly ClassicTranscriptItem[] | undefined,
   messages: readonly ChatMessage[],
-): BoundedSessionVisualInput {
-  const recentMessages = messages.slice(-VISUAL_MESSAGE_ITEMS);
-  const boundedMessages: ChatMessage[] = [];
-  let messageChars = 0;
-  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
-    const message = recentMessages[index]!;
-    const content = capVisualField(message.content);
-    if (boundedMessages.length > 0 && messageChars + content.length > VISUAL_TOTAL_CHARS) {
-      break;
-    }
-    messageChars += content.length;
-    boundedMessages.push({
-      ...message,
-      content,
-      ...(message.toolCalls
-        ? {
-            toolCalls: message.toolCalls.map((call) => ({
-              ...call,
-              args: { restored: "Arguments available in the full session record" },
-              rawArguments: undefined,
-            })),
-          }
-        : {}),
-    });
-  }
-  boundedMessages.reverse();
-
-  const recentTranscript = transcript?.slice(-VISUAL_TRANSCRIPT_ITEMS);
-  const boundedTranscript: ClassicTranscriptItem[] = [];
-  let transcriptChars = 0;
-  if (recentTranscript) {
-    for (let index = recentTranscript.length - 1; index >= 0; index -= 1) {
-      const item = boundedTranscriptItem(recentTranscript[index]!);
-      const size =
-        item.kind === "tool"
-          ? item.output.length + item.argsDisplay.length
-          : item.kind === "thinking"
-            ? item.content.length
-            : item.kind === "compacted"
-              ? item.summary.length
-              : item.kind === "plan"
-                ? 4_000
-                : item.kind === "turn-summary"
-                  ? 0
-                  : item.text.length;
-      if (
-        boundedTranscript.length > 0 &&
-        transcriptChars + size > VISUAL_TOTAL_CHARS
-      ) {
-        break;
-      }
-      transcriptChars += size;
-      boundedTranscript.push(item);
-    }
-    boundedTranscript.reverse();
-  }
-
+): SessionVisualInput {
   return {
-    transcript: transcript ? boundedTranscript : undefined,
-    messages: boundedMessages,
-    omittedItems: Math.max(0, (transcript?.length ?? 0) - boundedTranscript.length),
-    omittedMessages: Math.max(0, messages.length - boundedMessages.length),
+    transcript: transcript?.map(visualTranscriptItem),
+    messages: messages.map(visualMessage),
   };
 }
 

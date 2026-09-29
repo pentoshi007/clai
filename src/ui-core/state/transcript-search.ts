@@ -1,5 +1,21 @@
 
-import { itemSearchText, transcriptItems, type TranscriptState } from "./transcript-types.js";
+import {
+  itemSearchText,
+  transcriptItems,
+  type TranscriptItem,
+  type TranscriptState,
+} from "./transcript-types.js";
+
+const haystacks = new WeakMap<TranscriptItem, string>();
+
+function haystackFor(item: TranscriptItem): string {
+  let haystack = haystacks.get(item);
+  if (haystack === undefined) {
+    haystack = itemSearchText(item).toLowerCase();
+    haystacks.set(item, haystack);
+  }
+  return haystack;
+}
 
 export interface TranscriptMatch {
   readonly itemId: string;
@@ -12,7 +28,7 @@ export function findMatches(state: TranscriptState, query: string): TranscriptMa
   if (!needle) return [];
   const matches: TranscriptMatch[] = [];
   for (const item of transcriptItems(state)) {
-    const haystack = itemSearchText(item).toLowerCase();
+    const haystack = haystackFor(item);
     let from = 0;
     for (;;) {
       const at = haystack.indexOf(needle, from);

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { open, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { open, readFile, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 
 export interface HistorySummary {
   id: string;
@@ -337,4 +337,73 @@ export async function findHistoryRecordStreaming<T extends HistoryRecordShape>(
     if (record.id === id) found = record;
   });
   return found;
+}
+
+const RANGE_COPY_CHUNK = 1024 * 1024;
+
+async function copyEntryRanges(
+  sourcePath: string,
+  destination: FileHandle,
+  entries: readonly HistoryIndexEntry[],
+  startOffset: number,
+): Promise<HistoryIndexEntry[]> {
+  const source = await open(sourcePath, "r");
+  const buffer = Buffer.allocUnsafe(RANGE_COPY_CHUNK);
+  const copied: HistoryIndexEntry[] = [];
+  let offset = startOffset;
+  try {
+    for (const entry of entries) {
+      let remaining = entry.length;
+      let position = entry.offset;
+      while (remaining > 0) {
+        const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, remaining), position);
+        if (bytesRead === 0) throw new Error(`history record ${entry.id} is shorter than indexed`);
+        await destination.write(buffer, 0, bytesRead);
+        remaining -= bytesRead;
+        position += bytesRead;
+      }
+      copied.push({ ...entry, offset });
+      offset += entry.length;
+    }
+  } finally {
+    await source.close();
+  }
+  return copied;
+}
+
+export async function appendIndexedRanges(
+  sourcePath: string,
+  destinationPath: string,
+  entries: readonly HistoryIndexEntry[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  const destination = await open(destinationPath, "a", 0o600);
+  try {
+    const { size } = await destination.stat();
+    await copyEntryRanges(sourcePath, destination, entries, size);
+    await destination.sync().catch(() => undefined);
+  } finally {
+    await destination.close();
+  }
+}
+
+export async function rewriteIndexedJsonl(
+  jsonlPath: string,
+  indexPath: string,
+  entries: readonly HistoryIndexEntry[],
+): Promise<void> {
+  const jsonlTemp = `${jsonlPath}.${process.pid}.${randomUUID()}.tmp`;
+  const handle = await open(jsonlTemp, "wx", 0o600);
+  let copied: HistoryIndexEntry[];
+  try {
+    copied = await copyEntryRanges(jsonlPath, handle, entries, 0);
+    await handle.sync();
+  } catch (error) {
+    await handle.close();
+    await rm(jsonlTemp, { force: true });
+    throw error;
+  }
+  await handle.close();
+  await rename(jsonlTemp, jsonlPath);
+  await writeHistoryIndexFile(jsonlPath, indexPath, copied);
 }
