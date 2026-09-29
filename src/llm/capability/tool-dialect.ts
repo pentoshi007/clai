@@ -6,6 +6,7 @@ import { catalogFactsByRoute, reasoningKey } from "./state.js";
 
 const providerToolDialect: Record<ProviderId, ToolDialect> = {
   free: "openai",
+  freebuff: "openai",
   openai: "openai",
   openrouter: "openai",
   nvidia: "openai",

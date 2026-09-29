@@ -36,6 +36,13 @@ import {
   startCopilotDeviceAuth,
 } from "../../llm/copilot-auth.js";
 import {
+  importExistingFreebuffToken,
+  isFreebuffHeadless,
+  pollFreebuffDeviceAuth,
+  startFreebuffDeviceAuth,
+  validateFreebuffToken,
+} from "../../llm/freebuff-auth.js";
+import {
   encodeKiroKey,
   decodeKiroKey,
   isKiroOAuthToken,
@@ -758,6 +765,201 @@ export async function runCopilotAuthForUI(
   }
 }
 
+export async function runFreebuffAuthForUI(
+  services: AppServices,
+): Promise<string | undefined> {
+  let start;
+  try {
+    start = await startFreebuffDeviceAuth();
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `could not start Freebuff sign-in: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+
+  if (!isFreebuffHeadless()) {
+    void openSystemBrowser(start.loginUrl).catch(() => {});
+  }
+
+  services.overlay.openPager(
+    "Freebuff sign-in",
+    [
+      "Authenticate Freebuff on any device:",
+      "",
+      `  ${start.loginUrl}`,
+      "",
+      isFreebuffHeadless()
+        ? "Open the link on any device, sign in, then return here."
+        : "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
+  const waiting = services.toast.info("waiting for Freebuff approval…", {
+    sticky: true,
+  });
+  try {
+    const result = await pollFreebuffDeviceAuth(start, {
+      signal: abortController.signal,
+    });
+    notice(services, "info", "Freebuff authenticated");
+    return result.token;
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
+    notice(
+      services,
+      "warn",
+      `Freebuff sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
+  }
+}
+
+async function importFreebuffForUI(
+  services: AppServices,
+): Promise<string | undefined> {
+  const imported = await importExistingFreebuffToken();
+  if (!imported) {
+    notice(
+      services,
+      "warn",
+      "no existing Freebuff login found (set FREEBUFF_API_KEY or CODEBUFF_API_KEY)",
+    );
+    return undefined;
+  }
+  try {
+    await validateFreebuffToken(imported.token);
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `imported Freebuff token is not valid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+  notice(services, "info", `imported Freebuff login from ${imported.source}`);
+  return imported.token;
+}
+
+function pickFreebuffAuthMethod(
+  services: AppServices,
+): Promise<"signin" | "import" | undefined> {
+  return new Promise((resolve) => {
+    const opened = services.overlay.openPicker(
+      {
+        title: "Freebuff sign-in method",
+        options: [
+          {
+            value: "signin",
+            label: "Sign in with Freebuff",
+            description: "opens a login link — works in browser or over SSH",
+          },
+          {
+            value: "import",
+            label: "Import existing Freebuff login",
+            description: "reuse FREEBUFF_API_KEY / CODEBUFF_API_KEY or manicode credentials",
+          },
+        ],
+      },
+      (value) => {
+        services.overlay.close();
+        resolve(value as "signin" | "import");
+      },
+    );
+    if (!opened) resolve(undefined);
+  });
+}
+
+async function addFreebuffAccount(
+  services: AppServices,
+): Promise<string | undefined> {
+  const method = await pickFreebuffAuthMethod(services);
+  if (!method) return undefined;
+  return method === "import"
+    ? importFreebuffForUI(services)
+    : runFreebuffAuthForUI(services);
+}
+
+async function openFreebuffKeysFlow(services: AppServices): Promise<void> {
+  let { keys, activeIndex } = await loadOAuthKeys("freebuff");
+  for (;;) {
+    services.overlay.close();
+    const answer = await services.overlay.openKeysEditor({
+      provider: "freebuff",
+      heading: "FREEBUFF ACCOUNTS",
+      itemLabel: "account",
+      addViaPicker: true,
+      refreshable: true,
+      initialKeys: keys.map((key) => ({
+        id: key.id,
+        masked: maskSecret(key.value),
+        disabled: key.disabled === true,
+      })),
+      activeIndex,
+    });
+    if (!answer) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    if (answer.action === "reset") {
+      await unsetProviderSecret("freebuff");
+      notice(services, "info", "unset all keys for Freebuff");
+      return;
+    }
+    if (answer.action === "pick") {
+      await savePickerDraft("freebuff", answer, keys, activeIndex);
+      const token = await addFreebuffAccount(services);
+      if (token) {
+        await appendProviderKey("freebuff", token);
+        notice(services, "info", `added Freebuff account ${maskSecret(token)}`);
+      } else {
+        notice(services, "info", "cancelled");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("freebuff"));
+      continue;
+    }
+    if (answer.action === "refresh") {
+      const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected) {
+        const token = await addFreebuffAccount(services);
+        if (token) {
+          const replaced = await replaceProviderKey("freebuff", selected.value, token);
+          if (!replaced) {
+            notice(services, "warn", "Freebuff account was not found");
+          } else {
+            notice(services, "info", `refreshed Freebuff account ${maskSecret(token)}`);
+          }
+        } else {
+          notice(services, "info", "cancelled");
+        }
+      } else {
+        notice(services, "warn", "Freebuff account was not found");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("freebuff"));
+      continue;
+    }
+    await saveOAuthKeys(services, "freebuff", answer, keys, activeIndex);
+    return;
+  }
+}
+
 async function loadClineKeys(): Promise<{
   keys: ProviderKeySlot[];
   activeIndex: number;
@@ -917,7 +1119,7 @@ async function openClineKeysFlow(services: AppServices): Promise<void> {
 }
 
 async function loadOAuthKeys(
-  provider: "codex" | "copilot" | "kiro",
+  provider: "codex" | "copilot" | "kiro" | "freebuff",
 ): Promise<{ keys: ProviderKeySlot[]; activeIndex: number }> {
   const multi = await getProviderKeys(provider);
   return {
@@ -927,7 +1129,7 @@ async function loadOAuthKeys(
 }
 
 async function savePickerDraft(
-  provider: "cline" | "codex" | "copilot" | "kiro",
+  provider: "cline" | "codex" | "copilot" | "kiro" | "freebuff",
   answer: Extract<KeysEditorAnswer, { action: "pick" }>,
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
@@ -951,7 +1153,7 @@ async function savePickerDraft(
 
 async function saveOAuthKeys(
   services: AppServices,
-  provider: "codex" | "copilot" | "kiro",
+  provider: "codex" | "copilot" | "kiro" | "freebuff",
   answer: Extract<KeysEditorAnswer, { action: "save" }>,
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
@@ -1615,6 +1817,11 @@ export async function openLlmKeysEditor(
 
   if (id === "kiro") {
     await openKiroKeysFlow(services);
+    return;
+  }
+
+  if (id === "freebuff") {
+    await openFreebuffKeysFlow(services);
     return;
   }
 

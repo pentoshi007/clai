@@ -6,8 +6,8 @@
 
 Why people pick it over other agent CLIs:
 
-- **Zero cost of entry.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key, no card. It stays useful at $0: free tiers on Gemini, OpenRouter, NVIDIA NIM, Cline, Hetzner and Bynara are all first-class citizens, and `/freeonly on` guarantees you never spend a cent by accident.
-- **Your subscriptions, in the terminal.** Already paying for ChatGPT, GitHub Copilot, Cline, or Kiro? Sign in with `clai auth` (browser, device code, or one-command import from the official CLI) and use that subscription from the terminal — no separate API billing.
+- **Zero cost of entry.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key, no card. It stays useful at $0: Freebuff, Gemini, OpenRouter, NVIDIA NIM, Cline, Hetzner and Bynara are all first-class free options, and `/freeonly on` restricts cross-provider fallback to configured free-tier providers.
+- **Account sign-in in the terminal.** Freebuff, ChatGPT, GitHub Copilot, Cline, and Kiro support account-based sign-in. Freebuff uses its browser/device approval flow and a hosted session; the subscription-backed providers use their respective subscription credentials.
 - **One agent, ~25 providers.** DeepSeek, Kimi, GLM, MiniMax, MiMo, Qwen, OpenAI, Anthropic, Gemini, local Ollama, and a dozen OpenAI-compatible gateways — switch with one command, mid-session if you like.
 - **It doesn't die on rate limits.** Up to 10 keys per provider with sticky rotation, optional cross-provider fallback, and retry/backoff tuned per provider. Long jobs survive flaky free tiers.
 - **It's honest.** Findings need real tool output. Builds get typechecked/run before "done." Compaction and history keep long sessions coherent instead of hallucinating progress.
@@ -17,9 +17,9 @@ Why people pick it over other agent CLIs:
 ## Highlights
 
 - **Free-tier first.** Built-in **keyless Free** gateway (`free-2/kilo-auto/free`) so a fresh install runs at no cost with zero setup — no API key required.
-- **Subscription sign-in.** `clai auth <cline|chatgpt|copilot|kiro>` — OAuth browser/device-code flows, plus `--import` to reuse an existing Cline, Codex CLI, Copilot, or Kiro sign-in. Multi-account supported with automatic rotation.
+- **Account sign-in.** `clai auth <freebuff|cline|chatgpt|copilot|kiro>` — provider-specific browser/device approval, with supported `--import` paths and multi-credential rotation.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit, quota, transient, or 5xx errors. Disable any key to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
-- **Broad provider support.** ~25 built-in providers: DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, AgentRouter, AWS Mantle, TokenRouter, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
+- **Broad provider support.** 25+ built-in providers: Freebuff, DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, AgentRouter, AWS Mantle, TokenRouter, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
 - **Parallel subagents.** Independent investigations (recon, research, large refactors) run as read-only subagents concurrently; `/orchestrator` and `/agents` control and inspect them, with per-role model chains.
 - **Agent Skills.** Loads `SKILL.md`-based skills on demand — `/skills` manages them, and relevant skills surface automatically per prompt.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -111,18 +111,19 @@ clai use ollama
 
 ## Providers & Key Management
 
-### Subscription & OAuth providers (no API key needed)
+### Account sign-in providers (no conventional API key needed)
 
-Sign in with an account you already have. Every flow works on headless servers (device code / copyable link), and `--import` reuses the official tool's existing sign-in.
+Sign in with an account you already have. Browser/device-code flows work on headless servers through a copyable link; `--import` reuses supported local sign-ins or imports provider tokens.
 
 | Provider | Sign-in | Notes |
 |----------|---------|-------|
+| **Freebuff** | `clai auth freebuff` | Free, session-gated catalog; browser sign-in or headless link |
 | **ChatGPT (Codex)** | `clai auth chatgpt` | Any ChatGPT tier incl. Free; mimics the official Codex CLI |
 | **GitHub Copilot** | `clai auth copilot` | Incl. Copilot Free; mimics VS Code Copilot Chat |
 | **Cline** | `clai auth cline` | Free `cline-free/*` models plus frontier catalog |
 | **Kiro (AWS)** | `clai auth kiro` | AWS Builder ID, Google/GitHub social login, or IAM Identity Center SSO |
 
-Each supports up to 10 signed-in accounts with automatic rotation, and `clai auth <p> --import` imports an existing Cline / Codex CLI / Copilot / Kiro sign-in in one step.
+Up to 10 credentials can be stored per provider, with automatic key rotation on applicable authentication/quota errors. `clai auth <p> --import` imports supported local sign-ins; Freebuff also imports `FREEBUFF_API_KEY`, `CODEBUFF_API_KEY`, or the upstream `~/.config/manicode/credentials.json` token.
 
 ### API-key providers
 
@@ -155,7 +156,44 @@ Each supports up to 10 signed-in accounts with automatic rotation, and `clai aut
 | **ExpLabs** | `claude-fable-5.1` | Paid / BYOK gateway | `EXPLABS_API_KEY` |
 | **Vercel AI Gateway** | `openai/gpt-5.4-mini` | Paid gateway | `AI_GATEWAY_API_KEY` |
 
-Model lists for all providers are fetched dynamically from their respective APIs. You can switch models anytime using `/model` or `clai model <name>`, browse the whole fleet with `/models`, and read setup details for any provider with `/info <provider>`.
+Model catalogs use each provider's supported discovery source; most expose a dedicated models endpoint. Freebuff does not: clai reads account-visible model IDs from its read-only session endpoint and merges them with a source-versioned fallback. You can switch models anytime using `/model` or `clai model <name>`, browse the whole fleet with `/models`, and read setup details for any provider with `/info <provider>`.
+
+### Freebuff setup and behavior
+
+Freebuff is a hosted, free-tier provider that requires an account sign-in. Free-mode inference is only served to the genuine freebuff CLI: the server refuses direct API calls (free_mode_cli_required), so clai manages sign-in and the live model catalog but refuses generation requests fast with an actionable message. The default model is `z-ai/glm-5.3-flash`.
+
+```sh
+clai auth freebuff             # sign in, then approve in your browser
+clai use freebuff
+clai                           # start the interactive agent
+clai model z-ai/glm-5.3-flash  # set a model from the catalog
+# in the interactive console: /model · /info freebuff
+```
+
+On a desktop, `clai auth freebuff` opens the approval page when possible. On SSH/headless Linux it prints a URL to open on any device; no localhost callback or port-forwarding is required. To import an existing token, use `clai auth freebuff --import`. Import checks `FREEBUFF_API_KEY`, `CODEBUFF_API_KEY`, then the upstream `~/.config/manicode/credentials.json` file (or `FREEBUFF_CONFIG_DIR`). A token can also be entered with `clai set freebuff <token>`. clai stores credentials through its existing secure key storage; up to 10 credentials can be configured and rotated on authentication or quota errors.
+
+The login token is an opaque bearer credential. It has no refresh token or documented expiry; if the server returns 401, sign in again or replace the token. Keep it secret and do not paste it into chat or commit it to a repository.
+
+#### Sessions, models, and spending
+
+clai admits no Freebuff session for inference and spends no wallet Freebucks: every direct inference attempt is refused server-side, so the request stops before any session state mutates. To use these models, run the genuine client (`npm i -g freebuff`, then `freebuff`). Because inference is unavailable, Freebuff is intentionally excluded from automatic cross-provider fallback; select it explicitly only for sign-in and catalog browsing.
+
+`/model` lists only the models the server currently reports as applicable to the signed-in account (live rate-limit pools plus zero-price models, minus plan-gated ids), cached per credential for up to 30 minutes. The bundled model-ID table is only an offline fallback when the session probe is unreachable; nothing is hardcoded into the live list. Freebuff does not provide the separately probed `/api/v1/models` endpoint, nor does the session catalog publish per-model context-window limits. Context sizes therefore use clai's generic estimates rather than claimed live Freebuff limits. Modality and reasoning support are recognized from known model patterns; not every catalog item is guaranteed to support images or a configurable effort.
+
+#### Tools, images, thinking, and caching
+
+clai does not run Freebuff inference, so no Chat Completions or SSE streaming path is exercised against this provider. `/model` lists only the models the server currently reports as applicable to the signed-in account (live rate-limit pools plus zero-price models, minus plan-gated ids), cached per credential for up to 30 minutes. The bundled model-ID table is only an offline fallback when the session probe is unreachable; nothing is hardcoded into the live list.
+
+On clean TUI shutdown and after a noninteractive run, clai awaits best-effort deletion of its own CLI session claims. Forced termination, process crashes, or an unreachable server can prevent that request; the server-side session expiry still applies. clai never sends a delete for a claim it does not own.
+
+#### Troubleshooting
+
+- **401 / invalid token:** run `clai auth freebuff` again or replace the saved token. There is no refresh-token flow.
+- **409 session_superseded / 403 free_mode_cli_required on generation:** expected. The server only serves free-mode turns to the genuine freebuff CLI; clai refuses before spending anything. Use `freebuff` for these models or `/provider` for another provider.
+- **Quota, model-unavailable, country, or account refusal:** follow the server's message; wait for the indicated reset/window or choose a currently available model with `/model`.
+- **Wallet consent required:** clai has not spent anything. It always requests zero wallet spend; use a free-eligible model or review the purchase in a Freebuff-supported surface.
+- **Catalog does not refresh:** `/model` uses the account-visible session response and a 30-minute per-account cache. If the session probe is unreachable, clai displays its bundled catalog fallback; the hosted `/api/v1/models` endpoint is not available.
+- **Session remains after a forced stop:** clean exits attempt deletion; otherwise Freebuff's server-side expiry clears it.
 
 ### Manage Keys
 

@@ -44,6 +44,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   mimo: "paid-cloud",
   glm: "paid-cloud",
   minimax: "paid-cloud",
+  freebuff: "free-cloud",
   cline: "free-cloud",
   codex: "free-cloud",
   copilot: "free-cloud",

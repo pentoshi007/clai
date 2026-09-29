@@ -25,6 +25,7 @@ export const providerIds = [
   "mimo",
   "glm",
   "minimax",
+  "freebuff",
   "cline",
   "codex",
   "copilot",

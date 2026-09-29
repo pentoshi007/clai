@@ -18,6 +18,7 @@ import {
   authCodex,
   authCopilot,
   authKiro,
+  authFreebuff,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
 import {
@@ -467,10 +468,10 @@ async function main(): Promise<void> {
   program
     .command("auth")
     .description(
-      "authenticate a provider via browser/OAuth (Cline, Chatgpt Subscription, Github Copilot)",
+      "authenticate a provider via browser/device flow (Freebuff, Cline, Chatgpt Subscription, Github Copilot, Kiro)",
     )
-    .argument("<provider>", "provider id (cline, chatgpt, copilot, kiro)")
-    .option("--import", "import an existing app sign-in (Cline/Chatgpt Subscription/Github Copilot/Kiro)")
+    .argument("<provider>", "provider id (freebuff, cline, chatgpt, copilot, kiro)")
+    .option("--import", "import an existing app sign-in (Freebuff/Cline/Chatgpt Subscription/Github Copilot/Kiro)")
     .option("--browser", "authenticate via browser (default for Chatgpt Subscription)")
     .option("--headless", "authenticate via headless/device code flow")
     .action(
@@ -504,6 +505,10 @@ async function main(): Promise<void> {
           id.includes("copilot")
         ) {
           await authCopilot("copilot", options);
+          return;
+        }
+        if (id === "freebuff" || id === "fb" || id === "free-buff") {
+          await authFreebuff("freebuff", options);
           return;
         }
         if (

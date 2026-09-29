@@ -47,6 +47,8 @@ export async function openAiCompatibleComplete(options: {
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
+  bodyExtras?: Readonly<Record<string, unknown>> | undefined;
+  ephemeralCacheBreakpoints?: boolean | undefined;
   usageAliases?: CompatibleUsageAliases | undefined;
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
@@ -85,6 +87,8 @@ export async function openAiCompatibleComplete(options: {
   });
   const requestBody = chatCompletionsBodyFromPlan(plan, {
     reasoningStyle: options.reasoningStyle,
+    bodyExtras: options.bodyExtras,
+    ephemeralCacheBreakpoints: options.ephemeralCacheBreakpoints,
     reasoningArtifactReplayObserver: options.reasoningArtifactReplayObserver,
     ...(options.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
   });

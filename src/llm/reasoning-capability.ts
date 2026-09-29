@@ -3,6 +3,20 @@ import { FAMILYLESS_ENDPOINT_LAYERS } from "./provider-profile-layers.js";
 
 export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   free: [/deepseek/i, /kimi/i, /minimax/i, /mimo/i, /nemotron/i],
+  freebuff: [
+    /deepseek/i,
+    /kimi/i,
+    /glm/i,
+    /qwen3/i,
+    /gpt-[56]/i,
+    /o[34]/i,
+    /claude/i,
+    /gemini-3/i,
+    /grok/i,
+    /minimax/i,
+    /mistral/i,
+    /reason/i,
+  ],
   gemini: [/gemini-2\.5/i, /gemini-3/i, /gemini-3\.5/i],
   openrouter: [
     /:thinking/i,

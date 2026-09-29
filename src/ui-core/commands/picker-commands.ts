@@ -346,6 +346,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   mimo: "https://api.xiaomimimo.com/v1",
   glm: "https://api.z.ai/api/paas/v4",
   minimax: "https://api.minimaxi.chat/v1",
+  freebuff: "https://www.codebuff.com/api/v1",
   cline: "https://api.cline.bot/api/v1",
   codex: "https://chatgpt.com/backend-api/codex",
   copilot: "https://api.githubcopilot.com",
@@ -461,6 +462,16 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
         services.overlay.close();
         const { runCopilotAuthForUI } = await import("./key-commands.js");
         const token = await runCopilotAuthForUI(services);
+        if (!token) {
+          services.overlay.close();
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        await appendProviderKey(next, token);
+      } else if (next === "freebuff") {
+        services.overlay.close();
+        const { runFreebuffAuthForUI } = await import("./key-commands.js");
+        const token = await runFreebuffAuthForUI(services);
         if (!token) {
           services.overlay.close();
           services.session.notice("info", `cancelled · provider unchanged`);
