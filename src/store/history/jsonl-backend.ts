@@ -1,6 +1,6 @@
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
 import { getConfig } from "../config.js";
-import { appendIndexedHistoryRecord, readIndexedHistoryRecord, readValidatedHistoryIndex, writeIndexedJsonl } from "../history-index.js";
+import { appendIndexedHistoryRecord, appendIndexedRanges, readIndexedHistoryRecord, readValidatedHistoryIndex, rewriteIndexedJsonl, writeIndexedJsonl } from "../history-index.js";
 import type { HistoryIndexEntry, HistorySummary } from "../history-index.js";
 import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
 import { backupActiveHistory, compareHistoryFreshness, dedupeHistoryById, ensureHistoryRecovered, HistoryRecord, hydrateHistoryRecord, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, readJsonlRecordsFrom, sortHistoryByUpdatedDesc } from "./recovery.js";
@@ -145,9 +145,30 @@ function shouldCompactHistory(result: {
   return result.liveBytes / result.fileSize < HISTORY_COMPACT_LIVE_RATIO;
 }
 
-async function compactJsonlUnderLock(): Promise<void> {
-  const records = await readJsonlRecordsFrom(jsonlFilePath());
-  await writeJsonlAtomic(records, records.length);
+async function compactJsonlUnderLock(entries: readonly HistoryIndexEntry[]): Promise<void> {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const { kept, pruned } = partitionByRetention(
+    entries.map((entry) => summaryFreshness(entry.summary)),
+    getConfig().historyRetentionLimit,
+  );
+  const keptEntries = kept.map((record) => byId.get(record.id)!).reverse();
+  const prunedEntries = pruned.map((record) => byId.get(record.id)!);
+  try {
+    if (prunedEntries.length > 0) {
+      await appendIndexedRanges(jsonlFilePath(), archiveFilePath(), prunedEntries);
+      await fixOwner(archiveFilePath()).catch(() => undefined);
+      await backupActiveHistory();
+    }
+    await rewriteIndexedJsonl(jsonlFilePath(), jsonlIndexFilePath(), keptEntries);
+  } catch {
+    const records = await readJsonlRecordsFrom(jsonlFilePath());
+    await writeJsonlAtomic(records, records.length);
+    return;
+  }
+  await Promise.all([
+    fixOwner(jsonlFilePath()).catch(() => undefined),
+    fixOwner(jsonlIndexFilePath()).catch(() => undefined),
+  ]);
 }
 
 async function upsertJsonlUnderLock(
@@ -195,7 +216,7 @@ async function upsertJsonlUnderLock(
     fixOwner(jsonlFilePath()).catch(() => undefined),
     fixOwner(jsonlIndexFilePath()).catch(() => undefined),
   ]);
-  if (shouldCompactHistory(result)) await compactJsonlUnderLock();
+  if (shouldCompactHistory(result)) await compactJsonlUnderLock(result.entries);
   return record;
 }
 

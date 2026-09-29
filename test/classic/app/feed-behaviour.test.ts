@@ -11,7 +11,7 @@ import {
 import type { ActionId } from "../../../src/ui-core/actions/action-id.js";
 import { keyEvent, type MouseEvent } from "../../../src/classic/input/key-event.js";
 import type { FeedBlock } from "../../../src/classic/feed/feed-blocks.js";
-import { flattenBlocks, planTranscriptWindow } from "../../../src/classic/feed/transcript-window.js";
+import { planTranscriptWindow } from "../../../src/classic/feed/transcript-window.js";
 import { createHarness, type Harness } from "./harness.js";
 
 let harness: Harness | undefined;
@@ -265,8 +265,7 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
       turnId: undefined,
       sequence: 0,
     };
-    const flat = flattenBlocks([block]);
-    const window = planTranscriptWindow(flat, 2, 0);
+    const window = planTranscriptWindow([block], 2, 0);
     harness.wiring.observeFeed({
       columns: 96,
       generation: 0,
@@ -304,7 +303,7 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
       turnId: undefined,
       sequence: 0,
     };
-    const window = planTranscriptWindow(flattenBlocks([block]), 5, 5);
+    const window = planTranscriptWindow([block], 5, 5);
     harness.wiring.observeFeed({ columns: 96, generation: 0, blocks: [block], window } as never);
     harness.wiring.setTranscriptSelectionGeometry({ left: 0, top: 2 });
     harness.wiring.handleMouse(mouse({ x: 0, y: 3 }));

@@ -323,7 +323,7 @@ export function createCompositionRoot(
       const live = sessionRef;
       if (!live) return undefined;
       return transcript.mergePersistSnapshot(
-        serializeForHistory(transcript.getState(), (id) => live.spool.tail(id)),
+        serializeForHistory(transcript.getState(), (id) => live.spool.peekTail(id)),
       );
     },
   });

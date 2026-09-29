@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/react */
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,7 +18,8 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import { wheelChatDelta } from "../../composer/composer-wheel.js";
 import { useTranscriptState } from "../../../ui-core/react/use-transcript-store.js";
-import { useSessionState } from "../../../ui-core/react/use-session-state.js";
+import { useSessionField } from "../../../ui-core/react/use-transcript-meta.js";
+import type { SessionState } from "../../../app/controllers/session-controller.js";
 import {
   isFileDiffExpanded,
   isItemExpanded,
@@ -90,11 +92,22 @@ export function useTranscriptFollowKey(
   return useMemo(() => transcriptFollowKey(state, running), [state, running]);
 }
 
-export function TranscriptView(props: TranscriptViewProps): ReactNode {
+function selectRunning(state: SessionState): boolean {
+  return state.running;
+}
+
+function selectSessionId(state: SessionState): SessionState["sessionId"] {
+  return state.sessionId;
+}
+
+export const TranscriptView = memo(TranscriptViewImpl);
+
+function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   countRender("TranscriptView");
   const { services, theme, focused, contentWidth, scrollRef: externalScrollRef } = props;
   const state = useTranscriptState(services.transcript);
-  const session = useSessionState(services.session);
+  const sessionRunning = useSessionField(services.session, selectRunning);
+  const sessionId = useSessionField(services.session, selectSessionId);
   const items = useMemo(() => transcriptItems(state), [state]);
   const { width: termWidth } = useTerminalDimensionsContext();
   const paneWidth = Math.max(20, contentWidth ?? termWidth - 6);
@@ -132,7 +145,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     { itemId?: string; edge?: "top" | "bottom" } | undefined
   >(undefined);
 
-  const followKey = useTranscriptFollowKey(state, session.running);
+  const followKey = useTranscriptFollowKey(state, sessionRunning);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -404,7 +417,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     return () => cancelAnimationFrame(frame);
   }, [mountWindow.start, mountWindow.end]);
 
-  const sessionFingerprint = session.sessionId;
+  const sessionFingerprint = sessionId;
   const lastSessionFp = useRef(sessionFingerprint);
   useEffect(() => {
     if (sessionFingerprint === lastSessionFp.current) return;
@@ -414,12 +427,12 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   }, [sessionFingerprint, items.length]);
 
   useEffect(() => {
-    const running = session.running || Boolean(state.runningStatus);
+    const running = sessionRunning || Boolean(state.runningStatus);
     if (running && !wasRunning.current) {
       setFollowing(true);
     }
     wasRunning.current = running;
-  }, [session.running, state.runningStatus]);
+  }, [sessionRunning, state.runningStatus]);
 
   useEffect(() => {
     const tailId = items.at(-1)?.id;

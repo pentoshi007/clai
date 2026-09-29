@@ -10,10 +10,18 @@ import {
   EMPTY_MARKDOWN_STREAM_CACHE,
   type MarkdownStreamCache,
 } from "../../../ui-core/rendering/streaming-markdown.js";
-import { renderStyledStreamingMarkdown } from "../../rendering/styled-markdown.js";
+import {
+  renderStyledMarkdownLines,
+  renderStyledStreamingMarkdown,
+  styledLinesWeight,
+  type StyledLine,
+} from "../../rendering/styled-markdown.js";
+import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
 import { selectableRowStyle } from "./selectable-line.js";
 
 const BODY_INDENT = 2;
+
+const FINISHED_LINES = new ObjectRenderCache<AssistantItem, StyledLine[]>(48 * 1024 * 1024);
 
 export function AssistantMessage(props: {
   item: AssistantItem;
@@ -31,21 +39,32 @@ export function AssistantMessage(props: {
 
   const cacheRef = useRef<MarkdownStreamCache>(EMPTY_MARKDOWN_STREAM_CACHE);
   const lines = useMemo(() => {
+    const options = {
+      width: wrapWidth,
+      defaultFg: theme.response,
+      stripOuterIndent: true,
+      theme,
+      colorMode,
+    };
+    if (!item.text) return [];
+    if (!item.streaming) {
+      cacheRef.current = EMPTY_MARKDOWN_STREAM_CACHE;
+      return FINISHED_LINES.resolve(
+        item,
+        `${wrapWidth}|${colorMode}|${objectIdentity(theme)}`,
+        () => renderStyledMarkdownLines(item.text, options),
+        styledLinesWeight,
+      );
+    }
     const rendered = renderStyledStreamingMarkdown({
       text: item.text,
-      streaming: item.streaming,
-      options: {
-        width: wrapWidth,
-        defaultFg: theme.response,
-        stripOuterIndent: true,
-        theme,
-        colorMode,
-      },
+      streaming: true,
+      options,
       cache: cacheRef.current,
     });
     cacheRef.current = rendered.cache;
     return rendered.lines;
-  }, [item.text, item.streaming, wrapWidth, theme, colorMode]);
+  }, [item, wrapWidth, theme, colorMode]);
 
   if (!item.text.trim() && item.streaming) return null;
   if (!item.text.trim() && lines.length === 0) return null;
