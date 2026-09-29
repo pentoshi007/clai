@@ -21,7 +21,7 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/rtk",
-    usage: "[on|off|status]",
+    usage: "[on|off|status|install|update]",
     description: "compress shell output with rtk to save tokens, prompt-cache safe",
   },
   {
@@ -148,8 +148,8 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/plan",
-    usage: "[view|off]",
-    description: "enter plan mode",
+    usage: "[view]",
+    description: "switch to plan mode: design a plan you approve before anything runs",
   },
   {
     command: "/implement",
