@@ -25,8 +25,8 @@ it("renders readable subagent activity and one evidence report in Classic", asyn
   const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
   try {
     const frame = view.lastFrame() ?? "";
-    expect(frame).toContain(colorInk.style("fs.read", { fg: "cyan", bold: true }).replace(/\x1b\[39m\x1b\[0m$/, ""));
-    expect(frame).toContain(colorInk.fg("success", "✓ ").replace(/\x1b\[39m\x1b\[0m$/, ""));
+    expect(frame).toContain(colorInk.style("fs.read", { fg: "cyan", bold: true }).replace(/\x1b\[39m(?:\x1b\[0m)?$/, ""));
+    expect(frame).toContain(colorInk.fg("success", "✓ ").replace(/\x1b\[39m(?:\x1b\[0m)?$/, ""));
     expect(frame).toContain("src/agent/subagents/worker.ts");
     expect(frame).toContain("offset=81, limit=80");
     expect(frame).not.toContain("PRIVATE_FILE_BODY_MUST_NOT_APPEAR");

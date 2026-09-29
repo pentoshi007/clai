@@ -1,7 +1,9 @@
 import type { FileChange } from "../../tools/file-diff.js";
 import {
   collapsedFileChangeLabel,
+  gutterWidth,
   presentFileChangePreview,
+  relativeDisplayPath,
   syntaxColor,
   type PresentedDiffRow,
 } from "../../ui-core/rendering/file-diff-view.js";
@@ -11,15 +13,18 @@ import {
   isItemExpanded,
   type ToolItem,
 } from "../../ui-core/state/transcript-types.js";
-import { alignEnds, padStartToWidth, padToWidth, sealStyle, trimTrailingSpaces } from "../render/ansi-text.js";
-import type { TextStyle, ThemeToken } from "../render/ink-theme.js";
-import { clipRow, joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
+import { alignEnds, clipToWidth, sealStyle, trimTrailingSpaces } from "../render/ansi-text.js";
+import type { ThemeToken } from "../render/ink-theme.js";
+import { clipRow, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
 import { outputToggleLabel, toolGlyph } from "./tool-lines.js";
 
 export const SINGLE_FILE_PREVIEW_ROWS = 40;
 export const WRITE_MANY_PREVIEW_ROWS = 8;
-const GUTTER_WIDTH = 4;
-export const DIFF_CODE_COLUMN = GUTTER_WIDTH + 4;
+export const WRITE_MANY_LISTED_FILES = 12;
+export const DIFF_INDENT = 2;
+export const DIFF_TAB_WIDTH = 4;
+const GUTTER_RULE_WIDTH = 3;
+const CLICK_HINT = " · click for full";
 
 const STATUS_TOKEN: Record<ToolItem["status"], ThemeToken> = {
   queued: "muted",
@@ -29,31 +34,92 @@ const STATUS_TOKEN: Record<ToolItem["status"], ThemeToken> = {
   blocked: "activity",
 };
 
-function washOk(ctx: BlockContext): boolean {
-  return ctx.ink.colorMode === "truecolor" || ctx.ink.colorMode === "256";
+type ChangeKind = FileChange["kind"];
+
+function changeMark(ctx: BlockContext, kind: ChangeKind): { mark: string; token: ThemeToken } {
+  if (kind === "create") return { mark: "+", token: "success" };
+  if (kind === "overwrite") return { mark: "~", token: "activity" };
+  return { mark: ctx.glyphs.separator, token: "toolOutput" };
 }
 
-function rowStyle(ctx: BlockContext, tone: PresentedDiffRow["tone"]): TextStyle {
-  if (tone === "add") return { fg: "diffAdd", bg: washOk(ctx) ? "diffAddBg" : undefined };
-  if (tone === "del") return { fg: "diffDel", bg: washOk(ctx) ? "diffDelBg" : undefined };
-  if (tone === "gap") return { fg: "muted" };
-  if (tone === "header") return { fg: "muted", bold: true };
-  return {};
+function washToken(tone: PresentedDiffRow["tone"]): ThemeToken | undefined {
+  if (tone === "add") return "diffAddBg";
+  if (tone === "del") return "diffDelBg";
+  return undefined;
 }
 
-function codeText(ctx: BlockContext, row: PresentedDiffRow, budget: number): string {
-  const wash = washOk(ctx) && (row.tone === "add" || row.tone === "del");
-  const body = wash ? padToWidth(row.displayText, budget) : row.displayText;
-  if (row.tone !== "context") return ctx.ink.style(body, rowStyle(ctx, row.tone));
-  if (ctx.ink.colorMode === "none") return body;
+function syntaxCode(ctx: BlockContext, row: PresentedDiffRow): string {
+  if (ctx.ink.colorMode === "none") return row.displayText;
   let out = "";
   for (const span of row.spans) out += ctx.ink.hex(syntaxColor(span.kind, ctx.ink.theme), span.text);
   return out;
 }
 
+function mutedCode(ctx: BlockContext, text: string): string {
+  return ctx.ink.style(text, { fg: "muted", dim: true });
+}
+
+function gutterCell(ctx: BlockContext, row: PresentedDiffRow): string {
+  return ctx.ink.fg("diffGutter", `${row.gutter} ${ctx.glyphs.boxVertical} `);
+}
+
+function quietText(row: PresentedDiffRow): string {
+  return row.tone === "gap" ? row.displayText.replace(CLICK_HINT, "") : row.displayText;
+}
+
+function washedRow(ctx: BlockContext, row: PresentedDiffRow, rowWidth: number): string {
+  const gutter = gutterCell(ctx, row);
+  const quiet = row.tone === "gap" || row.tone === "header";
+  const code = quiet ? mutedCode(ctx, quietText(row)) : syntaxCode(ctx, row);
+  const line = clipToWidth(`${gutter}${code}`, rowWidth, ctx.glyphs.ellipsis);
+  const wash = washToken(row.tone);
+  return wash ? ctx.ink.band(line, rowWidth, { bg: wash }) : line;
+}
+
+function markedRow(ctx: BlockContext, row: PresentedDiffRow, rowWidth: number): string {
+  const gutter = gutterCell(ctx, row);
+  const marker = row.prefix === "−" && !ctx.ink.unicode ? "-" : row.prefix;
+  let body: string;
+  if (row.tone === "add") body = ctx.ink.fg("diffAdd", `${marker} ${row.displayText}`);
+  else if (row.tone === "del") body = ctx.ink.fg("diffDel", `${marker} ${row.displayText}`);
+  else if (row.tone === "context") body = `  ${syntaxCode(ctx, row)}`;
+  else body = `  ${mutedCode(ctx, quietText(row))}`;
+  return clipToWidth(`${gutter}${body}`, rowWidth, ctx.glyphs.ellipsis);
+}
+
+function diffRowLine(ctx: BlockContext, row: PresentedDiffRow): string {
+  const rowWidth = Math.max(1, ctx.width - DIFF_INDENT);
+  const body = ctx.ink.richColor ? washedRow(ctx, row, rowWidth) : markedRow(ctx, row, rowWidth);
+  return trimTrailingSpaces(sealStyle(`${" ".repeat(DIFF_INDENT)}${body}`));
+}
+
+function codeBudget(ctx: BlockContext, change: FileChange): number {
+  const marker = ctx.ink.richColor ? 0 : 2;
+  return Math.max(8, ctx.width - DIFF_INDENT - gutterWidth(change) - GUTTER_RULE_WIDTH - marker);
+}
+
 export function diffStatsSuffix(ctx: BlockContext, change: FileChange): string {
   const minus = ctx.ink.unicode ? "−" : "-";
-  return `${ctx.ink.fg("diffAdd", `+${change.stats.added}`)} ${ctx.ink.fg("diffDel", `${minus}${change.stats.removed}`)}`;
+  const added = ctx.ink.style(`+${change.stats.added}`, { fg: "diffAdd", bold: true });
+  const removed = ctx.ink.style(`${minus}${change.stats.removed}`, { fg: "diffDel", bold: true });
+  return `${added} ${removed}`;
+}
+
+function totalStats(changes: readonly FileChange[]): FileChange["stats"] | undefined {
+  if (changes.length === 0) return undefined;
+  if (changes.length === 1) return changes[0]!.stats;
+  let added = 0;
+  let removed = 0;
+  for (const change of changes) {
+    added += change.stats.added;
+    removed += change.stats.removed;
+  }
+  return { ...changes[0]!.stats, added, removed };
+}
+
+function statsCarrier(changes: readonly FileChange[]): FileChange | undefined {
+  const stats = totalStats(changes);
+  return stats ? { ...changes[0]!, stats } : undefined;
 }
 
 export function diffTitleLine(
@@ -73,60 +139,59 @@ export function diffStatsRow(ctx: BlockContext, change: FileChange): string | un
   return clipRow(ctx, `  ${diffStatsSuffix(ctx, change)}`);
 }
 
-function diffRowLine(ctx: BlockContext, row: PresentedDiffRow): string {
-  const marker = row.prefix === "−" && !ctx.ink.unicode ? "-" : row.prefix;
-  const gutter = ctx.ink.fg("diffGutter", padStartToWidth(row.gutter, GUTTER_WIDTH));
-  const budget = Math.max(1, ctx.width - DIFF_CODE_COLUMN);
-  const head = `${gutter} ${ctx.ink.style(marker, rowStyle(ctx, row.tone))}  `;
-  return trimTrailingSpaces(sealStyle(`${head}${codeText(ctx, row, budget)}`));
+function fileRow(ctx: BlockContext, change: FileChange): string {
+  const { mark, token } = changeMark(ctx, change.kind);
+  const path = ctx.ink.fg("inputBorder", relativeDisplayPath(change.path));
+  return clipRow(ctx, ` ${ctx.ink.fg(token, mark)} ${path}`);
+}
+
+function labelRow(ctx: BlockContext, change: FileChange): string {
+  return clipRow(ctx, `  ${ctx.ink.style(collapsedFileChangeLabel(change), { fg: "foreground", bold: true })}`);
+}
+
+function moreFilesRow(ctx: BlockContext, hidden: number): string {
+  return clipRow(ctx, `  ${ctx.ink.fg("muted", `${ctx.glyphs.ellipsis} +${hidden} more file${hidden === 1 ? "" : "s"}`)}`);
 }
 
 export function buildDiffLines(ctx: BlockContext, item: ToolItem): string[] {
   const changes = item.fileChanges ?? [];
   const primary = changes[0];
+  const multi = changes.length > 1;
   const diffExpanded = isFileDiffExpanded(ctx.state, item.id);
   const outputExpanded = isItemExpanded(ctx.state, item);
+  const carrier = multi ? statsCarrier(changes) : primary;
 
-  const lines = [diffTitleLine(ctx, item, primary)];
-  if (primary) {
-    const statsRow = diffStatsRow(ctx, primary);
+  const lines = [diffTitleLine(ctx, item, carrier)];
+  if (carrier) {
+    const statsRow = diffStatsRow(ctx, carrier);
     if (statsRow) lines.push(statsRow);
   }
 
+  const listed = multi ? changes.slice(0, WRITE_MANY_LISTED_FILES) : changes;
+  const hiddenFiles = changes.length - listed.length;
+
   if (!diffExpanded) {
-    if (primary) {
-      lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", collapsedFileChangeLabel(primary))}`));
+    if (primary && !multi) lines.push(labelRow(ctx, primary));
+    if (multi) {
+      for (const change of listed) lines.push(fileRow(ctx, change));
+      if (hiddenFiles > 0) lines.push(moreFilesRow(ctx, hiddenFiles));
     }
     lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", outputToggleLabel(outputExpanded))}`));
     return lines;
   }
 
-  const maxRows = changes.length > 1 ? WRITE_MANY_PREVIEW_ROWS : SINGLE_FILE_PREVIEW_ROWS;
-  const maxLineChars = Math.max(16, ctx.width - DIFF_CODE_COLUMN);
-  let emitted = 0;
-
-  for (const change of changes) {
-    if (emitted >= maxRows) break;
-    if (changes.length > 1) {
-      lines.push(
-        clipRow(ctx, `  ${ctx.ink.fg("cyan", change.path)} ${diffStatsSuffix(ctx, change)}`),
-      );
-    }
-    for (const row of presentFileChangePreview(change, { maxLineChars, maxRows })) {
-      if (emitted >= maxRows) break;
-      lines.push(diffRowLine(ctx, row));
-      emitted += 1;
-    }
+  const maxRows = multi ? WRITE_MANY_PREVIEW_ROWS : SINGLE_FILE_PREVIEW_ROWS;
+  for (const change of listed) {
+    if (multi) lines.push(fileRow(ctx, change));
+    const rows = presentFileChangePreview(change, {
+      maxLineChars: codeBudget(ctx, change),
+      maxRows,
+      tabWidth: DIFF_TAB_WIDTH,
+    });
+    for (const row of rows) lines.push(diffRowLine(ctx, row));
   }
+  if (hiddenFiles > 0) lines.push(moreFilesRow(ctx, hiddenFiles));
 
-  const total = changes.reduce((sum, c) => sum + c.stats.added + c.stats.removed, 0);
-  const hidden = Math.max(0, total - emitted);
-  const body = joinMeta(ctx, [
-    outputToggleLabel(outputExpanded),
-    hidden > 0
-      ? `${ctx.glyphs.ellipsis} +${hidden} line${hidden === 1 ? "" : "s"}`
-      : undefined,
-  ]);
-  lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", body)}`));
+  lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", outputToggleLabel(outputExpanded))}`));
   return lines;
 }

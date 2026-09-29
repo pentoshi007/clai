@@ -6,7 +6,7 @@ import { ConfirmPanel } from "./ConfirmPanel.js";
 import { JobsPanel } from "./JobsPanel.js";
 import { KeysPanel } from "./KeysPanel.js";
 import { PagerPanel } from "./PagerPanel.js";
-import { pagerViewModel } from "./pager-panel.js";
+import { pagerDiffOptions, pagerViewModel } from "./pager-panel.js";
 import type { PanelController, PanelSnapshot } from "./panel-controller.js";
 import { PickerPanel } from "./PickerPanel.js";
 import { PromptActionsPanel } from "./PromptActionsPanel.js";
@@ -54,6 +54,7 @@ export function PanelHost(props: PanelHostProps): ReactNode {
         snapshot.pager.format,
         subagent,
         props.ink,
+        subagent ? undefined : pagerDiffOptions(overlay, props.ink),
       );
       return (
         <PagerPanel

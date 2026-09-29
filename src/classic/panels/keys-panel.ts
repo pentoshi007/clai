@@ -224,7 +224,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
         columns: input.columns,
         label: `${sticky} ${index + 1}  ${rowValue(row, reveal, editing, state.draft)}${disabledTag}`,
         active,
-        trailing: `${input.request.refreshable ? "↻ " : ""}${ink.fg("muted", ink.glyphs.remove)}`,
+        trailing: `${input.request.refreshable ? (ink.unicode ? "↻ " : "r ") : ""}${ink.fg("muted", ink.glyphs.remove)}`,
       }),
     );
   }

@@ -82,6 +82,50 @@ function prefixFor(op: DiffOp): string {
   return " ";
 }
 
+export function expandTabs(text: string, tabWidth: number): string {
+  if (tabWidth <= 0 || !text.includes("\t")) return text;
+  let out = "";
+  let column = 0;
+  for (const char of text) {
+    if (char === "\t") {
+      const pad = tabWidth - (column % tabWidth);
+      out += " ".repeat(pad);
+      column += pad;
+      continue;
+    }
+    out += char;
+    column += 1;
+  }
+  return out;
+}
+
+export type ParsedDiffLineTone = "add" | "del" | "context" | "header";
+
+export interface ParsedDiffLine {
+  readonly gutter: string;
+  readonly prefix: string;
+  readonly code: string;
+  readonly tone: ParsedDiffLineTone;
+}
+
+const MODAL_DIFF_LINE = /^(?<gutter>[\d ]{0,8}) │ (?<rest>.*)$/;
+
+export function parseModalDiffLine(line: string): ParsedDiffLine | null {
+  const match = MODAL_DIFF_LINE.exec(line);
+  if (!match?.groups) return null;
+  const gutter = match.groups.gutter ?? "";
+  const rest = match.groups.rest ?? "";
+  if (/^[+\-−] /.test(rest)) {
+    const prefix = rest[0]!;
+    const tone = prefix === "+" ? "add" : "del";
+    return { gutter, prefix, code: rest.slice(2), tone };
+  }
+  if (rest.startsWith("  ")) {
+    return { gutter, prefix: " ", code: rest.slice(2), tone: "context" };
+  }
+  return { gutter, prefix: " ", code: rest, tone: "header" };
+}
+
 export function wrapCodeLine(text: string, max: number): string[] {
   const width = Math.max(8, max);
   if (text.length <= width) return [text];
@@ -92,7 +136,7 @@ export function wrapCodeLine(text: string, max: number): string[] {
   return out.length > 0 ? out : [""];
 }
 
-function sliceSpans(
+export function sliceSpans(
   spans: readonly SyntaxSpan[],
   start: number,
   end: number,
@@ -152,10 +196,11 @@ export function rowBackground(
 
 export function presentFileChangePreview(
   change: FileChange,
-  options: { maxLineChars?: number; maxRows?: number } = {},
+  options: { maxLineChars?: number; maxRows?: number; tabWidth?: number } = {},
 ): PresentedDiffRow[] {
   const maxLineChars = options.maxLineChars ?? DEFAULT_WRAP;
   const maxRows = options.maxRows ?? 80;
+  const tabWidth = options.tabWidth ?? 0;
   const rows: PresentedDiffRow[] = [];
   const carry = emptyCarry();
 
@@ -178,7 +223,7 @@ export function presentFileChangePreview(
     if (used >= maxRows) break;
     for (const dl of hunk.lines) {
       if (used >= maxRows) break;
-      const text = dl.text;
+      const text = expandTabs(dl.text, tabWidth);
       const fullSpans = highlightLineForPath(text, change.path, carry);
       const chunks = wrapCodeLine(text, maxLineChars);
       let offset = 0;
