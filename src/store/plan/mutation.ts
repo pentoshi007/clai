@@ -97,7 +97,7 @@ export async function mutatePlan(
   if (getConfig().privateMode) {
     const plan = await loadPlan(sessionId);
     if (!plan) return { ok: false, reason: "missing-plan" };
-    if (reducer(plan) === false) return { ok: false, reason: "no-change" };
+    if (reducer(plan) === false) return { ok: false, reason: "no-change", plan };
     const repairs = enforcePlanInvariants(plan);
     plan.version = (plan.version ?? 1) + 1;
     plan.updatedAt = new Date().toISOString();
