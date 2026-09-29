@@ -80,7 +80,7 @@ function followupMessage(followup: SubagentFollowup): ChatMessage {
   return { role: "user", content: `Parent follow-up for this assignment. Reuse relevant retained evidence and complete this request without unrelated research.\n${JSON.stringify(followup)}` };
 }
 
-async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, followup, modelChain, noteRoute }: SubagentWorkerInput, signal: AbortSignal): Promise<string> {
+async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, followup, modelChain, noteRoute, recordOperationUsage }: SubagentWorkerInput, signal: AbortSignal): Promise<string> {
   signal.throwIfAborted();
   const root = await realpath(run.cwd);
   if (!(await stat(root)).isDirectory()) throw new Error("Assigned cwd is not a directory");
@@ -227,6 +227,7 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
           }, {
             allowProviderFallback: false, adoptFallback: false, maxRetries: 0, retryRateLimits: false,
             onStatus: (text) => { if (!signal.aborted && responseOpen) emit({ kind: "notice", text: boundedOutput(text) }); },
+            ...(recordOperationUsage ? { onOperationUsage: recordOperationUsage } : {}),
           }));
           signal.throwIfAborted();
           if (value.provider !== route.provider || value.model !== route.model) throw new Error("Incomplete report: provider route changed");
