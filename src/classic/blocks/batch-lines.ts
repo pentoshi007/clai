@@ -10,8 +10,8 @@ import { adaptPresenterGlyphs } from "../render/glyphs.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { alignEnds, trimTrailingSpaces } from "../render/ansi-text.js";
 import { wrapAnsiLine } from "../render/wrap.js";
-import { clipRow, joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
-import { outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
+import { joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
+import { hintRows, outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
 
 export const BATCH_COLLAPSED_ROWS = 8;
 const SUB_INDENT = 2;
@@ -45,7 +45,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   const lines = toolHeaderLines(ctx, item);
   const subIndent = " ".repeat(SUB_INDENT);
   if (sections.length === 0) {
-    lines.push(clipRow(ctx, `${subIndent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`));
+    lines.push(...hintRows(ctx, subIndent, outputToggleLabel(expanded)));
     return lines;
   }
 
@@ -72,7 +72,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     const text = adaptPresenterGlyphs(summaryRow, ctx.ink.unicode);
     for (const chunk of wrapAnsiLine(text, budget)) {
       lines.push(
-        trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("foreground", chunk)}`),
+        trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolText", chunk)}`),
       );
     }
   }
@@ -84,8 +84,6 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     summary === "" ? undefined : summary,
     hidden > 0 ? `${ctx.glyphs.ellipsis} +${hidden} more` : undefined,
   ]);
-  if (footer !== "") {
-    lines.push(clipRow(ctx, `${subIndent}${ctx.ink.fg("muted", footer)}`));
-  }
+  if (footer !== "") lines.push(...hintRows(ctx, subIndent, footer));
   return lines;
 }
