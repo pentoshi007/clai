@@ -10,6 +10,7 @@ const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
   createToolRouting({
     mode: "agent",
     mcpPresent: false,
+    pentestTools: false,
     toolCalling: "auto",
     useCompactSystemPrompt: () => false,
     ...overrides,

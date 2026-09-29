@@ -11,6 +11,7 @@ import {
   isServerReadyOutput,
 } from "../task-evidence.js";
 import { localHttpProbeIsSuccess } from "../tool-call-parser.js";
+import { startsBackgroundJob } from "../../tools/command-intent.js";
 
 const SOURCE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "fs.write",
@@ -20,8 +21,7 @@ const SOURCE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "fs.append",
 ]);
 
-const isShellLaunch = (name: string): boolean =>
-  name === "shell.exec" || name === "shell.start";
+const isShellLaunch = (name: string): boolean => name === "shell.exec";
 
 const mentionsLoopback = (call: ToolCall, command: string): boolean =>
   /\b(localhost|127\.0\.0\.1)\b/i.test(
@@ -44,7 +44,7 @@ export const readTaskWorkSignals = (
   }
   if (isDevServerCall(call)) signals.devServerStart = true;
   if (
-    (call.name === "shell.tail" || call.name === "shell.start") &&
+    (call.name === "shell.tail" || startsBackgroundJob(call)) &&
     isServerReadyOutput(output)
   ) {
     signals.serverReady = true;

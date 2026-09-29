@@ -6,9 +6,16 @@ export function isScaffoldCreateCommand(cmd: string): boolean {
   );
 }
 
+export function isOsPackageInstallCommand(cmd: string): boolean {
+  return /\b(?:brew\s+(?:install|upgrade|reinstall)|(?:apt|apt-get|dnf|yum|zypper)\s+(?:-\S+\s+)*install|pacman\s+(?:-\S*S\S*)|apk\s+add|port\s+install|winget\s+(?:install|upgrade)|choco\s+(?:install|upgrade)|scoop\s+install|snap\s+install)\b/i.test(
+    cmd,
+  );
+}
+
 export function isLongQuietInstallOrScaffoldCommand(cmd: string): boolean {
   if (!cmd.trim()) return false;
   if (isScaffoldCreateCommand(cmd)) return true;
+  if (isOsPackageInstallCommand(cmd)) return true;
   return (
     /\b(?:npm|pnpm|yarn|bun)\s+i(?:nstall)?\b/i.test(cmd) ||
     /\b(?:npm|pnpm|yarn|bun)\s+(?:ci|update)\b/i.test(cmd) ||
@@ -68,10 +75,7 @@ function requestedToolTimeoutMs(call: {
   }
 
   const cmd = typeof call.args.command === "string" ? call.args.command : "";
-  if (
-    call.name === "pkg.install" ||
-    (call.name === "shell.exec" && isLongQuietInstallOrScaffoldCommand(cmd))
-  ) {
+  if (call.name === "shell.exec" && isLongQuietInstallOrScaffoldCommand(cmd)) {
     return 15 * 60_000;
   }
   if (call.name === "shell.exec" && isLongRunningTestOrBuildCommand(cmd)) {

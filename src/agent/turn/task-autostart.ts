@@ -10,7 +10,7 @@ import {
 } from "../task-evidence.js";
 
 export interface TaskAutostartPorts {
-  readonly openTask: (taskId: string) => Promise<SessionPlan>;
+  readonly openTask: (taskId: string) => Promise<SessionPlan | undefined>;
   readonly renderPlan: (plan: SessionPlan) => void;
   readonly notify: (message: string) => void;
   readonly getLedger: () => TaskWorkLedger | null;
@@ -49,6 +49,22 @@ export const selectAutostartTask = (
   );
 };
 
+export const claimAutostartTask = (
+  draft: SessionPlan,
+  taskId: string,
+): boolean => {
+  if (!needsAutostart(draft)) return false;
+  const target = draft.tasks.find((candidate) => candidate.id === taskId);
+  if (!target || target.responderOwned || target.state !== "pending") {
+    return false;
+  }
+  target.state = "in_progress";
+  if (draft.status === "draft" || draft.status === "approved") {
+    draft.status = "in_progress";
+  }
+  return true;
+};
+
 export const autostartPlanTask = async (
   plan: SessionPlan,
   call: ToolCall,
@@ -57,6 +73,7 @@ export const autostartPlanTask = async (
   const next = selectAutostartTask(plan, call);
   if (!next) return undefined;
   const committed = await ports.openTask(next.id);
+  if (!committed) return undefined;
   const committedTask = committed.tasks.find((task) => task.id === next.id);
   const ledger = ports.getLedger();
   if (!ledger || ledger.taskId !== next.id) {

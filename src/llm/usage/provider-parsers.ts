@@ -157,11 +157,24 @@ function mergeProviderUsage(
   });
 }
 
+const anthropicShapedUsage = (
+  raw: Record<string, unknown>,
+  aliases: CompatibleUsageAliases | undefined,
+): boolean =>
+  configuredPath(aliases, "promptTokens") === undefined &&
+  raw.prompt_tokens === undefined &&
+  raw.promptTokens === undefined &&
+  raw.input_tokens_details === undefined &&
+  typeof raw.input_tokens === "number" &&
+  (typeof raw.cache_read_input_tokens === "number" ||
+    typeof raw.cache_creation_input_tokens === "number");
+
 export function parseOpenAiUsage(
   raw: unknown,
   aliases?: CompatibleUsageAliases | undefined,
 ): TokenUsage | undefined {
   if (!isRecord(raw)) return undefined;
+  if (anthropicShapedUsage(raw, aliases)) return parseAnthropicUsage(raw);
   return normalizeTokenUsage({
     promptTokens: counterFromPaths(
       raw,
@@ -308,19 +321,25 @@ export function mergeAnthropicStreamUsage(
 
 export function parseGeminiUsage(raw: unknown): TokenUsage | undefined {
   if (!isRecord(raw)) return undefined;
+  const prompt = nonNegInt(raw.promptTokenCount) ?? nonNegInt(raw.prompt_token_count);
+  const toolPrompt =
+    nonNegInt(raw.toolUsePromptTokenCount) ?? nonNegInt(raw.tool_use_prompt_token_count);
+  const candidates =
+    nonNegInt(raw.candidatesTokenCount) ?? nonNegInt(raw.candidates_token_count);
+  const thoughts = nonNegInt(raw.thoughtsTokenCount) ?? nonNegInt(raw.thoughts_token_count);
   return normalizeTokenUsage({
-    promptTokens:
-      nonNegInt(raw.promptTokenCount) ?? nonNegInt(raw.prompt_token_count),
-    completionTokens:
-      nonNegInt(raw.candidatesTokenCount) ??
-      nonNegInt(raw.candidates_token_count),
+    ...(prompt !== undefined || toolPrompt !== undefined
+      ? { promptTokens: (prompt ?? 0) + (toolPrompt ?? 0) }
+      : {}),
+    ...(candidates !== undefined || thoughts !== undefined
+      ? { completionTokens: (candidates ?? 0) + (thoughts ?? 0) }
+      : {}),
     totalTokens:
       nonNegInt(raw.totalTokenCount) ?? nonNegInt(raw.total_token_count),
     cachedPromptTokens:
       nonNegInt(raw.cachedContentTokenCount) ??
       nonNegInt(raw.cached_content_token_count),
-    reasoningTokens:
-      nonNegInt(raw.thoughtsTokenCount) ?? nonNegInt(raw.thoughts_token_count),
+    reasoningTokens: thoughts,
     exact: true,
   });
 }

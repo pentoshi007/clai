@@ -47,8 +47,6 @@ describe("plan-awaiting-approval gate — allowed tools", () => {
       "fs.read",
       "fs.list",
       "fs.search",
-      "sysinfo",
-      "tool.batch",
       "tool.check",
       "web.search",
       "web.fetch",
@@ -63,8 +61,6 @@ describe("plan-awaiting-approval gate — allowed tools", () => {
     // Free-text after a plan is REVISION, not a 'go' signal.
     for (const tool of [
       "shell.exec",
-      "shell.start",
-      "pkg.install",
       "fs.write",
       "fs.writeMany",
       "fs.edit",

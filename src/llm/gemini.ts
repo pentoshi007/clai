@@ -19,7 +19,7 @@ import {
   readStreamLines,
   streamIdleBudgets,
 } from "./http.js";
-import { generationFetch } from "./operation-usage.js";
+import { generationFetch, observeStreamUsage } from "./operation-usage.js";
 import {
   geminiToolBodyFields,
   parseGeminiFunctionCalls,
@@ -424,7 +424,10 @@ export const geminiProvider: LlmProvider = {
           }>;
         };
         const u = parseGeminiUsage(parsed.usageMetadata);
-        if (u) streamUsage = u;
+        if (u) {
+          streamUsage = u;
+          observeStreamUsage(u);
+        }
         const candidate = parsed.candidates?.[0];
         if (candidate?.finishReason) finishReason = candidate.finishReason;
         const parts = candidate?.content?.parts ?? [];

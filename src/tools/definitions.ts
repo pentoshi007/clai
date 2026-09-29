@@ -14,7 +14,6 @@ export const PLAN_TOOL_NAMES = new Set([
   "plan.create",
   "task.add",
   "task.move",
-  "task.read",
   "task.update",
 ]);
 

@@ -229,11 +229,8 @@ const MUTATING_TOOL_NAMES = new Set([
   "fs.replaceLines",
   "fs.delete",
   "shell.exec",
-  "shell.start",
   "shell.stop",
-  "pkg.install",
   "http.fetch",
-  "tool.batch",
 ]);
 
 export function isMutatingToolName(name: string): boolean {

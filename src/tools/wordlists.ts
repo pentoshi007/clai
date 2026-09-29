@@ -417,7 +417,7 @@ export async function wordlistFind(args: WordlistFindArgs): Promise<ToolResult> 
         `No match for "${query}" in known wordlist locations for ${platform()}.\n` +
         `Tried keywords: ${plan.keywords.join(", ") || query}.\n` +
         `Checked: ${roots.join(", ")}\n` +
-        `Retry with expand=true to broaden the search, or pkg.install seclists.`,
+        `Retry with expand=true to broaden the search, or install seclists with the OS package manager.`,
       exitCode: 0,
     };
   }
@@ -453,7 +453,7 @@ export async function wordlistFind(args: WordlistFindArgs): Promise<ToolResult> 
     output:
       `No wordlist matching "${query}" found after searching known locations, ` +
       `the locate database, and the filesystem (keywords: ${plan.keywords.join(", ") || query}).\n` +
-      `Install one: pkg.install seclists (Linux/macOS) or clone https://github.com/danielmiessler/SecLists.\n` +
+      `Install one: seclists via the OS package manager (Linux/macOS) or clone https://github.com/danielmiessler/SecLists.\n` +
       `If credentials are not cached, an elevated search was skipped (clai never opens a raw sudo prompt).`,
     exitCode: 0,
   };

@@ -39,12 +39,6 @@ describe("responder parent ownership (TASK-005)", () => {
       expect(Object.keys(properties), name).toContain("parentTaskId");
       expect(Object.keys(properties), name).not.toContain("taskId");
     }
-    const shellStart = TOOL_DEFINITIONS.find(
-      (candidate) => candidate.name === "shell.start",
-    );
-    expect(Object.keys(shellStart?.parameters.properties ?? {})).not.toContain(
-      "parentTaskId",
-    );
   });
 
   it("reads only a non-empty declared parent", () => {
@@ -134,12 +128,6 @@ describe("explicit responder delegation", () => {
     expect(
       isExplicitResponderDelegation({
         name: "shell.exec",
-        args: { command: "npm run dev", responder: true },
-      }),
-    ).toBe(false);
-    expect(
-      isExplicitResponderDelegation({
-        name: "shell.start",
         args: { command: "npm run dev", responder: true },
       }),
     ).toBe(false);

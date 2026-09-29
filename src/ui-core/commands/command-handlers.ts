@@ -31,6 +31,7 @@ import {
 import { handleInfo, handleKeys, handleSet, handleUnset } from "./key-commands.js";
 import { handleMcp } from "./mcp-commands.js";
 import { handleSkills } from "./skill-commands.js";
+import { handleRtk } from "./rtk-commands.js";
 import { handleAgents, handleOrchestration } from "./subagent-commands.js";
 import {
   handleHistory,
@@ -51,7 +52,7 @@ async function handlePlan(services: AppServices, invocation: CommandInvocation):
     if (!subcommand) {
       services.session.notice(
         "info",
-        "plan mode on — describe the multi-step task you want to plan",
+        "plan mode · describe the multi-step task; clai drafts a plan for your approval before running anything",
       );
     }
     return;
@@ -64,7 +65,7 @@ async function handlePlan(services: AppServices, invocation: CommandInvocation):
     handlePlanPager(services);
     return;
   }
-  services.session.notice("warn", "usage: /plan [view|off]");
+  services.session.notice("warn", "usage: /plan [view] · /agent or /ask leaves plan mode");
 }
 
 export function attachCommandHandlers(services: AppServices): void {
@@ -73,6 +74,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("agent", () => handleMode(services, "agent"));
   c.setHandler("orchestration", (i) => handleOrchestration(services, i));
   c.setHandler("agents", (i) => handleAgents(services, i));
+  c.setHandler("rtk", (i) => handleRtk(services, i));
   c.setHandler("model", (i) => handleModel(services, i));
   c.setHandler("provider", (i) => handleProvider(services, i));
   c.setHandler("search", (i) => handleSearch(services, i));

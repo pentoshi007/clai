@@ -354,7 +354,7 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
   }
 
   const command =
-    call.name === "shell.exec" || call.name === "shell.start"
+    call.name === "shell.exec"
       ? String(call.args.command ?? "")
       : call.name;
   let bodySource = output;

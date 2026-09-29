@@ -148,7 +148,7 @@ describe("normalizeToolCall — runner meta tools", () => {
       ["task_update", "task.update"],
       ["task_add", "task.add"],
       ["task_move", "task.move"],
-      ["task_read", "task.read"],
+      ["task_read", "job.read"],
       ["plan_create", "plan.create"],
       ["job_read", "job.read"],
       ["agent_handoff", "agent.handoff"],

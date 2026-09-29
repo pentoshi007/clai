@@ -7,8 +7,6 @@ const TIMED_TOOLS = new Set([
   "web.fetch",
   "web.search",
   "net.pingSweep",
-  "pkg.install",
-  "tool.batch",
   "tool.check",
   "image.ocr",
   "pdf.read",
@@ -31,8 +29,7 @@ export function def(
             type: "integer",
             minimum: 1_000,
             maximum: 1_800_000,
-            description:
-              "Wall-clock timeout in milliseconds (default 40000). You can decide how much time is enough for this task and set timeoutMs accordingly — choose a larger value when the operation is expected to take longer.",
+            description: "Timeout in ms (default 40000); raise it for slow work.",
             ...((parameters.properties?.timeoutMs as
               Record<string, unknown> | undefined) ?? {}),
           },

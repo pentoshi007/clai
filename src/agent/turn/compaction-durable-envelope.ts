@@ -1,11 +1,15 @@
 import type { ChatMessage } from "../../types.js";
 import type { OutcomeEnvelope } from "../outcomes.js";
 import type { SessionPlan } from "../../store/plan.js";
+import type { SubagentRun } from "../subagents/types.js";
 import {
   buildDurableEnvelope,
+  isDurableEnvelopeContent,
   type EnvelopeJobState,
+  type EnvelopeSubagentState,
   type WorkLedger,
 } from "../durable-envelope.js";
+import { collectUserCredentials } from "../context/user-credentials.js";
 import { isResponderResultLedgerMessage } from "../responder-context.js";
 
 export interface CompactionEnvelopeJob {
@@ -13,42 +17,61 @@ export interface CompactionEnvelopeJob {
   readonly status: string;
   readonly command: string;
   readonly commandDisplay: string;
+  readonly name?: string | undefined;
   readonly taskId?: string | undefined;
   readonly stdoutArtifact?: string | undefined;
+  readonly exitCode?: number | undefined;
+  readonly responder?: boolean | undefined;
+}
+
+export interface CompactionEnvelopeNotification {
+  readonly id: string;
+  readonly jobId: string;
 }
 
 export interface CompactionDurableEnvelopePorts {
   readonly messages: readonly ChatMessage[];
-  readonly outcome: OutcomeEnvelope;
-  readonly ledger: WorkLedger;
+  readonly outcome?: OutcomeEnvelope | undefined;
+  readonly ledger?: WorkLedger | undefined;
   readonly loadPlan: () => Promise<SessionPlan | undefined>;
   readonly getProjectRoot: () => string | undefined;
   readonly detectPackageManager: (root: string) => string | undefined;
-  readonly getUnreadNotificationIds: () => readonly string[];
+  readonly getPendingNotifications: () => readonly CompactionEnvelopeNotification[];
   readonly getRunningJobs: () => readonly CompactionEnvelopeJob[];
   readonly getRecentJobs: () => readonly CompactionEnvelopeJob[];
+  readonly getSubagents: () => readonly SubagentRun[];
 }
 
-const consumedNotificationIds = (
-  messages: readonly ChatMessage[],
-): string[] => {
-  const consumed: string[] = [];
+interface ConsumedResults {
+  readonly notifications: readonly string[];
+  readonly jobs: readonly string[];
+}
+
+const consumedResults = (messages: readonly ChatMessage[]): ConsumedResults => {
+  const notifications = new Set<string>();
+  const jobs = new Set<string>();
   for (const message of messages) {
     if (!isResponderResultLedgerMessage(message)) continue;
     for (const line of message.content.split("\n")) {
-      const match = /notification=(\S+)/.exec(line);
-      if (match?.[1]) consumed.push(match[1]);
+      const notification = /notification=(\S+)/.exec(line)?.[1];
+      if (!notification) continue;
+      notifications.add(notification);
+      const job = /\bjob=(\S+)/.exec(line)?.[1];
+      if (job) jobs.add(job);
     }
   }
-  return [...new Set(consumed)];
+  return { notifications: [...notifications], jobs: [...jobs] };
 };
 
 const envelopeJob = (job: CompactionEnvelopeJob): EnvelopeJobState => ({
   id: job.id,
   status: job.status,
   command: job.commandDisplay || job.command,
+  ...(job.name ? { name: job.name } : {}),
   ...(job.taskId ? { taskId: job.taskId } : {}),
   ...(job.stdoutArtifact ? { artifact: job.stdoutArtifact } : {}),
+  ...(typeof job.exitCode === "number" ? { exitCode: job.exitCode } : {}),
+  ...(job.responder ? { responder: true } : {}),
 });
 
 const collectJobs = (
@@ -66,18 +89,54 @@ const collectJobs = (
   return { liveJobs, finishedJobs };
 };
 
+const findingsDigest = (report: string | undefined): string | undefined => {
+  if (!report?.trim()) return undefined;
+  const findings = report.split(/^## /m).find((section) => /^findings\b/i.test(section));
+  const body = (findings
+    ? findings.replace(/^findings[^\n]*\n?/i, "")
+    : report.replace(/^\s*Status:[^\n]*\n?/i, ""))
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return body || undefined;
+};
+
+const subagentResult = (run: SubagentRun): EnvelopeSubagentState["result"] => {
+  if (run.status === "running" || run.status === "stopping") return "running";
+  if (!run.report && !run.lastKnownSummary?.report) return "none";
+  return run.resultAcknowledged ? "read" : "unread";
+};
+
+const envelopeSubagent = (run: SubagentRun): EnvelopeSubagentState => {
+  const result = subagentResult(run);
+  const digest =
+    result === "read" ? findingsDigest(run.report ?? run.lastKnownSummary?.report) : undefined;
+  return {
+    id: run.id,
+    title: run.title,
+    status: run.status,
+    attempt: run.attempt,
+    result,
+    ...(digest ? { digest } : {}),
+  };
+};
+
 const build = async (
   ports: CompactionDurableEnvelopePorts,
 ): Promise<string | undefined> => {
   const plan = await ports.loadPlan();
   const root = ports.getProjectRoot() ?? plan?.meta?.projectRoot;
-  const consumed = consumedNotificationIds(ports.messages);
-  const unread = [...ports.getUnreadNotificationIds()];
+  const consumed = consumedResults(ports.messages);
+  const pending = ports.getPendingNotifications();
+  const consumedIds = new Set(consumed.notifications);
+  const unread = pending.filter((notification) => !consumedIds.has(notification.id));
   const { liveJobs, finishedJobs } = collectJobs(ports);
+  const subagents = ports.getSubagents().map(envelopeSubagent);
+  const credentials = collectUserCredentials(ports.messages, isDurableEnvelopeContent);
   return buildDurableEnvelope({
     ...(plan ? { plan } : {}),
-    outcome: ports.outcome,
-    ledger: ports.ledger,
+    ...(ports.outcome ? { outcome: ports.outcome } : {}),
+    ...(ports.ledger ? { ledger: ports.ledger } : {}),
     ...(root ? { projectRoot: root } : {}),
     ...(root
       ? {
@@ -85,9 +144,16 @@ const build = async (
             plan?.meta?.packageManager ?? ports.detectPackageManager(root),
         }
       : {}),
-    responder: { unread, consumed },
+    responder: {
+      unread: unread.map((notification) => notification.id),
+      consumed: consumed.notifications,
+      unreadJobs: unread.map((notification) => notification.jobId),
+      consumedJobs: consumed.jobs,
+    },
     ...(liveJobs.length > 0 ? { liveJobs } : {}),
     ...(finishedJobs.length > 0 ? { finishedJobs } : {}),
+    ...(subagents.length > 0 ? { subagents } : {}),
+    ...(credentials.length > 0 ? { credentials } : {}),
   });
 };
 

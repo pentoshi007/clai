@@ -76,8 +76,8 @@ describe("plan mode gate", () => {
     ).toBe(true);
     expect(
       gate({
-        name: "shell.start",
-        args: { command: "npx create-next-app app" },
+        name: "shell.exec",
+        args: { command: "npx create-next-app app", background: "always" },
       }).blocked,
     ).toBe(true);
   });

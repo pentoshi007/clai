@@ -150,7 +150,7 @@ export const reconcileScaffoldOutcome = (
   call: ToolCall,
   result: ToolResult,
 ): ScaffoldOutcome => {
-  if (call.name !== "shell.exec" && call.name !== "shell.start") {
+  if (call.name !== "shell.exec") {
     return unchanged(result);
   }
   if (

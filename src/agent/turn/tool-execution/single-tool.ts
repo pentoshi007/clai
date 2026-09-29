@@ -25,7 +25,10 @@ import { accountToolOutcome } from "../../turn/outcome-accounting.js";
 import { linkResponderJobToPlan } from "../../turn/responder-job-linkage.js";
 import { reconcileScaffoldOutcome } from "../../turn/scaffold-outcome.js";
 import { decideScaffoldPreflight } from "../../turn/scaffold-preflight.js";
-import { autostartPlanTask } from "../../turn/task-autostart.js";
+import {
+  autostartPlanTask,
+  claimAutostartTask,
+} from "../../turn/task-autostart.js";
 import { invalidToolCall } from "../../turn/tool-call-preparation.js";
 import { authorizeToolExecution } from "../../turn/tool-execution/authorization.js";
 import { resolveToolDispatch } from "../../turn/tool-execution/dispatch.js";
@@ -317,23 +320,14 @@ export const runSingleTool = async (
     if (livePlanForGate) {
       const autostartedPlan = await autostartPlanTask(livePlanForGate, call, {
         openTask: async (taskId) => {
-          const committed = await mutatePlan(deps.session.sessionId, (draft) => {
-            const target = draft.tasks.find(
-              (candidate) => candidate.id === taskId,
-            );
-            if (!target || target.state === "in_progress") return false;
-            target.state = "in_progress";
-            if (draft.status === "draft" || draft.status === "approved") {
-              draft.status = "in_progress";
-            }
-            return true;
-          });
-          if (!committed.ok || !committed.plan) {
-            throw new Error(
-              `Task autostart was not durably committed (${committed.reason ?? "persist-failed"})`,
-            );
-          }
-          return committed.plan;
+          const committed = await mutatePlan(deps.session.sessionId, (draft) =>
+            claimAutostartTask(draft, taskId),
+          );
+          if (committed.ok && committed.plan) return committed.plan;
+          if (committed.reason === "no-change") return undefined;
+          throw new Error(
+            `Task autostart was not durably committed (${committed.reason ?? "persist-failed"})`,
+          );
         },
         renderPlan: deps.writePlanUpdate,
         notify: (message) => deps.writeNotice("info", message),
@@ -640,13 +634,14 @@ export const runSingleTool = async (
         : `toolState.delegation=${delegationId} failed to launch`;
       return true;
     });
-    if (!settlement.ok || !settlement.plan) {
+    if (settlement.ok && settlement.plan) {
+      deps.toolState.pendingSessionStatePlan = settlement.plan;
+      deps.writePlanUpdate(settlement.plan);
+    } else if (settlement.reason !== "no-change") {
       throw new Error(
         `Delegation settlement was not durably committed (${settlement.reason ?? "persist-failed"})`,
       );
     }
-    deps.toolState.pendingSessionStatePlan = settlement.plan;
-    deps.writePlanUpdate(settlement.plan);
     deps.toolState.delegation = undefined;
   }
 

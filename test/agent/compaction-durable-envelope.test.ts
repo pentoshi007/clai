@@ -59,9 +59,9 @@ describe("compaction durable envelope builder", () => {
       loadPlan: async () => plan,
       getProjectRoot: () => undefined,
       detectPackageManager,
-      getUnreadNotificationIds: () => {
+      getPendingNotifications: () => {
         lookupOrder.push("unread");
-        return ["notice-unread"];
+        return [{ id: "notice-unread", jobId: "job-unread" }];
       },
       getRunningJobs: () => {
         lookupOrder.push("running");
@@ -94,6 +94,7 @@ describe("compaction durable envelope builder", () => {
           },
         ];
       },
+      getSubagents: () => [],
     });
 
     await expect(buildEnvelope()).resolves.toBe(
@@ -106,6 +107,8 @@ describe("compaction durable envelope builder", () => {
         responder: {
           unread: ["notice-unread"],
           consumed: ["notice-read"],
+          unreadJobs: ["job-unread"],
+          consumedJobs: [],
         },
         liveJobs: [
           {
@@ -141,9 +144,10 @@ describe("compaction durable envelope builder", () => {
       },
       getProjectRoot: () => "/workspace/active",
       detectPackageManager,
-      getUnreadNotificationIds: () => [],
+      getPendingNotifications: () => [],
       getRunningJobs: () => [],
       getRecentJobs: () => [],
+      getSubagents: () => [],
     });
 
     await expect(buildEnvelope()).rejects.toThrow("store unavailable");

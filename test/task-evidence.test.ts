@@ -7,7 +7,6 @@ import {
   classifyTaskTitle,
   codingBuildRequiresPlan,
   hasLocalRuntimeProof,
-  isBatchSoftFailTool,
   isBuildPrePlanAllowedTool,
   isDevServerCall,
   isFeatureImplementationCall,
@@ -43,15 +42,6 @@ import {
 import { isProjectLocalNodeBin } from "../src/tools/capabilities.js";
 
 describe("task evidence / verify-before-done", () => {
-  it("soft-fails plan bookkeeping so batch siblings are not cancelled", () => {
-    expect(isBatchSoftFailTool("task.update")).toBe(true);
-    expect(isBatchSoftFailTool("plan.create")).toBe(true);
-    expect(isBatchSoftFailTool("http.fetch")).toBe(true);
-    expect(isBatchSoftFailTool("net.pingSweep")).toBe(true);
-    expect(isBatchSoftFailTool("fs.write")).toBe(false);
-    expect(isBatchSoftFailTool("shell.exec")).toBe(false);
-  });
-
   it("prefers SSRF-related pending task for og-image http.fetch", () => {
     const pending = [
       { id: "t2", title: "Test SSRF with bypass techniques and alternative payloads" },
@@ -326,7 +316,7 @@ describe("typed task evidence", () => {
     led = recordTaskWorkSuccess(led, "t4", "fs.list");
     expect(led?.successWorkCount).toBe(1);
 
-    led = recordTaskWorkSuccess(led, "t4", "shell.start", {
+    led = recordTaskWorkSuccess(led, "t4", "shell.exec", {
       devServerStart: true,
     });
     expect(led?.successWorkCount).toBe(2);

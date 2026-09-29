@@ -83,18 +83,18 @@ describe("engagement target-aware policy matrix", () => {
     replenished.release();
   });
 
-  it("classifies active HTTP and adversarial shell.start capabilities by action", () => {
+  it("classifies active HTTP and adversarial background shell capabilities by action", () => {
     expect(engagementActionForToolCall({ name: "http.fetch", args: { url: "https://app.test/api", method: "DELETE" } })).toMatchObject({
       phase: "exploitation",
       capability: "active-enumeration",
       method: "DELETE",
     });
-    expect(engagementActionForToolCall({ name: "shell.start", args: { command: "hydra -l admin -P words.txt app.test" } })).toMatchObject({
+    expect(engagementActionForToolCall({ name: "shell.exec", args: { command: "hydra -l admin -P words.txt app.test", background: "always" } })).toMatchObject({
       target: "app.test",
       phase: "exploitation",
       capability: "exploitation",
     });
-    expect(engagementActionForToolCall({ name: "shell.start", args: { command: "launchctl load persistence.plist app.test" } })).toMatchObject({
+    expect(engagementActionForToolCall({ name: "shell.exec", args: { command: "launchctl load persistence.plist app.test", background: "always" } })).toMatchObject({
       phase: "post-exploitation",
       capability: "persistence",
     });

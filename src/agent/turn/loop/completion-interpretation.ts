@@ -4,6 +4,10 @@ import { trimExactContinuationOverlap } from "../continuation-overlap.js";
 import { recordRequestTokenObservation } from "../../../llm/token-estimate-calibration.js";
 import { effectivePromptTokens } from "../../../llm/token-usage.js";
 import { contextAttemptFromOperationUsage } from "../../../llm/context-snapshot.js";
+import {
+  claimDiscardedAttemptUsage,
+  type DiscardedAttemptUsage,
+} from "../../../llm/operation-usage.js";
 
 export interface CompletionUsagePorts {
   readonly dispatchedRawRequestTokens: number;
@@ -17,6 +21,7 @@ export interface CompletionUsagePorts {
     api?: string | undefined;
     attempt?: ReturnType<typeof contextAttemptFromOperationUsage> | undefined;
   }) => void;
+  readonly emitDiscardedUsage: (input: DiscardedAttemptUsage) => void;
   readonly audit: (
     event: string,
     payload: Readonly<Record<string, string | number | boolean | undefined>>,
@@ -27,6 +32,9 @@ export const accountCompletionUsage = async (
   ports: CompletionUsagePorts,
   completion: CompletionResult,
 ): Promise<void> => {
+  for (const discarded of claimDiscardedAttemptUsage(completion.operationUsage)) {
+    ports.emitDiscardedUsage(discarded);
+  }
   const usage = completion.usage;
   if (!usage) return;
   const requestRouteMatched =

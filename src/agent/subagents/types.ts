@@ -1,5 +1,6 @@
 import type { ChatMessage, ProviderId, ToolCall } from "../../types.js";
 import type { SubagentModelRoute } from "./model-chain.js";
+import type { OperationUsageSnapshot } from "../../llm/operation-usage.js";
 
 export type SubagentStatus = "running" | "stopping" | "completed" | "partial" | "stopped" | "error";
 
@@ -70,6 +71,7 @@ export interface SubagentWorkerInput {
   readonly saveSummary?: ((report: string) => void) | undefined;
   readonly modelChain?: readonly SubagentModelRoute[] | undefined;
   readonly noteRoute?: ((route: SubagentModelRoute) => void) | undefined;
+  readonly recordOperationUsage?: ((snapshot: OperationUsageSnapshot) => void) | undefined;
   readonly emit: (event: {
     kind: SubagentEvent["kind"];
     text: string;

@@ -15,10 +15,11 @@ describe("tool registry", () => {
     expect(names).toContain("fs.write");
     expect(names).toContain("fs.list");
     expect(names).toContain("fs.search");
-    expect(names).toContain("pkg.install");
     expect(names).toContain("net.pingSweep");
     expect(names).toContain("http.fetch");
-    expect(names).toContain("sysinfo");
+    for (const retired of ["sysinfo", "pkg.install", "tool.batch", "shell.start"]) {
+      expect(names).not.toContain(retired);
+    }
     expect(names).not.toContain("net.scan");
     expect(names).not.toContain("pentest.recon");
     expect(names).not.toContain("dns.lookup");
@@ -27,15 +28,6 @@ describe("tool registry", () => {
     expect(names).toContain("image.ocr");
     expect(names).toContain("image.view");
     expect(names).toContain("pdf.read");
-  });
-
-  it("sysinfo returns valid JSON with system info", async () => {
-    const result = await toolRegistry["sysinfo"]!({});
-    expect(result.ok).toBe(true);
-    const info = JSON.parse(result.output);
-    expect(info.platform).toBeTruthy();
-    expect(info.arch).toBeTruthy();
-    expect(info.osName).toBeTruthy();
   });
 
   it("fs.list returns directory listing for cwd", async () => {
