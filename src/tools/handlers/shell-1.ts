@@ -18,12 +18,6 @@ import {
   looksInteractiveStdin,
 } from "../shell.js";
 import {
-  compileBatchFailMode,
-  evaluateCancelTargets,
-  formatBatchCancelReason,
-  parseBatchFailPolicy,
-} from "../batch-fail-policy.js";
-import {
   optionalBoolean,
   optionalNumber,
   optionalResponseMode,
@@ -54,6 +48,7 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
         elevated?.prepared ? elevated.spec : command,
         {
           cwd: optionalString(args, "cwd"),
+          name: optionalString(args, "name"),
           ...responderJobOptions(options),
           responder,
           wakeOnCompletion: responder,

@@ -11,7 +11,7 @@ export function isSubagentTool(name: string): boolean {
 
 export function orchestrationContext(enabled: boolean): string {
   return `ORCHESTRATION: ${enabled ? "ON" : "OFF"}. ${enabled
-    ? "Context-gathering subagents are available. Launch rules: (1) NEVER launch a subagent for a single issue or task and wait for it; the main agent must inspect single tasks directly itself. (2) Subagents should only be launched if different unrelated issues are greater than or equal to 2 (>= 2). (3) Do NOT launch subagents if tasks are short and simple such that the main agent can gather all info in 2-3 tool calls. Subagents can only be used as context gatherers and must never modify or delete project files or delegate. When launching for 2 or more independent assignments, prefer one subagent.start_many call or emit all subagent.start calls together before any wait, read, or dependent task work; never launch one sibling, wait for it, then launch the next. When no independent non-delegated work exists, suspend with subagent.wait without a timeout and omit id to join whichever child settles first. Otherwise do independent work on non-delegated surfaces while children run. Terminal results arrive at safe model boundaries through wait and read; an early report may unblock its own thread while others still run. Read every report page through nextOffset, verify decisive claims, and own implementation. Do not poll, manufacture busywork, or cancel healthy children for slowness. Reuse settled children with subagent.restart for scoped follow-ups."
+    ? "Context-gathering subagents are available. Launch rules: (1) NEVER launch a subagent for a single issue or task and wait for it; the main agent must inspect single tasks directly itself. (2) Subagents should only be launched if different unrelated issues are greater than or equal to 2 (>= 2). (3) Do NOT launch subagents if tasks are short and simple such that the main agent can gather all info in 2-3 tool calls. Subagents can only be used as context gatherers and must never modify or delete project files or delegate. When launching for 2 or more independent assignments, emit one subagent.start call per assignment in the same response before any wait, read, or dependent task work; never launch one sibling, wait for it, then launch the next. When no independent non-delegated work exists, suspend with subagent.wait without a timeout and omit id to join whichever child settles first. Otherwise do independent work on non-delegated surfaces while children run. Terminal results arrive at safe model boundaries through wait and read; an early report may unblock its own thread while others still run. Read every report page through nextOffset, verify decisive claims, and own implementation. Do not poll, manufacture busywork, or cancel healthy children for slowness. For a scoped follow-up on a settled child, start a new child and pass the settled child's findings as context."
     : "Subagent tools are disabled. Only the user can enable them with /orchestration on."}`;
 }
 
@@ -44,19 +44,6 @@ function integer(value: unknown, fallback: number, maximum: number): number {
   return value;
 }
 
-function assignmentFromArgs(value: unknown, index: number, context: { provider: ProviderId; model: string; cwd: string }) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Assignment ${index + 1} must be an object.`);
-  const assignment = value as Record<string, unknown>;
-  return {
-    title: text(assignment.title, `assignments[${index}].title`, 120),
-    prompt: text(assignment.prompt, `assignments[${index}].prompt`, 12000),
-    context: assignment.context === undefined ? undefined : text(assignment.context, `assignments[${index}].context`, 24000),
-    cwd: context.cwd,
-    provider: context.provider,
-    model: context.model,
-  };
-}
-
 export async function runSubagentTool(
   call: ToolCall,
   context: { manager?: SubagentManager | undefined; provider: ProviderId; model: string; cwd: string },
@@ -74,12 +61,6 @@ export async function runSubagentTool(
         const prompt = text(args.prompt, "prompt", 12000);
         const details = args.context === undefined ? undefined : text(args.context, "context", 24000);
         value = summary(manager.start({ title, prompt, context: details, cwd: context.cwd, provider: context.provider, model: context.model }));
-        break;
-      }
-      case "subagent.start_many": {
-        if (!Array.isArray(args.assignments)) throw new Error("assignments must be an array");
-        const assignments = args.assignments.map((assignment, index) => assignmentFromArgs(assignment, index, context));
-        value = manager.startMany(assignments).map(summary);
         break;
       }
       case "subagent.list": value = manager.list().map(summary); break;
@@ -101,10 +82,6 @@ export async function runSubagentTool(
         if (call.name === "subagent.stop") {
           manager.stop(id);
           value = summary(manager.get(id)!);
-        } else if (call.name === "subagent.restart") {
-          const prompt = args.prompt === undefined ? undefined : text(args.prompt, "prompt", 12000);
-          const details = args.context === undefined ? undefined : text(args.context, "context", 24000);
-          value = summary(prompt === undefined && details === undefined ? manager.restart(id) : manager.restart(id, { prompt, context: details }));
         } else if (call.name === "subagent.read") {
           if (args.view !== undefined && args.view !== "tail" && args.view !== "report" && args.view !== "summary") throw new Error("view must be tail, report, or summary.");
           const limit = integer(args.limit, 3, 20);

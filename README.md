@@ -268,7 +268,7 @@ You own authorization; `clai` gates risk on every action:
 
 | Level | Behavior |
 |-------|----------|
-| **safe** | Auto-runs read-only work: `fs.read/list/search`, `sysinfo`, `http.fetch` GET, `web.search`/`web.fetch`, recon commands. |
+| **safe** | Auto-runs read-only work: `fs.read/list/search`, `tool.check`, `http.fetch` GET, `web.search`/`web.fetch`, recon commands. |
 | **confirm** | Asks first for mutations: file writes/edits, installs, moves, mutating shell commands. |
 | **block** | Refuses destructive patterns (`rm -rf /`, fork bombs, exfiltration signatures) and SSRF-prone fetches. |
 
@@ -409,14 +409,14 @@ Use `/mcp` inside the interactive console to browse servers, inspect available t
 | Group | Tools |
 |-------|-------|
 | **Files** | `fs.read` · `fs.list` · `fs.search` · `fs.write` · `fs.writeMany` · `fs.edit` · `fs.replaceLines` · `fs.append` · `fs.delete` |
-| **Shell & jobs** | `shell.exec` · `shell.start` · `shell.jobs` · `shell.tail` · `shell.wait` · `shell.stop` · `pkg.install` |
-| **Terminals** | `terminal.start` · `terminal.send` · `terminal.read` · `terminal.status` · `terminal.resize` · `terminal.close` |
-| **Network** | `net.pingSweep` · `tool.check` · `wordlist.find` (plus `nmap`, `ffuf`, etc. via shell) |
+| **Shell & jobs** | `shell.exec` (servers: `background:"always"` + `name`) · `shell.jobs` · `shell.tail` · `shell.wait` · `shell.stop` |
+| **Terminals** | `terminal.start` · `terminal.send` · `terminal.read` · `terminal.status` · `terminal.close` |
+| **Network** | `tool.check` (with the install command for this OS) · `net.pingSweep` · `wordlist.find` (pentest sessions; plus `nmap`, `ffuf`, etc. via shell) |
 | **HTTP / web** | `http.fetch` (raw evidence) · `web.search` · `web.fetch` (readable) |
-| **Orchestration** | `subagent.start` · `subagent.wait` · `subagent.read` · `subagent.stop` · `subagent.restart` · `tool.batch` (up to 20 calls, `on_fail` policies) |
+| **Orchestration** | `subagent.start` · `subagent.list` · `subagent.wait` · `subagent.read` · `subagent.stop` — independent read-only tool calls in one response run in parallel |
 | **Plan** | `plan.create` · `plan.clear` · `task.add` · `task.update` · `task.move` · `agent.handoff` |
 | **MCP** | `mcp.list` · `mcp.tools` · `mcp.call` · `mcp.enable` · `mcp.connect` · `mcp.login` · `mcp.add` |
-| **Context** | `sysinfo` · `image.ocr` · `image.view` · `pdf.read` · `skill.load` |
+| **Context** | `image.ocr` · `image.view` · `pdf.read` · `skill.load` — OS, shell, and cwd arrive with every request |
 
 ---
 

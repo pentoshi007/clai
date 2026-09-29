@@ -39,8 +39,7 @@ export interface OutcomeAccountingInput {
   readonly probeStateKey: string | undefined;
 }
 
-const isShellLaunch = (name: string): boolean =>
-  name === "shell.exec" || name === "shell.start";
+const isShellLaunch = (name: string): boolean => name === "shell.exec";
 
 const applyFailure = (
   ports: OutcomeAccountingPorts,
@@ -69,8 +68,7 @@ const applySuccess = (
       DEPENDENCY_MUTATING_COMMAND.test(command));
   state.retryDependenciesChanged ||= mutatesDependencies;
   state.retryEnvironmentChanged ||=
-    input.call.name === "pkg.install" ||
-    (isShellLaunch(input.call.name) && isPackageInstallCommand(command));
+    isShellLaunch(input.call.name) && isPackageInstallCommand(command);
 };
 
 const governorMessage = (reason: string, reflects: number): string => {

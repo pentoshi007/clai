@@ -5,6 +5,7 @@ import { fromWireName, sanitizeToolName } from "../llm/tool-protocol.js";
 import type { ToolCall } from "../types.js";
 import { NON_REGISTRY_TOOL_NAMES } from "./definitions.js";
 import { toolRegistry } from "./registry.js";
+import { upgradeRetiredToolCall } from "./retired-tools.js";
 
 const CONTENT_SHAPED_ARG_KEYS = new Set([
   "content",
@@ -134,6 +135,10 @@ function unwrapGatewayToolArgs(
 }
 
 export function normalizeToolCall(call: ToolCall): ToolCall {
+  return upgradeRetiredToolCall(normalizeToolCallName(call));
+}
+
+function normalizeToolCallName(call: ToolCall): ToolCall {
   let name = typeof call.name === "string" ? call.name.trim() : "";
   const originalArgs = call.args ?? {};
   const classic = CLASSIC_TOOL_ALIASES[name.toLowerCase()];

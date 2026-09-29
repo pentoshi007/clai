@@ -381,25 +381,6 @@ describe("LoopGuard", () => {
     expect(guard.observeActionSequence(seq).suppress).toBe(true);
   });
 
-  it("applies side-effect replay protection through tool.batch", () => {
-    const guard = new LoopGuard();
-    const seq = [
-      {
-        name: "tool.batch",
-        args: {
-          calls: [
-            { name: "fs.list", args: { path: "." } },
-            { name: "fs.append", args: { path: "events.log", content: "x\n" } },
-          ],
-        },
-      },
-    ];
-
-    guard.observeActionSequence(seq);
-    guard.completeActionSequence(seq, true, "first");
-    expect(guard.observeActionSequence(seq).suppress).toBe(true);
-  });
-
   it("escalates only after repeated suppressed replays", () => {
     const guard = new LoopGuard();
     const seq = [{ name: "shell.exec", args: { command: "node test.mjs" } }];
@@ -607,52 +588,6 @@ describe("LoopGuard", () => {
       expect(decision.warn).toBe(false);
       guard.completeActionSequence(seq, true, `cursor-${i}`);
     }
-  });
-
-  it("exempts a tool.batch made only of state-polling calls", () => {
-    const guard = new LoopGuard();
-    const seq = [
-      {
-        name: "tool.batch",
-        args: {
-          calls: [
-            { name: "shell.tail", args: { id: "job-1" } },
-            { name: "shell.jobs", args: {} },
-          ],
-        },
-      },
-    ];
-
-    for (let i = 0; i < 6; i++) {
-      expect(guard.observeActionSequence(seq).suppress).toBe(false);
-      guard.completeActionSequence(seq, true, "same");
-    }
-  });
-
-  it("still suppresses a tool.batch mixing polling with ordinary reads", () => {
-    const guard = new LoopGuard();
-    const seq = [
-      {
-        name: "tool.batch",
-        args: {
-          calls: [
-            { name: "shell.tail", args: { id: "job-1" } },
-            { name: "fs.read", args: { path: "notes.md" } },
-          ],
-        },
-      },
-    ];
-
-    guard.observeActionSequence(seq);
-    guard.completeActionSequence(seq, true, "same");
-    expect(guard.observeActionSequence(seq).suppress).toBe(false);
-    guard.completeActionSequence(seq, true, "same");
-    expect(guard.observeActionSequence(seq)).toMatchObject({
-      suppress: false,
-      warn: true,
-    });
-    guard.completeActionSequence(seq, true, "same");
-    expect(guard.observeActionSequence(seq).suppress).toBe(true);
   });
 
   it("keeps polling unblocked while the observation keeps changing", () => {

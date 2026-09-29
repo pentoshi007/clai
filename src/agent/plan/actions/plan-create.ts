@@ -72,7 +72,7 @@ export async function handlePlanCreate(
         modelNote:
           "plan.create rejected: the previous plan is already finished and this goal is only run/verify. " +
           "Do NOT create a new plan or re-list old scaffold tasks. " +
-          "Just shell.start the dev server, shell.tail until ready, probe localhost " +
+          'Just start the dev server with shell.exec background:"always", shell.tail until ready, probe localhost ' +
           "(curl or http.fetch with iOwnThis:true), LEAVE the server running, and tell the user " +
           "the URL (http://localhost:<port>), port, and job id.",
       };
@@ -475,7 +475,7 @@ export async function handlePlanCreate(
           (firstPending
             ? `Continue from [${firstPending.id}] "${firstPending.title}" only. `
             : "") +
-          "If the only new work is run/verify on an existing app, prefer shell.start + probe + report URL — " +
+          'If the only new work is run/verify on an existing app, prefer a background shell.exec start + probe + report URL — ' +
           "do not reboot the world. When the run/verify task finishes, final message MUST include " +
           "http://localhost:<port>, port, job id, and that the server is still running."
         : autoApprove

@@ -291,6 +291,30 @@ export function resolveShellExecBackgroundPolicy(input: {
   };
 }
 
+interface ShellCallShape {
+  readonly name: string;
+  readonly args: Readonly<Record<string, unknown>>;
+}
+
+const backgroundPolicyOf = (call: ShellCallShape): ShellExecBackgroundPolicy | undefined =>
+  call.name === "shell.exec"
+    ? resolveShellExecBackgroundPolicy({
+        command: typeof call.args.command === "string" ? call.args.command : "",
+        background: call.args.background,
+        responder: call.args.responder,
+      })
+    : undefined;
+
+export function startsBackgroundJob(call: ShellCallShape): boolean {
+  const policy = backgroundPolicyOf(call);
+  return Boolean(policy?.wantsBackground && !policy.responder);
+}
+
+export function startsPersistentProcess(call: ShellCallShape): boolean {
+  const policy = backgroundPolicyOf(call);
+  return Boolean(policy?.wantsBackground && !policy.responder && policy.persistent);
+}
+
 function portSpecIsBroad(spec: string): boolean {
   if (spec === "-" || spec.includes("-")) return true;
   const parts = spec.split(",").filter(Boolean);

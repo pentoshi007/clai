@@ -5,13 +5,17 @@ import { def, emptyObject } from "./define.js";
 export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
   def(
     "shell.exec",
-    'Run a finite shell command and wait for completion. Default timeoutMs is 40000; choose a larger timeout for builds, installs, scaffolds, scans, and searches. Known long installs get a safe automatic budget when omitted. Choose background:"always" for a normal pollable finite job or responder:true for a fire-and-continue finite job with automatic terminal delivery. Persistent commands auto-launch as normal background jobs that require shell.tail/shell.jobs plus a readiness probe. Pass background:"never" to force foreground and honor timeoutMs. Pass cwd instead of cd; use shell.start for persistent servers/watchers/listeners.',
+    'Run a shell command. Default timeoutMs is 40000; choose a larger timeout for builds, installs, scaffolds, scans, and searches. Known long installs get a safe automatic budget when omitted. Persistent servers, watchers, and listeners: background:"always" with a name; they auto-launch as normal background jobs that need shell.tail/shell.jobs plus a readiness probe. Choose responder:true for a fire-and-continue finite job with automatic terminal delivery. Pass background:"never" to force foreground and honor timeoutMs. Pass cwd instead of cd.',
     {
       type: "object",
       properties: {
         command: { type: "string" },
         cwd: { type: "string" },
         timeoutMs: { type: "integer" },
+        name: {
+          type: "string",
+          description: "Short label for a background job, e.g. \"api dev server\".",
+        },
         background: {
           type: "string",
           enum: ["auto", "never", "always"],
@@ -28,21 +32,6 @@ export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
           description:
             'Plan task id that owns this delegation (e.g. "t3"). Required whenever more than one task could own it; the Responder child is created under exactly this task.',
         },
-      },
-      required: ["command"],
-      additionalProperties: false,
-    },
-    { mutates: true },
-  ),
-  def(
-    "shell.start",
-    "Start a persistent server/watcher/listener as a normal tracked background job. Returns a stable job id and persists registry/status across turns and CLI restarts. Captured output is incrementally available while this CLI process owns the child pipes; after a restart, status is reconciled but detached output pipes cannot be reattached. Launch success does not prove readiness: use shell.tail with offset/nextOffset, shell.jobs, and an application readiness probe. Do not start duplicates; use shell.stop for cleanup. Durable background jobs have no generic execution deadline and stop only naturally, by explicit cancellation, process error, or authorization expiry. Servers do not self-complete, so shell.start cannot delegate to the Responder.",
-    {
-      type: "object",
-      properties: {
-        command: { type: "string" },
-        cwd: { type: "string" },
-        name: { type: "string" },
       },
       required: ["command"],
       additionalProperties: false,
@@ -106,19 +95,5 @@ export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
       additionalProperties: false,
     },
     { readOnly: true },
-  ),
-  def(
-    "pkg.install",
-    "Install a package via the OS package manager if the binary is missing.",
-    {
-      type: "object",
-      properties: {
-        tool: { type: "string" },
-        checkBinary: { type: "string" },
-      },
-      required: ["tool"],
-      additionalProperties: false,
-    },
-    { mutates: true },
   ),
 ];

@@ -8,7 +8,6 @@ import { asToolCallId, asTurnId } from "../../../src/app/events/app-event.js";
 /** FEATURE_PARITY "Tool registry parity" minimum set (V2-082). */
 const REQUIRED_TOOLS = [
   "shell.exec",
-  "shell.start",
   "shell.jobs",
   "shell.tail",
   "shell.stop",
@@ -20,12 +19,10 @@ const REQUIRED_TOOLS = [
   "fs.edit",
   "fs.replaceLines",
   "fs.delete",
-  "pkg.install",
   "net.pingSweep",
   "http.fetch",
   "web.search",
   "web.fetch",
-  "tool.batch",
   "tool.check",
   "wordlist.find",
   "image.ocr",

@@ -673,7 +673,7 @@ export class JobManager {
           ok: false,
           output:
             `Background command launch error [INVALID_CWD]: working directory is not a directory.\n` +
-            `cwd=${JSON.stringify(cwd)}\nThe command did not start; correct shell.start cwd instead of changing command syntax.`,
+            `cwd=${JSON.stringify(cwd)}\nThe command did not start; correct the cwd instead of changing command syntax.`,
           exitCode: 127,
         };
       }
@@ -682,7 +682,7 @@ export class JobManager {
         ok: false,
         output:
           `Background command launch error [INVALID_CWD]: ${error instanceof Error ? error.message : String(error)}\n` +
-          `cwd=${JSON.stringify(cwd)}\nThe command did not start; correct shell.start cwd instead of changing command syntax.`,
+          `cwd=${JSON.stringify(cwd)}\nThe command did not start; correct the cwd instead of changing command syntax.`,
         exitCode: 127,
       };
     }

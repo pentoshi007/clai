@@ -6,6 +6,7 @@ import type { TaskEvidence } from "../store/plan.js";
 import { TaskWorkSignals, classifyTaskTitle, isEvidenceWorkTool, isPentestPlanKind, looksLikeInstallTaskTitle, looksLikeScaffoldTaskTitle, toolFitsTaskClass } from "./evidence/task-classification.js";
 import { isScaffoldCreateCommand } from "./evidence/tool-budgets.js";
 import { TaskWorkLedger, commandOf } from "./evidence/task-selection.js";
+import { startsBackgroundJob } from "../tools/command-intent.js";
 export { isDevServerCall, isPackageInstallCommand, isRemoteObservationTask, isRuntimeObservationTask, pickPendingTaskForToolCall } from "./evidence/task-selection.js";
 export type { TaskWorkLedger } from "./evidence/task-selection.js";
 export { DEFAULT_TOOL_TIMEOUT_MS, isLongQuietInstallOrScaffoldCommand, isLongRunningTestOrBuildCommand, toolHardBudgetMs, toolStallBudgetMs } from "./evidence/tool-budgets.js";
@@ -151,7 +152,7 @@ export function isRemoteReconToolCall(call: ToolCall): boolean {
     }
     return Boolean(url);
   }
-  if (call.name === "shell.exec" || call.name === "shell.start") {
+  if (call.name === "shell.exec") {
     const cmd = commandOf(call);
     return /\b(?:nmap|masscan|ffuf|gobuster|feroxbuster|nikto|nuclei|httpx|subfinder|amass|dig|whois|whatweb)\b/i.test(
       cmd,
@@ -171,7 +172,7 @@ export function isRemoteActiveTestCall(call: ToolCall): boolean {
       url,
     );
   }
-  if (call.name === "shell.exec" || call.name === "shell.start") {
+  if (call.name === "shell.exec") {
     const cmd = commandOf(call);
     return /\b(?:sqlmap|hydra|nikto|nuclei|msfconsole|exploit|payload|reverse\s+shell)\b/i.test(
       cmd,
@@ -183,7 +184,6 @@ export function isRemoteActiveTestCall(call: ToolCall): boolean {
 export function isPlanPreflightTool(name: string): boolean {
   return (
     name === "tool.check" ||
-    name === "sysinfo" ||
     name === "fs.list" ||
     name === "fs.read" ||
     name === "fs.search"
@@ -193,7 +193,6 @@ export function isPlanPreflightTool(name: string): boolean {
 export function isReadOnlyReconTool(name: string): boolean {
   return (
     isPlanPreflightTool(name) ||
-    name === "tool.batch" ||
     name === "http.fetch" ||
     name === "web.fetch" ||
     name === "web.search" ||
@@ -202,32 +201,10 @@ export function isReadOnlyReconTool(name: string): boolean {
   );
 }
 
-export function isBatchSoftFailTool(name: string): boolean {
-  if (
-    name === "plan.create" ||
-    name === "task.move" ||
-    name === "job.read" ||
-    name === "task.read" ||
-    name === "task.update"
-  ) return true;
-  if (name === "tool.batch" || name === "tool.check") return true;
-  if (isReadOnlyReconTool(name)) return true;
-  if (
-    name === "net.pingSweep" ||
-    name === "shell.jobs" ||
-    name === "shell.tail" ||
-    name === "sysinfo"
-  ) {
-    return true;
-  }
-  return false;
-}
-
 export function isBuildPrePlanAllowedTool(name: string): boolean {
   return (
     name === "plan.create" ||
     isPlanPreflightTool(name) ||
-    name === "tool.batch" ||
     name === "fs.search" ||
     name === "web.search" ||
     name === "web.fetch"
@@ -461,7 +438,7 @@ export function applyDestinationCwd(
   call: ToolCall,
   destinationHint: string | undefined,
 ): ToolCall {
-  if (call.name !== "shell.exec" && call.name !== "shell.start") return call;
+  if (call.name !== "shell.exec") return call;
   if (typeof call.args.cwd === "string" && call.args.cwd.trim()) return call;
   const cmd = commandOf(call);
   const cwd = getActiveProjectRoot() ?? destinationHint;
@@ -489,7 +466,7 @@ export function applyDestinationCwd(
   const looksProjectLocal =
     /\b(npm\s+i(nstall)?|npm\s+run|yarn\s|pnpm\s|bun\s|pip\s+install|poetry\s+|cargo\s+|go\s+run|go\s+build|composer\s+|bundle\s+|dotnet\s+|flutter\s+|mix\s+|rails\s+|django)/i.test(
       cmd,
-    ) || call.name === "shell.start";
+    ) || startsBackgroundJob(call);
   if (!looksProjectLocal) return call;
   return {
     ...call,

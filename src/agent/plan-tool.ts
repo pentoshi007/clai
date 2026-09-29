@@ -162,7 +162,7 @@ export function ensureCodingPlanRunVerifyTask(
   if (tasks.some(looksLikeRunServerTask)) return tasks;
   return [
     ...tasks,
-    "Start dev server with shell.start, probe localhost, leave running, report URL/port/job id",
+    'Start the dev server with shell.exec background:"always" and a name, probe localhost, leave it running, report URL/port/job id',
   ];
 }
 

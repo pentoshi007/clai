@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { detectPackageManager } from "../os/pkgmgr.js";
 import { findExecutable } from "../os/command.js";
 import type { ToolResult } from "../types.js";
 
@@ -32,25 +33,35 @@ const VERSION_COMMANDS: Record<string, string[]> = {
   tesseract: ["tesseract", "--version"],
 };
 
-const INSTALL_HINTS: Record<string, string> = {
-  nmap: "pkg.install nmap",
+const OS_PACKAGES: Readonly<Record<string, string>> = {
+  nmap: "nmap",
+  nikto: "nikto",
+  sqlmap: "sqlmap",
+  hydra: "hydra",
+  rg: "ripgrep",
+  jq: "jq",
+  dig: "dnsutils",
+  whois: "whois",
+  nslookup: "dnsutils",
+  host: "dnsutils",
+  tesseract: "tesseract",
+};
+
+const SOURCE_INSTALLS: Readonly<Record<string, string>> = {
   ffuf: "go install github.com/ffuf/ffuf/v2@latest",
   gobuster: "go install github.com/OJ/gobuster/v3@latest",
-  nikto: "pkg.install nikto",
-  sqlmap: "pkg.install sqlmap",
-  hydra: "pkg.install hydra",
-  rg: "pkg.install ripgrep",
-  jq: "pkg.install jq",
-  dig: "pkg.install dnsutils",
-  whois: "pkg.install whois",
-  nslookup: "pkg.install dnsutils",
-  host: "pkg.install dnsutils",
   subfinder:
     "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
   httpx: "go install github.com/projectdiscovery/httpx/cmd/httpx@latest",
   nuclei: "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
-  tesseract: "pkg.install tesseract",
 };
+
+async function installHint(name: string): Promise<string | undefined> {
+  const source = SOURCE_INSTALLS[name];
+  if (source) return source;
+  const pkg = OS_PACKAGES[name];
+  return pkg ? (await detectPackageManager()).installCommand(pkg) : undefined;
+}
 
 export function isProjectLocalNodeBin(path: string): boolean {
   return /(?:^|[/\\])node_modules[/\\]\.bin[/\\]/i.test(path);
@@ -109,7 +120,7 @@ export async function checkTool(name: string): Promise<ToolAvailability> {
     return {
       name,
       available: false,
-      installHint: INSTALL_HINTS[name],
+      installHint: await installHint(name),
     };
   }
   const version = await getVersion(name, path);

@@ -64,11 +64,11 @@ describe("native prompts", () => {
 
   it("keeps shell and interactive terminal selection unambiguous", () => {
     const p = renderAgentSystemPrompt(
-      "shell.exec, shell.start, terminal.start, terminal.send, terminal.read",
+      "shell.exec, terminal.start, terminal.send, terminal.read",
       { nativeTools: true },
     );
     expect(p).toContain("Finite chatty work → shell.exec");
-    expect(p).toContain("persistent work → shell.start");
+    expect(p).toContain("persistent work → background shell.exec");
     expect(p).toMatch(/ssh\/gpg\/passwd need a real TTY: use terminal\.start/i);
   });
 

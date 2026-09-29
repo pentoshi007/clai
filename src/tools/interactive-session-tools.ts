@@ -29,7 +29,6 @@ export const INTERACTIVE_SESSION_TOOL_NAMES = [
   "terminal.read",
   "terminal.status",
   "terminal.list",
-  "terminal.resize",
   "terminal.close",
 ] as const;
 
@@ -233,7 +232,7 @@ async function guarded(
       return {
         ok: false,
         output:
-          "Interactive terminal sessions are disabled. Use shell.exec or shell.start instead.",
+          'Interactive terminal sessions are disabled. Use shell.exec instead (background:"always" for servers).',
         exitCode: 1,
       };
     }
@@ -305,20 +304,6 @@ export function createInteractiveSessionHandlers(
       ),
     "terminal.list": async (_args, options) =>
       guarded("list", () => manager.list({ ownerId: requireOwner(options, "list") })),
-    "terminal.resize": async (args, options) =>
-      guarded("resize", async () => {
-        const columns = optionalNumber(args, "columns");
-        const rows = optionalNumber(args, "rows");
-        if (columns === undefined || rows === undefined) {
-          throw new Error("columns and rows are required");
-        }
-        return await manager.resize({
-          ownerId: requireOwner(options, "resize"),
-          id: requireString(args, "id"),
-          columns,
-          rows,
-        });
-      }),
     "terminal.close": async (args, options) =>
       guarded("close", async () =>
         await manager.close({

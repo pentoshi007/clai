@@ -20,18 +20,9 @@ import {
 } from "../agent/message-slim.js";
 import { fromWireName } from "../llm/tool-protocol.js";
 import { NON_REGISTRY_TOOL_NAMES } from "./definitions.js";
-import {
-  compileBatchFailMode,
-  evaluateCancelTargets,
-  formatBatchCancelReason,
-  parseBatchFailPolicy,
-} from "./batch-fail-policy.js";
 import { toolRegistry_SHELL_1 } from "./handlers/shell-1.js";
 import { toolRegistry_FILES_1 } from "./handlers/files-1.js";
-import { toolRegistry_SHELL_2 } from "./handlers/shell-2.js";
 import { toolRegistry_WEB } from "./handlers/web.js";
-import { toolRegistry_CONTEXT_1 } from "./handlers/context-1.js";
-import { toolRegistry_ORCHESTRATION_1 } from "./handlers/orchestration-1.js";
 import { SUBAGENT_TOOL_NAMES } from "./definitions/subagents.js";
 import { toolRegistry_NETWORK_3 } from "./handlers/network-3.js";
 import { toolRegistry_ORCHESTRATION_2 } from "./handlers/orchestration-2.js";
@@ -39,30 +30,22 @@ import { toolRegistry_CONTEXT_2 } from "./handlers/context-2.js";
 import { toolRegistry_SHELL_3 } from "./handlers/shell-3.js";
 import { toolRegistry_FILES_2 } from "./handlers/files-2.js";
 import { normalizeToolCall } from "./call-normalization.js";
+import { retiredToolGuidance } from "./retired-tools.js";
 
 export { normalizeToolCall };
 
 export type { ToolRunOptions, ToolHandler };
-export {
-  parseBatchFailPolicy,
-  compileBatchFailMode,
-  evaluateCancelTargets,
-  formatBatchCancelReason,
-} from "./batch-fail-policy.js";
 
 export const toolRegistry: Record<string, ToolHandler> = {
   ...Object.fromEntries(SUBAGENT_TOOL_NAMES.map((name) => [name, async () => ({
     ok: false,
     exitCode: 1,
-    output: "Subagent tools require the active parent session with /orchestration on. Call them directly, not through tool.batch.",
+    output: "Subagent tools require the active parent session with /orchestration on.",
   })])),
   ...createInteractiveSessionHandlers(),
   ...toolRegistry_SHELL_1,
   ...toolRegistry_FILES_1,
-  ...toolRegistry_SHELL_2,
   ...toolRegistry_WEB,
-  ...toolRegistry_CONTEXT_1,
-  ...toolRegistry_ORCHESTRATION_1,
   ...toolRegistry_NETWORK_3,
   ...toolRegistry_ORCHESTRATION_2,
   ...toolRegistry_CONTEXT_2,
@@ -88,6 +71,8 @@ export function knownToolNames(): string[] {
 }
 
 export function unknownToolErrorMessage(name: string): string {
+  const retired = retiredToolGuidance(name);
+  if (retired) return retired;
   const known = knownToolNames();
   const external = externalToolNames();
   const mapped = fromWireName(name);
@@ -181,12 +166,11 @@ export async function runToolCall(
   );
 }
 
-export const BATCH_SAFE_TOOLS = new Set([
+export const PARALLEL_SAFE_TOOLS = new Set([
   "fs.read",
   "fs.list",
   "fs.search",
   "http.fetch",
-  "sysinfo",
   "net.pingSweep",
   "tool.check",
   "wordlist.find",

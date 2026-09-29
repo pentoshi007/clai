@@ -42,7 +42,7 @@ describe("scaffold preflight", () => {
   });
 
   it("ignores a missing command argument", () => {
-    expect(decideScaffoldPreflight({ name: "shell.start", args: {} }).skip).toBe(
+    expect(decideScaffoldPreflight({ name: "shell.exec", args: {} }).skip).toBe(
       false,
     );
   });
@@ -80,8 +80,8 @@ describe("scaffold preflight", () => {
     resolveTarget.mockReturnValue("/work/app");
     materialized.mockReturnValue(false);
     const decision = decideScaffoldPreflight({
-      name: "shell.start",
-      args: { command: scaffoldCommand },
+      name: "shell.exec",
+      args: { command: scaffoldCommand, background: "always" },
     });
     expect(decision.skip).toBe(true);
     expect(decision.adoptTarget).toBe(false);

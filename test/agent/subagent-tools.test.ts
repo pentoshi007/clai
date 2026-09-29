@@ -22,7 +22,7 @@ const run: SubagentRun = {
 
 function fixture(enabled = true) {
   const manager = {
-    enabled, start: vi.fn(() => run), startMany: vi.fn(() => [run, run]), list: vi.fn(() => [run]), get: vi.fn(() => run),
+    enabled, start: vi.fn(() => run), list: vi.fn(() => [run]), get: vi.fn(() => run),
     stop: vi.fn(), restart: vi.fn(() => run), wait: vi.fn(async () => run),
     waitAny: vi.fn<() => Promise<SubagentRun | undefined>>(async () => run), acknowledgeResult: vi.fn(),
   };
@@ -63,19 +63,6 @@ describe("parent subagent tool boundary", () => {
     expect(manager.start).toHaveBeenCalledWith({ title: run.title, prompt: run.prompt, context: undefined, cwd: process.cwd(), provider: "openai", model: "gpt-4.1" });
   });
 
-  it("starts independent assignments through one concurrent batch", async () => {
-    const { manager, context, signal } = fixture();
-    const result = await runSubagentTool({ name: "subagent.start_many", args: { assignments: [
-      { title: "Routes", prompt: "Inspect routes" },
-      { title: "Storage", prompt: "Inspect storage", context: "Focus on persistence" },
-    ] } }, context, signal);
-    expect(result.ok).toBe(true);
-    expect(manager.startMany).toHaveBeenCalledWith([
-      { title: "Routes", prompt: "Inspect routes", context: undefined, cwd: process.cwd(), provider: "openai", model: "gpt-4.1" },
-      { title: "Storage", prompt: "Inspect storage", context: "Focus on persistence", cwd: process.cwd(), provider: "openai", model: "gpt-4.1" },
-    ]);
-  });
-
   it("defaults to three recent conversation events and reads reports separately", async () => {
     const { context, signal } = fixture();
     const tail = await runSubagentTool({ name: "subagent.read", args: { id: run.id } }, context, signal);
@@ -83,52 +70,6 @@ describe("parent subagent tool boundary", () => {
     expect(data(tail.output).report).toBeUndefined();
     const report = await runSubagentTool({ name: "subagent.read", args: { id: run.id, view: "report" } }, context, signal);
     expect(data(report.output).report).toBe(run.report);
-  });
-
-  it("continues a child without follow-up arguments for backward compatibility", async () => {
-    const { manager, context, signal } = fixture();
-    const result = await runSubagentTool({ name: "subagent.restart", args: { id: run.id } }, context, signal);
-    expect(result.ok).toBe(true);
-    expect(manager.restart).toHaveBeenCalledExactlyOnceWith(run.id);
-  });
-
-  it.each([
-    { prompt: "Inspect the caller" },
-    { context: "The route has changed" },
-    { prompt: "Inspect the caller", context: "The route has changed" },
-  ])("forwards focused restart instructions without changing the original route: %j", async (followup) => {
-    const { manager, context, signal } = fixture();
-    const result = await runSubagentTool({ name: "subagent.restart", args: { id: run.id, ...followup, cwd: "/", model: "other" } }, context, signal);
-    expect(result.ok).toBe(true);
-    expect(manager.restart).toHaveBeenCalledExactlyOnceWith(run.id, { prompt: followup.prompt, context: followup.context });
-    expect(manager.start).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    { prompt: "" }, { prompt: 42 }, { prompt: "x".repeat(12001) },
-    { context: " " }, { context: false }, { context: "x".repeat(24001) },
-  ])("rejects invalid restart instructions before launching ($#)", async (followup) => {
-    const { manager, context, signal } = fixture();
-    const result = await runSubagentTool({ name: "subagent.restart", args: { id: run.id, ...followup } }, context, signal);
-    expect(result.ok).toBe(false);
-    expect(result.output).toContain("non-empty string");
-    expect(manager.restart).not.toHaveBeenCalled();
-  });
-
-  it("advertises optional bounded follow-ups in both tool definition formats", () => {
-    for (const definitions of [getToolDefinitions(), getCompactToolDefinitions()]) {
-      const restart = definitions.find((definition) => definition.name === "subagent.restart")!;
-      expect(restart.parameters).toMatchObject({
-        required: ["id"],
-        additionalProperties: false,
-        properties: {
-          prompt: { type: "string", minLength: 1, maxLength: 12000 },
-          context: { type: "string", minLength: 1, maxLength: 24000 },
-        },
-      });
-    }
-    expect(orchestrationContext(true)).toContain("subagent.restart");
-    expect(orchestrationContext(true)).toContain("follow-up");
   });
 
   it("exposes partial status and recovery with reports instead of promoting them to completed", async () => {
@@ -238,13 +179,13 @@ describe("parent subagent tool boundary", () => {
     expect((await runSubagentTool({ name: "subagent.read", args: { id: run.id, limit } }, context, signal)).ok).toBe(false);
   });
 
-  it("does not dispatch registry or batch calls outside the parent boundary", async () => {
+  it("does not dispatch registry calls outside the parent boundary and rejects retired batching", async () => {
     for (const name of SUBAGENT_TOOL_NAMES) {
       expect((await runToolCall({ name, args: { id: run.id, title: run.title, prompt: run.prompt } })).ok).toBe(false);
     }
-    const result = await runToolCall({ name: "tool.batch", args: { calls: [{ name: "subagent.start", args: { title: run.title, prompt: run.prompt } }] } }, { confirmed: true });
-    expect(result.ok).toBe(false);
-    expect(result.output).toContain("directly");
+    await expect(
+      runToolCall({ name: "tool.batch", args: { calls: [{ name: "subagent.start", args: { title: run.title, prompt: run.prompt } }] } }, { confirmed: true }),
+    ).rejects.toThrow("Emit the calls directly");
   });
 
   it("enforces the gate in the real single-tool dispatch before privileged execution", async () => {

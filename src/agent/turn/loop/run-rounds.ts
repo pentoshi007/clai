@@ -1,5 +1,5 @@
 import { routeCompletionBudget } from "./output-budget.js";
-import { BATCH_SAFE_TOOLS } from "../../../tools/registry.js";
+import { PARALLEL_SAFE_TOOLS } from "../../../tools/registry.js";
 import type { BoundCall } from "../contracts.js";
 import type { EmptyResponseState } from "./empty-response.js";
 import { MAX_STEP_COMPLETION_TOKENS } from "../../reliability-policy.js";
@@ -679,16 +679,15 @@ export const runTurnRounds = async (
 
       const isParallelSafe = (c: ToolCall): boolean => {
         if (deps.mcpRuntime?.isParallelSafe(c.name)) return true;
-        if (c.name === "subagent.start" || c.name === "subagent.start_many") return true;
+        if (c.name === "subagent.start") return true;
         if (
-          c.name === "tool.batch" ||
           c.name === "tool.check" ||
           c.name === "shell.jobs" ||
           c.name === "shell.tail"
         ) {
           return true;
         }
-        if (!BATCH_SAFE_TOOLS.has(c.name)) return false;
+        if (!PARALLEL_SAFE_TOOLS.has(c.name)) return false;
         try {
           return (
             classifyToolCall(c, { scope: scopeForBatch }).level === "safe"
@@ -849,7 +848,7 @@ export const runTurnRounds = async (
           unreadResponderResults: deps.responderClaims.size > 0,
           calledResponderRead: allCalls.some(
             (candidate) =>
-              candidate.name === "job.read" || candidate.name === "task.read",
+              candidate.name === "job.read",
           ),
         },
       );

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getDataDir } from "../store/paths.js";
 import { redactSecrets } from "../llm/provider.js";
 import { copyString } from "../os/copy-string.js";
+import { startsPersistentProcess } from "../tools/command-intent.js";
 
 export type OutcomeKind = "answer" | "build" | "bugfix" | "operation" | "pentest";
 export type OutcomeStatus = "active" | "succeeded" | "partial" | "blocked" | "failed" | "aborted" | "paused_budget";
@@ -576,7 +577,7 @@ export function recordToolEvidence(
   const isWrite = /^(?:fs\.(?:write|writeMany|edit|replaceLines|append))$/.test(input.tool);
   const isCheck = input.tool === "shell.exec" && /\b(?:test|vitest|jest|pytest|typecheck|lint|build|check)\b/i.test(command);
   const isProbe = input.tool === "http.fetch" || (input.tool === "shell.exec" && /\bcurl\b/i.test(command));
-  const isStart = input.tool === "shell.start";
+  const isStart = startsPersistentProcess({ name: input.tool, args: input.args ?? {} });
   const isReady = input.tool === "shell.tail" && /\b(?:ready|listening|started|localhost|127\.0\.0\.1)\b/i.test(input.output);
   const isScanner = /\b(?:nmap|nikto|nuclei|ffuf|gobuster)\b/i.test(command);
   const isActiveSecurity = input.tool === "http.fetch" && !/^(?:GET|HEAD|OPTIONS)?$/i.test(String(input.args?.method ?? "GET"));

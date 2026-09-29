@@ -1,3 +1,4 @@
+import { startsPersistentProcess } from "../../tools/command-intent.js";
 import type { ToolCall } from "../../types.js";
 import {
   isEvidenceWorkTool,
@@ -75,7 +76,7 @@ const serverSignals = (
   input: ToolEvidenceInput,
 ): { started: boolean; tailed: boolean } => {
   if (!input.ok) return { started: false, tailed: false };
-  if (input.call.name === "shell.start") return { started: true, tailed: false };
+  if (startsPersistentProcess(input.call)) return { started: true, tailed: false };
   if (input.call.name === "shell.tail") {
     return { started: isServerReadyOutput(input.output), tailed: true };
   }

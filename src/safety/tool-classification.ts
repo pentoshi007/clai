@@ -1,16 +1,7 @@
-import { findExecutableSync } from "../os/command.js";
 import { externalToolRisk } from "../tools/external-tools.js";
-import { packageBinaryName } from "../tools/package-binary.js";
 import { classifyHost } from "../tools/web/ssrf-guard.js";
 import type { ToolCall } from "../types.js";
 import { classifyInteractiveInput, ClassifyOptions, classifyShellCommand, RiskDecision } from "./shell-classification.js";
-
-const PLAIN_BINARY_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
-
-function isBinaryOnPath(binary: string): boolean {
-  if (!PLAIN_BINARY_NAME_RE.test(binary)) return false;
-  return Boolean(findExecutableSync(binary));
-}
 
 export function stringArg(
   args: Record<string, unknown>,
@@ -37,10 +28,6 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only operation" };
   }
 
-  if (call.name === "sysinfo") {
-    return { level: "safe", reason: "Read-only operation" };
-  }
-
   if (call.name === "skill.load" || call.name === "skill.list") {
     return { level: "safe", reason: "Read-only Agent Skill lookup" };
   }
@@ -50,57 +37,6 @@ export function classifyToolCall(
       level: "safe",
       reason: "Records standing instructions in .clai/INSTRUCTIONS.md",
     };
-  }
-
-  if (call.name === "tool.batch") {
-    const rawCalls = call.args?.calls;
-    if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
-      return { level: "safe", reason: "Empty or invalid batch (handler will reject)" };
-    }
-    let elevates = false;
-    for (const entry of rawCalls) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      const childName =
-        typeof (entry as { name?: unknown }).name === "string"
-          ? String((entry as { name: string }).name).trim()
-          : "";
-      if (!childName) continue;
-      const dotted = childName.includes(".")
-        ? childName
-        : childName.includes("_")
-          ? childName.replace(/_/g, ".")
-          : childName;
-      if (dotted === "tool.batch") {
-        return {
-          level: "block",
-          reason: "Nested tool.batch is not allowed",
-        };
-      }
-      const childArgs =
-        typeof (entry as { args?: unknown }).args === "object" &&
-        (entry as { args?: unknown }).args !== null &&
-        !Array.isArray((entry as { args?: unknown }).args)
-          ? ((entry as { args: Record<string, unknown> }).args)
-          : {};
-      const child = classifyToolCall(
-        { name: dotted, args: childArgs },
-        options,
-      );
-      if (child.level === "block") {
-        return {
-          level: "block",
-          reason: `Batch child ${dotted}: ${child.reason}`,
-        };
-      }
-      if (child.level === "confirm") elevates = true;
-    }
-    if (elevates) {
-      return {
-        level: "confirm",
-        reason: "Batch includes tools that require confirmation",
-      };
-    }
-    return { level: "safe", reason: "Batch of read-only / auto-safe tools" };
   }
 
   if (call.name === "http.fetch") {
@@ -143,7 +79,6 @@ export function classifyToolCall(
     call.name === "terminal.read" ||
     call.name === "terminal.status" ||
     call.name === "terminal.list" ||
-    call.name === "terminal.resize" ||
     call.name === "terminal.close"
   ) {
     return { level: "safe", reason: "Interactive session management" };
@@ -159,24 +94,6 @@ export function classifyToolCall(
     return {
       level: "confirm",
       reason: "Mutating operation requires confirmation",
-    };
-  }
-
-  if (call.name === "pkg.install") {
-    const tool = stringArg(call.args, "tool");
-    const checkBinary = stringArg(call.args, "checkBinary");
-    if (tool) {
-      const binary = checkBinary ?? packageBinaryName(tool);
-      if (isBinaryOnPath(binary)) {
-        return {
-          level: "safe",
-          reason: `${binary} is already installed — pkg.install will no-op`,
-        };
-      }
-    }
-    return {
-      level: "confirm",
-      reason: "Package install requires confirmation",
     };
   }
 
@@ -216,11 +133,6 @@ export function classifyToolCall(
       level: "safe",
       reason: "Read-only local network sweep",
     };
-  }
-
-  if (call.name === "shell.start") {
-    const command = stringArg(call.args, "command") ?? "";
-    return classifyShellCommand(command, options);
   }
 
   if (

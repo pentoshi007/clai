@@ -47,13 +47,4 @@ describe("issues.md §23 — sweep", () => {
     expect(decision.level).toBe("safe");
   });
 
-  it("the agent prompt advertises tool.batch alongside other tools", () => {
-    const prompt = renderAgentSystemPrompt(availableToolNames().join(", "));
-    expect(prompt).toMatch(/tool\.batch/);
-    expect(prompt).toMatch(/in parallel/);
-  });
-
-  it("availableToolNames includes tool.batch", () => {
-    expect(availableToolNames()).toContain("tool.batch");
-  });
 });

@@ -8,7 +8,6 @@ export function inferToolFromArgs(
     Object.prototype.hasOwnProperty.call(obj, key);
   if (has("command") || has("cmd")) return undefined;
   if (has("files")) return "fs.writeMany";
-  if (has("calls")) return "tool.batch";
   if (has("startLine") && has("endLine") && has("path")) return "fs.replaceLines";
   if (has("oldText") || has("newText")) return "fs.edit";
   if (has("position") && has("content") && has("path")) return "fs.append";
@@ -23,7 +22,6 @@ export function inferToolFromArgs(
     (has("position") || has("beforeTaskId") || has("afterTaskId"))
   ) return "task.move";
   if (has("taskId") || has("state")) return "task.update";
-  if (has("tool")) return "pkg.install";
   if (has("url")) {
     return has("method") || has("body") ? "http.fetch" : "web.fetch";
   }

@@ -37,10 +37,10 @@ describe("prompt rendering", () => {
   });
 
   it("agent prompt includes tool list", () => {
-    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, sysinfo");
+    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, tool.check");
     expect(prompt).toContain("shell.exec");
     expect(prompt).toContain("fs.read");
-    expect(prompt).toContain("sysinfo");
+    expect(prompt).toContain("tool.check");
   });
 
   it("agent prompt requires exact fs.edit evidence before retrying", () => {

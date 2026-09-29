@@ -18,22 +18,6 @@ import {
 } from "./args.js";
 
 export const toolRegistry_SHELL_3: Record<string, ToolHandler> = {
-  async "shell.start"(args, options) {
-    const command = requireString(args, "command");
-    const elevated = await prepareElevatedBackgroundCommand(command, {
-      signal: options?.signal,
-      onOutput: options?.onOutput,
-      requestSecret: options?.requestSecret,
-    });
-    if (elevated && !elevated.prepared) return elevated.result;
-    return jobManager.startJob(elevated?.prepared ? elevated.spec : command, {
-      cwd: optionalString(args, "cwd"),
-      name: optionalString(args, "name"),
-      ...responderJobOptions(options),
-      responder: false,
-      wakeOnCompletion: false,
-    });
-  },
   async "shell.jobs"(_args, options) {
     return jobManager.listJobs(options?.sessionId);
   },

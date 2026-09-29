@@ -341,7 +341,7 @@ export async function pingSweep(
 
   return {
     ok: false,
-    output: `No suitable method for ping sweep. Install nmap for best results: pkg.install nmap`,
+    output: `No suitable method for ping sweep. Install nmap for best results with the OS package manager (tool.check nmap shows the command).`,
     exitCode: 1,
   };
 }
