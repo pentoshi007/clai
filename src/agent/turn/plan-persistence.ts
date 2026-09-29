@@ -57,6 +57,9 @@ export const persistTaskEvidence = async (
     if (!task) return false;
     task.evidence = evidence;
   });
+  if (!result.ok && result.reason === "no-change" && result.plan) {
+    return result.plan;
+  }
   return committedPlan(result, `Evidence update for task ${taskId}`);
 };
 
