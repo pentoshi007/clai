@@ -16,6 +16,7 @@ import {
 } from "../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { claimDiscardedAttemptUsage } from "../llm/operation-usage.js";
+import { exposePentestTools } from "./turn/pentest-tools.js";
 import { createStreamRecoveryState } from "./stream-recovery.js";
 import type {
   SingleToolResult,
@@ -341,16 +342,18 @@ export async function runAgentTurn(
       model: initialModel,
       previousSuccessfulRequest: options.previousSuccessfulRequest,
     });
+    const session: SessionPolicy = options.session ?? createSessionPolicy();
+    const classification = classifyTurnPrompt(prompt, options.history);
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
+      pentestTools: await exposePentestTools(session, classification.pentestLikeTurn),
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
     });
     const routeToolNames = toolRouting.routeToolNames;
     const resolveNativeTools = toolRouting.resolveNativeTools;
     const toolNames = routeToolNames(initialProvider, initialModel);
-    const classification = classifyTurnPrompt(prompt, options.history);
     const {
       buildLikeTurn,
       pentestLikeTurn,
@@ -386,7 +389,6 @@ export async function runAgentTurn(
       toolRouting.buildStableSystemContent(native, loop.provider, loop.model);
     let { dialect: toolDialect, native: nativeToolsActive } =
       resolveNativeTools(loop.provider, loop.model);
-    const session: SessionPolicy = options.session ?? createSessionPolicy();
     if (!getActiveSessionWorkspace()) {
       beginSessionWorkspace();
     }
