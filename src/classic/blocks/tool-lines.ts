@@ -10,7 +10,9 @@ import {
   TOOL_PREVIEW_HEAD_LINES,
   TOOL_PREVIEW_TAIL_LINES,
 } from "../../ui-core/rendering/tool-presenter.js";
+import { fsSearchHitsLabel, presentFsSearchOutput } from "../../ui-core/rendering/fs-search-summary.js";
 import { shouldShowToolElapsed } from "../../ui-core/rendering/duration.js";
+import { relativeDisplayPath } from "../../ui-core/rendering/file-diff-view.js";
 import { clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
@@ -20,7 +22,7 @@ import {
   clipRow,
   formatElapsed,
   joinMeta,
-  SUFFIX_MIN_COLUMNS,
+  separator,
   type BlockContext,
 } from "./block-context.js";
 
@@ -29,6 +31,8 @@ export const TOOL_COLLAPSED_BODY_ROWS =
 export const TOOL_EXPANDED_BODY_ROWS = 40;
 export const TOOL_LIVE_BODY_ROWS = 8;
 const BODY_INDENT = 4;
+const FIELD_INDENT = "  ";
+const SUMMARY_TOOLS: ReadonlySet<string> = new Set(["fs.read", "fs.search"]);
 
 const STATUS_TOKEN: Record<ToolStatus, ThemeToken> = {
   queued: "muted",
@@ -37,6 +41,16 @@ const STATUS_TOKEN: Record<ToolStatus, ThemeToken> = {
   failed: "diffDel",
   blocked: "activity",
 };
+
+const META_TOKEN: Record<ToolStatus, ThemeToken> = {
+  queued: "muted",
+  running: "activity",
+  ok: "hint",
+  failed: "diffDel",
+  blocked: "activity",
+};
+
+type Presented = ReturnType<typeof presentTool>;
 
 export function toolGlyph(ctx: BlockContext, status: ToolStatus): string {
   const glyphs = ctx.glyphs;
@@ -68,69 +82,92 @@ export function toolSuffix(
   item: ToolItem,
   statusLabel: string,
 ): string {
-  if (ctx.width + 2 < SUFFIX_MIN_COLUMNS) return "";
-  const body = joinMeta(ctx, [statusLabel, toolElapsed(ctx, item)]);
-  return body === "" ? "" : ctx.ink.fg(STATUS_TOKEN[item.status], body);
+  const label = item.status === "ok" ? undefined : statusLabel;
+  const body = joinMeta(ctx, [label, toolElapsed(ctx, item)]);
+  return body === "" ? "" : ctx.ink.fg(META_TOKEN[item.status], body);
 }
 
-function toolHeadline(
-  ctx: BlockContext,
-  item: ToolItem,
-  presented: ReturnType<typeof presentTool>,
-): string {
+export function hintRows(ctx: BlockContext, indent: string, text: string): string[] {
+  const budget = Math.max(1, ctx.width - layoutWidth(indent));
+  return wrapAnsiLine(text, budget).map((row) => clipRow(ctx, `${indent}${ctx.ink.fg("hint", row)}`));
+}
+
+function argLines(presented: Presented): string[] {
+  return (presented.argsDisplay ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function toolTitle(ctx: BlockContext, item: ToolItem, presented: Presented): string {
   const glyph = ctx.ink.fg(STATUS_TOKEN[item.status], toolGlyph(ctx, item.status));
-  const name = ctx.ink.style(presented.name, { fg: "cyan", bold: true });
-  const head = `${glyph} ${name}`;
-  const suffix = toolSuffix(ctx, item, presented.statusLabel);
-  if (!suffix) return clipToWidth(head, ctx.width, ctx.glyphs.ellipsis);
-  const budget = Math.max(8, ctx.width - layoutWidth(suffix) - 3);
-  const clipped = clipToWidth(head, budget, ctx.glyphs.ellipsis);
-  const line = `${clipped}  ${suffix}`;
-  return layoutWidth(line) > ctx.width ? clipToWidth(line, ctx.width, ctx.glyphs.ellipsis) : line;
+  return `${glyph} ${ctx.ink.style(presented.name, { fg: "cyan", bold: true })}`;
 }
 
-function fsReadFieldLines(
-  ctx: BlockContext,
-  label: string,
-  value: string,
-  token: ThemeToken,
-): string[] {
-  const prefix = `  ${ctx.ink.fg("muted", `${label}: `)}`;
+function metaSuffix(ctx: BlockContext, item: ToolItem, presented: Presented): string {
+  const suffix = toolSuffix(ctx, item, presented.statusLabel);
+  return suffix === "" ? "" : `${ctx.ink.fg("hint", separator(ctx))}${suffix}`;
+}
+
+function headline(ctx: BlockContext, item: ToolItem, presented: Presented, inline: string | undefined): string[] {
+  const title = toolTitle(ctx, item, presented);
+  const args = inline === undefined ? "" : ` ${ctx.ink.fg("muted", `(${inline})`)}`;
+  const meta = metaSuffix(ctx, item, presented);
+  const line = `${title}${args}${meta}`;
+  if (layoutWidth(line) <= ctx.width) return [line];
+  const head = clipToWidth(`${title}${args}`, ctx.width, ctx.glyphs.ellipsis);
+  const suffix = toolSuffix(ctx, item, presented.statusLabel);
+  if (suffix === "") return [head];
+  const budget = Math.max(1, ctx.width - FIELD_INDENT.length);
+  return [head, ...wrapAnsiLine(suffix, budget).map((row) => clipRow(ctx, `${FIELD_INDENT}${row}`))];
+}
+
+function inlineFits(ctx: BlockContext, item: ToolItem, presented: Presented, args: string): boolean {
+  const used = layoutWidth(toolTitle(ctx, item, presented)) + layoutWidth(args) + 3;
+  return used + layoutWidth(metaSuffix(ctx, item, presented)) <= ctx.width;
+}
+
+function fieldLines(ctx: BlockContext, label: string, value: string, token: ThemeToken): string[] {
+  const prefix = `${FIELD_INDENT}${ctx.ink.fg("muted", `${label}: `)}`;
   const budget = Math.max(8, ctx.width - layoutWidth(prefix));
   return wrapAnsiLine(ctx.ink.fg(token, value), budget).map((row, index) =>
-    clipRow(ctx, index === 0 ? `${prefix}${row}` : `  ${row}`),
+    clipRow(ctx, index === 0 ? `${prefix}${row}` : `${" ".repeat(layoutWidth(prefix))}${row}`),
   );
 }
 
-function fsReadHeaderLines(
-  ctx: BlockContext,
-  item: ToolItem,
-  presented: ReturnType<typeof presentTool>,
-): string[] {
+function fsReadHeaderLines(ctx: BlockContext, item: ToolItem, presented: Presented): string[] {
   const args = presentFsReadArgs(presented.argsDisplay);
-  const lines = [toolHeadline(ctx, item, presented)];
-  if (args.options) lines.push(...fsReadFieldLines(ctx, "options", args.options, "inputBorder"));
-  if (args.path) lines.push(...fsReadFieldLines(ctx, "file", args.path, "inputBorder"));
+  const lines = headline(ctx, item, presented, undefined);
+  if (args.options) lines.push(...fieldLines(ctx, "options", args.options, "inputBorder"));
+  if (args.path) lines.push(...fieldLines(ctx, "file", args.path, "inputBorder"));
+  return lines;
+}
+
+function fsSearchHeaderLines(ctx: BlockContext, item: ToolItem, presented: Presented): string[] {
+  const summary = presentFsSearchOutput(ctx.spool.tail(item.toolCallId), presented.argsDisplay);
+  const lines = headline(ctx, item, presented, undefined);
+  if (summary.pattern) lines.push(...fieldLines(ctx, "pattern", summary.pattern, "inputBorder"));
+  if (summary.path) lines.push(...fieldLines(ctx, "path", summary.path, "inputBorder"));
+  if (item.status === "ok") {
+    lines.push(...fieldLines(ctx, "hits", fsSearchHitsLabel(summary), summary.hits > 0 ? "success" : "muted"));
+  }
+  for (const note of summary.notes) lines.push(...fieldLines(ctx, "note", note, "activity"));
   return lines;
 }
 
 export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
   const presented = presentTool(item);
   if (item.name === "fs.read") return fsReadHeaderLines(ctx, item, presented);
-  const head = toolHeadline(ctx, item, presented);
-  const suffix = toolSuffix(ctx, item, presented.statusLabel);
-  if (!suffix) {
-    const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-    if (argsLines.length === 0) return [head];
-    const budget = Math.max(8, ctx.width - 2);
-    const rows = argsLines.flatMap((l) => wrapAnsiLine(ctx.ink.fg("muted", `(${l})`), budget));
-    return [head, ...rows.map((r) => trimTrailingSpaces(`  ${r}`))];
+  if (item.name === "fs.search") return fsSearchHeaderLines(ctx, item, presented);
+  const args = argLines(presented);
+  if (args.length === 1 && inlineFits(ctx, item, presented, args[0]!)) {
+    return headline(ctx, item, presented, args[0]);
   }
-  const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  if (argsLines.length === 0) return [head];
-  const argsBudget = Math.max(8, ctx.width - 2);
-  const argRows = argsLines.flatMap((l) => wrapAnsiLine(ctx.ink.fg("muted", `(${l})`), argsBudget));
-  return [head, ...argRows.map((r) => trimTrailingSpaces(`  ${r}`))];
+  const head = headline(ctx, item, presented, undefined);
+  if (args.length === 0) return head;
+  const budget = Math.max(8, ctx.width - FIELD_INDENT.length);
+  const rows = args.flatMap((line) => wrapAnsiLine(ctx.ink.fg("muted", `(${line})`), budget));
+  return [...head, ...rows.map((row) => trimTrailingSpaces(`${FIELD_INDENT}${row}`))];
 }
 
 export interface ToolBodyOptions {
@@ -141,21 +178,40 @@ export function outputToggleLabel(expanded: boolean): string {
   return expanded ? "Ctrl+O to minimize" : "Ctrl+O to expand";
 }
 
+function bodySource(ctx: BlockContext, item: ToolItem): string {
+  const tail = ctx.spool.tail(item.toolCallId);
+  if (item.name === "fs.search" && tail.trim().length > 0) {
+    return presentFsSearchOutput(tail).body.join("\n");
+  }
+  const detail = item.status === "blocked" ? item.reason : item.summary;
+  return tail.trim().length > 0 ? tail : (detail ?? "");
+}
+
+const SEARCH_HIT = /^(.+?)([:-])(\d+)\2(.*)$/;
+
+function paintBodyLine(ctx: BlockContext, item: ToolItem, raw: string): string {
+  const text = adaptPresenterGlyphs(raw, ctx.ink.unicode);
+  const hit = item.name === "fs.search" ? SEARCH_HIT.exec(text) : null;
+  if (!hit) return ctx.ink.fg("toolText", text);
+  const [, path, mark, line, rest] = hit;
+  const location = `${ctx.ink.fg("inputBorder", relativeDisplayPath(path!))}${ctx.ink.fg("hint", `${mark}${line}${mark}`)}`;
+  return `${location}${ctx.ink.fg(mark === ":" ? "toolText" : "muted", rest!)}`;
+}
+
 export function buildToolBodyLines(
   ctx: BlockContext,
   item: ToolItem,
   options: ToolBodyOptions = {},
 ): string[] {
   const expanded = isItemExpanded(ctx.state, item);
-  if (item.name === "fs.read" && !expanded) {
-    return [clipRow(ctx, `  ${ctx.ink.fg("muted", outputToggleLabel(false))}`)];
-  }
-  const tail = ctx.spool.tail(item.toolCallId);
-  const detail = item.status === "blocked" ? item.reason : item.summary;
-  const source = tail.trim().length > 0 ? tail : (detail ?? "");
   const indent = " ".repeat(BODY_INDENT);
+  const failed = item.status === "failed" || item.status === "blocked";
+  if (SUMMARY_TOOLS.has(item.name) && !expanded && !failed) {
+    return hintRows(ctx, FIELD_INDENT, outputToggleLabel(false));
+  }
+  const source = bodySource(ctx, item);
   if (source.trim().length === 0) {
-    return [clipRow(ctx, `${indent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`)];
+    return hintRows(ctx, indent, outputToggleLabel(expanded));
   }
 
   const presented = presentOutput(
@@ -170,32 +226,28 @@ export function buildToolBodyLines(
   const kept = presented.lines.slice(0, Math.max(0, cap));
   const hidden = presented.lines.length - kept.length + presented.hiddenAboveCount;
 
-  const branch = ctx.ink.fg("muted", `  ${ctx.glyphs.bodyBranch} `);
+  const branch = ctx.ink.fg("hint", `  ${ctx.glyphs.bodyBranch} `);
   const budget = Math.max(1, ctx.width - BODY_INDENT);
 
   const lines: string[] = [];
   for (const [index, raw] of kept.entries()) {
-    const text = adaptPresenterGlyphs(raw, ctx.ink.unicode);
-    for (const [row, chunk] of wrapAnsiLine(text, budget).entries()) {
+    for (const [row, chunk] of wrapAnsiLine(paintBodyLine(ctx, item, raw), budget).entries()) {
       const prefix = index === 0 && row === 0 ? branch : indent;
-      lines.push(trimTrailingSpaces(`${prefix}${ctx.ink.fg("foreground", chunk)}`));
+      lines.push(trimTrailingSpaces(`${prefix}${chunk}`));
     }
   }
 
-  const artifact = item.artifactPath ? "saved" : undefined;
   if (presented.truncatedNotice) {
-    lines.push(
-      clipRow(ctx, `${indent}${ctx.ink.fg("muted", presented.truncatedNotice)}`),
-    );
+    lines.push(...hintRows(ctx, indent, presented.truncatedNotice));
   }
   const body = joinMeta(ctx, [
-    outputToggleLabel(expanded),
     hidden > 0
       ? `${ctx.glyphs.ellipsis} +${hidden} line${hidden === 1 ? "" : "s"}`
       : undefined,
-    artifact,
+    outputToggleLabel(expanded),
+    item.artifactPath ? "saved" : undefined,
   ]);
-  lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", body)}`));
+  lines.push(...hintRows(ctx, indent, body));
   return lines;
 }
 

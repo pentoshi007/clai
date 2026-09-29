@@ -36,6 +36,16 @@ export const DEFAULT_COLUMNS = 80;
 export const DEFAULT_ROWS = 24;
 
 const TRUECOLOR_TERMS = ["iterm", "kitty", "wezterm", "ghostty", "vte", "alacritty"];
+const TRUECOLOR_PROGRAMS = ["vscode", "warpterminal", "hyper", "tabby", "rio", "mintty", "zed", "contour", "cursor", "windsurf"];
+const TRUECOLOR_ENV_MARKERS = [
+  "WT_SESSION",
+  "KONSOLE_VERSION",
+  "KITTY_WINDOW_ID",
+  "ALACRITTY_WINDOW_ID",
+  "ALACRITTY_SOCKET",
+  "WEZTERM_EXECUTABLE",
+  "GHOSTTY_RESOURCES_DIR",
+] as const;
 const KITTY_KEYBOARD_TERMS = ["kitty", "ghostty", "wezterm", "foot"];
 
 function truthy(value: string | undefined): boolean {
@@ -81,6 +91,24 @@ export function restoreSudoTruecolorHint(
   env.COLORTERM = "truecolor";
 }
 
+function isMultiplexed(term: string, termProgram: string): boolean {
+  return term.startsWith("screen") || term.startsWith("tmux") || termProgram === "tmux";
+}
+
+function advertisesTruecolor(
+  env: CapabilityEnv["env"],
+  term: string,
+  termProgram: string,
+): boolean {
+  if (term.includes("direct") || term.includes("truecolor") || term.includes("24bit")) return true;
+  if (isMultiplexed(term, termProgram)) return false;
+  if (TRUECOLOR_PROGRAMS.some((program) => termProgram.includes(program))) return true;
+  if (TRUECOLOR_ENV_MARKERS.some((key) => (env[key] ?? "").trim() !== "")) return true;
+  if ((env.TERMINAL_EMULATOR ?? "").toLowerCase().includes("jetbrains")) return true;
+  const vte = Number(env.VTE_VERSION ?? "");
+  return Number.isFinite(vte) && vte >= 3600;
+}
+
 function detectColorMode(
   env: CapabilityEnv["env"],
   isTTY: boolean,
@@ -98,6 +126,9 @@ function detectColorMode(
     return { colorMode: "truecolor", noColor: false };
   }
   if (TRUECOLOR_TERMS.some((t) => termProgram.includes(t) || term.includes(t))) {
+    return { colorMode: "truecolor", noColor: false };
+  }
+  if (advertisesTruecolor(env, term, termProgram)) {
     return { colorMode: "truecolor", noColor: false };
   }
   if (term.includes("256")) return { colorMode: "256", noColor: false };

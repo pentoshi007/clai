@@ -36,6 +36,9 @@ export interface Theme {
   readonly userBorder: string;
   readonly toolBorder: string;
   readonly toolOutput: string;
+  readonly toolText: string;
+  readonly hint: string;
+  readonly userBg: string;
   readonly modalBorder: string;
   readonly diffAdd: string;
   readonly diffDel: string;
@@ -88,6 +91,9 @@ const DARK_THEME: Theme = {
   userBorder: "#f5b351",
   toolBorder: "#3B82F6",
   toolOutput: "#7DD3FC",
+  toolText: "#B4BECB",
+  hint: "#6E7C91",
+  userBg: "#1A202C",
   modalBorder: "#22D3EE",
   diffAdd: "#4ADE80",
   diffDel: "#F87171",
@@ -140,6 +146,9 @@ const LIGHT_THEME: Theme = {
   userBorder: "#f5b351",
   toolBorder: "#2563eb",
   toolOutput: "#0369a1",
+  toolText: "#3B4452",
+  hint: "#8A94A3",
+  userBg: "#EDF1F6",
   modalBorder: "#0891B2",
   diffAdd: "#15803d",
   diffDel: "#dc2626",

@@ -140,7 +140,7 @@ function paintAccentText(
   const overlapping = spans
     .filter((span) => span.end > origin && span.start < end)
     .sort((a, b) => a.start - b.start);
-  if (overlapping.length === 0) return ink.fg("white", text);
+  if (overlapping.length === 0) return ink.fg("foreground", text);
   const pieces: string[] = [];
   let cursor = origin;
   for (const span of overlapping) {
@@ -148,7 +148,7 @@ function paintAccentText(
     const to = Math.min(span.end, end);
     if (to <= cursor) continue;
     if (from > cursor) {
-      pieces.push(ink.fg("white", text.slice(cursor - origin, from - origin)));
+      pieces.push(ink.fg("foreground", text.slice(cursor - origin, from - origin)));
     }
     pieces.push(
       ink.style(text.slice(from - origin, to - origin), {
@@ -158,7 +158,7 @@ function paintAccentText(
     );
     cursor = to;
   }
-  if (cursor < end) pieces.push(ink.fg("white", text.slice(cursor - origin)));
+  if (cursor < end) pieces.push(ink.fg("foreground", text.slice(cursor - origin)));
   return pieces.join("");
 }
 

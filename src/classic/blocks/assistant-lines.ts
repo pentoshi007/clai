@@ -40,6 +40,7 @@ export function buildAssistantLines(
       options: {
         width: Math.max(20, ctx.width - ASSISTANT_CHROME_COLS),
         stripOuterIndent: true,
+        theme: ctx.ink.theme,
       },
       cache: ctx.markdownCache ?? EMPTY_MARKDOWN_STREAM_CACHE,
     }),
