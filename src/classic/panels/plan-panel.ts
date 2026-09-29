@@ -103,10 +103,14 @@ export function planView(input: PlanViewInput): PanelFrameInput {
   const width = panelBodyWidth(input.columns);
   const height = panelBodyHeight(input.rows);
   const progress = progressView(input.plan);
-  const bar = adaptPresenterGlyphs(
-    progressBar(progress.done, progress.total, Math.min(12, Math.max(4, width - 8))),
-    ink.unicode,
-  );
+  const barWidth = Math.min(12, Math.max(4, width - 8));
+  const raw = progressBar(progress.done, progress.total, barWidth);
+  const filled = raw.length - raw.replace(/█/g, "").length;
+  const complete = progress.total > 0 && progress.done === progress.total;
+  const bar = `${ink.fg(complete ? "success" : "cyan", adaptPresenterGlyphs(raw.slice(0, filled), ink.unicode))}${ink.fg(
+    "muted",
+    adaptPresenterGlyphs(raw.slice(filled), ink.unicode),
+  )}`;
   const percent = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
 
   const rows = taskRows(input, width);
@@ -124,7 +128,7 @@ export function planView(input: PlanViewInput): PanelFrameInput {
   const body: string[] = [
     sealStyle(
       clipToWidth(
-        `${ink.fg("activity", bar)}  ${ink.fg("muted", `${percent}%`)}`,
+        `${bar}  ${ink.style(`${percent}%`, { fg: complete ? "success" : "foreground", bold: true })}`,
         width,
         ink.glyphs.ellipsis,
       ),
@@ -133,12 +137,8 @@ export function planView(input: PlanViewInput): PanelFrameInput {
 
   for (const row of rows.slice(window.top, window.top + window.height)) {
     const active = input.focused && row.taskIndex === state.cursor;
-    const text = padToWidth(clipToWidth(row.text, width, ink.glyphs.ellipsis), width);
-    body.push(
-      active
-        ? sealStyle(ink.style(text, { fg: "accent", bold: true }))
-        : sealStyle(text),
-    );
+    const text = clipToWidth(row.text, width, ink.glyphs.ellipsis);
+    body.push(active ? ink.selectedRow(text, width) : sealStyle(padToWidth(text, width)));
   }
 
   return {

@@ -4,7 +4,7 @@ import type { CompletionMenu } from "../../ui-core/composer/completion.js";
 import type { FileSuggestion } from "../../ui/mentions.js";
 import { clipToWidth, padToWidth, sealStyle } from "../render/ansi-text.js";
 import type { InkTheme } from "../render/ink-theme.js";
-import { layoutWidth } from "../render/measure.js";
+import { layoutWidth, stripAnsi } from "../render/measure.js";
 import { listWindow, windowCounter } from "./list-window.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 
@@ -89,12 +89,16 @@ function twoColumnRow(
   width: number,
   activeRow: boolean,
 ): string {
-  const rightWidth = right === "" ? 0 : layoutWidth(right) + 2;
-  const leftWidth = Math.max(1, width - 2 - rightWidth);
+  const markerWidth = layoutWidth(marker);
+  const rightMax = Math.max(0, Math.floor((width - markerWidth) * 0.6) - 2);
+  const fitted = right === "" || rightMax < 4 ? "" : clipToWidth(right, rightMax, ink.glyphs.ellipsis);
+  const rightWidth = fitted === "" ? 0 : layoutWidth(fitted) + 2;
+  const leftWidth = Math.max(1, width - markerWidth - rightWidth);
   const label = padToWidth(clipToWidth(left, leftWidth, ink.glyphs.ellipsis), leftWidth);
-  const painted = activeRow ? ink.bold(label) : label;
-  const tail = right === "" ? "" : `  ${right}`;
-  return sealStyle(`${marker}${painted}${tail}`);
+  const tail = fitted === "" ? "" : `  ${fitted}`;
+  const row = `${marker}${label}${tail}`;
+  if (activeRow) return ink.selectedRow(stripAnsi(row), width);
+  return sealStyle(clipToWidth(row, width, ink.glyphs.ellipsis));
 }
 
 function slashRows(input: CompletionViewInput, items: readonly CommandDefinition[]): string[] {

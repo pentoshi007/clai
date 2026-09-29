@@ -24,13 +24,14 @@ export function showsDescription(columns: number): boolean {
 export function listRow(input: ListRowInput): string {
   const { ink } = input;
   const markerText = input.marker ?? (input.active ? `${ink.glyphs.promptMark} ` : "  ");
-  const marker = ink.style(markerText, { fg: "inputBorder" });
   const inner = Math.max(1, input.width - layoutWidth(markerText));
 
   const right =
     input.description && showsDescription(input.columns) ? input.description : "";
   const trailing = input.trailing ?? "";
-  const tailText = [right, trailing].filter((part) => part !== "").join("  ");
+  const joined = [right, trailing].filter((part) => part !== "").join("  ");
+  const tailMax = Math.max(0, Math.floor(inner * 0.6) - 1);
+  const tailText = joined === "" || tailMax < 1 ? "" : clipToWidth(joined, tailMax, ink.glyphs.ellipsis);
   const tailWidth = tailText === "" ? 0 : layoutWidth(tailText) + 1;
   const labelWidth = Math.max(1, inner - tailWidth);
 
@@ -38,10 +39,11 @@ export function listRow(input: ListRowInput): string {
     clipToWidth(input.label, labelWidth, ink.glyphs.ellipsis),
     labelWidth,
   );
-  const painted = ink.style(label, {
-    fg: input.active ? "accent" : (input.labelToken ?? "foreground"),
-    bold: input.active,
-  });
+  if (input.active) {
+    return ink.selectedRow(`${markerText}${label}${tailText === "" ? "" : ` ${tailText}`}`, input.width);
+  }
+  const marker = ink.style(markerText, { fg: "inputBorder" });
+  const painted = ink.style(label, { fg: input.labelToken ?? "foreground" });
   const tail =
     tailText === ""
       ? ""

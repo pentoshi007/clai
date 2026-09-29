@@ -1,3 +1,4 @@
+import type { OverlayState } from "../../ui-core/controllers/overlay-controller.js";
 import { renderMarkdownLines } from "../../ui-core/rendering/render-markdown-lines.js";
 import { defaultPagerMarkdownMode } from "../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "../../ui-core/rendering/pager-source.js";
@@ -17,6 +18,7 @@ import type { InkTheme } from "../render/ink-theme.js";
 import { isPrintable } from "./picker-panel.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, unhandled, type PanelKeyResult } from "./panel-effect.js";
+import { diffPagerLines, type PagerDiffOptions } from "./pager-diff.js";
 
 export type PagerFormat = "formatted" | "raw";
 export type PagerMarkdownMode = "auto" | "force" | "plain";
@@ -84,10 +86,16 @@ export function pagerLines(
   format: PagerFormat = "formatted",
   ansiBody = false,
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
+  diff?: PagerDiffOptions,
 ): readonly string[] {
   const width = panelBodyWidth(columns);
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
-  const lines = logicalPagerLines(body, textWidth, format, appearance).flatMap((line) =>
+  const logical = logicalPagerLines(body, textWidth, format, appearance);
+  if (diff && format === "raw" && !ansiBody) {
+    const painted = diffPagerLines(logical, textWidth, diff);
+    if (painted) return painted.length === 0 ? [" "] : painted;
+  }
+  const lines = logical.flatMap((line) =>
     format === "formatted" || ansiBody
       ? wrapAnsiLine(line, textWidth)
       : wrapPagerLine(line, textWidth, { preserveWhitespace: true }),
@@ -104,17 +112,28 @@ export interface PagerViewModel {
   readonly searchLines: readonly string[];
 }
 
-let pagerCache:
-  | {
-      readonly body: string;
-      readonly columns: number;
-      readonly rows: number;
-      readonly format: PagerFormat;
-      readonly ansiBody: boolean;
-      readonly appearance: Pick<InkTheme, "theme" | "colorMode"> | undefined;
-      readonly view: PagerViewModel;
-    }
-  | undefined;
+export function pagerDiffOptions(
+  overlay: OverlayState,
+  ink?: InkTheme,
+): PagerDiffOptions | undefined {
+  if (overlay.kind !== "pager" || !overlay.highlightPath) return undefined;
+  return ink ? { path: overlay.highlightPath, ink } : { path: overlay.highlightPath };
+}
+
+interface PagerCacheEntry {
+  readonly body: string;
+  readonly columns: number;
+  readonly rows: number;
+  readonly format: PagerFormat;
+  readonly ansiBody: boolean;
+  readonly appearance: Pick<InkTheme, "theme" | "colorMode"> | undefined;
+  readonly diffPath: string | undefined;
+  readonly diffInk: InkTheme | undefined;
+  readonly view: PagerViewModel;
+}
+
+const PAGER_CACHE_SIZE = 4;
+const pagerCache: PagerCacheEntry[] = [];
 
 export function pagerViewModel(
   body: string,
@@ -123,24 +142,36 @@ export function pagerViewModel(
   format: PagerFormat = "formatted",
   ansiBody = false,
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
+  diff?: PagerDiffOptions,
 ): PagerViewModel {
-  const hit = pagerCache;
-  if (
-    hit !== undefined &&
-    hit.body === body &&
-    hit.columns === columns &&
-    hit.rows === rows &&
-    hit.format === format &&
-    hit.ansiBody === ansiBody &&
-    hit.appearance === appearance
-  ) {
+  const diffPath = diff?.path;
+  const diffInk = diff?.ink;
+  const index = pagerCache.findIndex(
+    (entry) =>
+      entry.body === body &&
+      entry.columns === columns &&
+      entry.rows === rows &&
+      entry.format === format &&
+      entry.ansiBody === ansiBody &&
+      entry.appearance === appearance &&
+      entry.diffPath === diffPath &&
+      entry.diffInk === diffInk,
+  );
+  if (index >= 0) {
+    const hit = pagerCache[index]!;
+    if (index > 0) {
+      pagerCache.splice(index, 1);
+      pagerCache.unshift(hit);
+    }
     return hit.view;
   }
-  const lines = pagerLines(body, columns, rows, format, ansiBody, appearance);
+  const lines = pagerLines(body, columns, rows, format, ansiBody, appearance, diff);
   const view: PagerViewModel = { lines, searchLines: pagerSearchLines(lines) };
-  pagerCache = { body, columns, rows, format, ansiBody, appearance, view };
+  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, view });
+  if (pagerCache.length > PAGER_CACHE_SIZE) pagerCache.length = PAGER_CACHE_SIZE;
   return view;
 }
+
 function clampTop(caret: number, top: number, height: number, count: number): number {
   const max = Math.max(0, count - height);
   let next = Math.max(0, Math.min(top, max));

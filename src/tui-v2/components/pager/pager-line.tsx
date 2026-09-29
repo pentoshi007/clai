@@ -7,15 +7,13 @@ import {
   segmentPagerLine,
   type PagerMatch,
 } from "../../../ui-core/state/pager-search.js";
-import { syntaxColor } from "../../../ui-core/rendering/file-diff-view.js";
+import { parseModalDiffLine, syntaxColor } from "../../../ui-core/rendering/file-diff-view.js";
 import {
   highlightLineForPath,
   type SyntaxSpan,
 } from "../../../ui-core/rendering/syntax-highlight.js";
 import type { PagerDisplayLine } from "../../rendering/pager-markdown.js";
 import type { SubagentSpan } from "../../../ui-core/rendering/subagent-presentation.js";
-
-const DIFF_SPLIT_RE = /^(?<gutter>[\d ]{0,8}) │ (?<rest>.*)$/;
 
 export function baseLineFg(line: string, theme: Theme): string {
   const t = line.trim();
@@ -39,30 +37,7 @@ export function baseLineFg(line: string, theme: Theme): string {
   return theme.foreground;
 }
 
-export function parseDiffLine(line: string): {
-  gutter: string;
-  prefix: string;
-  code: string;
-  tone: "add" | "del" | "context" | "header";
-} | null {
-  const m = DIFF_SPLIT_RE.exec(line);
-  if (!m?.groups) return null;
-  const gutter = m.groups.gutter ?? "";
-  const rest = m.groups.rest ?? "";
-  if (/^[+\-−] /.test(rest)) {
-    const prefix = rest[0]!;
-    const code = rest.slice(2);
-    const tone =
-      prefix === "+" ? "add" : prefix === "-" || prefix === "−" ? "del" : "context";
-    return { gutter, prefix, code, tone };
-  }
-  if (rest.startsWith("  ") || rest.startsWith(" ")) {
-    if (rest[0] === " " && rest[1] === " ") {
-      return { gutter, prefix: " ", code: rest.slice(2), tone: "context" };
-    }
-  }
-  return { gutter, prefix: " ", code: rest, tone: "header" };
-}
+export const parseDiffLine = parseModalDiffLine;
 
 export function bodyOnlyForCopy(full: string): string {
   return full
