@@ -52,7 +52,7 @@ async function handlePlan(services: AppServices, invocation: CommandInvocation):
     if (!subcommand) {
       services.session.notice(
         "info",
-        "plan mode on — describe the multi-step task you want to plan",
+        "plan mode · describe the multi-step task; clai drafts a plan for your approval before running anything",
       );
     }
     return;
@@ -65,7 +65,7 @@ async function handlePlan(services: AppServices, invocation: CommandInvocation):
     handlePlanPager(services);
     return;
   }
-  services.session.notice("warn", "usage: /plan [view|off]");
+  services.session.notice("warn", "usage: /plan [view] · /agent or /ask leaves plan mode");
 }
 
 export function attachCommandHandlers(services: AppServices): void {
