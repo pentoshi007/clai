@@ -82,6 +82,8 @@ export async function openAiCompatibleStream(request: {
   onStreamEvent?: ProviderStreamEventSink | undefined;
   streamTerminal?: StreamTerminalPolicy | undefined;
   includeStreamUsage?: boolean | undefined;
+  bodyExtras?: Readonly<Record<string, unknown>> | undefined;
+  ephemeralCacheBreakpoints?: boolean | undefined;
   usageAliases?: CompatibleUsageAliases | undefined;
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
@@ -203,6 +205,8 @@ export async function openAiCompatibleStream(request: {
   const requestBody = chatCompletionsBodyFromPlan(plan, {
     reasoningStyle: options.reasoningStyle,
     includeStreamUsage: options.includeStreamUsage,
+    bodyExtras: options.bodyExtras,
+    ephemeralCacheBreakpoints: options.ephemeralCacheBreakpoints,
     reasoningArtifactReplayObserver: options.reasoningArtifactReplayObserver,
     ...(options.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
   });

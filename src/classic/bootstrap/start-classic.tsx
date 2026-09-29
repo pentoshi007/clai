@@ -32,6 +32,7 @@ import { createTerminalSession } from "./terminal-session.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
+import { runFreebuffSessionShutdownCleanup } from "../../llm/freebuff-session.js";
 
 export interface StartClassicOptions {
   readonly mode?: Mode | undefined;
@@ -171,7 +172,7 @@ export async function startClassic(
         }
       },
     ],
-    epilogue: epilogue.run,
+    epilogue: () => runFreebuffSessionShutdownCleanup(epilogue.run),
     onSigint: () => {
       const dismissed = services.overlay.cancelBlockingPrompt();
       if (services.session.getState().running) {

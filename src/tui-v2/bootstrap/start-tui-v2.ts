@@ -37,6 +37,7 @@ import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-supp
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
+import { runFreebuffSessionShutdownCleanup } from "../../llm/freebuff-session.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import { repaintAttachedScreen } from "./resize-repaint.js";
 import { installShrinkResizeGuard } from "./shrink-resize-guard.js";
@@ -220,7 +221,7 @@ export async function startTuiV2(
         }
       },
     ],
-    epilogue: epilogue.run,
+    epilogue: () => runFreebuffSessionShutdownCleanup(epilogue.run),
     onSigint: () => {
       const dismissed = services.overlay.cancelBlockingPrompt();
       if (services.session.getState().running) {

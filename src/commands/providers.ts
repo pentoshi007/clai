@@ -67,6 +67,13 @@ import {
   type KiroSocialProvider,
 } from "../llm/kiro-social-device.js";
 import type { ProviderId } from "../types.js";
+import {
+  importExistingFreebuffToken,
+  isFreebuffHeadless,
+  pollFreebuffDeviceAuth,
+  startFreebuffDeviceAuth,
+  validateFreebuffToken,
+} from "../llm/freebuff-auth.js";
 
 export interface SetKeyOptions {
   fromEnv?: string | undefined;
@@ -160,6 +167,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "GLM keys are alphanumeric or id.secret (from https://open.bigmodel.cn or https://z.ai)";
   if (provider === "minimax")
     return "MiniMax keys are alphanumeric (from https://intl.minimaxi.com or https://api.minimax.chat)";
+  if (provider === "freebuff")
+    return "Freebuff uses browser sign-in — run `clai auth freebuff` (or import with --import)";
   if (provider === "codex")
     return "Chatgpt Subscription uses ChatGPT sign-in — run `clai auth chatgpt` (or import with --import)";
   if (provider === "copilot")
@@ -243,6 +252,13 @@ export async function setProviderKey(
       return;
     }
     secret = encodeKiroKey(credential);
+  }
+  if (!secret && provider === "freebuff" && !options.fromEnv) {
+    secret = await resolveFreebuffCredentialInteractive();
+    if (!secret) {
+      console.log("cancelled");
+      return;
+    }
   }
   if (!secret) {
     secret = await promptForSecret(provider);
@@ -496,6 +512,13 @@ export async function useProvider(providerValue: string): Promise<void> {
         return;
       }
       await appendProviderKey("kiro", encodeKiroKey(credential));
+    } else if (provider === "freebuff") {
+      const token = await resolveFreebuffCredentialInteractive();
+      if (!token) {
+        console.log("provider unchanged");
+        return;
+      }
+      await appendProviderKey("freebuff", token);
     } else {
       const entered = await promptForSecret(provider);
       if (!entered) {
@@ -507,6 +530,73 @@ export async function useProvider(providerValue: string): Promise<void> {
   }
   setDefaultProvider(provider);
   console.log(`now using ${label} · model=${getProviderModel(provider)}`);
+}
+
+async function resolveFreebuffTokenInteractive(options: {
+  browser?: boolean | undefined;
+  headless?: boolean | undefined;
+} = {}): Promise<string> {
+  if (options.browser && options.headless) {
+    throw new Error("Choose either --browser or --headless, not both.");
+  }
+  const start = await startFreebuffDeviceAuth();
+  console.log("To authenticate Freebuff:");
+  console.log(`  Open this link on any device:
+       ${start.loginUrl}
+`);
+  const headless = options.headless === true || (!options.browser && isFreebuffHeadless());
+  if (!headless) {
+    await openSystemBrowser(start.loginUrl).catch((error) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.log(`Browser could not be opened (${detail}). Use the URL above.`);
+    });
+  } else {
+    console.log("Complete sign-in in a browser, then return to this terminal.");
+  }
+  process.stderr.write("Waiting for Freebuff approval…\n");
+  const result = await pollFreebuffDeviceAuth(start);
+  return result.token;
+}
+
+export async function resolveFreebuffCredentialInteractive(): Promise<string> {
+  return resolveFreebuffTokenInteractive();
+}
+
+export async function authFreebuff(
+  providerValue: string,
+  options: {
+    import?: boolean | undefined;
+    browser?: boolean | undefined;
+    headless?: boolean | undefined;
+  } = {},
+): Promise<void> {
+  const provider = assertProvider(providerValue);
+  if (provider !== "freebuff") {
+    throw new Error(
+      `Browser sign-in is only supported for the Freebuff provider (got "${provider}").`,
+    );
+  }
+  const imported = options.import ? await importExistingFreebuffToken() : undefined;
+  if (options.import && !imported) {
+    throw new Error(
+      "No existing Freebuff login found. Run `clai auth freebuff` to sign in, or set CODEBUFF_API_KEY.",
+    );
+  }
+  const token = imported?.token ?? await resolveFreebuffTokenInteractive(options);
+  await validateFreebuffToken(token);
+  const source = await appendProviderKey("freebuff", token);
+  if (source === "fallback") {
+    console.log(
+      chalk.yellow(
+        `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+      ),
+    );
+  }
+  const multi = await getProviderKeys("freebuff");
+  const origin = imported ? ` imported from ${imported.source}` : "";
+  console.log(
+    `authenticated Freebuff${origin} ${maskSecret(token)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+  );
 }
 
 export async function authCline(

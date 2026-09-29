@@ -15,6 +15,7 @@ import {
   type PromptStream,
 } from "./readline-prompts.js";
 import { installNoninteractiveCancellation } from "./cancellation.js";
+import { disposeFreebuffSessionManager } from "../llm/freebuff-session.js";
 
 export interface NoninteractiveOptions {
   readonly prompt: string;
@@ -171,6 +172,7 @@ export async function startNoninteractive(
       .closeAll("app-shutdown")
       .catch(() => undefined);
     await mcp.closeAll().catch(() => undefined);
+    await disposeFreebuffSessionManager();
     for (const failure of cleanup?.failures ?? []) {
       err.write(
         `interactive-session cleanup: [${failure.code}] ${failure.message}\n`,

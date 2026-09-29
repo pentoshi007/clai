@@ -88,6 +88,82 @@ export function toOpenAiMessages(
   ) as Array<Record<string, unknown>>;
 }
 
+const protectedBodyExtraKeys = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+  "model",
+  "messages",
+  "stream",
+  "stream_options",
+  "max_tokens",
+  "max_completion_tokens",
+  "temperature",
+  "top_p",
+  "tools",
+  "tool_choice",
+  "parallel_tool_calls",
+  "reasoning",
+  "reasoning_effort",
+  "thinking",
+]);
+
+function safeBodyExtras(
+  extras: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+  if (!extras) return {};
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extras)) {
+    if (protectedBodyExtraKeys.has(key)) {
+      throw new Error(`Chat body extra cannot override protected field "${key}".`);
+    }
+    safe[key] = value;
+  }
+  return safe;
+}
+
+function addEphemeralBreakpoint(message: Record<string, unknown>): void {
+  const content = message.content;
+  if (typeof content === "string") {
+    if (content.trim()) message.cache_control = { type: "ephemeral" };
+    return;
+  }
+  if (!Array.isArray(content)) return;
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    const part = content[index];
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    content[index] = {
+      ...(part as Record<string, unknown>),
+      cache_control: { type: "ephemeral" },
+    };
+    return;
+  }
+}
+
+export function applyOpenAiEphemeralCacheBreakpoints(
+  messages: Array<Record<string, unknown>>,
+): void {
+  const lastIndexForRole = (role: string): number => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === role) return index;
+    }
+    return -1;
+  };
+  const beforeLast = (role: string): number => {
+    const index = lastIndexForRole(role);
+    return index > 0 ? index - 1 : -1;
+  };
+  const indexes = new Set([
+    lastIndexForRole("system"),
+    beforeLast("assistant"),
+    beforeLast("user"),
+    messages.length - 1,
+  ]);
+  for (const index of [...indexes].sort((a, b) => a - b)) {
+    if (index >= 0) addEphemeralBreakpoint(messages[index]!);
+  }
+}
+
 export function isOpenAiReasoningModel(model: string): boolean {
   const m = model.toLowerCase();
   return (
@@ -118,6 +194,8 @@ export interface ChatCompletionsBodyOptions {
   control?: ReasoningControlContext | undefined;
   outputTokenLimit?: number | undefined;
   cacheFields?: Record<string, string> | undefined;
+  bodyExtras?: Readonly<Record<string, unknown>> | undefined;
+  ephemeralCacheBreakpoints?: boolean | undefined;
   resolvedSampling?:
     | {
         readonly temperature?: number | undefined;
@@ -247,7 +325,11 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       }
     }
   }
+  if (options.ephemeralCacheBreakpoints) {
+    applyOpenAiEphemeralCacheBreakpoints(rawMessages);
+  }
   const body: Record<string, unknown> = {
+    ...safeBodyExtras(options.bodyExtras),
     ...options.cacheFields,
     model: options.model,
     messages: rawMessages,
@@ -372,6 +454,8 @@ export function chatCompletionsBodyFromPlan(
     reasoningArtifactReplayObserver?:
       ReasoningArtifactReplayObserver | undefined;
     forceReasoningReplay?: boolean | undefined;
+    bodyExtras?: Readonly<Record<string, unknown>> | undefined;
+    ephemeralCacheBreakpoints?: boolean | undefined;
   } = {},
 ): string {
   const portableHistory = portableToolHistory(
@@ -395,6 +479,8 @@ export function chatCompletionsBodyFromPlan(
       messages: plan.timeline.messages,
       policy: plan.policy.cache,
     }),
+    bodyExtras: extras.bodyExtras,
+    ephemeralCacheBreakpoints: extras.ephemeralCacheBreakpoints,
     includeStreamUsage: extras.includeStreamUsage,
     reasoning: plan.controls.reasoning,
     reasoningStyle: extras.reasoningStyle,

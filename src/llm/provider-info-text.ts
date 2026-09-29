@@ -898,6 +898,54 @@ SETUP (pick one)
   with automatic rotation on auth/quota errors.
 
 Docs: https://docs.cline.bot`,
+  freebuff: `Freebuff — free coding agent on the Codebuff backend
+
+WHAT IT IS
+  Freebuff (freebuff.com) is a free, session-gated coding agent served by the
+  Codebuff backend. clai speaks the same wire contract as the freebuff CLI: it
+  opens an agent run, streams the OpenAI-compatible completion, and closes the
+  run, so free-mode inference works from inside clai.
+
+  Base URL   https://www.codebuff.com/api/v1
+  Auth       Opaque bearer token from the Freebuff CLI login (no refresh token)
+  Endpoints  /chat/completions (inference) · /agent-runs (run lifecycle)
+             · /freebuff/session (session claim + catalog) · /me (token check)
+
+SESSIONS
+  Before a completion clai claims a free session the way the CLI does
+  (a cli:-prefixed instance id plus the multi-session header set), and it
+  releases the claim as soon as the run finishes, so the account's single
+  session slot is handed back. Session admission is best-effort: the
+  completions endpoint serves the request even when the claim is refused, so a
+  refusal degrades the run rather than failing it. Cost stays 0 on zero-priced
+  models; clai never sets a wallet spend limit above 0.
+
+MODELS
+  /model lists only the models the server currently reports as applicable to
+  this account: the live rate-limit pools plus zero-price models, minus
+  plan-gated ids (cached up to 30 minutes). Nothing is hardcoded into the live
+  list; the bundled table is only an offline fallback when the probe fails.
+  Select models accept images; reasoning models accept thinking effort levels.
+
+SETUP (pick one)
+  1. Sign in (works on headless/SSH servers too):
+       clai auth freebuff
+     then open the printed link on any device and approve the code.
+  2. Import an existing Freebuff/Codebuff token automatically:
+       clai auth freebuff --import
+  3. Paste a token manually:
+       clai set freebuff <auth-token>
+
+  Multi-account: run "clai auth freebuff" again to add more keys (up to 10),
+  with automatic rotation on auth/quota errors.
+
+LIMITATIONS
+  Inference is CLI-only (see above): /model and /info work, but generating
+  with a Freebuff model inside clai is refused before any wallet spend occurs.
+  Run the genuine freebuff CLI for these models, or pick another provider with
+  /provider. clai does not take over claims it does not own.
+
+Docs: https://freebuff.com`,
   codex: `${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} — sign in with your ChatGPT account
 
 WHAT IT IS

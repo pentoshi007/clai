@@ -18,6 +18,7 @@ import { getCustomProviderSync } from "../custom-providers.js";
 import { explabsProvider } from "../explabs.js";
 import { fireworksProvider } from "../fireworks.js";
 import { freeProvider } from "../free.js";
+import { freebuffProvider } from "../freebuff.js";
 import { geminiProvider } from "../gemini.js";
 import { hetznerProvider } from "../hetzner.js";
 import { lightningProvider } from "../lightning.js";
@@ -45,6 +46,7 @@ import { kiroProvider } from "../kiro.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
+  freebuff: freebuffProvider,
   gemini: geminiProvider,
   openrouter: openrouterProvider,
   openai: openaiProvider,

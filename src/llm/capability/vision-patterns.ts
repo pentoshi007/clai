@@ -60,6 +60,16 @@ export const universalVisionPatterns: RegExp[] = [
 
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
   free: [/muse-spark/i, /mimo/i, /step-3/i, /dots-.*note/i],
+  freebuff: [
+    /gpt-6/i,
+    /gpt-5\.[4-6]/i,
+    /o3-pro/i,
+    /claude/i,
+    /gemini/i,
+    /mimo/i,
+    /vision/i,
+    /vl$/i,
+  ],
   gemini: [
     /gemini-/i,
   ],
@@ -215,6 +225,7 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   free: "free-1/muse-spark-1.2-contributor-free",
+  freebuff: "openai/gpt-5.6-luna",
   gemini: "gemini-3.5-flash",
   openrouter: "google/gemini-2.5-flash",
   openai: "gpt-4o-mini",
