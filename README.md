@@ -25,6 +25,7 @@ Why people pick it over other agent CLIs:
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
 - **Real building & debugging.** Scaffolds apps, edits code surgically, installs packages, runs builds/tests, starts dev servers as background jobs, and probes them before reporting success.
 - **Durable plans.** `plan.create` / `task.update` drive a live checklist that survives context compaction and reloads with `/history` — the agent works task-by-task and won't fake completion.
+- **State-preserving compaction.** Automatic and manual `/compact` keep a deterministic work envelope next to the summary: subagents (id, title, status, and a digest of results already read), live and finished background jobs, Responder-delegated tasks with their read state, touched files, and any credentials you supplied for the task, carried verbatim instead of being summarized away. When the history fits the model's window, the summary request replays the cached conversation prefix, so compaction is mostly a cache read.
 - **Durable agent sessions.** Interactive sessions run behind a local broker, so an agent keeps working after `/minimise`, an SSH disconnect, or switching to another history session; `clai --resume <id>` reattaches to the same live UI and output stream.
 - **Persistent interactive terminals.** Conversation-owned PTY or pipe sessions keep REPLs such as Python, Metasploit, Meterpreter, database consoles, and debuggers open across model turns.
 - **Native + text tool calling.** Uses provider-native function calling where available, with a text-fence fallback (`toolCalling: auto|native|text`).
@@ -181,9 +182,9 @@ In the interactive console:
 - **Multi-key rotation** — Store up to **10 keys per provider**. The last key that worked is *sticky*. On encountering a rate limit (HTTP 429), quota limit, auth error, or 5xx server error, `clai` automatically rotates to the next available key.
 - **Disable without deleting** — Toggle any key disabled in the `/set` editor; rotation skips it until you re-enable it.
 - **Cross-provider fallback** *(opt-in)* — `/fallback on` lets `clai` fall back to other configured providers when the active provider is exhausted.
-- **Token-saving shell output** *(opt-in)* — `/rtk on` routes foreground `shell.exec` commands through an installed [rtk](https://github.com/rtk-ai/rtk) binary via `rtk rewrite`, so the model reads compact output. Only the executed command changes: the model's tool call, approvals, and history keep the original, and the system prompt and tool schemas never change, so the prompt cache prefix is never invalidated. Background jobs, interactive/PTY sessions, sudo, and commands clai already reduces (nmap, ffuf, …) are never rewritten; if rtk is missing or fails, commands run unmodified. Update rtk independently (`brew upgrade rtk`) — all rewrite rules live in rtk itself.
+- **Token-saving shell output** *(opt-in)* — `/rtk on` routes foreground `shell.exec` commands through [rtk](https://github.com/rtk-ai/rtk) via `rtk rewrite`, so the model reads compact output. Only the executed command changes: the model's tool call, approvals, and history keep the original, and the system prompt and tool schemas never change, so the prompt cache prefix is never invalidated. Background jobs, interactive/PTY sessions, sudo, and commands clai already reduces (nmap, ffuf, …) are never rewritten; if rtk is missing, busy updating, or fails, commands run unmodified. No rtk yet? `/rtk install` (or **Install rtk** on the `/rtk` screen) uses Homebrew, else rtk's checksum-verified installer, else cargo (winget, else cargo, on Windows) in the background; `/rtk update` upgrades through whichever tool installed it. rtk is found even when its directory is not on `PATH`, and a same-named impostor binary is skipped. All rewrite rules live in rtk itself, so updating rtk never requires a clai release.
 - **Free-only mode** *(opt-in)* — `/freeonly on` restricts fallback strictly to free tiers (Free, Gemini, OpenRouter, NIM, Bynara, Hetzner, and the free-lane subscription providers) so you never accidentally spend.
-- **Usage visibility** — `/usage` shows token consumption per provider and model, so you can see what a session actually cost.
+- **Usage visibility** — `/usage` shows token consumption per provider and model, including cache reads and writes, so you can see what a session actually cost. It counts every billed request: subagents, title generation, compaction, and retried attempts whose stream died after the provider had already billed the prompt.
 
 ---
 
@@ -313,7 +314,7 @@ Interactive sessions run behind a local broker so an agent continues working acr
 
 | Command | Does |
 |---------|------|
-| `/ask` · `/agent` · `/plan` | Switch mode (plan = design-then-approve) |
+| `/ask` · `/agent` · `/plan [view]` | Switch mode (plan = design a plan you approve before anything runs; `view` pages the current plan) |
 | `/implement` · `/discard` | Approve and execute or drop the current plan |
 | `/model [name]` · `/models [filter]` | Select model · browse all models across providers |
 | `/provider [name]` | Switch provider or open picker |
@@ -322,7 +323,7 @@ Interactive sessions run behind a local broker so an agent continues working acr
 | `/effort [level]` · `/reasoning [level]` | Configure thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
 | `/orchestrator [...]` · `/agents` | Control subagent delegation · inspect live subagents |
-| `/rtk [on\|off\|status]` | Compress shell output through [rtk](https://github.com/rtk-ai/rtk) (off by default) |
+| `/rtk [on\|off\|status\|install\|update]` | Compress shell output through [rtk](https://github.com/rtk-ai/rtk) (off by default) · install or update rtk |
 | `/skills [name\|list\|refresh]` | Manage Agent Skills |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |
 | `/mcp [...]` | Browse, configure, start, or stop MCP servers |
