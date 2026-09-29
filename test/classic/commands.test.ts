@@ -56,6 +56,7 @@ beforeEach(() => {
     disableKeychain: true,
     freeOnly: false,
     providerFallback: false,
+    rtk: false,
     privateMode: false,
     permissions: "default",
   });
@@ -68,6 +69,7 @@ afterEach(() => {
   updateConfig({
     freeOnly: false,
     providerFallback: false,
+    rtk: false,
     privateMode: false,
     permissions: "default",
   });
@@ -562,6 +564,30 @@ describe("classic command parity (W12)", () => {
     services.overlay.answerKeys({ action: "reset" });
     await vi.waitFor(() => expect(getSubagentModelChain()).toBeUndefined());
     expect(noticed(services, "subagent models reset")).toBe(true);
+  });
+
+  spec(["rtk"], "/rtk shows status and toggles output compression from its picker", async () => {
+    const { services } = open();
+    await run(services, "rtk");
+    const opened = services.overlay.getState();
+    expect(opened.kind).toBe("picker");
+    if (opened.kind === "picker") {
+      expect(opened.request.title).toBe("RTK · off");
+      expect(opened.request.options.map((option) => option.value)).toEqual(["on", "off", "refresh"]);
+      expect(opened.request.options.find((option) => option.active)?.value).toBe("off");
+    }
+    services.overlay.selectPicker("on");
+    expect(services.overlay.getState().kind).toBe("none");
+    expect(getConfig().rtk).toBe(true);
+    await vi.waitFor(() => expect(noticed(services, "RTK on")).toBe(true));
+    await run(services, "rtk", "status");
+    expect(noticed(services, "RTK · on")).toBe(true);
+    await run(services, "rtk", "off");
+    expect(getConfig().rtk).toBe(false);
+    expect(noticed(services, "RTK off")).toBe(true);
+    await run(services, "rtk", "sideways");
+    expect(noticed(services, "usage: /rtk")).toBe(true);
+    expect(getConfig().rtk).toBe(false);
   });
 
   spec(["agents"], "/agents opens the shared picker and returns to the main conversation", async () => {

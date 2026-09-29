@@ -7,6 +7,7 @@ import {
 } from "../../agent/task-evidence.js";
 import { jobManager, type StartJobOptions } from "../jobs.js";
 import { resolveShellExecBackgroundPolicy } from "../command-intent.js";
+import { prepareRtkExecution } from "../rtk/rewrite.js";
 import { type ToolRunOptions, type ToolHandler } from "../tool-types.js";
 import {
   prepareElevatedBackgroundCommand,
@@ -115,8 +116,10 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       }
     }
 
+    const execution = await prepareRtkExecution(command, options?.signal);
     return shellExec({
-      command,
+      command: execution.command,
+      env: execution.env,
       cwd: optionalString(args, "cwd"),
       timeoutMs,
       signal: options?.signal,

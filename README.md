@@ -181,6 +181,7 @@ In the interactive console:
 - **Multi-key rotation** — Store up to **10 keys per provider**. The last key that worked is *sticky*. On encountering a rate limit (HTTP 429), quota limit, auth error, or 5xx server error, `clai` automatically rotates to the next available key.
 - **Disable without deleting** — Toggle any key disabled in the `/set` editor; rotation skips it until you re-enable it.
 - **Cross-provider fallback** *(opt-in)* — `/fallback on` lets `clai` fall back to other configured providers when the active provider is exhausted.
+- **Token-saving shell output** *(opt-in)* — `/rtk on` routes foreground `shell.exec` commands through an installed [rtk](https://github.com/rtk-ai/rtk) binary via `rtk rewrite`, so the model reads compact output. Only the executed command changes: the model's tool call, approvals, and history keep the original, and the system prompt and tool schemas never change, so the prompt cache prefix is never invalidated. Background jobs, interactive/PTY sessions, sudo, and commands clai already reduces (nmap, ffuf, …) are never rewritten; if rtk is missing or fails, commands run unmodified. Update rtk independently (`brew upgrade rtk`) — all rewrite rules live in rtk itself.
 - **Free-only mode** *(opt-in)* — `/freeonly on` restricts fallback strictly to free tiers (Free, Gemini, OpenRouter, NIM, Bynara, Hetzner, and the free-lane subscription providers) so you never accidentally spend.
 - **Usage visibility** — `/usage` shows token consumption per provider and model, so you can see what a session actually cost.
 
@@ -321,6 +322,7 @@ Interactive sessions run behind a local broker so an agent continues working acr
 | `/effort [level]` · `/reasoning [level]` | Configure thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
 | `/orchestrator [...]` · `/agents` | Control subagent delegation · inspect live subagents |
+| `/rtk [on\|off\|status]` | Compress shell output through [rtk](https://github.com/rtk-ai/rtk) (off by default) |
 | `/skills [name\|list\|refresh]` | Manage Agent Skills |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |
 | `/mcp [...]` | Browse, configure, start, or stop MCP servers |
