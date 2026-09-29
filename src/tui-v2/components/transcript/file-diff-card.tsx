@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -169,10 +169,14 @@ function FileDiffHunks(props: {
         ? theme.activity
         : theme.toolOutput;
 
-  const gutterChars = gutterWidth(change);
+  const gutterChars = useMemo(() => gutterWidth(change), [change]);
   const maxLineChars = diffCardMaxLineChars(paneWidth, gutterChars);
-  const rows = presentFileChangePreview(change, { maxRows, maxLineChars }).map((row) =>
-    row.tone === "gap" || row.tone === "header" ? clipPresentedRow(row, maxLineChars) : row,
+  const rows = useMemo(
+    () =>
+      presentFileChangePreview(change, { maxRows, maxLineChars }).map((row) =>
+        row.tone === "gap" || row.tone === "header" ? clipPresentedRow(row, maxLineChars) : row,
+      ),
+    [change, maxRows, maxLineChars],
   );
   return (
     <box

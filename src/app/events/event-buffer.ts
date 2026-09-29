@@ -65,30 +65,39 @@ export class BoundedText {
 }
 
 
+export type DeferredOutput = () => string | undefined;
+
 export class OutputSpool {
   private readonly byTool = new Map<ToolCallId, BoundedText>();
+  private readonly deferred = new Map<ToolCallId, DeferredOutput>();
 
-  constructor(
-    private readonly maxCharsPerTool = 256 * 1024,
-    private readonly maxTools = 128,
-  ) {
-    if (!Number.isInteger(maxTools) || maxTools <= 0) throw new RangeError("maxTools must be positive");
-  }
+  constructor(private readonly maxCharsPerTool = 256 * 1024) {}
 
   private bufferFor(toolCallId: ToolCallId): BoundedText {
     let buffer = this.byTool.get(toolCallId);
     if (buffer) return buffer;
-    while (this.byTool.size >= this.maxTools) {
-      const oldest = this.byTool.keys().next().value as ToolCallId | undefined;
-      if (oldest === undefined) break;
-      this.byTool.delete(oldest);
-    }
     buffer = new BoundedText(this.maxCharsPerTool);
     this.byTool.set(toolCallId, buffer);
     return buffer;
   }
 
+  private resolve(toolCallId: ToolCallId): BoundedText | undefined {
+    const load = this.deferred.get(toolCallId);
+    if (load) {
+      this.deferred.delete(toolCallId);
+      let text: string | undefined;
+      try {
+        text = load();
+      } catch {
+        text = undefined;
+      }
+      if (text !== undefined) this.bufferFor(toolCallId).replace(text);
+    }
+    return this.byTool.get(toolCallId);
+  }
+
   append(toolCallId: ToolCallId, chunk: string): OutputChunkRef {
+    this.resolve(toolCallId);
     const buffer = this.bufferFor(toolCallId);
     buffer.append(chunk);
     return {
@@ -98,8 +107,8 @@ export class OutputSpool {
     };
   }
 
-  
   replace(toolCallId: ToolCallId, text: string): OutputChunkRef {
+    this.deferred.delete(toolCallId);
     const buffer = this.bufferFor(toolCallId);
     buffer.replace(text);
     return {
@@ -109,19 +118,28 @@ export class OutputSpool {
     };
   }
 
+  defer(toolCallId: ToolCallId, load: DeferredOutput): void {
+    this.deferred.set(toolCallId, load);
+  }
+
   tail(toolCallId: ToolCallId): string {
+    return this.resolve(toolCallId)?.tail ?? "";
+  }
+
+  peekTail(toolCallId: ToolCallId): string {
     return this.byTool.get(toolCallId)?.tail ?? "";
   }
 
   state(toolCallId: ToolCallId): BoundedTextState | undefined {
-    return this.byTool.get(toolCallId)?.snapshot();
+    return this.resolve(toolCallId)?.snapshot();
   }
 
   has(toolCallId: ToolCallId): boolean {
-    return this.byTool.has(toolCallId);
+    return this.byTool.has(toolCallId) || this.deferred.has(toolCallId);
   }
 
   clear(): void {
     this.byTool.clear();
+    this.deferred.clear();
   }
 }

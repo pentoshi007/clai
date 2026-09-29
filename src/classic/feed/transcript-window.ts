@@ -22,19 +22,6 @@ export interface TranscriptWindow {
   readonly visibleItemIds: ReadonlySet<string>;
 }
 
-export function flattenBlocks(blocks: readonly FeedBlock[]): readonly TranscriptWindowRow[] {
-  const rows: TranscriptWindowRow[] = [];
-  for (const [blockIndex, block] of blocks.entries()) {
-    for (const [lineIndex, line] of block.lines.entries()) {
-      rows.push({ key: `${block.key}:${lineIndex}`, line, block, lineIndex });
-    }
-    if (blockIndex < blocks.length - 1) {
-      rows.push({ key: `${block.key}:gap`, line: "", block, lineIndex: undefined });
-    }
-  }
-  return rows;
-}
-
 export function totalTranscriptRows(blocks: readonly FeedBlock[]): number {
   if (blocks.length === 0) return 0;
   let total = BLOCK_GAP_ROWS * (blocks.length - 1);
@@ -42,18 +29,47 @@ export function totalTranscriptRows(blocks: readonly FeedBlock[]): number {
   return total;
 }
 
+function sliceRows(
+  blocks: readonly FeedBlock[],
+  start: number,
+  end: number,
+): TranscriptWindowRow[] {
+  const rows: TranscriptWindowRow[] = [];
+  let cursor = 0;
+  for (let blockIndex = 0; blockIndex < blocks.length && cursor < end; blockIndex += 1) {
+    const block = blocks[blockIndex]!;
+    const gap = blockIndex < blocks.length - 1 ? BLOCK_GAP_ROWS : 0;
+    const span = block.lines.length + gap;
+    if (cursor + span <= start) {
+      cursor += span;
+      continue;
+    }
+    const from = Math.max(0, start - cursor);
+    const to = Math.min(span, end - cursor);
+    for (let offset = from; offset < to; offset += 1) {
+      rows.push(
+        offset < block.lines.length
+          ? { key: `${block.key}:${offset}`, line: block.lines[offset]!, block, lineIndex: offset }
+          : { key: `${block.key}:gap`, line: "", block, lineIndex: undefined },
+      );
+    }
+    cursor += span;
+  }
+  return rows;
+}
+
 export function planTranscriptWindow(
-  flat: readonly TranscriptWindowRow[],
+  blocks: readonly FeedBlock[],
   budget: number,
   offsetFromBottom: number,
 ): TranscriptWindow {
   const viewportRows = Math.max(0, Math.floor(budget));
-  const totalRows = flat.length;
+  const totalRows = totalTranscriptRows(blocks);
   const maxOffset = Math.max(0, totalRows - viewportRows);
   const offset = Math.max(0, Math.min(Math.floor(offsetFromBottom), maxOffset));
   const end = totalRows - offset;
   const start = Math.max(0, end - viewportRows);
-  const rows = viewportRows === 0 ? [] : flat.slice(start, end);
+  const rows = viewportRows === 0 ? [] : sliceRows(blocks, start, end);
   const visibleItemIds = new Set<string>();
   for (const row of rows) visibleItemIds.add(row.block.itemId);
   return {

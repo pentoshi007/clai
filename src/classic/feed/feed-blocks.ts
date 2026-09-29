@@ -6,7 +6,7 @@ import type {
   TranscriptItem,
   TranscriptState,
 } from "../../ui-core/state/transcript-types.js";
-import { isItemExpanded, transcriptItems } from "../../ui-core/state/transcript-types.js";
+import { isFileDiffExpanded, isItemExpanded, transcriptItems } from "../../ui-core/state/transcript-types.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { contentWidth } from "../render/measure.js";
 import { EMPTY_SPOOL, type BlockContext, type SpoolReader } from "../blocks/block-context.js";
@@ -17,10 +17,9 @@ import { buildDiffLines } from "../blocks/diff-lines.js";
 import { buildIntroLines, type IntroBlockInput } from "../blocks/intro-lines.js";
 import { buildNoticeLines } from "../blocks/notice-lines.js";
 import { buildThinkingLines } from "../blocks/thinking-lines.js";
-import { buildToolLines, outputToggleLabel } from "../blocks/tool-lines.js";
+import { buildToolLines } from "../blocks/tool-lines.js";
 import { buildTurnSummaryLines } from "../blocks/turn-summary-lines.js";
 import { buildUserLines } from "../blocks/user-lines.js";
-import { clipRow, joinMeta } from "../blocks/block-context.js";
 import { reflowRows } from "../render/wrap.js";
 
 export type BlockKind =
@@ -45,8 +44,6 @@ export interface FeedBlock {
   readonly sequence: number;
 }
 
-export const MAX_BLOCK_ROWS = 400;
-
 export const INTRO_ITEM_ID = "intro";
 
 export interface FeedViewInput {
@@ -56,7 +53,6 @@ export interface FeedViewInput {
   readonly spool?: SpoolReader | undefined;
   readonly generation: number;
   readonly intro?: IntroBlockInput | undefined;
-  readonly markdownCaches?: ReadonlyMap<string, MarkdownStreamCache> | undefined;
 }
 
 export function blockContextFor(state: TranscriptState, view: FeedViewInput): BlockContext {
@@ -90,92 +86,187 @@ function isOpen(item: TranscriptItem): boolean {
   }
 }
 
-function bound(
-  ctx: BlockContext,
-  item: TranscriptItem,
-  lines: readonly string[],
-): readonly string[] {
-  if (lines.length <= MAX_BLOCK_ROWS) return lines;
-  const kept = lines.slice(0, MAX_BLOCK_ROWS - 1);
-  const hidden = lines.length - kept.length;
-  const expandable = item.kind === "tool" || item.kind === "compacted";
-  const footer = joinMeta(ctx, [
-    expandable ? outputToggleLabel(isItemExpanded(ctx.state, item)) : undefined,
-    `${ctx.glyphs.ellipsis} +${hidden} rows`,
-  ]);
-  return [...kept, clipRow(ctx, ctx.ink.fg("muted", footer))];
+interface RenderedLines {
+  readonly lines: readonly string[];
+  readonly markdownCache: MarkdownStreamCache | undefined;
 }
 
-function linesFor(
+function renderLines(
   ctx: BlockContext,
   item: TranscriptItem,
   kind: BlockKind,
-  view: FeedViewInput,
-): readonly string[] {
+  markdownCache: MarkdownStreamCache | undefined,
+): RenderedLines {
   switch (kind) {
     case "user":
-      return buildUserLines(ctx, item as Extract<TranscriptItem, { kind: "user" }>);
-    case "assistant":
-      return buildAssistantLines(
-        { ...ctx, markdownCache: view.markdownCaches?.get(item.id) },
+      return { lines: buildUserLines(ctx, item as Extract<TranscriptItem, { kind: "user" }>), markdownCache };
+    case "assistant": {
+      const result = buildAssistantLines(
+        { ...ctx, markdownCache },
         item as Extract<TranscriptItem, { kind: "assistant" }>,
-      ).lines;
+      );
+      return { lines: result.lines, markdownCache: result.cache };
+    }
     case "thinking":
-      return buildThinkingLines(ctx, item as Extract<TranscriptItem, { kind: "thinking" }>);
+      return { lines: buildThinkingLines(ctx, item as Extract<TranscriptItem, { kind: "thinking" }>), markdownCache };
     case "tool":
-      return buildToolLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>);
+      return { lines: buildToolLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>), markdownCache };
     case "batch":
-      return buildBatchLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>);
+      return { lines: buildBatchLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>), markdownCache };
     case "diff":
-      return buildDiffLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>);
+      return { lines: buildDiffLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>), markdownCache };
     case "compacted":
-      return buildCompactedLines(ctx, item as Extract<TranscriptItem, { kind: "compacted" }>);
+      return { lines: buildCompactedLines(ctx, item as Extract<TranscriptItem, { kind: "compacted" }>), markdownCache };
     case "turn-summary":
-      return buildTurnSummaryLines(ctx, item as Extract<TranscriptItem, { kind: "turn-summary" }>);
+      return { lines: buildTurnSummaryLines(ctx, item as Extract<TranscriptItem, { kind: "turn-summary" }>), markdownCache };
     default:
-      return buildNoticeLines(ctx, item as Extract<TranscriptItem, { kind: "notice" }>);
+      return { lines: buildNoticeLines(ctx, item as Extract<TranscriptItem, { kind: "notice" }>), markdownCache };
+  }
+}
+
+interface BlockInputs {
+  readonly item: TranscriptItem;
+  readonly kind: BlockKind;
+  readonly width: number;
+  readonly ink: InkTheme;
+  readonly expanded: boolean;
+  readonly diffExpanded: boolean;
+  readonly output: string | undefined;
+  readonly now: number | undefined;
+}
+
+interface CachedBlock {
+  readonly inputs: BlockInputs;
+  readonly lines: readonly string[];
+  readonly markdownCache: MarkdownStreamCache | undefined;
+  readonly block: FeedBlock | undefined;
+}
+
+function sameInputs(left: BlockInputs, right: BlockInputs): boolean {
+  return (
+    left.item === right.item &&
+    left.kind === right.kind &&
+    left.width === right.width &&
+    left.ink === right.ink &&
+    left.expanded === right.expanded &&
+    left.diffExpanded === right.diffExpanded &&
+    left.output === right.output &&
+    left.now === right.now
+  );
+}
+
+function blockInputs(ctx: BlockContext, item: TranscriptItem, kind: BlockKind): BlockInputs {
+  const tool = item.kind === "tool" ? item : undefined;
+  return {
+    item,
+    kind,
+    width: ctx.width,
+    ink: ctx.ink,
+    expanded: isItemExpanded(ctx.state, item),
+    diffExpanded: tool ? isFileDiffExpanded(ctx.state, item.id) : false,
+    output: tool ? ctx.spool.tail(tool.toolCallId) : undefined,
+    now: isOpen(item) ? ctx.now : undefined,
+  };
+}
+
+export class FeedBlockCache {
+  private entries = new Map<string, CachedBlock>();
+  private intro: { input: IntroBlockInput; width: number; ink: InkTheme; block: FeedBlock | undefined; generation: number } | undefined;
+
+  introBlock(ctx: BlockContext, input: IntroBlockInput, generation: number): FeedBlock | undefined {
+    const cached = this.intro;
+    if (
+      cached &&
+      cached.input === input &&
+      cached.width === ctx.width &&
+      cached.ink === ctx.ink &&
+      cached.generation === generation
+    ) {
+      return cached.block;
+    }
+    const lines = buildIntroLines(ctx, input);
+    const block: FeedBlock | undefined = lines.length > 0
+      ? {
+          key: `${generation}:${INTRO_ITEM_ID}`,
+          itemId: INTRO_ITEM_ID,
+          kind: "intro",
+          open: false,
+          lines,
+          turnId: undefined,
+          sequence: -1,
+        }
+      : undefined;
+    this.intro = { input, width: ctx.width, ink: ctx.ink, block, generation };
+    return block;
+  }
+
+  itemBlock(
+    ctx: BlockContext,
+    item: TranscriptItem,
+    kind: BlockKind,
+    generation: number,
+    next: Map<string, CachedBlock>,
+  ): FeedBlock | undefined {
+    const inputs = blockInputs(ctx, item, kind);
+    const key = `${generation}:${item.id}`;
+    const cached = this.entries.get(item.id);
+    if (cached && sameInputs(cached.inputs, inputs)) {
+      const reusable = !cached.block || cached.block.key === key;
+      const entry = reusable ? cached : { ...cached, block: { ...cached.block!, key } };
+      next.set(item.id, entry);
+      return entry.block;
+    }
+    const markdownCache = cached?.inputs.ink === ctx.ink ? cached.markdownCache : undefined;
+    const rendered = renderLines(ctx, item, kind, markdownCache);
+    const lines = reflowRows(rendered.lines, ctx.width);
+    const block: FeedBlock | undefined = lines.length > 0
+      ? {
+          key,
+          itemId: item.id,
+          kind,
+          open: isOpen(item),
+          lines,
+          turnId: item.turnId,
+          sequence: item.sequence,
+        }
+      : undefined;
+    next.set(item.id, {
+      inputs,
+      lines,
+      markdownCache: item.kind === "assistant" && item.streaming ? rendered.markdownCache : undefined,
+      block,
+    });
+    return block;
+  }
+
+  commit(next: Map<string, CachedBlock>): void {
+    this.entries = next;
   }
 }
 
 export function buildFeedBlocks(
   state: TranscriptState,
   view: FeedViewInput,
+  cache: FeedBlockCache = new FeedBlockCache(),
 ): readonly FeedBlock[] {
   const ctx = blockContextFor(state, view);
   const blocks: FeedBlock[] = [];
 
   if (view.intro) {
-    const lines = buildIntroLines(ctx, view.intro);
-    if (lines.length > 0) {
-      blocks.push({
-        key: `${view.generation}:${INTRO_ITEM_ID}`,
-        itemId: INTRO_ITEM_ID,
-        kind: "intro",
-        open: false,
-        lines,
-        turnId: undefined,
-        sequence: -1,
-      });
-    }
+    const intro = cache.introBlock(ctx, view.intro, view.generation);
+    if (intro) blocks.push(intro);
   }
 
+  const next = new Map<string, CachedBlock>();
   for (const item of transcriptItems(state)) {
     if (item.kind === "tool" && shouldHideQuietMetaToolInChat(item.name, item.status)) {
       continue;
     }
     const kind: BlockKind = item.kind === "tool" ? toolBlockKind(item) : item.kind;
-    const lines = bound(ctx, item, reflowRows(linesFor(ctx, item, kind, view), ctx.width));
-    if (lines.length === 0) continue;
-    blocks.push({
-      key: `${view.generation}:${item.id}`,
-      itemId: item.id,
-      kind,
-      open: isOpen(item),
-      lines,
-      turnId: item.turnId,
-      sequence: item.sequence,
-    });
+    const block = cache.itemBlock(ctx, item, kind, view.generation, next);
+    if (block) blocks.push(block);
   }
+  cache.commit(next);
 
   return blocks;
 }

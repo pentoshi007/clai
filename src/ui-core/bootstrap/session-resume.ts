@@ -12,11 +12,12 @@ import {
   loadSessionModelBinding,
 } from "../../store/session-model.js";
 import {
-  boundSessionVisualInput,
   hydrateSessionVisual,
+  prepareSessionVisualInput,
   transcriptLooksIncomplete,
 } from "../state/transcript-hydrate.js";
-import { conversationItemCount } from "../state/transcript-types.js";
+import { conversationItemCount, type TranscriptState } from "../state/transcript-types.js";
+import type { OutputSpool } from "../../app/events/event-buffer.js";
 import type { AppServices } from "./composition-root.js";
 
 export type ResumeTarget =
@@ -35,13 +36,11 @@ export interface ResumeOutcome {
   readonly hasPlan: boolean;
   readonly planTasks: number;
   readonly incomplete: boolean;
-  readonly omitted: number;
 }
 
 const CANDIDATE_LIMIT = 500;
 
 const MAX_RESTORED_ARTIFACT_OUTPUT_CHARS = 256 * 1024;
-const MAX_RESTORED_ARTIFACT_TOOLS = 256;
 
 function readArtifactTail(path: string): string | undefined {
   let fd: number | undefined;
@@ -61,7 +60,7 @@ function readArtifactTail(path: string): string | undefined {
     if (text.length > MAX_RESTORED_ARTIFACT_OUTPUT_CHARS) {
       text = text.slice(text.length - MAX_RESTORED_ARTIFACT_OUTPUT_CHARS);
     }
-    return text;
+    return text.trim().length > 0 ? text : undefined;
   } catch {
     return undefined;
   } finally {
@@ -70,21 +69,15 @@ function readArtifactTail(path: string): string | undefined {
 }
 
 export function restoreArtifactOutputs(
-  state: import("../state/transcript-types.js").TranscriptState,
-  spool: { replace: (toolCallId: import("../../app/events/app-event.js").ToolCallId, text: string) => unknown },
+  state: TranscriptState,
+  spool: Pick<OutputSpool, "defer">,
 ): void {
-  let restored = 0;
   for (const id of state.order) {
-    if (restored >= MAX_RESTORED_ARTIFACT_TOOLS) break;
     const item = state.byId.get(id);
     if (item?.kind !== "tool") continue;
     const artifactPath = item.artifactPath;
     if (typeof artifactPath !== "string" || artifactPath.length === 0) continue;
-    const text = readArtifactTail(artifactPath);
-    if (text !== undefined && text.trim().length > 0) {
-      spool.replace(item.toolCallId, text);
-      restored += 1;
-    }
+    spool.defer(item.toolCallId, () => readArtifactTail(artifactPath));
   }
 }
 
@@ -202,7 +195,7 @@ export async function applySessionResume(
       : {}),
   });
 
-  const visual = boundSessionVisualInput(record.transcript, record.messages);
+  const visual = prepareSessionVisualInput(record.transcript, record.messages);
   const hydrated = hydrateSessionVisual(visual.transcript, visual.messages);
   services.transcript.hydrate(hydrated.state, {
     persistBase: record.transcript,
@@ -233,19 +226,12 @@ export async function applySessionResume(
     hasPlan: Boolean(plan),
     planTasks: plan?.tasks?.length ?? 0,
     incomplete,
-    omitted: Math.max(visual.omittedItems, visual.omittedMessages),
   };
 }
 
 export function resumeNotices(
   outcome: ResumeOutcome,
 ): readonly { readonly level: "info" | "warn"; readonly text: string }[] {  const notices: { level: "info" | "warn"; text: string }[] = [];
-  if (outcome.omitted > 0) {
-    notices.push({
-      level: "info",
-      text: `Loaded recent history view; ${outcome.omitted} older item(s) remain available to the model on continue.`,
-    });
-  }
   const title = outcome.title?.trim();
   const shortTitle = title
     ? ` · ${title.length > 28 ? `${title.slice(0, 27)}…` : title}`

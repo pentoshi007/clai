@@ -9,7 +9,7 @@ import { FeedStatic } from "../../../src/classic/feed/FeedStatic.js";
 import { planLiveTail } from "../../../src/classic/feed/live-tail-policy.js";
 import { LiveTail } from "../../../src/classic/feed/LiveTail.js";
 import {
-  flattenBlocks,
+  totalTranscriptRows,
   planTranscriptWindow,
 } from "../../../src/classic/feed/transcript-window.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
@@ -39,8 +39,7 @@ function renderWindow(columns: number, rows: number, offset = 0): Frame {
     overlay: undefined,
   });
   const blocks = buildFeedBlocks(turn.state, view);
-  const flat = flattenBlocks(blocks);
-  const window = planTranscriptWindow(flat, layout.liveTail, offset);
+  const window = planTranscriptWindow(blocks, layout.liveTail, offset);
   const wanted = window.rows.map((row) => stripAnsi(row.line).replace(/\s+$/, ""));
 
   const { lastFrame, unmount } = render(
@@ -151,7 +150,7 @@ describe("scripted turn renders exactly its planned window at 80 and 44 columns"
 describe("the transcript window scrolls as one page", () => {
   it("pins to the bottom by default", () => {
     const blocks = buildFeedBlocks(turn.state, feedView(turn, { columns: 80, withIntro: true }));
-    const window = planTranscriptWindow(flattenBlocks(blocks), 10, 0);
+    const window = planTranscriptWindow(blocks, 10, 0);
     expect(window.offset).toBe(0);
     expect(window.lastItemId).toBe(blocks.at(-1)?.itemId);
     expect(window.rows.at(-1)?.line).toBe(blocks.at(-1)?.lines.at(-1));
@@ -159,8 +158,7 @@ describe("the transcript window scrolls as one page", () => {
 
   it("shows the intro card when scrolled to the very top", () => {
     const blocks = buildFeedBlocks(turn.state, feedView(turn, { columns: 80, withIntro: true }));
-    const flat = flattenBlocks(blocks);
-    const window = planTranscriptWindow(flat, 10, Number.MAX_SAFE_INTEGER);
+    const window = planTranscriptWindow(blocks, 10, Number.MAX_SAFE_INTEGER);
     expect(window.offset).toBe(window.maxOffset);
     expect(window.rows[0]?.block.kind).toBe("intro");
     expect(window.rows[0]?.line).toBe(blocks[0]?.lines[0]);
@@ -168,9 +166,9 @@ describe("the transcript window scrolls as one page", () => {
 
   it("slides by exact line offsets, not by whole blocks", () => {
     const blocks = buildFeedBlocks(turn.state, feedView(turn, { columns: 80, withIntro: true }));
-    const flat = flattenBlocks(blocks);
+    const flat = planTranscriptWindow(blocks, totalTranscriptRows(blocks), 0).rows;
     for (const offset of [0, 1, 2, 3, 7, 11]) {
-      const window = planTranscriptWindow(flat, 8, offset);
+      const window = planTranscriptWindow(blocks, 8, offset);
       expect(window.height).toBeLessThanOrEqual(8);
       expect(window.scrollBelow).toBe(Math.min(offset, window.maxOffset));
       const end = flat.length - window.offset;
@@ -182,10 +180,9 @@ describe("the transcript window scrolls as one page", () => {
 
   it("clamps an oversized offset and reports both scroll remainders", () => {
     const blocks = buildFeedBlocks(turn.state, feedView(turn, { columns: 80, withIntro: true }));
-    const flat = flattenBlocks(blocks);
-    const window = planTranscriptWindow(flat, 6, 999);
+    const window = planTranscriptWindow(blocks, 6, 999);
     expect(window.offset).toBe(window.maxOffset);
-    expect(window.scrollAbove + window.height + window.scrollBelow).toBe(flat.length);
+    expect(window.scrollAbove + window.height + window.scrollBelow).toBe(totalTranscriptRows(blocks));
   });
 });
 

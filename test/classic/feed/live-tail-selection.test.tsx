@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LiveTail } from "../../../src/classic/feed/LiveTail.js";
 import type { FeedBlock } from "../../../src/classic/feed/feed-blocks.js";
 import { classicTranscriptDocument } from "../../../src/classic/feed/transcript-selection.js";
-import { flattenBlocks, planTranscriptWindow } from "../../../src/classic/feed/transcript-window.js";
+import { planTranscriptWindow } from "../../../src/classic/feed/transcript-window.js";
 
 describe("LiveTail transcript selection", () => {
   it("renders selected text without changing visible row text", () => {
@@ -17,7 +17,7 @@ describe("LiveTail transcript selection", () => {
       turnId: undefined,
       sequence: 0,
     };
-    const window = planTranscriptWindow(flattenBlocks([block]), 1, 0);
+    const window = planTranscriptWindow([block], 1, 0);
     const document = classicTranscriptDocument([block]);
     const selection = {
       activePane: "transcript" as const,

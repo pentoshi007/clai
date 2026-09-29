@@ -28,8 +28,17 @@ import {
   wrapThinkingBody,
 } from "./thinking-presentation.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
+import { ObjectRenderCache } from "../../../ui-core/rendering/object-render-cache.js";
 
 const WHEEL_ROWS = 3;
+
+const FINISHED_ROWS = new ObjectRenderCache<ThinkingItem, readonly string[]>(16 * 1024 * 1024);
+
+function rowsWeight(rows: readonly string[]): number {
+  let weight = 0;
+  for (const row of rows) weight += row.length * 2 + 32;
+  return weight;
+}
 const DRAG_SCROLL_ROWS = 2;
 const DRAG_SCROLL_MS = 45;
 
@@ -76,8 +85,13 @@ export function ThinkingBlock(props: {
     () =>
       item.streaming
         ? liveWrap(content)
-        : wrapThinkingBody(content, bodyWidth, false),
-    [content, bodyWidth, item.streaming, liveWrap],
+        : FINISHED_ROWS.resolve(
+            item,
+            String(bodyWidth),
+            () => wrapThinkingBody(content, bodyWidth, false),
+            rowsWeight,
+          ),
+    [item, content, bodyWidth, liveWrap],
   );
   const viewport = resolveThinkingViewport({
     lineCount: lines.length,

@@ -18,11 +18,7 @@ import {
 import {
   fitOneLine,
   padChromeRow,
-  wrapPagerLine,
 } from "../../../ui-core/rendering/pager-chrome.js";
-import {
-  emptyCarry,
-} from "../../../ui-core/rendering/syntax-highlight.js";
 import {
   preparePagerDisplay,
   type PagerMarkdownMode,
@@ -39,6 +35,7 @@ import {
   bodyOnlyForCopy,
   parseDiffLine,
 } from "./pager-line.js";
+import { buildPagerRows, groupPagerMatches, NO_MATCHES } from "./pager-rows.js";
 
 export interface PagerProps {
   readonly services: AppServices;
@@ -161,7 +158,6 @@ export function Pager(props: PagerProps): ReactNode {
   const [exportError, setExportError] = useState<string | undefined>(undefined);
   const [statusFlash, setStatusFlash] = useState<string | undefined>(undefined);
   const hasQuery = query.trim().length > 0;
-  const syntaxCarry = useMemo(() => emptyCarry(), [displayBody, pathForHighlight]);
 
   useEffect(() => {
     setFollowing(canFollow);
@@ -633,117 +629,36 @@ export function Pager(props: PagerProps): ReactNode {
     Math.max(8, Math.floor(chromeCols * 0.4)),
   );
 
+  const rowModels = useMemo(
+    () => buildPagerRows({ display, lines, contentCols, useDiffGutters, isSubagent, highlightPath: pathForHighlight }),
+    [display, lines, contentCols, useDiffGutters, isSubagent, pathForHighlight],
+  );
+  const lineSearch = useMemo(() => groupPagerMatches(matches, matchIndex), [matches, matchIndex]);
+
   const bodyRows = useMemo(
     () =>
-      lines.flatMap((line, index) => {
-        const row = display.lines[index];
-        const isMd = display.mode === "markdown";
-
-        if (isMd) {
-          return [
-            <PagerLine
-              key={`md-${index}-0`}
-              line={line}
-              index={index}
-              theme={theme}
-              matches={matches}
-              activeMatchIndex={matchIndex}
-              hasQuery={hasQuery}
-              highlightPath=""
-              carry={syntaxCarry}
-              styled={row?.styled}
-              subagent={isSubagent}
-              subagentSpans={subagentSpans?.[index]}
-              markdownMode
-            />,
-          ];
-        }
-
-        const parsed = useDiffGutters ? parseDiffLine(line) : null;
-        if (parsed) {
-          const codeChunks = wrapPagerLine(
-            parsed.code,
-            Math.max(1, contentCols - (parsed.gutter.length + 3)),
-            { preserveWhitespace: true },
-          );
-          return codeChunks.map((codeChunk, part) => {
-            const mark =
-              parsed.tone === "add"
-                ? "+"
-                : parsed.tone === "del"
-                  ? "−"
-                  : " ";
-            const g =
-              part === 0
-                ? parsed.gutter
-                : " ".repeat(parsed.gutter.length);
-            const rebuilt =
-              parsed.tone === "header"
-                ? `${g} │ ${codeChunk}`
-                : `${g} │ ${mark} ${codeChunk}`;
-            return (
-              <PagerLine
-                key={`${index}-${part}`}
-                line={rebuilt}
-                index={index}
-                theme={theme}
-                matches={matches}
-                activeMatchIndex={matchIndex}
-                hasQuery={hasQuery}
-                highlightPath={pathForHighlight}
-                carry={syntaxCarry}
-              />
-            );
-          });
-        }
-        if (isSubagent && !useDiffGutters) {
-          return [
-            <PagerLine
-              key={`${index}-0`}
-              line={line}
-              index={index}
-              theme={theme}
-              matches={matches}
-              activeMatchIndex={matchIndex}
-              hasQuery={hasQuery}
-              highlightPath={pathForHighlight}
-              carry={syntaxCarry}
-              diffGutters={false}
-              subagent
-              subagentSpans={subagentSpans?.[index]}
-            />,
-          ];
-        }
-        return wrapPagerLine(line, contentCols, { preserveWhitespace: true }).map((chunk, part) => (
+      rowModels.map((row) => {
+        const search = lineSearch.get(row.index);
+        return (
           <PagerLine
-            key={`${index}-${part}`}
-            line={chunk}
-            index={index}
+            key={row.key}
+            line={row.line}
+            index={row.index}
             theme={theme}
-            matches={matches}
-            activeMatchIndex={matchIndex}
+            matches={search?.matches ?? NO_MATCHES}
+            activeMatchIndex={search?.active ?? -1}
             hasQuery={hasQuery}
-            highlightPath={pathForHighlight}
-            carry={syntaxCarry}
-            diffGutters={false}
-            subagent={isSubagent}
+            highlightPath={row.kind === "markdown" ? "" : pathForHighlight}
+            spans={row.spans}
+            styled={row.kind === "markdown" ? display.lines[row.index]?.styled : undefined}
+            markdownMode={row.kind === "markdown" ? true : undefined}
+            diffGutters={row.kind === "plain" || row.kind === "subagent" ? false : undefined}
+            subagent={row.kind === "diff" ? undefined : row.kind === "subagent" || isSubagent}
+            subagentSpans={row.kind === "markdown" || row.kind === "subagent" ? subagentSpans?.[row.index] : undefined}
           />
-        ));
+        );
       }),
-    [
-      contentCols,
-      display,
-      hasQuery,
-      lines,
-      matchIndex,
-      matches,
-      pathForHighlight,
-      syntaxCarry,
-      theme,
-      useDiffGutters,
-      isSubagent,
-      subagentSpans,
-    ],
+    [rowModels, lineSearch, theme, hasQuery, pathForHighlight, display.lines, isSubagent, subagentSpans],
   );
 
   const borderTitle = ` ${fitOneLine([sanitizeDisplayText(title)], Math.max(1, size.width - 4))} `;

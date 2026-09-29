@@ -19,6 +19,15 @@ export interface StyledMarkdownOptions extends RenderMarkdownLinesOptions {
 
 const styledCache = new RenderCache<StyledText>(4096, 8 * 1024 * 1024);
 
+export function styledLinesWeight(lines: readonly StyledText[]): number {
+  let weight = 0;
+  for (const line of lines) {
+    weight += 64;
+    for (const chunk of line.chunks) weight += chunk.text.length * 2 + 96;
+  }
+  return weight;
+}
+
 export function styleAnsiLine(line: AnsiLine, defaultFg: string | undefined): StyledText {
   const key = `${defaultFg ?? ""}\u0000${line}`;
   const hit = styledCache.get(key);
