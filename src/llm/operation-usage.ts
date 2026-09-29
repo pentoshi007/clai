@@ -37,6 +37,35 @@ export interface OperationUsageSnapshot {
   readonly aggregate: OperationUsageAggregate;
 }
 
+export interface DiscardedAttemptUsage {
+  readonly usage: TokenUsage;
+  readonly provider: GenerationAttemptInput["provider"];
+  readonly model: string;
+}
+
+const accountedAttempts = new WeakSet<GenerationAttemptRecord>();
+
+const attemptUsage = (attempt: GenerationAttemptRecord): DiscardedAttemptUsage[] =>
+  attempt.usage.kind === "known"
+    ? [{ usage: attempt.usage.value, provider: attempt.provider, model: attempt.model }]
+    : [];
+
+export function claimDiscardedAttemptUsage(
+  snapshot: OperationUsageSnapshot | undefined,
+): DiscardedAttemptUsage[] {
+  return (snapshot?.attempts ?? []).flatMap((attempt) => {
+    if (attempt.outcome === "success" || accountedAttempts.has(attempt)) return [];
+    accountedAttempts.add(attempt);
+    return attemptUsage(attempt);
+  });
+}
+
+export function knownAttemptUsage(
+  snapshot: OperationUsageSnapshot | undefined,
+): DiscardedAttemptUsage[] {
+  return (snapshot?.attempts ?? []).flatMap(attemptUsage);
+}
+
 function immutableUsage(usage: TokenUsage): TokenUsage {
   return Object.freeze({ ...usage });
 }
@@ -188,9 +217,20 @@ interface GenerationAttemptContext {
   readonly input: GenerationAttemptInput;
   active?: GenerationAttemptHandle | undefined;
   admissions: number;
+  streamUsage?: TokenUsage | undefined;
 }
 
 const generationAttemptContext = new AsyncLocalStorage<GenerationAttemptContext>();
+
+export function observeStreamUsage(usage: TokenUsage | undefined): void {
+  const context = generationAttemptContext.getStore();
+  if (context && usage) context.streamUsage = usage;
+}
+
+const failedAttemptUsage = (
+  context: GenerationAttemptContext,
+  error: unknown,
+): TokenUsage | undefined => canonicalUsageFromError(error) ?? context.streamUsage;
 
 const unrecordedTransportStorage = new AsyncLocalStorage<{ maxOutputTokens?: number }>();
 
@@ -255,6 +295,7 @@ export async function generationFetch(
     context.admissions === 0 ? context.input.reason : "provider-retry";
   const requestFingerprint = fingerprintFinalRequest(context.input, init?.body);
   context.admissions += 1;
+  context.streamUsage = undefined;
   context.active = context.request.attemptUsage.begin({
     provider: context.input.provider,
     model: context.input.model,
@@ -272,7 +313,7 @@ export async function generationFetch(
     settleActiveAttempt(
       context,
       context.request.signal?.aborted ? "cancelled" : "failure",
-      canonicalUsageFromError(error),
+      failedAttemptUsage(context, error),
       statusCodeFromError(error),
     );
     throw error;
@@ -294,7 +335,7 @@ export async function runGenerationAttempt(
       settleActiveAttempt(
         context,
         request.signal?.aborted ? "cancelled" : "failure",
-        canonicalUsageFromError(error),
+        failedAttemptUsage(context, error),
         statusCodeFromError(error),
       );
       throw error;

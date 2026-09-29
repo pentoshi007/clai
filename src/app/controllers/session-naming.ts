@@ -9,6 +9,7 @@ import {
 import type { ClaiConfig } from "../../store/config/endpoints.js";
 import { providerIds } from "../../types.js";
 import { completeWithProvider } from "../../llm/router.js";
+import type { OperationUsageSnapshot } from "../../llm/operation-usage.js";
 
 export const DEFAULT_NAMING_PROVIDER: ProviderId = "free";
 export const DEFAULT_NAMING_MODEL = "free-2/kilo-auto/free";
@@ -39,18 +40,22 @@ export function resolveNamingRoute(
 export async function completeForSessionNaming(
   messages: ChatMessage[],
   route: { provider?: ProviderId | undefined; model?: string | undefined },
+  onOperationUsage?: ((snapshot: OperationUsageSnapshot) => void) | undefined,
 ): Promise<string> {
   const { provider, model } = resolveNamingRoute(route);
-  const result = await completeWithProvider({
-    provider,
-    model,
-    purpose: "auxiliary",
-    messages,
-    temperature: 0.2,
-    ...(provider === "free"
-      ? { thinking: { enabled: true, effort: "low" as const } }
-      : {}),
-  });
+  const result = await completeWithProvider(
+    {
+      provider,
+      model,
+      purpose: "auxiliary",
+      messages,
+      temperature: 0.2,
+      ...(provider === "free"
+        ? { thinking: { enabled: true, effort: "low" as const } }
+        : {}),
+    },
+    onOperationUsage ? { onOperationUsage } : {},
+  );
   return result.text;
 }
 

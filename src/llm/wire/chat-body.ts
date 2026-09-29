@@ -255,6 +255,9 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     ...(options.providerId === "cline" && /claude|anthropic|qwen/i.test(options.model)
       ? { cache_control: { type: "ephemeral" } }
       : {}),
+    ...(options.providerId === "openrouter" && /(?:^|\/)(?:anthropic\/|claude)/i.test(options.model)
+      ? { cache_control: { type: "ephemeral", ttl: "1h" } }
+      : {}),
     ...((options.providerId === "openrouter" ||
       options.providerId === "merge-gateway" ||
       options.providerId === "cline") &&

@@ -185,6 +185,14 @@ export const runTurnRounds = async (
               ...(attempt ? { attempt } : {}),
             });
           },
+          emitDiscardedUsage: ({ usage, provider: usageProvider, model: usageModel }) =>
+            deps.emit({
+              type: "token-usage",
+              usage,
+              model: usageModel,
+              provider: usageProvider,
+              auxiliary: true,
+            }),
           audit: (event, payload) => auditLog(event, payload),
         },
         completion,

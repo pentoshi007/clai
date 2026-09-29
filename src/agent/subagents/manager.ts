@@ -4,6 +4,7 @@ import { isValidSubagentParentId, restoreSubagentRun, sanitizeSubagentRun, sanit
 import { subagentReportStatus } from "./report.js";
 import { resolveSubagentModelChain, subagentModelChainBlocked } from "./model-chain.js";
 import type { SubagentAssignment, SubagentCheckpoint, SubagentEvent, SubagentFollowup, SubagentRun, SubagentStore, SubagentWorker } from "./types.js";
+import type { OperationUsageSnapshot } from "../../llm/operation-usage.js";
 
 type Child = {
   run: SubagentRun;
@@ -32,11 +33,20 @@ export class SubagentManager {
   private notificationTimer?: ReturnType<typeof setTimeout> | undefined;
   private readonly worker: SubagentWorker;
   private readonly store: SubagentStore | undefined;
+  private readonly onOperationUsage: ((snapshot: OperationUsageSnapshot) => void) | undefined;
 
-  constructor(readonly parentSessionId: string, options: { worker?: SubagentWorker; store?: SubagentStore } = {}) {
+  constructor(
+    readonly parentSessionId: string,
+    options: {
+      worker?: SubagentWorker;
+      store?: SubagentStore;
+      onOperationUsage?: (snapshot: OperationUsageSnapshot) => void;
+    } = {},
+  ) {
     if (!isValidSubagentParentId(parentSessionId)) throw new Error("Invalid parent session ID");
     this.worker = options.worker ?? defaultWorker;
     this.store = options.store;
+    this.onOperationUsage = options.onOperationUsage;
     if (this.store) {
       try {
         for (const value of this.store.load(parentSessionId)) {
@@ -254,6 +264,9 @@ export class SubagentManager {
         run: inputRun, signal: controller.signal, emit, followup,
         modelChain,
         noteRoute,
+        recordOperationUsage: (snapshot) => {
+          if (!this.disposed) this.onOperationUsage?.(snapshot);
+        },
         checkpoint: child.checkpoint ? structuredClone(child.checkpoint) : undefined,
         saveSummary: (report) => {
           if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
