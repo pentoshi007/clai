@@ -74,6 +74,7 @@ export interface ClaiConfig {
   thinking: ReasoningPreference;
   freeOnly: boolean;
   providerFallback: boolean;
+  rtk: boolean;
   offline: boolean;
   parserStrict: boolean;
   privateMode: boolean;
@@ -115,6 +116,7 @@ const defaults: ClaiConfig = {
   thinking: { enabled: false, effort: "medium" },
   freeOnly: false,
   providerFallback: false,
+  rtk: false,
   offline: false,
   parserStrict: false,
   privateMode: false,
