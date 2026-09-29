@@ -44,7 +44,7 @@ function paintCode(
   spans: readonly SyntaxSpan[],
 ): string {
   if (parsed.tone === "header") return ink.fg("muted", chunk);
-  if (!ink.richColor && parsed.tone !== "context") {
+  if (ink.colorMode === "16" && parsed.tone !== "context") {
     return ink.fg(parsed.tone === "add" ? "diffAdd" : "diffDel", chunk);
   }
   if (spans.length === 0) return ink.fg("foreground", chunk);
@@ -66,7 +66,7 @@ function paintRow(
   const markTone: ThemeToken = parsed.tone === "add" ? "diffAdd" : parsed.tone === "del" ? "diffDel" : "muted";
   const head = parsed.tone === "header" ? rule : `${rule}${ink.style(`${mark} `, { fg: markTone, bold: mark.trim() !== "" })}`;
   const line = `${head}${paintCode(ink, parsed, chunk, spans)}`;
-  const wash = ink.richColor ? washFor(parsed) : undefined;
+  const wash = ink.washColor ? washFor(parsed) : undefined;
   return wash ? ink.band(line, width, { bg: wash }) : sealStyle(line);
 }
 

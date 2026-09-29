@@ -17,10 +17,8 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
   const content = sanitizeDisplayText(item.content);
   const elapsed = thinkingElapsedLabel(item, ctx.now);
 
-  const header = (): string =>
-    clipRow(
-      ctx,
-      `${gutter}${ctx.ink.style(
+  const header = (): string[] =>
+    wrapWithPrefixes(
         joinMeta(ctx, [
           "thinking",
           elapsed,
@@ -33,9 +31,8 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
               ? "Ctrl+T to hide"
               : "Ctrl+T to expand",
         ]),
-        { fg: "thinking" },
-      )}`,
-    );
+      { width: Math.max(1, ctx.width - 2) },
+    ).map((row) => clipRow(ctx, `${gutter}${ctx.ink.style(row, { fg: "thinking" })}`));
 
   const bodyRows = (text: string): string[] =>
     wrapWithPrefixes(text, { width: ctx.width - 2 }).map((row) =>
@@ -47,11 +44,11 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
 
   if (item.streaming) {
     const tail = liveThinkingDisplay(content);
-    if (!tail.trim()) return [header()];
-    return [header(), ...bodyRows(tail)];
+    if (!tail.trim()) return header();
+    return [...header(), ...bodyRows(tail)];
   }
 
   if (!content.trim()) return [];
-  if (!expanded) return [header()];
-  return [header(), ...bodyRows(content)];
+  if (!expanded) return header();
+  return [...header(), ...bodyRows(content)];
 }

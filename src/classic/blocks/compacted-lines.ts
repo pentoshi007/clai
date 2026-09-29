@@ -8,8 +8,8 @@ import {
 } from "../../ui-core/state/transcript-types.js";
 import { trimTrailingSpaces } from "../render/ansi-text.js";
 import { wrapWithPrefixes } from "../render/wrap.js";
-import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
-import { outputToggleLabel } from "./tool-lines.js";
+import { joinMeta, type BlockContext } from "./block-context.js";
+import { hintRows, outputToggleLabel } from "./tool-lines.js";
 
 export const COMPACTED_PREVIEW_ROWS = 4;
 const BODY_INDENT = 4;
@@ -45,7 +45,7 @@ export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): str
         ),
       );
     }
-    lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`));
+    lines.push(...hintRows(ctx, indent, outputToggleLabel(expanded)));
     return lines;
   }
 
@@ -53,7 +53,7 @@ export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): str
     item.streaming ? liveCompactionHeadTail(item.summary) : item.summary,
   ).trim();
   if (summary === "") {
-    lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`));
+    lines.push(...hintRows(ctx, indent, outputToggleLabel(expanded)));
     return lines;
   }
 
@@ -61,7 +61,7 @@ export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): str
   const rows = wrapWithPrefixes(summary, { width: budget });
   const cap = expanded ? rows.length : COMPACTED_PREVIEW_ROWS;
   const shown = rows.slice(0, cap);
-  const branch = ctx.ink.fg("muted", `  ${ctx.glyphs.bodyBranch} `);
+  const branch = ctx.ink.fg("hint", `  ${ctx.glyphs.bodyBranch} `);
 
   for (const [index, row] of shown.entries()) {
     lines.push(
@@ -72,6 +72,6 @@ export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): str
     outputToggleLabel(expanded),
     rows.length > shown.length ? `${ctx.glyphs.ellipsis} full memory` : undefined,
   ]);
-  lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", footer)}`));
+  lines.push(...hintRows(ctx, indent, footer));
   return lines;
 }

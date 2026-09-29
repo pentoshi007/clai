@@ -5,6 +5,7 @@ import type { ThemeHint } from "../../ui-core/bootstrap/capabilities.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 import { themeFor } from "../../ui-core/rendering/theme.js";
 import { type Glyphs, glyphsFor } from "./glyphs.js";
+import { nearestAnsi16, nearestAnsi256 } from "./palette.js";
 import { padToWidth, reopenAfterResets, sealStyle } from "./ansi-text.js";
 
 export type ThemeToken = {
@@ -17,6 +18,8 @@ const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
   "256": 2,
   truecolor: 3,
 };
+
+const HUE_TOKENS: ReadonlySet<ThemeToken> = new Set<ThemeToken>(["diffAddBg", "diffDelBg"]);
 
 export interface TextStyle {
   readonly fg?: ThemeToken | undefined;
@@ -34,6 +37,7 @@ export interface InkTheme {
   readonly unicode: boolean;
   readonly italicOk: boolean;
   readonly richColor: boolean;
+  readonly washColor: boolean;
   readonly glyphs: Glyphs;
   inkColor(token: ThemeToken): string | undefined;
   style(text: string, style: TextStyle): string;
@@ -61,11 +65,25 @@ export function createInkTheme(input: InkThemeInput): InkTheme {
   const colored = level > 0;
   const italicOk = input.italic ?? input.unicode;
 
+  const foreground = (chain: ChalkInstance, color: string): ChalkInstance => {
+    if (level === 3) return chain.hex(color);
+    if (level === 2) return chain.ansi256(nearestAnsi256(color));
+    return chain[nearestAnsi16(color)];
+  };
+
+  const background = (chain: ChalkInstance, token: ThemeToken): ChalkInstance => {
+    const color = theme[token];
+    if (level === 3) return chain.bgHex(color);
+    if (level === 2) return chain.bgAnsi256(nearestAnsi256(color, HUE_TOKENS.has(token)));
+    const name = nearestAnsi16(color, true);
+    return chain[`bg${name[0]!.toUpperCase()}${name.slice(1)}` as keyof ChalkInstance] as ChalkInstance;
+  };
+
   const style = (text: string, spec: TextStyle): string => {
     if (text.length === 0) return text;
     let chain = paint;
-    if (colored && spec.bg) chain = chain.bgHex(theme[spec.bg]);
-    if (colored && spec.fg) chain = chain.hex(theme[spec.fg]);
+    if (colored && spec.bg) chain = background(chain, spec.bg);
+    if (colored && spec.fg) chain = foreground(chain, theme[spec.fg]);
     if (spec.bold) chain = chain.bold;
     if (spec.dim) chain = chain.dim;
     if (spec.italic && italicOk) chain = chain.italic;
@@ -93,12 +111,13 @@ export function createInkTheme(input: InkThemeInput): InkTheme {
     unicode: input.unicode,
     italicOk,
     richColor,
+    washColor: input.colorMode === "truecolor",
     glyphs: glyphsFor(input.unicode),
     inkColor: (token) => (colored ? theme[token] : undefined),
     style,
     fg: (token, text) => style(text, { fg: token }),
     hex: (color, text) =>
-      text.length === 0 || !colored ? text : sealStyle(paint.hex(color)(text)),
+      text.length === 0 || !colored ? text : sealStyle(foreground(paint, color)(text)),
     bold: (text) => style(text, { bold: true }),
     dim: (text) => style(text, { dim: true }),
     inverse: (text) => style(text, { inverse: true }),

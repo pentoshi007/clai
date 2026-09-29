@@ -53,6 +53,10 @@ function centerCell(content: string, width: number): string {
   return " ".repeat(left) + content + " ".repeat(total - left);
 }
 
+function defaultInk(text: string): string {
+  return text;
+}
+
 function displayPermissions(permissions: string): string {
   return permissions === "allow-all" ? "auto-allow" : permissions;
 }
@@ -140,11 +144,11 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
 
   const rightRows: string[] = [
     "",
-    infoRow("workdir", cwd, chalk.white),
+    infoRow("workdir", cwd, defaultInk),
     infoRow("model", model, chalk.cyan),
     infoRow("provider", provider, chalk.green),
     ...(variant ? [infoRow("effort", variant, chalk.magenta)] : []),
-    infoRow("version", version, chalk.white),
+    infoRow("version", version, defaultInk),
     "",
     modeBanner,
     "",
@@ -211,7 +215,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     bottom,
     "",
     centerIndent(Math.min(tagline.length, taglineBudget)) +
-      chalk.white(truncateMiddle(tagline, taglineBudget)),
+      defaultInk(truncateMiddle(tagline, taglineBudget)),
     centerIndent(Math.min(welcomeFull.length, taglineBudget)) +
       chalk.green.bold(truncateMiddle(welcome, Math.max(8, taglineBudget - welcomeHint.length))) +
       chalk.cyan(welcomeHint.length + welcome.length <= taglineBudget ? welcomeHint : ""),
@@ -254,21 +258,26 @@ function renderCompactCard(args: {
   );
 
   const welcomePlain = `Welcome to clai v${version}! /history · /help`;
+  const greeting = `Welcome to clai v${version}!`;
+  const hint = ["/history · /help", "/help", ""].find(
+    (candidate) => candidate === "" || 2 + greeting.length + 1 + candidate.length <= totalWidth,
+  ) ?? "";
+  const greetingBudget = Math.max(8, totalWidth - 2 - (hint === "" ? 0 : hint.length + 1));
   const welcome =
     "  " +
-    chalk.green.bold(truncateMiddle(`Welcome to clai v${version}! `, Math.max(8, totalWidth - 16))) +
-    chalk.cyan(totalWidth >= 40 ? "/history · /help" : totalWidth >= 28 ? "/history" : "");
+    chalk.green.bold(truncateMiddle(greeting, greetingBudget)) +
+    (hint === "" ? "" : ` ${chalk.cyan(hint)}`);
 
   const lines: string[] = ["", top];
   for (const wm of wmLines) {
     lines.push(row(centerCell(wm, inner)));
   }
   lines.push(row(""));
-  lines.push(row(chip("workdir", cwd, chalk.white)));
+  lines.push(row(chip("workdir", cwd, defaultInk)));
   lines.push(row(chip("model", model, chalk.cyan)));
   lines.push(row(chip("provider", provider, chalk.green)));
   if (variant) lines.push(row(chip("effort", variant, chalk.magenta)));
-  lines.push(row(chip("version", version, chalk.white)));
+  lines.push(row(chip("version", version, defaultInk)));
   lines.push(row(""));
   lines.push(row(modeBanner));
   lines.push(row(permBanner));
