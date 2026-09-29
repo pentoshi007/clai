@@ -53,6 +53,13 @@ export function tokenize(text: string): Token[] {
   return tokens;
 }
 
+function extendedColorArgs(codes: readonly number[], index: number): number {
+  const mode = codes[index + 1];
+  if (mode === 5) return 2;
+  if (mode === 2) return 4;
+  return 0;
+}
+
 export function hasOpenStyle(text: string): boolean {
   let foreground = false;
   let background = false;
@@ -68,8 +75,15 @@ export function hasOpenStyle(text: string): boolean {
     if (token.kind !== "escape" || !token.value.endsWith("m")) continue;
     const body = token.value.slice(2, -1);
     const codes = body === "" ? [0] : body.split(";").map(Number);
-    for (const code of codes) {
+    for (let index = 0; index < codes.length; index += 1) {
+      const code = codes[index]!;
       if (!Number.isFinite(code)) continue;
+      if (code === 38 || code === 48) {
+        if (code === 38) foreground = true;
+        else background = true;
+        index += extendedColorArgs(codes, index);
+        continue;
+      }
       if (code === 0) {
         foreground = false;
         background = false;
@@ -97,15 +111,67 @@ export function hasOpenStyle(text: string): boolean {
       else if (code === 29) strike = false;
       else if (code === 39) foreground = false;
       else if (code === 49) background = false;
-      else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97) || code === 38) {
+      else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
         foreground = true;
-      } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107) || code === 48) {
+      } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
         background = true;
       }
     }
   }
 
   return foreground || background || bold || dim || italic || underline || inverse || hidden || strike;
+}
+
+function sgrCodes(sequence: string): number[] | undefined {
+  if (!sequence.startsWith("\x1b[") || !sequence.endsWith("m")) return undefined;
+  const body = sequence.slice(2, -1);
+  return body === "" ? [0] : body.split(";").map(Number);
+}
+
+function sgrCloses(codes: readonly number[]): Set<number> {
+  const closed = new Set<number>();
+  for (let index = 0; index < codes.length; index += 1) {
+    const code = codes[index]!;
+    if (code === 38 || code === 48) {
+      index += extendedColorArgs(codes, index);
+      continue;
+    }
+    if (code === 0 || code === 22 || code === 27 || code === 39 || code === 49) closed.add(code);
+  }
+  return closed;
+}
+
+function sgrOpens(codes: readonly number[]): Set<number> {
+  const opened = new Set<number>();
+  for (let index = 0; index < codes.length; index += 1) {
+    const code = codes[index]!;
+    if (code === 38 || code === 48) {
+      opened.add(code === 38 ? 39 : 49);
+      index += extendedColorArgs(codes, index);
+    } else if (code === 1 || code === 2) opened.add(22);
+    else if (code === 7) opened.add(27);
+    else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) opened.add(39);
+    else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) opened.add(49);
+  }
+  return opened;
+}
+
+export function reopenAfterResets(text: string, open: string): string {
+  if (open === "" || !ESCAPE_START.test(text)) return text;
+  const owned = new Set<number>();
+  for (const token of tokenize(open)) {
+    const codes = token.kind === "escape" ? sgrCodes(token.value) : undefined;
+    if (codes) for (const code of sgrOpens(codes)) owned.add(code);
+  }
+  let out = "";
+  for (const token of tokenize(text)) {
+    out += token.value;
+    const codes = token.kind === "escape" ? sgrCodes(token.value) : undefined;
+    if (!codes) continue;
+    const closed = sgrCloses(codes);
+    if (closed.has(0) || [...closed].some((code) => owned.has(code))) out += open;
+  }
+  return out;
 }
 
 export function sealStyle(text: string): string {

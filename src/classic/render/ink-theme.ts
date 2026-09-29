@@ -5,7 +5,7 @@ import type { ThemeHint } from "../../ui-core/bootstrap/capabilities.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 import { themeFor } from "../../ui-core/rendering/theme.js";
 import { type Glyphs, glyphsFor } from "./glyphs.js";
-import { sealStyle } from "./ansi-text.js";
+import { padToWidth, reopenAfterResets, sealStyle } from "./ansi-text.js";
 
 export type ThemeToken = {
   [K in keyof Theme]: Theme[K] extends string ? K : never;
@@ -33,6 +33,7 @@ export interface InkTheme {
   readonly colorMode: ColorMode;
   readonly unicode: boolean;
   readonly italicOk: boolean;
+  readonly richColor: boolean;
   readonly glyphs: Glyphs;
   inkColor(token: ThemeToken): string | undefined;
   style(text: string, style: TextStyle): string;
@@ -42,6 +43,8 @@ export interface InkTheme {
   dim(text: string): string;
   inverse(text: string): string;
   plate(token: ThemeToken, text: string): string;
+  band(text: string, width: number, spec: TextStyle): string;
+  selectedRow(text: string, width: number): string;
 }
 
 export interface InkThemeInput {
@@ -71,11 +74,25 @@ export function createInkTheme(input: InkThemeInput): InkTheme {
     return sealStyle(chain(text));
   };
 
+  const band = (text: string, width: number, spec: TextStyle): string => {
+    const body = padToWidth(text, width);
+    const probe = style("X", spec);
+    const open = probe.slice(0, Math.max(0, probe.indexOf("X")));
+    if (open === "") return body;
+    return sealStyle(`${open}${reopenAfterResets(body, open)}`);
+  };
+
+  const richColor = input.colorMode === "truecolor" || input.colorMode === "256";
+  const selectedSpec: TextStyle = richColor
+    ? { bg: "chipTeal", fg: "white", bold: true }
+    : { inverse: true, bold: true };
+
   return {
     theme,
     colorMode: input.colorMode,
     unicode: input.unicode,
     italicOk,
+    richColor,
     glyphs: glyphsFor(input.unicode),
     inkColor: (token) => (colored ? theme[token] : undefined),
     style,
@@ -86,6 +103,8 @@ export function createInkTheme(input: InkThemeInput): InkTheme {
     dim: (text) => style(text, { dim: true }),
     inverse: (text) => style(text, { inverse: true }),
     plate: (token, text) => style(text, { bg: token, fg: "white", bold: true }),
+    band,
+    selectedRow: (text, width) => band(text, width, selectedSpec),
   };
 }
 
