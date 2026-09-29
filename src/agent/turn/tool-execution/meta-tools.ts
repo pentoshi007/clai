@@ -165,7 +165,7 @@ export const runMetaTool = async (
   call: ToolCall,
 ): Promise<MetaToolOutcome> => {
   if (!isRunnerMetaTool(call.name)) return { kind: "not-meta" };
-  if (call.name === "job.read" || call.name === "task.read") {
+  if (call.name === "job.read") {
     return handleResponderRead(ports, call);
   }
   const planResult = await ports.handlePlanTool(call);

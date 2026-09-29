@@ -11,7 +11,7 @@ import {
 const OBSERVATION_LIMIT = 16_000;
 
 const isScannerLead = (call: ToolCall): boolean =>
-  (call.name === "shell.exec" || call.name === "shell.start") &&
+  call.name === "shell.exec" &&
   /\b(?:nmap|masscan|nikto|nuclei|ffuf|gobuster|feroxbuster)\b/i.test(
     String(call.args.command ?? ""),
   );

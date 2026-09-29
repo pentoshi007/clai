@@ -168,40 +168,6 @@ describe("MCP dispatch through the static tool path", () => {
     expect(calls[0]?.name).toBe("resolve-library-id");
   });
 
-  it("accepts MCP children inside tool.batch and keeps read-only batches safe", async () => {
-    expect(normalizeBatchToolName("mcp_context7_get_library_docs")).toBe(
-      "mcp.context7.get-library-docs",
-    );
-    expect(
-      classifyToolCall({ name: "mcp.context7.resolve-library-id", args: {} }).level,
-    ).toBe("safe");
-    const batch = classifyToolCall({
-      name: "tool.batch",
-      args: {
-        calls: [
-          { name: "mcp.context7.resolve-library-id", args: { libraryName: "vite" } },
-          { name: "fs.list", args: { path: "." } },
-        ],
-      },
-    });
-    expect(batch.level).toBe("safe");
-
-    const result = await runToolCall({
-      name: "tool.batch",
-      args: {
-        calls: [
-          { name: "mcp.context7.resolve-library-id", args: { libraryName: "vite" } },
-          { name: "mcp.context7.get-library-docs", args: { context7CompatibleLibraryID: "/vite" } },
-        ],
-      },
-    });
-    expect(result.ok).toBe(true);
-    expect(calls.map((entry) => entry.name).sort()).toEqual([
-      "get-library-docs",
-      "resolve-library-id",
-    ]);
-  });
-
   it("keeps a turn's advertised tools callable after the selection changes", async () => {
     const advertised = runtime.toolNames();
     expect(advertised).toContain("mcp.context7.resolve-library-id");

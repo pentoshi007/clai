@@ -90,7 +90,7 @@ export class SubagentInbox {
       this.messages.push({
         role: "user",
         internal: true,
-        content: "Parallel delegation checkpoint: one context gatherer is active. Before waiting for it or finalizing, launch every other independent context assignment now with subagent.start_many or consecutive subagent.start calls. If no sibling assignment exists, continue; the next final boundary will wait for this child.",
+        content: "Parallel delegation checkpoint: one context gatherer is active. Before waiting for it or finalizing, launch every other independent context assignment now with one subagent.start call per assignment in the same response. If no sibling assignment exists, continue; the next final boundary will wait for this child.",
       });
       return true;
     }

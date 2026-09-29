@@ -29,7 +29,6 @@ export function isMetaPlanTool(name: string): boolean {
     name === "plan.create" ||
     name === "task.move" ||
     name === "job.read" ||
-    name === "task.read" ||
     name === "task.update" ||
     name === "agent.handoff"
   );
@@ -136,7 +135,6 @@ export function toolFitsTaskClass(
     case "explore":
       return (
         toolName === "tool.check" ||
-        toolName === "sysinfo" ||
         toolName === "fs.list" ||
         toolName === "fs.read" ||
         toolName === "fs.search" ||
@@ -147,11 +145,10 @@ export function toolFitsTaskClass(
         Boolean(s?.scaffoldOk) ||
         toolName === "fs.write" ||
         toolName === "fs.writeMany" ||
-        toolName === "shell.exec" ||
-        toolName === "shell.start"
+        toolName === "shell.exec"
       );
     case "install":
-      return Boolean(s?.installOk) || toolName === "pkg.install";
+      return Boolean(s?.installOk);
     case "implement":
       return (
         Boolean(s?.sourceWrite || s?.featureWrite) ||
@@ -169,7 +166,6 @@ export function toolFitsTaskClass(
             s?.serverReady ||
             s?.portListening,
         ) ||
-        toolName === "shell.start" ||
         toolName === "shell.tail" ||
         toolName === "http.fetch" ||
         toolName === "web.fetch"

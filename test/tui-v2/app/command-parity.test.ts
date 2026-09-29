@@ -67,6 +67,7 @@ describe("command parity (V2-080)", () => {
       disableKeychain: true,
       freeOnly: false,
       providerFallback: false,
+      rtk: false,
       privateMode: false,
       permissions: "default",
     });
@@ -77,6 +78,7 @@ describe("command parity (V2-080)", () => {
       disableKeychain: false,
       freeOnly: false,
       providerFallback: false,
+      rtk: false,
       privateMode: false,
       permissions: "default",
     });
@@ -107,6 +109,7 @@ describe("command parity (V2-080)", () => {
       "cwd",
       "freeonly",
       "fallback",
+      "rtk",
       "help",
       "allow",
       "disallow",

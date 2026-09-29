@@ -7,6 +7,7 @@ import {
 } from "../../agent/task-evidence.js";
 import { jobManager, type StartJobOptions } from "../jobs.js";
 import { resolveShellExecBackgroundPolicy } from "../command-intent.js";
+import { prepareRtkExecution } from "../rtk/rewrite.js";
 import { type ToolRunOptions, type ToolHandler } from "../tool-types.js";
 import {
   prepareElevatedBackgroundCommand,
@@ -16,12 +17,6 @@ import {
   getAllowInteractiveStdinInherit,
   looksInteractiveStdin,
 } from "../shell.js";
-import {
-  compileBatchFailMode,
-  evaluateCancelTargets,
-  formatBatchCancelReason,
-  parseBatchFailPolicy,
-} from "../batch-fail-policy.js";
 import {
   optionalBoolean,
   optionalNumber,
@@ -53,6 +48,7 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
         elevated?.prepared ? elevated.spec : command,
         {
           cwd: optionalString(args, "cwd"),
+          name: optionalString(args, "name"),
           ...responderJobOptions(options),
           responder,
           wakeOnCompletion: responder,
@@ -115,8 +111,10 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       }
     }
 
+    const execution = await prepareRtkExecution(command, options?.signal);
     return shellExec({
-      command,
+      command: execution.command,
+      env: execution.env,
       cwd: optionalString(args, "cwd"),
       timeoutMs,
       signal: options?.signal,

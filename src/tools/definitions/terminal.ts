@@ -4,7 +4,7 @@ import { def, emptyObject } from "./define.js";
 export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
   def(
     "terminal.start",
-    "Start a conversation-owned interactive process or REPL and return its session id and output cursor. Use for programs that need later input; use shell.exec for finite commands and shell.start for unattended services.",
+    "Start a conversation-owned interactive process or REPL and return its session id and output cursor. Use for programs that need later input; use shell.exec for finite commands and shell.exec background:\"always\" for unattended services.",
     {
       type: "object",
       properties: {
@@ -95,21 +95,6 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
     "List interactive sessions owned by this conversation, with live sessions first.",
     emptyObject,
     { readOnly: true },
-  ),
-  def(
-    "terminal.resize",
-    "Resize a PTY-backed interactive session.",
-    {
-      type: "object",
-      properties: {
-        id: { type: "string" },
-        columns: { type: "integer" },
-        rows: { type: "integer" },
-      },
-      required: ["id", "columns", "rows"],
-      additionalProperties: false,
-    },
-    { mutates: true },
   ),
   def(
     "terminal.close",

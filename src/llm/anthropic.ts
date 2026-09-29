@@ -31,7 +31,7 @@ import {
   parseAnthropicUsage,
   withReasoningObservation,
 } from "./token-usage.js";
-import { generationFetch } from "./operation-usage.js";
+import { generationFetch, observeStreamUsage } from "./operation-usage.js";
 import { fetchAnthropicModelEntries } from "./wire/anthropic-model-catalog.js";
 import { firstSystemPrompt } from "./system-messages.js";
 import { resolveSampling } from "./sampling.js";
@@ -397,6 +397,7 @@ export async function executeAnthropicStream(
         if (parsed.type === "message_stop") sawMessageStop = true;
         if (parsed.type === "message_start" && parsed.message?.usage) {
           streamUsage = parseAnthropicUsage(parsed.message.usage) ?? streamUsage;
+          observeStreamUsage(streamUsage);
         }
         if (parsed.type === "message_delta") {
           if (parsed.delta?.stop_reason) {
@@ -406,6 +407,7 @@ export async function executeAnthropicStream(
             const out = parseAnthropicUsage(parsed.usage);
             if (out) {
               streamUsage = mergeAnthropicStreamUsage(streamUsage, out);
+              observeStreamUsage(streamUsage);
             }
           }
         }

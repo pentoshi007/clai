@@ -38,7 +38,6 @@ describe("Property 24: legacy execution never allocates an interactive transport
   it("keeps the legacy shell/job tool names and adds the terminal tools additively", () => {
     for (const name of [
       "shell.exec",
-      "shell.start",
       "shell.jobs",
       "shell.tail",
       "shell.stop",

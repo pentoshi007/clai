@@ -110,7 +110,7 @@ export async function shellExecAttempt(
       detached: detached && !usingInteractiveStdin,
       shell,
       stdio,
-      env: { ...process.env, PATH: augmentedPathEnv() },
+      env: { ...process.env, PATH: augmentedPathEnv(), ...args.env },
     });
     let aborted = false;
     let timedOut = false;

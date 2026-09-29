@@ -53,16 +53,6 @@ describe("SEC-001 classifier never executes model-controlled text", () => {
     expect(spawnSyncSpy).not.toHaveBeenCalled();
   });
 
-  it("still recognizes an installed plain binary as a no-op", () => {
-    const decision = classifyToolCall({
-      name: "pkg.install",
-      args: { tool: "coreutils", checkBinary: "node" },
-    });
-    expect(decision.level).toBe("safe");
-    expect(decision.reason).toMatch(/already installed/i);
-    expect(execSyncSpy).not.toHaveBeenCalled();
-  });
-
   it("confirms when the binary is genuinely missing", () => {
     const decision = classifyToolCall({
       name: "pkg.install",

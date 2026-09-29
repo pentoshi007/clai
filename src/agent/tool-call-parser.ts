@@ -411,7 +411,7 @@ export function pentestNoLocalServerDirective(): string {
   return [
     "REMOTE / PENTEST SESSION RULE (always on for this engagement):",
     "- Target is remote (or remote-style). After findings/report delivery, STOP.",
-    "- Do not shell.start / npm|bun|pnpm|yarn run dev / vite / next dev / python -m http.server unless the user explicitly asked for a local app.",
+    "- Do not start a background server (npm|bun|pnpm|yarn run dev / vite / next dev / python -m http.server) unless the user explicitly asked for a local app.",
     "- Do not explore the clai workspace or package.json to invent a local server task.",
     "- If assessment is complete, answer in prose with evidence — no local-server follow-up.",
   ].join("\n");

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
 import { planDir, SessionPlan } from "./sqlite-backend.js";
 import { randomUUID } from "node:crypto";
@@ -15,18 +16,11 @@ export const jsonlFile =
 
 let planWriteQueue: Promise<unknown> = Promise.resolve();
 
-let planWriteDepth = 0;
+const planWriteScope = new AsyncLocalStorage<true>();
 
 export function enqueuePlanWrite<T>(task: () => Promise<T>): Promise<T> {
-  if (planWriteDepth > 0) return task();
-  const tracked = async (): Promise<T> => {
-    planWriteDepth += 1;
-    try {
-      return await task();
-    } finally {
-      planWriteDepth -= 1;
-    }
-  };
+  if (planWriteScope.getStore()) return task();
+  const tracked = (): Promise<T> => planWriteScope.run(true, task);
   const run = planWriteQueue.then(tracked, tracked);
   planWriteQueue = run.then(
     () => undefined,

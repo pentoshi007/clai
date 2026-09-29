@@ -39,9 +39,10 @@ describe("tool evidence signals", () => {
     ).toBe(false);
   });
 
-  it("detects a started server from shell.start and listening output", () => {
-    expect(signals({ name: "shell.start", args: {} }).serverStarted).toBe(true);
-    expect(signals({ name: "shell.start", args: {} }).serverTailed).toBe(false);
+  it("detects a started server from a background launch and listening output", () => {
+    const launch = { name: "shell.exec", args: { command: "npm run dev", background: "always" } };
+    expect(signals(launch).serverStarted).toBe(true);
+    expect(signals(launch).serverTailed).toBe(false);
     const listening = signals(
       { name: "shell.exec", args: { command: "ss -ltnp" } },
       { output: "LISTEN 0 511 127.0.0.1:3000 0.0.0.0:*" },

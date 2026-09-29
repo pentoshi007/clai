@@ -2,12 +2,10 @@ import type { ToolCall } from "../../../types.js";
 
 const NARROW_NMAP_ALLOWED: ReadonlySet<string> = new Set([
   "shell.exec",
-  "shell.start",
   "shell.tail",
   "shell.jobs",
   "shell.wait",
   "job.read",
-  "task.read",
 ]);
 
 const NARROW_NMAP_COMMAND =
@@ -63,7 +61,7 @@ const NARROW_NMAP_REPEAT =
   "Do not broaden or retry it automatically; report the existing result/job status and ask before another scan.";
 
 const isNarrowNmapScanCall = (call: ToolCall): boolean =>
-  (call.name === "shell.exec" || call.name === "shell.start") &&
+  call.name === "shell.exec" &&
   NARROW_NMAP_COMMAND.test(String(call.args.command ?? ""));
 
 const checkNarrowNmap = (input: ToolGuardInput): ToolGuardDecision => {

@@ -1,3 +1,4 @@
+import { startsBackgroundJob } from "../tools/command-intent.js";
 import type { ToolCall } from "../types.js";
 import { slimToolArgs } from "./message-slim.js";
 import { copyString } from "../os/copy-string.js";
@@ -26,7 +27,6 @@ const READ_ONLY_TOOLS = new Set([
   "fs.read",
   "fs.list",
   "fs.search",
-  "sysinfo",
   "tool.check",
   "wordlist.find",
   "image.ocr",
@@ -86,26 +86,21 @@ const IMMEDIATE_SEQUENCE_SUPPRESSION_TOOLS = new Set([
   "fs.replaceLines",
   "fs.append",
   "fs.delete",
-  "shell.start",
   "shell.stop",
-  "pkg.install",
   "plan.create",
   "task.add",
   "task.move",
   "job.read",
-  "task.read",
   "task.update",
   "agent.handoff",
   "loop.reset",
   "terminal.start",
   "terminal.send",
-  "terminal.resize",
   "terminal.close",
 ]);
 
 const UNSAFE_IMMEDIATE_RETRY_TOOLS = new Set([
   "fs.append",
-  "shell.start",
   "task.add",
   "agent.handoff",
   "terminal.start",
@@ -224,7 +219,7 @@ export class LoopGuard {
   canonicalize(name: string, args: Record<string, unknown>): string {
     const slimmed = slimToolArgs(normalizeOperationArgs(name, args));
     if (
-      (name === "shell.exec" || name === "shell.start") &&
+      name === "shell.exec" &&
       typeof slimmed.command === "string"
     ) {
       slimmed.command = slimmed.command.trim().replace(/\s+/g, " ");
@@ -252,23 +247,7 @@ export class LoopGuard {
     args?: Record<string, unknown>;
   }): boolean {
     if (IMMEDIATE_SEQUENCE_SUPPRESSION_TOOLS.has(call.name)) return false;
-    if (call.name !== "tool.batch") return true;
-    const children = call.args?.calls;
-    if (!Array.isArray(children) || children.length === 0) return false;
-    return children.every((child) => {
-      if (!child || typeof child !== "object") return false;
-      const record = child as Record<string, unknown>;
-      return (
-        typeof record.name === "string" &&
-        this.callNeedsOutcomeComparison({
-          name: record.name,
-          args:
-            record.args && typeof record.args === "object"
-              ? (record.args as Record<string, unknown>)
-              : {},
-        })
-      );
-    });
+    return !startsBackgroundJob({ name: call.name, args: call.args ?? {} });
   }
 
   private sequenceNeedsOutcomeComparison(
@@ -281,46 +260,17 @@ export class LoopGuard {
     name: string;
     args?: Record<string, unknown>;
   }): boolean {
-    if (UNSAFE_IMMEDIATE_RETRY_TOOLS.has(call.name)) return true;
-    if (call.name !== "tool.batch") return false;
-    const children = call.args?.calls;
-    if (!Array.isArray(children)) return true;
-    return children.some((child) => {
-      if (!child || typeof child !== "object") return true;
-      const record = child as Record<string, unknown>;
-      if (typeof record.name !== "string") return true;
-      return this.callHasUnsafeImmediateRetry({
-        name: record.name,
-        args:
-          record.args && typeof record.args === "object"
-            ? (record.args as Record<string, unknown>)
-            : {},
-      });
-    });
+    return (
+      UNSAFE_IMMEDIATE_RETRY_TOOLS.has(call.name) ||
+      startsBackgroundJob({ name: call.name, args: call.args ?? {} })
+    );
   }
 
   private callIsStatePolling(call: {
     name: string;
     args?: Record<string, unknown>;
   }): boolean {
-    if (STATE_POLLING_TOOLS.has(call.name)) return true;
-    if (call.name !== "tool.batch") return false;
-    const children = call.args?.calls;
-    if (!Array.isArray(children) || children.length === 0) return false;
-    return children.every((child) => {
-      if (!child || typeof child !== "object") return false;
-      const record = child as Record<string, unknown>;
-      return (
-        typeof record.name === "string" &&
-        this.callIsStatePolling({
-          name: record.name,
-          args:
-            record.args && typeof record.args === "object"
-              ? (record.args as Record<string, unknown>)
-              : {},
-        })
-      );
-    });
+    return STATE_POLLING_TOOLS.has(call.name);
   }
 
   private sequenceIsStatePolling(
@@ -687,8 +637,7 @@ export class LoopGuard {
       name === "fs.replaceLines" ||
       name === "fs.append" ||
       name === "fs.delete" ||
-      name === "shell.exec" ||
-      name === "shell.start"
+      name === "shell.exec"
     );
   }
 
@@ -709,10 +658,7 @@ export class LoopGuard {
         }
       }
     }
-    if (
-      (name === "shell.exec" || name === "shell.start") &&
-      typeof args.command === "string"
-    ) {
+    if (name === "shell.exec" && typeof args.command === "string") {
       const cmd = args.command;
       for (const m of cmd.matchAll(
         /(?:mkdir\s+(?:-p\s+)?|cd\s+|create-[\w@./-]+\s+|vite@\S+\s+)(['"]?)([^\s;'"]+)\1/gi,

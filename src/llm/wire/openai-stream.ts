@@ -13,7 +13,7 @@ import type {
 } from "../../types.js";
 import { learnModelEmitsReasoning } from "../capabilities.js";
 import { ProviderError } from "../http.js";
-import { generationFetch } from "../operation-usage.js";
+import { generationFetch, observeStreamUsage } from "../operation-usage.js";
 import type { StreamTerminalProof } from "../provider-profile.js";
 import { visibleReasoningDetailText } from "../reasoning-artifacts.js";
 import { inBandBadRequestStatus } from "../reasoning-errors.js";
@@ -719,7 +719,10 @@ export async function openAiCompatibleStream(request: {
                   response.headers,
                 )
               : parseOpenAiUsage(parsed.usage, options.usageAliases);
-          if (chunkUsage) streamUsage = chunkUsage;
+          if (chunkUsage) {
+            streamUsage = chunkUsage;
+            observeStreamUsage(chunkUsage);
+          }
           const finalUsageFrame = isFinalUsageFrame(parsed);
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;

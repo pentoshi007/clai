@@ -20,6 +20,11 @@ export const slashCommands: SlashCommand[] = [
     description: "inspect live subagents or stop/restart an assignment",
   },
   {
+    command: "/rtk",
+    usage: "[on|off|status|install|update]",
+    description: "compress shell output with rtk to save tokens, prompt-cache safe",
+  },
+  {
     command: "/model",
     usage: "[name|#]",
     description: "open picker or switch model",
@@ -143,8 +148,8 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/plan",
-    usage: "[view|off]",
-    description: "enter plan mode",
+    usage: "[view]",
+    description: "switch to plan mode: design a plan you approve before anything runs",
   },
   {
     command: "/implement",

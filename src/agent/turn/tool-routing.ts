@@ -13,10 +13,12 @@ import {
   renderCompactAgentSystemPrompt,
 } from "../../prompts/index.js";
 import { getReliabilityPolicy } from "../reliability-policy.js";
+import { PENTEST_TOOL_NAMES } from "./pentest-tools.js";
 
 export interface ToolRoutingInput {
   readonly mode: Mode;
   readonly mcpPresent: boolean;
+  readonly pentestTools: boolean;
   readonly toolCalling: ToolCallingMode | undefined;
   readonly useCompactSystemPrompt: () => boolean;
 }
@@ -44,8 +46,10 @@ const nameAllowed = (
   name: string,
   provider: ProviderId,
   model: string,
+  pentestTools: boolean,
 ): boolean => {
   if (name === "image.view") return modelSupportsVision(provider, model);
+  if (PENTEST_TOOL_NAMES.has(name)) return pentestTools;
   return true;
 };
 
@@ -54,7 +58,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     [
       ...availableToolNames(),
       ...(input.mcpPresent ? mcpAgentToolNames(input.mode === "ask") : []),
-    ].filter((name) => nameAllowed(name, provider, model));
+    ].filter((name) => nameAllowed(name, provider, model, input.pentestTools));
 
   const resolveNativeTools = (
     provider: ProviderId,

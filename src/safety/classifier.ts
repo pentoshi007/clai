@@ -122,7 +122,6 @@ export function isPentestToolCall(call: ToolCall): boolean {
   }
   if (
     call.name !== "shell.exec" &&
-    call.name !== "shell.start" &&
     call.name !== "terminal.start" &&
     call.name !== "terminal.send"
   ) {
@@ -187,7 +186,6 @@ export function scopeTargetForToolCall(call: ToolCall): string | undefined {
 
   if (
     call.name === "shell.exec" ||
-    call.name === "shell.start" ||
     call.name === "terminal.start" ||
     call.name === "terminal.send"
   ) {

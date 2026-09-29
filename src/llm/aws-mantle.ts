@@ -21,7 +21,7 @@ import {
   ingestOpenAiModelCatalog,
   streamIdleBudgets,
 } from "./http.js";
-import { generationFetch } from "./operation-usage.js";
+import { generationFetch, observeStreamUsage } from "./operation-usage.js";
 import {
   anthropicToolBodyFields,
   createAnthropicToolStreamState,
@@ -383,6 +383,7 @@ export const mantleProvider: LlmProvider = {
         if (parsed.type === "message_stop") sawMessageStop = true;
         if (parsed.type === "message_start" && parsed.message?.usage) {
           streamUsage = parseAnthropicUsage(parsed.message.usage) ?? streamUsage;
+          observeStreamUsage(streamUsage);
         }
         if (parsed.type === "message_delta") {
           if (parsed.delta?.stop_reason) {
@@ -392,6 +393,7 @@ export const mantleProvider: LlmProvider = {
             const out = parseAnthropicUsage(parsed.usage);
             if (out) {
               streamUsage = mergeAnthropicStreamUsage(streamUsage, out);
+              observeStreamUsage(streamUsage);
             }
           }
         }

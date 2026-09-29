@@ -32,7 +32,7 @@ export interface InstructionLoadInput {
 const EMPTY: AgentInstructions = { files: [], block: undefined, chars: 0 };
 
 interface CachedFile {
-  readonly signature: string;
+  readonly raw: string;
   readonly body: string;
   readonly truncated: boolean;
 }
@@ -70,16 +70,16 @@ function substantiveContent(body: string): string {
 async function readInstructionFile(
   candidate: InstructionCandidate,
 ): Promise<LoadedInstructionFile | undefined> {
-  let signature: string;
+  let raw: string;
   try {
     const info = await stat(candidate.path);
     if (!info.isFile() || info.size === 0) return undefined;
-    signature = `${info.mtimeMs}:${info.size}`;
+    raw = await readFile(candidate.path, "utf8");
   } catch {
     return undefined;
   }
   const cached = fileCache.get(candidate.path);
-  if (cached?.signature === signature) {
+  if (cached?.raw === raw) {
     if (!cached.body) return undefined;
     return {
       path: candidate.path,
@@ -88,22 +88,16 @@ async function readInstructionFile(
       truncated: cached.truncated,
     };
   }
-  let raw: string;
-  try {
-    raw = await readFile(candidate.path, "utf8");
-  } catch {
-    return undefined;
-  }
   const normalized = withoutHtmlComments(
     raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"),
   );
   if (substantiveContent(normalized).length === 0) {
-    fileCache.set(candidate.path, { signature, body: "", truncated: false });
+    fileCache.set(candidate.path, { raw, body: "", truncated: false });
     return undefined;
   }
   const truncated = normalized.length > MAX_FILE_CHARS;
   const body = truncated ? normalized.slice(0, MAX_FILE_CHARS).trimEnd() : normalized;
-  fileCache.set(candidate.path, { signature, body, truncated });
+  fileCache.set(candidate.path, { raw, body, truncated });
   return { path: candidate.path, scope: candidate.scope, body, truncated };
 }
 

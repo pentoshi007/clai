@@ -74,8 +74,6 @@ function researchResultSummary(call: ToolCall, ok: boolean): string {
       return "search complete";
     case "web.fetch":
       return "page fetched";
-    case "tool.batch":
-      return "lookups complete";
     case "fs.read":
       return "read";
     case "fs.list":
@@ -94,7 +92,6 @@ function researchResultSummary(call: ToolCall, ok: boolean): string {
 const ASK_RESEARCH_TOOLS = new Set([
   "web.search",
   "web.fetch",
-  "tool.batch",
   "fs.read",
   "fs.list",
   "fs.search",
