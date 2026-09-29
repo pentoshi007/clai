@@ -15,7 +15,7 @@ Rules:
 - LENGTH: aim for ~1800–3600 tokens of dense structured bullets — preserve every consequential fact, but finish every section and bullet within budget rather than cutting mid-sentence. Prefer one precise mention over repeated coverage.
 - DETAIL LEVEL: mechanism-level specificity. For code changes name the file path with line anchors, what changed, the before→after behavior, and the verification evidence (which tests/typecheck/build status prove it). For debugging name the root cause, each failed approach, and why it failed. For research name exact findings with their evidence. For pending work give the next concrete step a cold reader can execute immediately. A reader resuming with no other context must not need to re-discover anything recorded below.
 - NO DUPLICATION: state each fact exactly once, in its best section. This memory is prepended to a live context that ALSO re-injects fresh ACTIVE PLAN, SESSION STATE, and ENGAGEMENT SCOPE — do not restate the full plan or every task, and do not reproduce long user prompts verbatim; capture goals/deltas concisely.
-- Omit secrets, API keys, passwords, tokens, and full credential material. Say "[redacted]" if present.
+- Never copy secrets (API keys, passwords, tokens, private keys) into the memory. Credentials the user supplied are carried verbatim in the DURABLE WORK ENVELOPE, so refer to them by purpose only (for example "the user-supplied Stripe test key").
 - Omit progress bars, repeated failures, and decorative chatter — but list genuinely informative failures (with cause and attempt count) under Open risks / failures.
 - Do not wrap the whole answer in markdown code fences.
 - If something is unknown, write "(unknown)" rather than guessing.
@@ -76,6 +76,7 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
       "- Artifacts & paths: include only reusable artifacts the implementer may need (reports, downloads, extracted specs, scan outputs). Omit routine fs.list/fs.read/tool.check receipt paths and transient temp logs whose result is already summarized.",
       "- Durable engagement rules ONLY if they still bind implement (remote target/scope, authorized testing, non-destructive default, do not treat clai workspace as the target, no local dev server for remote assessments).",
       "- Plan-mode-only notes: gather-only / await-accept / no-exploit-yet gates that applied BEFORE accept — label historical; implementer is past that phase.",
+      "- Delegated work: keep every subagent, background job, and Responder task id with its title; fold the conclusions of results already read into Research evidence or Confirmed findings. Results not yet read are re-delivered after resume — list them as pending, never as read.",
       "- Commands/tools: only non-obvious or reusable commands and their outcomes. Do not repeat routine list/read/tool-version facts already captured above.",
       "- Current state: describe the last tool-observed state at compaction time. Do not claim plan acceptance/approval unless DURABLE STATE confirms it; distinguish transition assumptions from evidence.",
       "- Remaining work: ACTIVE PLAN is injected separately, so do not restate every task. Record only the next task, dependency/order caveats, blockers, or plan details not present in durable state.",
@@ -103,7 +104,8 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
       "",
       "How to fill sections (resume-quality critical — write for a reader with zero prior context):",
       "- User goals: the objective plus hard constraints the user imposed verbatim or near-verbatim (style rules, forbiddens, scope limits), and the requested execution boundary (entire program/all phases versus a named phase versus unspecified).",
-      "- Key facts and environment: mechanism-level truths discovered during the session — API/data shapes and field semantics, regex or parser behaviors, gate conditions and flag interactions, environment quirks (broken credentials, unavailable services, tool versions), and anything verified empirically. Each bullet must let the resumer act without re-verifying.",
+      "- Key facts and environment: mechanism-level truths discovered during the session — API/data shapes and field semantics, regex or parser behaviors, gate conditions and flag interactions, environment quirks (broken credentials, unavailable services, tool versions), and anything verified empirically, plus user-supplied values the remaining work needs (endpoints, test accounts, ids, config values) verbatim except secret values. Each bullet must let the resumer act without re-verifying.",
+      "- Delegated work: keep every subagent, background job, and Responder task id with its title. For results the session already read, record the conclusions that matter for the remaining work inline in the section where they are used (Key facts, Work completed, Current state) — not as a separate dump. Results not yet read are re-delivered after resume — list them as pending, never as read.",
       "- Decisions and constraints: each decision with its rationale and source (user directive, discovered evidence, tool constraint), not just the decision itself.",
       "- Work completed: one bullet per change/result with file path and line anchors, what changed, before→after behavior, and explicit verification evidence (test counts, exit codes, commands that passed, or 'not yet verified'). Group as Completed, then any reverted/abandoned changes with why.",
       "- In flight / blocked: edits made but not verified, designs decided but not applied, and blocked items with the exact missing piece — including the concrete next edit already determined but not yet performed.",
@@ -115,7 +117,7 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
       "",
       "Preserve: user intentions, decisions, constraints, requested execution boundary (entire program/all phases versus a named phase versus unspecified), referenced roadmap/plan/task/index paths, stack/package manager,",
       "commands and key results, plan task states/hierarchy, errors and failed approaches,",
-      "Responder notification ids, linked task/parent ids, job/PID/status, durable artifact paths, and the authoritative consumed/analyzed state from RESPONDER RESULT LEDGER entries. Never describe consumed=true ledger entries as unread, pending, or needing another artifact read.",
+      "Responder notification ids, linked task/parent ids, job/PID/status, subagent ids/titles, durable artifact paths, and the authoritative consumed/analyzed state from RESPONDER RESULT LEDGER entries. Never describe consumed=true ledger entries as unread, pending, or needing another artifact read.",
       "servers/jobs still running, and exactly what remains.",
       "",
       "AVOID BLOAT — this memory is prepended to a context that re-injects fresh ACTIVE PLAN, SESSION STATE, and ENGAGEMENT SCOPE after compaction:",
@@ -141,7 +143,7 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
   );
 
   const target =
-    "Be specific over short. Target ~1800–3600 tokens of dense continuation memory (~900–1600 for plan-mode handoffs), using more only when required to preserve verified state. Finish every bullet and section. End on a complete sentence. No secrets, fabricated successes, raw pseudo-tool syntax, or full tool dumps.";
+    "Be specific over short. Target ~1800–3600 tokens of dense continuation memory (~900–1600 for plan-mode handoffs), using more only when required to preserve verified state. Finish every bullet and section. End on a complete sentence. No secret values, fabricated successes, raw pseudo-tool syntax, or full tool dumps.";
   sections.push(target);
 
   if (durable) {
@@ -237,7 +239,7 @@ export function buildCompactionChunkPrompt(input: {
   const focus =
     input.purpose === "plan-implement"
       ? "Preserve targets, stack, confirmed findings, negative results, untested classes, artifact paths, commands and remaining work."
-      : "Preserve goals, decisions, file paths with line anchors, before→after behavior of each change, verification evidence, environment quirks, commands and their results, task states, failures (with causes), running jobs and remaining work.";
+      : "Preserve goals, decisions, file paths with line anchors, before→after behavior of each change, verification evidence, environment quirks, commands and their results, task states, failures (with causes), subagent/job/Responder ids with titles and the conclusions of results already read, running jobs and remaining work.";
   return [
     `Summarize region ${input.index + 1} of ${input.total} of one continuous session.`,
     "This is a partial region: do not write an orientation line, do not speculate about regions you cannot see, and do not answer the user.",

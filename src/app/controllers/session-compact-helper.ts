@@ -27,6 +27,7 @@ import { buildContextBreakdown } from "../../agent/context-breakdown.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../../llm/context-snapshot.js";
+import { claimDiscardedAttemptUsage } from "../../llm/operation-usage.js";
 import {
   OperationLedger,
   singleAdmissionOperationPolicy,
@@ -95,6 +96,7 @@ interface RunSessionCompactionOptions {
   readonly keepRecent: number;
   readonly signal: AbortSignal;
   readonly purpose?: "default" | "plan-implement" | undefined;
+  readonly durableEnvelope?: string | undefined;
   readonly provider: ProviderId | undefined;
   readonly model: string | undefined;
   readonly successfulRequest?: SuccessfulRequestSnapshot | undefined;
@@ -153,6 +155,7 @@ export async function runSessionCompaction(
     options.contextLimitTokens,
   );
   const instruction = buildDirectCompactionPrompt({
+    ...(options.durableEnvelope ? { durableState: options.durableEnvelope } : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
   const replayPlan = replayRequest
@@ -247,7 +250,11 @@ export async function runSessionCompaction(
             contextLimitTokens,
             operation,
             onUsage: (completion) => {
-              if (!completion.usage || !options.isCurrent()) return;
+              if (!options.isCurrent()) return;
+              for (const discarded of claimDiscardedAttemptUsage(completion.operationUsage)) {
+                emit("token-usage", { ...discarded.usage, provider: discarded.provider, model: discarded.model, auxiliary: true });
+              }
+              if (!completion.usage) return;
               const attempt = contextAttemptFromOperationUsage(completion.operationUsage);
               emit("token-usage", {
                 ...completion.usage,
@@ -276,6 +283,7 @@ export async function runSessionCompaction(
           budgetTokens: 0,
           keepRecent: options.keepRecent,
           purpose: options.purpose,
+          ...(options.durableEnvelope ? { durableEnvelope: options.durableEnvelope } : {}),
           singleAdmission: true,
           ...(replay ? { forceDirectSinglePass: true } : {}),
           ...(forcePrefixSlice ? { forcePrefixSlice: true } : {}),

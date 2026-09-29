@@ -37,6 +37,10 @@ import {
 } from "./session-context-usage.js";
 import { createSessionPolicy, type SessionPolicy } from "../../agent/session-policy.js";
 import { SubagentManager } from "../../agent/subagents/manager.js";
+import { knownAttemptUsage, type OperationUsageSnapshot } from "../../llm/operation-usage.js";
+import { getActiveProjectRoot } from "../../agent/project-root.js";
+import { createCompactionDurableEnvelopeBuilder } from "../../agent/turn/compaction-durable-envelope.js";
+import { detectPackageManager } from "../../agent/workspace-orient.js";
 import { createSubagentStore } from "../../store/subagents.js";
 import { SessionSubagents } from "./session-subagents.js";
 import { previousTurnSignal } from "./turn-continuation.js";
@@ -241,10 +245,11 @@ export class SessionController implements Disposable {
       complete:
         deps.titleCompleter ??
         ((messages) =>
-          completeForSessionNaming(messages, {
-            provider: this.provider,
-            model: this.model,
-          })),
+          completeForSessionNaming(
+            messages,
+            { provider: this.provider, model: this.model },
+            (snapshot) => this.recordAuxiliaryOperation(snapshot),
+          )),
       applyTitle: (title) => {
         this.sessionTitle = title;
         this.notifyState();
@@ -605,7 +610,14 @@ export class SessionController implements Disposable {
   private createSubagents(): SubagentManager {
     return new SubagentManager(this.sessionIdValue, {
       ...(this.deps.noHistory ? {} : { store: createSubagentStore() }),
+      onOperationUsage: (snapshot) => this.recordAuxiliaryOperation(snapshot),
     });
+  }
+
+  private recordAuxiliaryOperation(snapshot: OperationUsageSnapshot): void {
+    for (const attempt of knownAttemptUsage(snapshot)) {
+      this.recordTokenUsage(attempt.usage, attempt.model, attempt.provider, undefined, undefined, true);
+    }
   }
 
   private replaceSubagents(): void {
@@ -699,6 +711,7 @@ export class SessionController implements Disposable {
         : undefined);
 
     try {
+      const durableEnvelope = await this.compactionEnvelope(history);
       return await withSessionAffinity(this.sessionIdValue, () =>
         runSessionCompaction({
           history,
@@ -706,6 +719,7 @@ export class SessionController implements Disposable {
           keepRecent,
           signal: abortController.signal,
           purpose: options.purpose,
+          ...(durableEnvelope ? { durableEnvelope } : {}),
           provider,
           model: this.model ?? getProviderModel(provider ?? cfg.defaultProvider),
           ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
@@ -745,6 +759,21 @@ export class SessionController implements Disposable {
       this.responder?.scheduleWake();
       this.subagentDelivery.scheduleWake();
     }
+  }
+
+  private compactionEnvelope(history: readonly ChatMessage[]): Promise<string | undefined> {
+    const sessionId = this.sessionIdValue;
+    const jobs = this.deps.jobs;
+    return createCompactionDurableEnvelopeBuilder({
+      messages: history,
+      loadPlan: () => this.deps.persistence.loadPlan(sessionId),
+      getProjectRoot: getActiveProjectRoot,
+      detectPackageManager,
+      getPendingNotifications: () => jobs?.pendingNotifications(sessionId) ?? [],
+      getRunningJobs: () => jobs?.running(sessionId) ?? [],
+      getRecentJobs: () => jobs?.recent?.(12, sessionId) ?? [],
+      getSubagents: () => this.subagentsValue.list(),
+    })();
   }
 
   private settlePersistedResponderResults(): void {

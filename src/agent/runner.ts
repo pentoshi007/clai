@@ -15,6 +15,7 @@ import {
   providerInputTokenBudget,
 } from "../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
+import { claimDiscardedAttemptUsage } from "../llm/operation-usage.js";
 import { createStreamRecoveryState } from "./stream-recovery.js";
 import type {
   SingleToolResult,
@@ -721,6 +722,7 @@ export async function runAgentTurn(
           jobManager.getPendingNotifications(session.sessionId),
         runningJobs: () => jobManager.getRunningJobs(session.sessionId),
         recentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
+        subagents: () => session.subagents?.list() ?? [],
         requestSnapshot: () => loop.lastSuccessfulRequestSnapshot,
         measureRequestTokens,
         thinking: () => config.thinking,
@@ -740,6 +742,9 @@ export async function runAgentTurn(
         },
         writeDelta: writeCompactionDelta,
         onUsage: (completion) => {
+          for (const discarded of claimDiscardedAttemptUsage(completion.operationUsage)) {
+            emit({ type: "token-usage", ...discarded, auxiliary: true });
+          }
           if (!completion.usage) return;
           const attempt = contextAttemptFromOperationUsage(
             completion.operationUsage,

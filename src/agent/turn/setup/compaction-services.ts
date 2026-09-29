@@ -14,6 +14,7 @@ import type {
   ResponderNotification,
 } from "../../../tools/jobs.js";
 import type { OutcomeEnvelope } from "../../outcomes.js";
+import type { SubagentRun } from "../../subagents/types.js";
 import type { WorkLedger } from "../../durable-envelope.js";
 import type {
   CompactionExecutionState,
@@ -55,6 +56,7 @@ export interface CompactionServicesInput {
   readonly pendingNotifications: () => readonly ResponderNotification[];
   readonly runningJobs: () => readonly BackgroundJob[];
   readonly recentJobs: () => readonly BackgroundJob[];
+  readonly subagents: () => readonly SubagentRun[];
   readonly requestSnapshot: () => SuccessfulRequestSnapshot | undefined;
   readonly measureRequestTokens?:
     | ((estimatedTokens: number) => number | undefined)
@@ -143,10 +145,10 @@ export const createCompactionServices = (
     loadPlan: input.loadPlanStrict,
     getProjectRoot: input.projectRoot,
     detectPackageManager: input.detectPackageManager,
-    getUnreadNotificationIds: () =>
-      input.pendingNotifications().map((notification) => notification.id),
+    getPendingNotifications: input.pendingNotifications,
     getRunningJobs: input.runningJobs,
     getRecentJobs: input.recentJobs,
+    getSubagents: input.subagents,
   });
 
   const maybeAutoCompact = createCompactionCoordinator({
