@@ -7,7 +7,12 @@ import {
 import type { InkTheme } from "../render/ink-theme.js";
 import { emptyRow, filterRow } from "./list-rows.js";
 import { windowCounter } from "./list-window.js";
-import { layoutPickerOptions, pickerScrollTop } from "../../ui-core/rendering/picker-layout.js";
+import {
+  layoutPickerOptions,
+  pickerScrollTop,
+  type PickerLine,
+} from "../../ui-core/rendering/picker-layout.js";
+import { pickerToneColor } from "../../ui-core/rendering/picker-style.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, unhandled, type PanelKeyResult } from "./panel-effect.js";
 
@@ -136,8 +141,28 @@ function pickerHints(ink: InkTheme, request: PickerRequest): readonly string[] {
   ];
   if (request.rowAction) hints.push(request.rowAction.hint);
   hints.push("esc cancel", "type to filter");
-  hints.push("pg↑↓ scroll");
+  hints.push(`pg${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} scroll`);
   return hints;
+}
+
+function pickerLine(
+  ink: InkTheme,
+  option: PickerOption | undefined,
+  line: PickerLine,
+  offset: number,
+  marker: string,
+  twoLine: boolean,
+): string {
+  if (line.description) return ink.style(`${marker}${line.text}`, { fg: "muted" });
+  const icon = offset === 0 && option?.icon && line.text.startsWith(option.icon) ? option.icon : "";
+  const text = line.text.slice(icon.length);
+  const tail = !twoLine && option?.description && text.endsWith(option.description)
+    ? option.description
+    : "";
+  const head = text.slice(0, text.length - tail.length);
+  const paintedIcon = icon ? ink.hex(pickerToneColor(option?.tone, ink.theme), icon) : "";
+  const paintedTail = tail ? ink.fg("muted", tail) : "";
+  return `${marker}${paintedIcon}${ink.fg("foreground", head)}${paintedTail}`;
 }
 
 export function pickerView(input: PickerViewInput): PickerView {
@@ -154,7 +179,9 @@ export function pickerView(input: PickerViewInput): PickerView {
   const top = pickerScrollTop(items, cursor, capacity, state.top);
 
   const body: string[] = [];
-  if (filterRows === 1) body.push(filterRow(ink, width, "filter", state.query));
+  if (filterRows === 1) {
+    body.push(filterRow(ink, width, "filter", `${state.query} ${ink.glyphs.separator} ${count}/${request.options.length}`));
+  }
 
   if (count === 0) {
     body.push(emptyRow(ink, width));
@@ -166,20 +193,11 @@ export function pickerView(input: PickerViewInput): PickerView {
       item.lines.forEach((line, offset) => {
         if (item.top + offset < top || item.top + offset >= top + capacity) return;
         const marker = width >= 3 ? active && offset === 0 ? `${ink.glyphs.promptMark} ` : "  " : "";
-        const tail = !twoLine && !line.description && option?.description && line.text.endsWith(option.description)
-          ? option.description
-          : undefined;
-        if (tail) {
-          const head = line.text.slice(0, line.text.length - tail.length);
-          body.push(
-            `${marker}${ink.style(head, { fg: active ? "accent" : "foreground", bold: active })}${ink.style(tail, { fg: "muted", bold: active })}`,
-          );
+        if (active) {
+          body.push(ink.selectedRow(`${marker}${line.text}`, width));
           return;
         }
-        body.push(ink.style(`${marker}${line.text}`, {
-          fg: line.description ? "muted" : active ? "accent" : "foreground",
-          bold: active,
-        }));
+        body.push(pickerLine(ink, option, line, offset, marker, twoLine));
       });
     });
   }

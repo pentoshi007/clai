@@ -4,9 +4,11 @@ import { confirmKey, confirmRowsWanted } from "./confirm-panel.js";
 import { jobsKey, JOBS_INITIAL_STATE } from "./jobs-panel.js";
 import { keysInitialState, keysKey } from "./keys-panel.js";
 import {
+  pagerDiffOptions,
   pagerKey,
   pagerViewModel,
   PAGER_INITIAL_STATE,
+  type PagerViewModel,
   resolvePagerMarkdownMode,
 } from "./pager-panel.js";
 import type { PanelEffect } from "./panel-effect.js";
@@ -166,12 +168,7 @@ export class PanelController {
         return true;
       }
       case "pager": {
-        const view = pagerViewModel(
-          snapshot.pagerBody,
-          this.deps.columns(),
-          rows,
-          snapshot.pager.format,
-        );
+        const view = this.pagerView(snapshot.pagerBody, snapshot.overlay);
         const result = pagerKey({
           state: snapshot.pager,
           chord,
@@ -387,7 +384,7 @@ export class PanelController {
       const growing = source.isGrowing?.() ?? true;
       void source.readTail!().then((page) => {
         if (!active || this.deps.overlay.getState() !== state || !this.snapshot.pager.follow) return;
-        const lines = pagerViewModel(page.body, this.deps.columns(), this.deps.rows(), this.snapshot.pager.format).lines;
+        const lines = this.pagerView(page.body, state).lines;
         this.publish({
           ...this.snapshot,
           pagerBody: page.body,
@@ -413,6 +410,12 @@ export class PanelController {
       unwatch();
     };
     pull();
+  }
+
+  private pagerView(body: string, overlay: OverlayState): PagerViewModel {
+    const format = this.snapshot.pager.format;
+    const diff = pagerDiffOptions(overlay);
+    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, false, undefined, diff);
   }
 
   private apply(effects: readonly PanelEffect[]): void {
