@@ -21,8 +21,8 @@ describe("task work signals", () => {
     expect(
       readTaskWorkSignals(
         {
-          name: "shell.start",
-          args: { command: "npm create vite@latest app" },
+          name: "shell.exec",
+          args: { command: "npm create vite@latest app", background: "always" },
         },
         "",
       ),

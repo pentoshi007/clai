@@ -1,7 +1,8 @@
 import type { TaskEvidence } from "../../store/plan.js";
 import type { ToolCall } from "../../types.js";
 import { looksLikeInstallTaskTitle, looksLikeScaffoldTaskTitle } from "./task-classification.js";
-import { isScaffoldCreateCommand } from "./tool-budgets.js";
+import { isOsPackageInstallCommand, isScaffoldCreateCommand } from "./tool-budgets.js";
+import { startsBackgroundJob } from "../../tools/command-intent.js";
 
 export interface TaskWorkLedger extends TaskEvidence {
   taskId: string;
@@ -59,7 +60,7 @@ export function isDevServerCall(call: ToolCall): boolean {
   const cmd = commandOf(call);
   if (isScaffoldCreateCommand(cmd)) return false;
 
-  if (call.name === "shell.start") {
+  if (startsBackgroundJob(call)) {
     if (!cmd) return true;
     return (
       /\bnpm\s+run\s+dev\b|\byarn\s+dev\b|\bpnpm\s+(run\s+)?dev\b|\bbun\s+(run\s+)?dev\b|\bnext\s+dev\b|\bnuxt\s+dev\b|\bcargo\s+watch\b|\bflask\s+run\b|\buvicorn\b|\bgunicorn\b|\brails\s+s(?:erver)?\b|\bdjango(-admin)?\s+runserver\b|\bdotnet\s+run\b|\bgo\s+run\b/i.test(
@@ -91,7 +92,7 @@ function isLocalHttpProbe(call: ToolCall): boolean {
 export function isPackageInstallCommand(cmd: string): boolean {
   return /\bnpm\s+i(nstall)?\b|\byarn\s+install\b|\bpnpm\s+i(nstall)?\b|\bbun\s+install\b|\bpip\s+install\b|\bpoetry\s+install\b|\bcargo\s+build\b|\bcomposer\s+install\b|\bbundle\s+install\b|\bgo\s+mod\s+tidy\b/.test(
     cmd,
-  );
+  ) || isOsPackageInstallCommand(cmd);
 }
 
 export function pickPendingTaskForToolCall<T extends { id: string; title: string }>(

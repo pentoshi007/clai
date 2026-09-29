@@ -105,7 +105,7 @@ describe("isolated read-only subagent worker", () => {
     expect(requests[0]!.messages).toEqual(snapshots[0]);
     expect(requests[1]!.messages.slice(0, 2)).toEqual(snapshots[0]);
     expect(requests[0]!.tools).toBe(requests[1]!.tools);
-    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "http.fetch", "image.ocr", "image.view", "pdf.read", "shell.exec", "skill.list", "skill.load", "sysinfo", "tool.check", "web.fetch", "web.search", "wordlist.find"]);
+    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "http.fetch", "image.ocr", "image.view", "pdf.read", "shell.exec", "skill.list", "skill.load", "tool.check", "web.fetch", "web.search", "wordlist.find"]);
     expect(requests[0]!.messages[0]!.content).not.toContain(input.run.prompt);
     expect(requests[0]!.messages[0]!.content).not.toContain(cwd);
     expect(requests[0]!.messages[0]!.content.length).toBeLessThan(1800);

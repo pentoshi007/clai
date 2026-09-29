@@ -293,11 +293,11 @@ describe("durable outcome and evidence invariants", () => {
       kind: "operation",
     });
     recordToolEvidence(state, {
-      tool: "shell.start",
+      tool: "shell.exec",
       callId: "start",
       ok: true,
       output: "pid 12",
-      args: { command: "npm run dev" },
+      args: { command: "npm run dev", background: "always" },
     });
     recordToolEvidence(state, {
       tool: "shell.tail",

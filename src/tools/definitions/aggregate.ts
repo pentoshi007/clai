@@ -1,5 +1,4 @@
 import type { ToolDefinition } from "../../types.js";
-import { TOOL_DEFINITIONS_CONTEXT_1 } from "./context-1.js";
 import { TOOL_DEFINITIONS_CONTEXT_2 } from "./context-2.js";
 import { def, emptyObject } from "./define.js";
 import { TOOL_DEFINITIONS_FILES } from "./files.js";
@@ -17,7 +16,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_NETWORK,
   ...TOOL_DEFINITIONS_WEB_1,
   ...TOOL_DEFINITIONS_WEB_2,
-  ...TOOL_DEFINITIONS_CONTEXT_1,
   ...TOOL_DEFINITIONS_ORCHESTRATION,
   ...TOOL_DEFINITIONS_CONTEXT_2,
   ...TOOL_DEFINITIONS_SUBAGENTS,
@@ -208,23 +206,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
             "Exact notification id from the delivered Responder result",
         },
       },
-      additionalProperties: false,
-    },
-    { mutates: true },
-  ),
-  def(
-    "task.read",
-    "Compatibility alias for job.read using notificationId. It does not require an active plan. Call only after analyzing the delivered Responder result.",
-    {
-      type: "object",
-      properties: {
-        notificationId: {
-          type: "string",
-          description:
-            "Exact notification id from the Responder inbox entry you finished analyzing",
-        },
-      },
-      required: ["notificationId"],
       additionalProperties: false,
     },
     { mutates: true },

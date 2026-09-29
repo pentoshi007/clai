@@ -4,7 +4,6 @@ export const QUIET_META_TOOL_NAMES = new Set([
   "task.add",
   "task.move",
   "job.read",
-  "task.read",
   "task.update",
 ]);
 

@@ -99,12 +99,12 @@ describe("tool dispatch", () => {
     const h = harness();
     const outcome = await resolveToolDispatch(
       h.ports,
-      { name: "shell.start", args: { command: "x", parentTaskId: "ghost" } },
+      { name: "shell.exec", args: { command: "x", parentTaskId: "ghost", background: "always" } },
       plan([task({ id: "t1", state: "in_progress" })]),
     );
     expect(outcome.kind).toBe("reject");
     if (outcome.kind !== "reject") throw new Error("expected reject");
-    expect(outcome.reason).toContain("shell.start failed:");
+    expect(outcome.reason).toContain("shell.exec failed:");
   });
 
   it("keeps an existing ledger for the same dispatch target", async () => {

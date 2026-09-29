@@ -2,8 +2,8 @@
 //
 // Asserts the tool registry exposes the new `web.search` and
 // `web.fetch` handlers (Requirement 4.1) and that both classify as
-// `safe` so `tool.batch` accepts them in its fan-out flow
-// (`BATCH_SAFE_TOOLS` membership; Requirement 4.6).
+// `safe` so parallel tool calls can run them concurrently
+// (`PARALLEL_SAFE_TOOLS` membership; Requirement 4.6).
 
 import { describe, expect, it } from "vitest";
 

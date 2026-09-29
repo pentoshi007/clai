@@ -354,7 +354,6 @@ export function engagementActionForToolCall(call: ToolCall): EngagementAction | 
   }
   if (
     call.name !== "shell.exec" &&
-    call.name !== "shell.start" &&
     call.name !== "terminal.start" &&
     call.name !== "terminal.send"
   ) {
@@ -428,7 +427,6 @@ export function engagementActionsForToolCall(
   if (!primary) return [];
   if (
     call.name !== "shell.exec" &&
-    call.name !== "shell.start" &&
     call.name !== "terminal.start" &&
     call.name !== "terminal.send"
   ) {

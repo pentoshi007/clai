@@ -71,13 +71,10 @@ describe("TOOL-003 timeoutMs is opt-in per tool", () => {
   it("omits timeoutMs from tools that ignore it", () => {
     const defs = getToolDefinitions();
     const byName = new Map(defs.map((d) => [d.name, d]));
-    for (const name of ["fs.read", "fs.write", "fs.list", "shell.start"]) {
+    for (const name of ["fs.read", "fs.write", "fs.list"]) {
       const props = byName.get(name)?.parameters.properties ?? {};
       expect(Object.keys(props)).not.toContain("timeoutMs");
     }
-    expect(
-      Object.keys(byName.get("shell.start")?.parameters.properties ?? {}),
-    ).not.toContain("responder");
     for (const name of ["shell.exec", "http.fetch", "pdf.read", "image.ocr"]) {
       const props = byName.get(name)?.parameters.properties ?? {};
       expect(Object.keys(props)).toContain("timeoutMs");

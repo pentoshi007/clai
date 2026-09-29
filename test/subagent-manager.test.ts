@@ -70,20 +70,6 @@ describe("SubagentManager", () => {
     expect(manager.start(assignment).status).toBe("running");
   });
 
-  it("launches a batch of independent assignments together", async () => {
-    const { manager, work } = controlled();
-    const runs = manager.startMany([
-      { ...assignment, prompt: "First" },
-      { ...assignment, prompt: "Second" },
-      { ...assignment, prompt: "Third" },
-    ]);
-    expect(runs).toHaveLength(3);
-    await tick();
-    expect(work).toHaveLength(3);
-    for (const item of work) item.resolve("A report");
-    await expect(Promise.all(runs.map((run) => manager.wait(run.id)))).resolves.toHaveLength(3);
-  });
-
   it("keeps aborting assignments reserved and ignores late events and reports", async () => {
     const { manager, work } = controlled();
     manager.setEnabled(true);

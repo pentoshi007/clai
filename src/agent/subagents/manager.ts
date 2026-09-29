@@ -125,21 +125,6 @@ export class SubagentManager {
     return this.startAssigned(assignment);
   }
 
-  startMany(values: readonly SubagentAssignment[]): readonly SubagentRun[] {
-    this.assertAvailable();
-    if (values.length < 2 || values.length > 3) throw new Error("Start between two and three subagents at once");
-    const assignments = values.map((value) => this.assignment(value));
-    const fingerprints = new Set<string>();
-    for (const assignment of assignments) {
-      const key = fingerprint(assignment);
-      if (fingerprints.has(key)) throw new Error("Duplicate assignments in one subagent batch");
-      this.assertUnique(assignment);
-      fingerprints.add(key);
-    }
-    this.assertCapacity(assignments.length);
-    return Object.freeze(assignments.map((assignment) => this.startAssigned(assignment)));
-  }
-
   private snapshot(run: SubagentRun): SubagentRun {
     const cached = this.snapshots.get(run);
     if (cached) return cached;

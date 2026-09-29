@@ -3,7 +3,6 @@ import { jobManager } from "../../src/tools/jobs.js";
 import { toolRegistry } from "../../src/tools/registry.js";
 
 const shellExec = toolRegistry["shell.exec"]!;
-const shellStart = toolRegistry["shell.start"]!;
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -116,8 +115,12 @@ describe("TOOL-002 shell.exec background mode", () => {
     });
 
     start.mockClear();
-    await shellStart({ command: "npm run dev", responder: true }, {});
+    await shellExec(
+      { command: "npm run dev", background: "always", responder: true, name: "web" },
+      {},
+    );
     expect(start.mock.calls[0]?.[1]).toMatchObject({
+      name: "web",
       responder: false,
       wakeOnCompletion: false,
     });

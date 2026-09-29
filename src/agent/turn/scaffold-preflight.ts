@@ -23,7 +23,7 @@ const NO_SKIP: ScaffoldPreflightDecision = {
 export const decideScaffoldPreflight = (
   call: ToolCall,
 ): ScaffoldPreflightDecision => {
-  if (call.name !== "shell.exec" && call.name !== "shell.start") return NO_SKIP;
+  if (call.name !== "shell.exec") return NO_SKIP;
   const command = call.args.command;
   if (typeof command !== "string" || !isScaffoldCreateCommand(command)) {
     return NO_SKIP;

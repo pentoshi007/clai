@@ -16,7 +16,6 @@ describe("plan mode gather-only policy", () => {
       "tool.check",
       "wordlist.find",
       "shell.exec",
-      "shell.start",
       "pkg.install",
       "plan.create",
     ]) {

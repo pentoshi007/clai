@@ -28,7 +28,7 @@ const shellIsBlocked = (call: ToolCall): boolean => {
   if (call.name === "terminal.start" || call.name === "terminal.send") {
     return true;
   }
-  if (call.name !== "shell.exec" && call.name !== "shell.start") return false;
+  if (call.name !== "shell.exec") return false;
   return !isPlanModeAllowedShellCommand(commandUnderReview(call));
 };
 

@@ -17,13 +17,13 @@ export const IMPLEMENT_PROMPT_CODING =
   "Work through pending tasks in dependency order. For each: mark in_progress → do real work → verify → mark done (or failed and recover). " +
   "Skip tasks already done. Adapt if reality differs from the plan. " +
   "Do not claim done without tool evidence. Build for real with fs.write / fs.writeMany when needed. " +
-  "For local apps: shell.start, leave the server running, report URL + port + job id.";
+  'For local apps: start the server with shell.exec background:"always", leave it running, report URL + port + job id.';
 
 export const IMPLEMENT_PROMPT_PENTEST =
   "Plan approved. Execute the engagement tasks. " +
   "Work through pending tasks: in_progress → recon/testing with tools → done (or failed with a note). " +
-  "Prefer tool.batch / http.fetch for parallel recon; run nmap, dig, whois, and other recon commands via shell.exec with the flags the situation calls for; continue when one lookup fails. " +
-  "Do NOT start a local dev server, npm run dev, bun run, vite, next, or shell.start. " +
+  "Emit independent read-only lookups (http.fetch, web.fetch) together so they run in parallel; run nmap, dig, whois, and other recon commands via shell.exec with the flags the situation calls for; continue when one lookup fails. " +
+  "Do NOT start a local dev server, npm run dev, bun run, vite, next, or any background server. " +
   "Do NOT list or read the clai workspace/package.json as a follow-up. Stay on the remote engagement target/scope. " +
   "When all tasks are done, write the report if needed and STOP with findings — no localhost step.";
 

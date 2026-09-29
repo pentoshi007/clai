@@ -146,7 +146,7 @@ describe("God Mode Phase 1 contracts", () => {
   it("classifies scanner processes and active HTTP while excluding passive requests", () => {
     expect(
       isPentestToolCall({
-        name: "shell.start",
+        name: "shell.exec",
         args: { command: "nmap -sV example.com" },
       }),
     ).toBe(true);
@@ -164,7 +164,7 @@ describe("God Mode Phase 1 contracts", () => {
     ).toBe(false);
     expect(
       isPentestToolCall({
-        name: "shell.start",
+        name: "shell.exec",
         args: { command: "npm run dev" },
       }),
     ).toBe(false);

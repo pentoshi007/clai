@@ -54,9 +54,10 @@ describe("tool definitions", () => {
       enum?: string[];
     };
     expect(state.enum).toContain("failed");
-    const read = TOOL_DEFINITIONS.find((d) => d.name === "task.read")!;
-    expect(read.parameters.required).toEqual(["notificationId"]);
+    const read = TOOL_DEFINITIONS.find((d) => d.name === "job.read")!;
+    expect(Object.keys(read.parameters.properties)).toEqual(["jobId", "notificationId"]);
     expect(read.mutates).toBe(true);
+    expect(TOOL_DEFINITIONS.find((d) => d.name === "task.read")).toBeUndefined();
     const handoff = TOOL_DEFINITIONS.find((d) => d.name === "agent.handoff")!;
     expect(handoff.parameters.required).toEqual(["task", "reason"]);
     expect(handoff.askMode).toBeFalsy();
@@ -92,11 +93,11 @@ describe("tool definitions", () => {
     expect(check.parameters.properties.tools).toBeDefined();
   });
 
-  it("does not expose a generic execution deadline for shell.start", () => {
-    const start = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.start")!;
+  it("labels background jobs on shell.exec instead of a separate start tool", () => {
     const exec = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.exec")!;
-    expect(start.parameters.properties.timeoutMs).toBeUndefined();
     expect(exec.parameters.properties.timeoutMs).toBeDefined();
+    expect(exec.parameters.properties.name).toMatchObject({ type: "string" });
+    expect(TOOL_DEFINITIONS.find((definition) => definition.name === "shell.start")).toBeUndefined();
   });
 
   it("guides subagent briefs without adding mandatory assignment gates", () => {
@@ -110,25 +111,21 @@ describe("tool definitions", () => {
     expect(start.description).toMatch(/not a fixed procedure or completion gate/i);
     expect(prompt.description).toMatch(/appropriate depth\/technicality/i);
     expect(context.description).toMatch(/never send the whole conversation or parent system\/project\/skill boilerplate/i);
-    const restart = TOOL_DEFINITIONS.find((definition) => definition.name === "subagent.restart")!;
-    expect(restart.description).toMatch(/do not assume runtime call deduplication/i);
+    expect(start.description).toMatch(/call subagent\.start once per assignment in the same response/i);
   });
 
   it("distinguishes finite, unattended, and prompt-driven execution tools", () => {
     const exec = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.exec")!;
-    const start = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.start")!;
     const terminal = TOOL_DEFINITIONS.find(
       (definition) => definition.name === "terminal.start",
     )!;
     const send = TOOL_DEFINITIONS.find((definition) => definition.name === "terminal.send")!;
 
-    expect(exec.description).toMatch(/finite shell command/i);
-    expect(exec.description).toMatch(/shell\.start for persistent servers/i);
-    expect(start.description).toMatch(/persistent server\/watcher\/listener/i);
-    expect(start.description).toMatch(/readiness probe/i);
+    expect(exec.description).toMatch(/persistent servers, watchers, and listeners: background:"always" with a name/i);
+    expect(exec.description).toMatch(/readiness probe/i);
     expect(terminal.description).toMatch(/interactive process or REPL/i);
     expect(terminal.description).toMatch(/need later input/i);
-    expect(terminal.description).toMatch(/shell\.start for unattended services/i);
+    expect(terminal.description).toMatch(/shell\.exec background:"always" for unattended services/i);
     expect(send.description).toMatch(/never resend/i);
   });
 
