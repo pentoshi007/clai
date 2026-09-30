@@ -322,13 +322,14 @@ def run(timeout: float) -> int:
             drain(master, output, probe, 0.15)
             send(master, b"\r")
             wait_for(process, master, output, probe, lambda data: b"Commands" in data, timeout, "help pager")
+            pager_closed_at = len(output)
             send(master, b"q")
             wait_for(
                 process,
                 master,
                 output,
                 probe,
-                lambda data: b"Ask anything" in data,
+                lambda data: b"Ask anything" in data[pager_closed_at:],
                 timeout,
                 "composer after pager",
             )
