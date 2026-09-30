@@ -180,6 +180,20 @@ export const rtkPathEnv = (entry: RtkPathEntry): string =>
     ? `${entry.dir}${delimiter}${augmentedPathEnv()}`
     : `${augmentedPathEnv()}${delimiter}${entry.dir}`;
 
+export const probeRtkPath = async (path: string): Promise<RtkStatus> => {
+  const candidate = await probeCandidate(path);
+  if (candidate.state === "ready") {
+    const onPath = await findExecutable("rtk");
+    return path === onPath
+      ? { state: "ready", path, version: candidate.version }
+      : { state: "ready", path, version: candidate.version, pathEntry: shimPathEntry(path) };
+  }
+  if (candidate.state === "incompatible") {
+    return { state: "incompatible", path, version: candidate.version };
+  }
+  return { state: "missing" };
+};
+
 const probe = async (): Promise<RtkStatus> => {
   try {
     const onPath = await findExecutable("rtk");

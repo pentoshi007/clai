@@ -3,12 +3,13 @@ import { formatTokenCount } from "../../llm/token-usage.js";
 import { updateConfig } from "../../store/config.js";
 import { detectRtk, readRtkGain, type RtkGain, type RtkStatus } from "../../tools/rtk/binary.js";
 import {
-  RTK_INSTALL_HINT,
   rtkMaintenance,
   runRtkMaintenance,
+  setRtkMaintenanceListener,
   type RtkMaintenanceAction,
   type RtkMaintenanceResult,
   type RtkMaintenanceState,
+  type RtkProgress,
 } from "../../tools/rtk/install.js";
 import { rtkEnabled, rtkRewriteCount } from "../../tools/rtk/rewrite.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
@@ -28,6 +29,18 @@ const plural = (count: number, noun: string): string =>
 
 const progressive = (action: RtkMaintenanceAction): string =>
   action === "install" ? "Installing" : "Updating";
+
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+};
 
 const statusLine = (status: RtkStatus): string => {
   switch (status.state) {
@@ -52,9 +65,13 @@ const gainLine = (gain: RtkGain | undefined): string =>
 
 const statusOption = ({ status, gain, maintenance }: RtkView): PickerOption => {
   if (maintenance) {
+    const pct =
+      maintenance.totalBytes && maintenance.totalBytes > 0 && maintenance.receivedBytes !== undefined
+        ? ` ${Math.min(100, Math.round((maintenance.receivedBytes / maintenance.totalBytes) * 100))}%`
+        : "";
     return {
       value: "refresh",
-      label: `${progressive(maintenance.action)} rtk…`,
+      label: `${progressive(maintenance.action)} rtk${pct}…`,
       icon: "⟳",
       tone: "warn",
       description: `${maintenance.installer ? `via ${maintenance.installer} · ` : ""}shell commands run unmodified until it finishes · select to refresh`,
@@ -115,7 +132,7 @@ const maintenanceOption = ({ status, maintenance }: RtkView): PickerOption[] => 
           label: "Install rtk",
           icon: "↓",
           tone: "accent",
-          description: `${process.platform === "win32" ? "winget, else cargo" : "Homebrew, else the checksum-verified rtk installer, else cargo"} · clai stays usable meanwhile`,
+          description: `${process.platform === "win32" ? "winget, then a checksum-verified binary, then cargo" : "Homebrew, then a checksum-verified release binary, then cargo"} · clai stays usable meanwhile`,
         },
       ];
 };
@@ -152,16 +169,42 @@ const compressionHint = (): string => (rtkEnabled() ? "" : " · turn compression
 
 const maintenanceMessage = (result: RtkMaintenanceResult): string => {
   if (!result.ok) {
-    const manual = result.status.state === "ready" ? "" : ` · install manually: ${RTK_INSTALL_HINT}`;
-    return `rtk ${result.action} failed · ${result.reason}${manual}`;
+    return `rtk ${result.action} failed · ${result.reason}\n  ${result.manual.replace(/\n/g, "\n  ")}`;
   }
-  const { status, installer, previousVersion, action } = result;
+  const { status, installer, previousVersion, latestVersion, action, pathWarning } = result;
   if (!installer) return `rtk ${status.version} is already installed${compressionHint()}`;
-  if (action === "install") return `rtk ${status.version} installed via ${installer}${compressionHint()}`;
-  return previousVersion === status.version
-    ? `rtk ${status.version} is already the latest (${installer})`
-    : `rtk updated ${previousVersion ?? "?"} → ${status.version} via ${installer}`;
+  const base =
+    action === "install"
+      ? `rtk ${status.version} installed via ${installer}${compressionHint()}`
+      : previousVersion === status.version || latestVersion === status.version
+        ? `rtk ${status.version} is already the latest (${installer})`
+        : `rtk updated ${previousVersion ?? "?"} → ${status.version} via ${installer}`;
+  return pathWarning ? `${base}\n  ${pathWarning}` : base;
 };
+
+const PHASE_LABEL: Record<RtkProgress["phase"], string> = {
+  preparing: "checking rtk",
+  resolving: "resolving the latest release",
+  downloading: "downloading",
+  verifying: "verifying the checksum",
+  extracting: "extracting",
+  running: "installing",
+};
+
+const progressLine = (progress: RtkProgress): string => {
+  const method = progress.method ? ` via ${progress.method}` : "";
+  if (progress.phase === "downloading") {
+    const { receivedBytes = 0, totalBytes } = progress;
+    if (totalBytes && totalBytes > 0) {
+      const pct = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+      return `downloading rtk ${pct}% (${formatBytes(receivedBytes)}/${formatBytes(totalBytes)})${method}…`;
+    }
+    return receivedBytes > 0 ? `downloading rtk (${formatBytes(receivedBytes)})…` : `downloading rtk…`;
+  }
+  return `${PHASE_LABEL[progress.phase]}${method}…`;
+};
+
+const MAINTENANCE_TOAST_KEY = "rtk-maintenance";
 
 function startMaintenance(services: AppServices, action: RtkMaintenanceAction): void {
   const running = rtkMaintenance();
@@ -172,10 +215,20 @@ function startMaintenance(services: AppServices, action: RtkMaintenanceAction): 
     );
     return;
   }
-  services.session.notice("info", `${progressive(action)} rtk… clai stays usable meanwhile`);
+  let toastId = services.toast.info(`${progressive(action)} rtk…`, { key: MAINTENANCE_TOAST_KEY, sticky: true });
+  setRtkMaintenanceListener((progress) => {
+    toastId = services.toast.info(progressLine(progress), { key: MAINTENANCE_TOAST_KEY, sticky: true });
+  });
+  const settle = (level: "info" | "warn", text: string): void => {
+    setRtkMaintenanceListener(undefined);
+    services.toast.dismiss(toastId);
+    services.session.notice(level, text);
+  };
   void runRtkMaintenance(action)
-    .then((result) => services.session.notice(result.ok ? "info" : "warn", maintenanceMessage(result)))
-    .catch(() => undefined);
+    .then((result) => settle(result.ok ? "info" : "warn", maintenanceMessage(result)))
+    .catch((error: unknown) =>
+      settle("warn", `rtk ${action} failed · ${error instanceof Error ? error.message : String(error)}`),
+    );
 }
 
 async function announce(services: AppServices, enabled: boolean): Promise<void> {
