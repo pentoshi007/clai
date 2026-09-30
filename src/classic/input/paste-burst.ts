@@ -54,11 +54,16 @@ function textOf(events: readonly DecodedEvent[]): string {
   return text;
 }
 
-function hasLineBreakBeforeContent(events: readonly DecodedEvent[]): boolean {
-  let seenBreak = false;
+function hasLineBreakBetweenContent(events: readonly DecodedEvent[]): boolean {
+  let contentBefore = false;
+  let breakFollowsContent = false;
   for (const event of events) {
-    if (isLineBreak(event)) seenBreak = true;
-    else if (seenBreak && isContent(event)) return true;
+    if (isLineBreak(event)) {
+      breakFollowsContent ||= contentBefore;
+    } else if (isContent(event)) {
+      if (breakFollowsContent) return true;
+      contentBefore = true;
+    }
   }
   return false;
 }
@@ -118,7 +123,7 @@ export class PasteBurstAssembler {
       return emitted;
     }
     const startsBurst =
-      hasLineBreakBeforeContent(events) ||
+      hasLineBreakBetweenContent(events) ||
       (followsPlainInput && events.some(isLineBreak));
     if (startsBurst) {
       this.collected = textOf(events);
