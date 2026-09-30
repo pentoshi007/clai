@@ -14,6 +14,7 @@ export { OutputDecoder, RingBuffer };
 
 export interface ShellExecArgs {
   command: string;
+  requestedCommand?: string | undefined;
   env?: Readonly<Record<string, string>> | undefined;
   cwd?: string | undefined;
   timeoutMs?: number | undefined;

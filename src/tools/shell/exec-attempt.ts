@@ -71,11 +71,12 @@ export async function shellExecAttempt(
   const maxCaptureBytes = args.maxCaptureBytes ?? DEFAULT_MAX_CAPTURE_BYTES;
   const onLimit = args.onLimit ?? "continue";
   const halfModel = Math.max(512, Math.floor(maxModelBytes / 2));
+  const requestedCommand = args.requestedCommand ?? args.command;
 
   const start = Date.now();
   const artifact = args.noArtifact
     ? undefined
-    : await openArtifact(args.command, args.artifactPath);
+    : await openArtifact(requestedCommand, args.artifactPath);
 
   let head = "";
   const tail = new RingBuffer(halfModel);
@@ -87,7 +88,7 @@ export async function shellExecAttempt(
 
   return new Promise((resolve) => {
     const detached = process.platform !== "win32";
-    const stdio = chooseStdio(args.command, args.interactiveStdin);
+    const stdio = chooseStdio(requestedCommand, args.interactiveStdin);
     const usingInteractiveStdin = stdio[0] === "inherit";
     const restoreStdin = usingInteractiveStdin
       ? takeOverCookedStdin()
@@ -306,7 +307,7 @@ export async function shellExecAttempt(
         });
         return;
       }
-      const noMatchTool = benignNoMatchTool(args.command, code);
+      const noMatchTool = benignNoMatchTool(requestedCommand, code);
       const benignNote = (() => {
         if (!noMatchTool) return undefined;
         if (["diff", "diff3", "cmp", "comm"].includes(noMatchTool))

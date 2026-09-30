@@ -236,7 +236,7 @@ async function announce(services: AppServices, enabled: boolean): Promise<void> 
     services.session.notice("info", "RTK off · shell commands run unmodified");
     return;
   }
-  const status = await detectRtk();
+  const status = await detectRtk(true);
   if (status.state === "ready") {
     services.session.notice(
       "info",
