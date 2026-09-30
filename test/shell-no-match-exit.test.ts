@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { shellExec } from "../src/tools/shell.js";
 
@@ -75,5 +75,46 @@ describe("shell exec — grep-family no-match exit classification", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("shell exec — requested command classification", () => {
+  const executed = "search() { grep \"$@\"; }; printf 'a\\n' | search zzz";
+  const requested = "printf 'a\\n' | grep zzz";
+
+  it("classifies a no-match exit by the requested command, not the executed one", async () => {
+    const unclassified = await shellExec({ command: executed, noArtifact: true, timeoutMs: 5_000 });
+    expect(unclassified.ok).toBe(false);
+
+    const classified = await shellExec({
+      command: executed,
+      requestedCommand: requested,
+      noArtifact: true,
+      timeoutMs: 5_000,
+    });
+    expect(classified.ok).toBe(true);
+    expect(classified.exitCode).toBe(1);
+    expect(classified.output).toContain("no matching lines");
+  });
+
+  it("still fails when the requested command is not grep-family", async () => {
+    const result = await shellExec({
+      command: executed,
+      requestedCommand: "true; false",
+      noArtifact: true,
+      timeoutMs: 5_000,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it("names the output artifact after the requested command", async () => {
+    const result = await shellExec({
+      command: "printf hi",
+      requestedCommand: "git status",
+      timeoutMs: 5_000,
+    });
+    expect(result.output).toBe("hi");
+    expect(basename(result.outputPath ?? "")).toMatch(/-git\.txt$/);
   });
 });
