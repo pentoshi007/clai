@@ -129,6 +129,10 @@ function makeServices(answers?: {
   return { services, pagers, notices, secrets };
 }
 
+async function waitForLiveModel(notices: readonly string[]): Promise<void> {
+  await vi.waitFor(() => expect(notices.some((text) => text.includes("model → live-model"))).toBe(true));
+}
+
 let modelDir: string;
 
 beforeEach(() => {
@@ -198,6 +202,7 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
     await vi.waitFor(() =>
       expect(notices.some((text) => text.includes("provider → Cline"))).toBe(true),
     );
+    await waitForLiveModel(notices);
   });
 
   it("codex opens the ChatGPT browser sign-in pager like Zed", async () => {
@@ -227,7 +232,10 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
       "codex",
       encodeCodexKey({ accessToken: "acc-new", accountId: "acct-new" }),
     );
-    expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true);
+    await vi.waitFor(() =>
+      expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true),
+    );
+    await waitForLiveModel(notices);
   });
 
   it("codex falls back to the device-code pager when the browser flow cannot start", async () => {
@@ -260,7 +268,10 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
       "codex",
       encodeCodexKey({ accessToken: "acc-new", accountId: "acct-new" }),
     );
-    expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true);
+    await vi.waitFor(() =>
+      expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true),
+    );
+    await waitForLiveModel(notices);
   });
 
   it("codex headless choice goes straight to the device-code pager", async () => {
@@ -291,7 +302,10 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
       "codex",
       encodeCodexKey({ accessToken: "acc-headless", accountId: "acct-headless" }),
     );
-    expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true);
+    await vi.waitFor(() =>
+      expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true),
+    );
+    await waitForLiveModel(notices);
   });
 
   it("codex apikey choice prompts for a token and stores it as a credential", async () => {
@@ -315,7 +329,10 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
       accessToken: fakeJwt,
       accountId: "acct-pasted",
     });
-    expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true);
+    await vi.waitFor(() =>
+      expect(notices.some((text) => text.includes("provider → Chatgpt Subscription"))).toBe(true),
+    );
+    await waitForLiveModel(notices);
   });
 
   it("codex apikey choice rejects a token without a chatgpt account id", async () => {
@@ -360,8 +377,9 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
     expect(pagers[0]?.body).toContain("7BB3-F9E7");
     expect(h.cliCopilot).not.toHaveBeenCalled();
     expect(h.appendProviderKey).toHaveBeenCalledWith("copilot", "ghu_testtoken");
-    expect(notices.some((text) => text.includes("provider → Github Copilot"))).toBe(
-      true,
+    await vi.waitFor(() =>
+      expect(notices.some((text) => text.includes("provider → Github Copilot"))).toBe(true),
     );
+    await waitForLiveModel(notices);
   });
 });

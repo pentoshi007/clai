@@ -163,14 +163,28 @@ describe.skipIf(!platformSupported)(`supported-platform integration (${platformS
         confirm: approve,
       });
       const marker = "CLAI_PYTHON_REPL_ROUND_TRIP";
+      let cursor = 0;
+      let prompt = "";
+      for (let attempt = 0; attempt < 10 && !prompt.includes(">>>"); attempt += 1) {
+        const read = await manager.read({
+          ownerId: OWNER,
+          id: started.sessionId,
+          cursor,
+          waitMs: 300,
+        });
+        prompt += textOf(read.page);
+        cursor = read.page!.nextCursor;
+      }
+      expect(prompt).toContain(">>>");
       const result = await send(
         manager,
         started.sessionId,
         'print("CLAI_" + "PYTHON_REPL_ROUND_TRIP")',
+        cursor,
       );
       expect(result.delivery).toBe("delivered");
       let output = textOf(result.page);
-      let cursor = result.page!.nextCursor;
+      cursor = result.page!.nextCursor;
       for (let attempt = 0; attempt < 10 && !output.includes(marker); attempt += 1) {
         const read = await manager.read({
           ownerId: OWNER,

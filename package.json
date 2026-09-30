@@ -1,6 +1,6 @@
 {
   "name": "@pentoshi/clai",
-  "version": "4.11.28",
+  "version": "4.11.29",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",
@@ -95,13 +95,13 @@
   "devDependencies": {
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
-    "@vitest/coverage-v8": "4.1.10",
+    "@vitest/coverage-v8": "4.1.11",
     "fast-check": "4.9.0",
     "ink-testing-library": "4.0.0",
     "react-devtools-core": "7.0.1",
     "tsx": "4.23.12",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "engines": {
     "node": ">=22"
