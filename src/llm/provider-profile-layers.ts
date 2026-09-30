@@ -254,6 +254,16 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  freebuff: {
+    evidence: viaGateway("codebuff-openrouter-reasoning"),
+    reasoning: {
+      control: {
+        dialect: "openai-nested-reasoning",
+        status: "supported",
+        evidence: viaGateway("codebuff-openrouter-reasoning"),
+      },
+    },
+  },
   nvidia: {
     evidence: codeFact("nvidia-nim"),
     capabilities: { tools: "supported" },
