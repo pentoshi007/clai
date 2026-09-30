@@ -31,6 +31,11 @@ export function stubJobsPort(): JobsPort {
     recent: () => [],
     pendingNotifications: () => [],
     get: () => undefined,
+    activateResponderLease: () => "lease",
+    releaseResponderLease: () => undefined,
+    claimNextResponderNotification: () => undefined,
+    markDeliveryStarted: () => true,
+    markDelivered: () => true,
     start: async () => {
       throw new Error("not supported");
     },

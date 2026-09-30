@@ -96,7 +96,7 @@ export class InputRouter {
       return;
     }
 
-    if (context === "composer" && chord === "ctrl+l") {
+    if (chord === "ctrl+l") {
       this.deps.onContextLimitStart?.();
       return;
     }

@@ -9,8 +9,8 @@ import type {
 } from "../../ui-core/state/transcript-types.js";
 import type { ComposerController, ComposerSnapshot } from "../chrome/composer-controller.js";
 import type { CancelLadder } from "../input/cancel-ladder.js";
+import type { InputPipeline } from "../input/input-pipeline.js";
 import type { InputRouter } from "../input/input-router.js";
-import type { RawDecoder } from "../input/raw-decoder.js";
 import type { KeyEvent } from "../input/key-event.js";
 import type { PanelController, PanelSnapshot } from "../panels/panel-controller.js";
 import type { FeedSnapshot } from "./use-feed.js";
@@ -67,7 +67,7 @@ export interface WiringHost {
   readonly composer: ComposerController;
   readonly panels: PanelController;
   readonly ladder: CancelLadder;
-  readonly decoder: RawDecoder;
+  readonly input: InputPipeline;
   readonly router: InputRouter;
   readonly listeners: Set<() => void>;
   readonly disposers: Array<() => void>;

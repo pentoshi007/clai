@@ -9,6 +9,8 @@ import { gutterShellWidth } from "../render/shell-width.js";
 import type { FeedSnapshot } from "./use-feed.js";
 import { CancelLadder } from "../input/cancel-ladder.js";
 import { InputRouter } from "../input/input-router.js";
+import { InputPipeline } from "../input/input-pipeline.js";
+import { PasteBurstAssembler } from "../input/paste-burst.js";
 import { RawDecoder } from "../input/raw-decoder.js";
 import type { KeyEvent } from "../input/key-event.js";
 import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
@@ -42,7 +44,7 @@ export class ClassicAppWiring implements WiringHost {
   readonly composer: ComposerController;
   readonly panels: PanelController;
   readonly ladder: CancelLadder;
-  readonly decoder: RawDecoder;
+  readonly input: InputPipeline;
   readonly router: InputRouter;
 
   readonly services: AppServices;
@@ -189,11 +191,15 @@ export class ClassicAppWiring implements WiringHost {
       },
     });
 
-    this.decoder = new RawDecoder({
-      now: this.now,
-      mouse: options.mouse,
-      onWarn: (message) => notify(this.services, message, { level: "warn" }),
-    });
+    this.input = new InputPipeline(
+      new RawDecoder({
+        now: this.now,
+        mouse: options.mouse,
+        onWarn: (message) => notify(this.services, message, { level: "warn" }),
+      }),
+      new PasteBurstAssembler(),
+      this.now,
+    );
 
     this.router = new InputRouter({
       focus: this.services.focus,
@@ -252,7 +258,7 @@ export class ClassicAppWiring implements WiringHost {
 
   handleData = (chunk: string): void => {
     if (this.disposed) return;
-    this.router.handleAll(this.decoder.push(chunk));
+    this.router.handleAll(this.input.push(chunk));
     this.scheduleDecoderFlush();
   };
 

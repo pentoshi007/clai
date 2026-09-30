@@ -235,15 +235,23 @@ export function schedulePaint(host: WiringHost): void {
 export function scheduleDecoderFlush(host: WiringHost): void {
   if (host.decoderTimer) clearTimeout(host.decoderTimer);
   host.decoderTimer = undefined;
-  const deadline = host.decoder.pendingDeadline;
+  const deadline = host.input.pendingDeadline;
   if (deadline === undefined) return;
   host.decoderTimer = setTimeout(() => {
     host.decoderTimer = undefined;
-    host.router.handleAll(host.decoder.flush());
-    host.schedulePaint();
-    host.scheduleDecoderFlush();
+    setImmediate(() => flushWhenSettled(host));
   }, Math.max(0, deadline - host.now()));
   host.decoderTimer.unref?.();
+}
+
+function flushWhenSettled(host: WiringHost): void {
+  if (host.disposed) return;
+  const deadline = host.input.pendingDeadline;
+  if (deadline !== undefined && deadline <= host.now()) {
+    host.router.handleAll(host.input.flush());
+    host.schedulePaint();
+  }
+  host.scheduleDecoderFlush();
 }
 
 export function scheduleEscapeExpiry(host: WiringHost): void {
