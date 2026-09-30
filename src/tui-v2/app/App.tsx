@@ -22,8 +22,10 @@ import { SubagentsPanel } from "../components/jobs/subagents-panel.js";
 import {
   chordFromKeyEvent,
   consumeCancellationKeyRepeat,
+  isKeyEventRepeat,
   isKeyEventRelease,
 } from "../input/chord-from-opentui-key.js";
+import { resolveContextFreeAction } from "../../ui-core/actions/context-free.js";
 import {
   escapeCancellationAction,
   preserveEscapeArmAfterTurn,
@@ -207,6 +209,12 @@ export function App(): ReactNode {
 
     const chord = chordFromKeyEvent(key);
     if (consumeCancellationKeyRepeat(key, chord)) return;
+
+    if (resolveContextFreeAction(services.router, chord) === "app.redraw") {
+      key.preventDefault();
+      if (!isKeyEventRepeat(key)) services.requestRedraw();
+      return;
+    }
 
     if (overlay.kind === "secret" || overlay.kind === "confirm" || overlay.kind === "scope-editor") {
       if (chord === "escape" || chord === "ctrl+c") {

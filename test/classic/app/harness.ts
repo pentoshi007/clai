@@ -54,6 +54,7 @@ export interface HarnessOptions {
   readonly commands?: boolean;
   readonly requestExit?: () => void;
   readonly requestMinimise?: () => boolean;
+  readonly requestRedraw?: () => boolean;
   readonly requestSessionSwitch?: (sessionId: string, closeCurrent: boolean) => boolean;
   readonly updates?: AppServices["ports"]["updates"];
   readonly agent?: AppServices["ports"]["agent"];
@@ -69,6 +70,7 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     agent: options.agent,
     requestExit: options.requestExit,
     requestMinimise: options.requestMinimise,
+    requestRedraw: options.requestRedraw,
     requestSessionSwitch: options.requestSessionSwitch,
     updates:
       options.updates ??

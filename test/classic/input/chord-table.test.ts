@@ -29,6 +29,24 @@ const CSI_U_CODES: Readonly<Record<string, number>> = {
   backspace: 127,
 };
 
+const FUNCTION_KEY_CODES: Readonly<Record<string, number>> = {
+  f5: 15,
+  f6: 17,
+  f7: 18,
+  f8: 19,
+  f9: 20,
+  f10: 21,
+  f11: 23,
+  f12: 24,
+};
+
+const FUNCTION_KEY_SS3: Readonly<Record<string, string>> = {
+  f1: "P",
+  f2: "Q",
+  f3: "R",
+  f4: "S",
+};
+
 function modifierMask(mods: ReadonlySet<string>): number {
   let mask = 1;
   if (mods.has("shift")) mask += 1;
@@ -43,15 +61,24 @@ function csiU(key: string, mods: ReadonlySet<string>): string {
   return `\x1b[${code};${modifierMask(mods)}u`;
 }
 
+function functionKey(key: string, mods: ReadonlySet<string>): string {
+  const ss3 = FUNCTION_KEY_SS3[key];
+  if (ss3 !== undefined) {
+    return mods.size === 0 ? `\x1bO${ss3}` : `\x1b[1;${modifierMask(mods)}${ss3}`;
+  }
+  const code = FUNCTION_KEY_CODES[key] as number;
+  return mods.size === 0 ? `\x1b[${code}~` : `\x1b[${code};${modifierMask(mods)}~`;
+}
+
 export function bytesForChord(chord: string): string {
   const parts = chord.split("+");
   const key = parts[parts.length - 1] as string;
   const mods = new Set(parts.slice(0, -1));
   const isLetter = key.length === 1 && key >= "a" && key <= "z";
+  if (/^f([1-9]|1[0-2])$/.test(key)) return functionKey(key, mods);
 
   if (mods.size === 0) {
     if (NAMED_SEQUENCES[key]) return NAMED_SEQUENCES[key] as string;
-    if (/^f([1-9]|1[0-2])$/.test(key)) return csiU(key, mods);
     return key;
   }
   if (mods.size === 1 && mods.has("shift")) {

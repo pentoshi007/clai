@@ -151,6 +151,7 @@ export async function startTuiV2(
     sessionId: options.sessionId,
     capabilities,
     requestMinimise: () => runtimeBridge?.minimise() ?? false,
+    requestRedraw: requestRepaint,
     requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
       runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
     clipboard: createOsc52ClipboardPort({

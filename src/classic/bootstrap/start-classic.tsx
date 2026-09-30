@@ -104,6 +104,12 @@ export async function startClassic(
     sessionId: options.sessionId,
     capabilities,
     requestMinimise: () => runtimeBridge?.minimise() ?? false,
+    requestRedraw: () => {
+      control.unmount();
+      session.clearScreen();
+      control.mount();
+      return true;
+    },
     requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
       runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
     clipboard: createOsc52ClipboardPort({
