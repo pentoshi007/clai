@@ -214,6 +214,23 @@ describe("rtk download hardening", () => {
       downloadToFile(`${server.url}/asset`, join(dir, "rtk.tar.gz"), { attempts: 1, idleTimeoutMs: 1_000 }),
     ).rejects.toBeInstanceOf(RtkDownloadError);
   }, 10_000);
+
+  it("abandons a silently stalled transfer at the idle timeout, not the overall timeout", async () => {
+    const server = await startServer((res) => {
+      res.writeHead(200, { "content-length": "100000" });
+      res.write("some-bytes-then-silence");
+    });
+    const dir = await workDir();
+    const started = Date.now();
+    await expect(
+      downloadToFile(`${server.url}/asset`, join(dir, "rtk.tar.gz"), {
+        attempts: 1,
+        idleTimeoutMs: 300,
+        timeoutMs: 30_000,
+      }),
+    ).rejects.toThrow(/stalled/);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 20_000);
 });
 
 describe("rtk latest release resolution", () => {
