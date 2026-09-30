@@ -12,6 +12,8 @@ import { renderColumns } from "../../src/ui-core/rendering/text-width.js";
 
 vi.setConfig({ testTimeout: 30_000 });
 
+const PAINT_WAIT = { timeout: 10_000, interval: 25 } as const;
+
 describe("Classic expanded overlays", () => {
   it.each([[120, 40], [40, 20], [24, 10], [8, 4]])("fills %i by %i without changing the slash completion panel", async (columns, rows) => {
     const services = createCompositionRoot({
@@ -40,14 +42,14 @@ describe("Classic expanded overlays", () => {
       expect(services.session.subagents.enabled).toBe(false);
       services.overlay.openPager("Output", "body content\n".repeat(50), undefined, undefined, "plain");
       await new Promise((resolve) => setTimeout(resolve, 60));
+      if (columns >= 100) await vi.waitFor(() => expect(ui.lastFrame() ?? "").toContain("c copy"), PAINT_WAIT);
       const pager = ui.lastFrame() ?? "";
       if (columns >= 100) expect((pager.match(/c copy/g) ?? []).length).toBe(1);
       expect(pager.split("\n").length).toBeLessThanOrEqual(rows);
       services.overlay.close();
       wiring.composer.paste("/");
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      await vi.waitFor(() => expect(wiring.getSnapshot().composer.menu.kind).not.toBe("none"), PAINT_WAIT);
       expect(wiring.panels.getSnapshot().kind).toBe("none");
-      expect(wiring.getSnapshot().composer.menu.kind).not.toBe("none");
     } finally {
       ui.unmount();
       wiring.dispose();
