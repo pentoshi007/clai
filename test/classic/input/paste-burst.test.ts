@@ -196,3 +196,20 @@ describe("PasteBurstAssembler", () => {
     );
   });
 });
+  it("leaves an Enter followed by text in one read alone when no text just preceded it", () => {
+    const assembler = new PasteBurstAssembler();
+    assembler.process(decode("/help"), 0);
+    const events = decode("\rqresize smoke");
+    expect(assembler.process(events, 200)).toEqual(events);
+    expect(assembler.pendingDeadline).toBeUndefined();
+  });
+
+  it("still joins a leading Enter to a paste whose previous piece just arrived", () => {
+    const assembler = new PasteBurstAssembler();
+    assembler.process(decode("line1"), 0);
+    expect(assembler.process(decode("\rline2"), PASTE_BURST_GLUE_MS)).toEqual([]);
+    expect(assembler.expire(PASTE_BURST_GLUE_MS + PASTE_BURST_SETTLE_MS)).toEqual([
+      { type: "paste", text: "\nline2" },
+    ]);
+  });
+
