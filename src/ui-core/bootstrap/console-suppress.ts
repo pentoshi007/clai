@@ -4,6 +4,7 @@ const SUPPRESSED_CONSOLE_PATTERNS: readonly RegExp[] = [
   /MaxListenersExceededWarning/i,
   /Cannot update a component/i,
   /while rendering a different component/i,
+  /^clai: OS keychain unavailable\b/i,
 ];
 
 export function isSuppressedConsoleMessage(message: string): boolean {

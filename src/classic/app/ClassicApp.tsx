@@ -27,6 +27,7 @@ import { ScrollbarGutter } from "../feed/ScrollbarGutter.js";
 import { CompletionPanel } from "../panels/CompletionPanel.js";
 import { PanelHost } from "../panels/panel-host.js";
 import { PlanPanel } from "../panels/PlanPanel.js";
+import { planBodyRowsWanted } from "../panels/plan-panel.js";
 import { completionOverlayRows } from "../panels/completion-rows.js";
 import { overlaySize } from "../../ui-core/layout/overlay-size.js";
 import { createClassicAppWiring, overlayDemandContext, type ClassicAppWiring } from "./app-wiring.js";
@@ -81,7 +82,7 @@ export function ClassicApp(
     responderVisible: responderVisible(session.responder),
     subagentsVisible: subagentsVisible(session.subagents),
     planVisible: snapshot.planVisible && plan !== undefined,
-    planRowsWanted: plan?.tasks.length ?? 0,
+    planRowsWanted: plan ? planBodyRowsWanted(plan, shellWidth) : 0,
     overlay,
   };
   const layout = allocateChrome(demand);

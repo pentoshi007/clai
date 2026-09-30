@@ -6,9 +6,9 @@ import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js
 import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-size.js";
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
 import { readBranchFromGitDir } from "./git-branch.js";
+import { nextPaintPacing } from "./paint-pacing.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
-const PAINT_INTERVAL_MS = 50;
 const ANIMATION_INTERVAL_MS = 250;
 const TICK_INTERVAL_MS = 1000;
 const BRANCH_REFRESH_INTERVAL_MS = 5000;
@@ -217,13 +217,17 @@ export function buildSnapshot(host: WiringHost): ClassicAppSnapshot {
 
 export function schedulePaint(host: WiringHost): void {
   if (host.disposed || host.paintTimer) return;
-  const delay = Math.max(0, PAINT_INTERVAL_MS - (host.now() - host.lastPaintAt));
+  const delay = Math.max(0, host.paintPacing.intervalMs - (host.now() - host.lastPaintAt));
   host.paintTimer = setTimeout(() => {
     host.paintTimer = undefined;
     if (host.disposed) return;
-    host.lastPaintAt = host.now();
+    const startedAt = host.now();
+    host.lastPaintAt = startedAt;
     host.snapshot = buildSnapshot(host);
     for (const listener of host.listeners) listener();
+    setImmediate(() => {
+      host.paintPacing = nextPaintPacing(host.paintPacing, host.now() - startedAt);
+    });
   }, delay);
   host.paintTimer.unref?.();
 }
