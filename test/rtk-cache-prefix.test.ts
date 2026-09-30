@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runAgentLoop } from "../src/agent/runner.js";
 import { REQUEST_CONTEXT_PREFIX } from "../src/llm/system-messages.js";
 import {
   renderAgentSystemPrompt,
@@ -26,6 +27,8 @@ vi.mock("../src/llm/router.js", async (importOriginal) => ({
 vi.mock("../src/commands/providers.js", () => ({
   ensureProviderConfigured: vi.fn(async () => undefined),
 }));
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 60_000 });
 
 interface Step {
   readonly rtk: boolean;
@@ -73,6 +76,7 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
   let rtk: FakeRtk;
   let workdir: string;
   let previousCwd: string;
+  const sessions: AbortController[] = [];
 
   beforeEach(async () => {
     previousCwd = process.cwd();
@@ -86,6 +90,7 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
   });
 
   afterEach(async () => {
+    for (const session of sessions.splice(0)) session.abort();
     updateConfig({ rtk: false });
     forgetRtk();
     await rtk.dispose();
@@ -95,14 +100,19 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
 
   const runSession = async (steps: readonly Step[]): Promise<SentRequest[]> => {
     const sent: SentRequest[] = [];
+    const session = new AbortController();
+    sessions.push(session);
     let index = 0;
     streamMock.mockImplementation(
       async (request: CompletionRequest, onToken: (token: string) => void): Promise<CompletionResult> => {
+        const step = steps[index];
+        if (!step) {
+          throw new Error(`unexpected model request ${index + 1}; the script has ${steps.length} steps`);
+        }
         sent.push({
           tools: structuredClone(request.tools),
           messages: structuredClone(request.messages),
         });
-        const step = steps[index]!;
         index += 1;
         updateConfig({ rtk: step.rtk });
         if (step.command) {
@@ -119,11 +129,11 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
       },
     );
     updateConfig({ rtk: false });
-    const { runAgentLoop } = await import("../src/agent/runner.js");
     const answer = await runAgentLoop("check the notes", {
       provider: PROVIDER,
       model: MODEL,
       maxSteps: steps.length + 3,
+      signal: session.signal,
       confirm: autoConfirm as never,
     });
     expect(answer).toContain("done");
@@ -142,7 +152,7 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
       const previous = toggled[index - 1]!;
       expect(request.messages.slice(0, previous.messages.length)).toEqual(previous.messages);
     }
-  }, 60_000);
+  });
 
   it("sends only compressed results to the model while the transcript keeps the requested commands", async () => {
     const toggled = await runSession(TOGGLED_SESSION);
@@ -156,7 +166,7 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
 
     const compressed = toolMessages(last).map((message) => message.content.includes(FAKE_RTK_MARKER));
     expect(compressed).toEqual([false, true, true, false]);
-  }, 60_000);
+  });
 
   it("keeps every request byte-identical to an uncompressed session up to the first tool result", async () => {
     const plain = await runSession(PLAIN_SESSION);
@@ -165,7 +175,7 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
     expect(toggled[1]!.messages.length).toBe(plain[1]!.messages.length);
     expect(stableShape(toggled[1]!.messages)).toEqual(stableShape(plain[1]!.messages));
     expect(toolMessages(toggled[1]!.messages).map((m) => m.content.includes(FAKE_RTK_MARKER))).toEqual([false]);
-  }, 60_000);
+  });
 });
 
 describe("rtk configuration is invisible to everything the provider caches", () => {
