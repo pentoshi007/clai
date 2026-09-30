@@ -13,7 +13,7 @@ import {
 } from "../../ui-core/state/pager-search.js";
 import { stripAnsi } from "../render/measure.js";
 import { wrapAnsiLine } from "../render/wrap.js";
-import { padStartToWidth, sealStyle } from "../render/ansi-text.js";
+import { expandTabs, padStartToWidth, sealStyle } from "../render/ansi-text.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { isPrintable } from "./picker-panel.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
@@ -90,7 +90,7 @@ export function pagerLines(
 ): readonly string[] {
   const width = panelBodyWidth(columns);
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
-  const logical = logicalPagerLines(body, textWidth, format, appearance);
+  const logical = logicalPagerLines(body, textWidth, format, appearance).map((line) => expandTabs(line));
   if (diff && format === "raw" && !ansiBody) {
     const painted = diffPagerLines(logical, textWidth, diff);
     if (painted) return painted.length === 0 ? [" "] : painted;

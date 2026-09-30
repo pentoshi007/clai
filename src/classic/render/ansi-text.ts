@@ -178,8 +178,34 @@ export function sealStyle(text: string): string {
   return hasOpenStyle(text) ? `${text}${RESET}` : text;
 }
 
-export function clipToWidth(text: string, max: number, suffix = ""): string {
+const TAB_WIDTH = 8;
+
+export function expandTabs(text: string, tabWidth = TAB_WIDTH): string {
+  if (!text.includes("\t")) return text;
+  let out = "";
+  let column = 0;
+  for (const token of tokenize(text)) {
+    if (token.kind === "escape") {
+      out += token.value;
+      continue;
+    }
+    for (const grapheme of graphemes(token.value)) {
+      if (grapheme === "\t") {
+        const padding = tabWidth - (column % tabWidth);
+        out += " ".repeat(padding);
+        column += padding;
+        continue;
+      }
+      out += grapheme;
+      column += layoutWidth(grapheme);
+    }
+  }
+  return out;
+}
+
+export function clipToWidth(source: string, max: number, suffix = ""): string {
   if (max <= 0) return "";
+  const text = expandTabs(source);
   if (layoutWidth(text) <= max) return sealStyle(text);
   const suffixWidth = layoutWidth(suffix);
   const budget = Math.max(0, max - suffixWidth);
