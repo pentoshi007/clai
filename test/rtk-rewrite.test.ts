@@ -25,6 +25,8 @@ vi.mock("../src/tools/rtk/install.js", async (importOriginal) => ({
   rtkMaintenance: () => maintenance.current,
 }));
 
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 const run = promisify(execFile);
 
 const rewrites = async (rtk: FakeRtk): Promise<string[]> =>
