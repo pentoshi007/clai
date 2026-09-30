@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PlanTask } from "../../../src/store/plan.js";
 import { panelFrameRows } from "../../../src/classic/panels/panel-frame.js";
-import { planKey, planView, PLAN_INITIAL_STATE } from "../../../src/classic/panels/plan-panel.js";
+import { planBodyRowsWanted, planKey, planView, PLAN_INITIAL_STATE } from "../../../src/classic/panels/plan-panel.js";
+import { allocateChrome } from "../../../src/classic/chrome/row-budget.js";
 import { asciiInk, createHarness, ink, plan, rowsOf } from "./harness.js";
 
 function task(overrides: Partial<PlanTask> & Pick<PlanTask, "id" | "title" | "state">): PlanTask {
@@ -48,8 +49,47 @@ describe("plan rows", () => {
     expect(rows.join("\n")).not.toContain("⟳");
   });
 
-  it("lists its own hints", () => {
-    expect(render().frame.hints).toEqual(["^H hide", "^P detail", "▲▼ task"]);
+  it("offers the scroll hint only when rows are clipped", () => {
+    expect(render().frame.hints).toEqual(["^H hide", "^P detail"]);
+    expect(render(PLAN_INITIAL_STATE, true, ink, 5).frame.hints).toEqual([
+      "^H hide",
+      "^P detail",
+      "▲▼ task",
+    ]);
+  });
+
+  it("counts progress, wrapped title and owner rows so every task fits", () => {
+    const many = plan(
+      Array.from({ length: 30 }, (_, index) =>
+        task({ id: `t${index}`, title: `step ${index}`, state: "pending" }),
+      ),
+    );
+    const wanted = planBodyRowsWanted(many, 80);
+    expect(wanted).toBe(31);
+    const layout = allocateChrome({
+      rows: 60,
+      columns: 80,
+      composerTextRows: 1,
+      statusRowsWanted: 1,
+      toastCount: 0,
+      queueCount: 0,
+      responderVisible: false,
+      planVisible: true,
+      planRowsWanted: wanted,
+      overlay: undefined,
+    });
+    const frame = planView({
+      ink,
+      columns: 80,
+      rows: layout.plan,
+      plan: many,
+      state: PLAN_INITIAL_STATE,
+      focused: false,
+    });
+    const body = rowsOf(panelFrameRows(frame).rows).join("\n");
+    expect(body).toContain("step 0");
+    expect(body).toContain("step 29");
+    expect(planBodyRowsWanted(PLAN, 80)).toBe(6);
   });
 
   it("wraps long titles instead of ellipsizing them", () => {

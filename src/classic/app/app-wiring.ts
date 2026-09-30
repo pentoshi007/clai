@@ -22,6 +22,7 @@ import { PanelController, type PanelSnapshot } from "../panels/panel-controller.
 import { ClassicActionHandlers, panelContextFor } from "./action-handlers.js";
 import * as interactions from "./wiring-interactions.js";
 import * as lifecycle from "./wiring-lifecycle.js";
+import { INITIAL_PAINT_PACING, type PaintPacing } from "./paint-pacing.js";
 import type {
   ClassicAppSnapshot,
   ResizeSource,
@@ -79,6 +80,7 @@ export class ClassicAppWiring implements WiringHost {
   branchRefreshTimer: ReturnType<typeof setInterval> | undefined;
   branchRefreshRequest = 0;
   lastPaintAt = 0;
+  paintPacing: PaintPacing = INITIAL_PAINT_PACING;
   paintTimer: ReturnType<typeof setTimeout> | undefined;
   resizeTimer: ReturnType<typeof setTimeout> | undefined;
   decoderTimer: ReturnType<typeof setTimeout> | undefined;

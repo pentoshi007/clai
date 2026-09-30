@@ -2,7 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   MAX_TOAST_ROWS,
-  PLAN_MAX_ROWS,
+  planMaxRows,
   QUEUE_MAX_ROWS,
   allocateChrome,
   type ChromeDemand,
@@ -99,7 +99,7 @@ describe("allocateChrome invariants", () => {
         const layout = allocateChrome(input);
         expect(layout.toast).toBeLessThanOrEqual(MAX_TOAST_ROWS);
         expect(layout.queue).toBeLessThanOrEqual(QUEUE_MAX_ROWS);
-        expect(layout.plan).toBeLessThanOrEqual(PLAN_MAX_ROWS);
+        expect(layout.plan).toBeLessThanOrEqual(planMaxRows(input.rows));
         expect(layout.responder).toBeLessThanOrEqual(1);
         expect(layout.subagents).toBeLessThanOrEqual(1);
         expect(layout.status).toBeLessThanOrEqual(input.statusRowsWanted);
