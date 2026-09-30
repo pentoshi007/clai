@@ -196,6 +196,18 @@ function hashParts(
   return { sha256: hash.digest("hex"), byteLength };
 }
 
+function memoized<T>(compute: () => T): () => T {
+  let computed = false;
+  let value: T;
+  return () => {
+    if (!computed) {
+      value = compute();
+      computed = true;
+    }
+    return value;
+  };
+}
+
 function instructionsEnd(messages: readonly ChatMessage[]): number {
   let index = 0;
   while (index < messages.length && messages[index]!.role === "system") {
@@ -417,26 +429,31 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     topP: emittedTopP,
   };
 
-  const cacheSections: RequestPlanCacheSection[] = [
-    cacheSection(1, "instructions", stableInstructions.map((m) => JSON.stringify(m))),
-    cacheSection(2, "tools", tools.map((tool) => JSON.stringify(tool))),
-    cacheSection(3, "history", stableHistory.map((m) => JSON.stringify(m))),
-    cacheSection(4, "artifacts", replayedArtifactParts),
-    cacheSection(
-      5,
-      "settings",
-      [
-        `serializer:${wire}`,
-        `version:${REQUEST_PLAN_COMPILER_VERSION}`,
-        ...[...profile.cache.cacheAffectingFields]
-          .sort()
-          .map((field) => `${field}=${cacheAffectingValue(field, settingsValueInput)}`),
-      ],
-    ),
-  ];
-
-  const prefixHash = createHash("sha256").update(PLAN_HASH_DOMAIN, "utf8");
-  for (const section of cacheSections) prefixHash.update(section.sha256, "hex");
+  const cacheDigest = memoized(() => {
+    const sections: RequestPlanCacheSection[] = [
+      cacheSection(1, "instructions", stableInstructions.map((m) => JSON.stringify(m))),
+      cacheSection(2, "tools", tools.map((tool) => JSON.stringify(tool))),
+      cacheSection(3, "history", stableHistory.map((m) => JSON.stringify(m))),
+      cacheSection(4, "artifacts", replayedArtifactParts),
+      cacheSection(
+        5,
+        "settings",
+        [
+          `serializer:${wire}`,
+          `version:${REQUEST_PLAN_COMPILER_VERSION}`,
+          ...[...profile.cache.cacheAffectingFields]
+            .sort()
+            .map((field) => `${field}=${cacheAffectingValue(field, settingsValueInput)}`),
+        ],
+      ),
+    ];
+    const prefixHash = createHash("sha256").update(PLAN_HASH_DOMAIN, "utf8");
+    for (const section of sections) prefixHash.update(section.sha256, "hex");
+    return Object.freeze({
+      sections: Object.freeze(sections),
+      prefixSha256: prefixHash.digest("hex"),
+    });
+  });
 
   const requestedMaxTokens =
     input.maxTokens === undefined
@@ -509,8 +526,12 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
       fingerprint: Object.freeze({
         prefixMessageCount: stableInstructions.length + stableHistory.length,
         replayedArtifactCount: replayedArtifactParts.length,
-        sections: Object.freeze(cacheSections),
-        prefixSha256: prefixHash.digest("hex"),
+        get sections(): readonly RequestPlanCacheSection[] {
+          return cacheDigest().sections;
+        },
+        get prefixSha256(): string {
+          return cacheDigest().prefixSha256;
+        },
       }),
     }),
   });

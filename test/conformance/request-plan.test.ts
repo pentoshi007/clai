@@ -147,6 +147,54 @@ describe("canonical request plan", () => {
     );
   });
 
+  it("derives the cache fingerprint on first read instead of serializing history at compile time", () => {
+    let serialized = 0;
+    const counted = (role: "user" | "assistant", content: string): ChatMessage =>
+      ({
+        role,
+        content,
+        toJSON() {
+          serialized += 1;
+          return { role, content };
+        },
+      }) as unknown as ChatMessage;
+    const plan = compileRequestPlan({
+      provider: "nvidia",
+      model: "llama-3.3-70b-versatile",
+      stream: true,
+      messages: [
+        { role: "system", content: "stable system prefix" },
+        counted("user", "first user turn"),
+        counted("assistant", "first assistant answer"),
+        { role: "user", content: "live turn" },
+      ],
+    });
+    const { fingerprint } = plan.cache;
+
+    expect(serialized).toBe(0);
+    expect(fingerprint.prefixMessageCount).toBe(3);
+    expect(fingerprint.replayedArtifactCount).toBe(0);
+    expect(serialized).toBe(0);
+
+    const sections = fingerprint.sections;
+    const prefix = fingerprint.prefixSha256;
+    expect(serialized).toBe(2);
+    expect(sections.map((section) => section.section)).toEqual([
+      "instructions",
+      "tools",
+      "history",
+      "artifacts",
+      "settings",
+    ]);
+    expect(prefix).toMatch(/^[0-9a-f]{64}$/);
+
+    expect(fingerprint.sections).toBe(sections);
+    expect(fingerprint.prefixSha256).toBe(prefix);
+    expect(serialized).toBe(2);
+    expect(Object.isFrozen(fingerprint)).toBe(true);
+    expect(Object.isFrozen(sections)).toBe(true);
+  });
+
   it("treats request-context system messages as mutable and excludes them from the prefix", () => {
     const common = {
       provider: "anthropic" as const,
