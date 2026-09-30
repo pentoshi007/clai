@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   alignEnds,
   clipToWidth,
+  expandTabs,
   hasOpenStyle,
   padToWidth,
   sealStyle,
   tokenize,
 } from "../../../src/classic/render/ansi-text.js";
 import { displayWidth, layoutWidth } from "../../../src/classic/render/measure.js";
-import { reflowRows, wrapAnsiLine, wrapWithPrefixes } from "../../../src/classic/render/wrap.js";
+import { reflowRows, wrapAnsiLine, wrapAnsiLineBounded, wrapWithPrefixes } from "../../../src/classic/render/wrap.js";
 import { createInkTheme } from "../../../src/classic/render/ink-theme.js";
 import { toAsciiGlyphs, UNICODE_GLYPHS } from "../../../src/classic/render/glyphs.js";
 
@@ -166,5 +167,54 @@ describe("toAsciiGlyphs", () => {
   it("downgrades presenter glyphs", () => {
     expect(toAsciiGlyphs(`${UNICODE_GLYPHS.toolOk} done`)).toBe("v done");
     expect(toAsciiGlyphs("unchanged")).toBe("unchanged");
+  });
+});
+
+describe("expandTabs", () => {
+  it("leaves tab-free text untouched", () => {
+    expect(expandTabs("plain text")).toBe("plain text");
+  });
+
+  it("pads to the next tab stop", () => {
+    expect(expandTabs("a\tb")).toBe("a       b");
+    expect(expandTabs("12345678\tb")).toBe("12345678        b");
+  });
+
+  it("ignores escapes and wide graphemes when measuring columns", () => {
+    expect(expandTabs(`${RED}ab${RESET}\tc`)).toBe(`${RED}ab${RESET}      c`);
+    expect(expandTabs("日本\tx")).toBe("日本    x");
+  });
+
+  it("keeps wrapped, clipped and reflowed rows free of tabs and within budget", () => {
+    const line = "completed\tsuccess\tMerge pull request\tCI\tmain\tpush";
+    for (const row of [
+      ...wrapAnsiLine(line, 30),
+      ...reflowRows([line], 30),
+      clipToWidth(line, 30, "…"),
+    ]) {
+      expect(row).not.toContain("\t");
+      expect(layoutWidth(row)).toBeLessThanOrEqual(30);
+    }
+  });
+});
+
+describe("wrapAnsiLineBounded", () => {
+  it("matches wrapAnsiLine when the text fits the row limit", () => {
+    const text = "alpha beta gamma delta epsilon zeta";
+    const bounded = wrapAnsiLineBounded(text, 12, 10);
+    expect(bounded.truncated).toBe(false);
+    expect(bounded.rows).toEqual(wrapAnsiLine(text, 12));
+  });
+
+  it("stops at the row limit and reports truncation", () => {
+    const bounded = wrapAnsiLineBounded("x".repeat(500), 20, 3);
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.rows).toEqual(["x".repeat(20), "x".repeat(20), "x".repeat(20)]);
+  });
+
+  it("does not flag text that fills exactly the row limit", () => {
+    const bounded = wrapAnsiLineBounded("x".repeat(60), 20, 3);
+    expect(bounded.truncated).toBe(false);
+    expect(bounded.rows).toHaveLength(3);
   });
 });

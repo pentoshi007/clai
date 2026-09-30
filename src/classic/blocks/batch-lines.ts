@@ -9,8 +9,13 @@ import { isItemExpanded, type ToolItem } from "../../ui-core/state/transcript-ty
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { alignEnds, trimTrailingSpaces } from "../render/ansi-text.js";
-import { wrapAnsiLine } from "../render/wrap.js";
-import { joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
+import {
+  EXPANDED_LINE_ROWS,
+  joinMeta,
+  SUFFIX_MIN_COLUMNS,
+  wrapBoundedRows,
+  type BlockContext,
+} from "./block-context.js";
 import { hintRows, outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
 
 export const BATCH_COLLAPSED_ROWS = 8;
@@ -70,7 +75,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     const summaryRow = presented.lines.find((line) => line.trim().length > 0);
     if (summaryRow === undefined) continue;
     const text = adaptPresenterGlyphs(summaryRow, ctx.ink.unicode);
-    for (const chunk of wrapAnsiLine(text, budget)) {
+    for (const chunk of wrapBoundedRows(ctx, text, budget, EXPANDED_LINE_ROWS)) {
       lines.push(
         trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolText", chunk)}`),
       );
