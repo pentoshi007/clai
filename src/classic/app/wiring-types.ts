@@ -17,6 +17,7 @@ import type { FeedSnapshot } from "./use-feed.js";
 import type { FeedBlock } from "../feed/feed-blocks.js";
 import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
 import type { TranscriptPointerGeometry } from "../feed/transcript-selection.js";
+import type { PaintPacing } from "./paint-pacing.js";
 
 export interface ResizeSource {
   readonly columns?: number | undefined;
@@ -98,6 +99,7 @@ export interface WiringHost {
   branchRefreshTimer: ReturnType<typeof setInterval> | undefined;
   branchRefreshRequest: number;
   lastPaintAt: number;
+  paintPacing: PaintPacing;
   paintTimer: ReturnType<typeof setTimeout> | undefined;
   resizeTimer: ReturnType<typeof setTimeout> | undefined;
   decoderTimer: ReturnType<typeof setTimeout> | undefined;

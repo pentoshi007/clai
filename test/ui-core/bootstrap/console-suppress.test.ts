@@ -15,6 +15,12 @@ describe("isSuppressedConsoleMessage", () => {
     expect(isSuppressedConsoleMessage(msg)).toBe(true);
   });
 
+  it("keeps the handled OS-keychain fallback out of the toast surface", () => {
+    const msg =
+      "clai: OS keychain unavailable (Couldn't access platform storage: Secret Service: unlock prompt was dismissed); using restricted-permission plaintext file at /home/u/.clai/keys.json";
+    expect(isSuppressedConsoleMessage(msg)).toBe(true);
+  });
+
   it("does not suppress ordinary warnings", () => {
     expect(
       isSuppressedConsoleMessage('modelVisionSupport: "omniroute" is not a canonical ProviderId'),

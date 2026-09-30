@@ -75,14 +75,27 @@ interface PlanRow {
   readonly owner: boolean;
 }
 
+function taskTitleLines(task: PlanTask, width: number): readonly string[] {
+  return wrapPlanText(cleanTaskTitle(task), Math.max(8, width - 2));
+}
+
+export function planBodyRowsWanted(plan: SessionPlan, columns: number): number {
+  const width = panelBodyWidth(columns);
+  let rows = 1;
+  for (const task of planTasks(plan)) {
+    rows += taskTitleLines(task, width).length;
+    if (taskOwnerChip(task)) rows += 1;
+  }
+  return rows;
+}
+
 function taskRows(input: PlanViewInput, width: number): readonly PlanRow[] {
   const { ink } = input;
   const rows: PlanRow[] = [];
   planTasks(input.plan).forEach((task, index) => {
     const glyph = adaptPresenterGlyphs(taskGlyph(task), ink.unicode);
     const token = taskStateColor(task.state);
-    const wrapped = wrapPlanText(cleanTaskTitle(task), Math.max(8, width - 2));
-    wrapped.forEach((line, offset) => {
+    taskTitleLines(task, width).forEach((line, offset) => {
       const head = offset === 0 ? ink.fg(token, glyph) : " ";
       rows.push({ text: `${head} ${line}`, taskIndex: index, owner: false });
     });
@@ -151,7 +164,9 @@ export function planView(input: PlanViewInput): PanelFrameInput {
     hints: [
       "^H hide",
       "^P detail",
-      `${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} task`,
+      ...(window.clippedAbove || window.clippedBelow
+        ? [`${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} task`]
+        : []),
     ],
     body: body.slice(0, Math.max(0, height)),
   };

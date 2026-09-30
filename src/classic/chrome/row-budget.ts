@@ -9,7 +9,7 @@ export const OVERLAY_MIN_ROWS = 5;
 export const MAX_TOAST_ROWS = 2;
 export const QUEUE_MAX_ROWS = 5;
 export const PLAN_MIN_ROWS = 5;
-export const PLAN_MAX_ROWS = 14;
+export const PLAN_MAX_SCREEN_SHARE = 0.6;
 export const PLAN_BORDER_ROWS = 2;
 
 export type StatusRowsWanted = 1 | 2 | 3;
@@ -55,6 +55,10 @@ function whole(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
+export function planMaxRows(rows: number): number {
+  return Math.max(PLAN_MIN_ROWS, Math.floor(whole(rows) * PLAN_MAX_SCREEN_SHARE));
+}
+
 export function allocateChrome(demand: ChromeDemand): ChromeLayout {
   const rows = whole(demand.rows);
   let budget = rows;
@@ -98,7 +102,7 @@ export function allocateChrome(demand: ChromeDemand): ChromeLayout {
     ? clamp(
         whole(demand.planRowsWanted) + PLAN_BORDER_ROWS,
         PLAN_MIN_ROWS,
-        PLAN_MAX_ROWS,
+        planMaxRows(rows),
         budget,
       )
     : 0;

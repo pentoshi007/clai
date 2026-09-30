@@ -49,7 +49,7 @@ export function buildAssistantLines(
   const body = rendered.lines.length > 0 ? rendered.lines : [""];
   const lines = body.map((line, index) => {
     if (line.trim() === "") return "";
-    const styled = line.includes("\x1b") ? line : ctx.ink.fg("response", line);
+    const styled = ctx.ink.fg("response", line);
     return trimTrailingSpaces(`${index === 0 ? bullet : indent}${styled}`);
   });
 
