@@ -31,78 +31,101 @@ type SectionAccumulator = {
   itemCount: number;
 };
 
-function byteLength(value: string): number {
-  return Buffer.byteLength(value, "utf8");
+type HashChunk = string | Uint8Array;
+
+function byteLength(chunk: HashChunk): number {
+  return typeof chunk === "string" ? Buffer.byteLength(chunk, "utf8") : chunk.length;
 }
 
-function updateChunk(hash: Hash, value: string): number {
-  const bytes = byteLength(value);
+function updateHash(hash: Hash, chunk: HashChunk): Hash {
+  return typeof chunk === "string" ? hash.update(chunk, "utf8") : hash.update(chunk);
+}
+
+function updateChunk(hash: Hash, chunk: HashChunk): number {
+  const bytes = byteLength(chunk);
   hash.update(`${bytes}:`, "utf8");
-  hash.update(value, "utf8");
+  updateHash(hash, chunk);
   return bytes;
 }
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
+function sha256(chunk: HashChunk): string {
+  return updateHash(createHash("sha256"), chunk).digest("hex");
 }
 
-function chainedSha256(previous: string | undefined, value: string): string {
+function chainedSha256(previous: string | undefined, chunk: HashChunk): string {
   const hash = createHash("sha256");
   hash.update("clai.request-fingerprint.prefix.v1\0", "utf8");
   if (previous) hash.update(previous, "hex");
-  updateChunk(hash, value);
+  updateChunk(hash, chunk);
   return hash.digest("hex");
 }
 
-function skipWhitespace(source: string, index: number): number {
+const QUOTE = 0x22;
+const BACKSLASH = 0x5c;
+const COMMA = 0x2c;
+const COLON = 0x3a;
+const OPEN_BRACE = 0x7b;
+const CLOSE_BRACE = 0x7d;
+const OPEN_BRACKET = 0x5b;
+const CLOSE_BRACKET = 0x5d;
+
+function isJsonWhitespace(code: number | undefined): boolean {
+  return code === 0x20 || code === 0x0a || code === 0x0d || code === 0x09;
+}
+
+function skipWhitespace(source: Buffer, index: number): number {
   let next = index;
-  while (next < source.length && /\s/.test(source[next]!)) next += 1;
+  while (next < source.length && isJsonWhitespace(source[next])) next += 1;
   return next;
 }
 
-function scanJsonString(source: string, start: number): number {
-  if (source[start] !== '"') throw new Error("expected JSON string");
-  for (let index = start + 1; index < source.length; index += 1) {
-    if (source[index] === "\\") {
-      index += 1;
-      continue;
+function scanJsonString(source: Buffer, start: number): number {
+  if (source[start] !== QUOTE) throw new Error("expected JSON string");
+  let cursor = start + 1;
+  for (;;) {
+    const quote = source.indexOf(QUOTE, cursor);
+    if (quote === -1) throw new Error("unterminated JSON string");
+    let backslashes = 0;
+    while (
+      quote - backslashes - 1 >= cursor &&
+      source[quote - backslashes - 1] === BACKSLASH
+    ) {
+      backslashes += 1;
     }
-    if (source[index] === '"') return index + 1;
+    if (backslashes % 2 === 0) return quote + 1;
+    cursor = quote + 1;
   }
-  throw new Error("unterminated JSON string");
 }
 
-function scanJsonValue(source: string, start: number): number {
+function scanJsonValue(source: Buffer, start: number): number {
   const first = source[start];
-  if (first === '"') return scanJsonString(source, start);
-  if (first !== "{" && first !== "[") {
+  if (first === QUOTE) return scanJsonString(source, start);
+  if (first !== OPEN_BRACE && first !== OPEN_BRACKET) {
     let end = start;
-    while (end < source.length && !/[\s,}\]]/.test(source[end]!)) end += 1;
+    while (end < source.length) {
+      const code = source[end];
+      if (
+        isJsonWhitespace(code) ||
+        code === COMMA ||
+        code === CLOSE_BRACE ||
+        code === CLOSE_BRACKET
+      ) {
+        break;
+      }
+      end += 1;
+    }
     if (end === start) throw new Error("expected JSON value");
     return end;
   }
 
   let depth = 0;
-  let inString = false;
   for (let index = start; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (inString) {
-      if (character === "\\") {
-        index += 1;
-      } else if (character === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      continue;
-    }
-    if (character === "{" || character === "[") {
+    const code = source[index];
+    if (code === QUOTE) {
+      index = scanJsonString(source, index) - 1;
+    } else if (code === OPEN_BRACE || code === OPEN_BRACKET) {
       depth += 1;
-      continue;
-    }
-    if (character === "}" || character === "]") {
+    } else if (code === CLOSE_BRACE || code === CLOSE_BRACKET) {
       depth -= 1;
       if (depth === 0) return index + 1;
     }
@@ -110,26 +133,26 @@ function scanJsonValue(source: string, start: number): number {
   throw new Error("unterminated JSON value");
 }
 
-function rootJsonFields(source: string): readonly JsonField[] {
+function rootJsonFields(source: Buffer): readonly JsonField[] {
   let index = skipWhitespace(source, 0);
-  if (source[index] !== "{") throw new Error("expected JSON object");
+  if (source[index] !== OPEN_BRACE) throw new Error("expected JSON object");
   index = skipWhitespace(source, index + 1);
   const fields: JsonField[] = [];
-  while (source[index] !== "}") {
+  while (source[index] !== CLOSE_BRACE) {
     const start = index;
     const keyEnd = scanJsonString(source, index);
-    const name = JSON.parse(source.slice(index, keyEnd)) as string;
+    const name = JSON.parse(source.toString("utf8", index, keyEnd)) as string;
     index = skipWhitespace(source, keyEnd);
-    if (source[index] !== ":") throw new Error("expected JSON field separator");
+    if (source[index] !== COLON) throw new Error("expected JSON field separator");
     const valueStart = skipWhitespace(source, index + 1);
     const end = scanJsonValue(source, valueStart);
     fields.push({ name, start, valueStart, end });
     index = skipWhitespace(source, end);
-    if (source[index] === ",") {
+    if (source[index] === COMMA) {
       index = skipWhitespace(source, index + 1);
       continue;
     }
-    if (source[index] === "}") break;
+    if (source[index] === CLOSE_BRACE) break;
     throw new Error("expected JSON field delimiter");
   }
   if (skipWhitespace(source, index + 1) !== source.length) {
@@ -138,21 +161,21 @@ function rootJsonFields(source: string): readonly JsonField[] {
   return fields;
 }
 
-function arrayElements(source: string, range: JsonRange): readonly JsonRange[] {
+function arrayElements(source: Buffer, range: JsonRange): readonly JsonRange[] {
   let index = skipWhitespace(source, range.start);
-  if (source[index] !== "[") return [];
+  if (source[index] !== OPEN_BRACKET) return [];
   index = skipWhitespace(source, index + 1);
   const elements: JsonRange[] = [];
-  while (source[index] !== "]") {
+  while (source[index] !== CLOSE_BRACKET) {
     const start = index;
     const end = scanJsonValue(source, start);
     elements.push({ start, end });
     index = skipWhitespace(source, end);
-    if (source[index] === ",") {
+    if (source[index] === COMMA) {
       index = skipWhitespace(source, index + 1);
       continue;
     }
-    if (source[index] === "]") break;
+    if (source[index] === CLOSE_BRACKET) break;
     throw new Error("expected JSON array delimiter");
   }
   return elements;
@@ -237,12 +260,13 @@ export function fingerprintFinalRequest(
   if (typeof body !== "string") return undefined;
   try {
     JSON.parse(body);
-    const fields = rootJsonFields(body);
+    const bytes = Buffer.from(body, "utf8");
+    const fields = rootJsonFields(bytes);
     const sections = new Map<RequestFingerprintSectionKind, SectionAccumulator>();
     const sectionOrder: SectionAccumulator[] = [];
     const appendSection = (
       kind: RequestFingerprintSectionKind,
-      value: string,
+      value: HashChunk,
       itemCount = 0,
     ): void => {
       let section = sections.get(kind);
@@ -272,10 +296,10 @@ export function fingerprintFinalRequest(
 
     for (const field of fields) {
       const kind = sectionKind(field.name);
-      const fieldValue = body.slice(field.start, field.end);
+      const fieldValue = bytes.subarray(field.start, field.end);
       const history =
         kind === "history"
-          ? arrayElements(body, { start: field.valueStart, end: field.end })
+          ? arrayElements(bytes, { start: field.valueStart, end: field.end })
           : [];
       appendSection(kind, fieldValue, history.length);
       for (let index = 0; index < history.length; index += 1) {
@@ -294,7 +318,7 @@ export function fingerprintFinalRequest(
       });
     }
     boundaries.push({
-      end: body.length,
+      end: bytes.length,
       section: "wire",
       boundary: "wire",
     });
@@ -304,8 +328,8 @@ export function fingerprintFinalRequest(
     let prefixBytes = 0;
     const prefixes: RequestFingerprintPrefix[] = [];
     for (const boundary of boundaries) {
-      const chunk = body.slice(cursor, boundary.end);
-      prefixBytes += byteLength(chunk);
+      const chunk = bytes.subarray(cursor, boundary.end);
+      prefixBytes += chunk.length;
       previous = chainedSha256(previous, chunk);
       prefixes.push({
         ordinal: prefixes.length + 1,
@@ -330,7 +354,7 @@ export function fingerprintFinalRequest(
     );
     return freezeFingerprint(
       serializerId(input),
-      { byteLength: byteLength(body), sha256: sha256(body) },
+      { byteLength: bytes.length, sha256: sha256(bytes) },
       sectionFingerprints,
       prefixes,
     );
