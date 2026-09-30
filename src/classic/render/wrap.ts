@@ -1,4 +1,4 @@
-import { graphemes, tokenize, sealStyle } from "./ansi-text.js";
+import { expandTabs, graphemes, tokenize, sealStyle } from "./ansi-text.js";
 import { layoutWidth } from "./measure.js";
 
 export interface WrapOptions {
@@ -11,9 +11,23 @@ function isBreakable(grapheme: string): boolean {
   return grapheme === " " || grapheme === "\t";
 }
 
+export interface BoundedWrap {
+  readonly rows: string[];
+  readonly truncated: boolean;
+}
+
 export function wrapAnsiLine(text: string, budget: number): string[] {
-  if (budget <= 0) return [""];
-  if (text.length === 0) return [""];
+  return wrapAnsiLineBounded(text, budget, Number.POSITIVE_INFINITY).rows;
+}
+
+export function wrapAnsiLineBounded(
+  source: string,
+  budget: number,
+  maxRows: number,
+): BoundedWrap {
+  if (budget <= 0 || source.length === 0) return { rows: [""], truncated: false };
+  const text = expandTabs(source);
+  const limit = Math.max(1, maxRows);
 
   const rows: string[] = [];
   let active = "";
@@ -37,7 +51,7 @@ export function wrapAnsiLine(text: string, budget: number): string[] {
     wordWidth = 0;
   };
 
-  for (const token of tokenize(text)) {
+  scan: for (const token of tokenize(text)) {
     if (token.kind === "escape") {
       if (token.value.endsWith("m")) {
         const body = token.value.slice(2, -1);
@@ -47,6 +61,7 @@ export function wrapAnsiLine(text: string, budget: number): string[] {
       continue;
     }
     for (const grapheme of graphemes(token.value)) {
+      if (rows.length > limit) break scan;
       const width = layoutWidth(grapheme);
       if (isBreakable(grapheme)) {
         if (rowWidth + wordWidth > budget && rowWidth > 0) flushRow();
@@ -70,9 +85,13 @@ export function wrapAnsiLine(text: string, budget: number): string[] {
       wordWidth += width;
     }
   }
-  commitWord();
-  if (row.length > 0 || rows.length === 0) flushRow();
-  return rows;
+  if (rows.length <= limit) {
+    commitWord();
+    if (row.length > 0 || rows.length === 0) flushRow();
+  }
+  const truncated = rows.length > limit;
+  if (truncated) rows.length = limit;
+  return { rows, truncated };
 }
 
 export function wrapWithPrefixes(
@@ -96,7 +115,8 @@ export function wrapWithPrefixes(
 
 export function reflowRows(rows: readonly string[], budget: number): string[] {
   const out: string[] = [];
-  for (const row of rows) {
+  for (const source of rows) {
+    const row = expandTabs(source);
     if (layoutWidth(row) <= budget) {
       out.push(row);
       continue;

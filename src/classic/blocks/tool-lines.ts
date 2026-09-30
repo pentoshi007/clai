@@ -20,9 +20,13 @@ import { wrapAnsiLine } from "../render/wrap.js";
 import { layoutWidth } from "../render/measure.js";
 import {
   clipRow,
+  COLLAPSED_LINE_ROWS,
+  EXPANDED_LINE_ROWS,
+  FIELD_LINE_ROWS,
   formatElapsed,
   joinMeta,
   separator,
+  wrapBoundedRows,
   type BlockContext,
 } from "./block-context.js";
 
@@ -130,7 +134,7 @@ function inlineFits(ctx: BlockContext, item: ToolItem, presented: Presented, arg
 function fieldLines(ctx: BlockContext, label: string, value: string, token: ThemeToken): string[] {
   const prefix = `${FIELD_INDENT}${ctx.ink.fg("muted", `${label}: `)}`;
   const budget = Math.max(8, ctx.width - layoutWidth(prefix));
-  return wrapAnsiLine(ctx.ink.fg(token, value), budget).map((row, index) =>
+  return wrapBoundedRows(ctx, ctx.ink.fg(token, value), budget, FIELD_LINE_ROWS).map((row, index) =>
     clipRow(ctx, index === 0 ? `${prefix}${row}` : `${" ".repeat(layoutWidth(prefix))}${row}`),
   );
 }
@@ -166,7 +170,9 @@ export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
   const head = headline(ctx, item, presented, undefined);
   if (args.length === 0) return head;
   const budget = Math.max(8, ctx.width - FIELD_INDENT.length);
-  const rows = args.flatMap((line) => wrapAnsiLine(ctx.ink.fg("muted", `(${line})`), budget));
+  const rows = args.flatMap((line) =>
+    wrapBoundedRows(ctx, ctx.ink.fg("muted", `(${line})`), budget, FIELD_LINE_ROWS),
+  );
   return [...head, ...rows.map((row) => trimTrailingSpaces(`${FIELD_INDENT}${row}`))];
 }
 
@@ -228,10 +234,12 @@ export function buildToolBodyLines(
 
   const branch = ctx.ink.fg("hint", `  ${ctx.glyphs.bodyBranch} `);
   const budget = Math.max(1, ctx.width - BODY_INDENT);
+  const lineRows = expanded ? EXPANDED_LINE_ROWS : COLLAPSED_LINE_ROWS;
 
   const lines: string[] = [];
   for (const [index, raw] of kept.entries()) {
-    for (const [row, chunk] of wrapAnsiLine(paintBodyLine(ctx, item, raw), budget).entries()) {
+    const painted = paintBodyLine(ctx, item, raw);
+    for (const [row, chunk] of wrapBoundedRows(ctx, painted, budget, lineRows).entries()) {
       const prefix = index === 0 && row === 0 ? branch : indent;
       lines.push(trimTrailingSpaces(`${prefix}${chunk}`));
     }

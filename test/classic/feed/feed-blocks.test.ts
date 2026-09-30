@@ -141,6 +141,47 @@ describe("buildFeedBlocks", () => {
     expect(text).toContain("+4 lines");
   });
 
+  it("contains abnormally long output lines without touching normal ones", () => {
+    const outputTurn = scriptedTurn();
+    const source = transcriptItems(outputTurn.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    );
+    expect(source).toBeDefined();
+    const normal = `normal line ${"word ".repeat(18)}`.trim();
+    const giant = `{"payload":"${"z".repeat(20_000)}"}`;
+    outputTurn.spool.replace(source!.toolCallId, [giant, normal, "middle", "middle two", "middle three", "tail", normal].join("\n"));
+    for (const columns of [40, 80, 120]) {
+      const ctx = blockContextFor(outputTurn.state, feedView(outputTurn, { columns }));
+      const lines = buildToolLines(ctx, source!);
+      const plain = lines.map(stripAnsi);
+      expect(lines.length).toBeLessThan(40);
+      expect(plain.join("\n")).toMatch(/\+\d+ chars/);
+      for (const row of plain) expect(displayWidth(row)).toBeLessThanOrEqual(columns);
+      const normalRows = plain.filter((row) => /word|normal line/.test(row));
+      expect(normalRows.join("").replace(/\s+/g, " ")).toContain(normal.slice(0, 20));
+      for (const row of plain.filter((candidate) => /\+\d+ chars/.test(candidate))) {
+        expect(row).toMatch(/^\s+z+ \S \+\d+ chars$/);
+      }
+    }
+  });
+
+  it("expands tabs in tool output so rows keep their measured width", () => {
+    const tabbed = scriptedTurn();
+    const source = transcriptItems(tabbed.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    );
+    expect(source).toBeDefined();
+    tabbed.spool.replace(
+      source!.toolCallId,
+      "completed\tsuccess\tMerge pull request #36 from feat/rtk-output-compression\tCI\tmain\tpush\n36617238855\t4m27s\t2026-09-29T19:09:34Z",
+    );
+    const ctx = blockContextFor(tabbed.state, feedView(tabbed, { columns: 62 }));
+    for (const row of buildToolLines(ctx, source!)) {
+      expect(row).not.toContain("\t");
+      expect(displayWidth(row)).toBeLessThanOrEqual(62);
+    }
+  });
+
   it("keeps diff hunks visible while tool output is minimized", () => {
     const state = { ...turn.state, expandOutputGlobal: false, expandFileDiffsGlobal: true };
     const diff = buildFeedBlocks(state, feedView(turn, { columns: 96 })).find(
