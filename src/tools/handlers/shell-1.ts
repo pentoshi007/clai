@@ -114,6 +114,7 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
     const execution = await prepareRtkExecution(command, options?.signal);
     return shellExec({
       command: execution.command,
+      requestedCommand: command,
       env: execution.env,
       cwd: optionalString(args, "cwd"),
       timeoutMs,

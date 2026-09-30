@@ -84,16 +84,18 @@ const streamToFile = async (
   response: Response,
   file: string,
   options: RtkDownloadOptions,
+  transfer: AbortController,
 ): Promise<AttemptResult> => {
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const totalBytes = totalFromHeader(response.headers.get("content-length"));
-  const controller = new AbortController();
-  const onExternalAbort = (): void => controller.abort();
-  options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+  let stalled = false;
   let idle: ReturnType<typeof setTimeout> | undefined;
   const armIdle = (): void => {
     clearTimeout(idle);
-    idle = setTimeout(() => controller.abort(), idleTimeoutMs);
+    idle = setTimeout(() => {
+      stalled = true;
+      transfer.abort();
+    }, idleTimeoutMs);
   };
   const out = createWriteStream(file);
   let received = 0;
@@ -119,14 +121,12 @@ const streamToFile = async (
   } catch (error) {
     out.destroy();
     if (options.signal?.aborted) return { bytes: received, outcome: "abort", message: "download cancelled" };
-    if (controller.signal.aborted) {
+    if (stalled) {
       return { bytes: received, outcome: "retry", message: `stalled — no data for ${Math.round(idleTimeoutMs / 1000)}s` };
     }
     return { bytes: received, outcome: "retry", message: describe(error, "") };
   } finally {
     clearTimeout(idle);
-    options.signal?.removeEventListener("abort", onExternalAbort);
-    controller.abort();
   }
   if (totalBytes !== undefined && received < totalBytes) {
     return {
@@ -169,7 +169,7 @@ const attemptOnce = async (
       };
     }
     if (options.signal?.aborted) return { bytes: 0, outcome: "abort", message: "download cancelled" };
-    return await streamToFile(response, file, options);
+    return await streamToFile(response, file, options, controller);
   } catch (error) {
     if (options.signal?.aborted) return { bytes: 0, outcome: "abort", message: "download cancelled" };
     return { bytes: 0, outcome: "retry", message: describe(error, url) };
