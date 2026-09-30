@@ -80,6 +80,7 @@ export interface CompositionOptions {
   readonly pagerExport?: PagerExportPort | undefined;
   readonly requestExit?: (() => void) | undefined;
   readonly requestMinimise?: (() => boolean) | undefined;
+  readonly requestRedraw?: (() => boolean) | undefined;
   readonly requestSessionSwitch?: ((sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean) | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
@@ -107,6 +108,7 @@ export interface AppServices {
   readonly pagerExport: PagerExportPort;
   readonly requestExit: () => void;
   readonly requestMinimise: () => boolean;
+  readonly requestRedraw: () => boolean;
   readonly requestSessionSwitch: (sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean;
   readonly capabilities: TerminalCapabilityReport;
   readonly recordedEvents: readonly AnyAppEvent[];
@@ -376,6 +378,7 @@ export function createCompositionRoot(
     pagerExport,
     requestExit: options.requestExit ?? (() => {}),
     requestMinimise: options.requestMinimise ?? (() => false),
+    requestRedraw: options.requestRedraw ?? (() => false),
     requestSessionSwitch:
       options.requestSessionSwitch ?? (() => false),
     capabilities,

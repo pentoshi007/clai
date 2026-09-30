@@ -254,7 +254,7 @@ describe("base regions", () => {
 
   it("routes a decoded key object without going through bytes", () => {
     const { calls, router } = build();
-    router.handle({ type: "key", key: keyEvent("f5") });
-    expect(calls).toEqual(["panel:composer:f5"]);
+    router.handle({ type: "key", key: keyEvent("f6") });
+    expect(calls).toEqual(["panel:composer:f6"]);
   });
 });

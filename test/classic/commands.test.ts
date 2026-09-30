@@ -431,6 +431,14 @@ describe("classic command parity (W12)", () => {
     expect(requestMinimise).toHaveBeenCalledOnce();
   });
 
+  spec(["redraw", "refresh"], "/redraw and its /refresh alias repaint the screen", async () => {
+    const requestRedraw = vi.fn(() => true);
+    const { services } = open({ requestRedraw });
+    expect(services.commands.resolve("refresh")).toBe("redraw");
+    await run(services, "refresh");
+    expect(requestRedraw).toHaveBeenCalledOnce();
+  });
+
   spec(["exit", "quit"], "/exit and its /quit alias request a clean shutdown", async () => {
     const requestExit = vi.fn();
     const { services } = open({ requestExit });

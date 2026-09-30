@@ -22,6 +22,7 @@ export const ACTION_IDS = [
   "app.toggle-plan",
   "app.jobs",
   "app.cycle-mode",
+  "app.redraw",
   "focus.next-region",
   "focus.composer",
   "focus.transcript",

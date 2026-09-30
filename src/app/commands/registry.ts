@@ -14,6 +14,7 @@ const ALIAS_GROUPS: Record<string, readonly string[]> = {
   effort: ["reasoning"],
   think: ["thinking"],
   minimise: ["minimize"],
+  redraw: ["refresh"],
   exit: ["quit"],
 };
 

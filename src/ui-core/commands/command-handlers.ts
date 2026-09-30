@@ -24,6 +24,7 @@ import {
   handleJobs,
   handleMinimise,
   handlePrivacy,
+  handleRedraw,
   handleScope,
   handleShortcuts,
   handleUpdate,
@@ -123,6 +124,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("help", () => handleHelp(services));
   c.setHandler("shortcuts", () => handleShortcuts(services));
   c.setHandler("minimise", () => void handleMinimise(services));
+  c.setHandler("redraw", () => handleRedraw(services));
   c.setHandler("exit", () => handleExit(services));
   c.setHandler("set", (i) => void handleSet(services, i));
   c.setHandler("unset", (i) => void handleUnset(services, i));
