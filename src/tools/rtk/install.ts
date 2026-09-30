@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
 import { augmentedPathEnv, findExecutable } from "../../os/command.js";
-import { detectRtk, probeRtkPath, type RtkStatus } from "./binary.js";
+import { detectRtk, forgetRtk, probeRtkPath, type RtkStatus } from "./binary.js";
 import { downloadToFile } from "./download.js";
 import {
   RTK_GITHUB,
@@ -506,6 +506,7 @@ export const runRtkMaintenance = (action: RtkMaintenanceAction): Promise<RtkMain
       }),
     )
     .finally(() => {
+      forgetRtk();
       maintenance = undefined;
       current = undefined;
     });
