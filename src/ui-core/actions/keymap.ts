@@ -34,6 +34,7 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("ctrl+t", "transcript.toggle-thinking", "global"),
   binding("ctrl+o", "transcript.toggle-output", "global"),
   binding("shift+tab", "app.cycle-mode", "global"),
+  binding("f5", "app.redraw", "global"),
   binding("ctrl+d", "transcript.bottom", "global"),
   binding("tab", "focus.next-region", "global"),
   binding("ctrl+y", "queue.select-prev", "global"),

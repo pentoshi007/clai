@@ -59,6 +59,7 @@ export class ClassicActionHandlers {
       case "app.toggle-plan":
       case "app.jobs":
       case "app.cycle-mode":
+      case "app.redraw":
       case "focus.next-region":
       case "focus.composer":
       case "focus.transcript":
@@ -225,6 +226,9 @@ export class ClassicActionHandlers {
         return;
       case "focus.transcript":
         services.focus.focusRegion("transcript");
+        return;
+      case "app.redraw":
+        services.requestRedraw();
         return;
       default:
         return;
