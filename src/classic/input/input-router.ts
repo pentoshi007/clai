@@ -1,5 +1,6 @@
 import type { ActionContext, ActionId } from "../../ui-core/actions/action-id.js";
 import type { ActionRouter } from "../../ui-core/actions/action-router.js";
+import { resolveContextFreeAction } from "../../ui-core/actions/context-free.js";
 import type { FocusController } from "../../ui-core/controllers/focus-controller.js";
 import type { CancelLadder } from "./cancel-ladder.js";
 import { chordFromKey } from "./chord-from-key.js";
@@ -62,6 +63,12 @@ export class InputRouter {
   private routeKey(key: KeyEvent): void {
     const chord = chordFromKey(key);
     const context = this.deps.focus.activeContext();
+
+    const contextFree = resolveContextFreeAction(this.deps.router, chord);
+    if (contextFree) {
+      this.deps.onAction(contextFree, chord, key);
+      return;
+    }
 
     if (BLOCKING_CONTEXTS.has(context)) {
       if (chord === "ctrl+c") {

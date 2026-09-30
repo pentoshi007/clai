@@ -438,6 +438,11 @@ export async function handleMinimise(services: AppServices): Promise<void> {
   );
 }
 
+export function handleRedraw(services: AppServices): void {
+  if (services.requestRedraw()) return;
+  notice(services, "warn", "screen redraw is unavailable in this launch");
+}
+
 export function handleExit(services: AppServices): void {
   services.requestExit();
 }
