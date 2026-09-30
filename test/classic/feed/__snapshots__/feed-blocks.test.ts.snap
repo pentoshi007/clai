@@ -195,7 +195,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and[39m
   [38;2;74;222;128m   offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
@@ -277,7 +277,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and[39m
   [38;2;74;222;128m   offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
@@ -507,7 +507,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -581,7 +581,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -786,7 +786,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -852,7 +852,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1050,7 +1050,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1116,7 +1116,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1311,7 +1311,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1376,7 +1376,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1569,7 +1569,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1633,7 +1633,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1825,7 +1825,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128mv[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m - [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m
@@ -1889,7 +1889,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
 
   [38;2;74;222;128mThe change touches three files:[39m
 
-  [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
+  [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
 [38;2;74;222;128m✓[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm test -- --run)[39m[38;2;110;124;145m · [39m[38;2;110;124;145m1.2s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203mPASS src/routes/users.test.ts[39m

@@ -107,7 +107,7 @@ export function renderAnswerLines(ctx: StreamContext, text: string): readonly st
   const body = rendered.length > 0 ? rendered : [source];
   return body.map((line, index) => {
     if (line.trim() === "") return "";
-    const paint = line.includes("\x1b") ? line : styled(ctx, line, { fg: "response" });
+    const paint = styled(ctx, line, { fg: "response" });
     return row(ctx, `${index === 0 ? bullet : "  "}${paint}`);
   });
 }
