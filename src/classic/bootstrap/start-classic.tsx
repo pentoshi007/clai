@@ -1,4 +1,4 @@
-import { render, type Instance } from "ink";
+import { render, type Instance, type RenderOptions } from "ink";
 import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import type { Mode, ProviderId } from "../../types.js";
 import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
@@ -34,6 +34,14 @@ import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { runFreebuffSessionShutdownCleanup } from "../../llm/freebuff-session.js";
 
+export const CLASSIC_INK_OPTIONS: RenderOptions = {
+  exitOnCtrlC: false,
+  patchConsole: false,
+  alternateScreen: false,
+  concurrent: false,
+  incrementalRendering: true,
+};
+
 export interface StartClassicOptions {
   readonly mode?: Mode | undefined;
   readonly provider?: ProviderId | undefined;
@@ -68,12 +76,7 @@ export async function startClassic(
         <ServicesProvider services={services}>
           <ClassicApp wiring={wiring} />
         </ServicesProvider>,
-        {
-          exitOnCtrlC: false,
-          patchConsole: false,
-          alternateScreen: false,
-          concurrent: false,
-        },
+        CLASSIC_INK_OPTIONS,
       );
     },
     unmount() {
