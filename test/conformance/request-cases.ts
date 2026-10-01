@@ -1,3 +1,4 @@
+import { arch, platform, release } from "node:os";
 import type { ChatMessage, CompletionRequest, ToolDefinition } from "../../src/types.js";
 import {
   createReasoningArtifact,
@@ -184,6 +185,12 @@ const VOLATILE_HEADERS = new Set([
   "x-request-id",
 ]);
 
+const HOST_DESCRIPTOR = `${platform()} ${release()}; ${arch()}`;
+
+function withoutHostDescriptor(value: string): string {
+  return value.split(HOST_DESCRIPTOR).join("<host>");
+}
+
 export function redactHeaders(
   headers: Record<string, string>,
 ): Record<string, string> {
@@ -194,7 +201,7 @@ export function redactHeaders(
       ? "<redacted>"
       : VOLATILE_HEADERS.has(lower)
         ? "<generated>"
-        : value;
+        : withoutHostDescriptor(value);
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
