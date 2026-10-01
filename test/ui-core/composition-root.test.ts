@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   AgentPort,
   RunTurnHandlers,
@@ -14,6 +14,7 @@ import {
   registerModelCatalogFacts,
 } from "../../src/llm/capabilities.js";
 import { createTurnOutcome, type TurnOutcome } from "../../src/agent/turn-outcome.js";
+import { RESPONDER_RESULT_LEDGER_PREFIX } from "../../src/agent/responder-context.js";
 
 class StubAgent implements AgentPort {
   async runTurn(
@@ -59,6 +60,27 @@ class UsageAgent implements AgentPort {
     handlers.onMessages?.([
       { role: "user", content: "usage" },
       { role: "assistant", content: "usage" },
+    ]);
+    return outcome;
+  }
+}
+
+class CarriedWorkAgent implements AgentPort {
+  async runTurn(
+    _req: RunTurnRequest,
+    handlers: RunTurnHandlers,
+  ): Promise<TurnOutcome> {
+    const outcome = createTurnOutcome({ status: "succeeded", answer: "ok", steps: 1, remainingCriteria: [] });
+    handlers.onEvent({ type: "turn-start", prompt: "go" });
+    handlers.onEvent({ type: "assistant-message", text: "ok" });
+    handlers.onEvent({ type: "turn-end", outcome, finalAnswer: "ok", steps: 1 });
+    handlers.onMessages?.([
+      { role: "user", content: ["staging API_TOKEN=", "tok_", "000000000001"].join("") },
+      {
+        role: "system",
+        content: `${RESPONDER_RESULT_LEDGER_PREFIX}\n- notification=completion:job-1 job=job-1 status=exited consumed=true artifact=/a/job-1.log summary="14 routes, 3 open"`,
+      },
+      { role: "assistant", content: "ok" },
     ]);
     return outcome;
   }
@@ -346,6 +368,57 @@ describe("createCompositionRoot", () => {
       notice?.type === "notice" ? notice.payload.text : "",
     ).toContain("reasoning output 12");
     services.dispose();
+  });
+
+  it("shows what survives compaction right after the context line, without leaking values", async () => {
+    const services = createCompositionRoot({
+      agent: new CarriedWorkAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+      captureEvents: true,
+    });
+    try {
+      await services.session.submit("go");
+      await handleContext(services);
+      const texts = services.recordedEvents.flatMap((event) =>
+        event.type === "notice" ? [event.payload.text] : [],
+      );
+      const contextIndex = texts.findIndex((text) => text.startsWith("context: "));
+      expect(contextIndex).toBeGreaterThanOrEqual(0);
+      expect(texts[contextIndex + 1]).toBe(
+        "carried across compaction: 1 responder result read (1 with a conclusion) · 1 credential",
+      );
+      expect(texts.join("\n")).not.toContain("000000000001");
+    } finally {
+      services.dispose();
+    }
+  });
+
+  it("prints no carried-work line when nothing is carried, and survives a failing projection", async () => {
+    const services = createCompositionRoot({
+      agent: new StubAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+      captureEvents: true,
+    });
+    try {
+      await services.session.submit("go");
+      await handleContext(services);
+      const noticeTexts = (): string[] =>
+        services.recordedEvents.flatMap((event) =>
+          event.type === "notice" ? [event.payload.text] : [],
+        );
+      expect(noticeTexts().some((text) => text.startsWith("carried across compaction"))).toBe(false);
+
+      const failing = vi
+        .spyOn(services.session, "carriedWork")
+        .mockRejectedValue(new Error("plan store unavailable"));
+      await expect(handleContext(services)).resolves.toBeUndefined();
+      expect(noticeTexts().some((text) => text.startsWith("carried across compaction"))).toBe(false);
+      failing.mockRestore();
+    } finally {
+      services.dispose();
+    }
   });
 
   it("reports provider-ratio usage against the advertised window", async () => {

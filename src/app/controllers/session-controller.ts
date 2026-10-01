@@ -39,7 +39,12 @@ import { createSessionPolicy, type SessionPolicy } from "../../agent/session-pol
 import { SubagentManager } from "../../agent/subagents/manager.js";
 import { knownAttemptUsage, type OperationUsageSnapshot } from "../../llm/operation-usage.js";
 import { getActiveProjectRoot } from "../../agent/project-root.js";
-import { createCompactionDurableEnvelopeBuilder } from "../../agent/turn/compaction-durable-envelope.js";
+import {
+  collectCompactionEnvelopeInput,
+  createCompactionDurableEnvelopeBuilder,
+  type CompactionDurableEnvelopePorts,
+} from "../../agent/turn/compaction-durable-envelope.js";
+import { summarizeCarriedWork } from "../../agent/durable-envelope.js";
 import { detectPackageManager } from "../../agent/workspace-orient.js";
 import { createSubagentStore } from "../../store/subagents.js";
 import { SessionSubagents } from "./session-subagents.js";
@@ -761,10 +766,12 @@ export class SessionController implements Disposable {
     }
   }
 
-  private compactionEnvelope(history: readonly ChatMessage[]): Promise<string | undefined> {
+  private compactionEnvelopePorts(
+    history: readonly ChatMessage[],
+  ): CompactionDurableEnvelopePorts {
     const sessionId = this.sessionIdValue;
     const jobs = this.deps.jobs;
-    return createCompactionDurableEnvelopeBuilder({
+    return {
       messages: history,
       loadPlan: () => this.deps.persistence.loadPlan(sessionId),
       getProjectRoot: getActiveProjectRoot,
@@ -773,7 +780,19 @@ export class SessionController implements Disposable {
       getRunningJobs: () => jobs?.running(sessionId) ?? [],
       getRecentJobs: () => jobs?.recent?.(12, sessionId) ?? [],
       getSubagents: () => this.subagentsValue.list(),
-    })();
+    };
+  }
+
+  private compactionEnvelope(history: readonly ChatMessage[]): Promise<string | undefined> {
+    return createCompactionDurableEnvelopeBuilder(
+      this.compactionEnvelopePorts(history),
+    )();
+  }
+
+  async carriedWork(): Promise<string | undefined> {
+    return summarizeCarriedWork(
+      await collectCompactionEnvelopeInput(this.compactionEnvelopePorts(this.history)),
+    );
   }
 
   private settlePersistedResponderResults(): void {
