@@ -5,12 +5,17 @@ import type { SubagentRun } from "../subagents/types.js";
 import {
   buildDurableEnvelope,
   isDurableEnvelopeContent,
+  type DurableEnvelopeInput,
   type EnvelopeJobState,
   type EnvelopeSubagentState,
+  type ResultConclusion,
   type WorkLedger,
 } from "../durable-envelope.js";
 import { collectUserCredentials } from "../context/user-credentials.js";
-import { isResponderResultLedgerMessage } from "../responder-context.js";
+import {
+  isResponderResultLedgerMessage,
+  parseResponderLedgerLine,
+} from "../responder-context.js";
 
 export interface CompactionEnvelopeJob {
   readonly id: string;
@@ -45,22 +50,30 @@ export interface CompactionDurableEnvelopePorts {
 interface ConsumedResults {
   readonly notifications: readonly string[];
   readonly jobs: readonly string[];
+  readonly conclusions: readonly ResultConclusion[];
 }
 
 const consumedResults = (messages: readonly ChatMessage[]): ConsumedResults => {
   const notifications = new Set<string>();
   const jobs = new Set<string>();
+  const conclusions = new Map<string, string>();
   for (const message of messages) {
     if (!isResponderResultLedgerMessage(message)) continue;
     for (const line of message.content.split("\n")) {
-      const notification = /notification=(\S+)/.exec(line)?.[1];
-      if (!notification) continue;
-      notifications.add(notification);
-      const job = /\bjob=(\S+)/.exec(line)?.[1];
-      if (job) jobs.add(job);
+      const { notificationId, jobId, digest } = parseResponderLedgerLine(line);
+      if (!notificationId) continue;
+      notifications.add(notificationId);
+      if (!jobId) continue;
+      jobs.add(jobId);
+      if (digest) conclusions.set(jobId, digest);
+      else conclusions.delete(jobId);
     }
   }
-  return { notifications: [...notifications], jobs: [...jobs] };
+  return {
+    notifications: [...notifications],
+    jobs: [...jobs],
+    conclusions: [...conclusions].map(([jobId, conclusion]) => ({ jobId, conclusion })),
+  };
 };
 
 const envelopeJob = (job: CompactionEnvelopeJob): EnvelopeJobState => ({
@@ -121,9 +134,9 @@ const envelopeSubagent = (run: SubagentRun): EnvelopeSubagentState => {
   };
 };
 
-const build = async (
+export const collectCompactionEnvelopeInput = async (
   ports: CompactionDurableEnvelopePorts,
-): Promise<string | undefined> => {
+): Promise<DurableEnvelopeInput> => {
   const plan = await ports.loadPlan();
   const root = ports.getProjectRoot() ?? plan?.meta?.projectRoot;
   const consumed = consumedResults(ports.messages);
@@ -133,7 +146,7 @@ const build = async (
   const { liveJobs, finishedJobs } = collectJobs(ports);
   const subagents = ports.getSubagents().map(envelopeSubagent);
   const credentials = collectUserCredentials(ports.messages, isDurableEnvelopeContent);
-  return buildDurableEnvelope({
+  return {
     ...(plan ? { plan } : {}),
     ...(ports.outcome ? { outcome: ports.outcome } : {}),
     ...(ports.ledger ? { ledger: ports.ledger } : {}),
@@ -149,13 +162,19 @@ const build = async (
       consumed: consumed.notifications,
       unreadJobs: unread.map((notification) => notification.jobId),
       consumedJobs: consumed.jobs,
+      ...(consumed.conclusions.length > 0 ? { conclusions: consumed.conclusions } : {}),
     },
     ...(liveJobs.length > 0 ? { liveJobs } : {}),
     ...(finishedJobs.length > 0 ? { finishedJobs } : {}),
     ...(subagents.length > 0 ? { subagents } : {}),
     ...(credentials.length > 0 ? { credentials } : {}),
-  });
+  };
 };
+
+const build = async (
+  ports: CompactionDurableEnvelopePorts,
+): Promise<string | undefined> =>
+  buildDurableEnvelope(await collectCompactionEnvelopeInput(ports));
 
 export const createCompactionDurableEnvelopeBuilder =
   (ports: CompactionDurableEnvelopePorts) => (): Promise<string | undefined> =>

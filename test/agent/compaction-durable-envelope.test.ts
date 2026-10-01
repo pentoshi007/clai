@@ -6,6 +6,9 @@ import {
 import type { OutcomeEnvelope } from "../../src/agent/outcomes.js";
 import type { SessionPlan } from "../../src/store/plan.js";
 import { createCompactionDurableEnvelopeBuilder } from "../../src/agent/turn/compaction-durable-envelope.js";
+import type { SubagentRun } from "../../src/agent/subagents/types.js";
+
+const stagingKey = ["7f3a9c2e", "41b8d6f0"].join("");
 
 const outcome: OutcomeEnvelope = {
   schemaVersion: 1,
@@ -131,6 +134,96 @@ describe("compaction durable envelope builder", () => {
     );
     expect(detectPackageManager).not.toHaveBeenCalled();
     expect(lookupOrder).toEqual(["unread", "running", "recent"]);
+  });
+
+  it("carries subagents, jobs, delegated tasks and user credentials, summarising results already read", async () => {
+    const run = (overrides: Partial<SubagentRun>): SubagentRun => ({
+      title: "Audit",
+      prompt: "audit",
+      cwd: "/workspace",
+      provider: "openai",
+      model: "gpt-test",
+      id: "sa-0",
+      parentSessionId: "session-1",
+      attempt: 1,
+      status: "completed",
+      createdAt: 0,
+      updatedAt: 0,
+      events: [],
+      ...overrides,
+    });
+    const delegatedPlan: SessionPlan = {
+      ...plan,
+      tasks: [
+        {
+          id: "t4",
+          title: "Scan staging host",
+          state: "in_progress",
+          responderOwned: true,
+          parentTaskId: "t2",
+          jobId: "job-scan",
+        },
+      ],
+    };
+    const buildEnvelope = createCompactionDurableEnvelopeBuilder({
+      messages: [
+        { role: "user", content: `staging API key: ${stagingKey}\nusername: qa-bot` },
+        {
+          role: "system",
+          content:
+            "RESPONDER RESULT LEDGER (authoritative consumed results)\n- notification=notice-1 job=job-scan status=completed consumed=true",
+        },
+      ],
+      outcome,
+      ledger: new WorkLedger(),
+      loadPlan: async () => delegatedPlan,
+      getProjectRoot: () => "/workspace",
+      detectPackageManager: () => "npm",
+      getPendingNotifications: () => [],
+      getRunningJobs: () => [
+        {
+          id: "job-dev",
+          status: "running",
+          command: "npm run dev",
+          commandDisplay: "npm run dev",
+          name: "Dev server",
+        },
+      ],
+      getRecentJobs: () => [
+        {
+          id: "job-scan",
+          status: "completed",
+          command: "nmap -sV staging",
+          commandDisplay: "nmap -sV staging",
+          exitCode: 0,
+          responder: true,
+          taskId: "t4",
+        },
+      ],
+      getSubagents: () => [
+        run({
+          id: "sa-1",
+          title: "Map the auth flow",
+          report: "## Findings\n- Login issues a JWT at /api/login\n- Refresh is cookie based",
+          resultAcknowledged: true,
+        }),
+        run({ id: "sa-2", title: "Inventory routes", report: "## Findings\n- 14 routes", resultAcknowledged: false }),
+        run({ id: "sa-3", title: "Fuzz uploads", status: "running" }),
+      ],
+    });
+
+    const envelope = (await buildEnvelope()) ?? "";
+
+    expect(envelope).toContain("[sa-1] Map the auth flow (completed, attempt 1, result read) — Login issues a JWT at /api/login Refresh is cookie based");
+    expect(envelope).toContain("[sa-2] Inventory routes (completed, attempt 1, result pending delivery)");
+    expect(envelope).not.toContain("14 routes");
+    expect(envelope).toContain("[sa-3] Fuzz uploads (running, attempt 1)");
+    expect(envelope).toContain('[job-dev] "Dev server" running — npm run dev');
+    expect(envelope).toContain("[job-scan] completed exit=0 responder task=t4 — nmap -sV staging");
+    expect(envelope).toContain("[t4] Scan staging host (in_progress) parent=t2 job=job-scan completed exit=0, result read");
+    expect(envelope).toContain("Consumed responder results (never re-read): notice-1");
+    expect(envelope).toContain(`- staging API key: ${stagingKey}`);
+    expect(envelope).toContain("- username: qa-bot");
   });
 
   it("propagates plan-load failure before building the envelope", async () => {

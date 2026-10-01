@@ -1,9 +1,11 @@
 import type { ResponderNotification } from "../../tools/jobs.js";
+import { normalizeResultDigest } from "../responder-context.js";
 
 export interface ResponderReadRequest {
   readonly toolName: string;
   readonly notificationId: string;
   readonly jobId: string;
+  readonly summary?: string | undefined;
 }
 
 export interface ResponderReadWakeIdentity {
@@ -35,12 +37,16 @@ interface ResponderReadMatch {
 export const parseResponderReadRequest = (
   toolName: string,
   args: Record<string, unknown>,
-): ResponderReadRequest => ({
-  toolName,
-  notificationId:
-    typeof args.notificationId === "string" ? args.notificationId.trim() : "",
-  jobId: typeof args.jobId === "string" ? args.jobId.trim() : "",
-});
+): ResponderReadRequest => {
+  const summary = normalizeResultDigest(args.summary);
+  return {
+    toolName,
+    notificationId:
+      typeof args.notificationId === "string" ? args.notificationId.trim() : "",
+    jobId: typeof args.jobId === "string" ? args.jobId.trim() : "",
+    ...(summary ? { summary } : {}),
+  };
+};
 
 const findMatch = (
   request: ResponderReadRequest,
@@ -118,7 +124,9 @@ export const decideResponderRead = (
     return {
       marked: true,
       output: `Responder job ${notification.jobId} (${notification.id}) marked delivered and read after model analysis.`,
-      ledgerNotification: notification,
+      ledgerNotification: request.summary
+        ? { ...notification, resultDigest: request.summary }
+        : notification,
       releaseClaimId: notification.id,
     };
   }
