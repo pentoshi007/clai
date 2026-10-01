@@ -127,6 +127,9 @@ export const providerAliases: Record<string, ProviderId> = {
   omni: "omnirush",
   "omnirush-ai": "omnirush",
   "omni-rush": "omnirush",
+  tokenharbor: "tokenharbor",
+  "token-harbor": "tokenharbor",
+  "tokenharbor.ai": "tokenharbor",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -162,6 +165,7 @@ export const defaultModels: Record<ProviderId, string> = {
   copilot: "gpt-4o",
   kiro: "claude-sonnet-4.5",
   omnirush: "gpt-6-astra",
+  tokenharbor: "claude-sonnet-5.5",
 };
 
 export const retiredModelReplacements: Partial<
@@ -233,4 +237,5 @@ export const envVars: Record<ProviderId, string | undefined> = {
   copilot: "COPILOT_API_KEY",
   kiro: "KIRO_API_KEY",
   omnirush: "OMNIRUSH_API_KEY",
+  tokenharbor: "TOKENHARBOR_API_KEY",
 };

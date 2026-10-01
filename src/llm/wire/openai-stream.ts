@@ -37,7 +37,10 @@ import {
   parseOpenAiMessageToolCalls,
 } from "../tool-protocol.js";
 import { readWithAbort } from "./abort-race.js";
-import { chatCompletionsBodyFromPlan } from "./chat-body.js";
+import {
+  chatCompletionsBodyFromPlan,
+  type EphemeralCacheBreakpointMode,
+} from "./chat-body.js";
 import {
   artifactRaw,
   compatibleArtifactPolicyFor,
@@ -83,7 +86,7 @@ export async function openAiCompatibleStream(request: {
   streamTerminal?: StreamTerminalPolicy | undefined;
   includeStreamUsage?: boolean | undefined;
   bodyExtras?: Readonly<Record<string, unknown>> | undefined;
-  ephemeralCacheBreakpoints?: boolean | undefined;
+  ephemeralCacheBreakpoints?: EphemeralCacheBreakpointMode | undefined;
   usageAliases?: CompatibleUsageAliases | undefined;
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;

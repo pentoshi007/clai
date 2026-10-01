@@ -200,7 +200,7 @@ const CONTEXT_LIMIT_SOURCE_LABELS: Partial<Record<ContextLimitSource, string>> =
   default: "default",
 };
 
-export function handleContext(services: AppServices): void {
+export async function handleContext(services: AppServices): Promise<void> {
   const { messages, tokens } = services.session.estimateContext();
   const state = services.session.getState();
   const legacy = state.contextUsage;
@@ -274,6 +274,12 @@ export function handleContext(services: AppServices): void {
   if (snapshot) details.push(`scope ${snapshot.scope}`);
   const text = `context: ${messages} messages · ${usedLabel}${sessionBits} · ${details.join(" · ")}`;
   notice(services, "info", text);
+  try {
+    const carried = await services.session.carriedWork();
+    if (carried) notice(services, "info", `carried across compaction: ${carried}`);
+  } catch {
+    return;
+  }
 }
 
 function formatCredits(value: number): string {

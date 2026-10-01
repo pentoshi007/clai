@@ -98,6 +98,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "tokenharbor",
+    provider: "tokenharbor",
+    family: "chat_completions",
+    model: "claude-sonnet-5.5",
+    auth: { apiKey: "thk_live_conformance_key_0000000000" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "fireworks",
     provider: "fireworks",
     family: "chat_completions",
