@@ -176,6 +176,15 @@ describe("installPasteBurstGuard", () => {
     expect(input.app).toHaveLength(4);
   });
 
+  it("delivers two Enters typed apart after a multi-character read as two keypresses", () => {
+    const { input, read, advanceTo } = harness();
+    read("/help", 0);
+    read("\r", 200);
+    read("\r", 350);
+    advanceTo(10_000);
+    expect(input.app).toEqual(['key:"/"', 'key:"h"', 'key:"e"', 'key:"l"', 'key:"p"', 'key:"\\r"', 'key:"\\r"']);
+  });
+
   it("lets modified, navigation and escape keys through at once, behind pending text", () => {
     const { input, runMicrotasks } = harness();
     input.emitKey(fakeKey("a"));
