@@ -48,6 +48,29 @@ describe("pasting multiple lines", () => {
     nothingWasSent(harness!);
   });
 
+  it("stays one draft when the lines trickle in far slower than a local terminal would deliver them", async () => {
+    const { wiring } = harness!;
+    for (const piece of PROMPT.map((line) => `${line}\r`)) {
+      wiring.handleData(piece);
+      await vi.advanceTimersByTimeAsync(120);
+    }
+    await vi.advanceTimersByTimeAsync(PASTE_BURST_SETTLE_MS + 50);
+    expect(wiring.composer.text).toBe(`${PROMPT.join("\n")}\n`);
+    nothingWasSent(harness!);
+  });
+
+  it("stays one draft when each Enter arrives ahead of its line, blank lines included", async () => {
+    const { wiring } = harness!;
+    const pieces = PROMPT.map((line, index) => (index === 0 ? line : `\r${line}`));
+    for (const piece of pieces) {
+      wiring.handleData(piece);
+      await vi.advanceTimersByTimeAsync(120);
+    }
+    await vi.advanceTimersByTimeAsync(PASTE_BURST_SETTLE_MS + 50);
+    expect(wiring.composer.text).toBe(PROMPT.join("\n"));
+    nothingWasSent(harness!);
+  });
+
   it("does not send a line whose Enter is delivered on its own a moment later", async () => {
     const { wiring } = harness!;
     wiring.handleData("first line");
