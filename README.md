@@ -19,7 +19,7 @@ Why people pick it over other agent CLIs:
 - **Free-tier first.** Built-in **keyless Free** gateway (`free-2/kilo-auto/free`) so a fresh install runs at no cost with zero setup — no API key required.
 - **Account sign-in.** `clai auth <freebuff|cline|chatgpt|copilot|kiro>` — provider-specific browser/device approval, with supported `--import` paths and multi-credential rotation.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit, quota, transient, or 5xx errors. Disable any key to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
-- **Broad provider support.** 25+ built-in providers: Freebuff, DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, AgentRouter, AWS Mantle, TokenRouter, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
+- **Broad provider support.** 25+ built-in providers: Freebuff, DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, AgentRouter, AWS Mantle, TokenRouter, Token Harbor, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
 - **Parallel subagents.** Independent investigations (recon, research, large refactors) run as read-only subagents concurrently; `/orchestrator` and `/agents` control and inspect them, with per-role model chains.
 - **Agent Skills.** Loads `SKILL.md`-based skills on demand — `/skills` manages them, and relevant skills surface automatically per prompt.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -147,6 +147,7 @@ Up to 10 credentials can be stored per provider, with automatic key rotation on 
 | **AgentRouter** | `claude-opus-4-6` | Paid gateway | `AGENTROUTER_API_KEY` |
 | **AWS Mantle** | `anthropic.claude-haiku-4-5` | Paid (AWS) | `ANTHROPIC_API_KEY` |
 | **TokenRouter** | `moonshotai/kimi-k3` | Paid gateway | `TOKENROUTER_API_KEY` |
+| **Token Harbor** | `claude-sonnet-5.5` | Paid gateway (free tier) | `TOKENHARBOR_API_KEY` |
 | **Lightning AI** | `openai/gpt-5` | Free grant / Paid | `LIGHTNING_API_KEY` |
 | **Modal** | `moonshotai/Kimi-K3` | Your own endpoint ($30/mo credit) | `MODAL_PROXY_TOKEN_ID` |
 | **Meta (Muse)** | `muse-spark-1.2` | Paid | `MODEL_API_KEY` |

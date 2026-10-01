@@ -92,6 +92,7 @@ function parseVision(entry: Record<string, unknown>): boolean | undefined {
     architecture?.input_modalities,
     architecture?.modality,
     entry.input_modalities,
+    entry.inputModalities,
     entry.modalities,
     entry.capabilities,
     entry.features,
@@ -108,6 +109,7 @@ function parseModalities(entry: Record<string, unknown>): readonly string[] | un
   return (
     stringList(architecture?.input_modalities) ??
     stringList(entry.input_modalities) ??
+    stringList(entry.inputModalities) ??
     stringList(modalities?.input)
   );
 }

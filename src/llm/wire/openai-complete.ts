@@ -16,7 +16,10 @@ import { compileRequestPlan } from "../request-plan.js";
 import { parseFireworksUsage, parseOpenAiUsage } from "../token-usage.js";
 import type { CompatibleUsageAliases } from "../token-usage.js";
 import { parseOpenAiMessageToolCalls } from "../tool-protocol.js";
-import { chatCompletionsBodyFromPlan } from "./chat-body.js";
+import {
+  chatCompletionsBodyFromPlan,
+  type EphemeralCacheBreakpointMode,
+} from "./chat-body.js";
 import {
   artifactRaw,
   compatibleArtifactPolicyFor,
@@ -48,7 +51,7 @@ export async function openAiCompatibleComplete(options: {
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
   bodyExtras?: Readonly<Record<string, unknown>> | undefined;
-  ephemeralCacheBreakpoints?: boolean | undefined;
+  ephemeralCacheBreakpoints?: EphemeralCacheBreakpointMode | undefined;
   usageAliases?: CompatibleUsageAliases | undefined;
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
