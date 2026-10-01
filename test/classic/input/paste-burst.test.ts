@@ -93,6 +93,14 @@ describe("PasteBurstAssembler", () => {
     expect(describeEvents(assembler.expire(arrival + PASTE_BURST_SETTLE_MS))).toEqual(["key:enter"]);
   });
 
+  it("delivers two Enters typed apart after a multi-character read as two keypresses", () => {
+    const assembler = new PasteBurstAssembler();
+    assembler.process(decode("/help"), 0);
+    expect(assembler.process(decode("\r"), 200)).toEqual([]);
+    expect(describeEvents(assembler.process(decode("\r"), 350))).toEqual(["key:enter", "key:enter"]);
+    expect(assembler.pendingDeadline).toBeUndefined();
+  });
+
   it("keeps a paste whole when its lines arrive as separate reads with blank lines between", () => {
     const assembler = new PasteBurstAssembler();
     const gap = PASTE_BURST_SETTLE_MS - 10;

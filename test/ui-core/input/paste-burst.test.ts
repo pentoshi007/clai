@@ -25,6 +25,12 @@ function show(outputs: readonly BurstOutput<string>[]): string[] {
   );
 }
 
+function withoutConsecutiveBlankLines(lines: readonly string[]): string[] {
+  const result: string[] = [];
+  for (const line of lines) result.push(line === "" && result.at(-1) === "" ? "_" : line);
+  return result;
+}
+
 function detector(): PasteBurstDetector<string> {
   return new PasteBurstDetector<string>({ normalize: normalizePasteLineBreaks });
 }
@@ -99,7 +105,7 @@ describe("PasteBurstDetector", () => {
         fc.array(gap, { minLength: 13, maxLength: 13 }),
         (first, rest, mode, gaps) => {
           const instance = detector();
-          const lines = [first, ...rest];
+          const lines = mode === "after" ? [first, ...rest] : withoutConsecutiveBlankLines([first, ...rest]);
           const reads =
             mode === "after"
               ? lines.map((line) => `${line}\r`)
@@ -153,6 +159,24 @@ describe("PasteBurstDetector", () => {
     expect(instance.pendingDeadline).toBe(arrival + PASTE_BURST_SETTLE_MS);
     expect(instance.expire(arrival + PASTE_BURST_SETTLE_MS - 1)).toEqual([]);
     expect(show(instance.expire(arrival + PASTE_BURST_SETTLE_MS))).toEqual(['key:"\\r"']);
+  });
+
+  it("releases a held lone Enter as a keypress when a second lone Enter arrives after the glue window", () => {
+    const instance = detector();
+    instance.process(read("/help"), 0);
+    expect(instance.process(read("\r"), 200)).toEqual([]);
+    expect(show(instance.process(read("\r"), 350))).toEqual(['key:"\\r"', 'key:"\\r"']);
+    expect(instance.pendingDeadline).toBeUndefined();
+  });
+
+  it("merges a held lone Enter with another one that follows inside the glue window", () => {
+    const instance = detector();
+    instance.process(read("/help"), 0);
+    instance.process(read("\r"), 200);
+    expect(instance.process(read("\r"), 200 + PASTE_BURST_GLUE_MS)).toEqual([]);
+    expect(instance.expire(200 + PASTE_BURST_GLUE_MS + PASTE_BURST_SETTLE_MS)).toEqual([
+      { type: "paste", text: "\n\n" },
+    ]);
   });
 
   it("turns that held Enter into a newline when the paste carries on", () => {

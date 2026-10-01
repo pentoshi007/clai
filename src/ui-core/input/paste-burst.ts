@@ -62,6 +62,10 @@ function measure<T>(chunk: readonly BurstUnit<T>[]): ChunkShape {
   };
 }
 
+function isContent<T>(unit: BurstUnit<T>): boolean {
+  return unit.kind === "content";
+}
+
 function textOf<T>(units: readonly BurstUnit<T>[]): string {
   let text = "";
   for (const unit of units) text += unit.text;
@@ -109,7 +113,7 @@ export class PasteBurstDetector<T> {
       }
       emitted.push(...this.releaseCollected());
     } else if (this.held.length > 0) {
-      if (plain && now - this.touchedAt <= this.settleMs) {
+      if (plain && this.continuesHeld(chunk, now)) {
         const text = textOf(this.held) + textOf(chunk);
         this.held = [];
         this.begin(text, now);
@@ -160,6 +164,13 @@ export class PasteBurstDetector<T> {
     return now - this.plainAt <= gapLimit;
   }
 
+  private continuesHeld(chunk: readonly BurstUnit<T>[], now: number): boolean {
+    const gap = now - this.touchedAt;
+    if (gap > this.settleMs) return false;
+    if (this.held.some(isContent)) return true;
+    return gap <= this.glueMs || chunk.some(isContent);
+  }
+
   private isUndecided(shape: ChunkShape, now: number): boolean {
     if (shape.endsWithBreakAfterContent) return true;
     return this.plainWasBulk && now - this.plainAt <= this.settleMs;
@@ -185,6 +196,7 @@ export class PasteBurstDetector<T> {
   private releaseHeld(): readonly BurstOutput<T>[] {
     const held = this.held;
     this.held = [];
+    this.plainWasBulk = false;
     return passThrough(held);
   }
 }
