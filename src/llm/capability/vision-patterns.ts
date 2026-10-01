@@ -221,6 +221,7 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
   codex: [/gpt/i, /codex/i, /o[34]/i, /vision/i],
   copilot: [/gpt/i, /claude/i, /gemini/i, /vision/i, /o[34]/i],
   kiro: [/claude/i, /gpt/i, /vision/i],
+  omnirush: [/gpt-[5-9]/i, /muse-spark/i, /vision/i],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {

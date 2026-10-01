@@ -351,6 +351,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   codex: "https://chatgpt.com/backend-api/codex",
   copilot: "https://api.githubcopilot.com",
   kiro: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+  omnirush: "https://omnirush.ai/omnirush/v1",
 };
 
 function providerBaseUrl(provider: ProviderId): string | undefined {
@@ -492,6 +493,18 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
         await appendProviderKey(next, key, {
           ...(credential.refreshToken ? { refreshToken: credential.refreshToken } : {}),
           ...(credential.expiresAt !== undefined ? { expiresAt: credential.expiresAt } : {}),
+        });
+      } else if (next === "omnirush") {
+        services.overlay.close();
+        const { runOmnirushAuthForUI } = await import("./key-commands.js");
+        const tokens = await runOmnirushAuthForUI(services);
+        if (!tokens) {
+          services.overlay.close();
+          services.session.notice("info", `cancelled · provider unchanged`);
+          return;
+        }
+        await appendProviderKey(next, tokens.accessToken, {
+          refreshToken: tokens.refreshToken,
         });
       } else {
         services.overlay.close();

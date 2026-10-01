@@ -43,6 +43,7 @@ import { clineProvider } from "../cline.js";
 import { codexProvider } from "../codex.js";
 import { copilotProvider } from "../copilot.js";
 import { kiroProvider } from "../kiro.js";
+import { omnirushProvider } from "../omnirush.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -76,6 +77,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   codex: codexProvider,
   copilot: copilotProvider,
   kiro: kiroProvider,
+  omnirush: omnirushProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -109,6 +111,7 @@ const fallbackOrder: ProviderId[] = [
   "codex",
   "copilot",
   "kiro",
+  "omnirush",
 ];
 
 function allFallbackIds(): ProviderId[] {

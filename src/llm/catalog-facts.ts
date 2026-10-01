@@ -77,6 +77,8 @@ function parseVision(entry: Record<string, unknown>): boolean | undefined {
   const caps = asRecord(entry.capabilities);
   const supports = asRecord(caps?.supports);
   if (typeof supports?.vision === "boolean") return supports.vision;
+  if (typeof caps?.image_input === "boolean") return caps.image_input;
+  if (typeof caps?.vision === "boolean") return caps.vision;
   for (const flag of [
     entry.vision,
     entry.supports_vision,
@@ -119,6 +121,7 @@ function parseEffortsFromOptions(entry: Record<string, unknown>): string[] | und
       for (const value of stringList(shaped?.values) ?? []) collected.push(value);
     }
   }
+  for (const value of stringList(entry.reasoning_levels) ?? []) collected.push(value);
   for (const value of stringList(entry.supported_reasoning_efforts) ?? []) {
     collected.push(value);
   }
@@ -218,6 +221,7 @@ function parseReasoning(
 
   const caps = asRecord(entry.capabilities);
   const supports = asRecord(caps?.supports);
+  if (typeof caps?.reasoning === "boolean") facts.supported = caps.reasoning;
   if (supports) {
     if (supports.adaptive_thinking === true || supports.max_thinking_budget !== undefined) {
       facts.supported = true;

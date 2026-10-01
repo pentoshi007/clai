@@ -102,6 +102,8 @@ describe("/provider search is scoped to provider names", () => {
     expect(bynara?.description).toBe("(https://router.bynara.id/v1)");
     const openai = picker.options.find((option) => option.value === "openai");
     expect(openai?.description).toBe("(https://api.openai.com/v1)");
+    const omnirush = picker.options.find((option) => option.value === "omnirush");
+    expect(omnirush?.description).toBe("(https://omnirush.ai/omnirush/v1)");
     const matched = filterPickerOptions([...picker.options], bynara!.description!, {
       searchDescription: picker.searchDescription ?? true,
     });

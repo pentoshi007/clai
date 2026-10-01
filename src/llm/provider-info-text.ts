@@ -1068,4 +1068,45 @@ SETUP (pick one)
   with automatic failover and token refresh on expiration.
 
 Docs: https://kiro.dev`,
+  omnirush: `Omnirush — free daily tokens for frontier OpenAI Responses models
+
+WHAT IT IS
+  A gateway that serves SOTA reasoning models through the OpenAI Responses
+  API with a device-code sign-in and a daily free token allowance. Every
+  model is reasoning-capable and accepts image input (vision).
+
+AUTH
+  Device flow (browser approval; works over SSH):
+    clai auth omnirush
+  Import an existing omnirush CLI login:
+    clai auth omnirush --import
+  Or set a token directly:
+    clai set omnirush <access-token>       env: OMNIRUSH_API_KEY
+  Tokens live in ~/.omnirush/auth.json (OMNIRUSH_DIR overrides). The access
+  token is rotated with its refresh token on a 401, and the rotated pair is
+  saved against the same account in clai's multi-key store.
+
+ENDPOINTS
+  Manager  https://omnirush.ai/omnirush       device/authorize · token ·
+                                              refresh · me
+  Gateway  https://omnirush.ai/omnirush/v1    /models · /responses
+  Overrides: OMNIRUSH_ORIGIN, OMNIRUSH_GATEWAY_URL.
+
+MODELS
+  /model lists the live gateway catalog (cached up to 30 minutes) and falls
+  back to the shipped ids offline. Default: gpt-6-astra. The catalog carries
+  each model's reasoning levels (e.g. low/high/xhigh/max), context window
+  (400000) and output limit (128000), so /effort and the context meter follow
+  the gateway automatically.
+
+LIMITS
+  Free daily token allowance; when it is spent the gateway reports the scope
+  (day/week) and the reset time. Earn more at https://omnirush.ai/console.
+
+GOOD TO KNOW
+  - Classed as free-cloud, so /freeonly keeps it in the fallback chain.
+  - Reasoning streams as Responses reasoning events; clai folds them into the
+    normal thinking block, so /think and /effort behave as usual.
+  - Tool calls, vision, and web search are advertised per model by the
+    gateway catalog.`,
 };

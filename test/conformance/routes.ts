@@ -196,6 +196,15 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/responses",
   },
   {
+    id: "omnirush",
+    provider: "omnirush",
+    family: "meta_responses",
+    model: "gpt-6-astra",
+    auth: { apiKey: "omnirush-conformance-token-000000" },
+    urlContains: "/responses",
+    note: "device-flow credential against the omnirush Responses gateway",
+  },
+  {
     id: "deepseek",
     provider: "deepseek",
     family: "chat_completions",

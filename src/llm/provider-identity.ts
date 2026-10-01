@@ -123,6 +123,10 @@ export const providerAliases: Record<string, ProviderId> = {
   "kiro.dev": "kiro",
   "kiro-desktop": "kiro",
   "aws-kiro": "kiro",
+  omnirush: "omnirush",
+  omni: "omnirush",
+  "omnirush-ai": "omnirush",
+  "omni-rush": "omnirush",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -157,6 +161,7 @@ export const defaultModels: Record<ProviderId, string> = {
   codex: "gpt-5.6-luna",
   copilot: "gpt-4o",
   kiro: "claude-sonnet-4.5",
+  omnirush: "gpt-6-astra",
 };
 
 export const retiredModelReplacements: Partial<
@@ -227,4 +232,5 @@ export const envVars: Record<ProviderId, string | undefined> = {
   codex: "CODEX_API_KEY",
   copilot: "COPILOT_API_KEY",
   kiro: "KIRO_API_KEY",
+  omnirush: "OMNIRUSH_API_KEY",
 };
