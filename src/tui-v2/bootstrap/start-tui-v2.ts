@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { createCliRenderer, RendererControlState } from "@opentui/core";
+import { createCliRenderer, RendererControlState, type KeyEvent } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import type { Mode, ProviderId } from "../../types.js";
@@ -41,6 +41,7 @@ import { runFreebuffSessionShutdownCleanup } from "../../llm/freebuff-session.js
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import { repaintAttachedScreen } from "./resize-repaint.js";
 import { installShrinkResizeGuard } from "./shrink-resize-guard.js";
+import { installPasteBurstGuard } from "../input/paste-burst-guard.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -198,9 +199,11 @@ export async function startTuiV2(
     disposeServices: () => services.dispose(),
   });
   const disposeShrinkResizeGuard = installShrinkResizeGuard({ renderer });
+  const disposePasteBurstGuard = installPasteBurstGuard<KeyEvent>(renderer.keyInput);
   const lifecycle = new RendererLifecycle({
     handle,
     disposers: [
+      disposePasteBurstGuard,
       disposeShrinkResizeGuard,
       () => disposeRuntimeBridge(),
       epilogue.capture,
