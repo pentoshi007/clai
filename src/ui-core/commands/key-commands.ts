@@ -70,6 +70,13 @@ import {
 } from "../../llm/kiro-social-device.js";
 import { appendProviderKey, replaceProviderKey, type ProviderKeySlot } from "../../store/keys.js";
 import { MAX_PROVIDER_KEYS } from "../../llm/key-rotation.js";
+import {
+  importExistingOmnirushAuth,
+  pollOmnirushDeviceAuth,
+  startOmnirushDeviceAuth,
+  validateOmnirushToken,
+  type OmnirushOAuthTokens,
+} from "../../llm/omnirush-auth.js";
 
 const SEARCH_IDS = new Set(["brave", "tavily", "duckduckgo", "exa"]);
 
@@ -960,6 +967,214 @@ async function openFreebuffKeysFlow(services: AppServices): Promise<void> {
   }
 }
 
+function pickOmnirushAuthMethod(
+  services: AppServices,
+): Promise<"signin" | "import" | undefined> {
+  return new Promise((resolve) => {
+    const opened = services.overlay.openPicker(
+      {
+        title: "Omnirush sign-in method",
+        options: [
+          {
+            value: "signin",
+            label: "Sign in with Omnirush",
+            description: "opens a device-code link — works in browser or over SSH",
+          },
+          {
+            value: "import",
+            label: "Import existing omnirush CLI login",
+            description: "reuse ~/.omnirush/auth.json (OMNIRUSH_DIR overrides)",
+          },
+        ],
+      },
+      (value) => {
+        services.overlay.close();
+        resolve(value as "signin" | "import");
+      },
+    );
+    if (!opened) resolve(undefined);
+  });
+}
+
+function storeOmnirushAccount(
+  services: AppServices,
+  tokens: OmnirushOAuthTokens,
+): Promise<void> {
+  return appendProviderKey("omnirush", tokens.accessToken, {
+    refreshToken: tokens.refreshToken,
+  }).then(() => {
+    notice(services, "info", `added Omnirush account ${maskSecret(tokens.accessToken)}`);
+  });
+}
+
+async function importOmnirushForUI(
+  services: AppServices,
+): Promise<OmnirushOAuthTokens | undefined> {
+  const imported = await importExistingOmnirushAuth();
+  if (!imported) {
+    notice(
+      services,
+      "warn",
+      "no existing omnirush login found (run `omnirush login`, or set OMNIRUSH_DIR)",
+    );
+    return undefined;
+  }
+  try {
+    await validateOmnirushToken(imported.accessToken);
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `imported omnirush token is not valid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+  notice(services, "info", "imported omnirush login");
+  return imported;
+}
+
+async function addOmnirushAccount(
+  services: AppServices,
+): Promise<OmnirushOAuthTokens | undefined> {
+  const method = await pickOmnirushAuthMethod(services);
+  if (!method) return undefined;
+  return method === "import"
+    ? importOmnirushForUI(services)
+    : runOmnirushAuthForUI(services);
+}
+
+export async function runOmnirushAuthForUI(
+  services: AppServices,
+): Promise<OmnirushOAuthTokens | undefined> {
+  let start;
+  try {
+    start = await startOmnirushDeviceAuth();
+  } catch (error) {
+    notice(
+      services,
+      "warn",
+      `could not start Omnirush sign-in: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+
+  void openSystemBrowser(start.verificationUrlComplete).catch(() => {});
+
+  services.overlay.openPager(
+    "Omnirush sign-in",
+    [
+      "Authenticate Omnirush on any device:",
+      "",
+      `  ${start.verificationUrlComplete}`,
+      "",
+      `  Code: ${start.userCode}`,
+      "",
+      "Approve in your browser — clai will continue automatically.",
+      "(close this and press Ctrl-C to cancel)",
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+
+  const abortController = new AbortController();
+  const unsubscribe = services.overlay.subscribe(() => {
+    if (!services.overlay.isOpen()) abortController.abort();
+  });
+
+  const waiting = services.toast.info("waiting for Omnirush approval…", {
+    sticky: true,
+  });
+  try {
+    const tokens = await pollOmnirushDeviceAuth(start, {
+      signal: abortController.signal,
+    });
+    notice(services, "info", "Omnirush authenticated");
+    return tokens;
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      notice(services, "info", "cancelled");
+      return undefined;
+    }
+    notice(
+      services,
+      "warn",
+      `Omnirush sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  } finally {
+    unsubscribe();
+    services.toast.dismiss(waiting);
+  }
+}
+
+async function openOmnirushKeysFlow(services: AppServices): Promise<void> {
+  let { keys, activeIndex } = await loadOAuthKeys("omnirush");
+  for (;;) {
+    services.overlay.close();
+    const answer = await services.overlay.openKeysEditor({
+      provider: "omnirush",
+      heading: "OMNIRUSH ACCOUNTS",
+      itemLabel: "account",
+      addViaPicker: true,
+      refreshable: true,
+      initialKeys: keys.map((key) => ({
+        id: key.id,
+        masked: maskSecret(key.value),
+        disabled: key.disabled === true,
+      })),
+      activeIndex,
+    });
+    if (!answer) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    if (answer.action === "reset") {
+      await unsetProviderSecret("omnirush");
+      notice(services, "info", "unset all keys for Omnirush");
+      return;
+    }
+    if (answer.action === "pick") {
+      await savePickerDraft("omnirush", answer, keys, activeIndex);
+      const tokens = await addOmnirushAccount(services);
+      if (tokens) {
+        await storeOmnirushAccount(services, tokens);
+      } else {
+        notice(services, "info", "cancelled");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("omnirush"));
+      continue;
+    }
+    if (answer.action === "refresh") {
+      const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected) {
+        const tokens = await addOmnirushAccount(services);
+        if (tokens) {
+          const replaced = await replaceProviderKey(
+            "omnirush",
+            selected.value,
+            tokens.accessToken,
+            { refreshToken: tokens.refreshToken },
+          );
+          if (!replaced) {
+            notice(services, "warn", "Omnirush account was not found");
+          } else {
+            notice(services, "info", `refreshed Omnirush account ${maskSecret(tokens.accessToken)}`);
+          }
+        } else {
+          notice(services, "info", "cancelled");
+        }
+      } else {
+        notice(services, "warn", "Omnirush account was not found");
+      }
+      ({ keys, activeIndex } = await loadOAuthKeys("omnirush"));
+      continue;
+    }
+    await saveOAuthKeys(services, "omnirush", answer, keys, activeIndex);
+    return;
+  }
+}
+
 async function loadClineKeys(): Promise<{
   keys: ProviderKeySlot[];
   activeIndex: number;
@@ -1119,7 +1334,7 @@ async function openClineKeysFlow(services: AppServices): Promise<void> {
 }
 
 async function loadOAuthKeys(
-  provider: "codex" | "copilot" | "kiro" | "freebuff",
+  provider: "codex" | "copilot" | "kiro" | "freebuff" | "omnirush",
 ): Promise<{ keys: ProviderKeySlot[]; activeIndex: number }> {
   const multi = await getProviderKeys(provider);
   return {
@@ -1129,7 +1344,7 @@ async function loadOAuthKeys(
 }
 
 async function savePickerDraft(
-  provider: "cline" | "codex" | "copilot" | "kiro" | "freebuff",
+  provider: "cline" | "codex" | "copilot" | "kiro" | "freebuff" | "omnirush",
   answer: Extract<KeysEditorAnswer, { action: "pick" }>,
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
@@ -1153,7 +1368,7 @@ async function savePickerDraft(
 
 async function saveOAuthKeys(
   services: AppServices,
-  provider: "codex" | "copilot" | "kiro" | "freebuff",
+  provider: "codex" | "copilot" | "kiro" | "freebuff" | "omnirush",
   answer: Extract<KeysEditorAnswer, { action: "save" }>,
   keys: readonly ProviderKeySlot[],
   activeIndex: number,
@@ -1822,6 +2037,11 @@ export async function openLlmKeysEditor(
 
   if (id === "freebuff") {
     await openFreebuffKeysFlow(services);
+    return;
+  }
+
+  if (id === "omnirush") {
+    await openOmnirushKeysFlow(services);
     return;
   }
 

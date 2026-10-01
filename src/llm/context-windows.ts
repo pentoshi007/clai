@@ -14,6 +14,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /claude-3-7/i, tokens: 200_000 },
   { pattern: /claude-3-5/i, tokens: 200_000 },
   { pattern: /claude-3/i, tokens: 200_000 },
+  { pattern: /gpt-6/i, tokens: 400_000 },
   { pattern: /gpt-5\.[456](?:[-.]|$)/i, tokens: 1_050_000 },
   { pattern: /gpt-5/i, tokens: 400_000 },
   { pattern: /gpt-4\.1/i, tokens: 1_047_576 },

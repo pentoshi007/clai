@@ -164,6 +164,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   codex: [/gpt-5/i, /codex/i, /o[34]/i, /reason/i],
   copilot: [/gpt-5/i, /claude/i, /gemini/i, /o[34]/i, /reason/i],
   kiro: [/claude/i, /gpt/i, /reason/i, /thinking/i],
+  omnirush: [/gpt-[5-9]/i, /muse/i, /reason/i],
 };
 
 export function endpointAcceptedEfforts(

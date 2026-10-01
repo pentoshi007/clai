@@ -33,6 +33,12 @@ import {
 } from "../llm/cline-auth.js";
 import type { ClineOAuthTokens } from "../llm/cline-auth.js";
 import {
+  importExistingOmnirushAuth,
+  pollOmnirushDeviceAuth,
+  startOmnirushDeviceAuth,
+} from "../llm/omnirush-auth.js";
+import type { OmnirushOAuthTokens } from "../llm/omnirush-auth.js";
+import {
   codexKeyFromAccessToken,
   encodeCodexKey,
   importExistingCodexKey,
@@ -693,6 +699,90 @@ export async function resolveClineCredentialInteractive(): Promise<
   string | undefined
 > {
   return (await resolveClineTokensInteractive())?.accessToken;
+}
+
+export async function authOmnirush(
+  providerValue: string,
+  options: { import?: boolean | undefined } = {},
+): Promise<void> {
+  const provider = assertProvider(providerValue);
+  if (provider !== "omnirush") {
+    throw new Error(
+      `Device sign-in is only supported for the omnirush provider (got "${provider}"). Use \`clai set ${provider} <key>\` instead.`,
+    );
+  }
+
+  if (options.import) {
+    process.stderr.write("Looking for an existing omnirush CLI sign-in…\n");
+    const tokens = await importExistingOmnirushAuth();
+    if (!tokens) {
+      process.exitCode = 5;
+      throw new Error(
+        "No usable omnirush credential found. Sign in with `clai auth omnirush` (no --import) or run `omnirush login` first.",
+      );
+    }
+    const storage = await appendProviderKey("omnirush", tokens.accessToken, {
+      refreshToken: tokens.refreshToken,
+    });
+    if (storage === "fallback") {
+      process.exitCode = 3;
+      console.warn(
+        chalk.yellow(
+          `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+        ),
+      );
+    }
+    const multi = await getProviderKeys("omnirush");
+    console.log(
+      `imported omnirush ${maskSecret(tokens.accessToken)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+    );
+    return;
+  }
+
+  const tokens = await resolveOmnirushTokensInteractive();
+  if (!tokens) {
+    process.exitCode = 5;
+    throw new Error("Omnirush authentication failed or was cancelled.");
+  }
+  const storage = await appendProviderKey("omnirush", tokens.accessToken, {
+    refreshToken: tokens.refreshToken,
+  });
+  if (storage === "fallback") {
+    process.exitCode = 3;
+    console.warn(
+      chalk.yellow(
+        `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
+      ),
+    );
+  }
+  const multi = await getProviderKeys("omnirush");
+  console.log(
+    `authenticated omnirush ${maskSecret(tokens.accessToken)} · ${multi.keys.length} key${multi.keys.length === 1 ? "" : "s"} total`,
+  );
+}
+
+export async function resolveOmnirushTokensInteractive(): Promise<
+  OmnirushOAuthTokens | undefined
+> {
+  const start = await startOmnirushDeviceAuth();
+  console.log("To authenticate Omnirush:");
+  console.log(
+    `  1. Open this link on any device:\n       ${start.verificationUrlComplete}`,
+  );
+  console.log(`  2. Enter code: ${chalk.bold(start.userCode)}`);
+  console.log("");
+
+  const tokens = await pollOmnirushDeviceAuth(start, {
+    onPending: (remaining) => {
+      const mm = Math.floor(remaining / 60);
+      const ss = String(remaining % 60).padStart(2, "0");
+      process.stderr.write(
+        `\rWaiting for approval… ${mm}:${ss} remaining (Ctrl-C to cancel)   `,
+      );
+    },
+  });
+  process.stderr.write("\n");
+  return tokens;
 }
 
 export async function authCodex(

@@ -10548,6 +10548,504 @@ exports[`serialized request snapshots > ollama / tools 1`] = `
 }
 `;
 
+exports[`serialized request snapshots > omnirush / images 1`] = `
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "developer",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "input_text",
+          },
+          {
+            "detail": "high",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            "type": "input_image",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-6-astra",
+    "prompt_cache_key": "clai-d2d63d8780d06efa71a159c545772f80a6e43dd0",
+    "store": false,
+    "stream": true,
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "omnirush (linux 7.0.0-1011-oracle; arm64)",
+  },
+  "method": "POST",
+  "url": "https://omnirush.ai/omnirush/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > omnirush / minimal 1`] = `
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "developer",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "second user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-6-astra",
+    "prompt_cache_key": "clai-d2d63d8780d06efa71a159c545772f80a6e43dd0",
+    "store": false,
+    "stream": true,
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "omnirush (linux 7.0.0-1011-oracle; arm64)",
+  },
+  "method": "POST",
+  "url": "https://omnirush.ai/omnirush/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > omnirush / reasoning-control 1`] = `
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "developer",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "second user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-6-astra",
+    "prompt_cache_key": "clai-d2d63d8780d06efa71a159c545772f80a6e43dd0",
+    "reasoning": {
+      "effort": "high",
+      "summary": "auto",
+    },
+    "store": false,
+    "stream": true,
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "omnirush (linux 7.0.0-1011-oracle; arm64)",
+  },
+  "method": "POST",
+  "url": "https://omnirush.ai/omnirush/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > omnirush / tool-loop-replay 1`] = `
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "developer",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "read the example file",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "arguments": "{"path":"docs/example.md"}",
+        "call_id": "call_replay_1",
+        "name": "fs_read",
+        "type": "function_call",
+      },
+      {
+        "call_id": "call_replay_1",
+        "output": "example file contents",
+        "type": "function_call_output",
+      },
+    ],
+    "model": "gpt-6-astra",
+    "prompt_cache_key": "clai-d2d63d8780d06efa71a159c545772f80a6e43dd0",
+    "reasoning": {
+      "effort": "medium",
+      "summary": "auto",
+    },
+    "store": false,
+    "stream": true,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "description": "read a file",
+        "name": "fs_read",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+      {
+        "description": "run a shell command",
+        "name": "shell_run",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "command",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "omnirush (linux 7.0.0-1011-oracle; arm64)",
+  },
+  "method": "POST",
+  "url": "https://omnirush.ai/omnirush/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > omnirush / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "developer",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "read the example file",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "arguments": "{"path":"docs/example.md"}",
+        "call_id": "call_replay_1",
+        "name": "fs_read",
+        "type": "function_call",
+      },
+      {
+        "call_id": "call_replay_1",
+        "output": "example file contents",
+        "type": "function_call_output",
+      },
+    ],
+    "model": "gpt-6-astra",
+    "prompt_cache_key": "clai-d2d63d8780d06efa71a159c545772f80a6e43dd0",
+    "reasoning": {
+      "effort": "medium",
+      "summary": "auto",
+    },
+    "store": false,
+    "stream": true,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "description": "read a file",
+        "name": "fs_read",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+      {
+        "description": "run a shell command",
+        "name": "shell_run",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "command",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "omnirush (linux 7.0.0-1011-oracle; arm64)",
+  },
+  "method": "POST",
+  "url": "https://omnirush.ai/omnirush/v1/responses",
+}
+`;
+
+exports[`serialized request snapshots > omnirush / tools 1`] = `
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "stable system prefix for cache reuse",
+            "type": "input_text",
+          },
+        ],
+        "role": "developer",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "first user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+      {
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
+        "role": "assistant",
+        "type": "message",
+      },
+      {
+        "content": [
+          {
+            "text": "second user turn",
+            "type": "input_text",
+          },
+        ],
+        "role": "user",
+        "type": "message",
+      },
+    ],
+    "model": "gpt-6-astra",
+    "prompt_cache_key": "clai-d2d63d8780d06efa71a159c545772f80a6e43dd0",
+    "store": false,
+    "stream": true,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "description": "read a file",
+        "name": "fs_read",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+      {
+        "description": "run a shell command",
+        "name": "shell_run",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "command",
+          ],
+          "type": "object",
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "text/event-stream",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "user-agent": "omnirush (linux 7.0.0-1011-oracle; arm64)",
+  },
+  "method": "POST",
+  "url": "https://omnirush.ai/omnirush/v1/responses",
+}
+`;
+
 exports[`serialized request snapshots > openai / images 1`] = `
 {
   "body": {

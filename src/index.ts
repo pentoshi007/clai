@@ -15,6 +15,7 @@ import {
   useProvider,
   ensureProviderConfigured,
   authCline,
+  authOmnirush,
   authCodex,
   authCopilot,
   authKiro,
@@ -468,10 +469,10 @@ async function main(): Promise<void> {
   program
     .command("auth")
     .description(
-      "authenticate a provider via browser/device flow (Freebuff, Cline, Chatgpt Subscription, Github Copilot, Kiro)",
+      "authenticate a provider via browser/device flow (Freebuff, Cline, Chatgpt Subscription, Github Copilot, Kiro, Omnirush)",
     )
-    .argument("<provider>", "provider id (freebuff, cline, chatgpt, copilot, kiro)")
-    .option("--import", "import an existing app sign-in (Freebuff/Cline/Chatgpt Subscription/Github Copilot/Kiro)")
+    .argument("<provider>", "provider id (freebuff, cline, chatgpt, copilot, kiro, omnirush)")
+    .option("--import", "import an existing app sign-in (Freebuff/Cline/Chatgpt Subscription/Github Copilot/Kiro/Omnirush)")
     .option("--browser", "authenticate via browser (default for Chatgpt Subscription)")
     .option("--headless", "authenticate via headless/device code flow")
     .action(
@@ -521,6 +522,16 @@ async function main(): Promise<void> {
           id.includes("kiro")
         ) {
           await authKiro("kiro", options);
+          return;
+        }
+        if (
+          id === "omnirush" ||
+          id === "omni" ||
+          id === "omnirush-ai" ||
+          id === "omni-rush" ||
+          id.includes("omnirush")
+        ) {
+          await authOmnirush("omnirush", options);
           return;
         }
         await authCline(provider, options);
