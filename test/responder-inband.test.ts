@@ -339,6 +339,73 @@ describe("ordinary-turn responder delivery", () => {
     ).toContain("notification=completion:inband-job");
   });
 
+  it("records the summary given to job.read in the persisted result ledger", async () => {
+    const summary = "Port 8080 serves the admin console without auth";
+    let requestCount = 0;
+    streamMock.mockImplementation(
+      async (
+        _request: CompletionRequest,
+        onToken: (token: string) => void,
+      ): Promise<CompletionResult> => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          jobsHarness.complete();
+          return {
+            text: "",
+            provider: "openai",
+            model: "gpt-test",
+            toolCalls: [
+              {
+                id: "call-plan-step",
+                name: "task.update",
+                args: { taskId: "t1", state: "in_progress" },
+              },
+            ],
+            finishReason: "tool_calls",
+          };
+        }
+        if (requestCount === 2) {
+          return {
+            text: "",
+            provider: "openai",
+            model: "gpt-test",
+            toolCalls: [
+              {
+                id: "call-read-responder",
+                name: "job.read",
+                args: { jobId: jobsHarness.notification.jobId, summary },
+              },
+            ],
+            finishReason: "tool_calls",
+          };
+        }
+        onToken("done");
+        return { text: "done", provider: "openai", model: "gpt-test", finishReason: "stop" };
+      },
+    );
+
+    let history = [] as Array<{ role: string; content: string }>;
+    await runAgentTurn("continue autonomous work", {
+      provider: "openai",
+      model: "gpt-4o-mini",
+      maxSteps: 4,
+      session: createSessionPolicy("inband-session"),
+      onEvent: () => undefined,
+      onMessages: (messages) => {
+        history = messages;
+      },
+    });
+
+    const ledger = history
+      .filter((message) =>
+        message.content.startsWith("RESPONDER RESULT LEDGER (authoritative consumed results)"),
+      )
+      .at(-1);
+    expect(ledger?.content).toContain("notification=completion:inband-job");
+    expect(ledger?.content).toContain(`summary=${JSON.stringify(summary)}`);
+    expect(jobsHarness.manager.markRead).toHaveBeenCalledTimes(1);
+  });
+
   it("suppresses repeated Responder-only shell.jobs polls with visible receipts", async () => {
     jobsHarness.startRunning();
     const events: AgentEvent[] = [];

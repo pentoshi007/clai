@@ -192,7 +192,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "job.read",
-    "Mark one delivered Responder job result read after analysis. This is plan-independent and mandatory before a final response. Identify the receipt by jobId or notificationId; reading atomically records delivery and prevents duplicate notification of the same result revision.",
+    "Mark one delivered Responder job result read after analysis. This is plan-independent and mandatory before a final response. Identify the receipt by jobId or notificationId; reading atomically records delivery and prevents duplicate notification of the same result revision. Pass summary with the conclusion later work depends on: it is kept across context compaction in place of the raw output.",
     {
       type: "object",
       properties: {
@@ -204,6 +204,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           type: "string",
           description:
             "Exact notification id from the delivered Responder result",
+        },
+        summary: {
+          type: "string",
+          description:
+            "One or two sentences: the key findings of this result that later work depends on (not raw output). Recorded when the result is marked read and carried through context compaction.",
         },
       },
       additionalProperties: false,
