@@ -2,16 +2,54 @@ import type {
   BackgroundJob,
   ResponderNotification,
 } from "../tools/jobs.js";
+import { redactSecrets } from "../llm/provider.js";
 
 export const RESPONDER_CONTEXT_PREFIX = "RESPONDER / DURABLE JOB INBOX";
 export const RESPONDER_RESULT_LEDGER_PREFIX =
   "RESPONDER RESULT LEDGER (authoritative consumed results)";
 
 const MAX_LEDGER_ENTRIES = 32;
+export const MAX_RESULT_DIGEST_CHARS = 280;
+
+const LEDGER_DIGEST_FIELD = /\ssummary=("(?:[^"\\]|\\.)*")$/;
+
+export interface ResponderLedgerFields {
+  readonly notificationId?: string | undefined;
+  readonly jobId?: string | undefined;
+  readonly digest?: string | undefined;
+}
 
 function oneLine(value: string, max = 120): string {
   const clean = value.replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
+export function normalizeResultDigest(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const digest = oneLine(redactSecrets(value), MAX_RESULT_DIGEST_CHARS);
+  return digest.length > 0 ? digest : undefined;
+}
+
+function parseLedgerDigest(line: string): string | undefined {
+  const quoted = LEDGER_DIGEST_FIELD.exec(line)?.[1];
+  if (!quoted) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(quoted);
+    return typeof parsed === "string" && parsed.length > 0 ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseResponderLedgerLine(line: string): ResponderLedgerFields {
+  const notificationId = /notification=(\S+)/.exec(line)?.[1];
+  const jobId = /\bjob=(\S+)/.exec(line)?.[1];
+  const digest = parseLedgerDigest(line);
+  return {
+    ...(notificationId ? { notificationId } : {}),
+    ...(jobId ? { jobId } : {}),
+    ...(digest ? { digest } : {}),
+  };
 }
 
 function receiptPath(notification: ResponderNotification): string {
@@ -57,7 +95,7 @@ export function responderContextMessage(input: {
     "FIRE AND CONTINUE: after launching, move to the next task immediately. Do NOT sleep, shell.jobs-poll, repeat shell.tail, or fs.read the job log to watch progress — this inbox delivers each completion to you automatically at the next safe model boundary.",
     "PARENT-DONE RULE: a parent task is done when its own non-Responder work is done; Responder-owned child subtasks advance from the real process lifecycle — never mark, block on, or wait for them.",
     "TASK SETTLEMENT: Responder-owned tasks reconcile automatically from the latest authoritative job result after analysis. Do not call task.update for that child.",
-    "MANDATORY READ RECEIPT: after analyzing a delivered completion and deciding its job is finished, call job.read with that job id or exact notification id. job.read is plan-independent, records delivered + read atomically, and is required before a final response. Do not create a plan merely to acknowledge a job.",
+    "MANDATORY READ RECEIPT: after analyzing a delivered completion and deciding its job is finished, call job.read with that job id or exact notification id, plus summary: one or two sentences with the conclusion later work depends on (key findings, not raw output). The summary is kept across context compaction, so the result never needs re-reading. job.read is plan-independent, records delivered + read atomically, and is required before a final response. Do not create a plan merely to acknowledge a job.",
     "ON COMPLETION: extract only the key result lines with a filter or bounded shell.tail window, never a full noisy scanner log. Add evidence-driven follow-up tasks only when an active plan exists and the result requires them; otherwise report the result directly after job.read. Never launch a duplicate while a job is live.",
     "PARENT OWNERSHIP: when you delegate to the Responder, pass parentTaskId with the plan task id that owns the work (e.g. parentTaskId:\"t3\"). The child subtask is created under exactly that task; an unknown, completed, or Responder-owned id is rejected.",
     "DECLARED WAITS ONLY: never idle because a Responder job is running. If a foreground task genuinely cannot start until a child finishes, declare that child as its dependency when you add it; otherwise keep executing the next dependency-ready task and fold late results in as an addendum.",
@@ -82,12 +120,14 @@ export function responderResultLedgerEntry(
 ): string {
   const analyzedAt =
     notification.analyzedAt ?? notification.readAt ?? new Date().toISOString();
+  const digest = normalizeResultDigest(notification.resultDigest);
   return (
     `- notification=${notification.id} job=${notification.jobId}` +
     ` status=${notification.status} consumed=true readAt=${notification.readAt ?? analyzedAt} analyzedAt=${analyzedAt}` +
     `${notification.taskId ? ` task=${notification.taskId}` : ""}` +
     `${notification.parentTaskId ? ` parent=${notification.parentTaskId}` : ""}` +
-    ` artifact=${receiptPath(notification)}`
+    ` artifact=${receiptPath(notification)}` +
+    `${digest ? ` summary=${JSON.stringify(digest)}` : ""}`
   );
 }
 

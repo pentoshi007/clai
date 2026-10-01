@@ -165,6 +165,21 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   copilot: [/gpt-5/i, /claude/i, /gemini/i, /o[34]/i, /reason/i],
   kiro: [/claude/i, /gpt/i, /reason/i, /thinking/i],
   omnirush: [/gpt-[5-9]/i, /muse/i, /reason/i],
+  tokenharbor: [
+    /claude-(?:opus|sonnet|haiku|fable|mythos)/i,
+    /gpt-[5-9]/i,
+    /o[134](?:-mini)?\b/i,
+    /gemini-(?:2\.5|[3-9])/i,
+    /grok-(?:4|[5-9])/i,
+    /muse-spark/i,
+    /kimi/i,
+    /deepseek/i,
+    /qwen3/i,
+    /glm-?[45]/i,
+    /minimax/i,
+    /reason/i,
+    /thinking/i,
+  ],
 };
 
 export function endpointAcceptedEfforts(

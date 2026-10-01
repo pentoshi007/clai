@@ -151,6 +151,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Modal expects a proxy token pair as <token-id>:<token-secret> (wk-…:ws-…, from `modal workspace proxy-tokens create`)";
   if (provider === "lightning")
     return "Lightning AI keys are alphanumeric (from https://lightning.ai/lightning-ai/model-apis/models?showApiKey=true)";
+  if (provider === "tokenharbor")
+    return "Token Harbor keys start with thk_live_ (create one at https://tokenharbor.ai/dashboard/api-keys)";
   if (provider === "tokenrouter")
     return "TokenRouter keys usually start with sk- (create one under My Account → API Keys)";
   if (provider === "meta")

@@ -31,6 +31,7 @@ export const providerIds = [
   "copilot",
   "kiro",
   "omnirush",
+  "tokenharbor",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

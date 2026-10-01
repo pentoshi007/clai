@@ -122,10 +122,22 @@ function safeBodyExtras(
   return safe;
 }
 
-function addEphemeralBreakpoint(message: Record<string, unknown>): void {
+export type EphemeralCacheBreakpointMode = boolean | "content-block";
+
+function addEphemeralBreakpoint(
+  message: Record<string, unknown>,
+  mode: EphemeralCacheBreakpointMode,
+): void {
   const content = message.content;
   if (typeof content === "string") {
-    if (content.trim()) message.cache_control = { type: "ephemeral" };
+    if (!content.trim()) return;
+    if (mode === "content-block") {
+      message.content = [
+        { type: "text", text: content, cache_control: { type: "ephemeral" } },
+      ];
+    } else {
+      message.cache_control = { type: "ephemeral" };
+    }
     return;
   }
   if (!Array.isArray(content)) return;
@@ -142,6 +154,7 @@ function addEphemeralBreakpoint(message: Record<string, unknown>): void {
 
 export function applyOpenAiEphemeralCacheBreakpoints(
   messages: Array<Record<string, unknown>>,
+  mode: EphemeralCacheBreakpointMode = true,
 ): void {
   const lastIndexForRole = (role: string): number => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -160,7 +173,7 @@ export function applyOpenAiEphemeralCacheBreakpoints(
     messages.length - 1,
   ]);
   for (const index of [...indexes].sort((a, b) => a - b)) {
-    if (index >= 0) addEphemeralBreakpoint(messages[index]!);
+    if (index >= 0) addEphemeralBreakpoint(messages[index]!, mode);
   }
 }
 
@@ -195,7 +208,7 @@ export interface ChatCompletionsBodyOptions {
   outputTokenLimit?: number | undefined;
   cacheFields?: Record<string, string> | undefined;
   bodyExtras?: Readonly<Record<string, unknown>> | undefined;
-  ephemeralCacheBreakpoints?: boolean | undefined;
+  ephemeralCacheBreakpoints?: EphemeralCacheBreakpointMode | undefined;
   resolvedSampling?:
     | {
         readonly temperature?: number | undefined;
@@ -326,7 +339,10 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     }
   }
   if (options.ephemeralCacheBreakpoints) {
-    applyOpenAiEphemeralCacheBreakpoints(rawMessages);
+    applyOpenAiEphemeralCacheBreakpoints(
+      rawMessages,
+      options.ephemeralCacheBreakpoints,
+    );
   }
   const body: Record<string, unknown> = {
     ...safeBodyExtras(options.bodyExtras),
@@ -455,7 +471,7 @@ export function chatCompletionsBodyFromPlan(
       ReasoningArtifactReplayObserver | undefined;
     forceReasoningReplay?: boolean | undefined;
     bodyExtras?: Readonly<Record<string, unknown>> | undefined;
-    ephemeralCacheBreakpoints?: boolean | undefined;
+    ephemeralCacheBreakpoints?: EphemeralCacheBreakpointMode | undefined;
   } = {},
 ): string {
   const portableHistory = portableToolHistory(
