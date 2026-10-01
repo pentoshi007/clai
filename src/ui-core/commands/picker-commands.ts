@@ -352,6 +352,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   copilot: "https://api.githubcopilot.com",
   kiro: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
   omnirush: "https://omnirush.ai/omnirush/v1",
+  tokenharbor: "https://tokenharbor.ai/v1",
 };
 
 function providerBaseUrl(provider: ProviderId): string | undefined {

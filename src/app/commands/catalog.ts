@@ -363,6 +363,18 @@ export const knownModels: Record<string, string[]> = {
     "minimax/minimax-m2.7",
     "z-ai/glm-5.1",
   ],
+  tokenharbor: [
+    "claude-sonnet-5.5",
+    "claude-opus-5.5",
+    "claude-fable-5.1",
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "grok-4.7",
+    "qwen3.8-max",
+    "glm-5.3",
+    "kimi-k3",
+    "muse-spark-1-3",
+  ],
   "merge-gateway": [
     "openai/gpt-5.2",
     "openai/gpt-5.2-mini",

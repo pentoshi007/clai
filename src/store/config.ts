@@ -10,6 +10,7 @@ export const endpointProviders: readonly ProviderId[] = [
   "modal",
   "lightning",
   "tokenrouter",
+  "tokenharbor",
 ];
 
 export function providerUsesEndpoints(provider: ProviderId): boolean {
@@ -50,6 +51,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   copilot: "free-cloud",
   kiro: "free-cloud",
   omnirush: "free-cloud",
+  tokenharbor: "paid-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

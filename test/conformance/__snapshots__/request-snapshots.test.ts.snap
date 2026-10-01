@@ -12695,6 +12695,600 @@ exports[`serialized request snapshots > qwen-cloud / tools 1`] = `
 }
 `;
 
+exports[`serialized request snapshots > tokenharbor / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "stable system prefix for cache reuse",
+            "type": "text",
+          },
+        ],
+        "role": "system",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first assistant answer",
+            "type": "text",
+          },
+        ],
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "claude-sonnet-5.5",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "x-th-cache-control": "bypass",
+  },
+  "method": "POST",
+  "url": "https://tokenharbor.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > tokenharbor / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "stable system prefix for cache reuse",
+            "type": "text",
+          },
+        ],
+        "role": "system",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first assistant answer",
+            "type": "text",
+          },
+        ],
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "claude-sonnet-5.5",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "x-th-cache-control": "bypass",
+  },
+  "method": "POST",
+  "url": "https://tokenharbor.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > tokenharbor / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "stable system prefix for cache reuse",
+            "type": "text",
+          },
+        ],
+        "role": "system",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first assistant answer",
+            "type": "text",
+          },
+        ],
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "claude-sonnet-5.5",
+    "reasoning_effort": "high",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "x-th-cache-control": "bypass",
+  },
+  "method": "POST",
+  "url": "https://tokenharbor.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > tokenharbor / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "stable system prefix for cache reuse",
+            "type": "text",
+          },
+        ],
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first assistant answer",
+            "type": "text",
+          },
+        ],
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "read the example file",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "example file contents",
+            "type": "text",
+          },
+        ],
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "claude-sonnet-5.5",
+    "reasoning_effort": "medium",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "x-th-cache-control": "bypass",
+  },
+  "method": "POST",
+  "url": "https://tokenharbor.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > tokenharbor / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "stable system prefix for cache reuse",
+            "type": "text",
+          },
+        ],
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first assistant answer",
+            "type": "text",
+          },
+        ],
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "read the example file",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "example file contents",
+            "type": "text",
+          },
+        ],
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "claude-sonnet-5.5",
+    "reasoning_effort": "medium",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "x-th-cache-control": "bypass",
+  },
+  "method": "POST",
+  "url": "https://tokenharbor.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > tokenharbor / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "stable system prefix for cache reuse",
+            "type": "text",
+          },
+        ],
+        "role": "system",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "first assistant answer",
+            "type": "text",
+          },
+        ],
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "claude-sonnet-5.5",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+    "x-th-cache-control": "bypass",
+  },
+  "method": "POST",
+  "url": "https://tokenharbor.ai/v1/chat/completions",
+}
+`;
+
 exports[`serialized request snapshots > tokenrouter / images 1`] = `
 {
   "body": {
