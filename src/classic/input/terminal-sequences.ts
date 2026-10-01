@@ -16,9 +16,12 @@ export const PASTE_END = "\x1b[201~";
 
 export const ESCAPE_TIMEOUT_MS = 25;
 export const PASTE_TIMEOUT_MS = 2_000;
-export const PASTE_BURST_GLUE_MS = 30;
-export const PASTE_BURST_SETTLE_MS = 200;
 export const PASTE_MAX_BYTES = 1_048_576;
+
+export {
+  PASTE_BURST_GLUE_MS,
+  PASTE_BURST_SETTLE_MS,
+} from "../../ui-core/input/paste-burst.js";
 
 export {
   CTRL_C_QUIT_WINDOW_MS,

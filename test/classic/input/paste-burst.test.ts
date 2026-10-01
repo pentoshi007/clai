@@ -74,21 +74,42 @@ describe("PasteBurstAssembler", () => {
     ]);
   });
 
-  it("submits an Enter that is not glued to the input before it", () => {
+  it("submits an Enter that is not glued to the keystrokes before it", () => {
     const assembler = new PasteBurstAssembler();
-    assembler.process(decode("abc"), 0);
-    expect(describeEvents(assembler.process(decode("\r"), PASTE_BURST_GLUE_MS + 1))).toEqual([
+    assembler.process(decode("a"), 0);
+    assembler.process(decode("b"), 100);
+    expect(describeEvents(assembler.process(decode("\r"), 100 + PASTE_BURST_GLUE_MS + 1))).toEqual([
       "key:enter",
     ]);
     expect(assembler.pendingDeadline).toBeUndefined();
   });
 
+  it("waits one settle window before submitting an Enter that follows a multi-character read", () => {
+    const assembler = new PasteBurstAssembler();
+    assembler.process(decode("abc"), 0);
+    const arrival = PASTE_BURST_GLUE_MS + 1;
+    expect(assembler.process(decode("\r"), arrival)).toEqual([]);
+    expect(assembler.pendingDeadline).toBe(arrival + PASTE_BURST_SETTLE_MS);
+    expect(describeEvents(assembler.expire(arrival + PASTE_BURST_SETTLE_MS))).toEqual(["key:enter"]);
+  });
+
+  it("keeps a paste whole when its lines arrive as separate reads with blank lines between", () => {
+    const assembler = new PasteBurstAssembler();
+    const gap = PASTE_BURST_SETTLE_MS - 10;
+    const emitted: DecodedEvent[] = [];
+    ["first line\r", "\r", "third line\r", "fourth"].forEach((piece, index) => {
+      emitted.push(...assembler.process(decode(piece), index * gap));
+    });
+    emitted.push(...assembler.expire(Number.MAX_SAFE_INTEGER));
+    expect(describeEvents(emitted)).toEqual(['paste:"first line\\n\\nthird line\\nfourth"']);
+  });
+
   it("holds a trailing Enter after text and releases it as keys when nothing follows", () => {
     const assembler = new PasteBurstAssembler();
     expect(assembler.process(decode("hello\r"), 0)).toEqual([]);
-    expect(assembler.pendingDeadline).toBe(PASTE_BURST_GLUE_MS);
-    expect(assembler.expire(PASTE_BURST_GLUE_MS - 1)).toEqual([]);
-    expect(describeEvents(assembler.expire(PASTE_BURST_GLUE_MS))).toEqual([
+    expect(assembler.pendingDeadline).toBe(PASTE_BURST_SETTLE_MS);
+    expect(assembler.expire(PASTE_BURST_SETTLE_MS - 1)).toEqual([]);
+    expect(describeEvents(assembler.expire(PASTE_BURST_SETTLE_MS))).toEqual([
       "key:h",
       "key:e",
       "key:l",
@@ -196,12 +217,21 @@ describe("PasteBurstAssembler", () => {
     );
   });
 });
-  it("leaves an Enter followed by text in one read alone when no text just preceded it", () => {
+  it("leaves an Enter followed by text in one read alone once the read before it is long past", () => {
     const assembler = new PasteBurstAssembler();
     assembler.process(decode("/help"), 0);
     const events = decode("\rqresize smoke");
-    expect(assembler.process(events, 200)).toEqual(events);
+    expect(assembler.process(events, PASTE_BURST_SETTLE_MS + 1)).toEqual(events);
     expect(assembler.pendingDeadline).toBeUndefined();
+  });
+
+  it("joins an Enter followed by text to a multi-character read that arrived within the settle window", () => {
+    const assembler = new PasteBurstAssembler();
+    assembler.process(decode("/help"), 0);
+    expect(assembler.process(decode("\rqresize smoke"), PASTE_BURST_SETTLE_MS)).toEqual([]);
+    expect(assembler.expire(PASTE_BURST_SETTLE_MS * 2)).toEqual([
+      { type: "paste", text: "\nqresize smoke" },
+    ]);
   });
 
   it("still joins a leading Enter to a paste whose previous piece just arrived", () => {

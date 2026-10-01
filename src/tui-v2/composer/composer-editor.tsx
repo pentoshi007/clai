@@ -42,6 +42,7 @@ import { buildComposerTextareaOverrides } from "./textarea-keybindings.js";
 import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { useDraftActions } from "./use-draft-actions.js";
 import { createComposerImagePaste } from "./composer-image-paste.js";
+import { normalizePasteLineBreaks } from "../../ui-core/input/paste-text.js";
 import { notify } from "../../ui-core/notify.js";
 import { CompletionMenuView } from "../components/completion/completion-menu.js";
 import { ComposerInputBox } from "../components/composer/composer-input-box.js";
@@ -242,7 +243,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       services.focus.focusRegion("composer");
       editorRef.current?.focus();
     }
-    const text = sanitizeDisplayText(decodePasteBytes(event.bytes));
+    const text = sanitizeDisplayText(normalizePasteLineBreaks(decodePasteBytes(event.bytes)));
     if (imagePaste.handlePaste(text, event)) return;
     if (imagePaste.handleDroppedImages(text, event)) return;
     if (!isLargePaste(text)) return;
