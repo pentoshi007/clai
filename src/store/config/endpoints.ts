@@ -33,6 +33,7 @@ const endpointEnvVars: Partial<Record<ProviderId, string>> = {
   modal: "MODAL_BASE_URL",
   lightning: "LIGHTNING_BASE_URL",
   tokenrouter: "TOKENROUTER_BASE_URL",
+  tokenharbor: "TOKENHARBOR_BASE_URL",
 };
 
 function providerEndpointEnvVar(provider: ProviderId): string | undefined {

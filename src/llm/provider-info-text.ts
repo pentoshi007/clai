@@ -106,6 +106,70 @@ GOOD TO KNOW
   - Env var: TOKENROUTER_API_KEY (used when nothing is stored).
 
 Docs: https://docs.tokenrouter.me`,
+  tokenharbor: `Token Harbor — one Universal Key for every frontier model
+
+WHAT IT IS
+  An OpenAI- and Anthropic-compatible gateway that fronts Claude, GPT, Gemini,
+  Grok, Kimi, Qwen, GLM, DeepSeek and more behind a single thk_live_ key.
+  clai uses /v1/chat/completions with SSE streaming, native tool calling and
+  live reasoning streaming.
+
+  Base URL   https://tokenharbor.ai/v1   (override — see ENDPOINTS below)
+  Auth       Authorization: Bearer thk_live_…
+  Endpoints  /models · /chat/completions
+
+MODELS
+  /model reads the live catalog from /v1/models and lists chat-capable models
+  only (image generators and embeddings are filtered out). Context windows,
+  input modalities and the reasoning efforts each model accepts are taken
+  from that catalog whenever the gateway reports them, so /effort offers
+  exactly what the selected model supports and new models appear without a
+  clai update. Ids are case-sensitive, e.g. claude-sonnet-5.5, gpt-6-astra.
+
+CACHING
+  - Claude models: clai places its own ephemeral cache marks on the system
+    prompt and the tail of the conversation (at most four, as content blocks)
+    so history is cached with certainty on every connection. Token Harbor
+    never rewrites a request that already carries a mark.
+  - Every other model caches upstream automatically; clai adds nothing.
+  - Gateway response caches (exact and semantic) are bypassed with
+    X-TH-Cache-Control: bypass so an agent never gets a stale answer to a
+    similar-looking question. Vendor prompt caching is unaffected.
+  - Cached tokens are read from usage.cache_read_input_tokens /
+    usage.cache_creation_input_tokens and shown in the usage totals.
+
+COST
+  Metered per token at the upstream price (see /models on the site). Free
+  accounts are limited to 60 requests/minute and 1,800/hour; paid accounts
+  have no request-rate limit. Classed paid-cloud, so /freeonly on keeps it
+  out of the fallback chain.
+
+SETUP
+  1. Create a key at https://tokenharbor.ai/dashboard/api-keys
+  2. clai set tokenharbor thk_live_yourKey
+  3. clai use tokenharbor
+  4. /model claude-sonnet-5.5      (or any id from /model)
+
+MANAGING KEYS AND ENDPOINTS IN clai
+  clai set tokenharbor <key>            add a key (up to 10, rotated on failure)
+  clai keys                             masked keys + the active endpoint
+  clai unset tokenharbor                remove every stored key
+  /set tokenharbor                      TUI: endpoint editor, then key editor
+  /info tokenharbor                     this page
+
+  Base URL (optional — defaults to tokenharbor.ai):
+  clai set tokenharbor --url https://gateway.example.com/v1
+  clai unset tokenharbor --url               back to the default
+  TOKENHARBOR_BASE_URL overrides the whole list.
+
+GOOD TO KNOW
+  - A leaked key is billed to your wallet. Give each machine its own key and
+    set a spending cap on it in the dashboard; revoke one key without
+    touching the others.
+  - Rate limits answer HTTP 429 with Retry-After; clai waits and retries.
+  - Env var: TOKENHARBOR_API_KEY (used when nothing is stored).
+
+Docs: https://tokenharbor.ai/docs`,
   lightning: `Lightning AI Model APIs — one key for OpenAI, Anthropic, Google
 and Lightning-hosted open models
 

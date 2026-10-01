@@ -210,6 +210,12 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
     { pattern: /kimi/i, layer: kimiNoPreservationLayer },
     { pattern: /deepseek/i, layer: deepseekV4DefaultOn },
   ],
+  tokenharbor: [
+    { pattern: /kimi-k3|kimi-k2\.7/i, layer: kimiMandatoryLayer },
+    { pattern: /kimi-k2\.6/i, layer: kimiConfigurableLayer },
+    { pattern: /kimi/i, layer: kimiNoPreservationLayer },
+    { pattern: /deepseek/i, layer: deepseekV4DefaultOn },
+  ],
   orcarouter: [
     { pattern: /kimi-k3|kimi-k2\.7/i, layer: kimiMandatoryLayer },
     { pattern: /kimi-k2\.6/i, layer: kimiConfigurableLayer },
