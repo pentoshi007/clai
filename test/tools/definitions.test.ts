@@ -55,7 +55,8 @@ describe("tool definitions", () => {
     };
     expect(state.enum).toContain("failed");
     const read = TOOL_DEFINITIONS.find((d) => d.name === "job.read")!;
-    expect(Object.keys(read.parameters.properties)).toEqual(["jobId", "notificationId"]);
+    expect(Object.keys(read.parameters.properties)).toEqual(["jobId", "notificationId", "summary"]);
+    expect(read.parameters.required ?? []).toEqual([]);
     expect(read.mutates).toBe(true);
     expect(TOOL_DEFINITIONS.find((d) => d.name === "task.read")).toBeUndefined();
     const handoff = TOOL_DEFINITIONS.find((d) => d.name === "agent.handoff")!;

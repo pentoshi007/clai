@@ -95,6 +95,7 @@ export interface ResponderNotification {
   discardReason?: "session-cancelled" | undefined;
   resultRevision?: number | undefined;
   resultHash?: string | undefined;
+  resultDigest?: string | undefined;
   supersededRevisions?: readonly SupersededResultRevision[] | undefined;
   archivedAt?: string | undefined;
   settledAt?: string | undefined;

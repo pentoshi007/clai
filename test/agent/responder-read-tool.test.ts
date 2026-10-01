@@ -46,6 +46,39 @@ describe("responder read tool", () => {
     ).toEqual({ toolName: "job.read", notificationId: "n1", jobId: "" });
   });
 
+  it("keeps a normalised, redacted, bounded summary of the result", () => {
+    const request = parseResponderReadRequest("job.read", {
+      jobId: "j1",
+      summary: `  Port 22 open\n\n  with ${["sk", "-", "abcdefghijklmnop1234"].join("")} leaked  ${"x".repeat(600)} `,
+    });
+    expect(request.summary).toBeDefined();
+    expect(request.summary).not.toMatch(/\s{2}|\n/);
+    expect(request.summary).not.toContain("abcdefghijklmnop1234");
+    expect(request.summary!.length).toBeLessThanOrEqual(280);
+    expect(request.summary!.startsWith("Port 22 open with sk-")).toBe(true);
+  });
+
+  it("omits the summary when it is missing, blank or not text", () => {
+    for (const summary of [undefined, "", "   \n ", 42, { text: "x" }]) {
+      const request = parseResponderReadRequest("job.read", { jobId: "j1", summary });
+      expect(request).toEqual({ toolName: "job.read", notificationId: "", jobId: "j1" });
+      expect("summary" in request).toBe(false);
+    }
+  });
+
+  it("carries the summary to the ledger on a copy and leaves the stored notification untouched", () => {
+    const target = notification();
+    const decision = decideResponderRead(
+      { toolName: "job.read", notificationId: "n1", jobId: "", summary: "login issues a JWT" },
+      noWake,
+      ports({ pendingNotifications: [target] }),
+    );
+    expect(decision.marked).toBe(true);
+    expect(decision.ledgerNotification).toMatchObject({ id: "n1", resultDigest: "login issues a JWT" });
+    expect(decision.ledgerNotification).not.toBe(target);
+    expect(target.resultDigest).toBeUndefined();
+  });
+
   it("requires an identifier", () => {
     const decision = decideResponderRead(
       { toolName: "job.read", notificationId: "", jobId: "" },
