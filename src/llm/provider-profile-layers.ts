@@ -415,6 +415,34 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  tokenharbor: {
+    evidence: providerDoc("tokenharbor-chat-completions"),
+    capabilities: { tools: "supported", images: "unknown" },
+    reasoning: {
+      control: {
+        dialect: "openai-effort",
+        status: "supported",
+        evidence: providerDoc("tokenharbor-chat-completions"),
+      },
+      outputShapes: ["reasoning-content", "reasoning-field", "structured-details"],
+    },
+    cache: {
+      kind: "explicit-breakpoint",
+      cacheAffectingFields: ["messages", "tools", "tool_choice", "cache_control"],
+    },
+    usage: {
+      cachedInput: [
+        "usage.cache_read_input_tokens",
+        "usage.prompt_tokens_details.cached_tokens",
+      ],
+      cacheWrite: ["usage.cache_creation_input_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
   fireworks: {
     evidence: providerDoc("fireworks-chat-completions"),
     capabilities: { tools: "supported" },

@@ -44,6 +44,7 @@ import { codexProvider } from "../codex.js";
 import { copilotProvider } from "../copilot.js";
 import { kiroProvider } from "../kiro.js";
 import { omnirushProvider } from "../omnirush.js";
+import { tokenharborProvider } from "../tokenharbor.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -78,6 +79,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   copilot: copilotProvider,
   kiro: kiroProvider,
   omnirush: omnirushProvider,
+  tokenharbor: tokenharborProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -112,6 +114,7 @@ const fallbackOrder: ProviderId[] = [
   "copilot",
   "kiro",
   "omnirush",
+  "tokenharbor",
 ];
 
 function allFallbackIds(): ProviderId[] {
