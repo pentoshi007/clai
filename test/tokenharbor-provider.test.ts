@@ -19,6 +19,7 @@ import {
   tokenHarborBreakpointMode,
   tokenHarborCacheStrategy,
 } from "../src/llm/tokenharbor-cache.js";
+import { getKnownModels } from "../src/app/commands/catalog.js";
 import type { ChatMessage, CompletionRequest } from "../src/types.js";
 
 const KEY = `thk_live_${"a1B2c3D4".repeat(8)}`;
@@ -135,6 +136,10 @@ describe("Token Harbor registration", () => {
     }
     expect(getDefaultModel("tokenharbor")).toBe("claude-sonnet-5.5");
     expect(resolveProviderCategory("tokenharbor")).toBe("paid-cloud");
+  });
+
+  it("offers a known-model fallback that includes the default model", () => {
+    expect(getKnownModels("tokenharbor")).toContain(getDefaultModel("tokenharbor"));
   });
 
   it("accepts Universal Keys and rejects foreign key shapes", () => {
