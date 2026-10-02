@@ -86,6 +86,7 @@ async function parseInput(
     const value = await options?.requestSecret?.({
       title: "Terminal secret input",
       prompt: secretPrompt,
+      operation: { name: "terminal.send", args },
     });
     if (value === undefined) throw new Error("Secret input was cancelled");
     return { kind: "secret", value, submit };

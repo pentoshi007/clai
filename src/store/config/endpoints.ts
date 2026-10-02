@@ -1,6 +1,7 @@
 import type { CustomProviderDef } from "../../llm/custom-providers.js";
 import { defaultModels, sanitizeProviderModel } from "../../llm/provider.js";
 import { safeCwd } from "../../os/cwd.js";
+import { DEFAULT_PERMISSION_MODE, configuredPermissionMode, type PermissionMode } from "../../safety/permission-mode.js";
 import { fixOwnerSync, handlePermissionError } from "../../os/permissions.js";
 import { DEFAULT_EXA_SEARCH_TYPE } from "../../tools/web/types.js";
 import type { ExaSearchType, SearchProviderId } from "../../tools/web/types.js";
@@ -87,7 +88,7 @@ export interface ClaiConfig {
   namingModel?: string | undefined;
   /** When true, bypass the OS keychain and always use plaintext file storage. */
   disableKeychain: boolean;
-  permissions?: "default" | "allow-all";
+  permissions?: PermissionMode;
   learnedVisionCapabilities: Record<string, LearnedVisionEntry>;
   learnedRouteCapabilities?: Record<string, LearnedRouteEntry>;
   toolCalling?: "auto" | "native" | "text";
@@ -126,7 +127,7 @@ const defaults: ClaiConfig = {
   activeSearchProvider: "duckduckgo",
   exaSearchType: DEFAULT_EXA_SEARCH_TYPE,
   disableKeychain: false,
-  permissions: "allow-all",
+  permissions: DEFAULT_PERMISSION_MODE,
   toolCalling: "auto",
   fsPassthroughCapChars: 64_000,
   adaptiveMaxTokens: true,
@@ -240,8 +241,10 @@ function readConfigFromStore(): ClaiConfig {
     defaultProvider === current.defaultProvider
       ? current.defaultModel
       : (providerModels[defaultProvider] ?? defaultModels[defaultProvider]);
+  const permissions = configuredPermissionMode(current.permissions);
   return {
     ...current,
+    permissions,
     defaultProvider,
     defaultModel: sanitizeProviderModel(defaultProvider, defaultModel),
     providerModels,

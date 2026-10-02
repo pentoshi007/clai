@@ -74,16 +74,35 @@ describe("command handlers (V2-072..075)", () => {
     expect(services.overlay.getState().kind).toBe("none");
   });
 
-  it("/permissions opens a two-option picker defaulting to the current value", async () => {
+  it("/permissions offers all three modes and persists full access", async () => {
     const services = buildServices();
     updateConfig({ permissions: "default" });
     await services.commands.dispatch({ name: "permissions", args: "" });
     const state = services.overlay.getState();
+    expect(state.kind).toBe("picker");
     if (state.kind === "picker") {
-      expect(state.request.options.map((o) => o.value)).toEqual(["default", "allow-all"]);
-      services.overlay.selectPicker("allow-all");
+      expect(state.request.options.map((o) => o.value)).toEqual(["default", "allow-all", "full-access"]);
+      expect(state.request.options[1]?.label).toBe("auto-allow");
+      expect(state.request.options[2]?.label).toBe("full-access everywhere");
+      expect(state.request.options[0]?.active).toBe(true);
+      services.overlay.selectPicker("full-access");
     }
-    expect(getConfig().permissions).toBe("allow-all");
+    expect(getConfig().permissions).toBe("full-access");
+    expect(services.overlay.getState().kind).toBe("none");
+  });
+
+  it.each(["auto-allow", "full-access"])("/permissions %s applies directly", async (value) => {
+    const services = buildServices();
+    await services.commands.dispatch({ name: "permissions", args: value });
+    expect(getConfig().permissions).toBe(value === "auto-allow" ? "allow-all" : value);
+  });
+
+  it("invalid permission choices retain the current mode and report an error", async () => {
+    const services = buildServices();
+    updateConfig({ permissions: "default" });
+    await services.commands.dispatch({ name: "permissions", args: "invalid" });
+    expect(getConfig().permissions).toBe("default");
+    expect(services.overlay.getState().kind).toBe("none");
   });
 
   it("/permissions allow-all applies directly", async () => {

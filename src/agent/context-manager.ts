@@ -10,6 +10,7 @@ import {
   projectToolHistory,
 } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
+import { latestUserMessage } from "./context/latest-user-message.js";
 import {
   estimateImageTokens,
   estimateMessagesTokens,
@@ -104,7 +105,10 @@ export function compactMessages(
   }
   const preservedLedger =
     ledger && !head.includes(ledger) && !tail.includes(ledger) ? [ledger] : [];
-  return [...head, memo, ...preservedLedger, ...tail];
+  const latestUser = latestUserMessage(messages);
+  const preservedUser =
+    latestUser && !tail.includes(latestUser) ? [latestUser] : [];
+  return [...head, memo, ...preservedUser, ...preservedLedger, ...tail];
 }
 
 export function shouldApplyAutoCompact(input: {

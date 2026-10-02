@@ -58,6 +58,8 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
         services.overlay.answerConfirm(false);
       } else if (chord === "v" && request.viewPath) {
         onViewFile?.();
+      } else if (chord === "ctrl+o" && request.review) {
+        services.overlay.openOperationReview();
       } else return;
     }
     key.preventDefault();
@@ -72,6 +74,7 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
           ? theme.queued
           : theme.cyan;
 
+  const reviewHint = request.review ? "  ·  ctrl+o view operation" : "";
   const hint =
     request.kind === "reset"
       ? "r confirm  ·  esc cancel"
@@ -80,8 +83,8 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
         : request.kind === "continue"
           ? "y continue  ·  n stop  ·  esc cancel"
           : request.viewPath
-            ? "y approve  ·  n deny  ·  v view file  ·  esc cancel"
-            : "y approve  ·  n deny  ·  esc cancel";
+            ? `y approve  ·  n deny  ·  v view file${reviewHint}  ·  esc cancel`
+            : `y approve  ·  n deny${reviewHint}  ·  esc cancel`;
 
   const promptLines = wrapPrompt(request.prompt, docked ? 88 : 72);
 

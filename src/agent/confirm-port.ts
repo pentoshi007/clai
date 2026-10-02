@@ -1,5 +1,7 @@
 import { getConfig } from "../store/config.js";
 import { isPentestToolCall } from "../safety/classifier.js";
+import { filesystemPermission } from "../safety/filesystem-permissions.js";
+import { DEFAULT_PERMISSION_MODE } from "../safety/permission-mode.js";
 import {
   createStdioConfirmPort,
   createStdioSecretPort,
@@ -12,7 +14,7 @@ export { restoreInteractiveStdin };
 
 export interface ConfirmPort {
   confirmTool(call: ToolCall): Promise<boolean>;
-  confirmPentest(): Promise<boolean>;
+  confirmPentest(call?: ToolCall): Promise<boolean>;
   confirmAgentSwitch?(info: {
     reason: string;
     tools: string[];
@@ -23,10 +25,7 @@ export const stdioConfirmPort: ConfirmPort = createStdioConfirmPort();
 
 const requestStdioSecret = createStdioSecretPort();
 
-export async function stdioSecretRequester(request: {
-  title: string;
-  prompt: string;
-}): Promise<string | undefined> {
+export async function stdioSecretRequester(request: Parameters<typeof requestStdioSecret>[0]): Promise<string | undefined> {
   return requestStdioSecret(request);
 }
 
@@ -38,7 +37,8 @@ export async function ensurePentestAuthorization(
 ): Promise<boolean> {
   if (!isPentestToolCall(call)) return true;
   const config = getConfig();
-  if (config.permissions === "allow-all") return true;
+  const mode = config.permissions ?? DEFAULT_PERMISSION_MODE;
+  if (mode === "allow-all" || mode === "full-access") return true;
   if (config.pentestAuthorized) return true;
   if (session.pentestAuthorized.value) return true;
 
@@ -47,7 +47,7 @@ export async function ensurePentestAuthorization(
     return true;
   }
 
-  const ok = await confirmPort.confirmPentest();
+  const ok = await confirmPort.confirmPentest(call);
   if (!ok) return false;
   session.pentestAuthorized.value = true;
   return true;
@@ -60,11 +60,12 @@ export async function confirmToolExecution(
   confirmPort: ConfirmPort,
   options?: { forceConfirm?: boolean | undefined },
 ): Promise<boolean> {
-  if (call.name === "fs.delete") {
-    return confirmPort.confirmTool(call);
-  }
   const config = getConfig();
-  if (config.permissions === "allow-all") return true;
+  const mode = config.permissions ?? DEFAULT_PERMISSION_MODE;
+  if (mode === "full-access") return true;
+  const filesystem = filesystemPermission(call, mode);
+  if (filesystem === "confirm") return confirmPort.confirmTool(call);
+  if (filesystem === "allow" || mode === "allow-all") return true;
   if (options?.forceConfirm) return confirmPort.confirmTool(call);
   if (autoConfirm) return true;
   if (session.allow.has(call.name)) return true;

@@ -36,6 +36,7 @@ import {
   updateConfig,
 } from "./store/config.js";
 import { assertProvider } from "./llm/provider.js";
+import { parsePermissionMode, permissionModeLabel } from "./safety/permission-mode.js";
 import { listSessionSummaries, getSession } from "./store/history.js";
 import { canUseTui } from "./ui-core/bootstrap/can-use-tui.js";
 import {
@@ -340,6 +341,17 @@ async function main(): Promise<void> {
           if (targetValue === undefined) {
             console.error(chalk.red("  ✗ Missing value for key: " + targetKey));
             process.exit(1);
+          }
+          if (targetKey === "permissions") {
+            const permissions = parsePermissionMode(targetValue);
+            if (!permissions) {
+              console.error(chalk.red("  ✗ Permissions must be default, auto-allow, or full-access"));
+              process.exitCode = 1;
+              return;
+            }
+            updateConfig({ permissions });
+            console.log(chalk.green(`  ✓ Set permissions = ${permissionModeLabel(permissions)}`));
+            return;
           }
           let typedValue: any = targetValue;
           const currentType = typeof (current as any)[targetKey];

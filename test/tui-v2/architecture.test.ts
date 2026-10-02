@@ -122,8 +122,13 @@ describe("src/tui-v2 architecture boundary", () => {
       "utf8",
     );
     expect(modal).toContain('buffer.insert(request.initialValue ?? "", 0)');
-    expect(modal).toContain(
-      "revealed ? bufferRef.current.reveal() : bufferRef.current.masked()",
+    expect(modal).toContain("export function createSecretDraft");
+    expect(modal).toContain("revealed ? buffer.reveal() : buffer.masked()");
+    const host = readFileSync(
+      join(tuiV2Root, "components", "overlay", "overlay-host.tsx"),
+      "utf8",
     );
+    expect(host).toContain("createSecretDraft(state.request)");
+    expect(host).toContain("draft={secretDraftRef.current!}");
   });
 });

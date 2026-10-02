@@ -17,7 +17,7 @@ vi.mock("../../src/safety/classifier.js", () => ({
   isPentestToolCall: (...args: unknown[]) => isPentest(...args),
 }));
 vi.mock("../../src/tools/fs.js", () => ({
-  isOutsideWorkingDirectory: (...args: unknown[]) => outsideCwd(...args),
+  isOutsideActiveFolder: (...args: unknown[]) => outsideCwd(...args),
   resolveFsToolPath: (path: string) => path,
 }));
 vi.mock("../../src/store/config.js", () => ({
@@ -57,7 +57,7 @@ beforeEach(() => {
   restore.mockReset();
   isPentest.mockReset().mockReturnValue(false);
   outsideCwd.mockReset().mockReturnValue(false);
-  config.mockReset().mockReturnValue({ pentestAuthorized: false });
+  config.mockReset().mockReturnValue({ pentestAuthorized: false, permissions: "default" });
 });
 
 describe("tool authorization", () => {

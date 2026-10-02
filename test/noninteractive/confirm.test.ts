@@ -35,6 +35,20 @@ function answer(io: FakeIO, line: string): void {
   setImmediate(() => io.input.write(`${line}\n`));
 }
 
+function answerReviewThen(io: FakeIO, line: string): void {
+  setImmediate(() => {
+    io.input.write("\n");
+    const send = (): void => {
+      if (io.written().includes("[Y/n]") || io.written().includes("[y/N]")) {
+        io.input.write(`${line}\n`);
+        return;
+      }
+      setImmediate(send);
+    };
+    send();
+  });
+}
+
 describe("releaseInteractiveStdin", () => {
   it("returns a resumed raw TTY to cooked paused state", () => {
     const input = new PassThrough() as PassThrough & {
@@ -188,7 +202,7 @@ describe("-y semantics", () => {
     const { confirmToolExecution, createSessionPolicy } = await load();
     const io = makeIO({ tty: true });
     const port = createStdioConfirmPort(io);
-    answer(io, "y");
+    answerReviewThen(io, "y");
     const call: ToolCall = { name: "fs.delete", args: { path: "/tmp/x" } };
     await expect(
       confirmToolExecution(call, true, createSessionPolicy(), port),
@@ -200,7 +214,7 @@ describe("-y semantics", () => {
     const { confirmToolExecution, createSessionPolicy } = await load();
     const io = makeIO({ tty: true });
     const port = createStdioConfirmPort(io);
-    answer(io, "n");
+    answerReviewThen(io, "n");
     const call: ToolCall = { name: "fs.write", args: { path: "/tmp/x" } };
     await expect(
       confirmToolExecution(call, true, createSessionPolicy(), port, {

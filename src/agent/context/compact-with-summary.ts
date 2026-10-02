@@ -3,6 +3,7 @@ import { redactSecrets } from "../../llm/provider.js";
 import { hasReasoningMarker } from "../../llm/reasoning-marker.js";
 import { ACTIVE_SKILLS_PREFIX } from "../../skills/catalog.js";
 import { compactionSourcePrefixEnd } from "./compaction-source-prefix.js";
+import { latestUserMessage } from "./latest-user-message.js";
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import {
@@ -482,7 +483,11 @@ export async function compactMessagesWithSummary(
   }
 
   const head = preserveSystemHead ? [messages[0]!] : [];
+  const protectedUser = latestUserMessage(messages);
   let rawTail = [...retainedMiddle, ...messages.slice(tailStart)];
+  if (protectedUser && !rawTail.includes(protectedUser)) {
+    rawTail.unshift(protectedUser);
+  }
   if (options.durableEnvelope?.trim()) {
     rawTail = rawTail.filter(
       (message) =>
@@ -517,6 +522,7 @@ export async function compactMessagesWithSummary(
     rawTail,
     TAIL_SOFT_TIERS[0]!,
     envelopeMsg,
+    protectedUser,
   );
   for (let i = 1; i < TAIL_SOFT_TIERS.length; i += 1) {
     if (estimateMessagesTokens(compacted) <= POST_COMPACT_SOFT_UPPER_BAND_TOKENS) {
@@ -528,6 +534,7 @@ export async function compactMessagesWithSummary(
       rawTail,
       TAIL_SOFT_TIERS[i]!,
       envelopeMsg,
+      protectedUser,
     );
   }
 
@@ -557,12 +564,13 @@ function buildLeanCompact(
   rawTail: ChatMessage[],
   preferMax: TailPreferMax,
   envelopeMsg?: ChatMessage | undefined,
+  protectedUser?: ChatMessage | undefined,
 ): ChatMessage[] {
   return [
     ...head,
     memoryMsg,
     ...(envelopeMsg ? [envelopeMsg] : []),
-    ...leanTailMessages(rawTail, preferMax),
+    ...leanTailMessages(rawTail, preferMax, protectedUser),
   ];
 }
 
@@ -600,6 +608,7 @@ function preferTrimContent(text: string, preferMax: number): string {
 function leanTailMessages(
   tail: ChatMessage[],
   preferMax: { tool: number; assistant: number; user: number },
+  protectedUser?: ChatMessage | undefined,
 ): ChatMessage[] {
   return tail
     .filter((msg) => {
@@ -610,6 +619,7 @@ function leanTailMessages(
       return true;
     })
     .map((msg) => {
+      if (msg === protectedUser) return msg;
       if (msg.role === "tool") {
         return { ...msg, content: preferTrimContent(msg.content, preferMax.tool) };
       }

@@ -207,6 +207,10 @@ describe("secret-modal password elevation", () => {
     expect(obtain).toHaveBeenCalledTimes(1);
     const promptRequest = obtain.mock.calls[0]?.[0];
     expect(promptRequest?.title).toBe("Administrator access");
+    expect(promptRequest?.operation).toMatchObject({
+      name: "clai.update",
+      args: { destination: execPath, elevation: "sudo" },
+    });
     const sudo = calls.find((call) => call.cmd === "sudo");
     expect(sudo).toBeDefined();
     expect(sudo?.args.slice(0, 6)).toEqual(["-S", "-p", "", "--", "mv", "-f"]);

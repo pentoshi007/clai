@@ -152,3 +152,94 @@ describe("OverlayController (V2-071..076)", () => {
     expect(overlay.getState().kind).toBe("confirm");
   });
 });
+
+
+describe("operation review pager suspension", () => {
+  it("keeps a confirmation pending until an explicit answer after review", async () => {
+    const overlay = new OverlayController(new FocusController());
+    const pending = overlay.openConfirm({
+      kind: "tool",
+      prompt: "approve?",
+      review: { title: "Review operation", body: "full command" },
+    });
+
+    expect(overlay.openOperationReview()).toBe(true);
+    const pager = overlay.getState();
+    expect(pager.kind).toBe("pager");
+    if (pager.kind === "pager") expect(pager.body).toBe("full command");
+
+    overlay.close();
+    expect(overlay.getState().kind).toBe("confirm");
+    overlay.answerConfirm(true);
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it("restores and safely cancels a secret prompt suspended under review", async () => {
+    const overlay = new OverlayController(new FocusController());
+    const pending = overlay.openSecret({
+      title: "Administrator access",
+      prompt: "password",
+      review: { title: "Review operation", body: "sudo full command" },
+    });
+
+    expect(overlay.openOperationReview()).toBe(true);
+    expect(overlay.getState().kind).toBe("pager");
+    overlay.close();
+    expect(overlay.getState().kind).toBe("secret");
+
+    overlay.answerSecret("password-value");
+    await expect(pending).resolves.toBe("password-value");
+    expect(overlay.getState().kind).toBe("none");
+  });
+
+  it("resolves a secret as cancelled when disposal happens during review", async () => {
+    const overlay = new OverlayController(new FocusController());
+    const pending = overlay.openSecret({
+      title: "Administrator access",
+      prompt: "password",
+      review: { title: "Review operation", body: "sudo full command" },
+    });
+
+    overlay.openOperationReview();
+    overlay.dispose();
+    await expect(pending).resolves.toBeUndefined();
+  });
+});
+
+describe("operation review pending-prompt safety", () => {
+  it("keeps a decline explicit and never authorizes on pager return", async () => {
+    const overlay = new OverlayController(new FocusController());
+    const pending = overlay.openConfirm({
+      kind: "tool",
+      prompt: "approve?",
+      review: { title: "Review operation", body: "full command" },
+    });
+
+    overlay.openOperationReview();
+    overlay.close();
+    expect(overlay.getState().kind).toBe("confirm");
+    overlay.answerConfirm(false);
+    await expect(pending).resolves.toBe(false);
+  });
+
+  it("aborts a suspended secret safely while its review pager is open", async () => {
+    const overlay = new OverlayController(new FocusController());
+    const pending = overlay.openSecret({
+      title: "Administrator access",
+      prompt: "password",
+      review: { title: "Review operation", body: "sudo full command" },
+    });
+
+    overlay.openOperationReview();
+    expect(overlay.cancelBlockingPrompt()).toBe(true);
+    await expect(pending).resolves.toBeUndefined();
+    expect(overlay.getState().kind).toBe("none");
+  });
+
+  it("does not open a review pager when the request has none", () => {
+    const overlay = new OverlayController(new FocusController());
+    void overlay.openConfirm({ kind: "tool", prompt: "plain" });
+    expect(overlay.openOperationReview()).toBe(false);
+    expect(overlay.getState().kind).toBe("confirm");
+  });
+});

@@ -135,7 +135,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   const metaLabel = formatComposerMeta(
     activeProvider,
     activeModel,
-    cfg.permissions ?? "default",
+    cfg.permissions,
     effectiveThinkingEffort(activeProvider, activeModel, cfg.thinking),
   );
 

@@ -17,15 +17,15 @@ Why people pick it over other agent CLIs:
 ## Highlights
 
 - **Free-tier first.** Built-in **keyless Free** gateway (`free-2/kilo-auto/free`) so a fresh install runs at no cost with zero setup — no API key required.
-- **Account sign-in.** `clai auth <freebuff|cline|chatgpt|copilot|kiro>` — provider-specific browser/device approval, with supported `--import` paths and multi-credential rotation.
+- **Account sign-in.** `clai auth <freebuff|cline|chatgpt|copilot|kiro|omnirush>` — provider-specific browser/device approval, with supported `--import` paths and multi-credential rotation.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit, quota, transient, or 5xx errors. Disable any key to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
-- **Broad provider support.** 25+ built-in providers: Freebuff, DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, AgentRouter, AWS Mantle, TokenRouter, Token Harbor, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
+- **Broad provider support.** 25+ built-in providers: Freebuff, DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, OmniRush, AgentRouter, AWS Mantle, TokenRouter, Token Harbor, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
 - **Parallel subagents.** Independent investigations (recon, research, large refactors) run as read-only subagents concurrently; `/orchestrator` and `/subagents` control and inspect them, with per-role model chains.
 - **Agent Skills.** Loads `SKILL.md`-based skills on demand — `/skills` manages them, and relevant skills surface automatically per prompt.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
 - **Real building & debugging.** Scaffolds apps, edits code surgically, installs packages, runs builds/tests, starts dev servers as background jobs, and probes them before reporting success.
 - **Durable plans.** `plan.create` / `task.update` drive a live checklist that survives context compaction and reloads with `/history` — the agent works task-by-task and won't fake completion.
-- **State-preserving compaction.** Automatic and manual `/compact` keep a deterministic work envelope next to the summary: subagents (id, title, status, and a digest of results already read), live and finished background jobs, Responder-delegated tasks with their read state, touched files, and any credentials you supplied for the task, carried verbatim instead of being summarized away. When the history fits the model's window, the summary request replays the cached conversation prefix, so compaction is mostly a cache read.
+- **State-preserving compaction.** Automatic and manual `/compact` keep the latest user request verbatim alongside a deterministic work envelope: subagents (id, title, status, and a digest of results already read), live and finished background jobs, Responder-delegated tasks with their read state, touched files, and any credentials you supplied for the task. Before each model dispatch, clai estimates the current assembled request, including the incoming prompt and tool schemas, calibrated with provider-reported usage when available; it does not ask the model to guess its context size. Injected system blocks cannot displace the latest prompt, and successful manual compaction is saved even when the message count stays unchanged. When the history fits the model's window, the summary request replays the cached conversation prefix, so compaction is mostly a cache read.
 - **Durable agent sessions.** Interactive sessions run behind a local broker, so an agent keeps working after `/minimise`, an SSH disconnect, or switching to another history session; `clai --resume <id>` reattaches to the same live UI and output stream.
 - **Persistent interactive terminals.** Conversation-owned PTY or pipe sessions keep REPLs such as Python, Metasploit, Meterpreter, database consoles, and debuggers open across model turns.
 - **Native + text tool calling.** Uses provider-native function calling where available, with a text-fence fallback (`toolCalling: auto|native|text`).
@@ -122,6 +122,7 @@ Sign in with an account you already have. Browser/device-code flows work on head
 | **GitHub Copilot** | `clai auth copilot` | Incl. Copilot Free; mimics VS Code Copilot Chat |
 | **Cline** | `clai auth cline` | Free `cline-free/*` models plus frontier catalog |
 | **Kiro (AWS)** | `clai auth kiro` | AWS Builder ID, Google/GitHub social login, or IAM Identity Center SSO |
+| **OmniRush** | `clai auth omnirush` | Device-code sign-in; `--import` reuses an existing OmniRush CLI login |
 
 Up to 10 credentials can be stored per provider, with automatic key rotation on applicable authentication/quota errors. `clai auth <p> --import` imports supported local sign-ins; Freebuff also imports `FREEBUFF_API_KEY`, `CODEBUFF_API_KEY`, or the upstream `~/.config/manicode/credentials.json` token.
 
@@ -195,6 +196,18 @@ On clean TUI shutdown and after a noninteractive run, clai awaits best-effort de
 - **Wallet consent required:** clai has not spent anything. It always requests zero wallet spend; use a free-eligible model or review the purchase in a Freebuff-supported surface.
 - **Catalog does not refresh:** `/model` uses the account-visible session response and a 30-minute per-account cache. If the session probe is unreachable, clai displays its bundled catalog fallback; the hosted `/api/v1/models` endpoint is not available.
 - **Session remains after a forced stop:** clean exits attempt deletion; otherwise Freebuff's server-side expiry clears it.
+
+### ChatGPT (Codex) subscription behavior
+
+- `clai auth chatgpt` signs in with ChatGPT; `--headless` uses a device code, and `--import` reuses an existing Codex CLI sign-in.
+- `/model` uses the live account-visible catalog and installed Codex client version. Model context limits and supported reasoning levels follow the catalog; account-scoped results refresh every five minutes and are cached for offline use.
+- `/usage` shows ChatGPT subscription limits, reset times, and credits when the account reports them, alongside session token and cache usage. Subscription allowances are separate from session token totals.
+
+### OmniRush session uploads
+
+For OmniRush sessions, clai invokes the OmniRush CLI to upload a **synthetic lifecycle workspace** after turns and at session close. It contains the session id, sequence, lifecycle phase, status, and timestamp—not your project source, prompts, or tool-output transcript. The CLI must be available and signed in; missing CLI or login errors produce a notice without failing the agent turn.
+
+Uploads are disabled by `--no-history`, private mode (`/privacy on`), or `CLAI_OMNIRUSH_SESSION_UPLOAD=0` (also accepts `false`, `off`, or `no`). `OMNIRUSH_CLI_PATH` selects a custom OmniRush executable.
 
 ### Manage Keys
 
@@ -289,6 +302,8 @@ Log triage, config hardening, packaging, network analysis, OCR of a screenshot o
 
 ## Modes & reasoning
 
+Codex subscription sessions preserve compatible encrypted reasoning for normal continuation. If a restored session's `/compact` request rejects it with `invalid_encrypted_content`, clai retries once on the same model without the rejected opaque replay, retaining visible text, tool history, and generation settings. Unrelated errors or failures after streamed output do not trigger this recovery; failed compaction retains the original context.
+
 Three modes, switchable anytime with a slash command, `Shift+Tab`, or `clai --mode`:
 
 | Mode | Use |
@@ -308,10 +323,31 @@ You own authorization; `clai` gates risk on every action:
 | Level | Behavior |
 |-------|----------|
 | **safe** | Auto-runs read-only work: `fs.read/list/search`, `tool.check`, `http.fetch` GET, `web.search`/`web.fetch`, recon commands. |
-| **confirm** | Asks first for mutations: file writes/edits, installs, moves, mutating shell commands. |
+| **confirm** | Applies the selected permission mode to mutations; filesystem scope can require approval even with `--yes` or a tool allow-list. |
 | **block** | Refuses destructive patterns (`rm -rf /`, fork bombs, exfiltration signatures) and SSRF-prone fetches. |
 
-`fs.delete` always confirms (with an optional diff preview) even under allow-all. Use `/permissions` to choose the confirmation level and `/allow` / `/disallow` for a per-session tool allow-list.
+Use `/permissions` in either UI to select a persistent permission mode:
+
+| Permission mode | Writes, creates, edits | File deletion (`fs.delete` and shell `rm`) |
+|-----------------|-----------------------|-------------------------------------------|
+| **default** | Allowed inside the active folder; outside writes ask | Always asks |
+| **auto-allow** *(default)* | Allowed everywhere | Allowed inside the active folder; outside or unresolved targets ask |
+| **full-access everywhere** | Allowed everywhere | Allowed everywhere without confirmation |
+
+Set a mode directly with `/permissions default`, `/permissions auto-allow`, or `/permissions full-access`, or from the CLI with `clai config set permissions <mode>`. The legacy `allow-all` value remains an alias for auto-allow; existing explicit choices survive upgrades and restarts. `/allow` and `/disallow` manage per-session tool allowances, but cannot bypass a required filesystem-scope prompt.
+
+The active folder is the pinned project root, or the current working directory when no project is pinned—not every temporary directory. Shell checks cover direct, piped, compound, and wrapped deletion commands and account for explicit cwd, traversal, and symlink escapes. Dynamic targets, unsupported shell syntax, and indirect deletion with unresolved inputs require approval under auto-allow; this policy is not an OS sandbox. Full-access changes confirmation policy, not ask-mode restrictions, OS permissions, engagement scope, or hard safety blocks.
+
+### Reviewing what you approve
+
+Before you authorize anything, press **Ctrl+O** on any approval or password prompt to page the *complete* pending operation—the same way plan mode lets you read the plan before implementing. The review shows the operation name, working directory, active folder, resolved filesystem paths, and the full untruncated arguments, including complete shell commands and surrounding `cwd`.
+
+- Press **Ctrl+O** on a tool, pentest, or sudo/secret prompt to open the review pager. Scroll it, search it, and close it to return to the pending prompt.
+- Viewing approves nothing, cancels nothing, and executes nothing. The prompt stays pending until you answer it explicitly.
+- Deletion prompts keep **v** for the existing file-content preview; **Ctrl+O** shows the operation descriptor instead. The content preview is capped while the descriptor is not.
+- Sensitive values stay masked: password, secret, token, cookie and API-key fields are redacted, as are recognizable provider keys and `Bearer` credentials. Control characters are shown as escapes so nothing is silently hidden.
+- Terminal/`-y` (non-interactive) runs page the same review before the y/n question when stdin is a TTY; without a TTY they still fail closed instead of reading a piped answer.
+- Returning from the pager never authorizes. A partially typed password survives the round trip, and `esc` still cancels.
 
 ---
 
@@ -515,7 +551,8 @@ npm install
 npm run dev          # run from source
 npm run typecheck
 npm run build
-npm test             # full test suite
+npm run test:deterministic
+npm run test:host
 npm run compile      # compile native binaries with Bun
 ```
 

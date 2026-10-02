@@ -3,6 +3,7 @@ import { useMemo, useRef } from "react";
 import { getCurrentVersion } from "../../commands/update.js";
 import { safeCwd } from "../../os/cwd.js";
 import { getConfig } from "../../store/config.js";
+import { DEFAULT_PERMISSION_MODE } from "../../safety/permission-mode.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import type { IntroBlockInput } from "../blocks/intro-lines.js";
@@ -34,7 +35,7 @@ export function introInputFor(services: AppServices): IntroBlockInput {
     mode: session.mode,
     provider: session.provider ?? cfg.defaultProvider,
     model: session.model ?? cfg.defaultModel,
-    permissions: cfg.permissions ?? "default",
+    permissions: cfg.permissions ?? DEFAULT_PERMISSION_MODE,
     workdir: displayWorkdir(safeCwd()),
     variant:
       effectiveThinkingEffort(

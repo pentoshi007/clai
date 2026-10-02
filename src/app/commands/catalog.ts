@@ -171,7 +171,7 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/permissions",
-    usage: "[default|allow-all]",
+    usage: "[default|auto-allow|full-access]",
     description: "control permission level for tool confirmation prompts",
   },
   { command: "/update", description: "check for updates" },

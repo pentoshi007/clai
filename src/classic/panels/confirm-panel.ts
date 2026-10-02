@@ -40,7 +40,9 @@ export function confirmActions(request: ConfirmRequest): readonly ConfirmActionK
         { chord: "y", label: "approve" },
         { chord: "n", label: "deny" },
       ];
-      return request.viewPath ? [...keys, { chord: "v", label: "preview" }] : keys;
+      const preview = request.viewPath ? [{ chord: "v", label: "preview" }] : [];
+      const review = request.review ? [{ chord: "ctrl+o", label: "view operation" }] : [];
+      return [...keys, ...preview, ...review];
     }
   }
 }
@@ -51,8 +53,10 @@ export function confirmHints(request: ConfirmRequest): readonly string[] {
       return ["r", "esc cancel"];
     case "plan":
       return ["i/d/s/p", "esc dismiss"];
-    default:
-      return request.viewPath ? ["y/n/v", "esc deny"] : ["y/n", "esc deny"];
+    default: {
+      const keys = ["y/n", ...(request.viewPath ? ["v"] : []), ...(request.review ? ["ctrl+o"] : [])];
+      return [keys.join("/"), "esc deny"];
+    }
   }
 }
 
@@ -88,6 +92,7 @@ export function confirmKey(input: ConfirmKeyInput): PanelKeyResult<undefined> {
   if (chord === "y" || chord === "enter") return emit({ kind: "confirm", ok: true });
   if (chord === "n" || chord === "escape") return emit({ kind: "confirm", ok: false });
   if (chord === "v" && request.viewPath) return emit({ kind: "view-file" });
+  if (chord === "ctrl+o" && request.review) return emit({ kind: "view-operation" });
   return emit();
 }
 

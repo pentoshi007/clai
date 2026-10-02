@@ -523,7 +523,7 @@ export const runSingleTool = async (
         ? deps.mcpRuntime.callTool(call.name, call.args, { signal: toolAc.signal })
         : runToolCall(call, {
       signal: toolAc.signal,
-      requestSecret: deps.options.requestSecret ?? stdioSecretRequester,
+      requestSecret: (request) => (deps.options.requestSecret ?? stdioSecretRequester)({ ...request, operation: request.operation ?? call }),
       onOutput: (chunk) => {
         if (toolAc.signal.aborted) return;
         watchdog.resetStallTimer();

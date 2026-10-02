@@ -258,3 +258,34 @@ describe("base regions", () => {
     expect(calls).toEqual(["panel:composer:f6"]);
   });
 });
+describe("operation review chord routing", () => {
+  it("delivers ctrl+o to the open confirm panel instead of the global output toggle", () => {
+    const { calls, focus, overlay, router } = build();
+    void overlay.openConfirm({
+      kind: "tool",
+      prompt: "Run command?",
+      review: { title: "Review operation", body: "complete command" },
+    });
+    expect(focus.activeContext()).toBe("modal");
+
+    feed(router, "\x0f");
+
+    expect(calls).toContain("panel:modal:ctrl+o");
+    expect(calls).not.toContain("action:transcript.toggle-output");
+  });
+
+  it("delivers ctrl+o to the open secret prompt so sudo review stays reachable", () => {
+    const { calls, focus, overlay, router } = build();
+    void overlay.openSecret({
+      title: "Administrator access",
+      prompt: "password",
+      review: { title: "Review operation", body: "sudo complete command" },
+    });
+    expect(focus.activeContext()).toBe("secret");
+
+    feed(router, "\x0f");
+
+    expect(calls).toContain("panel:secret:ctrl+o");
+    expect(calls).not.toContain("action:transcript.toggle-output");
+  });
+});

@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { normalizeProvider } from "../../llm/provider.js";
 import { getProvider } from "../../llm/router.js";
 import { renderWordmark, wordmarkWidth } from "./wordmark.js";
+import { DEFAULT_PERMISSION_MODE, permissionModeLabel } from "../../safety/permission-mode.js";
 
 const CARD_BORDER_HEX = "#2EEBFF";
 const cardBorder = chalk.hex(CARD_BORDER_HEX);
@@ -57,10 +58,6 @@ function defaultInk(text: string): string {
   return text;
 }
 
-function displayPermissions(permissions: string): string {
-  return permissions === "allow-all" ? "auto-allow" : permissions;
-}
-
 function displayModel(model: string, variant?: string): string {
   if (!variant || variant === "off") return model;
   return `${model}(${variant})`;
@@ -83,8 +80,8 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const providerId = normalizeProvider(opts.provider || "openai");
   const provider = providerId ? getProvider(providerId).displayName : opts.provider || "openai";
   const model = displayModel(opts.model || "gpt-4", opts.variant);
-  const permissions = displayPermissions(opts.permissions || "default");
-  const rawPermissions = opts.permissions || "default";
+  const rawPermissions = opts.permissions || DEFAULT_PERMISSION_MODE;
+  const permissions = permissionModeLabel(rawPermissions);
   const variant = opts.variant;
   const cwd = opts.workdir;
 
@@ -140,7 +137,8 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const permissionsBanner = chalk.bgHex(permBgColor).whiteBright.bold(
     `  ${permissions.toUpperCase()}  `,
   );
-  const permLabel = chalk.bgHex("#334155").whiteBright.bold(` PERMISSION `);
+  const permLabelText = rightWidth >= permissions.length + 16 ? "PERMISSION" : "PERM";
+  const permLabel = chalk.bgHex("#334155").whiteBright.bold(` ${permLabelText} `);
 
   const rightRows: string[] = [
     "",

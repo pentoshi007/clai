@@ -2,6 +2,7 @@
 import type { FocusController, OverlayContext } from "./focus-controller.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
 import type { ArtifactPagerSource } from "../rendering/artifact-pager-source.js";
+import type { OperationReview } from "../../app/operation-review.js";
 
 export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch" | "mcp-oauth";
 
@@ -10,6 +11,7 @@ export type PlanConfirmResult = "implement" | "discard" | "suggest" | "dismiss";
 export interface ConfirmRequest {
   readonly kind: ConfirmKind;
   readonly prompt: string;
+  readonly review?: OperationReview | undefined;
   readonly viewPath?: string | undefined;
 }
 
@@ -30,6 +32,7 @@ export interface PickerRequest {
 export interface SecretRequestView {
   readonly title: string;
   readonly prompt: string;
+  readonly review?: OperationReview | undefined;
   readonly reveal?: boolean | undefined;
   readonly initialValue?: string | undefined;
 }
@@ -190,13 +193,22 @@ export class OverlayController {
       ...(highlightPath ? { highlightPath } : {}),
       ...(markdown ? { markdown } : {}),
     };
-    const stackable = this.state.kind === "confirm" || this.state.kind === "jobs" || this.state.kind === "picker";
+    const stackable = this.state.kind === "confirm" || this.state.kind === "secret" || this.state.kind === "jobs" || this.state.kind === "picker";
     const opened =
       stackable && !this.suspended
         ? this.suspendUnder(pager, "pager")
         : this.open(pager, "pager");
     if (!opened) source?.dispose();
     return opened;
+  }
+
+  openOperationReview(): boolean {
+    const request =
+      this.state.kind === "confirm" || this.state.kind === "secret"
+        ? this.state.request
+        : undefined;
+    if (!request?.review) return false;
+    return this.openPager(request.review.title, request.review.body, undefined, undefined, "plain");
   }
 
   openJobs(): boolean {
@@ -332,19 +344,22 @@ export class OverlayController {
   }
 
   answerSecret(value: string | undefined): void {
-    if (this.state.kind !== "secret") return;
-    const { resolve } = this.state;
+    const secret = this.activeSecret();
+    if (!secret) return;
+    const { resolve } = secret;
+    this.suspended = undefined;
     this.forceClose();
     resolve(value);
   }
 
   cancelBlockingPrompt(): boolean {
-    if (this.state.kind === "secret") {
+    if (this.activeSecret()) {
       this.answerSecret(undefined);
       return true;
     }
-    if (this.state.kind === "confirm") {
-      if (this.state.request.kind === "plan" && this.state.planResolve) {
+    const confirm = this.activeConfirm();
+    if (confirm) {
+      if (confirm.request.kind === "plan" && confirm.planResolve) {
         this.answerPlanConfirm("dismiss");
       } else {
         this.answerConfirm(false);
@@ -392,6 +407,8 @@ export class OverlayController {
       } else {
         this.suspended.resolve(false);
       }
+    } else if (this.suspended?.kind === "secret") {
+      this.suspended.resolve(undefined);
     } else if (this.state.kind === "confirm") {
       if (this.state.request.kind === "plan" && this.state.planResolve) {
         this.state.planResolve("dismiss");
@@ -410,6 +427,12 @@ export class OverlayController {
   private activeConfirm(): Extract<OverlayState, { kind: "confirm" }> | undefined {
     if (this.state.kind === "confirm") return this.state;
     if (this.suspended?.kind === "confirm") return this.suspended;
+    return undefined;
+  }
+
+  private activeSecret(): Extract<OverlayState, { kind: "secret" }> | undefined {
+    if (this.state.kind === "secret") return this.state;
+    if (this.suspended?.kind === "secret") return this.suspended;
     return undefined;
   }
 

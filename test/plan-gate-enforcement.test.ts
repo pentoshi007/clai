@@ -244,7 +244,8 @@ describe("agent plan gate enforcement", () => {
     expect(confirmTool).toHaveBeenCalledTimes(1);
   });
 
-  it("still prompts for deletes inside the pinned project root", async () => {
+  it("default still prompts for deletes inside the pinned project root", async () => {
+    updateConfig({ permissions: "default" });
     const project = join(homedir(), "Desktop", "bloging-app");
     setActiveProjectRoot(project);
     const confirmTool = vi.fn(async () => true);

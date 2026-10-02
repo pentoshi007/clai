@@ -155,20 +155,35 @@ function canonicalizeForContainment(path: string): string | undefined {
     try {
       const entry = lstatSync(cursor);
       if (entry.isSymbolicLink()) {
-        const linked = resolve(dirname(cursor), readlinkSync(cursor));
+        try { return resolve(realpathSync.native(cursor), ...suffix); }
+        catch (error) {
+          const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+          if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
+        }
+        const linkedPath = readlinkSync(cursor);
+        if (linkedPath.split(/[\\/]/).includes("..")) return undefined;
+        const linked = resolve(dirname(cursor), linkedPath);
         cursor = resolve(linked, ...suffix);
         suffix = [];
         continue;
       }
-      const canonical = realpathSync(cursor);
+      const canonical = realpathSync.native(cursor);
       return resolve(canonical, ...suffix);
-    } catch {
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
       const parent = dirname(cursor);
       if (parent === cursor) return undefined;
       suffix.unshift(basename(cursor));
       cursor = parent;
     }
   }
+}
+
+export function isOutsideActiveFolder(resolvedPath: string): boolean {
+  const root = canonicalizeForContainment(getActiveProjectRoot() ?? safeCwd());
+  const target = canonicalizeForContainment(resolvedPath);
+  return !root || !target || !isUnderRoot(root, target);
 }
 
 export function isOutsideWorkingDirectory(resolvedPath: string): boolean {

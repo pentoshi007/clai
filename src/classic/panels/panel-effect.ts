@@ -11,6 +11,7 @@ export type PanelEffect =
   | { readonly kind: "confirm-plan"; readonly result: PlanConfirmResult }
   | { readonly kind: "view-plan" }
   | { readonly kind: "view-file" }
+  | { readonly kind: "view-operation" }
   | { readonly kind: "secret"; readonly value: string | undefined }
   | { readonly kind: "text-editor"; readonly value: string | undefined }
   | { readonly kind: "scope"; readonly targets: string[] | undefined }

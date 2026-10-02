@@ -11,6 +11,7 @@ import { getCurrentVersion } from "../../../commands/update.js";
 import { getConfig, getProviderModel } from "../../../store/config.js";
 import { effectiveThinkingEffort } from "../../../llm/capabilities.js";
 import { safeCwd } from "../../../os/cwd.js";
+import { DEFAULT_PERMISSION_MODE } from "../../../safety/permission-mode.js";
 
 export interface IntroCardProps {
   readonly services: AppServices;
@@ -30,7 +31,7 @@ export function IntroCard(props: IntroCardProps): ReactNode {
 
   const session = services.session.getState();
   const cfg = getConfig();
-  const permissions = cfg.permissions ?? "default";
+  const permissions = cfg.permissions ?? DEFAULT_PERMISSION_MODE;
   const version = getCurrentVersion();
   const workdir = displayWorkdir(safeCwd());
 

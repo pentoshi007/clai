@@ -159,7 +159,7 @@ export function classifyToolCall(
     return {
       level: "confirm",
       reason:
-        "File deletion requires manual confirmation (never auto-confirmed, even under allow-all)",
+        "File deletion is subject to the selected permission mode and active-folder boundary",
     };
   }
 

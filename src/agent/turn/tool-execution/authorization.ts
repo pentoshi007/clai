@@ -3,22 +3,13 @@ import type { SessionPolicy } from "../../session-policy.js";
 import type { SingleToolResult } from "../contracts.js";
 import { getConfig } from "../../../store/config.js";
 import { isPentestToolCall } from "../../../safety/classifier.js";
-import { isOutsideWorkingDirectory, resolveFsToolPath } from "../../../tools/fs.js";
+import { filesystemPermission } from "../../../safety/filesystem-permissions.js";
 import type { ConfirmPort } from "../../confirm-port.js";
 import {
   confirmToolExecution,
   ensurePentestAuthorization,
   restoreInteractiveStdin,
 } from "../../confirm-port.js";
-
-const PATH_CONFIRM_TOOLS: ReadonlySet<string> = new Set([
-  "fs.write",
-  "fs.writeMany",
-  "fs.edit",
-  "fs.append",
-  "fs.replaceLines",
-  "fs.delete",
-]);
 
 export interface ToolAuthorizationPorts {
   readonly autoConfirm: boolean;
@@ -49,30 +40,8 @@ export type ToolAuthorizationOutcome =
   | { readonly kind: "proceed"; readonly pentestJustConfirmed: boolean }
   | { readonly kind: "stop"; readonly result: SingleToolResult };
 
-const collectPaths = (call: ToolCall): string[] => {
-  const paths: string[] = [];
-  if (typeof call.args.path === "string") paths.push(call.args.path);
-  if (Array.isArray(call.args.files)) {
-    for (const entry of call.args.files) {
-      const entryPath = (entry as { path?: string } | null)?.path;
-      if (typeof entryPath === "string") paths.push(entryPath);
-    }
-  }
-  return paths;
-};
-
-export const requiresPathConfirmation = (call: ToolCall): boolean => {
-  if (call.name === "fs.delete") return true;
-  if (!PATH_CONFIRM_TOOLS.has(call.name)) return false;
-  for (const path of collectPaths(call)) {
-    try {
-      if (isOutsideWorkingDirectory(resolveFsToolPath(path))) return true;
-    } catch {
-      return true;
-    }
-  }
-  return false;
-};
+export const requiresPathConfirmation = (call: ToolCall): boolean =>
+  filesystemPermission(call, getConfig().permissions) === "confirm";
 
 const blockedByClassifier = (
   input: ToolAuthorizationInput,
@@ -131,7 +100,7 @@ const runPrompts = async (
   }
 
   const forceConfirm = requiresPathConfirmation(input.call);
-  if ((input.level !== "confirm" && !forceConfirm) || needsPentestAuth) {
+  if ((input.level !== "confirm" && !forceConfirm) || (needsPentestAuth && !forceConfirm)) {
     return { kind: "proceed", pentestJustConfirmed: needsPentestAuth };
   }
 
