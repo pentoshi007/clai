@@ -125,4 +125,12 @@ describe('config store', () => {
     updateConfig({ permissions: 'default' });
     expect(getConfig().permissions).toBe('default');
   });
+
+  it.each(['default', 'allow-all', 'full-access'] as const)('retains %s after a store reload', async (permissions) => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions });
+    vi.resetModules();
+    const reloaded = await loadConfigStore();
+    expect(reloaded.getConfig().permissions).toBe(permissions);
+  });
 });

@@ -32,6 +32,7 @@ export async function preparePrivilegedBackgroundArgv(
   command: string,
   argv: string[],
   options: {
+    cwd?: string | undefined;
     signal?: AbortSignal | undefined;
     onOutput?: ToolRunOptions["onOutput"];
     requestSecret?: ToolRunOptions["requestSecret"];
@@ -75,6 +76,7 @@ export async function preparePrivilegedBackgroundArgv(
   const outcome = await obtainSudoPassword(
     {
       requestSecret: options.requestSecret,
+      operation: { name: "shell.exec", args: { executable: "sudo", argv: ["-S", "-p", "", command, ...argv], cwd: options.cwd } },
       title: options.title ?? "Administrator access",
       prompt:
         options.prompt ??
@@ -192,6 +194,7 @@ export async function tryRunElevatedWithoutTty(
   const outcome = await obtainSudoPassword(
     {
       requestSecret: options.requestSecret,
+      operation: { name: "shell.exec", args: { command, cwd: options.cwd, executable: "sudo", argv: ["-S", "-p", "", "sh", "-c", command], timeoutMs: options.timeoutMs } },
       title: "Administrator access",
       prompt: `Enter your password for sudo. Command: ${truncateForPrompt(command)}. It is sent only to sudo stdin, kept in memory for a few minutes so parallel privileged commands don't ask again, and never written to disk. Esc cancels.`,
       ...(options.signal ? { signal: options.signal } : {}),

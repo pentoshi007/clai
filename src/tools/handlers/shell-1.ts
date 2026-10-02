@@ -37,8 +37,10 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       responder: args.responder,
     });
     const { backgroundMode, costReason, wantsBackground, responder } = policy;
+    const cwd = optionalString(args, "cwd");
     if (wantsBackground) {
       const elevated = await prepareElevatedBackgroundCommand(command, {
+        cwd,
         signal: options?.signal,
         onOutput: options?.onOutput,
         requestSecret: options?.requestSecret,

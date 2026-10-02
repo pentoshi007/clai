@@ -126,3 +126,42 @@ describe("confirm keys", () => {
     expect(harness.overlay.getState().kind).toBe("confirm");
   });
 });
+
+
+describe("operation review keys", () => {
+  it("adds a distinct review shortcut without replacing deletion preview", () => {
+    const request: ConfirmRequest = {
+      kind: "tool",
+      prompt: "DELETE?",
+      viewPath: "/tmp/x",
+      review: { title: "Review operation", body: "complete delete" },
+    };
+    const rendered = render(request);
+
+    expect(rendered.rows.join("\n")).toContain("v preview");
+    expect(rendered.rows.join("\n")).toContain("ctrl+o view operation");
+    expect(rendered.frame.hints).toEqual(["y/n/v/ctrl+o", "esc deny"]);
+    expect(confirmKey({ request, chord: "v" }).effects).toEqual([{ kind: "view-file" }]);
+    expect(confirmKey({ request, chord: "ctrl+o" }).effects).toEqual([
+      { kind: "view-operation" },
+    ]);
+  });
+
+  it("opens review without resolving the pending confirmation", async () => {
+    const harness = createHarness();
+    const answer = harness.overlay.openConfirm({
+      kind: "tool",
+      prompt: "Run tool?",
+      review: { title: "Review operation", body: "complete command" },
+    });
+
+    expect(harness.press("ctrl+o")).toBe(true);
+    const pager = harness.overlay.getState();
+    expect(pager.kind).toBe("pager");
+    if (pager.kind === "pager") expect(pager.body).toBe("complete command");
+    harness.overlay.close();
+    expect(harness.overlay.getState().kind).toBe("confirm");
+    harness.press("y");
+    await expect(answer).resolves.toBe(true);
+  });
+});

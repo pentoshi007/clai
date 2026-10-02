@@ -446,6 +446,7 @@ export async function installDirectBinary(
         const auth = await obtainSudoPassword(
           {
             requestSecret: options.requestSecret,
+            operation: { name: "clai.update", args: { version: options.version, destination: execPath, binaryUrls: binUrls, checksumUrls: sumUrls, elevation: "sudo", action: "download, verify checksum, and replace executable" } },
             title: "Administrator access",
             prompt: `Updating clai will replace ${execPath}, which needs admin permission. Enter your password for sudo. It is sent only to sudo stdin, kept in memory briefly, and never written to disk. Esc cancels.`,
             ...(options.signal ? { signal: options.signal } : {}),

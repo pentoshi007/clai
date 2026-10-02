@@ -31,10 +31,17 @@ describe("preparePrivilegedBackgroundArgv", () => {
   it("authenticates first and returns a shell:false stdin-only sudo spec", async () => {
     const secret = "background-sudo-secret";
     const authInputs: string[] = [];
+    let review: { operation?: { name: string; args: Record<string, unknown> } } | undefined;
     const prepared = await preparePrivilegedBackgroundArgv(
       "nmap",
       ["-sS", "example.com"],
-      { requestSecret: async () => secret },
+      {
+        cwd: "/work/project",
+        requestSecret: async (request) => {
+          review = request;
+          return secret;
+        },
+      },
       {
         isRoot: () => false,
         available: async () => true,
@@ -46,6 +53,14 @@ describe("preparePrivilegedBackgroundArgv", () => {
     );
 
     expect(authInputs).toEqual([`${secret}\n`]);
+    expect(review?.operation).toEqual({
+      name: "shell.exec",
+      args: {
+        executable: "sudo",
+        argv: ["-S", "-p", "", "nmap", "-sS", "example.com"],
+        cwd: "/work/project",
+      },
+    });
     expect(prepared.prepared).toBe(true);
     if (prepared.prepared) {
       expect(prepared.spec).toMatchObject({

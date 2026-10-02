@@ -340,7 +340,7 @@ export async function runSessionCompaction(
       });
     }
     if (options.persist) settled = true;
-    if (options.persist && result.summarized && result.after !== result.before) {
+    if (options.persist && result.summarized) {
       await options.persistNow();
     }
     return result;

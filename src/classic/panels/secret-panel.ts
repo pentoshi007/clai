@@ -26,11 +26,15 @@ export function sanitizeSecretInput(text: string): string {
 export interface SecretKeyInput {
   readonly state: SecretPanelState;
   readonly chord: string;
+  readonly canReview?: boolean | undefined;
   readonly text?: string | undefined;
 }
 
 export function secretKey(input: SecretKeyInput): PanelKeyResult<SecretPanelState> {
   const { state, chord } = input;
+  if (chord === "ctrl+o" && input.canReview) {
+    return handled(state, { kind: "view-operation" });
+  }
   if (chord === "enter") {
     return handled(state, { kind: "secret", value: state.buffer.reveal() });
   }
@@ -134,7 +138,11 @@ export function secretView(input: SecretViewInput): PanelFrameInput {
     rows: input.rows,
     title: `${ink.glyphs.lock} ${input.request.title}`,
     borderColor: "magenta",
-    hints: [`${ink.glyphs.enter} submit`, "esc cancel"],
+    hints: [
+      `${ink.glyphs.enter} submit`,
+      ...(input.request.review ? ["ctrl+o view operation"] : []),
+      "esc cancel",
+    ],
     body: secretBody(input),
   };
 }

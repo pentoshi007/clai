@@ -1,15 +1,12 @@
+import { permissionModeLabel } from "../../safety/permission-mode.js";
+
 export function formatComposerMeta(
   provider: string | undefined,
   model: string | undefined,
   permissions: string | undefined,
   effort?: string | undefined,
 ): string {
-  const perm =
-    permissions === "allow-all"
-      ? "auto-allow"
-      : permissions === "default"
-        ? "default"
-        : (permissions ?? "default");
+  const perm = permissionModeLabel(permissions);
 
   const parts: string[] = [];
   if (provider) parts.push(provider);

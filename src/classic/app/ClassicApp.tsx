@@ -122,7 +122,7 @@ export function ClassicApp(
   const metaLabel = formatComposerMeta(
     session.provider ?? cfg.defaultProvider,
     session.model ?? cfg.defaultModel,
-    cfg.permissions ?? "default",
+    cfg.permissions,
     effectiveThinkingEffort(
       session.provider ?? cfg.defaultProvider,
       session.model ?? cfg.defaultModel,

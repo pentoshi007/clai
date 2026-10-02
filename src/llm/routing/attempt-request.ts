@@ -83,6 +83,7 @@ export function withoutReasoningReplay(
       if (
         !message.reasoningArtifacts?.length &&
         !message.reasoningBlock &&
+        !message.responsesReplay &&
         !hasToolSignatures
       ) {
         return message;
@@ -90,6 +91,7 @@ export function withoutReasoningReplay(
       const {
         reasoningArtifacts: _reasoningArtifacts,
         reasoningBlock: _reasoningBlock,
+        responsesReplay: _responsesReplay,
         ...rest
       } = message;
       const toolCalls = message.toolCalls?.map((call) => {

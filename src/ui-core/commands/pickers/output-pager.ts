@@ -1,19 +1,21 @@
 import type { CommandInvocation } from "../../../app/commands/command.js";
 import { getConfig, updateConfig } from "../../../store/config.js";
+import { DEFAULT_PERMISSION_MODE, parsePermissionMode, permissionModeLabel, type PermissionMode } from "../../../safety/permission-mode.js";
 import type { AppServices } from "../../bootstrap/composition-root.js";
 import { openToolOutputPager } from "../../rendering/open-tool-output.js";
 
 export function handlePermissions(services: AppServices, invocation: CommandInvocation): void {
-  const apply = (value: "default" | "allow-all") => {
+  const apply = (value: PermissionMode) => {
     updateConfig({ permissions: value });
-    services.session.notice("info", `permissions → ${value}`);
+    services.session.notice("info", `permissions → ${permissionModeLabel(value)}`);
   };
   if (invocation.args) {
-    const value = invocation.args.trim().toLowerCase();
-    if (value === "default" || value === "allow-all") apply(value);
+    const value = parsePermissionMode(invocation.args);
+    if (value) apply(value);
+    else services.session.notice("warn", "Use /permissions default, auto-allow, or full-access.");
     return;
   }
-  const current = getConfig().permissions ?? "default";
+  const current = getConfig().permissions ?? DEFAULT_PERMISSION_MODE;
   services.overlay.openPicker(
     {
       title: "Permissions",
@@ -21,19 +23,26 @@ export function handlePermissions(services: AppServices, invocation: CommandInvo
         {
           value: "default",
           label: "default",
-          description: "confirm risky tool calls",
+          description: "workspace writes allowed; confirm all deletes and outside writes",
           active: current === "default",
         },
         {
           value: "allow-all",
-          label: "allow-all",
-          description: "skip confirmation prompts",
+          label: "auto-allow",
+          description: "writes everywhere; confirm deletes outside the active folder",
           active: current === "allow-all",
+        },
+        {
+          value: "full-access",
+          label: "full-access everywhere",
+          description: "allow filesystem writes and deletes anywhere without prompts",
+          active: current === "full-access",
         },
       ],
     },
     (value) => {
-      apply(value as "default" | "allow-all");
+      const mode = parsePermissionMode(value);
+      if (mode) apply(mode);
       services.overlay.close();
     },
   );

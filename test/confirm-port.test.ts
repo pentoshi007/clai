@@ -39,7 +39,7 @@ describe("confirm-port", () => {
     const { createSessionPolicy } = await loadSessionPolicy();
 
     const session = createSessionPolicy();
-    const call: ToolCall = { name: "shell.exec", args: { command: "rm -rf /" } };
+    const call: ToolCall = { name: "shell.exec", args: { command: "touch /tmp/confirmation-test.txt" } };
 
     const mockConfirmPort: ConfirmPort = {
       confirmTool: vi.fn().mockResolvedValue(true),
@@ -59,7 +59,7 @@ describe("confirm-port", () => {
     const { createSessionPolicy } = await loadSessionPolicy();
 
     const session = createSessionPolicy();
-    const call: ToolCall = { name: "shell.exec", args: { command: "rm -rf /" } };
+    const call: ToolCall = { name: "shell.exec", args: { command: "touch /tmp/confirmation-test.txt" } };
 
     const mockConfirmPortDisabled: ConfirmPort = {
       confirmTool: vi.fn(),
@@ -71,7 +71,7 @@ describe("confirm-port", () => {
     expect(mockConfirmPortDisabled.confirmTool).not.toHaveBeenCalled();
   });
 
-  it("always prompts for fs.delete, even under allow-all", async () => {
+  it("prompts for outside fs.delete under auto-allow even with --yes", async () => {
     const { updateConfig } = await loadConfigStore();
     updateConfig({ permissions: "allow-all" });
 

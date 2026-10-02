@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
-import { memo } from "react";
+import { memo, useRef } from "react";
 import type { ReactNode } from "react";
 import { countRender } from "../../perf/render-counters.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
@@ -9,7 +9,7 @@ import { useOverlayState } from "../../../ui-core/react/use-overlay.js";
 import { Picker } from "../picker/picker.js";
 import { ConfirmModal } from "../modal/confirm-modal.js";
 import { PromptActionsModal } from "../modal/prompt-actions-modal.js";
-import { SecretModal } from "../modal/secret-modal.js";
+import { createSecretDraft, SecretModal, type SecretDraft } from "../modal/secret-modal.js";
 import { ScopeModal } from "../modal/scope-modal.js";
 import { KeysModal } from "../modal/keys-modal.js";
 import { TextEditorModal } from "../modal/text-editor-modal.js";
@@ -37,6 +37,16 @@ function OverlayHostImpl(props: OverlayHostProps): ReactNode {
   countRender("OverlayHost");
   const { services, theme, width, height, docked } = props;
   const state = useOverlayState(services.overlay);
+  const secretDraftRef = useRef<SecretDraft | undefined>(undefined);
+  if (state.kind === "secret") {
+    if (secretDraftRef.current?.request !== state.request) {
+      secretDraftRef.current?.buffer.clear();
+      secretDraftRef.current = createSecretDraft(state.request);
+    }
+  } else if (state.kind !== "pager") {
+    secretDraftRef.current?.buffer.clear();
+    secretDraftRef.current = undefined;
+  }
   if (state.kind === "none") return null;
 
   if (docked) {
@@ -65,6 +75,7 @@ function OverlayHostImpl(props: OverlayHostProps): ReactNode {
             services={services}
             theme={theme}
             request={state.request}
+            draft={secretDraftRef.current!}
             docked
           />
         ) : null}

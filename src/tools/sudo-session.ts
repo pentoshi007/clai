@@ -1,4 +1,5 @@
-import type { ToolResult } from "../types.js";
+import type { ToolCall, ToolResult } from "../types.js";
+import type { SecretPort } from "../app/ports/secret-port.js";
 import type { ToolRunOptions } from "./tool-types.js";
 import { spawnArgv } from "./shell.js";
 
@@ -19,9 +20,8 @@ export type SudoAuthOutcome =
   | { readonly status: "failed"; readonly detail: string };
 
 export interface SudoAuthOptions {
-  readonly requestSecret: (
-    request: { title: string; prompt: string },
-  ) => Promise<string | undefined>;
+  readonly requestSecret: SecretPort["request"];
+  readonly operation?: ToolCall | undefined;
   readonly title: string;
   readonly prompt: string;
   readonly signal?: AbortSignal | undefined;
@@ -66,6 +66,7 @@ export function obtainSudoPassword(
     const password = await options.requestSecret({
       title: options.title,
       prompt: options.prompt,
+      operation: options.operation,
     });
     if (password === undefined || options.signal?.aborted) {
       return { status: "cancelled" };

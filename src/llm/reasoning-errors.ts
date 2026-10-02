@@ -36,7 +36,9 @@ export function isInvalidReasoningContentError(error: unknown): boolean {
   const status = errorStatus(error);
   if (status !== undefined && status !== 400 && status !== 422) return false;
   if (isMissingReasoningContentError(error)) return false;
-  return INVALID_REASONING_CONTENT_RE.test(errorHaystack(error));
+  const text = errorHaystack(error);
+  return /\binvalid_encrypted_content\b|encrypted[_ ]content.{0,160}(?:could not be verified|cannot be verified|could not be decrypted|could not be parsed)/i.test(text)
+    || INVALID_REASONING_CONTENT_RE.test(text);
 }
 
 export function mentionsReasoning(error: unknown): boolean {

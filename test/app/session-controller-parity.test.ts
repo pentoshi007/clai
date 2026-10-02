@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPACTION_MAX_COMPLETION_TOKENS } from "../../src/agent/compaction-summary.js";
 import type { AgentPort, RunTurnRequest } from "../../src/app/ports/agent-port.js";
-import type { SuccessfulRequestSnapshot } from "../../src/types.js";
+import type { ChatMessage, SuccessfulRequestSnapshot } from "../../src/types.js";
 import type {
   PersistencePort,
   SaveSessionOptions,
@@ -727,10 +727,8 @@ describe("SessionController parity helpers (V2-080)", () => {
     }
   });
 
-  it("persists after compaction even when the kept tail has no user message (trailing compacted card survives reload)", async () => {
-    const saved: Array<
-      readonly { role: string; content: string }[]
-    > = [];
+  it.each([true, false])("persists compaction with an assistant-only recent tail (user request: %s)", async (hasUser) => {
+    const saved: ChatMessage[][] = [];
     const persistence: PersistencePort = {
       async saveSession(messages) {
         saved.push(messages.map((m) => ({ role: m.role, content: m.content })));
@@ -747,11 +745,9 @@ describe("SessionController parity helpers (V2-080)", () => {
       emit: () => {},
       sessionId: "sess-tail-no-user",
     });
-    // Older turns get summarized; the kept tail is assistant-only (no user),
-    // which previously tripped the persistNow user-message guard.
     session.loadHistory(
       [
-        { role: "user", content: "build the app " + "x".repeat(400) },
+        { role: hasUser ? "user" : "assistant", content: "build the app " + "x".repeat(400) },
         { role: "assistant", content: "starting the build " + "x".repeat(400) },
         { role: "assistant", content: "recent assistant one" },
         { role: "assistant", content: "recent assistant two" },
@@ -764,11 +760,22 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     expect(result.summarized).toBe(true);
     expect(session.messages.some(isCompactionMemoryMessage)).toBe(true);
-    expect(session.messages.some((m) => m.role === "user")).toBe(false);
+    expect(session.messages.some((m) => m.role === "user")).toBe(hasUser);
+    if (hasUser) {
+      expect(result.after).toBe(result.before);
+      expect(session.messages.find((m) => m.role === "user")?.content).toBe(
+        "build the app " + "x".repeat(400),
+      );
+    }
     expect(saved.length).toBeGreaterThan(0);
+    expect(saved.at(-1)?.some((m) => m.role === "user")).toBe(hasUser);
     expect(
       saved.at(-1)?.some((m) => m.content.includes("Session memory from compacted")),
     ).toBe(true);
+    session.loadHistory(saved.at(-1) ?? [], { sessionId: "sess-tail-no-user" });
+    expect(session.messages.some(isCompactionMemoryMessage)).toBe(true);
+    expect(session.messages.some((m) => m.role === "user")).toBe(hasUser);
+    session.dispose();
   });
 
   it("emits the PLAN MODE HANDOFF memory instead of a generic compacted label", async () => {

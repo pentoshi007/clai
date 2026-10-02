@@ -1,4 +1,5 @@
 import type { ProviderId, ToolResult } from "../types.js";
+import type { SecretPort } from "../app/ports/secret-port.js";
 import type { JobMonitorMetadata } from "./jobs.js";
 
 export interface ToolRunOptions {
@@ -6,7 +7,7 @@ export interface ToolRunOptions {
   onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
   llmProvider?: ProviderId | undefined;
   llmModel?: string | undefined;
-  requestSecret?: ((request: { title: string; prompt: string }) => Promise<string | undefined>) | undefined;
+  requestSecret?: SecretPort["request"] | undefined;
   confirmed?: boolean | undefined;
   userPrompt?: string | undefined;
   sessionId?: string | undefined;

@@ -230,3 +230,41 @@ describe("secret cursor editing", () => {
     expect(homeView.rows[2]).toContain("T…");
   });
 });
+
+
+describe("secret operation review", () => {
+  it("advertises the review shortcut with a hint instead of a password character", () => {
+    const { frame, rows } = render(secretInitialState(), {
+      ...REQUEST,
+      review: { title: "Review operation", body: "sudo complete command" },
+    });
+    expect(frame.hints).toEqual(["⏎ submit", "ctrl+o view operation", "esc cancel"]);
+    expect(rows.join("\n")).toContain("ctrl+o view operation");
+    expect(render().frame.hints).toEqual(["⏎ submit", "esc cancel"]);
+  });
+
+  it("uses ctrl+o without stealing v as a password character and preserves the draft", async () => {
+    const harness = createHarness();
+    const answer = harness.overlay.openSecret({
+      ...REQUEST,
+      review: { title: "Review operation", body: "sudo full command" },
+    });
+    harness.press("v", "v");
+    harness.press("a", "a");
+    harness.press("l", "l");
+    harness.press("left");
+    const before = harness.panels.getSnapshot().secret;
+
+    expect(harness.press("ctrl+o")).toBe(true);
+    const pager = harness.overlay.getState();
+    expect(pager.kind).toBe("pager");
+    if (pager.kind === "pager") expect(pager.body).not.toContain("val");
+    harness.overlay.close();
+
+    const restored = harness.panels.getSnapshot().secret;
+    expect(restored.buffer.reveal()).toBe(before.buffer.reveal());
+    expect(restored.cursor).toBe(before.cursor);
+    harness.press("enter");
+    await expect(answer).resolves.toBe("val");
+  });
+});

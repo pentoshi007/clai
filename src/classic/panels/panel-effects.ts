@@ -50,6 +50,9 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
     case "view-file":
       if (snapshot.overlay.kind === "confirm") snapshot.overlay.onViewFile?.();
       return;
+    case "view-operation":
+      overlay.openOperationReview();
+      return;
     case "secret":
       overlay.answerSecret(effect.value);
       return;

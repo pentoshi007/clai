@@ -110,3 +110,59 @@ describe("single blocking overlay", () => {
     expect(harness.panels.getSnapshot().pager.caret).toBe(1);
   });
 });
+
+describe("pager over operation review", () => {
+  it("scrolls the review and returns to the pending confirm unchanged", async () => {
+    const harness = createHarness({ rows: 14 });
+    let resolved: boolean | undefined;
+    const answer = harness.overlay
+      .openConfirm({
+        kind: "tool",
+        prompt: "Run command?",
+        review: {
+          title: "Review operation",
+          body: Array.from({ length: 200 }, (_, index) => `line ${index}`).join("\n"),
+        },
+      })
+      .then((value) => {
+        resolved = value;
+        return value;
+      });
+
+    expect(harness.press("ctrl+o")).toBe(true);
+    expect(harness.overlay.getState().kind).toBe("pager");
+    expect(harness.focus.activeContext()).toBe("pager");
+    harness.press("j");
+    harness.press("j");
+    expect(harness.panels.getSnapshot().pager.caret).toBe(2);
+    expect(resolved).toBeUndefined();
+
+    harness.press("q");
+    expect(harness.overlay.getState().kind).toBe("confirm");
+    expect(harness.focus.activeContext()).toBe("modal");
+    expect(resolved).toBeUndefined();
+
+    harness.press("y");
+    await expect(answer).resolves.toBe(true);
+    expect(harness.overlay.isOpen()).toBe(false);
+  });
+
+  it("keeps a typed sudo password while the review pager is opened from the secret prompt", async () => {
+    const harness = createHarness();
+    const answer = harness.overlay.openSecret({
+      title: "Administrator access",
+      prompt: "sudo password",
+      review: { title: "Review operation", body: "sudo complete command" },
+    });
+
+    harness.press("h", "h");
+    harness.press("u", "u");
+    expect(harness.press("ctrl+o")).toBe(true);
+    expect(harness.overlay.getState().kind).toBe("pager");
+    expect(harness.focus.activeContext()).toBe("pager");
+    harness.press("q");
+    expect(harness.focus.activeContext()).toBe("secret");
+    harness.press("enter");
+    await expect(answer).resolves.toBe("hu");
+  });
+});

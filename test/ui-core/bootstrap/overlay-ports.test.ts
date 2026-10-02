@@ -14,6 +14,7 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     if (state.kind === "confirm") {
       expect(state.request.kind).toBe("tool");
       expect(state.request.prompt).toBe("Run shell.exec rm -rf /tmp/x?");
+      expect(state.request.review?.body).toContain("rm -rf /tmp/x");
     }
     overlay.answerConfirm(true);
     expect(await pending).toBe(true);
@@ -23,8 +24,15 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     const overlay = new OverlayController(new FocusController());
     const port = createOverlayConfirmPort(overlay);
 
-    const pentest = port.confirmPentest();
-    expect(overlay.getState().kind).toBe("confirm");
+    const pentest = port.confirmPentest({
+      name: "shell.exec",
+      args: { command: "nmap -sV 10.0.0.1" },
+    });
+    const pentestState = overlay.getState();
+    expect(pentestState.kind).toBe("confirm");
+    if (pentestState.kind === "confirm") {
+      expect(pentestState.request.review?.body).toContain("nmap -sV 10.0.0.1");
+    }
     overlay.answerConfirm(false);
     expect(await pentest).toBe(false);
 
@@ -42,8 +50,16 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     const overlay = new OverlayController(new FocusController());
     const request = createOverlaySecretPort(overlay);
 
-    const pending = request({ title: "nvidia API key", prompt: "enter it" });
-    expect(overlay.getState().kind).toBe("secret");
+    const pending = request({
+      title: "Administrator access",
+      prompt: "enter it",
+      operation: { name: "shell.exec", args: { command: "sudo apt update" } },
+    });
+    const state = overlay.getState();
+    expect(state.kind).toBe("secret");
+    if (state.kind === "secret") {
+      expect(state.request.review?.body).toContain("sudo apt update");
+    }
     overlay.answerSecret("sk-abc");
     expect(await pending).toBe("sk-abc");
 

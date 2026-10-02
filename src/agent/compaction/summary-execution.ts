@@ -4,6 +4,8 @@ import { modelMaxOutputTokens } from "../../llm/context-windows.js";
 import { effortReasoningBudgetTokens } from "../../llm/reasoning-controls.js";
 import { streamAlreadyEmitted } from "../../llm/stream-progress.js";
 import { isEmptyCompletionError } from "../../llm/routing/error-classification.js";
+import { isInvalidReasoningContentError } from "../../llm/reasoning-errors.js";
+import { withoutReasoningReplay } from "../../llm/routing/attempt-request.js";
 import type { ChatMessage, CompletionRequest, CompletionResult, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
 import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
 import { buildCompactionRetryPrompt, COMPACTION_INPUT_SAFETY_TOKENS, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
@@ -562,13 +564,26 @@ export async function executeCompactionSummary(
     }
   };
 
+  let reasoningReplayRejected = false;
   const runAttempt = async (
     attemptRequest: CompletionRequest,
     replace = false,
   ) => {
+    if (reasoningReplayRejected) attemptRequest = withoutReasoningReplay(attemptRequest);
     try {
       return await runTransientAttempt(attemptRequest, replace);
     } catch (error) {
+      const hasReplay = attemptRequest.messages.some((message) =>
+        message.responsesReplay || message.reasoningArtifacts?.length || message.reasoningBlock,
+      );
+      if (
+        !reasoningReplayRejected && hasReplay &&
+        !streamAlreadyEmitted(error) && !isAbortError(error, execution.signal) &&
+        isInvalidReasoningContentError(error)
+      ) {
+        reasoningReplayRejected = true;
+        return await runTransientAttempt(withoutReasoningReplay(attemptRequest), replace);
+      }
       if (execution.retryOnRequestShapeRejection === false) throw error;
       if (!isRequestShapeRejection(error, execution.signal)) throw error;
       const compatibility = compactionCompatibilityRequest(attemptRequest);

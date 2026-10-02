@@ -14,7 +14,7 @@ export interface PromptIO {
 }
 
 export const CONFIRMATION_REQUIRED_MESSAGE =
-  "confirmation required; re-run with -y or --permissions allow-all";
+  "confirmation required; run clai interactively to approve this operation";
 
 const ECHO_OFF = "\u001b[8m";
 const ECHO_ON = "\u001b[28m";
@@ -207,5 +207,43 @@ export async function askChoice<T>(
       output.write(`enter a number between 1 and ${choices.length}\n`);
     }
     return undefined;
+  });
+}
+
+export async function askReviewPager(
+  title: string,
+  body: string,
+  io?: PromptIO,
+): Promise<boolean> {
+  const output = resolveOutput(io);
+  const lines = [`Review · ${title}`, "", ...body.split("\n")];
+  const pageSize = 20;
+  return session(io, true, async (ask) => {
+    let offset = 0;
+    for (;;) {
+      const page = lines.slice(offset, offset + pageSize);
+      const atEnd = offset + pageSize >= lines.length;
+      output.write(`\n${page.join("\n")}\n`);
+      const answer = await ask(
+        atEnd
+          ? "End of review. Enter to return to the pending prompt, or n to cancel: "
+          : "Enter next page, p previous page, or n to cancel: ",
+      );
+      if (answer === undefined) return false;
+      const choice = answer.trim().toLowerCase();
+      if (choice === "n" || choice === "no" || choice === "q" || choice === "quit") {
+        return false;
+      }
+      if (choice === "p" || choice === "previous") {
+        offset = Math.max(0, offset - pageSize);
+        continue;
+      }
+      if (choice === "" && atEnd) return true;
+      if (choice === "" || choice === "next") {
+        offset = Math.min(Math.max(0, lines.length - 1), offset + pageSize);
+        continue;
+      }
+      output.write("enter, p, or n\n");
+    }
   });
 }

@@ -17,14 +17,27 @@ import {
 import type { SecretRequestView } from "../../../ui-core/controllers/overlay-controller.js";
 import { SecretBuffer } from "../../../ui-core/composer/secret-buffer.js";
 
+export interface SecretDraft {
+  readonly request: SecretRequestView;
+  readonly buffer: SecretBuffer;
+  cursor: number;
+}
+
 export interface SecretModalProps {
   readonly services: AppServices;
   readonly theme: Theme;
   readonly request: SecretRequestView;
+  readonly draft: SecretDraft;
   readonly docked?: boolean | undefined;
 }
 
 const ACCENT = "#e0b000";
+
+export function createSecretDraft(request: SecretRequestView): SecretDraft {
+  const buffer = new SecretBuffer();
+  buffer.insert(request.initialValue ?? "", 0);
+  return { request, buffer, cursor: buffer.length };
+}
 
 function isPrintableSequence(seq: string): boolean {
   if (!seq) return false;
@@ -36,38 +49,35 @@ function isPrintableSequence(seq: string): boolean {
 }
 
 export function SecretModal(props: SecretModalProps): ReactNode {
-  const { services, theme, request, docked } = props;
-  const bufferRef = useRef(
-    (() => {
-      const buffer = new SecretBuffer();
-      buffer.insert(request.initialValue ?? "", 0);
-      return buffer;
-    })(),
-  );
-  const cursorRef = useRef(bufferRef.current.length);
+  const { services, theme, request, draft, docked } = props;
+  const buffer = draft.buffer;
+  const cursorRef = useRef(draft.cursor);
   const [cursor, setCursor] = useState(cursorRef.current);
   const revealed = request.reveal === true;
   const [mask, setMask] = useState(() =>
-    revealed ? bufferRef.current.reveal() : bufferRef.current.masked(),
+    revealed ? buffer.reveal() : buffer.masked(),
   );
 
   function refreshMask(): void {
-    setMask(revealed ? bufferRef.current.reveal() : bufferRef.current.masked());
+    setMask(revealed ? buffer.reveal() : buffer.masked());
   }
 
   function moveCursor(next: number): void {
     cursorRef.current = next;
+    draft.cursor = next;
     setCursor(next);
   }
 
   function cancel(): void {
-    bufferRef.current.clear();
+    buffer.clear();
+    moveCursor(0);
     services.overlay.answerSecret(undefined);
   }
 
   function submit(): void {
-    const value = bufferRef.current.reveal();
-    bufferRef.current.clear();
+    const value = buffer.reveal();
+    buffer.clear();
+    moveCursor(0);
     services.overlay.answerSecret(value.length > 0 ? value : undefined);
   }
 
@@ -87,6 +97,11 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       services.cancel.abortForeground();
       return;
     }
+    if (chord === "ctrl+o" && request.review) {
+      key.preventDefault();
+      services.overlay.openOperationReview();
+      return;
+    }
     if (chord === "enter") {
       key.preventDefault();
       submit();
@@ -94,13 +109,13 @@ export function SecretModal(props: SecretModalProps): ReactNode {
     }
     if (chord === "backspace") {
       key.preventDefault();
-      moveCursor(bufferRef.current.deleteBackward(cursorRef.current));
+      moveCursor(buffer.deleteBackward(cursorRef.current));
       refreshMask();
       return;
     }
     if (chord === "delete") {
       key.preventDefault();
-      moveCursor(bufferRef.current.deleteForward(cursorRef.current));
+      moveCursor(buffer.deleteForward(cursorRef.current));
       refreshMask();
       return;
     }
@@ -111,7 +126,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
     }
     if (chord === "right" || chord === "end") {
       key.preventDefault();
-      const end = bufferRef.current.length;
+      const end = buffer.length;
       moveCursor(chord === "right" ? Math.min(end, cursorRef.current + 1) : end);
       return;
     }
@@ -130,7 +145,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
         : "";
     if (!seq) return;
     key.preventDefault();
-    moveCursor(bufferRef.current.insert(seq, cursorRef.current));
+    moveCursor(buffer.insert(seq, cursorRef.current));
     refreshMask();
   });
 
@@ -141,7 +156,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       event.preventDefault();
       const cleaned = text.replace(/\r?\n/g, "");
       if (!cleaned) return;
-      const buf = bufferRef.current;
+      const buf = buffer;
       moveCursor(buf.insert(cleaned, cursorRef.current));
       refreshMask();
     } catch {
@@ -201,7 +216,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       <box style={{ flexDirection: "row", width: "100%" }}>
         <text style={{ fg: theme.cyan, attributes: TextAttributes.BOLD }}>› </text>
         <text style={{ fg: theme.cyan }}>
-          enter submit  ·  esc cancel  ·  ctrl+c cancel (again to quit)
+          {`enter submit${request.review ? "  ·  ctrl+o view operation" : ""}  ·  esc cancel  ·  ctrl+c cancel (again to quit)`}
         </text>
       </box>
     </box>

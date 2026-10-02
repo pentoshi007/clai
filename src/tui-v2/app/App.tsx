@@ -73,6 +73,7 @@ export function App(): ReactNode {
   const theme = useTheme();
   const [focusContext, setFocusContext] = useState(services.focus.activeContext());
   const [planVisible, setPlanVisible] = useState(false);
+  const planVisibilityRef = useRef<"visible" | "hidden" | "auto">("auto");
   const plan = usePlan(services.plan);
   const overlay = useOverlayState(services.overlay);
   const runningStatus = useTranscriptField(
@@ -149,13 +150,14 @@ export function App(): ReactNode {
   useEffect(() => {
     if (!plan) {
       seenPlanKey.current = undefined;
+      planVisibilityRef.current = "auto";
       setPlanVisible(false);
       return;
     }
     const key = `${plan.sessionId}:${plan.updatedAt}`;
     if (seenPlanKey.current === key) return;
     seenPlanKey.current = key;
-    setPlanVisible(true);
+    if (planVisibilityRef.current !== "visible") setPlanVisible(true);
   }, [plan]);
 
   const terminalWidth = Number.isFinite(width)
@@ -624,6 +626,7 @@ export function App(): ReactNode {
   }
 
   const toggleTasksPane = useCallback((): void => {
+    planVisibilityRef.current = planVisible ? "hidden" : "visible";
     setPlanVisible((visible) => {
       const next = !visible;
       if (next && !services.plan.current()) {

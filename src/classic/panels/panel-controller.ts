@@ -204,7 +204,12 @@ export class PanelController {
         return result.handled;
       }
       case "secret": {
-        const result = secretKey({ state: snapshot.secret, chord, text });
+        const result = secretKey({
+          state: snapshot.secret,
+          chord,
+          text,
+          canReview: Boolean(snapshot.overlay.request.review),
+        });
         this.publish({ ...snapshot, secret: result.state });
         this.apply(result.effects);
         return result.handled;
@@ -340,7 +345,13 @@ export class PanelController {
         this.publish({ ...base, jobs: JOBS_INITIAL_STATE });
         return;
       case "secret":
-        this.publish({ ...base, secret: secretInitialState(state.request.initialValue) });
+        this.publish({
+          ...base,
+          secret:
+            this.snapshot.overlay.kind === "pager"
+              ? this.snapshot.secret
+              : secretInitialState(state.request.initialValue),
+        });
         return;
       case "text-editor":
         this.publish({ ...base, textEditor: textEditorInitialState(state.request) });

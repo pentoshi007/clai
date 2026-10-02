@@ -12,6 +12,7 @@ import { overlaySize } from "../../src/ui-core/layout/overlay-size.js";
 import { layoutPickerOptions } from "../../src/ui-core/rendering/picker-layout.js";
 import { centerChromeRow, wrapPagerLine } from "../../src/ui-core/rendering/pager-chrome.js";
 import { themeFor } from "../../src/ui-core/rendering/theme.js";
+import { createPlan } from "../../src/store/plan.js";
 
 const services = createCompositionRoot({
   noHistory: true,
@@ -31,6 +32,14 @@ const settle = async (action: () => unknown = () => undefined, waitMs = 80): Pro
   return setup.captureCharFrame();
 };
 const evidence: string[] = [];
+const settlesUntil = async (
+  predicate: (frame: string) => boolean,
+  tries = 12,
+): Promise<string> => {
+  let frame = setup.captureCharFrame();
+  for (let i = 0; i < tries && !predicate(frame); i++) frame = await settle(() => undefined, 120);
+  return frame;
+};
 const assertPickerTitle = (title: string, width: number): void => {
   const heading = setup.renderer.root.findDescendantById("picker-title");
   assert.ok(heading);
@@ -277,7 +286,101 @@ try {
   assert.equal(await secretAnswer, undefined);
   assert.equal(services.overlay.getState().kind, "none");
 
+  const reviewedSecret = services.overlay.openSecret({
+    title: "Administrator access",
+    prompt: "Enter your password for sudo",
+    review: { title: "Review operation", body: "sudo complete command --with-args" },
+  });
+  const secretPromptFrame = await settle();
+  assert.match(secretPromptFrame, /ctrl\+o view operation/, "secret prompt must advertise the review shortcut");
+  await settle(() => setup.mockInput.pressKey("v"));
+  await settle(() => setup.mockInput.pressKey("a"));
+  await settle(() => setup.mockInput.pressKey("u"));
+  await settle(() => setup.mockInput.pressKey("l"));
+  await settle(() => setup.mockInput.pressKey("t"));
+  const reviewFrame = await settle(() => setup.mockInput.pressKey("o", { ctrl: true }));
+  assert.equal(services.overlay.getState().kind, "pager");
+  assert.match(reviewFrame, /sudo complete command --with-args/);
+  assert.doesNotMatch(reviewFrame, /vault/);
+  await settle(() => setup.mockInput.pressEscape());
+  assert.equal(services.overlay.getState().kind, "secret");
+  await settle(() => setup.mockInput.pressEnter());
+  assert.equal(await reviewedSecret, "vault");
+  assert.equal(services.overlay.getState().kind, "none");
+
+  const reviewedConfirm = services.overlay.openConfirm({
+    kind: "tool",
+    prompt: "Run command?",
+    review: { title: "Review operation", body: "complete command confirmation" },
+  });
+  const confirmPromptFrame = await settle();
+  assert.match(confirmPromptFrame, /ctrl\+o view operation/, "confirm prompt must advertise the review shortcut");
+  const confirmReviewFrame = await settle(() => setup.mockInput.pressKey("o", { ctrl: true }));
+  assert.equal(services.overlay.getState().kind, "pager");
+  assert.match(confirmReviewFrame, /complete command confirmation/);
+  await settle(() => setup.mockInput.pressEscape());
+  assert.equal(services.overlay.getState().kind, "confirm");
+  await settle(() => setup.mockInput.pressKey("y"));
+  assert.equal(await reviewedConfirm, true);
+
   await settle(() => setup.resize(120, 40));
+
+  const planGoal = "PENDING-REVIEW-PLAN-GOAL";
+  const planWithTasks = (taskTitles: string[]) =>
+    createPlan({
+      sessionId: services.session.sessionId,
+      goal: planGoal,
+      detail: "",
+      taskTitles,
+    });
+  await settle(
+    () => services.plan.observe({
+      type: "plan-updated",
+      id: "plan-update-1",
+      version: 1,
+      sequence: 1,
+      sessionId: services.session.sessionId,
+      timestamp: Date.now(),
+      payload: {
+        planId: services.session.sessionId,
+        plan: planWithTasks(["one", "two"]),
+      },
+    } as never),
+    120,
+  );
+  assert.ok(
+    (await settlesUntil((frame) => frame.includes(planGoal))).includes(planGoal),
+    "an active plan should surface the tasks pane the first time",
+  );
+  const hiddenTasksFrame = await settle(() => setup.mockInput.pressKey("h", { ctrl: true }), 700);
+  assert.ok(!hiddenTasksFrame.includes(planGoal), "ctrl+h must hide the tasks pane");
+
+  await settle(
+    () => services.plan.observe({
+      type: "plan-updated",
+      id: "plan-update-2",
+      version: 1,
+      sequence: 2,
+      sessionId: services.session.sessionId,
+      timestamp: Date.now(),
+      payload: {
+        planId: services.session.sessionId,
+        plan: planWithTasks(["one", "two", "three"]),
+      },
+    } as never),
+    560,
+  );
+  const afterUpdateFrame = await settlesUntil((frame) => frame.includes(planGoal), 6);
+  assert.ok(
+    !afterUpdateFrame.includes(planGoal),
+    "a plan update must not resurrect the tasks pane the user hid",
+  );
+  await settle(() => setup.mockInput.pressKey("h", { ctrl: true }), 700);
+  assert.ok(
+    (await settlesUntil((frame) => frame.includes(planGoal))).includes(planGoal),
+    "ctrl+h must show the tasks pane again",
+  );
+
   const slashMenu = await settle(() => setup.mockInput.pressKey("/"));
   assert.equal(services.overlay.getState().kind, "none");
   assertCompletionHeaderStyle();
