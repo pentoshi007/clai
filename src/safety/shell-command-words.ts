@@ -27,6 +27,8 @@ const wrapperCommands: ReadonlySet<string> = new Set([
   "nice",
   "timeout",
   "busybox",
+  "setsid",
+  "ionice",
 ]);
 
 const controlKeywords: ReadonlySet<string> = new Set([
@@ -54,6 +56,7 @@ const wrapperValueOptions: Readonly<Record<string, ReadonlySet<string>>> = {
   stdbuf: new Set(["-i", "--input", "-o", "--output", "-e", "--error"]),
   time: new Set(["-f", "--format", "-o", "--output"]),
   exec: new Set(["-a"]),
+  ionice: new Set(["-c", "--class", "-n", "--classdata", "-p", "--pid", "-P", "--pgid", "-u", "--uid"]),
 };
 
 const xargsValueOptions: ReadonlySet<string> = new Set([
@@ -87,7 +90,7 @@ const containerExecutors: Readonly<Record<string, ReadonlySet<string>>> = {
 };
 
 const inlineCodeInterpreters =
-  /^(?:python[\d.]*|pypy[\d.]*|node(?:js)?|deno|bun|ruby|perl|php|lua(?:jit)?[\d.]*|rscript|julia|osascript|pwsh|powershell|tclsh|fish|nu)$/;
+  /^(?:python[\d.]*|pypy[\d.]*|node(?:js)?|deno|bun|ruby|perl|php|lua(?:jit)?[\d.]*|rscript|julia|osascript|pwsh|powershell|tclsh|fish|nu|sh|bash|dash|zsh|ksh|ash|su)$/;
 
 const inlineCodeFlag = /^(?:-[A-Za-z]*[ceErp]|--(?:eval|print|command|execute)|-command)$/i;
 
