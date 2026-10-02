@@ -64,6 +64,7 @@ export function hasVisibleReasoning(result: OpenAiCompatibleResult): boolean {
 function selectionKey(options: ResponsesFirstOptions, streaming: boolean): string {
   const headers = [...new Headers(options.headers).entries()].sort(([a], [b]) => a.localeCompare(b));
   return createHash("sha256").update(JSON.stringify({
+    session: currentSessionAffinity(),
     provider: options.providerId,
     endpoint: options.baseUrl.replace(/\/+$/, ""),
     model: options.model,

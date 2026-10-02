@@ -219,6 +219,7 @@ async function streamAskRound(
   nativeIds?: string[];
   reasoningBlock?: CompletionResult["reasoningBlock"];
   reasoningArtifacts?: CompletionResult["reasoningArtifacts"];
+  responsesReplay?: CompletionResult["responsesReplay"];
 }> {
   let full = "";
   let forwardedLen = 0;
@@ -249,6 +250,7 @@ async function streamAskRound(
       model: completion.model,
       toolCalls: completion.toolCalls,
       nativeIds: completion.toolCalls.map((tc) => tc.id),
+      ...(completion.responsesReplay ? { responsesReplay: completion.responsesReplay } : {}),
       ...(completion.reasoningBlock
         ? { reasoningBlock: completion.reasoningBlock }
         : {}),
@@ -450,6 +452,7 @@ async function resolveAskAnswer(
         historyNativeCalls,
         roundResult.reasoningBlock,
         roundResult.reasoningArtifacts,
+        roundResult.responsesReplay,
       );
     } else {
       messages.push({ role: "assistant", content: text });

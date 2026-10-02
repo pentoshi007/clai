@@ -110,7 +110,7 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
           })
         : null}
       {!collapsed && hidden > 0 ? (
-        <text content={`  +${hidden} more · /agents`} wrapMode="none" style={{ width: "100%", height: 1, fg: theme.muted }} />
+        <text content={`  +${hidden} more · /subagents`} wrapMode="none" style={{ width: "100%", height: 1, fg: theme.muted }} />
       ) : null}
     </box>
   );

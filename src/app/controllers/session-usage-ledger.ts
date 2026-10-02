@@ -5,7 +5,10 @@ import {
   type UsageCharge,
 } from "../../types.js";
 
+import { normalizeUsageSource, SessionUsageSources, type SubagentUsageSource } from "./session-usage-source.js";
+
 export interface SessionUsageRoute {
+  readonly source?: SubagentUsageSource | undefined;
   readonly provider: ProviderId | undefined;
   readonly model: string | undefined;
   readonly api?: string | undefined;
@@ -51,6 +54,7 @@ export interface SessionUsageReport {
 }
 
 export interface PersistedRouteUsage {
+  readonly source?: SubagentUsageSource | undefined;
   readonly provider?: string | undefined;
   readonly model?: string | undefined;
   readonly api?: string | undefined;
@@ -72,6 +76,7 @@ export interface PersistedRouteUsage {
 }
 
 interface MutableRoute {
+  source: SubagentUsageSource | undefined;
   provider: ProviderId | undefined;
   model: string | undefined;
   apis: Set<string>;
@@ -116,8 +121,9 @@ function addOptional(
 function routeKey(
   provider: ProviderId | undefined,
   model: string | undefined,
+  source?: SubagentUsageSource,
 ): string {
-  return `${provider ?? ""}\u0000${model ?? ""}`;
+  return JSON.stringify([provider ?? "", model ?? "", source?.id ?? ""]);
 }
 
 function normalizeModel(model: string | undefined): string | undefined {
@@ -142,6 +148,7 @@ function normalizeApi(value: unknown): string | undefined {
 function toRoute(entry: MutableRoute): SessionUsageRoute {
   const apis = [...entry.apis].sort();
   return Object.freeze({
+    ...(entry.source ? { source: entry.source } : {}),
     provider: entry.provider,
     model: entry.model,
     ...(apis.length === 1 ? { api: apis[0] } : {}),
@@ -246,6 +253,7 @@ export function usageCacheHitRate(input: {
 
 export class SessionUsageLedger {
   private readonly entries = new Map<string, MutableRoute>();
+  private readonly sources = new SessionUsageSources();
   private sequence = 0;
 
   record(
@@ -253,12 +261,15 @@ export class SessionUsageLedger {
     provider: ProviderId | undefined,
     model: string | undefined,
     api?: string | undefined,
+    subagentId?: string | undefined,
   ): void {
     const normalizedModel = normalizeModel(model);
-    const key = routeKey(provider, normalizedModel);
+    const source = subagentId ? this.sources.subagent(subagentId) : undefined;
+    const key = routeKey(provider, normalizedModel, source);
     let entry = this.entries.get(key);
     if (!entry) {
       entry = {
+        source,
         provider,
         model: normalizedModel,
         apis: new Set<string>(),
@@ -324,6 +335,7 @@ export class SessionUsageLedger {
 
   clear(): void {
     this.entries.clear();
+    this.sources.clear();
     this.sequence = 0;
   }
 
@@ -406,6 +418,7 @@ export class SessionUsageLedger {
       .sort((left, right) => left.sequence - right.sequence)
       .slice(0, MAX_PERSISTED_ROUTES)
       .map((entry) => ({
+        ...(entry.source ? { source: entry.source } : {}),
         ...(entry.provider !== undefined ? { provider: entry.provider } : {}),
         ...(entry.model !== undefined ? { model: entry.model } : {}),
         ...(entry.apis.size > 0 ? { apis: [...entry.apis].sort() } : {}),
@@ -458,7 +471,12 @@ export class SessionUsageLedger {
       const model = normalizeModel(
         typeof raw.model === "string" ? raw.model : undefined,
       );
-      const key = routeKey(provider, model);
+      const restoredSource = normalizeUsageSource(raw.source);
+      if (raw.source !== undefined && !restoredSource) continue;
+      const source = restoredSource
+        ? this.sources.subagent(restoredSource.id, restoredSource.number)
+        : undefined;
+      const key = routeKey(provider, model, source);
       if (this.entries.has(key)) continue;
       const apis = new Set<string>();
       const rawApis = Array.isArray((raw as Record<string, unknown>).apis)
@@ -474,6 +492,7 @@ export class SessionUsageLedger {
         if (single) apis.add(single);
       }
       this.entries.set(key, {
+        source,
         provider,
         model,
         apis,

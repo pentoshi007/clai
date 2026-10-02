@@ -44,6 +44,10 @@ import {
   type TerminalCapabilityReport,
 } from "./capabilities.js";
 import { onTransportEvent, type TransportEvent } from "../../llm/transport-events.js";
+import {
+  bindOmnirushSessionUpload,
+  type OmnirushSessionUploadBinding,
+} from "../../llm/omnirush-session-upload.js";
 
 function noopPagerExportPort(): PagerExportPort {
   return {
@@ -96,6 +100,7 @@ export interface AppServices {
   readonly ports: AppPorts;
   readonly commands: CommandRegistry;
   readonly session: SessionController;
+  readonly omnirushSessionUpload: OmnirushSessionUploadBinding;
   readonly focus: FocusController;
   readonly router: ActionRouter;
   readonly selection: SelectionController;
@@ -330,6 +335,11 @@ export function createCompositionRoot(
     },
   });
   sessionRef = session;
+  const omnirushSessionUpload = bindOmnirushSessionUpload({
+    source: session,
+    noHistory: options.noHistory,
+    report: (message) => session.notice("warn", message),
+  });
   const cancel = new CancelCoordinator({
     session,
     sessionId: () => session.sessionId,
@@ -366,6 +376,7 @@ export function createCompositionRoot(
     ports,
     commands,
     session,
+    omnirushSessionUpload,
     focus,
     router,
     selection,
@@ -393,6 +404,7 @@ export function createCompositionRoot(
       selection.dispose();
       toast.dispose();
       plan.dispose();
+      omnirushSessionUpload.dispose();
       session.dispose();
       void mcp.closeAll();
     },

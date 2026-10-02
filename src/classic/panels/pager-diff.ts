@@ -25,9 +25,9 @@ const HIGHLIGHT_LINE_LIMIT = 5_000;
 const MIN_DIFF_WIDTH = 16;
 const BARE_RULE = /^[\d ]{0,8} │\s*$/;
 
-function markFor(parsed: ParsedDiffLine, unicode: boolean): string {
+function markFor(parsed: ParsedDiffLine): string {
   if (parsed.tone === "add") return "+";
-  if (parsed.tone === "del") return unicode ? "−" : "-";
+  if (parsed.tone === "del") return "-";
   return " ";
 }
 
@@ -44,9 +44,6 @@ function paintCode(
   spans: readonly SyntaxSpan[],
 ): string {
   if (parsed.tone === "header") return ink.fg("muted", chunk);
-  if (ink.colorMode === "16" && parsed.tone !== "context") {
-    return ink.fg(parsed.tone === "add" ? "diffAdd" : "diffDel", chunk);
-  }
   if (spans.length === 0) return ink.fg("foreground", chunk);
   let out = "";
   for (const span of spans) out += ink.hex(syntaxColor(span.kind, ink.theme), span.text);
@@ -62,7 +59,8 @@ function paintRow(
   spans: readonly SyntaxSpan[],
   width: number,
 ): string {
-  const rule = ink.fg("diffGutter", `${gutter} ${ink.glyphs.boxVertical} `);
+  const railTone: ThemeToken = parsed.tone === "add" ? "diffAdd" : parsed.tone === "del" ? "diffDel" : "diffGutter";
+  const rule = `${ink.fg("diffGutter", `${gutter} `)}${ink.fg(railTone, `${ink.glyphs.boxVertical} `)}`;
   const markTone: ThemeToken = parsed.tone === "add" ? "diffAdd" : parsed.tone === "del" ? "diffDel" : "muted";
   const head = parsed.tone === "header" ? rule : `${rule}${ink.style(`${mark} `, { fg: markTone, bold: mark.trim() !== "" })}`;
   const line = `${head}${paintCode(ink, parsed, chunk, spans)}`;
@@ -82,7 +80,7 @@ function diffRows(
   const rule = unicode ? "│" : "|";
   const code = expandTabs(parsed.code, TAB_WIDTH);
   const header = parsed.tone === "header";
-  const mark = markFor(parsed, unicode);
+  const mark = markFor(parsed);
   const lead = parsed.gutter.length + 3 + (header ? 0 : 2);
   const chunks = wrapPagerLine(code, Math.max(1, width - lead), { preserveWhitespace: true });
   const spans = ink && highlight && !header && ink.colorMode !== "none"

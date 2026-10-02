@@ -3,7 +3,7 @@ import { copilotProvider, resetCopilotModelCache } from "../src/llm/copilot.js";
 import { codexProvider, resetCodexModelCache } from "../src/llm/codex.js";
 import { getProvider } from "../src/llm/router.js";
 import { normalizeProvider } from "../src/llm/provider.js";
-import { encodeCodexKey } from "../src/llm/codex-auth.js";
+import { encodeCodexKey, CODEX_CLIENT_VERSION } from "../src/llm/codex-auth.js";
 import { withSessionAffinity } from "../src/llm/session-affinity.js";
 import type { CompletionRequest } from "../src/types.js";
 
@@ -159,12 +159,12 @@ describe("ChatGPT Subscription and GitHub Copilot integration", () => {
     expect(result.usage?.cachedPromptTokens).toBe(15);
   });
 
-  it("omits parallel_tool_calls and sends prompt_cache_key in Codex responses requests", async () => {
+  it("matches Codex parallel tool calls and sends prompt_cache_key in Codex responses requests", async () => {
     const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/responses")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        expect(body).not.toHaveProperty("parallel_tool_calls");
+        expect(body.parallel_tool_calls).toBe(true);
         expect(body.prompt_cache_key).toBe("session-codex-affinity-99");
         expect(body.tools).toBeDefined();
 
@@ -434,7 +434,8 @@ describe("ChatGPT Subscription and GitHub Copilot integration", () => {
         controller.close();
       },
     });
-    const fetchMock = vi.fn(async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      if (String(input).includes("/models?")) return new Response(JSON.stringify({ models: [{ slug: "gpt-5.4" }] }));
       return new Response(stream, {
         status: 200,
         headers: { "content-type": "text/event-stream" },
@@ -498,7 +499,7 @@ describe("ChatGPT Subscription and GitHub Copilot integration", () => {
 
     const models = await codexProvider.listModels!({ apiKey: codexKey() });
 
-    expect(modelsUrl).toContain("client_version=0.0.0");
+    expect(modelsUrl).toContain(`client_version=${CODEX_CLIENT_VERSION}`);
     expect(models).toContain("gpt-5.6-luna");
 
     const { modelReasoningEfforts } = await import(

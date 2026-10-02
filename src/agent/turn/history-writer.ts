@@ -26,13 +26,13 @@ export interface TurnHistoryWriter {
   readonly recoveryProse: (content: string) => string | undefined;
   readonly pushAssistantHistory: (
     content: string,
-    reasoning?: Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock">,
+    reasoning?: Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock" | "responsesReplay">,
     hasToolCalls?: boolean,
   ) => void;
 }
 
 type ReasoningInput =
-  | Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock">
+  | Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock" | "responsesReplay">
   | undefined;
 
 const looksLikeToolPayload = (text: string): boolean =>
@@ -81,7 +81,7 @@ const isToolCallContent = (text: string): boolean =>
 const persistedReasoning = (
   reasoning: ReasoningInput,
   hasToolCalls = false,
-): Pick<ChatMessage, "reasoningBlock" | "reasoningArtifacts"> => {
+): Pick<ChatMessage, "reasoningBlock" | "reasoningArtifacts" | "responsesReplay"> => {
   const persistedArtifacts = reasoningArtifactsForPersistence({
     artifacts: reasoning?.reasoningArtifacts,
     hasToolCalls,
@@ -119,6 +119,7 @@ const appendAssistantHistory = (
       ? cleaned
       : "[No visible assistant response was produced.]",
     ...persistedReasoning(reasoning, toolTurn),
+    ...(reasoning?.responsesReplay ? { responsesReplay: reasoning.responsesReplay } : {}),
   });
 };
 

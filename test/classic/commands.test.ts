@@ -598,9 +598,9 @@ describe("classic command parity (W12)", () => {
     expect(getConfig().rtk).toBe(false);
   });
 
-  spec(["agents"], "/agents opens the shared picker and returns to the main conversation", async () => {
+  spec(["subagents"], "/subagents opens the shared picker and returns to the main conversation", async () => {
     const { services } = open();
-    await run(services, "agents");
+    await run(services, "subagents");
     const state = services.overlay.getState();
     expect(state.kind).toBe("picker");
     if (state.kind === "picker") expect(state.request.options[0]?.value).toBe("main");

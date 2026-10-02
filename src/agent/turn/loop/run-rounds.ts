@@ -658,6 +658,7 @@ export const runTurnRounds = async (
               ? { text: assistantText.thinkContent }
               : undefined),
           completion.reasoningArtifacts,
+          completion.responsesReplay,
         );
       } else {
         const standardizedContent =

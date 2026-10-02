@@ -1,12 +1,14 @@
 import type { CompletionResult, NativeToolCall } from "../types.js";
 import { fromWireName, parseToolArguments } from "./tool-protocol.js";
-import { normalizeTokenUsage } from "./token-usage.js";
+import { parseResponsesUsage } from "./responses-usage.js";
+export { parseResponsesUsage } from "./responses-usage.js";
 import type { TokenUsage } from "./token-usage.js";
 import {
   createReasoningArtifact,
   createReasoningArtifactProvenance,
 } from "./reasoning-artifacts.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
+import { captureResponsesReplay } from "./responses-replay.js";
 
 export interface ToolCallAccumulator {
   id?: string;
@@ -27,59 +29,7 @@ export interface ParsedResponsesOutput {
   reasoningSummary: string;
   reasoningItems: Array<Record<string, unknown>>;
   reasoningItemPositions: ResponsesReasoningItemPosition[];
-}
-
-export function parseResponsesUsage(raw: unknown): TokenUsage | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const u = raw as Record<string, unknown>;
-  const inputTokens =
-    (u.input_tokens as number | undefined) ??
-    (u.prompt_tokens as number | undefined) ??
-    (u.inputTokens as number | undefined);
-  const outputTokens =
-    (u.output_tokens as number | undefined) ??
-    (u.completion_tokens as number | undefined) ??
-    (u.outputTokens as number | undefined);
-  const totalTokens =
-    (u.total_tokens as number | undefined) ??
-    (u.totalTokens as number | undefined);
-  const inputDetails = u.input_tokens_details as
-    Record<string, unknown> | undefined;
-  const promptDetails = u.prompt_tokens_details as
-    Record<string, unknown> | undefined;
-  const outputDetails = u.output_tokens_details as
-    Record<string, unknown> | undefined;
-  const completionDetails = u.completion_tokens_details as
-    Record<string, unknown> | undefined;
-  const cached =
-    inputDetails?.cached_tokens ??
-    promptDetails?.cached_tokens ??
-    u.prompt_cache_hit_tokens ??
-    u.cache_read_input_tokens;
-  const cacheCreation =
-    inputDetails?.cache_creation_tokens ??
-    promptDetails?.cache_creation_tokens ??
-    inputDetails?.cache_write_tokens ??
-    promptDetails?.cache_write_tokens ??
-    u.cache_creation_input_tokens ??
-    u.cache_write_input_tokens;
-  const uncached =
-    inputDetails?.uncached_tokens ??
-    promptDetails?.uncached_tokens ??
-    u.prompt_cache_miss_tokens;
-  const reasoning =
-    outputDetails?.reasoning_tokens ?? completionDetails?.reasoning_tokens;
-  return normalizeTokenUsage({
-    promptTokens: inputTokens,
-    completionTokens: outputTokens,
-    totalTokens,
-    cachedPromptTokens: typeof cached === "number" ? cached : undefined,
-    cacheCreationTokens:
-      typeof cacheCreation === "number" ? cacheCreation : undefined,
-    uncachedPromptTokens: typeof uncached === "number" ? uncached : undefined,
-    reasoningTokens: typeof reasoning === "number" ? reasoning : undefined,
-    exact: true,
-  });
+  outputItems?: readonly Record<string, unknown>[] | undefined;
 }
 
 function reasoningTextParts(value: unknown): string {
@@ -206,6 +156,7 @@ export function parseResponsesOutput(data: {
     reasoningSummary,
     reasoningItems,
     reasoningItemPositions,
+    outputItems: output,
   };
 }
 
@@ -228,7 +179,9 @@ export function responsesReasoningArtifacts(
       kind: "encrypted",
       raw: item,
       provenance,
-      replay: replayable
+      replay: config.providerId === "codex"
+        ? { scope: "all-history", persistence: "all-turns" }
+        : replayable
         ? { scope: "tool-turn", persistence: "tool-turn" }
         : { scope: "none", persistence: "never" },
       position: {
@@ -337,6 +290,7 @@ export function assembleCompletionResult(
     outputBudgetIncomplete,
   } = input;
   const api = config.providerId === "meta" ? "meta-responses" : "responses";
+  const responsesReplay = captureResponsesReplay(config.providerId, model, parsed.outputItems);
   return {
     text: parsed.text,
     provider: config.providerId,
@@ -347,6 +301,7 @@ export function assembleCompletionResult(
     ...(usage ? { usage } : {}),
     ...reasoningResultFields(parsed),
     ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
+    ...(responsesReplay ? { responsesReplay } : {}),
   };
 }
 

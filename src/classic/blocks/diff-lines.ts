@@ -60,7 +60,8 @@ function mutedCode(ctx: BlockContext, text: string): string {
 }
 
 function gutterCell(ctx: BlockContext, row: PresentedDiffRow): string {
-  return ctx.ink.fg("diffGutter", `${row.gutter} ${ctx.glyphs.boxVertical} `);
+  const rail = row.tone === "add" ? "diffAdd" : row.tone === "del" ? "diffDel" : "diffGutter";
+  return `${ctx.ink.fg("diffGutter", `${row.gutter} `)}${ctx.ink.fg(rail, `${ctx.glyphs.boxVertical} `)}`;
 }
 
 function quietText(row: PresentedDiffRow): string {
@@ -69,9 +70,7 @@ function quietText(row: PresentedDiffRow): string {
 
 function washedRow(ctx: BlockContext, row: PresentedDiffRow, rowWidth: number): string {
   const gutter = gutterCell(ctx, row);
-  const quiet = row.tone === "gap" || row.tone === "header";
-  const code = quiet ? mutedCode(ctx, quietText(row)) : syntaxCode(ctx, row);
-  const line = clipToWidth(`${gutter}${code}`, rowWidth, ctx.glyphs.ellipsis);
+  const line = clipToWidth(`${gutter}${markedBody(ctx, row)}`, rowWidth, ctx.glyphs.ellipsis);
   const wash = washToken(row.tone);
   return wash ? ctx.ink.band(line, rowWidth, { bg: wash }) : line;
 }
@@ -84,9 +83,8 @@ function markedRow(ctx: BlockContext, row: PresentedDiffRow, rowWidth: number): 
 function markedBody(ctx: BlockContext, row: PresentedDiffRow): string {
   if (row.tone === "context") return `  ${syntaxCode(ctx, row)}`;
   if (row.tone !== "add" && row.tone !== "del") return `  ${mutedCode(ctx, quietText(row))}`;
-  const marker = row.prefix === "−" && !ctx.ink.unicode ? "-" : row.prefix;
+  const marker = row.prefix === "−" ? "-" : row.prefix;
   const token: ThemeToken = row.tone === "add" ? "diffAdd" : "diffDel";
-  if (!ctx.ink.richColor) return ctx.ink.fg(token, `${marker} ${row.displayText}`);
   return `${ctx.ink.style(marker, { fg: token, bold: true })} ${syntaxCode(ctx, row)}`;
 }
 
@@ -97,7 +95,7 @@ function diffRowLine(ctx: BlockContext, row: PresentedDiffRow): string {
 }
 
 function codeBudget(ctx: BlockContext, change: FileChange): number {
-  const marker = ctx.ink.washColor ? 0 : 2;
+  const marker = 2;
   return Math.max(8, ctx.width - DIFF_INDENT - gutterWidth(change) - GUTTER_RULE_WIDTH - marker);
 }
 

@@ -167,7 +167,7 @@ describe("session-scoped effort preflight", () => {
     expect(plain).toBe(slashed);
   });
 
-  it("shares one subagent probe across every child of the same conversation", async () => {
+  it("keeps subagent probes separate for every child of the same conversation", async () => {
     const childRoute = route({ requested: "none", purpose: undefined });
     let parentKey = "";
     await inSession("parent-1:subagent:alpha", async () => {
@@ -184,8 +184,8 @@ describe("session-scoped effort preflight", () => {
       expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "none" })).toBe("low");
     });
 
-    expect(siblingKey).toBe(parentKey);
-    expect(beta.seen).toEqual([]);
+    expect(siblingKey).not.toBe(parentKey);
+    expect(beta.seen).toEqual(["none", "low"]);
     await inSession("parent-1:subagent:alpha", async () => {
       expect(effectiveThinkingEffort(PROVIDER, MODEL, { enabled: true, effort: "none" })).toBe("low");
     });

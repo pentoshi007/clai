@@ -333,6 +333,7 @@ export async function responsesStream(
     messages: request.messages,
     purpose: request.purpose,
     reasoningEnabled: Boolean(request.thinking?.enabled),
+    parallelToolCalls: request.parallelToolCalls,
   };
   const body = buildResponsesRequestBody(config, request, model, true);
   const cleanup = (): void => {

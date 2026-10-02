@@ -28,7 +28,7 @@ describe("Codex Parity & Cache Affinity", () => {
       expect(headers["session-id"]).toBe(rootSessionId);
       expect(headers["chatgpt-account-id"]).toBe("acc-123");
       expect(headers["originator"]).toBe("codex_cli_rs");
-      expect(headers["openai-beta"]).toBe("responses=experimental");
+      expect(headers["openai-beta"]).toBeUndefined();
       expect(headers["x-openai-subagent"]).toBeUndefined();
     });
   });
@@ -67,31 +67,31 @@ describe("Codex Parity & Cache Affinity", () => {
     });
   });
 
-  it("routes subagents to parent cache session with collab_spawn header and thread identity", () => {
+  it("gives subagents their own Codex cache and thread identity", () => {
     const parentSessionId = "01948523-parent-0000-8000-000000000003";
     const subagentAffinity = `${parentSessionId}:subagent:worker-analyzer`;
 
     withSessionAffinity(subagentAffinity, () => {
       const derivedKey = codexPromptCacheKey();
-      expect(derivedKey).toBe(parentSessionId);
+      expect(derivedKey).toBe(subagentAffinity);
 
       const headers = codexRequestHeaders("acc-123");
-      expect(headers["session-id"]).toBe(parentSessionId);
+      expect(headers["session-id"]).toBe(subagentAffinity);
       expect(headers["thread-id"]).toBe(subagentAffinity);
       expect(headers["x-openai-subagent"]).toBe("collab_spawn");
     });
   });
 
-  it("routes auxiliary tasks to parent cache session", () => {
+  it("isolates auxiliary tasks from the root cache session", () => {
     const parentSessionId = "01948523-parent-0000-8000-000000000004";
     const auxAffinity = `${parentSessionId}:auxiliary`;
 
     withSessionAffinity(auxAffinity, () => {
       const derivedKey = codexPromptCacheKey();
-      expect(derivedKey).toBe(parentSessionId);
+      expect(derivedKey).toBe(auxAffinity);
 
       const headers = codexRequestHeaders("acc-123");
-      expect(headers["session-id"]).toBe(parentSessionId);
+      expect(headers["session-id"]).toBe(auxAffinity);
     });
   });
 

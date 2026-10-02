@@ -22,7 +22,12 @@ export const EFFORT_SCALE: readonly ReasoningEffort[] = [
   "high",
   "xhigh",
   "max",
+  "ultra",
 ];
+
+export const WIRE_EFFORT_SCALE: readonly ReasoningEffort[] = EFFORT_SCALE.filter(
+  (effort) => effort !== "ultra",
+);
 
 const EFFORT_BUDGET_TOKENS: Readonly<Record<ReasoningEffort, number>> = {
   none: 0,
@@ -32,6 +37,7 @@ const EFFORT_BUDGET_TOKENS: Readonly<Record<ReasoningEffort, number>> = {
   high: 16_384,
   xhigh: 24_576,
   max: 32_768,
+  ultra: 32_768,
 };
 
 export function effortReasoningBudgetTokens(

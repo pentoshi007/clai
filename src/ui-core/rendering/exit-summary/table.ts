@@ -1,6 +1,7 @@
 import { usageCacheHitRate } from "../../../app/controllers/session-usage-ledger.js";
 import type { SessionUsageReport, SessionUsageRoute, SessionUsageTotals } from "../../../app/controllers/session-usage-ledger.js";
 import { renderColumns } from "../text-width.js";
+import { usageSourceLabel } from "../../../app/controllers/session-usage-source.js";
 
 const MIN_LABEL_COLUMNS = 10;
 
@@ -239,7 +240,9 @@ export function tableLines(
 ): string[] {
   const routes: TableRow[] = report.routes.map((route) => ({
     provider: route.provider ?? "unknown",
-    model: route.model ?? "unknown",
+    model: route.source
+      ? `${usageSourceLabel(route.source)} · ${route.model ?? "unknown"}`
+      : route.model ?? "unknown",
     cells: metricCells(route, glyphs),
     emphasis: false,
   }));

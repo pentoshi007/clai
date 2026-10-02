@@ -12,7 +12,7 @@ import {
   registerWireRejectionEfforts,
   scopedRuntimeReasoningEffortsKnown,
 } from "../capabilities.js";
-import { EFFORT_SCALE } from "../reasoning-controls.js";
+import { WIRE_EFFORT_SCALE } from "../reasoning-controls.js";
 import { currentSessionAffinity } from "../session-affinity.js";
 
 export const PREFLIGHT_MESSAGES: ChatMessage[] = [
@@ -40,12 +40,12 @@ const SUBAGENT_ORDER: readonly ReasoningEffort[] = [
   "max",
 ];
 
-const TURN_ORDER: readonly ReasoningEffort[] = [...EFFORT_SCALE].reverse();
+const TURN_ORDER: readonly ReasoningEffort[] = [...WIRE_EFFORT_SCALE].reverse();
 
 const MAX_PROBED_KEYS = 400;
 
 const EFFORT_RANK = new Map<string, number>(
-  EFFORT_SCALE.map((effort, index) => [effort, index]),
+  WIRE_EFFORT_SCALE.map((effort, index) => [effort, index]),
 );
 
 const probedKeys = new Set<string>();
@@ -62,15 +62,10 @@ function isSubagentProbe(route: EffortPreflightRoute): boolean {
   return route.purpose === undefined;
 }
 
-function preflightSession(route: EffortPreflightRoute): string {
-  const affinity = currentSessionAffinity() ?? "shared";
-  return isSubagentProbe(route) ? affinity.split(":subagent:")[0]! : affinity;
-}
-
 export function effortPreflightKey(route: EffortPreflightRoute): string {
   const endpoint = (route.endpoint ?? "").replace(/\/+$/, "");
   return [
-    preflightSession(route),
+    currentSessionAffinity() ?? "shared",
     route.providerId,
     endpoint,
     route.model,
@@ -107,8 +102,8 @@ function settleProbedEfforts(
   const index = rankOf(accepted);
   if (index < 0) return;
   const observed = isSubagentProbe(route)
-    ? EFFORT_SCALE.slice(index)
-    : EFFORT_SCALE.slice(0, index + 1);
+    ? WIRE_EFFORT_SCALE.slice(index)
+    : WIRE_EFFORT_SCALE.slice(0, index + 1);
   registerWireRejectionEfforts(route.providerId, route.model, observed);
   if (accepted !== "none") {
     learnModelReasoningSupport(route.providerId, route.model);

@@ -84,7 +84,7 @@ try {
   assert.equal(services.session.getState().running, true);
   const pickerFrame = await settle(() => {
     services.toast.info("Orchestration on · independent research continues while inspecting agents", { sticky: true });
-    services.commands.dispatch({ name: "agents" });
+    services.commands.dispatch({ name: "subagents" });
   });
   assert.match(pickerFrame, /First inspector/);
   assert.match(pickerFrame.split("\n")[0]!, /Orchestration on/);

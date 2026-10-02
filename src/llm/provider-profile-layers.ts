@@ -816,11 +816,13 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       },
       generation: "optional",
       outputShapes: ["encrypted-reasoning-items"],
-      replayScope: "tool-turn",
+      replayScope: "all-history",
+      finalTurnPreservation: "supported",
     },
     cache: {
       kind: "automatic-prefix",
-      cacheAffectingFields: ["input", "tools"],
+      affinityField: "prompt_cache_key",
+      cacheAffectingFields: ["instructions", "input", "tools", "parallel_tool_calls", "reasoning.effort", "text.verbosity", "prompt_cache_key"],
     },
     usage: {
       cachedInput: [

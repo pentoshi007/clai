@@ -111,7 +111,7 @@ export function createInkTheme(input: InkThemeInput): InkTheme {
     unicode: input.unicode,
     italicOk,
     richColor,
-    washColor: input.colorMode === "truecolor",
+    washColor: input.colorMode === "truecolor" || input.colorMode === "256",
     glyphs: glyphsFor(input.unicode),
     inkColor: (token) => (colored ? theme[token] : undefined),
     style,

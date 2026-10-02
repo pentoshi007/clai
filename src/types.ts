@@ -37,7 +37,7 @@ export const providerIds = [
 export type ProviderId = (typeof providerIds)[number];
 export type Mode = "ask" | "agent" | "plan";
 export type RiskLevel = "safe" | "confirm" | "block";
-export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 export interface ReasoningPreference {
   enabled: boolean;
@@ -167,6 +167,12 @@ export type ReasoningArtifactReplayObserver = (
   decision: ReasoningArtifactReplayDecision,
 ) => void;
 
+export interface ResponsesReplay {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly items: readonly Record<string, unknown>[];
+}
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -177,6 +183,7 @@ export interface ChatMessage {
   ok?: boolean | undefined;
   reasoningBlock?: ReasoningBlock | undefined;
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
+  responsesReplay?: ResponsesReplay | undefined;
   internal?: boolean | undefined;
 }
 
@@ -361,6 +368,7 @@ export interface CompletionResult {
   operationUsage?: import("./llm/operation-usage.js").OperationUsageSnapshot | undefined;
   reasoningBlock?: ReasoningBlock | undefined;
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
+  responsesReplay?: ResponsesReplay | undefined;
 }
 
 export interface ProviderStatus {

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { codexProvider } from "../src/llm/codex.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { codexProvider, resetCodexModelCache } from "../src/llm/codex.js";
 import { encodeCodexKey } from "../src/llm/codex-auth.js";
 
 const ACCOUNT_ID = "00000000-0000-0000-0000-000000000000";
@@ -24,6 +24,7 @@ function catalogResponse() {
 }
 
 describe("Codex provider", () => {
+  beforeEach(() => resetCodexModelCache());
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -54,7 +55,7 @@ describe("Codex provider", () => {
     );
   });
 
-  it("caches the model list for an hour", async () => {
+  it("caches the model list for five minutes", async () => {
     const fetchMock = vi.fn(async () => catalogResponse());
     vi.stubGlobal("fetch", fetchMock);
     const time = baseTime + 5 * 60 * 60 * 1000;

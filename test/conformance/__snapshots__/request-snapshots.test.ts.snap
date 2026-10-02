@@ -2527,6 +2527,10 @@ exports[`serialized request snapshots > cline / tools 1`] = `
 exports[`serialized request snapshots > codex / images 1`] = `
 {
   "body": {
+    "client_metadata": {
+      "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    },
     "include": [
       "reasoning.encrypted_content",
     ],
@@ -2565,19 +2569,23 @@ exports[`serialized request snapshots > codex / images 1`] = `
     ],
     "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "reasoning": {},
     "store": false,
     "stream": true,
+    "tool_choice": "auto",
+    "tools": [],
   },
   "headers": {
     "accept": "text/event-stream",
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
-    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.0.0",
+    "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2588,6 +2596,10 @@ exports[`serialized request snapshots > codex / images 1`] = `
 exports[`serialized request snapshots > codex / minimal 1`] = `
 {
   "body": {
+    "client_metadata": {
+      "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    },
     "include": [
       "reasoning.encrypted_content",
     ],
@@ -2621,19 +2633,23 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
     ],
     "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "reasoning": {},
     "store": false,
     "stream": true,
+    "tool_choice": "auto",
+    "tools": [],
   },
   "headers": {
     "accept": "text/event-stream",
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
-    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.0.0",
+    "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2644,6 +2660,10 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
 exports[`serialized request snapshots > codex / reasoning-control 1`] = `
 {
   "body": {
+    "client_metadata": {
+      "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    },
     "include": [
       "reasoning.encrypted_content",
     ],
@@ -2677,6 +2697,7 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
     ],
     "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "reasoning": {
       "effort": "high",
@@ -2684,16 +2705,18 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
     },
     "store": false,
     "stream": true,
+    "tool_choice": "auto",
+    "tools": [],
   },
   "headers": {
     "accept": "text/event-stream",
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
-    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.0.0",
+    "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2704,6 +2727,10 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
 exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
 {
   "body": {
+    "client_metadata": {
+      "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    },
     "include": [
       "reasoning.encrypted_content",
     ],
@@ -2748,6 +2775,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
     ],
     "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "reasoning": {
       "effort": "medium",
@@ -2774,6 +2802,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
           ],
           "type": "object",
         },
+        "strict": false,
         "type": "function",
       },
       {
@@ -2791,6 +2820,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
           ],
           "type": "object",
         },
+        "strict": false,
         "type": "function",
       },
     ],
@@ -2800,10 +2830,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
-    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.0.0",
+    "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2814,6 +2844,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
+    "client_metadata": {
+      "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    },
     "include": [
       "reasoning.encrypted_content",
     ],
@@ -2858,6 +2892,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
     ],
     "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "reasoning": {
       "effort": "medium",
@@ -2884,6 +2919,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
           ],
           "type": "object",
         },
+        "strict": false,
         "type": "function",
       },
       {
@@ -2901,6 +2937,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
           ],
           "type": "object",
         },
+        "strict": false,
         "type": "function",
       },
     ],
@@ -2910,10 +2947,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
-    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.0.0",
+    "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",
@@ -2924,6 +2961,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
 exports[`serialized request snapshots > codex / tools 1`] = `
 {
   "body": {
+    "client_metadata": {
+      "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    },
     "include": [
       "reasoning.encrypted_content",
     ],
@@ -2957,7 +2998,9 @@ exports[`serialized request snapshots > codex / tools 1`] = `
     ],
     "instructions": "stable system prefix for cache reuse",
     "model": "gpt-5.1-codex",
+    "parallel_tool_calls": true,
     "prompt_cache_key": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "reasoning": {},
     "store": false,
     "stream": true,
     "tool_choice": "auto",
@@ -2979,6 +3022,7 @@ exports[`serialized request snapshots > codex / tools 1`] = `
           ],
           "type": "object",
         },
+        "strict": false,
         "type": "function",
       },
       {
@@ -2996,6 +3040,7 @@ exports[`serialized request snapshots > codex / tools 1`] = `
           ],
           "type": "object",
         },
+        "strict": false,
         "type": "function",
       },
     ],
@@ -3005,10 +3050,10 @@ exports[`serialized request snapshots > codex / tools 1`] = `
     "authorization": "<redacted>",
     "chatgpt-account-id": "00000000-0000-0000-0000-000000000000",
     "content-type": "application/json",
-    "openai-beta": "responses=experimental",
     "originator": "codex_cli_rs",
     "session-id": "<generated>",
-    "user-agent": "codex_cli_rs/0.0.0",
+    "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+    "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
   },
   "method": "POST",

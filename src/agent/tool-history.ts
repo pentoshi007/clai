@@ -3,6 +3,7 @@ import type {
   NativeToolCall,
   ReasoningArtifact,
   ReasoningBlock,
+  ResponsesReplay,
 } from "../types.js";
 import {
   legacyReasoningBlockFromArtifacts,
@@ -190,6 +191,7 @@ export function appendAssistantWithTools(
   toolCalls: NativeToolCall[],
   reasoningBlock?: ReasoningBlock | undefined,
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined,
+  responsesReplay?: ResponsesReplay | undefined,
 ): void {
   const durableCalls = slimNativeToolCallsForHistory(toolCalls);
   const reboundArtifacts = rebindReasoningArtifactsToToolCalls({
@@ -213,6 +215,7 @@ export function appendAssistantWithTools(
       ? { reasoningBlock: durableReasoningBlock }
       : {}),
     ...(persistedArtifacts ? { reasoningArtifacts: persistedArtifacts } : {}),
+    ...(responsesReplay ? { responsesReplay } : {}),
   });
 }
 

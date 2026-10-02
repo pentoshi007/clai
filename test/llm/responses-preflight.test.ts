@@ -337,16 +337,16 @@ describe("route selection cache and cancellation", () => {
     expect(probe).toHaveBeenCalledTimes(2);
   });
 
-  it("expires route observations for new sessions without changing an active session's wire", async () => {
+  it("keeps route observations independent without changing an active session's wire", async () => {
     vi.useFakeTimers();
     const probe = vi.fn(async () => selected);
     await withSessionAffinity("first", () => selectResponsesWire(options, false, probe));
     await withSessionAffinity("second", () => selectResponsesWire(options, false, probe));
-    expect(probe).toHaveBeenCalledOnce();
+    expect(probe).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
     await withSessionAffinity("first", () => selectResponsesWire(options, false, probe));
-    expect(probe).toHaveBeenCalledOnce();
-    await withSessionAffinity("third", () => selectResponsesWire(options, false, probe));
     expect(probe).toHaveBeenCalledTimes(2);
+    await withSessionAffinity("third", () => selectResponsesWire(options, false, probe));
+    expect(probe).toHaveBeenCalledTimes(3);
   });
 });

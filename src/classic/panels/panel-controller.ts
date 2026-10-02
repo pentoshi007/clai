@@ -46,6 +46,7 @@ export class PanelController {
   private unsubscribe: (() => void) | undefined;
   private unwatchPager: (() => void) | undefined;
   private pullPager: (() => void) | undefined;
+  private pagerOffset = 0;
 
   constructor(private readonly deps: PanelControllerDeps) {
     this.tracked = deps.overlay.getState();
@@ -318,6 +319,7 @@ export class PanelController {
         return;
       case "pager": {
         const pagerMarkdown = resolvePagerMarkdownMode(state.body, state.markdown);
+        this.pagerOffset = 0;
         this.publish({
           ...base,
           pager: {
@@ -329,9 +331,8 @@ export class PanelController {
           pagerMarkdown,
           pagerLive: state.source?.watch !== undefined,
         });
-        if (state.source?.watch && state.source.readTail) {
+        if (state.source?.watch) {
           this.watchPager(state);
-          if (!this.snapshot.pager.follow) void this.loadPagerPage(state, 0);
         } else if (state.source) void this.loadPagerPage(state, 0);
         return;
       }
@@ -363,6 +364,7 @@ export class PanelController {
     try {
       const page = await state.source.readPage(offset);
       if (this.deps.overlay.getState() !== state) return;
+      this.pagerOffset = page.offset;
       this.publish({ ...this.snapshot, pagerBody: page.body });
     } catch {
       this.deps.onToast("could not read artifact page");
@@ -371,28 +373,40 @@ export class PanelController {
 
   private watchPager(state: Extract<OverlayState, { kind: "pager" }>): void {
     const source = state.source!;
+    this.pagerOffset = 0;
     let active = true;
     let reading = false;
     let pending = false;
     const pull = (): void => {
-      if (!active || !this.snapshot.pager.follow) return;
+      if (!active) return;
       if (reading) {
         pending = true;
         return;
       }
       reading = true;
+      const follow = this.snapshot.pager.follow;
       const growing = source.isGrowing?.() ?? true;
-      void source.readTail!().then((page) => {
-        if (!active || this.deps.overlay.getState() !== state || !this.snapshot.pager.follow) return;
+      const pageRead = follow && source.readTail
+        ? source.readTail()
+        : source.readPage(this.pagerOffset);
+      void pageRead.then((page) => {
+        if (!active || this.deps.overlay.getState() !== state) return;
+        if (follow !== this.snapshot.pager.follow) {
+          pending = true;
+          return;
+        }
         const lines = this.pagerView(page.body, state).lines;
+        const maxCaret = Math.max(0, lines.length - 1);
+        const maxTop = Math.max(0, lines.length - panelBodyHeight(this.deps.rows()));
+        this.pagerOffset = page.offset;
         this.publish({
           ...this.snapshot,
           pagerBody: page.body,
           pager: {
             ...this.snapshot.pager,
-            caret: Math.max(0, lines.length - 1),
-            top: Math.max(0, lines.length - panelBodyHeight(this.deps.rows())),
-            follow: growing,
+            caret: follow ? maxCaret : Math.min(this.snapshot.pager.caret, maxCaret),
+            top: follow ? maxTop : Math.min(this.snapshot.pager.top, maxTop),
+            follow: follow && growing,
           },
         });
       }).catch(() => undefined).finally(() => {

@@ -15,6 +15,7 @@ export interface ResponsesBodyExtrasContext {
   readonly messages: readonly ChatMessage[];
   readonly purpose: CompletionRequestPurpose | undefined;
   readonly reasoningEnabled: boolean;
+  readonly parallelToolCalls?: boolean | undefined;
 }
 
 export interface ResponsesDialectConfig {
@@ -26,7 +27,8 @@ export interface ResponsesDialectConfig {
   readonly omitSampling?: boolean | undefined;
   readonly maxTokensField?: "max_tokens" | "omit" | undefined;
   readonly omitParallelToolCalls?: boolean | undefined;
-  readonly instructionsField?: "instructions" | "input" | undefined;
+  readonly toolStrict?: boolean | undefined;
+  readonly instructionsField?: "instructions" | "leading-instructions" | "input" | undefined;
   readonly systemRole?: "developer" | "system" | undefined;
   buildHeaders(
     auth: ProviderAuth,
@@ -38,6 +40,10 @@ export interface ResponsesDialectConfig {
     model?: string,
   ): Record<string, unknown> | undefined;
   bodyExtras(context: ResponsesBodyExtrasContext): Record<string, unknown>;
+  finalizeBody?(
+    body: Record<string, unknown>,
+    context: ResponsesBodyExtrasContext,
+  ): Record<string, unknown>;
 }
 
 export function mapResponsesEffort(effort: string): string {
@@ -59,4 +65,3 @@ export function resolveResponsesUrl(baseUrl: string): string {
   if (/\/responses$/i.test(clean)) return clean;
   return `${clean}/responses`;
 }
-

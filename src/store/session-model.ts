@@ -17,6 +17,7 @@ const THINKING_EFFORTS: readonly ReasoningEffort[] = [
   "high",
   "xhigh",
   "max",
+  "ultra",
 ];
 
 export interface SessionModelBinding {

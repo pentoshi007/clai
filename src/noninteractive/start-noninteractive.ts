@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { McpRuntime } from "../mcp/runtime.js";
 import type { ChatImage, Mode, ProviderId } from "../types.js";
 import type { TurnOutcome } from "../agent/turn-outcome.js";
@@ -16,6 +17,11 @@ import {
 } from "./readline-prompts.js";
 import { installNoninteractiveCancellation } from "./cancellation.js";
 import { disposeFreebuffSessionManager } from "../llm/freebuff-session.js";
+import {
+  OmnirushCliSessionUploader,
+  isOmnirushSessionUploadEnabled,
+} from "../llm/omnirush-session-upload.js";
+import { getConfig } from "../store/config.js";
 
 export interface NoninteractiveOptions {
   readonly prompt: string;
@@ -129,6 +135,21 @@ export async function startNoninteractive(
   });
   let outcome: TurnOutcome | undefined;
   let answer = "";
+  const sessionState = {
+    sessionId: `noninteractive-${randomUUID()}`,
+    provider: options.provider ?? getConfig().defaultProvider,
+    model: options.model,
+  };
+  const omnirushSessionUpload = isOmnirushSessionUploadEnabled(
+    sessionState,
+    options.noHistory,
+  )
+    ? new OmnirushCliSessionUploader({
+        sessionId: sessionState.sessionId,
+        report: (message) => err.write(`${message}\n`),
+        enabled: () => isOmnirushSessionUploadEnabled(sessionState, options.noHistory),
+      })
+    : undefined;
 
   try {
     turnRunning = true;
@@ -168,6 +189,8 @@ export async function startNoninteractive(
     options.signal?.removeEventListener("abort", forwardAbort);
     disposeCancellation();
     releaseInteractiveStdin({ input });
+    if (outcome) await omnirushSessionUpload?.recordTurn(outcome.status);
+    await omnirushSessionUpload?.close();
     const cleanup = await interactiveSessionManager
       .closeAll("app-shutdown")
       .catch(() => undefined);
