@@ -105,7 +105,7 @@ describe("SubagentManager", () => {
     previous.manager[operation]();
     expect(previous.work.every(({ input }) => input.signal.aborted)).toBe(true);
 
-    const next = controlled(undefined, "next-session");
+    const next = controlled(undefined, "previous-session");
     next.manager.setEnabled(true);
     expect(() => next.manager.start({ ...assignment, prompt: "Previous task 0" })).toThrow(/Duplicate/);
     expect(next.manager.list()).toEqual([]);
@@ -118,9 +118,9 @@ describe("SubagentManager", () => {
     expect(next.manager.start({ ...assignment, prompt: "Previous task 1" }).status).toBe("running");
   });
 
-  it("rejects duplicate live assignments regardless of title, including across managers and restarts", async () => {
+  it("rejects duplicate live assignments within a session across managers and restarts", async () => {
     const current = controlled();
-    const next = controlled(undefined, "next-session");
+    const next = controlled(undefined, "parent");
     current.manager.setEnabled(true);
     next.manager.setEnabled(true);
     const first = current.manager.start(assignment);
@@ -133,6 +133,20 @@ describe("SubagentManager", () => {
     await current.manager.wait(first.id);
     expect(next.manager.start({ ...assignment, title: "New attempt" }).status).toBe("running");
     expect(() => current.manager.restart(first.id)).toThrow(/Duplicate/);
+  });
+
+  it("allows identical subagent assignments in independent parent sessions", async () => {
+    const first = controlled(undefined, "first-parent");
+    const second = controlled(undefined, "second-parent");
+    const one = first.manager.start(assignment);
+    const two = second.manager.start(assignment);
+    await tick();
+    expect(one.id).not.toBe(two.id);
+    expect(first.work).toHaveLength(1);
+    expect(second.work).toHaveLength(1);
+    first.work[0]!.resolve("First report");
+    second.work[0]!.resolve("Second report");
+    await Promise.all([first.manager.wait(one.id), second.manager.wait(two.id)]);
   });
 
   it("distinguishes assignments by prompt, context, cwd, provider, and model", async () => {

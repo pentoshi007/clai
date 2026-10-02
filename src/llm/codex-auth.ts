@@ -9,12 +9,13 @@ import {
 import { cacheAffinityKey } from "./cache-affinity.js";
 import type { ResponsesBodyExtrasContext } from "./responses-config.js";
 import { CHATGPT_SUBSCRIPTION_DISPLAY_NAME } from "./provider-identity.js";
+import { installedCodexVersion } from "./codex-client.js";
 
 export const CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex";
 export const CODEX_AUTH_BASE_URL = "https://auth.openai.com";
 export const CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const CODEX_ORIGINATOR = "codex_cli_rs";
-export const CODEX_CLIENT_VERSION = "0.0.0";
+export const CODEX_CLIENT_VERSION = installedCodexVersion();
 export const CODEX_SCOPE = "openid profile email offline_access";
 
 const CODEX_KEY_PREFIX = "codex:";
@@ -85,15 +86,7 @@ export function codexPromptCacheKey(
   context?: ResponsesBodyExtrasContext | undefined,
 ): string {
   const affinity = currentSessionAffinity();
-  if (affinity) {
-    if (affinity.includes(":subagent:")) {
-      return affinity.split(":subagent:")[0]!;
-    }
-    if (affinity.endsWith(":auxiliary")) {
-      return affinity.slice(0, -":auxiliary".length);
-    }
-    return affinity;
-  }
+  if (affinity) return affinity;
   if (context?.model && context?.messages) {
     return cacheAffinityKey("codex", context.model, context.messages);
   }
@@ -112,12 +105,11 @@ export function codexRequestHeaders(
   return {
     "chatgpt-account-id": accountId,
     originator: CODEX_ORIGINATOR,
-    "openai-beta": "responses=experimental",
     "User-Agent": `${CODEX_ORIGINATOR}/${CODEX_CLIENT_VERSION}`,
     "session-id": session,
     "x-client-request-id": crypto.randomUUID(),
     ...(residency ? { "x-openai-internal-codex-residency": residency } : {}),
-    ...(affinity && affinity !== session ? { "thread-id": affinity } : {}),
+    "thread-id": affinity ?? session,
     ...(isSubagent ? { "x-openai-subagent": "collab_spawn" } : {}),
     ...extra,
   };
@@ -233,7 +225,9 @@ function credentialFromTokens(
     extractAccountIdFromClaims(jwtClaims(accessToken)) ??
     fallback?.accountId;
   if (!accountId) throw new Error(`${CHATGPT_SUBSCRIPTION_DISPLAY_NAME} token response missing ChatGPT account id`);
-  const expiresAt = expiresAtFromAccessToken(accessToken) ?? fallback?.expiresAt;
+  const expiresIn = typeof json.expires_in === "number" && json.expires_in > 0
+    ? Date.now() + json.expires_in * 1000 : undefined;
+  const expiresAt = expiresAtFromAccessToken(accessToken) ?? expiresIn ?? fallback?.expiresAt;
   const residency = extractResidency(accessToken) ?? (idToken ? extractResidency(idToken) : undefined) ?? fallback?.residency;
   return {
     accessToken,
@@ -386,6 +380,7 @@ export function candidateCodexCredentialPaths(): string[] {
   const home = homedir();
   const os = platform();
   const paths: string[] = [];
+  if (process.env.CODEX_HOME) paths.push(join(process.env.CODEX_HOME, "auth.json"));
   if (os === "win32") {
     const profile = process.env.USERPROFILE ?? home;
     paths.push(join(profile, ".codex", "auth.json"));
@@ -423,11 +418,13 @@ export async function readCodexStoredAuth(): Promise<CodexCredential | undefined
     const refreshToken =
       typeof tokens.refresh_token === "string" ? tokens.refresh_token : undefined;
     const expiresAt = expiresAtFromAccessToken(accessToken);
+    const residency = extractResidency(accessToken);
     return {
       accessToken,
       accountId,
       ...(refreshToken ? { refreshToken } : {}),
       ...(expiresAt !== undefined ? { expiresAt } : {}),
+      ...(residency ? { residency } : {}),
     };
   }
   return undefined;

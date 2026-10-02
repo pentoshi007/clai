@@ -21,7 +21,7 @@ export const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOp
 type OrchestrationManager = AppServices["session"]["subagents"];
 
 const ORCHESTRATION_EFFECT = {
-  on: "the main agent may delegate independent read-only research; /agents inspects live output",
+  on: "the main agent may delegate independent read-only research; /subagents inspects live output",
   off: "subagent tools are disabled; active children stop and new starts or restarts are blocked",
 } as const;
 
@@ -122,12 +122,12 @@ export function handleOrchestration(services: AppServices, invocation: CommandIn
   );
 }
 
-export function handleAgents(services: AppServices, invocation: CommandInvocation): void {
+export function handleSubagents(services: AppServices, invocation: CommandInvocation): void {
   const manager = services.session.subagents;
   const args = invocation.args.trim().split(/\s+/).filter(Boolean);
   if (args[0] === "stop" || args[0] === "restart") {
     if (args.length !== 2) {
-      services.session.notice("warn", "usage: /agents [id|stop id|restart id]");
+      services.session.notice("warn", "usage: /subagents [id|stop id|restart id]");
       return;
     }
     try {
@@ -145,7 +145,7 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
     return;
   }
   if (args.length > 1) {
-    services.session.notice("warn", "usage: /agents [id|stop id|restart id]");
+    services.session.notice("warn", "usage: /subagents [id|stop id|restart id]");
     return;
   }
 

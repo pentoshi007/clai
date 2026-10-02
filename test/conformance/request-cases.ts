@@ -201,7 +201,7 @@ export function redactHeaders(
       ? "<redacted>"
       : VOLATILE_HEADERS.has(lower)
         ? "<generated>"
-        : withoutHostDescriptor(value);
+        : withoutHostDescriptor(value).replace(/^codex_cli_rs\/\d+\.\d+\.\d+/, "codex_cli_rs/<installed-version>");
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }

@@ -33,7 +33,7 @@ import { handleInfo, handleKeys, handleSet, handleUnset } from "./key-commands.j
 import { handleMcp } from "./mcp-commands.js";
 import { handleSkills } from "./skill-commands.js";
 import { handleRtk } from "./rtk-commands.js";
-import { handleAgents, handleOrchestration } from "./subagent-commands.js";
+import { handleSubagents, handleOrchestration } from "./subagent-commands.js";
 import {
   handleHistory,
   handleModel,
@@ -74,7 +74,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("ask", () => handleMode(services, "ask"));
   c.setHandler("agent", () => handleMode(services, "agent"));
   c.setHandler("orchestration", (i) => handleOrchestration(services, i));
-  c.setHandler("agents", (i) => handleAgents(services, i));
+  c.setHandler("subagents", (i) => handleSubagents(services, i));
   c.setHandler("rtk", (i) => handleRtk(services, i));
   c.setHandler("model", (i) => handleModel(services, i));
   c.setHandler("provider", (i) => handleProvider(services, i));

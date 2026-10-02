@@ -18,7 +18,7 @@ type Waiter = { check: () => void; reject: (error: Error) => void };
 const terminal = (status: SubagentRun["status"]): boolean => status !== "running" && status !== "stopping";
 const defaultWorker: SubagentWorker = async (input) => (await import("./worker.js")).runReadOnlySubagent(input);
 const inFlight = new Map<AbortController, string>();
-const fingerprint = (assignment: SubagentAssignment): string => createHash("sha256").update(JSON.stringify([assignment.prompt, assignment.context ?? "", assignment.cwd, assignment.provider, assignment.model])).digest("hex");
+const fingerprint = (parentSessionId: string, assignment: SubagentAssignment): string => createHash("sha256").update(JSON.stringify([parentSessionId, assignment.prompt, assignment.context ?? "", assignment.cwd, assignment.provider, assignment.model])).digest("hex");
 
 export class SubagentManager {
   private active = true;
@@ -33,14 +33,14 @@ export class SubagentManager {
   private notificationTimer?: ReturnType<typeof setTimeout> | undefined;
   private readonly worker: SubagentWorker;
   private readonly store: SubagentStore | undefined;
-  private readonly onOperationUsage: ((snapshot: OperationUsageSnapshot) => void) | undefined;
+  private readonly onOperationUsage: ((snapshot: OperationUsageSnapshot, subagentId: string) => void) | undefined;
 
   constructor(
     readonly parentSessionId: string,
     options: {
       worker?: SubagentWorker;
       store?: SubagentStore;
-      onOperationUsage?: (snapshot: OperationUsageSnapshot) => void;
+      onOperationUsage?: (snapshot: OperationUsageSnapshot, subagentId: string) => void;
     } = {},
   ) {
     if (!isValidSubagentParentId(parentSessionId)) throw new Error("Invalid parent session ID");
@@ -91,7 +91,7 @@ export class SubagentManager {
   }
 
   private assertUnique(assignment: SubagentAssignment): void {
-    if ([...inFlight.values()].includes(fingerprint(assignment))) throw new Error("Duplicate active subagent assignment");
+    if ([...inFlight.values()].includes(fingerprint(this.parentSessionId, assignment))) throw new Error("Duplicate active subagent assignment");
   }
 
   private activeCount(): number {
@@ -214,7 +214,7 @@ export class SubagentManager {
     const controller = new AbortController();
     child.assistantSequence = undefined;
     child.controller = controller;
-    inFlight.set(controller, fingerprint(child.assignment));
+    inFlight.set(controller, fingerprint(this.parentSessionId, child.assignment));
     const inputRun = this.snapshot(child.run);
     const modelChain = resolveSubagentModelChain();
     const noteRoute: Parameters<SubagentWorker>[0]["noteRoute"] = (route) => {
@@ -250,7 +250,7 @@ export class SubagentManager {
         modelChain,
         noteRoute,
         recordOperationUsage: (snapshot) => {
-          if (!this.disposed) this.onOperationUsage?.(snapshot);
+          if (!this.disposed) this.onOperationUsage?.(snapshot, inputRun.id);
         },
         checkpoint: child.checkpoint ? structuredClone(child.checkpoint) : undefined,
         saveSummary: (report) => {

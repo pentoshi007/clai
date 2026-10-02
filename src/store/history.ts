@@ -89,6 +89,9 @@ function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
     return canonicalizeChatMessageReasoningArtifacts({
       ...rest,
       content: redactSecretsCached(message.content),
+      ...(message.responsesReplay ? {
+        responsesReplay: JSON.parse(redactSecretsCached(JSON.stringify(message.responsesReplay))),
+      } : {}),
       ...(persistedImages?.length ? { images: persistedImages } : {}),
     });
   });

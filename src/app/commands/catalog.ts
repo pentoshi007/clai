@@ -15,7 +15,7 @@ export const slashCommands: SlashCommand[] = [
     description: "show delegation status, configure subagent models, or turn subagents on/off",
   },
   {
-    command: "/agents",
+    command: "/subagents",
     usage: "[id|stop id|restart id]",
     description: "inspect live subagents or stop/restart an assignment",
   },
@@ -70,12 +70,12 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/effort",
-    usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh|max|ultra]",
     description: "toggle thinking/effort (interactive picker if no arg)",
   },
   {
     command: "/reasoning",
-    usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh|max|ultra]",
     description: "alias for /effort",
   },
   {

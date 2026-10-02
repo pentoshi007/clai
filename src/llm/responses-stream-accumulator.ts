@@ -1,7 +1,8 @@
 import type { CompletionRequest } from "../types.js";
 import { toWireName } from "./tool-protocol.js";
 import { wireToolArguments } from "./tool-wire/argument-repair.js";
-import { withReasoningObservation } from "./token-usage.js";
+import { normalizeTokenUsage, withReasoningObservation } from "./token-usage.js";
+import { mergeResponsesUsageCounters, type ResponsesUsageCounters } from "./responses-usage.js";
 import type { TokenUsage } from "./token-usage.js";
 import { emitStreamReasoningArtifacts } from "./stream-events.js";
 import type { StreamTerminalProof } from "./provider-profile.js";
@@ -23,6 +24,7 @@ export interface StreamAccumulator {
   finishReason: string | undefined;
   sawTerminalProof: StreamTerminalProof | undefined;
   streamUsage: TokenUsage | undefined;
+  usageCounters: ResponsesUsageCounters;
   responseId: string | undefined;
   readonly toolCallState: Map<string, ToolCallAccumulator>;
   readonly outputIndexToItemId: Map<number, string>;
@@ -31,6 +33,7 @@ export interface StreamAccumulator {
   readonly reasoningItemSequences: number[];
   readonly reasoningItemToolCallIndices: Array<number | undefined>;
   readonly reasoningItemIndexes: Map<string, number>;
+  readonly outputItems: Map<number, Record<string, unknown>>;
 }
 
 export function newStreamAccumulator(): StreamAccumulator {
@@ -41,6 +44,7 @@ export function newStreamAccumulator(): StreamAccumulator {
     finishReason: undefined,
     sawTerminalProof: undefined,
     streamUsage: undefined,
+    usageCounters: {},
     responseId: undefined,
     toolCallState: new Map(),
     outputIndexToItemId: new Map(),
@@ -49,7 +53,13 @@ export function newStreamAccumulator(): StreamAccumulator {
     reasoningItemSequences: [],
     reasoningItemToolCallIndices: [],
     reasoningItemIndexes: new Map(),
+    outputItems: new Map(),
   };
+}
+
+export function absorbStreamUsage(state: StreamAccumulator, raw: unknown): void {
+  state.usageCounters = mergeResponsesUsageCounters(state.usageCounters, raw);
+  state.streamUsage = normalizeTokenUsage({ ...state.usageCounters, exact: true });
 }
 
 export function noteReasoningItem(
@@ -106,6 +116,9 @@ export function absorbResponseOutput(
   emitReasoningDelta: (text: string) => void,
 ): void {
   if (!Array.isArray(resp.output)) return;
+  for (const [index, item] of resp.output.entries()) {
+    if (item && typeof item === "object" && !Array.isArray(item)) state.outputItems.set(index, item);
+  }
   const out = parseResponsesOutput(
     resp as { output?: unknown; usage?: unknown },
   );

@@ -20,7 +20,7 @@ Why people pick it over other agent CLIs:
 - **Account sign-in.** `clai auth <freebuff|cline|chatgpt|copilot|kiro>` — provider-specific browser/device approval, with supported `--import` paths and multi-credential rotation.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit, quota, transient, or 5xx errors. Disable any key to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
 - **Broad provider support.** 25+ built-in providers: Freebuff, DeepSeek, Kimi (Moonshot), GLM (Zhipu AI), MiniMax, Xiaomi MiMo, OpenAI, Anthropic, Google Gemini, Ollama, NVIDIA NIM, OpenRouter, Qwen Cloud, Cline, Codex (ChatGPT), GitHub Copilot, Kiro, AgentRouter, AWS Mantle, TokenRouter, Token Harbor, Lightning AI, Modal, Meta, Fireworks, Hetzner, OrcaRouter, Merge Gateway, ExpLabs, Vercel AI Gateway — plus custom OpenAI-compatible endpoints.
-- **Parallel subagents.** Independent investigations (recon, research, large refactors) run as read-only subagents concurrently; `/orchestrator` and `/agents` control and inspect them, with per-role model chains.
+- **Parallel subagents.** Independent investigations (recon, research, large refactors) run as read-only subagents concurrently; `/orchestrator` and `/subagents` control and inspect them, with per-role model chains.
 - **Agent Skills.** Loads `SKILL.md`-based skills on demand — `/skills` manages them, and relevant skills surface automatically per prompt.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
 - **Real building & debugging.** Scaffolds apps, edits code surgically, installs packages, runs builds/tests, starts dev servers as background jobs, and probes them before reporting success.
@@ -249,7 +249,7 @@ clai --mode agent "this test is flaky — find the race and fix it"
 For work with several independent threads — recon on multiple targets, researching unrelated bugs, surveying a large codebase — `clai` delegates read-only investigations to **subagents** that run concurrently and report back with evidence:
 
 - `/orchestrator on|off|status|models` — control delegation and assign cheaper models to subagent roles.
-- `/agents` — inspect live assignments; stop or restart one by id.
+- `/subagents` — inspect live assignments; stop or restart one by id.
 
 **Agent Skills** extend the agent with reusable `SKILL.md` playbooks (bundled or your own). Skills are discovered from standard locations, ranked per prompt, and loaded on demand; `/skills list|refresh` manages them.
 
@@ -361,7 +361,7 @@ Interactive sessions run behind a local broker so an agent continues working acr
 | `/info [provider]` | Setup, pricing, and endpoint details for a provider |
 | `/effort [level]` · `/reasoning [level]` | Configure thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
-| `/orchestrator [...]` · `/agents` | Control subagent delegation · inspect live subagents |
+| `/orchestrator [...]` · `/subagents` | Control subagent delegation · inspect live subagents |
 | `/rtk [on\|off\|status\|install\|update]` | Compress shell output through [rtk](https://github.com/rtk-ai/rtk) (off by default) · install or update rtk |
 | `/skills [name\|list\|refresh]` | Manage Agent Skills |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |

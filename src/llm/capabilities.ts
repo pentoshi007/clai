@@ -4,7 +4,7 @@ import type {
   ReasoningPreference,
 } from "../types.js";
 import type { ToolCallingMode } from "./tool-protocol.js";
-import { EFFORT_SCALE } from "./reasoning-controls.js";
+import { WIRE_EFFORT_SCALE } from "./reasoning-controls.js";
 import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
 import { GATEWAY_FAMILY_EXCLUDED_PROVIDERS } from "./provider-profile-layers.js";
@@ -235,13 +235,13 @@ export function settleRouteEfforts(
 ): void {
   if (!model.trim()) return;
   if (displayReasoningEfforts(provider, model) !== undefined) return;
-  const rungIndex = EFFORT_SCALE.indexOf(succeeded);
-  const requestedIndex = EFFORT_SCALE.indexOf(requested);
+  const rungIndex = WIRE_EFFORT_SCALE.indexOf(succeeded);
+  const requestedIndex = WIRE_EFFORT_SCALE.indexOf(requested);
   if (rungIndex < 0 || requestedIndex < 0) return;
   const vocabulary =
     rungIndex < requestedIndex
-      ? EFFORT_SCALE.slice(0, rungIndex + 1)
-      : EFFORT_SCALE.slice(rungIndex);
+      ? WIRE_EFFORT_SCALE.slice(0, rungIndex + 1)
+      : WIRE_EFFORT_SCALE.slice(rungIndex);
   registerWireRejectionEfforts(provider, model, vocabulary);
 }
 

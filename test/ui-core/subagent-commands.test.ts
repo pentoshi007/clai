@@ -139,20 +139,20 @@ describe("shared orchestration commands", () => {
     expect(f.manager.enabled).toBe(true);
     await f.dispatch("/orchestration off");
     expect(f.workers.get(run.id)!.signal.aborted).toBe(true);
-    await f.dispatch(`/agents restart ${run.id}`);
+    await f.dispatch(`/subagents restart ${run.id}`);
     expect(f.notice).toHaveBeenLastCalledWith("warn", expect.stringContaining("Orchestration is off"));
     expect(f.restartSubagent).not.toHaveBeenCalled();
     await flush();
     await f.dispatch("/orchestration on");
-    await f.dispatch(`/agents restart ${run.id}`);
+    await f.dispatch(`/subagents restart ${run.id}`);
     expect(f.manager.get(run.id)?.attempt).toBe(2);
     expect(f.restartSubagent).toHaveBeenCalledExactlyOnceWith(run.id);
-    await f.dispatch(`/agents stop ${run.id}`);
+    await f.dispatch(`/subagents stop ${run.id}`);
     await flush();
     expect(f.manager.get(run.id)?.status).toBe("stopped");
-    await f.dispatch("/agents missing");
+    await f.dispatch("/subagents missing");
     expect(f.notice).toHaveBeenLastCalledWith("warn", "Unknown subagent: missing");
-    await f.dispatch("/agents stop");
+    await f.dispatch("/subagents stop");
     expect(f.notice).toHaveBeenLastCalledWith("warn", expect.stringContaining("usage:"));
     expect(f.cancel).not.toHaveBeenCalled();
   });
@@ -163,7 +163,7 @@ describe("shared orchestration commands", () => {
     const first = f.manager.start(assignment);
     const second = f.manager.start({ ...assignment, title: "Inspect source", prompt: "Review the source implementation" });
     await flush();
-    await f.dispatch("/agents");
+    await f.dispatch("/subagents");
     expect(f.panels.getSnapshot().kind).toBe("picker");
     f.overlay.selectPicker(first.id);
     await flush();
@@ -172,12 +172,18 @@ describe("shared orchestration commands", () => {
     await flush();
     expect(f.panels.getSnapshot().pagerBody).toContain("first live finding");
     f.press("l", "l");
+    const pausedPosition = f.panels.getSnapshot().pager;
     f.workers.get(first.id)!.emit({ kind: "tool", text: "paused output" });
     await flush();
-    expect(f.panels.getSnapshot().pagerBody).not.toContain("paused output");
+    expect(f.panels.getSnapshot().pagerBody).toContain("paused output");
+    expect(f.panels.getSnapshot().pager).toMatchObject({
+      follow: false,
+      top: pausedPosition.top,
+      caret: pausedPosition.caret,
+    });
     f.press("l", "l");
     await flush();
-    expect(f.panels.getSnapshot().pagerBody).toContain("paused output");
+    expect(f.panels.getSnapshot().pager.follow).toBe(true);
     f.overlay.close();
     expect(f.panels.getSnapshot().kind).toBe("picker");
     f.overlay.selectPicker(second.id);
@@ -199,7 +205,7 @@ describe("shared orchestration commands", () => {
     f.manager.setEnabled(true);
     const run = f.manager.start(assignment);
     await flush();
-    await f.dispatch("/agents");
+    await f.dispatch("/subagents");
     f.overlay.selectPicker(run.id);
     f.manager.stop(run.id);
     await flush();
@@ -219,13 +225,13 @@ describe("shared orchestration commands", () => {
 
   it("opens an empty picker and direct child views with complete cleanup", async () => {
     const f = fixture();
-    await f.dispatch("/agents");
+    await f.dispatch("/subagents");
     const state = f.overlay.getState();
     expect(state.kind === "picker" && state.request.options.map((o) => o.value)).toEqual(["main"]);
     f.overlay.close();
     f.manager.setEnabled(true);
     const run = f.manager.start(assignment);
-    await f.dispatch(`/agents ${run.id}`);
+    await f.dispatch(`/subagents ${run.id}`);
     expect(f.overlay.getState().kind).toBe("pager");
     f.overlay.close();
     expect(f.overlay.getState().kind).toBe("none");

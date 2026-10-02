@@ -46,7 +46,7 @@ import {
 } from "./routing/provider-selection.js";
 import { requestForRoute } from "./routing/attempt-request.js";
 import { makeKeyEmitter, runWithKeyRotation } from "./routing/key-rotation.js";
-import { cacheAffinityKey } from "./cache-affinity.js";
+import { randomUUID } from "node:crypto";
 import { currentSessionAffinity, withSessionAffinity } from "./session-affinity.js";
 export { providers } from "./routing/provider-selection.js";
 export { buildFallbackChain, getProvider, providerAuth };
@@ -90,13 +90,9 @@ function resolveOperationLedger(
 
 function withRequestAffinity<T>(request: CompletionRequest, run: () => T): T {
   if (request.purpose !== "auxiliary") return run();
-  const affinity = currentSessionAffinity() ??
-    cacheAffinityKey(
-      request.provider ?? getConfig().defaultProvider,
-      request.model ?? "",
-      request.messages,
-    );
-  return withSessionAffinity(`${affinity}:auxiliary`, run);
+  const affinity = currentSessionAffinity() ?? `request-${randomUUID()}`;
+  const session = affinity.endsWith(":auxiliary") ? affinity : `${affinity}:auxiliary`;
+  return withSessionAffinity(session, run);
 }
 
 function retryOptionsForProvider(

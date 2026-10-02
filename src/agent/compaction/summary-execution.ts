@@ -32,6 +32,7 @@ function cloneCompatibilityMessage(message: ChatMessage): ChatMessage {
   const clone = cloneTextOnlyMessage(message);
   delete clone.reasoningBlock;
   delete clone.reasoningArtifacts;
+  delete clone.responsesReplay;
   return clone;
 }
 
@@ -277,6 +278,7 @@ export function comparableMessage(message: ChatMessage): string {
     images: _images,
     reasoningBlock: _reasoningBlock,
     reasoningArtifacts: _reasoningArtifacts,
+    responsesReplay: _responsesReplay,
     ...rest
   } = message;
   return JSON.stringify(rest);

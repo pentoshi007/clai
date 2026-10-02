@@ -19,7 +19,7 @@ import {
 import { rateLimitWaitMsFor } from "../key-rotation.js";
 import { quotaOrRateLimited } from "../quota-signals.js";
 import { resolveBuiltInProfile } from "../provider-profiles.js";
-import { EFFORT_SCALE, nearestAcceptedEffort } from "../reasoning-controls.js";
+import { EFFORT_SCALE, WIRE_EFFORT_SCALE, nearestAcceptedEffort } from "../reasoning-controls.js";
 import { mentionsReasoning } from "../reasoning-errors.js";
 import { streamAlreadyEmitted } from "../stream-progress.js";
 
@@ -178,7 +178,7 @@ export function effortCandidatesFor(
     .reasoning.acceptedEfforts;
   if (requested === "none") {
     if (declared.length === 0) {
-      return EFFORT_SCALE.filter(
+      return WIRE_EFFORT_SCALE.filter(
         (effort) => effort !== "none" && effort !== "minimal",
       );
     }

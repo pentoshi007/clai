@@ -143,10 +143,20 @@ describe("per-session thinking", () => {
   it("rejects malformed thinking in stored bindings", async () => {
     await saveSessionModel("sess-think-bad", {
       provider: "nvidia",
-      thinking: { enabled: true, effort: "ultra" } as never,
+      thinking: { enabled: true, effort: "invalid" } as never,
     });
     const binding = await loadSessionModelBinding("sess-think-bad");
     expect(binding?.thinking).toBeUndefined();
+  });
+
+  it("restores the Codex ultra effort when resuming a session", async () => {
+    await saveSessionModel("sess-codex-ultra", {
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      thinking: { enabled: true, effort: "ultra" },
+    });
+    const binding = await loadSessionModelBinding("sess-codex-ultra");
+    expect(binding?.thinking).toEqual({ enabled: true, effort: "ultra" });
   });
 
   it("restores the resumed session thinking instead of keeping the latest", async () => {

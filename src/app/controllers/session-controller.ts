@@ -249,12 +249,11 @@ export class SessionController implements Disposable {
     this.namer = new SessionNamer({
       complete:
         deps.titleCompleter ??
-        ((messages) =>
+        ((messages) => withSessionAffinity(`${this.sessionIdValue}:auxiliary`, () =>
           completeForSessionNaming(
             messages,
             { provider: this.provider, model: this.model },
-            (snapshot) => this.recordAuxiliaryOperation(snapshot),
-          )),
+          ))),
       applyTitle: (title) => {
         this.sessionTitle = title;
         this.notifyState();
@@ -408,9 +407,10 @@ export class SessionController implements Disposable {
     attempt?: ContextAttemptReference,
     api?: string | undefined,
     auxiliary = false,
+    subagentId?: string,
   ): void {
     if (auxiliary) {
-      this.usageLedger.record(usage, provider ?? this.provider, model ?? this.model, api);
+      this.usageLedger.record(usage, provider ?? this.provider, model ?? this.model, api, subagentId);
       this.setContextSnapshot(
         recordAuxiliaryUsageSnapshot(this.usageTarget, this.contextSnapshot, usage),
       );
@@ -615,13 +615,13 @@ export class SessionController implements Disposable {
   private createSubagents(): SubagentManager {
     return new SubagentManager(this.sessionIdValue, {
       ...(this.deps.noHistory ? {} : { store: createSubagentStore() }),
-      onOperationUsage: (snapshot) => this.recordAuxiliaryOperation(snapshot),
+      onOperationUsage: (snapshot, subagentId) => this.recordAuxiliaryOperation(snapshot, subagentId),
     });
   }
 
-  private recordAuxiliaryOperation(snapshot: OperationUsageSnapshot): void {
+  private recordAuxiliaryOperation(snapshot: OperationUsageSnapshot, subagentId: string): void {
     for (const attempt of knownAttemptUsage(snapshot)) {
-      this.recordTokenUsage(attempt.usage, attempt.model, attempt.provider, undefined, undefined, true);
+      this.recordTokenUsage(attempt.usage, attempt.model, attempt.provider, undefined, undefined, true, subagentId);
     }
   }
 

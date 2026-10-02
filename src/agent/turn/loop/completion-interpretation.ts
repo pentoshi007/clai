@@ -86,7 +86,7 @@ export interface InterpretedCompletion {
   readonly thinkContent: string;
   readonly retryReasoning: Pick<
     CompletionResult,
-    "reasoningArtifacts" | "reasoningBlock"
+    "reasoningArtifacts" | "reasoningBlock" | "responsesReplay"
   >;
 }
 

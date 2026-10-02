@@ -195,6 +195,22 @@ describe("buildFeedBlocks", () => {
     expect(diff!.lines.length).toBeGreaterThan(4);
   });
 
+  it.each(["256", "truecolor"] as const)("matches Codex diff row fills in %s feed rendering", (colorMode) => {
+    const view = feedView(turn, { columns: 96, colorMode });
+    const diff = buildFeedBlocks(turn.state, view).find((block) => block.kind === "diff");
+    expect(diff).toBeDefined();
+    const addRow = diff!.lines.find((line) => stripAnsi(line).includes("limit = 25"));
+    const delRow = diff!.lines.find((line) => stripAnsi(line).includes("findMany();"));
+    expect(addRow).toBeDefined();
+    expect(delRow).toBeDefined();
+    expect(addRow).toContain(view.ink.fg("diffAdd", "│ "));
+    expect(delRow).toContain(view.ink.fg("diffDel", "│ "));
+    expect(addRow).toContain(view.ink.hex("#569CD6", "const"));
+    expect(delRow).toContain(view.ink.hex("#569CD6", "const"));
+    expect(addRow).toContain(view.ink.band("X", 1, { bg: "diffAddBg" }).split("X")[0]!);
+    expect(delRow).toContain(view.ink.band("X", 1, { bg: "diffDelBg" }).split("X")[0]!);
+  });
+
   it("shows the Ctrl+O action for every output card state", () => {
     const outputKinds: readonly BlockKind[] = ["tool", "batch", "diff", "compacted"];
     for (const [expanded, label, otherLabel] of [

@@ -1023,12 +1023,13 @@ WHAT IT IS
   Auth       Sign in with ChatGPT — browser OAuth (auth.openai.com), headless
              device code, or paste a token — or import an existing Codex CLI
              sign-in
-  Endpoints  /responses · /models
+  Endpoints  /responses · /models · /wham/usage
 
 MODELS
-  /model lists the account-visible catalog (cached for up to 30 minutes), e.g.
-    gpt-5.1-codex        agentic coding default
-    gpt-5.1              general reasoning
+  /model uses the live account catalog and the installed Codex client version.
+  Models, context limits, reasoning levels, and verbosity follow the catalog.
+  Account-scoped catalogs refresh every five minutes and persist for offline use.
+  /usage shows subscription limits, reset times, credits, and session token usage.
   Free-tier quota errors are shown exactly as the backend returns them.
 
 SETUP (pick one)

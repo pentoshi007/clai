@@ -24,12 +24,15 @@ import type { AppServices } from "../bootstrap/composition-root.js";
 import { usageCacheHitRate } from "../../app/controllers/session-usage-ledger.js";
 import { getProviderSecret } from "../../store/keys.js";
 import { fetchKiroUsageLimits } from "../../llm/kiro.js";
+import { fetchCodexUsage } from "../../llm/codex-usage.js";
+import { credentialFor } from "../../llm/codex-credential.js";
 import type { KiroUsageLimits } from "../../llm/kiro-auth.js";
 import {
   ensureProviderBalancePolling,
   getProviderBalanceSnapshot,
   kiroBalanceFromLimits,
   subscribeProviderBalances,
+  setProviderBalanceAccount,
   type BalanceSnapshot,
   type ProviderBalance,
 } from "../../llm/provider-balance.js";
@@ -299,21 +302,27 @@ function relativeAge(fetchedAt: number): string {
 function balanceBody(balance: ProviderBalance): string[] {
   const lines: string[] = [];
   if (balance.plan) lines.push(`plan: **${balance.plan}**`);
-  const shown =
-    balance.breakdowns.find((b) => b.label.toLowerCase().includes("credit")) ??
-    balance.breakdowns[0];
-  if (shown) {
+  for (const shown of balance.breakdowns) {
     const remaining = Math.max(0, shown.limit - shown.used);
-    const pct = shown.limit > 0 ? ` (${((shown.used / shown.limit) * 100).toFixed(1)}% used)` : "";
-    lines.push(
-      `${shown.label.toLowerCase()}: **${formatCredits(shown.used)} / ${formatCredits(shown.limit)}**${pct} · ${formatCredits(remaining)} remaining`,
-    );
+    if (shown.unit === "percent") {
+      lines.push(`${shown.label.toLowerCase()}: **${formatCredits(remaining)}% remaining** · ${formatCredits(shown.used)}% used`);
+    } else {
+      const pct = shown.limit > 0 ? ` (${((shown.used / shown.limit) * 100).toFixed(1)}% used)` : "";
+      lines.push(`${shown.label.toLowerCase()}: **${formatCredits(shown.used)} / ${formatCredits(shown.limit)}**${pct} · ${formatCredits(remaining)} remaining`);
+    }
+    if (shown.nextResetAt) lines.push(`resets: ${new Date(shown.nextResetAt).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC")}`);
     if (shown.overages > 0) {
       lines.push(`overages: ${formatCredits(shown.overages)} ${shown.currency ?? "USD"}`);
-    } else if (balance.overageStatus) {
-      lines.push(`overages: ${balance.overageStatus.toLowerCase()}`);
     }
   }
+  if (balance.credits) {
+    const credits = balance.credits;
+    lines.push(credits.unlimited ? "credits: **unlimited**"
+      : credits.remaining !== undefined ? `credits: **${formatCredits(credits.remaining)} remaining**`
+        : `credits: ${credits.available ? "available" : "none available"}`);
+  }
+  if (balance.overageStatus) lines.push(`overages: ${balance.overageStatus.toLowerCase()}`);
+  if (balance.limitReached) lines.push("subscription limit reached");
   if (balance.nextResetAt !== undefined && balance.nextResetAt > 0) {
     const date = new Date(balance.nextResetAt);
     const inDays = Math.max(0, Math.ceil((balance.nextResetAt - Date.now()) / 86_400_000));
@@ -357,12 +366,18 @@ export function formatKiroQuotaSection(
   return formatProviderBalanceSection("Kiro AI", { state: "ready", balance });
 }
 
-let balanceNotifyWired = false;
-
 export function handleUsage(services: AppServices): void {
-  if (!balanceNotifyWired) {
-    balanceNotifyWired = true;
-    subscribeProviderBalances(() => services.session.notifyExternalUpdate());
+  const provider = services.session.getState().provider;
+  if (provider === "kiro" || provider === "codex") {
+    ensureProviderBalancePolling(provider, async () => {
+      const secret = await getProviderSecret(provider);
+      if (!secret.value) return undefined;
+      if (provider === "codex") {
+        setProviderBalanceAccount(provider, credentialFor({ apiKey: secret.value }).accountId);
+        return fetchCodexUsage({ apiKey: secret.value });
+      }
+      return kiroBalanceFromLimits(await fetchKiroUsageLimits({ apiKey: secret.value }));
+    });
   }
   const renderUsageBody = (): string => {
     const state = services.session.getState();
@@ -370,34 +385,32 @@ export function handleUsage(services: AppServices): void {
       sessionId: state.sessionId,
       ...(state.title ? { title: state.title } : {}),
     });
-    if (state.provider !== "kiro") return body;
-    const snapshot = getProviderBalanceSnapshot("kiro");
+    if (state.provider !== "kiro" && state.provider !== "codex") return body;
+    const snapshot = getProviderBalanceSnapshot(state.provider);
     if (snapshot.state === "idle") return body;
-    return `${body}\n${formatProviderBalanceSection("Kiro AI", snapshot)}`;
+    return `${body}\n${formatProviderBalanceSection(state.provider === "codex" ? "ChatGPT subscription" : "Kiro AI", snapshot)}`;
   };
   const report = services.session.usageReport();
+  const source = createUsagePagerSource({
+    subscribe: (listener) => {
+      const unsubscribeSession = services.session.subscribe(listener);
+      const unsubscribeBalances = subscribeProviderBalances(listener);
+      return () => {
+        unsubscribeSession();
+        unsubscribeBalances();
+      };
+    },
+    renderBody: renderUsageBody,
+  });
   const opened = services.overlay.openPager(
     "Session usage",
     renderUsageBody(),
-    createUsagePagerSource({
-      subscribe: (listener) => services.session.subscribe(listener),
-      renderBody: renderUsageBody,
-    }),
+    source,
     undefined,
     "force",
   );
-  if (opened) {
-    const kiroActive = services.session.getState().provider === "kiro";
-    if (kiroActive) {
-      ensureProviderBalancePolling("kiro", async () => {
-        const secret = await getProviderSecret("kiro");
-        if (!secret.value) return undefined;
-        const limits = await fetchKiroUsageLimits({ apiKey: secret.value });
-        return kiroBalanceFromLimits(limits);
-      });
-    }
-    return;
-  }
+  if (opened) return;
+  source.dispose();
   const { totals } = report;
   if (totals.requests === 0) {
     notice(services, "info", "usage: no provider token usage recorded yet in this session");

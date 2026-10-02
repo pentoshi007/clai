@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getDataDir } from "../store/paths.js";
 import type { ProviderId } from "../types.js";
 import type { KiroUsageLimits } from "./kiro-auth.js";
 
@@ -10,6 +10,8 @@ export interface BalanceBreakdown {
   readonly limit: number;
   readonly overages: number;
   readonly currency?: string | undefined;
+  readonly unit?: "percent" | undefined;
+  readonly nextResetAt?: number | undefined;
 }
 
 export interface ProviderBalance {
@@ -19,6 +21,13 @@ export interface ProviderBalance {
   readonly overageStatus?: string | undefined;
   readonly nextResetAt?: number | undefined;
   readonly fetchedAt: number;
+  readonly accountId?: string | undefined;
+  readonly credits?: {
+    readonly remaining?: number | undefined;
+    readonly unlimited: boolean;
+    readonly available: boolean;
+  } | undefined;
+  readonly limitReached?: boolean | undefined;
 }
 
 export type BalanceState = "idle" | "loading" | "ready" | "error";
@@ -28,7 +37,7 @@ export interface BalanceSnapshot {
   readonly balance?: ProviderBalance | undefined;
 }
 
-const CACHE_DIR = join(homedir(), ".clai");
+const CACHE_DIR = getDataDir();
 const CACHE_PATH = join(CACHE_DIR, "provider-balance.json");
 
 export const PROVIDER_BALANCE_REFRESH_MS = 60_000;
@@ -40,6 +49,7 @@ const states = new Map<ProviderId, BalanceSnapshot>();
 const timers = new Map<ProviderId, ReturnType<typeof setInterval>>();
 
 let cacheLoaded = false;
+let pollingGeneration = 0;
 
 function loadCache(): void {
   if (cacheLoaded) return;
@@ -87,6 +97,12 @@ export function getProviderBalanceSnapshot(provider: ProviderId): BalanceSnapsho
   return states.get(provider) ?? { state: "idle" };
 }
 
+export function setProviderBalanceAccount(provider: ProviderId, accountId: string): void {
+  loadCache();
+  const balance = states.get(provider)?.balance;
+  if (balance && balance.accountId !== accountId) setState(provider, { state: "loading" });
+}
+
 export function kiroBalanceFromLimits(limits: KiroUsageLimits): ProviderBalance {
   const breakdowns: BalanceBreakdown[] = limits.breakdowns.map((b) => ({
     label: b.displayNamePlural ?? b.displayName ?? (b.resourceType ?? "usage").toLowerCase(),
@@ -118,9 +134,14 @@ export function ensureProviderBalancePolling(
   if (!existing || existing.state === "idle") {
     setState(provider, { state: "loading", ...(existing?.balance ? { balance: existing.balance } : {}) });
   }
+  let refreshing = false;
+  const generation = pollingGeneration;
   const tick = async (): Promise<void> => {
+    if (refreshing) return;
+    refreshing = true;
     try {
       const balance = await fetcher();
+      if (generation !== pollingGeneration) return;
       if (balance) {
         setState(provider, { state: "ready", balance });
         persistCache();
@@ -129,8 +150,11 @@ export function ensureProviderBalancePolling(
         setState(provider, { state: "error", ...(prev?.balance ? { balance: prev.balance } : {}) });
       }
     } catch {
+      if (generation !== pollingGeneration) return;
       const prev = states.get(provider);
       setState(provider, { state: "error", ...(prev?.balance ? { balance: prev.balance } : {}) });
+    } finally {
+      refreshing = false;
     }
   };
   void tick();
@@ -140,6 +164,7 @@ export function ensureProviderBalancePolling(
 }
 
 export function stopProviderBalancePolling(): void {
+  pollingGeneration += 1;
   for (const timer of timers.values()) clearInterval(timer);
   timers.clear();
 }

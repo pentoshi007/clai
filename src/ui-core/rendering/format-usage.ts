@@ -6,6 +6,8 @@ import {
   type SessionUsageTotals,
 } from "../../app/controllers/session-usage-ledger.js";
 
+import { usageSourceLabel } from "../../app/controllers/session-usage-source.js";
+
 const MISSING = "—";
 
 const HEADERS = [
@@ -41,7 +43,8 @@ function bold(text: string): string {
 
 function routeLabel(route: SessionUsageRoute): string {
   const provider = route.provider ? getProvider(route.provider).displayName : "unknown provider";
-  return `${provider} / ${route.model ?? "unknown model"}`;
+  const label = `${provider} / ${route.model ?? "unknown model"}`;
+  return route.source ? `${usageSourceLabel(route.source)} · ${label}` : label;
 }
 
 function count(value: number): string {
@@ -178,7 +181,9 @@ export function formatSessionUsage(
     "",
     row(HEADERS),
     row(ALIGNS),
-    ...report.routes.map((route) => row([code(routeLabel(route)), escapeCell(apiLabel(route)), ...metrics(route)])),
+    ...[...report.routes]
+      .sort((left, right) => (left.source?.number ?? 0) - (right.source?.number ?? 0))
+      .map((route) => row([code(routeLabel(route)), escapeCell(apiLabel(route)), ...metrics(route)])),
     row([bold(`TOTAL · ${plural(totals.routes, "route")}`), escapeCell(apiLabel(totals)), ...metrics(totals).map(bold)]),
   ];
 
@@ -195,6 +200,12 @@ export function formatSessionUsage(
     "> cache hit = cached input ÷ measured input, counted only over requests that reported caching",
     "> every number is scoped to this session and comes from provider usage reports",
   );
+  if (report.routes.some((route) => route.source)) {
+    lines.push(
+      "> subagent-N rows track each subagent separately; unprefixed rows belong to the main agent",
+      "> session naming is excluded; TOTAL includes main-agent and subagent usage",
+    );
+  }
   if (totals.charges.length > 0) {
     lines.push(
       "> billed = provider-reported credits/cost; clai does not estimate prices",

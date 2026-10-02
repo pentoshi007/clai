@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   panelBodyHeight,
   panelBodyWidth,
   panelFrameRows,
 } from "../../../src/classic/panels/panel-frame.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
+import { syntaxColor } from "../../../src/ui-core/rendering/file-diff-view.js";
+import { createInkTheme } from "../../../src/classic/render/ink-theme.js";
 import { styleSubagentBody } from "../../../src/ui-core/rendering/subagent-presentation.js";
 import {
   pagerKey,
@@ -77,6 +79,36 @@ describe("pager rows", () => {
     });
     expect(rowsOf(panelFrameRows(short).rows)[1]).toContain("▎ a");
     expect(rowsOf(panelFrameRows(short).rows)[1]).not.toMatch(/\s1▎/);
+  });
+
+  it("matches Codex diff signs and row fills while preserving code syntax colors", () => {
+    const diff = ["  1 │ + const added = 1", "  1 │ - const removed = 1"].join("\n");
+    const lines = pagerLines(diff, 80, 8, "raw", false, undefined, {
+      path: "example.ts",
+      ink: colorInk,
+    });
+    expect(lines.join("\n")).toContain(colorInk.fg("diffAdd", "│ "));
+    expect(lines.join("\n")).toContain(colorInk.fg("diffDel", "│ "));
+    expect(lines.join("\n")).toContain(colorInk.hex(syntaxColor("keyword", colorInk.theme), "const"));
+    expect(stripAnsi(lines.join("\n"))).toContain("+ const added = 1");
+    expect(stripAnsi(lines.join("\n"))).toContain("- const removed = 1");
+    const addBackground = colorInk.band("X", 1, { bg: "diffAddBg" }).split("X")[0]!;
+    const delBackground = colorInk.band("X", 1, { bg: "diffDelBg" }).split("X")[0]!;
+    expect(lines.join("\n")).toContain(addBackground);
+    expect(lines.join("\n")).toContain(delBackground);
+  });
+
+  it("shows Codex-style added and removed row fills in 256-color terminals", () => {
+    const ansi256Ink = createInkTheme({ themeHint: "dark", colorMode: "256", unicode: true });
+    const diff = ["  1 │ + const added = 1", "  1 │ - const removed = 1"].join("\n");
+    const lines = pagerLines(diff, 80, 8, "raw", false, undefined, {
+      path: "example.ts",
+      ink: ansi256Ink,
+    });
+    expect(stripAnsi(lines.join("\n"))).toContain("+ const added = 1");
+    expect(stripAnsi(lines.join("\n"))).toContain("- const removed = 1");
+    expect(lines.join("\n")).toContain(ansi256Ink.band("X", 1, { bg: "diffAddBg" }).split("X")[0]!);
+    expect(lines.join("\n")).toContain(ansi256Ink.band("X", 1, { bg: "diffDelBg" }).split("X")[0]!);
   });
 
   it("marks the caret row and counts position over total", () => {
@@ -334,6 +366,35 @@ describe("pager controller wiring", () => {
     expect(harness.copied).toEqual([BODY]);
     expect(harness.press("q")).toBe(true);
     expect(harness.overlay.isOpen()).toBe(false);
+  });
+
+  it("keeps live pager content current while the reader is scrolled away from follow", async () => {
+    let body = "first line";
+    const listeners = new Set<() => void>();
+    const page = async (offset: number) => ({
+      body: body.slice(offset), offset, nextOffset: body.length, totalBytes: body.length,
+      pageNumber: 1, pageCount: 1,
+    });
+    const source = {
+      path: "memory://live",
+      pageBytes: 1024,
+      readPage: page,
+      readTail: () => page(0),
+      search: async () => undefined,
+      readAll: async () => body,
+      watch(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
+      isGrowing: () => true,
+      dispose() {},
+    };
+    const harness = createHarness();
+    harness.overlay.openPager("live", body, source, undefined, "plain");
+    await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerBody).toBe("first line"));
+    harness.press("g");
+    expect(harness.panels.getSnapshot().pager.follow).toBe(false);
+    body = "first line\nnew usage row";
+    for (const listener of listeners) listener();
+    await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerBody).toBe(body));
+    expect(harness.panels.getSnapshot().pager.follow).toBe(false);
   });
 
   it("exports through the injected ports", () => {

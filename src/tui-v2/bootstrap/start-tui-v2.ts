@@ -210,6 +210,9 @@ export async function startTuiV2(
       async () => {
         await services.session.persistNow().catch(() => undefined);
       },
+      async () => {
+        await services.omnirushSessionUpload.close();
+      },
       restoreConsole,
       async () => {
         await services.mcp.closeAll().catch(() => undefined);

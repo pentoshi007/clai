@@ -2,16 +2,17 @@ import type { CompletionResult, NativeToolCall } from "../types.js";
 import { ProviderError } from "./http.js";
 import { ChatShapedResponsesPayload } from "./responses-shape.js";
 import { fromWireName } from "./tool-protocol.js";
+import { captureResponsesReplay } from "./responses-replay.js";
 import { emitStreamReasoningDelta } from "./stream-events.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
 import {
   collectDoneToolCalls,
-  parseResponsesUsage,
 } from "./responses-parse.js";
 import type { ToolCallAccumulator } from "./responses-parse.js";
 import { responsesPrivateReasoningNote } from "./responses-http.js";
 import {
   absorbResponseOutput,
+  absorbStreamUsage,
   streamReasoningReplay,
   streamUsageResult,
 } from "./responses-stream-accumulator.js";
@@ -153,10 +154,7 @@ function handleResponseCompleted(
 ): void {
   ctx.state.sawTerminalProof = "response-completed";
   const resp = (parsed.response ?? parsed) as Record<string, unknown>;
-  if (resp.usage) {
-    const u = parseResponsesUsage(resp.usage);
-    if (u) ctx.state.streamUsage = u;
-  }
+  absorbStreamUsage(ctx.state, resp.usage);
   if (typeof resp.status === "string")
     ctx.state.finishReason = resp.status as string;
   absorbResponseOutput(
@@ -175,10 +173,7 @@ function handleResponseIncomplete(
   const details = resp.incomplete_details as
     Record<string, unknown> | undefined;
   const reason = typeof details?.reason === "string" ? details.reason : "";
-  if (resp.usage) {
-    const u = parseResponsesUsage(resp.usage);
-    if (u) ctx.state.streamUsage = u;
-  }
+  absorbStreamUsage(ctx.state, resp.usage);
   absorbResponseOutput(
     ctx.state,
     resp,
@@ -393,18 +388,9 @@ function absorbTrailingUsage(
   ctx: StreamEventContext,
   parsed: Record<string, unknown>,
 ): void {
-  const usageField = parsed.usage;
-  if (usageField) {
-    const u = parseResponsesUsage(usageField);
-    if (u) {
-      ctx.state.streamUsage = u;
-      ctx.watchdog.resetIdleTimer();
-    }
-  }
-  if (parsed.choices) {
-    const chunkUsage = parseResponsesUsage(parsed.usage);
-    if (chunkUsage) ctx.state.streamUsage = chunkUsage;
-  }
+  if (!parsed.usage) return;
+  absorbStreamUsage(ctx.state, parsed.usage);
+  if (ctx.state.streamUsage) ctx.watchdog.resetIdleTimer();
 }
 
 export function finalizeStreamResult(
@@ -415,6 +401,10 @@ export function finalizeStreamResult(
   const api = config.providerId === "meta" ? "meta-responses" : "responses";
   const reasoningPart = streamReasoningReplay(config, model, state, request.onStreamEvent);
   const usagePart = streamUsageResult(state);
+  const responsesReplay = captureResponsesReplay(config.providerId, model,
+    [...state.outputItems.entries()].sort(([left], [right]) => left - right).map(([, item]) => item),
+  );
+  const replayPart = responsesReplay ? { responsesReplay } : {};
   if (!state.visible.trim() && toolCalls.length === 0) {
     if (state.reasoningSeen.trim() || state.finishReason === "length") {
       return {
@@ -425,6 +415,7 @@ export function finalizeStreamResult(
         finishReason: state.finishReason ?? "stop",
         ...usagePart,
         ...reasoningPart,
+        ...replayPart,
       };
     }
     throw new ProviderError(
@@ -444,6 +435,7 @@ export function finalizeStreamResult(
         : {}),
     ...usagePart,
     ...reasoningPart,
+    ...replayPart,
   };
 }
 

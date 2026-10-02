@@ -21,6 +21,7 @@ import { compileRequestPlan } from "./request-plan.js";
 import type { RequestPlanV1 } from "./request-plan.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
 import { stripImagesFromMessages } from "./wire/capability-errors.js";
+import { responsesReplayItems } from "./responses-replay.js";
 import {
   invalidNativeToolHistoryIndexes,
   portableToolCallContent,
@@ -249,12 +250,19 @@ function toResponsesInput(
   const systemRole = config?.systemRole ?? "system";
   for (const [index, message] of visibleMessages.entries()) {
     if (message.role === "system") {
-      if (!skipSystemInInput) {
+      if (!skipSystemInInput && !(config?.instructionsField === "leading-instructions" && index === 0)) {
         input.push(systemInputItem(message, systemRole));
       }
     } else if (message.role === "user") {
       appendUserInput(input, message, supportsVision);
     } else if (message.role === "assistant") {
+      const originalItems = invalidHistory.has(index)
+        ? undefined
+        : responsesReplayItems(message, replay.target.provider, replay.target.model);
+      if (originalItems) {
+        input.push(...originalItems);
+        continue;
+      }
       if (invalidHistory.has(index)) {
         input.push({
           type: "message",
@@ -286,6 +294,7 @@ function toResponsesInput(
 
 function toResponsesTools(
   tools: ToolDefinition[] | undefined,
+  strict?: boolean | undefined,
 ): Array<Record<string, unknown>> | undefined {
   if (!tools || tools.length === 0) return undefined;
   return tools.map((t) => ({
@@ -293,6 +302,7 @@ function toResponsesTools(
     name: t.wireName,
     description: t.description,
     parameters: t.parameters,
+    ...(strict === undefined ? {} : { strict }),
   }));
 }
 
@@ -353,10 +363,14 @@ export function buildResponsesBody(
   );
   const tools = toResponsesTools(
     plan.tools.definitions.length ? [...plan.tools.definitions] : undefined,
+    config.toolStrict,
   );
   const body: Record<string, unknown> = { model: options.model, input };
-  if (config.instructionsField === "instructions") {
-    const instructions = plan.timeline.messages
+  if (config.instructionsField === "instructions" || config.instructionsField === "leading-instructions") {
+    const instructionMessages = config.instructionsField === "leading-instructions"
+      ? plan.timeline.messages.slice(0, 1)
+      : plan.timeline.messages;
+    const instructions = instructionMessages
       .filter((m) => m.role === "system")
       .map((m) => m.content)
       .filter(Boolean)
@@ -365,15 +379,14 @@ export function buildResponsesBody(
       body.instructions = instructions;
     }
   }
-  Object.assign(
-    body,
-    config.bodyExtras({
-      model: options.model,
-      messages: options.messages,
-      purpose: options.purpose,
-      reasoningEnabled: Boolean(plan.controls.reasoning?.enabled),
-    }),
-  );
+  const context = {
+    model: options.model,
+    messages: options.messages,
+    purpose: options.purpose,
+    reasoningEnabled: Boolean(plan.controls.reasoning?.enabled),
+    parallelToolCalls: options.parallelToolCalls,
+  };
+  Object.assign(body, config.bodyExtras(context));
   body.max_output_tokens = responsesMaxOutputTokens(plan);
   if (config.maxTokensField === "omit") {
     delete body.max_output_tokens;
@@ -391,5 +404,5 @@ export function buildResponsesBody(
   if (tools && options.toolChoice !== undefined) {
     body.tool_choice = mapToolChoiceToOpenAi(options.toolChoice);
   }
-  return JSON.stringify(body);
+  return JSON.stringify(config.finalizeBody?.(body, context) ?? body);
 }

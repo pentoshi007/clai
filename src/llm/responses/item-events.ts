@@ -104,6 +104,7 @@ export function handleOutputItemDone(
   parsed: Record<string, unknown>,
 ): void {
   const item = parsed.item as Record<string, unknown> | undefined;
+  if (item && typeof parsed.output_index === "number") ctx.state.outputItems.set(parsed.output_index, item);
   if (item?.type === "reasoning") {
     noteReasoningItem(
       ctx.state,

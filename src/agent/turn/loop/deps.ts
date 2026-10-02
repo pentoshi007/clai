@@ -121,7 +121,7 @@ export interface TurnLoopDeps extends TurnWriters {
   readonly nextToolEventId: () => string;
   readonly pushAssistantHistory: (
     text: string,
-    reasoning?: Pick<CompletionResult, "reasoningBlock" | "reasoningArtifacts">,
+    reasoning?: Pick<CompletionResult, "reasoningBlock" | "reasoningArtifacts" | "responsesReplay">,
     hasToolCalls?: boolean,
   ) => void;
   readonly liveMessages: () => ChatMessage[];
