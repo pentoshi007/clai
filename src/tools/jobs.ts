@@ -1889,6 +1889,7 @@ export class JobManager {
           }
         }
         delete job.timeoutAt;
+        delete job.executionDeadlineAt;
         this.jobs.set(job.id, job);
         this.ensureCompletionNotification(job);
         this.scheduleAuthorizationExpiry(job);

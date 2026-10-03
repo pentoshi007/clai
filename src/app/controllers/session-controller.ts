@@ -499,8 +499,9 @@ export class SessionController implements Disposable {
     const provider = this.provider ?? getConfig().defaultProvider;
     const generation = this.lifecycleGeneration;
     void prefetchProviderCatalog(provider).then(() => {
+      if (generation !== this.lifecycleGeneration) return;
       const currentProvider = this.provider ?? getConfig().defaultProvider;
-      if (generation !== this.lifecycleGeneration || provider !== currentProvider) return;
+      if (provider !== currentProvider) return;
       this.setContextSnapshot(this.resolveContextSnapshot());
       this.notifyState();
     });
@@ -709,10 +710,13 @@ export class SessionController implements Disposable {
     else signal?.addEventListener("abort", () => abortController.abort(), { once: true });
     this.notifyState();
 
+    const requestSettings: Omit<SuccessfulRequestSnapshot, "messages"> | undefined = provider === "codex"
+      ? { provider, model: this.model ?? getProviderModel(provider), thinking: { ...cfg.thinking } }
+      : undefined;
     const resumedRequest: SuccessfulRequestSnapshot | undefined =
       this.lastMainRequestSnapshot ??
       (provider !== undefined && requestTokensBefore !== undefined
-        ? { provider, model: this.model ?? getProviderModel(provider), messages: history }
+        ? { provider, model: this.model ?? getProviderModel(provider), messages: history, ...requestSettings }
         : undefined);
 
     try {
@@ -728,6 +732,7 @@ export class SessionController implements Disposable {
           provider,
           model: this.model ?? getProviderModel(provider ?? cfg.defaultProvider),
           ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
+          ...(requestSettings ? { requestSettings } : {}),
           ...(this.contextLimitTokens
             ? { contextLimitTokens: this.contextLimitTokens }
             : {}),

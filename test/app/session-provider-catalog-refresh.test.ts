@@ -9,6 +9,7 @@ vi.mock("../../src/llm/catalog-prefetch.js", async (importOriginal) => ({
 
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import { SessionController } from "../../src/app/controllers/session-controller.js";
+import * as config from "../../src/store/config.js";
 import type {
   AgentPort,
   RunTurnHandlers,
@@ -106,6 +107,27 @@ describe("SessionController provider catalog refresh", () => {
       });
     });
     session.dispose();
+  });
+
+  it("does not read configuration after disposal when catalog prefetch completes", async () => {
+    const session = build();
+    let release: (() => void) | undefined;
+    prefetch.mockImplementationOnce(
+      () => new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    session.setProvider(undefined);
+    const getConfig = vi.spyOn(config, "getConfig");
+    try {
+      session.dispose();
+      getConfig.mockClear();
+      release?.();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(getConfig).not.toHaveBeenCalled();
+    } finally {
+      getConfig.mockRestore();
+    }
   });
 
   it("does not block dispatch when catalog prefetch stalls", async () => {

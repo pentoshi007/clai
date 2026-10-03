@@ -299,6 +299,12 @@ function relativeAge(fetchedAt: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function resetCountdown(resetAt: number): string {
+  const minutes = Math.max(0, Math.ceil((resetAt - Date.now()) / 60_000));
+  const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
+  return `${hours}h:${String(minutes % 60).padStart(2, "0")}m`;
+}
+
 function balanceBody(balance: ProviderBalance): string[] {
   const lines: string[] = [];
   if (balance.plan) lines.push(`plan: **${balance.plan}**`);
@@ -310,7 +316,10 @@ function balanceBody(balance: ProviderBalance): string[] {
       const pct = shown.limit > 0 ? ` (${((shown.used / shown.limit) * 100).toFixed(1)}% used)` : "";
       lines.push(`${shown.label.toLowerCase()}: **${formatCredits(shown.used)} / ${formatCredits(shown.limit)}**${pct} · ${formatCredits(remaining)} remaining`);
     }
-    if (shown.nextResetAt) lines.push(`resets: ${new Date(shown.nextResetAt).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC")}`);
+    if (shown.nextResetAt) {
+      const countdown = balance.provider === "codex" ? ` (in ${resetCountdown(shown.nextResetAt)})` : "";
+      lines.push(`resets: ${new Date(shown.nextResetAt).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC")}${countdown}`);
+    }
     if (shown.overages > 0) {
       lines.push(`overages: ${formatCredits(shown.overages)} ${shown.currency ?? "USD"}`);
     }

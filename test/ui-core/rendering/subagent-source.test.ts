@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SubagentEvent, SubagentRun } from "../../../src/agent/subagents/types.js";
 import { createSubagentPagerSource, formatSubagentRun, orderSubagentRuns, subagentsBarVisible } from "../../../src/ui-core/rendering/subagent-source.js";
+import { subagentDurationLabel } from "../../../src/ui-core/rendering/duration.js";
 
 function run(events: Array<Pick<SubagentEvent, "kind" | "text">> = [], extra: Partial<SubagentRun> = {}): SubagentRun {
   return {
@@ -13,6 +14,28 @@ function run(events: Array<Pick<SubagentEvent, "kind" | "text">> = [], extra: Pa
 }
 
 afterEach(() => vi.useRealTimers());
+
+describe("subagent duration", () => {
+  it.each(["running", "stopping"] as const)("keeps %s time live across activity updates", (status) => {
+    const snapshot = run([], { status, createdAt: 1000, startedAt: 1000, updatedAt: 9000 });
+    expect(subagentDurationLabel(snapshot, 11_000)).toBe("elapsed 10s");
+    expect(subagentDurationLabel(snapshot, 66_000)).toBe("elapsed 1m05s");
+    expect(formatSubagentRun(snapshot, 66_000)).toContain("Elapsed 1m05s");
+  });
+
+  it.each(["completed", "partial", "stopped", "error"] as const)("freezes %s duration at settlement", (status) => {
+    const snapshot = run([], { status, createdAt: 1000, startedAt: 8000, updatedAt: 12_000 });
+    expect(subagentDurationLabel(snapshot, 100_000)).toBe("duration 4.0s");
+    expect(subagentDurationLabel(snapshot, 200_000)).toBe("duration 4.0s");
+  });
+
+  it("labels legacy multi-attempt totals and omits invalid spans", () => {
+    expect(subagentDurationLabel(run([], { attempt: 2, createdAt: 1000 }), 11_000)).toBe("total elapsed 10s");
+    expect(subagentDurationLabel(run([], { attempt: 2, status: "stopped", createdAt: 1000, updatedAt: 11_000 }), 90_000)).toBe("total duration 10s");
+    expect(subagentDurationLabel(run([], { startedAt: 2000 }), 1000)).toBe("");
+    expect(subagentDurationLabel(run([], { startedAt: NaN }), 1000)).toBe("");
+  });
+});
 
 describe("subagent presentation", () => {
   it("shows read paths and exact options, not file bodies or protocol envelopes", () => {
@@ -113,6 +136,37 @@ describe("subagent bar ordering", () => {
 });
 
 describe("subagent pager snapshots", () => {
+  it("ticks unchanged live snapshots, freezes on completion, and cleans up clocks", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    let snapshot = run([], { createdAt: 1000, startedAt: 1000, updatedAt: 1000 });
+    const listeners = new Set<() => void>();
+    const source = createSubagentPagerSource({
+      get: () => snapshot,
+      subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    }, snapshot.id);
+    const changed = vi.fn();
+    source.watch!(changed);
+    expect(await source.readAll()).toContain("Elapsed 0.0s");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(changed).toHaveBeenCalledTimes(2);
+    expect(await source.readAll()).toContain("Elapsed 2.0s");
+    snapshot = { ...snapshot, status: "completed", updatedAt: Date.now() };
+    for (const listener of listeners) listener();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await source.readAll()).toContain("Duration 2.0s");
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(changed).toHaveBeenCalledTimes(3);
+    snapshot = { ...snapshot, attempt: 2, status: "running", startedAt: Date.now() };
+    for (const listener of listeners) listener();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(vi.getTimerCount()).toBe(1);
+    source.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(listeners.size).toBe(0);
+  });
+
   it("formats an immutable run once across reads and searches", async () => {
     const snapshot = run([{ kind: "assistant", text: "Stable finding" }]);
     const events = vi.fn(() => snapshot.events);

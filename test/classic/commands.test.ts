@@ -358,20 +358,45 @@ describe("classic command parity (W12)", () => {
     expect(notices(services).some((message) => /context: 2 messages/.test(message))).toBe(true);
   });
 
-  spec(["plan"], "/plan enters plan mode, /plan off returns to agent, /plan view pages", async () => {
+  spec(["plan", "view-plan"], "/plan switches mode; /view-plan reports no plan without changing mode", async () => {
     const { services } = open();
     await run(services, "plan");
     expect(services.session.getState().mode).toBe("plan");
     expect(getConfig().defaultMode).toBe("plan");
     await run(services, "plan", "off");
     expect(services.session.getState().mode).toBe("agent");
-    await run(services, "plan", "view");
-    await vi.waitFor(() =>
-      expect(
-        services.overlay.getState().kind === "pager" ||
-          notices(services).some((message) => /plan/i.test(message)),
-      ).toBe(true),
-    );
+    await run(services, "view-plan");
+    await vi.waitFor(() => expect(noticed(services, "no active plan yet")).toBe(true));
+    expect(services.session.getState().mode).toBe("agent");
+    expect(getConfig().defaultMode).toBe("agent");
+    expect(services.overlay.getState().kind).toBe("none");
+  });
+
+  it("/view-plan opens the existing plan in classic without changing mode", async () => {
+    const { services } = open();
+    const current = vi.spyOn(services.plan, "current").mockReturnValue({
+      sessionId: services.session.sessionId,
+      goal: "Classic plan",
+      detail: "Display existing work",
+      tasks: [],
+      status: "draft",
+      kind: "coding",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    try {
+      await run(services, "ask");
+      await run(services, "view-plan");
+      await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("pager"));
+      const overlay = services.overlay.getState();
+      if (overlay.kind !== "pager") throw new Error("Expected plan pager");
+      expect(overlay.title).toContain("Classic plan");
+      expect(overlay.body).toContain("Display existing work");
+      expect(services.session.getState().mode).toBe("ask");
+      expect(getConfig().defaultMode).toBe("ask");
+    } finally {
+      current.mockRestore();
+    }
   });
 
   spec(["implement"], "/implement is inert without an approved plan", async () => {

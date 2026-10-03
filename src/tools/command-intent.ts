@@ -253,7 +253,6 @@ export function longFiniteCommandCost(command: string): {
 
 export interface ShellExecBackgroundPolicy {
   readonly backgroundMode: "auto" | "never" | "always";
-  readonly costReason: string | undefined;
   readonly persistent: boolean;
   readonly wantsBackground: boolean;
   readonly responder: boolean;
@@ -270,21 +269,13 @@ export function resolveShellExecBackgroundPolicy(input: {
       : "auto";
   const responderPreference =
     typeof input.responder === "boolean" ? input.responder : undefined;
-  const costReason = longFiniteCommandCost(input.command).reason;
   const persistent = looksLongRunning(input.command);
   const wantsBackground =
-    backgroundMode === "always"
-      ? true
-      : backgroundMode === "never"
-        ? false
-        : persistent || responderPreference === true;
-  const responder =
-    wantsBackground &&
-    !persistent &&
-    responderPreference === true;
+    backgroundMode === "always" ||
+    (backgroundMode !== "never" && responderPreference === true);
+  const responder = wantsBackground && responderPreference === true;
   return {
     backgroundMode,
-    costReason,
     persistent,
     wantsBackground,
     responder,

@@ -6,8 +6,10 @@ import type { PickerOption, PickerOptionTone } from "../rendering/picker-filter.
 import {
   createSubagentPagerSource,
   formatSubagentRun,
+  isLiveSubagentRun,
   watchSubagents,
 } from "../rendering/subagent-source.js";
+import { subagentDurationLabel } from "../rendering/duration.js";
 
 export const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOptionTone }> = {
   running: { icon: "⟳", tone: "warn" },
@@ -161,7 +163,7 @@ export function handleSubagents(services: AppServices, invocation: CommandInvoca
         icon: status.icon,
         tone: status.tone,
         label: run.title,
-        description: `${run.status} · ${run.id} · attempt ${run.attempt} · ${run.activeProvider ?? run.provider}/${run.activeModel ?? run.model}`,
+        description: [run.status, subagentDurationLabel(run, Date.now()), run.id, `attempt ${run.attempt}`, `${run.activeProvider ?? run.provider}/${run.activeModel ?? run.model}`].filter(Boolean).join(" · "),
       };
     }),
   ];
@@ -176,7 +178,7 @@ export function handleSubagents(services: AppServices, invocation: CommandInvoca
   };
   const opened = args[0]
     ? openSubagentRun(services, manager, args[0])
-    : services.overlay.openPicker({ title: "Agents", twoLine: true, searchDescription: true, options: options() }, select);
+    : services.overlay.openPicker({ title: "Agents", twoLine: true, searchDescription: true, preserveSelection: true, options: options() }, select);
   if (!opened) return;
 
   let signature = JSON.stringify(options());
@@ -189,7 +191,7 @@ export function handleSubagents(services: AppServices, invocation: CommandInvoca
     signature = nextSignature;
     services.overlay.replacePickerOptions(next);
   };
-  const stopWatching = watchSubagents(manager, refresh);
+  const stopWatching = watchSubagents(manager, refresh, args[0] ? undefined : () => manager.list().some(isLiveSubagentRun));
   const stopSession = services.session.subscribe(() => {
     if (services.session.subagents === manager) return;
     services.overlay.close();

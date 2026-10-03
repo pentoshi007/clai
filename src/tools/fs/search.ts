@@ -149,18 +149,20 @@ export interface SearchHit {
 
 const GROUP_SEPARATOR = /^--$/;
 
-const HIT_LINE = /^(.+?)([:-])(\d+)\2(.*)$/;
+const NULL_HIT_LINE = /^(?<path>[^\0]+)\0(?<line>\d+)(?<separator>[:-])(?<text>.*)$/;
+const MATCH_HIT_LINE = /^(?<path>.+?):(?<line>\d+)(?<separator>:)(?<text>.*)$/;
+const CONTEXT_HIT_LINE = /^(?<path>.+?)-(?<line>\d+)(?<separator>-)(?<text>.*)$/;
 
 export function parseHitLine(raw: string): SearchHit | undefined {
-  const parsed = HIT_LINE.exec(raw);
+  const parsed = (NULL_HIT_LINE.exec(raw) ?? MATCH_HIT_LINE.exec(raw) ?? CONTEXT_HIT_LINE.exec(raw))?.groups;
   if (!parsed) return undefined;
-  const line = Number(parsed[3]);
+  const line = Number(parsed.line);
   if (!Number.isFinite(line)) return undefined;
   return {
-    path: parsed[1]!,
+    path: parsed.path!,
     line,
-    match: parsed[2] === ":",
-    text: parsed[4]!,
+    match: parsed.separator === ":",
+    text: parsed.text!,
   };
 }
 
@@ -169,7 +171,8 @@ export function parseEngineOutput(
   filesOnly: boolean,
 ): SearchHit[] {
   const hits: SearchHit[] = [];
-  for (const raw of stdout.split("\n")) {
+  const separator = filesOnly && stdout.includes("\0") ? "\0" : "\n";
+  for (const raw of stdout.split(separator)) {
     if (!raw.length || GROUP_SEPARATOR.test(raw)) continue;
     if (filesOnly) {
       const path = raw.trim();
@@ -305,6 +308,7 @@ function ripgrepArgs(input: {
     "--line-number",
     "--no-heading",
     "--with-filename",
+    "--null",
     "--color",
     "never",
     "--max-count",
@@ -334,7 +338,7 @@ function grepArgs(input: {
   readonly literal: boolean;
   readonly options: FsSearchOptions;
 }): string[] {
-  const args = ["-R", "-n", "-H", "-I", "-m", String(input.maxPerFile)];
+  const args = ["-R", "-n", "-H", "--null", "-I", "-m", String(input.maxPerFile)];
   args.push(input.literal ? "-F" : "-E");
   if (input.options.caseInsensitive) args.push("-i");
   if (input.options.filesOnly) args.push("-l");

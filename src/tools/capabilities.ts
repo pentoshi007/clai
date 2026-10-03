@@ -164,10 +164,10 @@ export async function toolCheckHandler(
   if (names.length === 0) {
     return { ok: false, output: "No tool names provided.", exitCode: 1 };
   }
-  if (names.length > 20) {
+  if (names.length > 40) {
     return {
       ok: false,
-      output: "tool.check accepts at most 20 tools per call.",
+      output: "tool.check accepts at most 40 tools per call.",
       exitCode: 1,
     };
   }

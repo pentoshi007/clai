@@ -25,6 +25,7 @@ export interface PickerRequest {
   readonly options: readonly PickerOption[];
   readonly rowAction?: PickerRowAction | undefined;
   readonly searchDescription?: boolean | undefined;
+  readonly preserveSelection?: boolean | undefined;
   readonly twoLine?: boolean | undefined;
   readonly historyStyle?: boolean | undefined;
 }

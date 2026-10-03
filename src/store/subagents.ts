@@ -39,7 +39,7 @@ export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
   if (lastKnownSummary && Buffer.byteLength(lastKnownSummary.report) > SUBAGENT_LIMITS.report) throw new Error("Subagent summary exceeds the storage safety limit");
   const base = {
     id: run.id, parentSessionId: run.parentSessionId, attempt: run.attempt,
-    status: run.status, createdAt: run.createdAt, updatedAt: run.updatedAt,
+    status: run.status, createdAt: run.createdAt, startedAt: run.startedAt, updatedAt: run.updatedAt,
     recovery: run.recovery,
     title: clean(run.title, SUBAGENT_LIMITS.title),
     prompt: clean(run.prompt, SUBAGENT_LIMITS.prompt),
@@ -90,6 +90,7 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
     && run.parentSessionId === parentSessionId && typeof run.id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(run.id) && sanitizeSubagentText(run.id) === run.id
     && Number.isSafeInteger(run.attempt) && run.attempt > 0
     && Number.isFinite(run.createdAt) && Number.isFinite(run.updatedAt)
+    && (run.startedAt === undefined || Number.isFinite(run.startedAt))
     && ["running", "stopping", "completed", "partial", "stopped", "error"].includes(run.status)
     && (run.recovery === undefined || ["exact", "history", "fresh"].includes(run.recovery))
     && bounded(run.title, SUBAGENT_LIMITS.title) && !!run.title.trim() && bounded(run.prompt, SUBAGENT_LIMITS.prompt) && !!run.prompt.trim()
@@ -112,7 +113,7 @@ export function restoreSubagentRun(value: unknown, parentSessionId: string): Sub
     id: value.id, parentSessionId, title: value.title, prompt: value.prompt, context: value.context, followup: value.followup,
     cwd: value.cwd, provider: value.provider, model: value.model,
     activeProvider: value.activeProvider, activeModel: value.activeModel, attempt: value.attempt,
-    status: value.status, createdAt: value.createdAt, updatedAt: value.updatedAt,
+    status: value.status, createdAt: value.createdAt, startedAt: value.startedAt, updatedAt: value.updatedAt,
     events: value.events.map(({ sequence, kind, text, timestamp }) => ({ sequence, kind, text, timestamp })),
     report: value.report, error: value.error, lastKnownSummary: value.lastKnownSummary,
     resultAcknowledged: value.resultAcknowledged,

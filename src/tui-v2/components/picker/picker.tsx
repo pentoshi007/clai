@@ -61,15 +61,28 @@ export function Picker(props: PickerProps): ReactNode {
   );
   const selected = Math.min(hovered ?? cursor, Math.max(0, filtered.length - 1));
   const window = pickerWindow(items, scrollTop, bodyHeight);
+  const previousFilter = useRef({ options: filtered, query });
 
   useEffect(() => {
     const id = setTimeout(() => setPaintTick(1), 0);
     return () => clearTimeout(id);
   }, []);
   useEffect(() => {
-    setCursor(activeIndex(filtered));
-    setHovered(undefined);
-  }, [filtered]);
+    const previous = previousFilter.current;
+    if (request.preserveSelection && previous.query === query) {
+      const retainedIndex = (index: number): number => {
+        const value = previous.options[index]?.value;
+        const next = filtered.findIndex((option) => option.value === value);
+        return next >= 0 ? next : Math.min(index, Math.max(0, filtered.length - 1));
+      };
+      setCursor(retainedIndex);
+      setHovered((index) => index === undefined ? undefined : retainedIndex(index));
+    } else {
+      setCursor(activeIndex(filtered));
+      setHovered(undefined);
+    }
+    previousFilter.current = { options: filtered, query };
+  }, [filtered, query, request.preserveSelection]);
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;

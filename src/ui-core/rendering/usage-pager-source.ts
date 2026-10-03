@@ -17,13 +17,16 @@ export function createUsagePagerSource(
   let body = ports.renderBody();
   let disposed = false;
   const listeners = new Set<() => void>();
-  const unsubscribe = ports.subscribe(() => {
+  const refresh = (): void => {
     if (disposed) return;
     const next = ports.renderBody();
     if (next === body) return;
     body = next;
     for (const listener of [...listeners]) listener();
-  });
+  };
+  const unsubscribe = ports.subscribe(refresh);
+  const timer = setInterval(refresh, 1000);
+  timer.unref?.();
 
   const readPage = async (offset: number): Promise<ArtifactPage> => {
     if (disposed) throw new Error("usage pager source is disposed");
@@ -79,6 +82,7 @@ export function createUsagePagerSource(
     isGrowing: () => true,
     dispose() {
       disposed = true;
+      clearInterval(timer);
       unsubscribe();
       listeners.clear();
     },

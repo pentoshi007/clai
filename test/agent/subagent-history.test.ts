@@ -1,10 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createSubagentStore } from "../../src/store/subagents.js";
 import { clearAllHistory, deleteSession, saveSession } from "../../src/store/history.js";
 import type { SubagentRun } from "../../src/agent/subagents/types.js";
 
 const record = (parentSessionId: string): SubagentRun => ({
-  id: `child-${parentSessionId}`, parentSessionId, attempt: 1, status: "completed",
+  id: `child-${createHash("sha256").update(parentSessionId).digest("hex")}`, parentSessionId, attempt: 1, status: "completed",
   title: "Inspect package", prompt: "Read package metadata", cwd: process.cwd(),
   provider: "openai", model: "gpt-4.1", createdAt: 1, updatedAt: 2,
   events: [{ sequence: 1, kind: "assistant", text: "Found package metadata", timestamp: 2 }],

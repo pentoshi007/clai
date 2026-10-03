@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReasoningEffort, ReasoningPreference } from "../src/types.js";
 import { freebuffProvider } from "../src/llm/freebuff.js";
+import { disposeFreebuffSessionManager } from "../src/llm/freebuff-session.js";
 import { FREEBUFF_STATIC_MODEL_IDS } from "../src/llm/freebuff-models.js";
 import { resolveBuiltInProfile } from "../src/llm/provider-profiles.js";
 import { compileRequestPlan } from "../src/llm/request-plan.js";
@@ -62,7 +63,8 @@ function frame(delta: Record<string, unknown>, finishReason: string | null = nul
   })}\n\n`;
 }
 
-afterEach(() => {
+afterEach(async () => {
+  await disposeFreebuffSessionManager();
   vi.unstubAllGlobals();
 });
 
@@ -149,7 +151,7 @@ describe("Freebuff provider reasoning on the wire", () => {
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input);
         if (url.includes("/freebuff/session/admission")) {
-          return new Response(JSON.stringify({ error: "session_superseded" }), { status: 409 });
+          return new Response(JSON.stringify({ status: "active", instanceId: "cli:reasoning", model: "anthropic/claude-opus-5", remainingMs: 3_600_000 }), { status: 200 });
         }
         if (url.includes("/agent-runs")) {
           return new Response(JSON.stringify({ runId: "run-reasoning" }), { status: 200 });

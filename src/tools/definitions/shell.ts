@@ -5,13 +5,16 @@ import { def, emptyObject } from "./define.js";
 export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
   def(
     "shell.exec",
-    'Run a shell command. Default timeoutMs is 40000; choose a larger timeout for builds, installs, scaffolds, scans, and searches. Known long installs get a safe automatic budget when omitted. Persistent servers, watchers, and listeners: background:"always" with a name; they auto-launch as normal background jobs that need shell.tail/shell.jobs plus a readiness probe. Choose responder:true for a fire-and-continue finite job with automatic terminal delivery. Pass background:"never" to force foreground and honor timeoutMs. Pass cwd instead of cd.',
+    'Run a shell command in the foreground by default; commands are never automatically backgrounded. You choose execution mode and foreground timeoutMs in milliseconds. Foreground default is 60000; set a sufficient budget for builds, installs, scans and searches. background:"always" explicitly starts a durable pollable job; use shell.wait for finite jobs. Persistent servers, watchers, and listeners: background:"always" with a name; use shell.tail plus a readiness probe and shell.stop for cleanup. responder:true explicitly delegates finite work with automatic terminal delivery; do independent work instead of polling, then analyze the result and call job.read. background:"never" overrides responder. timeoutMs is ignored for background and Responder jobs; authorization expiry remains enforced. Pass cwd instead of cd.',
     {
       type: "object",
       properties: {
         command: { type: "string" },
         cwd: { type: "string" },
-        timeoutMs: { type: "integer" },
+        timeoutMs: {
+          type: "integer",
+          description: "Foreground execution deadline in milliseconds (1000–1800000; default 60000). Ignored for background and Responder jobs, which have no execution deadline. No command-based budget or seconds conversion.",
+        },
         name: {
           type: "string",
           description: "Short label for a background job, e.g. \"api dev server\".",
@@ -20,7 +23,7 @@ export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
           type: "string",
           enum: ["auto", "never", "always"],
           description:
-            "auto (default): run finite commands in the foreground and persistent commands in the background. never: always run in the foreground and honor timeoutMs. always: always run as a durable pollable job.",
+            'Omitted or auto (legacy compatibility): foreground unless responder:true is explicitly chosen; no heuristic backgrounding. never: force foreground even with responder:true. always: explicitly start a durable job, pollable unless responder:true.',
         },
         responder: {
           type: "boolean",

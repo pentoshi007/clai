@@ -810,7 +810,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
     capabilities: { tools: "supported", images: "supported" },
     reasoning: {
       control: {
-        dialect: "openai-effort",
+        dialect: "openai-nested-reasoning",
         status: "supported",
         evidence: providerDoc("codex-responses-reasoning"),
       },

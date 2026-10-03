@@ -77,6 +77,71 @@ async function flush(): Promise<void> {
 }
 
 describe("shared orchestration commands", () => {
+  it("keeps picker filtering and selection and inspector search across timer ticks", async () => {
+    const f = fixture();
+    vi.setSystemTime(1000);
+    f.manager.start(assignment);
+    const second = f.manager.start({ ...assignment, title: "Inspect source", prompt: "Review source" });
+    await vi.advanceTimersByTimeAsync(0);
+    await f.dispatch("/subagents");
+    f.press("Inspect", "Inspect");
+    f.press("down");
+    const picker = f.panels.getSnapshot().picker;
+    expect(picker.query).toBe("Inspect");
+    expect(picker.cursor).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.panels.getSnapshot().picker).toEqual(picker);
+    f.press("enter");
+    expect(f.overlay.getState()).toMatchObject({ kind: "pager", title: expect.stringContaining(second.title) });
+    await vi.advanceTimersByTimeAsync(0);
+    f.press("home");
+    f.press("ctrl+r");
+    f.press("Assignment", "Assignment");
+    f.press("enter");
+    const pager = f.panels.getSnapshot().pager;
+    expect(pager.query).toBe("Assignment");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.panels.getSnapshot().pagerBody).toContain("Elapsed 2.0s");
+    expect(f.panels.getSnapshot().pager).toEqual(pager);
+  });
+
+  it("ticks picker and paused inspector time, freezes stopped durations, and cleans up on replacement", async () => {
+    const f = fixture();
+    vi.setSystemTime(10_000);
+    const run = f.manager.start(assignment);
+    await vi.advanceTimersByTimeAsync(0);
+    await f.dispatch("/subagents");
+    const description = (): string | undefined => {
+      const state = f.overlay.getState();
+      return state.kind === "picker" ? state.request.options.find((option) => option.value === run.id)?.description : undefined;
+    };
+    expect(description()).toContain("elapsed 0.0s");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(description()).toContain("elapsed 1.0s");
+    f.overlay.selectPicker(run.id);
+    await vi.advanceTimersByTimeAsync(0);
+    f.press("l", "l");
+    const paused = f.panels.getSnapshot().pager;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.panels.getSnapshot().pagerBody).toContain("Elapsed 2.0s");
+    expect(f.panels.getSnapshot().pager).toMatchObject({ follow: false, top: paused.top, caret: paused.caret });
+    f.manager.stop(run.id);
+    await flush();
+    expect(f.panels.getSnapshot().pagerBody).toContain("Duration 2.0s");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(f.panels.getSnapshot().pagerBody).toContain("Duration 2.0s");
+    f.overlay.close();
+    expect(description()).toContain("duration 2.0s");
+    await f.dispatch(`/subagents restart ${run.id}`);
+    await flush();
+    expect(description()).toContain("elapsed");
+    f.replaceSession();
+    expect(f.overlay.getState().kind).toBe("none");
+    expect(f.sessionListeners.size).toBe(0);
+    await flush();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("lists /orchestrator with model fallback configuration", () => {
     const command = buildDefaultCommandRegistry().get("orchestrator");
     expect(command?.name).toBe("orchestrator");

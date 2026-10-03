@@ -8,7 +8,7 @@ const hookHarness = vi.hoisted(() => {
     | { kind: "state"; value: unknown }
     | { kind: "memo"; value: unknown; deps: readonly unknown[] | undefined }
     | { kind: "ref"; value: { current: unknown } }
-    | { kind: "effect" };
+    | { kind: "effect"; deps: readonly unknown[] | undefined; run: () => void | (() => void); cleanup?: (() => void) | undefined; pending: boolean };
 
   let cursor = 0;
   let slots: Slot[] = [];
@@ -23,6 +23,7 @@ const hookHarness = vi.hoisted(() => {
 
   return {
     reset(): void {
+      for (const slot of slots) if (slot.kind === "effect") slot.cleanup?.();
       cursor = 0;
       slots = [];
     },
@@ -67,9 +68,22 @@ const hookHarness = vi.hoisted(() => {
       if (slot.kind !== "ref") throw new Error("hook order changed");
       return slot.value;
     },
-    useEffect(): void {
+    useEffect(run: () => void | (() => void), deps: readonly unknown[] | undefined): void {
       const index = cursor++;
-      slots[index] = { kind: "effect" };
+      const slot = slots[index];
+      if (slot?.kind === "effect" && sameDeps(slot.deps, deps)) return;
+      if (slot?.kind === "effect") slot.cleanup?.();
+      slots[index] = { kind: "effect", deps, run, pending: true };
+    },
+    flushEffects(): void {
+      for (const slot of slots) {
+        if (slot.kind !== "effect" || !slot.pending) continue;
+        slot.pending = false;
+        slot.cleanup = slot.run() || undefined;
+      }
+    },
+    stateValues(): unknown[] {
+      return slots.filter((slot) => slot.kind === "state").map((slot) => slot.value);
     },
     replaceState(current: unknown, next: unknown): boolean {
       const slot = slots.find(
@@ -121,6 +135,43 @@ const services = {
 const theme = themeFor("dark");
 
 describe("OpenTUI pager scroll performance", () => {
+  it("keeps live content subscribed while follow is paused", async () => {
+    const { createUsagePagerSource } = await import("../../src/ui-core/rendering/usage-pager-source.js");
+    let body = "initial usage";
+    let emit = (): void => {};
+    const source = createUsagePagerSource({
+      renderBody: () => body,
+      subscribe: (listener) => { emit = listener; return () => {}; },
+    });
+    const watch = vi.spyOn(source, "watch");
+    const tail = vi.spyOn(source, "readTail");
+    const read = vi.spyOn(source, "readPage");
+    const props = { services, theme, title: "usage", body, source, markdown: "plain" as const };
+    const render = () => {
+      hookHarness.beginRender();
+      Pager(props);
+      hookHarness.flushEffects();
+    };
+    hookHarness.reset();
+    try {
+      render();
+      await Promise.resolve();
+      expect(tail).toHaveBeenCalledOnce();
+      expect(hookHarness.replaceState(true, false)).toBe(true);
+      render();
+      await Promise.resolve();
+      expect(read).toHaveBeenLastCalledWith(0);
+      expect(watch).toHaveBeenCalledTimes(2);
+      body = "updated while scrolled";
+      emit();
+      await vi.waitFor(() => expect(hookHarness.stateValues()).toContain(body));
+      expect(tail).toHaveBeenCalledOnce();
+      expect(hookHarness.stateValues()[8]).toBe(false);
+    } finally {
+      hookHarness.reset();
+      source.dispose();
+    }
+  });
   it("does not re-wrap every body row when only the scroll hint changes", () => {
     const rowCount = 600;
     const body = Array.from(

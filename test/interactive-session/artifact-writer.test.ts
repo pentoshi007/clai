@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { createHash } from "node:crypto";
 import { readFileSync, rmSync, statSync } from "node:fs";
+import { basename } from "node:path";
 import { BoundedArtifactWriter } from "../../src/interactive-session/artifact-writer.js";
 import { tempArtifactDir } from "./helpers.js";
 
@@ -92,12 +93,11 @@ describe("Property 16: artifact rotation and accounting are complete", () => {
   });
 
   it("names chunks with the opaque id only", async () => {
-    const artifact = writer();
-    artifact.append(new Uint8Array(Buffer.from("data", "utf8")));
+    const artifact = writer({ chunkBytes: 64 });
+    artifact.append(new Uint8Array(200));
     await artifact.close();
-    for (const path of artifact.receipt().chunks) {
-      expect(path).toContain("its_test");
-      expect(path).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    }
+    expect(artifact.receipt().chunks.map((path) => basename(path))).toEqual([
+      "its_test.log", "its_test.log.1", "its_test.log.2", "its_test.log.3",
+    ]);
   });
 });

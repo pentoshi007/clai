@@ -36,7 +36,6 @@ export interface CodexModelMetadata {
   readonly supportsSummary: boolean;
   readonly supportsVerbosity: boolean;
   readonly defaultVerbosity?: string | undefined;
-  readonly multiAgentEffort?: string | undefined;
   readonly responsesLite: boolean;
 }
 
@@ -127,7 +126,6 @@ export function codexModelMetadata(
     supportsSummary: entry.supports_reasoning_summary_parameter !== false,
     supportsVerbosity: entry.support_verbosity === true,
     defaultVerbosity: stringField(entry, "default_verbosity"),
-    multiAgentEffort: stringField(entry, "multi_agent_reasoning_effort"),
     responsesLite: entry.use_responses_lite === true,
   };
 }

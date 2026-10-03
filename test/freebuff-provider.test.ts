@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { disposeFreebuffSessionManager } from "../src/llm/freebuff-session.js";
+
+afterEach(async () => {
+  await disposeFreebuffSessionManager();
+  vi.unstubAllGlobals();
+});
 
 import type { CompletionRequest } from "../src/types.js";
 import { freebuffProvider } from "../src/llm/freebuff.js";
@@ -31,14 +37,14 @@ describe("Freebuff provider server gate", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("opens a run and streams even when session admission is refused", async () => {
+  it("opens a registered run and streams under an admitted session", async () => {
     const calls: { url: string; body: string }[] = [];
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const body = init?.body ? String(init.body) : "";
       calls.push({ url, body });
       if (url.includes("/freebuff/session/admission")) {
-        return new Response(JSON.stringify({ error: "session_superseded" }), { status: 409 });
+        return new Response(JSON.stringify({ status: "active", instanceId: "cli:provider", model: MODEL, remainingMs: 3_600_000 }), { status: 200 });
       }
       if (url.includes("/agent-runs")) {
         if (body.includes('"START"')) {
@@ -69,11 +75,11 @@ describe("Freebuff provider server gate", () => {
     );
   });
 
-  it("completes without streaming when admission is refused", async () => {
+  it("completes without streaming under an admitted session", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes("/freebuff/session/admission")) {
-        return new Response(JSON.stringify({ error: "session_superseded" }), { status: 409 });
+        return new Response(JSON.stringify({ status: "active", instanceId: "cli:provider", model: MODEL, remainingMs: 3_600_000 }), { status: 200 });
       }
       if (url.includes("/agent-runs")) {
         return new Response(JSON.stringify({ runId: "run-456" }), { status: 200 });

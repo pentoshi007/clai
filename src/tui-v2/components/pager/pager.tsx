@@ -179,13 +179,16 @@ export function Pager(props: PagerProps): ReactNode {
     return () => { active = false; };
   }, [body, source, canFollow]);
 
+  const artifactOffset = useRef(0);
+  artifactOffset.current = artifactPage?.offset ?? 0;
+
   useEffect(() => {
-    if (!source?.watch || !following) return;
+    if (!source?.watch) return;
     let active = true;
     let reading = false;
     let pending = false;
     const box = scrollRef.current;
-    if (box) box.scrollTo(Math.max(0, box.scrollHeight - box.viewport.height));
+    if (box && following) box.scrollTo(Math.max(0, box.scrollHeight - box.viewport.height));
     const pull = (): void => {
       if (!active) return;
       if (reading) {
@@ -193,7 +196,9 @@ export function Pager(props: PagerProps): ReactNode {
         return;
       }
       reading = true;
-      const page = source.readTail ? source.readTail() : source.readPage(0);
+      const page = following && source.readTail
+        ? source.readTail()
+        : source.readPage(artifactOffset.current);
       void page
         .then((page) => {
           if (!active) return;

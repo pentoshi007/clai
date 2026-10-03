@@ -111,7 +111,7 @@ export class SubagentManager {
   private startAssigned(assignment: SubagentAssignment): SubagentRun {
     this.assertLaunchModels();
     const now = Date.now();
-    const child: Child = { assignment, run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, updatedAt: now, events: [] } };
+    const child: Child = { assignment, run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, startedAt: now, updatedAt: now, events: [] } };
     this.children.set(child.run.id, child);
     this.launch(child);
     return this.snapshot(child.run);
@@ -180,12 +180,13 @@ export class SubagentManager {
     this.assertCapacity(1);
     this.assertLaunchModels();
     const previous = child.run;
+    const now = Date.now();
     this.settledAttempts.set(`${previous.id}:${previous.attempt}`, this.snapshot(previous));
     const summary = `Attempt ${previous.attempt}: ${previous.status}\n${previous.report ?? previous.error ?? "No report"}`;
     const events = [...previous.events, { kind: "notice" as const, text: summary, timestamp: Date.now(), sequence: (previous.events.at(-1)?.sequence ?? 0) + 1 }];
     if (followup) events.push({ kind: "notice", text: `Parent follow-up for attempt ${previous.attempt + 1}:\n${JSON.stringify(followup)}`, timestamp: Date.now(), sequence: events.at(-1)!.sequence + 1 });
     if (followup && child.checkpoint) child.checkpoint = { ...child.checkpoint, pendingFollowup: followup };
-    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report || previous.lastKnownSummary ? "history" : "fresh", report: undefined, resultAcknowledged: false, error: undefined, updatedAt: Date.now(), events: this.boundEvents(events) };
+    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report || previous.lastKnownSummary ? "history" : "fresh", report: undefined, resultAcknowledged: false, error: undefined, startedAt: now, updatedAt: now, events: this.boundEvents(events) };
     this.launch(child, followup);
     return this.snapshot(child.run);
   }

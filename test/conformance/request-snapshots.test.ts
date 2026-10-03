@@ -11,6 +11,18 @@ import {
   REQUEST_CASES,
 } from "./request-cases.js";
 
+const VOLATILE_BODY_KEYS = new Set(["installation_id"]);
+
+function redactBody(body: unknown): unknown {
+  if (Array.isArray(body)) return body.map(redactBody);
+  if (!body || typeof body !== "object") return body;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+    out[key] = VOLATILE_BODY_KEYS.has(key) ? "<generated>" : redactBody(value);
+  }
+  return out;
+}
+
 beforeEach(() => {
   resetReasoningKnowledge();
 });
@@ -42,7 +54,7 @@ describe("serialized request snapshots", () => {
           url: redactUrl(sent.url),
           method: sent.method,
           headers: redactHeaders(sent.headers),
-          body: sent.body,
+          body: redactBody(sent.body),
         };
         const serialized = JSON.stringify(redacted);
         for (const secret of [

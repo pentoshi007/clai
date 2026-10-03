@@ -14,7 +14,7 @@ import {
 import type { PanelEffect } from "./panel-effect.js";
 import { applyPanelEffects, openPanelJobTail } from "./panel-effects.js";
 import { planKey } from "./plan-panel.js";
-import { pickerInitialState, pickerKey } from "./picker-panel.js";
+import { pickerFiltered, pickerInitialState, pickerKey } from "./picker-panel.js";
 import {
   promptActionsKey,
   promptLines,
@@ -319,9 +319,20 @@ export class PanelController {
       kind: state.kind === "none" && this.snapshot.search !== undefined ? "search" : state.kind,
     };
     switch (state.kind) {
-      case "picker":
+      case "picker": {
+        const previous = this.snapshot.overlay;
+        if (state.request.preserveSelection && previous.kind === "picker" && previous.onSelect === state.onSelect) {
+          const picker = this.snapshot.picker;
+          const selected = pickerFiltered(previous.request, picker.query)[picker.cursor]?.value;
+          const options = pickerFiltered(state.request, picker.query);
+          const index = options.findIndex((option) => option.value === selected);
+          const cursor = index >= 0 ? index : Math.min(picker.cursor, Math.max(0, options.length - 1));
+          this.publish({ ...base, picker: { ...picker, cursor } });
+          return;
+        }
         this.publish({ ...base, picker: pickerInitialState(state.request) });
         return;
+      }
       case "pager": {
         const pagerMarkdown = resolvePagerMarkdownMode(state.body, state.markdown);
         this.pagerOffset = 0;

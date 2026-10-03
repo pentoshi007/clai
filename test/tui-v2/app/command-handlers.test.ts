@@ -241,7 +241,7 @@ describe("command handlers (V2-072..075)", () => {
     }
   });
 
-  it("bare /plan enters plan mode with an existing plan; /plan view opens its pager", async () => {
+  it("bare /plan enters plan mode with an existing plan; /view-plan pages without changing mode", async () => {
     const services = buildServices();
     services.plan.observe(
       new EventSequencer(asSessionId("s1")).build(
@@ -266,8 +266,11 @@ describe("command handlers (V2-072..075)", () => {
     expect(services.session.getState().mode).toBe("plan");
     expect(services.overlay.getState().kind).toBe("none");
 
-    await services.commands.dispatch({ name: "plan", args: "view" });
+    await services.commands.dispatch({ name: "ask", args: "" });
+    await services.commands.dispatch({ name: "view-plan", args: "" });
     await waitUntil(() => services.overlay.getState().kind === "pager");
+    expect(services.session.getState().mode).toBe("ask");
+    expect(getConfig().defaultMode).toBe("ask");
     const state = services.overlay.getState();
     expect(state.kind).toBe("pager");
     if (state.kind === "pager") {

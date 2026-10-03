@@ -71,6 +71,19 @@ describe("fsSearch", () => {
     expect(result.output).not.toContain("# no matches");
   });
 
+  it("preserves numbered paths and separator-like text in real search results", async () => {
+    const dir = makeTree();
+    dirs.push(dir);
+    const directory = join(dir, "session-2026-10-03");
+    mkdirSync(directory);
+    const path = join(directory, "example-12-copy.ts");
+    writeFileSync(path, "before-9-after:10:other\nanswer\nafter\n");
+    const result = await fsSearch("answer", directory, { context: 1 });
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain(`${path}-1-before-9-after:10:other`);
+    expect(result.output).toContain(`${path}:2:answer`);
+  });
+
   it.runIf(process.platform !== "win32")(
     "matches the same pattern through the grep fallback",
     async () => {
@@ -219,6 +232,30 @@ describe("engine output parsing", () => {
       path: "C:\\repo\\src\\b.ts",
       line: 9,
     });
+  });
+
+  it("keeps numbered path components out of match metadata", () => {
+    const path = "/tmp/session-2026-10-03/src/example-12-copy.ts";
+    expect(parseHitLine(`${path}:7:const answer = 42;`)).toEqual({
+      path, line: 7, match: true, text: "const answer = 42;",
+    });
+  });
+
+  it("parses null-delimited paths without consuming separators in paths or text", () => {
+    const path = "C:\\session-2026-10-03\\example-12-copy.ts";
+    expect(parseHitLine(`${path}\0${7}:answer:8:other`)).toEqual({
+      path, line: 7, match: true, text: "answer:8:other",
+    });
+    expect(parseHitLine(`${path}\0${6}-before-9-after:10:other`)).toEqual({
+      path, line: 6, match: false, text: "before-9-after:10:other",
+    });
+  });
+
+  it("parses null-delimited file lists", () => {
+    expect(parseEngineOutput("/repo/a.ts\0/repo/b.ts\0", true)).toEqual([
+      { path: "/repo/a.ts", line: 0, match: true, text: "" },
+      { path: "/repo/b.ts", line: 0, match: true, text: "" },
+    ]);
   });
 
   it("drops every line of a file the glob excludes, separators included", () => {

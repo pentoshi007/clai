@@ -121,6 +121,7 @@ export async function tryStreamOnce(
       : {}),
     ...(downstreamEvents ? { onStreamEvent: emitEvent } : {}),
   };
+  const preserveCodexEffort = providerId === "codex" && activeRequest.thinking?.enabled === true;
   const emit = (token: string): void => {
     if (!token) return;
     emittedBytes += token.length;
@@ -317,10 +318,14 @@ export async function tryStreamOnce(
             emittedBytes,
           );
         }
+        if (preserveCodexEffort) {
+          throw markStreamEmittedBytes(retryError, emittedBytes);
+        }
         return await runAttempt(withoutReasoning(activeRequest), "adaptation");
       }
     }
     if (
+      !preserveCodexEffort &&
       emittedBytes === 0 &&
       shouldEnterEffortLadder(
         error,
@@ -407,6 +412,7 @@ export async function tryStreamOnce(
       }
     }
     if (
+      !preserveCodexEffort &&
       emittedBytes === 0 &&
       !singleDispatch &&
       activeRequest.thinking?.enabled &&

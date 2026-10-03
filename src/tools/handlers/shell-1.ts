@@ -1,14 +1,10 @@
 import { responderJobOptions } from "./responder-job-options.js";
-import { safeCwd } from "../../os/cwd.js";
-import { shellExec, spawnArgv } from "../shell.js";
-import {
-  isLongQuietInstallOrScaffoldCommand,
-  isLongRunningTestOrBuildCommand,
-} from "../../agent/task-evidence.js";
-import { jobManager, type StartJobOptions } from "../jobs.js";
+import { shellExec } from "../shell.js";
+import { DEFAULT_SHELL_TIMEOUT_MS } from "../shell/timeout.js";
+import { jobManager } from "../jobs.js";
 import { resolveShellExecBackgroundPolicy } from "../command-intent.js";
 import { prepareRtkExecution } from "../rtk/rewrite.js";
-import { type ToolRunOptions, type ToolHandler } from "../tool-types.js";
+import { type ToolHandler } from "../tool-types.js";
 import {
   prepareElevatedBackgroundCommand,
   tryRunElevatedWithoutTty,
@@ -17,26 +13,28 @@ import {
   getAllowInteractiveStdinInherit,
   looksInteractiveStdin,
 } from "../shell.js";
-import {
-  optionalBoolean,
-  optionalNumber,
-  optionalResponseMode,
-  optionalString,
-  requireNumber,
-  requireString,
-  requireStringAllowEmpty,
-} from "./args.js";
+import { optionalNumber, optionalString, requireString } from "./args.js";
 
 export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
   async "shell.exec"(args, options) {
     const command = requireString(args, "command");
     const requestedTimeoutMs = optionalNumber(args, "timeoutMs");
+    if (
+      requestedTimeoutMs !== undefined &&
+      (!Number.isInteger(requestedTimeoutMs) || requestedTimeoutMs < 1_000 || requestedTimeoutMs > 1_800_000)
+    ) {
+      return {
+        ok: false,
+        exitCode: 1,
+        output: "timeoutMs must be an integer from 1000 to 1800000 milliseconds.",
+      };
+    }
     const policy = resolveShellExecBackgroundPolicy({
       command,
       background: args.background,
       responder: args.responder,
     });
-    const { backgroundMode, costReason, wantsBackground, responder } = policy;
+    const { wantsBackground, responder } = policy;
     const cwd = optionalString(args, "cwd");
     if (wantsBackground) {
       const elevated = await prepareElevatedBackgroundCommand(command, {
@@ -49,47 +47,18 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       const job = await jobManager.startJob(
         elevated?.prepared ? elevated.spec : command,
         {
-          cwd: optionalString(args, "cwd"),
+          cwd,
           name: optionalString(args, "name"),
           ...responderJobOptions(options),
           responder,
           wakeOnCompletion: responder,
         },
       );
-      if (job.ok) {
-        const autoBackgrounded = backgroundMode === "auto";
-        const timeoutNote =
-          autoBackgrounded && requestedTimeoutMs !== undefined
-            ? `\n\nNote: timeoutMs=${requestedTimeoutMs} does not apply — this command was auto-backgrounded${costReason ? ` (${costReason})` : ""}. Pass background:"never" to run it in the foreground with your timeout.`
-            : "";
-        const costNote =
-          autoBackgrounded && costReason
-            ? `\n\nAuto-backgrounded because: ${costReason}. Pass background:"never" to force foreground.`
-            : "";
-        return {
-          ...job,
-          output: `${job.output}${costNote}${timeoutNote}`,
-        };
-      }
-      return job;
+      return job.ok && requestedTimeoutMs !== undefined
+        ? { ...job, output: `${job.output}\nNote: timeoutMs applies only to foreground shell.exec and is ignored for background jobs.` }
+        : job;
     }
-    let timeoutMs = requestedTimeoutMs;
-    if (
-      timeoutMs !== undefined &&
-      timeoutMs > 0 &&
-      timeoutMs < 1000 &&
-      (isLongQuietInstallOrScaffoldCommand(command) ||
-        isLongRunningTestOrBuildCommand(command))
-    ) {
-      timeoutMs = timeoutMs * 1000;
-    }
-    timeoutMs =
-      timeoutMs ??
-      (isLongQuietInstallOrScaffoldCommand(command)
-        ? 15 * 60_000
-        : isLongRunningTestOrBuildCommand(command)
-          ? 120_000
-          : undefined);
+    const timeoutMs = requestedTimeoutMs ?? DEFAULT_SHELL_TIMEOUT_MS;
 
     if (looksInteractiveStdin(command)) {
       const elevated = await tryRunElevatedWithoutTty(command, {

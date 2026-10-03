@@ -86,14 +86,14 @@ describe("command-intent — looksLongRunning", () => {
     expect(looksLongRunning("corepack pnpm add postgres")).toBe(false);
   });
 
-  it("still backgrounds a persistent segment after a finite install", () => {
+  it("still recognizes a persistent segment after a finite install", () => {
     expect(looksLongRunning("npm install && npm run dev")).toBe(true);
     expect(looksLongRunning("npm install vite && npx vite")).toBe(true);
   });
 });
 
-describe("command-intent — durable finite jobs", () => {
-  it("routes potentially long scanners and filesystem find to durable jobs", () => {
+describe("command-intent — finite cost classification", () => {
+  it("identifies potentially long scanners and filesystem searches without scheduling them", () => {
     expect(looksLikeLongFiniteCommand("nmap -sV example.com")).toBe(true);
     expect(looksLikeLongFiniteCommand("ffuf -u https://x/FUZZ -w words.txt")).toBe(true);
     expect(looksLikeLongFiniteCommand("sudo find / -name '*.pem'")).toBe(true);
@@ -103,8 +103,8 @@ describe("command-intent — durable finite jobs", () => {
 });
 
 
-describe("TOOL-002 auto-background requires a real cost signal", () => {
-  it("keeps cheap scanner/search invocations in the foreground", () => {
+describe("command-intent — cost signals do not choose execution mode", () => {
+  it("does not mark cheap scanner/search invocations as costly", () => {
     for (const command of [
       "nmap -p22 --top-ports 1 10.0.0.5",
       "nmap -p 22,80,443 10.0.0.5",
@@ -118,7 +118,7 @@ describe("TOOL-002 auto-background requires a real cost signal", () => {
     }
   });
 
-  it("backgrounds only genuinely expensive invocations", () => {
+  it("identifies costly invocations without backgrounding them", () => {
     for (const command of [
       "nmap -p- 10.0.0.5",
       "nmap -sV example.com",

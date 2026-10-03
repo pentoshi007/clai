@@ -13,6 +13,10 @@ import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { App } from "../../src/tui-v2/app/App.js";
 import { themeFor, type Theme } from "../../src/ui-core/rendering/theme.js";
 
+const realNow = Date.now;
+let clockOffset = 0;
+Date.now = () => realNow() + clockOffset;
+
 const workers = new Map<string, SubagentWorkerInput>();
 const resolvers = new Map<string, (report: string) => void>();
 const manager = new SubagentManager("native-parent", {
@@ -79,7 +83,14 @@ try {
   await settle(() => services.commands.dispatch({ name: "orchestration", args: "on" }));
   const first = manager.start({ title: "First inspector", prompt: "inspect first", cwd: process.cwd(), provider: "openai", model: "test" });
   const second = manager.start({ title: "Second inspector", prompt: "inspect second", cwd: process.cwd(), provider: "openai", model: "test" });
-  await waitForFrame(/Subagents: 2 running · 0 done/, () => undefined);
+  const collapsedFrame = await waitForFrame(/Subagents: 2 running · 0 done/, () => undefined);
+  const headerRow = collapsedFrame.split("\n").findIndex((line) => line.includes("Subagents:"));
+  const expandedFrame = await settle(() => setup.mockMouse.click(6, headerRow));
+  assert.match(expandedFrame, /First inspector/);
+  assert.match(expandedFrame, /running · elapsed/);
+  clockOffset += 60_000;
+  const livePanelFrame = await settle(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+  assert.match(livePanelFrame, /running · elapsed 1m/);
   await settle(() => { main = services.session.submit("Keep the main turn running"); });
   assert.equal(services.session.getState().running, true);
   const pickerFrame = await settle(() => {
@@ -90,9 +101,27 @@ try {
   assert.match(pickerFrame.split("\n")[0]!, /Orchestration on/);
   assert.match(pickerFrame, /Main agent/);
   assert.match(pickerFrame, /Second inspector/);
-  await settle(() => setup.mockInput.pressArrow("down"));
+  assert.match(pickerFrame, /elapsed 1m/);
+  clockOffset += 60_000;
+  const livePickerFrame = await settle(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+  assert.match(livePickerFrame, /elapsed 2m/);
+  const filteredFrame = await settle(() => setup.mockInput.typeText("inspector"));
+  assert.match(filteredFrame, /filter: inspector/);
+  const selectedPickerFrame = await settle(() => setup.mockInput.pressArrow("down"));
+  assert.match(selectedPickerFrame, /[❯›>] .*First inspector/);
+  clockOffset += 60_000;
+  const filteredTickFrame = await settle(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+  assert.match(filteredTickFrame, /filter: inspector/);
+  assert.match(filteredTickFrame, /[❯›>] .*First inspector/);
   await settle(() => setup.mockInput.pressEnter());
-  assert.equal(services.overlay.getState().kind, "pager");
+  const inspector = services.overlay.getState();
+  assert.equal(inspector.kind, "pager");
+  assert.equal(inspector.kind === "pager" && inspector.source?.path, `memory://subagent/${first.id}`);
+  const elapsedFrame = await settle();
+  assert.match(elapsedFrame, /Elapsed 3m/);
+  clockOffset += 60_000;
+  const livePagerFrame = await settle(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+  assert.match(livePagerFrame, /Elapsed 4m/);
   await waitForFrame(/FIRST LIVE FINDING/, () => workers.get(first.id)!.emit({ kind: "assistant", text: "FIRST LIVE FINDING" }));
   const activityFrame = await waitForFrame(/✓ fs\.read/, () => {
     const worker = workers.get(first.id)!;
@@ -137,12 +166,23 @@ try {
   assert.doesNotMatch(frame, /FIRST LIVE FINDING/);
   await waitForFrame(/Stopped by parent/, () => manager.stop(second.id));
   assert.equal(manager.get(second.id)?.status, "stopped");
+  const stoppedFrame = await settle();
+  const finalDuration = stoppedFrame.match(/Duration ([\w.]+)/)?.[0];
+  assert.ok(finalDuration);
+  clockOffset += 60_000;
+  assert.ok((await settle()).includes(finalDuration));
   await settle(() => setup.mockInput.pressEscape());
   await settle(() => services.overlay.selectPicker("main"));
   assert.equal(services.overlay.getState().kind, "none");
   assert.equal(services.session.getState().running, true);
   assert.equal(mainAborted, false);
-  await waitForFrame(/Subagents: 0 running · 2 done/, () => resolvers.get(first.id)!("Status: complete\nAll evidence gathered."));
+  const doneFrame = await waitForFrame(/Subagents: 0 running · 2 done/, () => resolvers.get(first.id)!("Status: complete\n## Findings\nThe inspector gathered all required evidence.\n## Evidence\nsrc/agent/subagents/worker.ts:81 contains the worker.\n## Next steps\nNo further work.\n## Coverage gaps\nNo live provider was contacted."));
+  assert.match(doneFrame, /completed · duration/);
+  assert.match(doneFrame, /stopped · duration/);
+  clockOffset += 60_000;
+  const frozenPanelFrame = await settle();
+  assert.equal(frozenPanelFrame.match(/completed · duration [\w.]+/)?.[0], doneFrame.match(/completed · duration [\w.]+/)?.[0]);
+  assert.equal(frozenPanelFrame.match(/stopped · duration [\w.]+/)?.[0], doneFrame.match(/stopped · duration [\w.]+/)?.[0]);
   await settle(() => {
     manager.acknowledgeResult(first.id, manager.get(first.id)!.attempt);
     manager.acknowledgeResult(second.id, manager.get(second.id)!.attempt);
@@ -160,4 +200,5 @@ try {
     setup.renderer.destroy();
   });
   await setup.renderer.idle();
+  Date.now = realNow;
 }

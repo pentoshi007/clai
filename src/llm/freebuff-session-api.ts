@@ -5,7 +5,21 @@ import { ProviderError } from "./http.js";
 export const FREEBUFF_CLI_CLAIM_PREFIX = "cli:";
 export const FREEBUFF_SESSION_PATH = "/api/v1/freebuff/session";
 export const FREEBUFF_SESSION_ADMISSION_PATH = "/api/v1/freebuff/session/admission";
-export const FREEBUFF_HEARTBEAT_INTERVAL_MS = 45_000;
+export const FREEBUFF_HEARTBEAT_INTERVAL_MS = 30_000;
+
+export function freebuffHeartbeatDelay(expiresAt?: number, now = Date.now(), random = Math.random()): number {
+  const jittered = Math.max(1, Math.round(FREEBUFF_HEARTBEAT_INTERVAL_MS * (0.8 + 0.4 * random)));
+  const remaining = expiresAt === undefined ? jittered : expiresAt - now + 1_000;
+  return Math.max(1_000, Math.min(jittered, remaining));
+}
+
+export function freebuffHeartbeatRetryDelay(failures: number, retryAfterMs?: number, random = Math.random()): number {
+  const half = Math.min(300_000, 20_000 * 2 ** Math.max(0, failures - 1)) / 2;
+  const backoff = Math.max(1, Math.round(half + half * random));
+  if (retryAfterMs === undefined) return backoff;
+  const retry = Number.isFinite(retryAfterMs) ? Math.max(0, Math.min(300_000, retryAfterMs)) : 0;
+  return Math.min(300_000, Math.max(backoff, Math.round(retry * (1 + 0.2 * random))));
+}
 const SESSION_FETCH_TIMEOUT_MS = 20_000;
 
 const HEADER = {

@@ -194,7 +194,7 @@ describe("coding plan requirement helpers", () => {
     ).toBe(true);
   });
 
-  it("uses the universal default and honors model-selected tool timeouts", () => {
+  it("uses the shell default independently of other tools and honors model-selected timeouts", () => {
     expect(
       isLongQuietInstallOrScaffoldCommand(
         "npx create-next-app@latest /tmp/x --yes",
@@ -203,22 +203,23 @@ describe("coding plan requirement helpers", () => {
     expect(isLongQuietInstallOrScaffoldCommand("npm install")).toBe(true);
     expect(isLongQuietInstallOrScaffoldCommand("ls -la")).toBe(false);
 
-    const defaultCalls = [
-      { name: "shell.exec", args: { command: "echo ok" } },
+    for (const call of [
       { name: "web.search", args: { query: "x" } },
       { name: "web.fetch", args: { url: "https://x" } },
-    ];
-    for (const call of defaultCalls) {
+    ]) {
       expect(toolStallBudgetMs(call)).toBe(42_500);
       expect(toolHardBudgetMs(call)).toBe(42_500);
     }
+    const shell = { name: "shell.exec", args: { command: "echo ok" } };
+    expect(toolStallBudgetMs(shell)).toBe(62_500);
+    expect(toolHardBudgetMs(shell)).toBe(62_500);
 
-    const automaticLong = {
+    const install = {
       name: "shell.exec",
       args: { command: "npm install" },
     };
-    expect(toolStallBudgetMs(automaticLong)).toBe(15 * 60_000 + 2_500);
-    expect(toolHardBudgetMs(automaticLong)).toBe(15 * 60_000 + 2_500);
+    expect(toolStallBudgetMs(install)).toBe(62_500);
+    expect(toolHardBudgetMs(install)).toBe(62_500);
 
     const selected = {
       name: "shell.exec",

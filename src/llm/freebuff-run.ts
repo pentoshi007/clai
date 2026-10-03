@@ -105,12 +105,15 @@ export interface FreebuffRun {
   readonly runId: string;
   readonly clientId: string;
   readonly agentId: string;
+  readonly startedAt: string;
 }
 
 export interface FreebuffRunDeps {
   readonly fetch?: typeof fetch | undefined;
   readonly baseUrl?: string | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly clientId?: string | undefined;
+  readonly errorMessage?: string | undefined;
 }
 
 function runUrl(base: string): string {
@@ -171,7 +174,7 @@ export async function startFreebuffRun(
       "Freebuff run start returned no runId; the completion endpoint rejects unregistered runs.",
     );
   }
-  return { runId, clientId: randomUUID(), agentId };
+  return { runId, clientId: deps.clientId ?? randomUUID(), agentId, startedAt: new Date().toISOString() };
 }
 
 export async function finishFreebuffRun(
@@ -190,6 +193,14 @@ export async function finishFreebuffRun(
       totalSteps: steps,
       directCredits: 0,
       totalCredits: 0,
+      ...(deps.errorMessage ? { errorMessage: deps.errorMessage.slice(0, 5_000) } : {}),
+      steps: Array.from({ length: steps }, (_, stepNumber) => ({
+        id: randomUUID(),
+        stepNumber,
+        messageId: null,
+        status: "completed",
+        startTime: run.startedAt,
+      })),
     },
     "run finish",
     deps,

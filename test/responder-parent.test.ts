@@ -108,7 +108,7 @@ describe("responder parent ownership (TASK-005)", () => {
 
 
 describe("explicit responder delegation", () => {
-  it("applies foreground and persistent precedence before creating a child", () => {
+  it("applies explicit foreground precedence without reclassifying caller ownership", () => {
     expect(
       isExplicitResponderDelegation({
         name: "shell.exec",
@@ -128,9 +128,9 @@ describe("explicit responder delegation", () => {
     expect(
       isExplicitResponderDelegation({
         name: "shell.exec",
-        args: { command: "npm run dev", responder: true },
+        args: { command: "tcpdump -c 1", responder: true },
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isExplicitResponderDelegation({
         name: "shell.exec",
