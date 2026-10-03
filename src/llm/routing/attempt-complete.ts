@@ -62,6 +62,7 @@ export async function tryCompleteOnce(
     provider: providerId,
     model,
   };
+  const preserveCodexEffort = providerId === "codex" && activeRequest.thinking?.enabled === true;
   const dispatchAttempt = (
     candidate: CompletionRequest,
     attemptReason: GenerationAttemptReason,
@@ -163,10 +164,12 @@ export async function tryCompleteOnce(
         return result;
       } catch (retryError) {
         if (!isMissingReasoningContentError(retryError)) throw retryError;
+        if (preserveCodexEffort) throw retryError;
         return await runAttempt(withoutReasoning(activeRequest), "adaptation");
       }
     }
     if (
+      !preserveCodexEffort &&
       shouldEnterEffortLadder(
         error,
         activeRequest.thinking,
@@ -239,6 +242,7 @@ export async function tryCompleteOnce(
       return await runAttempt(withoutReasoning(activeRequest), "adaptation");
     }
     if (
+      !preserveCodexEffort &&
       !singleDispatch &&
       activeRequest.thinking?.enabled &&
       isUnattributableRequestBodyError(error)

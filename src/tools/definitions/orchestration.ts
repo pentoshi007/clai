@@ -4,7 +4,7 @@ import { def, emptyObject } from "./define.js";
 export const TOOL_DEFINITIONS_ORCHESTRATION: ToolDefinition[] = [
   def(
     "tool.check",
-    'Check whether binaries/tools are available on PATH (and versions). Pass tools as an array, e.g. {"tools":["nmap","ffuf"]}.',
+    'Check up to 40 binaries/tools per call for availability on PATH (and versions). Pass tools as an array, e.g. {"tools":["nmap","ffuf"]}.',
     {
       type: "object",
       properties: {
@@ -12,7 +12,7 @@ export const TOOL_DEFINITIONS_ORCHESTRATION: ToolDefinition[] = [
           type: "array",
           items: { type: "string" },
           minItems: 1,
-          maxItems: 20,
+          maxItems: 40,
           description: 'Tool names, e.g. ["nmap","ffuf"]',
         },
       },

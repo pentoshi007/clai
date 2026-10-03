@@ -1,8 +1,9 @@
 import { redactSecrets } from "../../llm/provider.js";
 import { finalPipelineStageName, MAX_REDACT_IN_MEMORY_BYTES, NO_MATCH_EXIT_COMMANDS } from "./internals-2.js";
 import { readFile, stat, writeFile } from "node:fs/promises";
+import { DEFAULT_SHELL_TIMEOUT_MS } from "./timeout.js";
 
-export const DEFAULT_TIMEOUT_MS = 40_000;
+export const DEFAULT_TIMEOUT_MS = DEFAULT_SHELL_TIMEOUT_MS;
 
 export function launchErrorOutput(
   error: NodeJS.ErrnoException,

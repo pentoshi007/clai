@@ -199,6 +199,7 @@ async function probeEffort(
 export async function preflightEffort(
   input: EffortPreflightInput,
 ): Promise<void> {
+  if (input.providerId === "codex") return;
   if (input.singleDispatch) return;
   const thinking = input.request.thinking;
   if (!thinking) return;

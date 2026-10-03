@@ -389,7 +389,8 @@ Interactive sessions run behind a local broker so an agent continues working acr
 
 | Command | Does |
 |---------|------|
-| `/ask` · `/agent` · `/plan [view]` | Switch mode (plan = design a plan you approve before anything runs; `view` pages the current plan) |
+| `/ask` · `/agent` · `/plan` | Switch mode (plan = design a plan you approve before anything runs) |
+| `/view-plan` | View the current plan without changing mode |
 | `/implement` · `/discard` | Approve and execute or drop the current plan |
 | `/model [name]` · `/models [filter]` | Select model · browse all models across providers |
 | `/provider [name]` | Switch provider or open picker |

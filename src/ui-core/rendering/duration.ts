@@ -3,6 +3,7 @@ import type {
   ThinkingItem,
   ToolItem,
 } from "../state/transcript-types.js";
+import type { SubagentRun } from "../../agent/subagents/types.js";
 
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -13,6 +14,14 @@ export function formatDurationMs(ms: number): string {
   const minutes = Math.floor(whole / 60);
   if (minutes < 60) return `${minutes}m${String(whole % 60).padStart(2, "0")}s`;
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+export function subagentDurationLabel(run: SubagentRun, now: number): string {
+  const live = run.status === "running" || run.status === "stopping";
+  const elapsed = formatDurationMs((live ? now : run.updatedAt) - (run.startedAt ?? run.createdAt));
+  if (!elapsed) return "";
+  const total = run.startedAt === undefined && run.attempt > 1 ? "total " : "";
+  return `${total}${live ? "elapsed" : "duration"} ${elapsed}`;
 }
 
 function elapsedLabel(

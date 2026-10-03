@@ -74,6 +74,27 @@ describe("createUsagePagerSource", () => {
     );
   });
 
+  it("refreshes time-dependent content without a balance or session event", async () => {
+    vi.useFakeTimers();
+    let body = "resets: (in 01:00)";
+    const source = createUsagePagerSource({ subscribe: () => () => {}, renderBody: () => body });
+    try {
+      const changed = vi.fn();
+      source.watch!(changed);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(changed).not.toHaveBeenCalled();
+      body = "resets: (in 00:59)";
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(changed).toHaveBeenCalledOnce();
+      expect(await source.readAll()).toBe(body);
+      source.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      source.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps watch callbacks independent per subscriber", () => {
     const { source, emit } = setup(["first", "second"]);
     const first = vi.fn();

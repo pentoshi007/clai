@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileSubagentStore, restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../src/store/subagents.js";
 import { SubagentManager } from "../src/agent/subagents/manager.js";
 import type { SubagentRun } from "../src/agent/subagents/types.js";
+import { subagentDurationLabel } from "../src/ui-core/rendering/duration.js";
 
 const roots: string[] = [];
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -20,6 +21,17 @@ function run(overrides: Partial<SubagentRun> = {}): SubagentRun {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("FileSubagentStore", () => {
+  it("persists attempt starts and freezes restored interrupted time at the last update", () => {
+    const { store } = fixture();
+    store.save(run({ status: "running", report: undefined, attempt: 2, createdAt: 1000, startedAt: 5000, updatedAt: 8000 }));
+    const restored = store.load("parent")[0]!;
+    expect(restored).toMatchObject({ status: "stopped", createdAt: 1000, startedAt: 5000, updatedAt: 8000 });
+    expect(subagentDurationLabel(restored, 100_000)).toBe("duration 3.0s");
+    expect(restoreSubagentRun(run(), "parent")).toBeDefined();
+    expect(restoreSubagentRun(run({ startedAt: NaN }), "parent")).toBeUndefined();
+    expect(restoreSubagentRun({ ...run(), startedAt: "5000" }, "parent")).toBeUndefined();
+  });
+
   it("round-trips the active model route and bounds malformed route fields", () => {
     const { store } = fixture();
     store.save(run({ activeProvider: "bynara", activeModel: "active-model" }));

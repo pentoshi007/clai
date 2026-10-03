@@ -51,6 +51,7 @@ export interface BackgroundJob extends JobLinkMetadata {
   name?: string | undefined;
   authorization?: { target: string; expiresAt?: string | undefined } | undefined;
   timeoutAt?: string | undefined;
+  executionDeadlineAt?: string | undefined;
 }
 
 export interface SupersededResultRevision {
@@ -149,6 +150,5 @@ export interface StartJobOptions extends JobLinkMetadata {
   ownerSessionId?: string | undefined;
   profile?: string | undefined;
   estimatedSeconds?: number | undefined;
-  timeoutMs?: number | undefined;
   authorization?: { target: string; expiresAt?: string | undefined } | undefined;
 }

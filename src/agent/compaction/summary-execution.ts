@@ -405,6 +405,7 @@ export async function executeCompactionSummary(
         }),
     ...(execution.signal ? { signal: execution.signal } : {}),
   };
+  const preserveCodexEffort = request.provider === "codex" && request.thinking?.enabled === true;
 
   const attemptAccounting = (
     attemptRequest: CompletionRequest,
@@ -477,6 +478,7 @@ export async function executeCompactionSummary(
   ): CompletionRequest | undefined => {
     const grown = grownRequest(attemptRequest, execution.maxTokens);
     if (grown) return grown;
+    if (preserveCodexEffort) return undefined;
     if (attemptRequest.thinking?.enabled !== true) return undefined;
     return { ...attemptRequest, thinking: COMPACTION_THINKING };
   };
@@ -584,7 +586,7 @@ export async function executeCompactionSummary(
         reasoningReplayRejected = true;
         return await runTransientAttempt(withoutReasoningReplay(attemptRequest), replace);
       }
-      if (execution.retryOnRequestShapeRejection === false) throw error;
+      if (execution.retryOnRequestShapeRejection === false || preserveCodexEffort) throw error;
       if (!isRequestShapeRejection(error, execution.signal)) throw error;
       const compatibility = compactionCompatibilityRequest(attemptRequest);
       if (!compatibility) {
@@ -658,7 +660,7 @@ export async function executeCompactionSummary(
               `${execution.systemContent}${RETRY_SYSTEM_SUFFIX}`,
             ),
             temperature: 0,
-            ...(retryReason === "reasoning-only" &&
+            ...(!preserveCodexEffort && retryReason === "reasoning-only" &&
             sizedRequest.thinking?.enabled === true
               ? { thinking: COMPACTION_THINKING }
               : {}),

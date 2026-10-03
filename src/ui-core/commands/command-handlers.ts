@@ -66,7 +66,7 @@ async function handlePlan(services: AppServices, invocation: CommandInvocation):
     handlePlanPager(services);
     return;
   }
-  services.session.notice("warn", "usage: /plan [view] · /agent or /ask leaves plan mode");
+  services.session.notice("warn", "usage: /plan · /view-plan views the current plan · /agent or /ask leaves plan mode");
 }
 
 export function attachCommandHandlers(services: AppServices): void {
@@ -84,6 +84,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("permissions", (i) => handlePermissions(services, i));
   c.setHandler("output", (i) => handleOutput(services, i));
   c.setHandler("plan", (i) => handlePlan(services, i));
+  c.setHandler("view-plan", () => handlePlanPager(services));
   c.setHandler("implement", () => {
     if (services.session.getState().running) {
       services.session.notice("warn", "a turn is already running");

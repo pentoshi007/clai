@@ -5,7 +5,8 @@ import {
   freebuffSessionMetadata,
   FreebuffSessionRequestError,
   FreebuffSessionResponse,
-  FREEBUFF_HEARTBEAT_INTERVAL_MS,
+  freebuffHeartbeatDelay,
+  freebuffHeartbeatRetryDelay,
   newFreebuffCliInstanceId,
   type FreebuffSessionCallOptions,
 } from "./freebuff-session-api.js";
@@ -23,6 +24,7 @@ interface ActiveClaim {
   readonly token: string;
   expiresAt: number | undefined;
   heartbeat: NodeJS.Timeout | undefined;
+  consecutiveFailures: number;
 }
 
 type SessionDeps = Pick<FreebuffSessionCallOptions, "baseUrl" | "fetch">;
@@ -88,13 +90,37 @@ function expiryMs(response: Extract<FreebuffSessionResponse, { status: "active" 
 export class FreebuffSessionManager {
   private readonly claims = new Map<string, ActiveClaim>();
   private readonly inflight = new Map<string, Promise<FreebuffAdmission>>();
+  private readonly generations = new Map<string, Promise<void>>();
   private closing = false;
   private disposePromise: Promise<void> | undefined;
 
   constructor(private readonly deps: SessionDeps = {}) {}
 
-  private scope(token: string, model: string): string {
-    return `${createHash("sha256").update(token).digest("hex").slice(0, 16)}:${model}`;
+  private scope(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  async withAdmission<T>(
+    token: string,
+    model: string,
+    signal: AbortSignal | undefined,
+    run: (admission: FreebuffAdmission) => Promise<T>,
+  ): Promise<T> {
+    if (this.closing) throw new ProviderError("Freebuff session manager is shutting down.");
+    signal?.throwIfAborted();
+    const key = this.scope(token);
+    const previous = this.generations.get(key) ?? Promise.resolve();
+    const result = previous.then(async () => {
+      signal?.throwIfAborted();
+      const admission = await this.ensureAdmission(token, model, signal);
+      signal?.throwIfAborted();
+      return run(admission);
+    });
+    const settled = result.then(() => {}, () => {}).finally(() => {
+      if (this.generations.get(key) === settled) this.generations.delete(key);
+    });
+    this.generations.set(key, settled);
+    return result;
   }
 
   async ensureAdmission(
@@ -103,13 +129,19 @@ export class FreebuffSessionManager {
     signal?: AbortSignal,
   ): Promise<FreebuffAdmission> {
     if (this.closing) throw new ProviderError("Freebuff session manager is shutting down.");
-    const key = this.scope(token, model);
+    signal?.throwIfAborted();
+    const key = this.scope(token);
+    const existing = this.inflight.get(key);
+    if (existing) {
+      const admission = await existing;
+      signal?.throwIfAborted();
+      if (admission.model === model) return admission;
+      return this.ensureAdmission(token, model, signal);
+    }
     const claim = this.claims.get(key);
-    if (claim && (claim.expiresAt === undefined || claim.expiresAt > Date.now() + 5_000)) {
+    if (claim?.model === model && (claim.expiresAt === undefined || claim.expiresAt > Date.now() + 5_000)) {
       return this.toAdmission(claim);
     }
-    const existing = this.inflight.get(key);
-    if (existing) return existing;
     const attempt = this.claim(key, token, model, signal).finally(() => {
       if (this.inflight.get(key) === attempt) this.inflight.delete(key);
     });
@@ -144,7 +176,8 @@ export class FreebuffSessionManager {
           model,
           walletSpendLimit: 0,
           signal,
-        }).catch((retryError: unknown) => {
+        }).catch(async (retryError: unknown) => {
+          await callFreebuffSession("DELETE", token, { ...this.deps, instanceId }).catch(() => undefined);
           if (retryError instanceof FreebuffSessionRequestError) {
             throw new ProviderError(
               `Freebuff session admission failed (${retryError.statusCode}). ${retryError.message}`,
@@ -172,6 +205,7 @@ export class FreebuffSessionManager {
       }
     }
     if (response.status !== "active") {
+      await callFreebuffSession("DELETE", token, { ...this.deps, instanceId }).catch(() => undefined);
       throw new ProviderError(refusalMessage(response), admissionStatusCode(response));
     }
     const activeInstance = response.instanceId || instanceId;
@@ -181,6 +215,7 @@ export class FreebuffSessionManager {
       token,
       expiresAt: expiryMs(response),
       heartbeat: undefined,
+      consecutiveFailures: 0,
     };
     this.claims.set(key, claim);
     this.scheduleHeartbeat(key, token, claim);
@@ -196,11 +231,12 @@ export class FreebuffSessionManager {
     };
   }
 
-  private scheduleHeartbeat(key: string, token: string, claim: ActiveClaim): void {
-    if (claim.heartbeat) clearInterval(claim.heartbeat);
-    const timer = setInterval(() => {
+  private scheduleHeartbeat(key: string, token: string, claim: ActiveClaim, delay = freebuffHeartbeatDelay(claim.expiresAt)): void {
+    if (claim.heartbeat) clearTimeout(claim.heartbeat);
+    const timer = setTimeout(() => {
+      claim.heartbeat = undefined;
       void this.beat(key, token, claim);
-    }, FREEBUFF_HEARTBEAT_INTERVAL_MS);
+    }, delay);
     if (typeof timer.unref === "function") timer.unref();
     claim.heartbeat = timer;
   }
@@ -217,18 +253,21 @@ export class FreebuffSessionManager {
       if (this.claims.get(key) !== claim) return;
       if (response.status === "active") {
         claim.expiresAt = expiryMs(response);
+        claim.consecutiveFailures = 0;
+        this.scheduleHeartbeat(key, token, claim);
         return;
       }
-      if (response.status === "superseded" || response.status === "none" || response.status === "ended") {
-        this.clearClaim(key, claim);
-      }
-    } catch {
-      return;
+      this.clearClaim(key, claim);
+    } catch (error) {
+      if (this.claims.get(key) !== claim) return;
+      claim.consecutiveFailures += 1;
+      const retryAfter = error instanceof FreebuffSessionRequestError ? error.retryAfterMs : undefined;
+      this.scheduleHeartbeat(key, token, claim, freebuffHeartbeatRetryDelay(claim.consecutiveFailures, retryAfter));
     }
   }
 
   private clearClaim(key: string, claim: ActiveClaim): void {
-    if (claim.heartbeat) clearInterval(claim.heartbeat);
+    if (claim.heartbeat) clearTimeout(claim.heartbeat);
     claim.heartbeat = undefined;
     if (this.claims.get(key) === claim) this.claims.delete(key);
   }
@@ -245,29 +284,25 @@ export class FreebuffSessionManager {
   }
 
   async release(token: string, model?: string, signal?: AbortSignal): Promise<void> {
-    if (model) {
-      await this.releaseKey(this.scope(token, model), token, signal);
-      return;
-    }
-    const prefix = `${createHash("sha256").update(token).digest("hex").slice(0, 16)}:`;
-    await Promise.all(
-      [...this.claims.keys()]
-        .filter((key) => key.startsWith(prefix))
-        .map((key) => this.releaseKey(key, token, signal)),
-    );
+    const key = this.scope(token);
+    await this.generations.get(key);
+    await this.inflight.get(key)?.catch(() => undefined);
+    if (model && this.claims.get(key)?.model !== model) return;
+    await this.releaseKey(key, token, signal);
   }
 
   async dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.closing = true;
     this.disposePromise = (async () => {
+      await Promise.all([...this.generations.values()]);
       await Promise.all([...this.inflight.values()].map((request) => request.catch(() => undefined)));
       const claims = [...this.claims.values()];
       this.claims.clear();
       this.inflight.clear();
       await Promise.all(
         claims.map(async (claim) => {
-          if (claim.heartbeat) clearInterval(claim.heartbeat);
+          if (claim.heartbeat) clearTimeout(claim.heartbeat);
           await callFreebuffSession("DELETE", claim.token, {
             ...this.deps,
             instanceId: claim.instanceId,
@@ -279,7 +314,7 @@ export class FreebuffSessionManager {
   }
 
   hasActiveClaim(token: string, model: string): boolean {
-    return this.claims.has(this.scope(token, model));
+    return this.claims.get(this.scope(token))?.model === model;
   }
 }
 

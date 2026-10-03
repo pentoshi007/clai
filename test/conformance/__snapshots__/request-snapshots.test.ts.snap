@@ -2528,8 +2528,10 @@ exports[`serialized request snapshots > codex / images 1`] = `
 {
   "body": {
     "client_metadata": {
+      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2587,6 +2589,7 @@ exports[`serialized request snapshots > codex / images 1`] = `
     "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
+    "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
   },
   "method": "POST",
   "url": "https://chatgpt.com/backend-api/codex/responses",
@@ -2597,8 +2600,10 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
 {
   "body": {
     "client_metadata": {
+      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2651,6 +2656,7 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
     "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
+    "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
   },
   "method": "POST",
   "url": "https://chatgpt.com/backend-api/codex/responses",
@@ -2661,8 +2667,10 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
 {
   "body": {
     "client_metadata": {
+      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2718,6 +2726,7 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
     "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
+    "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
   },
   "method": "POST",
   "url": "https://chatgpt.com/backend-api/codex/responses",
@@ -2728,8 +2737,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
 {
   "body": {
     "client_metadata": {
+      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2835,6 +2846,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
     "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
+    "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
   },
   "method": "POST",
   "url": "https://chatgpt.com/backend-api/codex/responses",
@@ -2845,8 +2857,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
 {
   "body": {
     "client_metadata": {
+      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2952,6 +2966,7 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
     "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
+    "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
   },
   "method": "POST",
   "url": "https://chatgpt.com/backend-api/codex/responses",
@@ -2962,8 +2977,10 @@ exports[`serialized request snapshots > codex / tools 1`] = `
 {
   "body": {
     "client_metadata": {
+      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
+      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -3055,6 +3072,7 @@ exports[`serialized request snapshots > codex / tools 1`] = `
     "thread-id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
     "user-agent": "codex_cli_rs/<installed-version>",
     "x-client-request-id": "<generated>",
+    "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
   },
   "method": "POST",
   "url": "https://chatgpt.com/backend-api/codex/responses",

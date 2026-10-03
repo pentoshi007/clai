@@ -1,14 +1,18 @@
 import { CHATGPT_SUBSCRIPTION_DISPLAY_NAME } from "./provider-identity.js";
 import {
   CODEX_API_BASE_URL,
+  codexInstallationId,
   codexPromptCacheKey,
   codexRequestHeaders,
+  codexWindowId,
   type CodexCredential,
 } from "./codex-auth.js";
 import { codexModelMetadata } from "./codex-models.js";
+import { nearestAcceptedEffort } from "./reasoning-controls.js";
 import { finalizeCodexBody } from "./codex-request.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import { currentSessionAffinity } from "./session-affinity.js";
+import type { ReasoningEffort } from "../types.js";
 import type { ResponsesBodyExtrasContext, ResponsesDialectConfig } from "./responses-config.js";
 
 export function codexConfigFor(credential: CodexCredential): ResponsesDialectConfig {
@@ -26,11 +30,19 @@ export function codexConfigFor(credential: CodexCredential): ResponsesDialectCon
     systemRole: "developer",
     buildHeaders(auth, accept, context) {
       const cacheKey = codexPromptCacheKey(context);
+      const lite = context?.model
+        ? codexModelMetadata(credential, context.model)?.responsesLite === true
+        : false;
       return {
         "content-type": "application/json",
         accept,
         ...(auth.apiKey ? { authorization: `Bearer ${auth.apiKey}` } : {}),
-        ...codexRequestHeaders(credential.accountId, {}, credential.residency, cacheKey),
+        ...codexRequestHeaders(
+          credential.accountId,
+          { ...(lite ? { "x-openai-internal-codex-responses-lite": "true" } : {}) },
+          credential.residency,
+          cacheKey,
+        ),
       };
     },
     reasoningPayload(reasoning, model) {
@@ -39,19 +51,17 @@ export function codexConfigFor(credential: CodexCredential): ResponsesDialectCon
       let effort = metadata?.defaultEffort;
       if (reasoning) {
         effort = reasoning.enabled
-          ? reasoning.effort
+          ? (efforts.length
+              ? nearestAcceptedEffort(
+                  reasoning.effort as ReasoningEffort,
+                  efforts,
+                ) ?? reasoning.effort
+              : reasoning.effort)
           : efforts.includes("none") ? "none" : efforts[0];
       }
-      if (effort === "ultra") {
-        effort = metadata?.multiAgentEffort
-          ?? (efforts.includes("max") ? "max" : efforts.filter((value) => value !== "ultra").at(-1))
-          ?? "medium";
-      }
-      // Codex leaves GPT-6.1 Sol summaries disabled by default. When clai is
-      // explicitly showing reasoning, opt into the streamed summary channel.
-      const summary = metadata?.defaultSummary === "none" && reasoning?.enabled
-        ? "auto"
-        : metadata?.defaultSummary ?? (reasoning?.enabled ? "auto" : undefined);
+      const summary = reasoning?.enabled
+        ? metadata?.defaultSummary && metadata.defaultSummary !== "none" ? metadata.defaultSummary : "auto"
+        : undefined;
       return {
         ...(effort ? { effort } : {}),
         ...(metadata?.supportsSummary !== false && summary && summary !== "none" ? { summary } : {}),
@@ -67,7 +77,12 @@ export function codexConfigFor(credential: CodexCredential): ResponsesDialectCon
         tool_choice: "auto",
         parallel_tool_calls: context.parallelToolCalls !== false && !metadata?.responsesLite,
         reasoning: {},
-        client_metadata: { session_id: threadId, thread_id: threadId },
+        client_metadata: {
+          installation_id: codexInstallationId(),
+          session_id: threadId,
+          thread_id: threadId,
+          window_id: codexWindowId(cacheKey),
+        },
         ...(metadata?.supportsVerbosity && metadata.defaultVerbosity
           ? { text: { verbosity: metadata.defaultVerbosity } }
           : {}),

@@ -149,14 +149,14 @@ describe("per-session thinking", () => {
     expect(binding?.thinking).toBeUndefined();
   });
 
-  it("restores the Codex ultra effort when resuming a session", async () => {
+  it("rejects the removed Codex ultra effort when restoring a session", async () => {
     await saveSessionModel("sess-codex-ultra", {
       provider: "codex",
       model: "gpt-6.1-sol",
-      thinking: { enabled: true, effort: "ultra" },
+      thinking: { enabled: true, effort: "ultra" } as never,
     });
     const binding = await loadSessionModelBinding("sess-codex-ultra");
-    expect(binding?.thinking).toEqual({ enabled: true, effort: "ultra" });
+    expect(binding?.thinking).toBeUndefined();
   });
 
   it("restores the resumed session thinking instead of keeping the latest", async () => {

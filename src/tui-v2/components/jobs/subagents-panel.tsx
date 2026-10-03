@@ -6,7 +6,8 @@ import { TextAttributes, type MouseEvent } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
-import { orderSubagentRuns, subagentsBarVisible, watchSubagents } from "../../../ui-core/rendering/subagent-source.js";
+import { isLiveSubagentRun, orderSubagentRuns, subagentsBarVisible, watchSubagents } from "../../../ui-core/rendering/subagent-source.js";
+import { subagentDurationLabel } from "../../../ui-core/rendering/duration.js";
 import { openSubagentRun, SUBAGENT_STATUS_ICON } from "../../../ui-core/commands/subagent-commands.js";
 import type { SubagentRun } from "../../../agent/subagents/types.js";
 
@@ -33,11 +34,22 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
   const manager = services.session.subagents;
   const [collapsed, setCollapsed] = useState(true);
   const [runs, setRuns] = useState<readonly SubagentRun[]>(() => manager.list());
+  const [now, setNow] = useState(Date.now);
+  const live = !collapsed && !blockingOverlay && runs.some(isLiveSubagentRun);
+
+  useEffect(() => {
+    if (!live) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  }, [live, manager]);
 
   useEffect(() => {
     const refresh = (): void => {
       if (services.session.subagents !== manager) return;
       setRuns(manager.list());
+      setNow(Date.now());
     };
     refresh();
     const stopManager = manager.subscribe(refresh);
@@ -104,7 +116,7 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
                 style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}
               >
                 <text content={`  ${icon} ${run.title}`} wrapMode="none" style={{ width: "100%", height: 1, fg: statusColor(run, theme) }} />
-                <text content={`    ${run.status} · ${route}`} wrapMode="none" style={{ width: "100%", height: 1, fg: theme.muted }} />
+                <text content={`    ${[run.status, subagentDurationLabel(run, now), route].filter(Boolean).join(" · ")}`} wrapMode="none" style={{ width: "100%", height: 1, fg: theme.muted }} />
               </box>
             );
           })

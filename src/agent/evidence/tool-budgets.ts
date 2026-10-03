@@ -1,5 +1,7 @@
 
 
+import { DEFAULT_SHELL_TIMEOUT_MS } from "../../tools/shell/timeout.js";
+
 export function isScaffoldCreateCommand(cmd: string): boolean {
   return /\b(?:npm\s+create|npm\s+init|yarn\s+create|pnpm\s+create|bun\s+create|npx\s+(?:--yes\s+)?create-[\w-]+|create-vite|create-next-app|create-react-app|cargo\s+new|cargo\s+init|go\s+mod\s+init|poetry\s+new|django-admin\s+startproject|rails\s+new|composer\s+create-project|mix\s+new|flutter\s+create|dotnet\s+new)\b/i.test(
     cmd,
@@ -62,26 +64,14 @@ function requestedToolTimeoutMs(call: {
     if (Number.isFinite(parsed)) requested = parsed;
   }
   if (requested !== undefined) {
-    let ms = Math.floor(requested);
-    const cmd = typeof call.args.command === "string" ? call.args.command : "";
-    const isLongRunning = isLongRunningTestOrBuildCommand(cmd) || isLongQuietInstallOrScaffoldCommand(cmd);
-    if (isLongRunning && ms > 0 && ms < 1000) {
-      ms = ms * 1000;
-    }
     return Math.max(
       MIN_TOOL_TIMEOUT_MS,
-      Math.min(MAX_TOOL_TIMEOUT_MS, ms),
+      Math.min(MAX_TOOL_TIMEOUT_MS, Math.floor(requested)),
     );
   }
 
-  const cmd = typeof call.args.command === "string" ? call.args.command : "";
-  if (call.name === "shell.exec" && isLongQuietInstallOrScaffoldCommand(cmd)) {
-    return 15 * 60_000;
-  }
-  if (call.name === "shell.exec" && isLongRunningTestOrBuildCommand(cmd)) {
-    return 120_000;
-  }
   if (call.name.startsWith("mcp.")) return 60_000;
+  if (call.name === "shell.exec") return DEFAULT_SHELL_TIMEOUT_MS;
   return DEFAULT_TOOL_TIMEOUT_MS;
 }
 

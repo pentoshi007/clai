@@ -349,23 +349,29 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
       }));
 
   const samplingOmit = new Set(profile.sampling.omit ?? []);
-  const emittedTemperature = samplingOmit.has("temperature")
-    ? undefined
-    : sampling.temperature;
-  const emittedTopP = samplingOmit.has("top_p") ? undefined : sampling.topP;
+  let emittedTemperature = samplingOmit.has("temperature") ? undefined : sampling.temperature;
+  let emittedTopP = samplingOmit.has("top_p") ? undefined : sampling.topP;
+  if (input.provider === "freebuff") {
+    emittedTemperature = input.temperature;
+    emittedTopP = undefined;
+  }
   if (input.temperature !== undefined && emittedTemperature === undefined) {
     warnSamplingFieldNotModifiable(input.provider, input.model, "temperature");
   }
 
   const controlDeclared = profile.reasoning.control.status === "supported";
-  const controlSuppression = isReasoningUnsupported(input.provider, input.model)
-    ? ("observed-rejection" as const)
-    : reasoningEnabled &&
-        !controlDeclared &&
-        !modelSupportsThinking(input.provider, input.model)
-      ? ("capability-denied" as const)
-      : undefined;
+  const preserveCodexEffort = input.provider === "codex" && input.reasoning?.enabled === true;
+  const controlSuppression = preserveCodexEffort
+    ? undefined
+    : isReasoningUnsupported(input.provider, input.model)
+      ? ("observed-rejection" as const)
+      : reasoningEnabled &&
+          !controlDeclared &&
+          !modelSupportsThinking(input.provider, input.model)
+        ? ("capability-denied" as const)
+        : undefined;
   const emittedReasoning =
+    !preserveCodexEffort &&
     input.reasoning &&
     profile.reasoning.acceptedEfforts.length > 0 &&
     !profile.reasoning.acceptedEfforts.includes(input.reasoning.effort)

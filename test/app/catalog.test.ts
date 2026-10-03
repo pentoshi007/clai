@@ -42,6 +42,15 @@ describe("W01 command catalogue lives in the app layer", () => {
     expect(isKnownSlashCommand("/jobs")).toBe(true);
   });
 
+  it("separates plan mode from plan viewing in help and completion", () => {
+    const plan = slashCommands.find((entry) => entry.command === "/plan")!;
+    expect(plan.usage).toBeUndefined();
+    expect(plan.description).toContain("switch to plan mode");
+    expect(isKnownSlashCommand("/view-plan")).toBe(true);
+    expect(getSlashCommandSuggestions("/view").map((entry) => entry.command)).toContain("/view-plan");
+    expect(registry.parse("/view-plan")).toEqual({ name: "view-plan", args: "", context: "global" });
+  });
+
   it("treats absolute paths as prompts, not commands", () => {
     for (const line of ["/etc/hosts", "/Users/me/notes.md", "/tmp/x", "/C:\\Windows"]) {
       expect(looksLikeSlashCommand(line), line).toBe(false);

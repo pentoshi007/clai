@@ -28,6 +28,7 @@ export async function runPagerLiveSpike(): Promise<SpikeResult> {
   const listeners = new Set<() => void>();
   let growing = true;
   let reads = 0;
+  let pageReads = 0;
   let releaseRead: (() => void) | undefined;
   const pendingReads = new Set<Promise<unknown>>();
   const trackRead = <T,>(read: () => Promise<T>): Promise<T> => {
@@ -39,6 +40,10 @@ export async function runPagerLiveSpike(): Promise<SpikeResult> {
   const artifact = createArtifactPagerSource(path);
   const source: ArtifactPagerSource = {
     ...artifact,
+    readPage: (offset) => trackRead(async () => {
+      pageReads += 1;
+      return artifact.readPage(offset);
+    }),
     readTail: () => trackRead(async () => {
       reads += 1;
       if (releaseRead) await new Promise<void>((resolve) => { releaseRead = resolve; });
@@ -143,14 +148,21 @@ export async function runPagerLiveSpike(): Promise<SpikeResult> {
     await flush();
     check(result, "burst notifications coalesce into one trailing read", reads === readsBeforeBurst + 2);
 
+    const tailReadsBeforePause = reads;
     await act(async () => { setup.mockInput.pressArrow("up"); });
     await flush();
-    check(result, "scrolling up pauses the live subscription", listeners.size === 0);
-    await writeFile(path, "FINAL OUTPUT\n");
+    check(result, "scrolling up keeps the live subscription without following the tail", listeners.size === 1 && reads === tailReadsBeforePause);
+    const pausedRows = frameCheck("before paused update").match(/test-2-\d+ passed/g) ?? [];
+    const pageReadsBeforeUpdate = pageReads;
+    await writeFile(path, Array.from({ length: 150 }, (_, index) =>
+      `\x1b[32m✓ test-2-${index} passed\x1b[0m\r\n`).join("") + "FINAL OUTPUT\n");
     growing = false;
     await act(async () => { notify(); });
     await flush();
-    check(result, "paused view does not jump on new output", !frameCheck("paused").includes("FINAL OUTPUT"));
+    check(result, "paused updates refresh the current page without reading the tail", pageReads === pageReadsBeforeUpdate + 1 && reads === tailReadsBeforePause);
+    const pausedFrame = frameCheck("paused");
+    check(result, "paused view does not jump on new output", !pausedFrame.includes("FINAL OUTPUT"));
+    check(result, "paused refresh preserves the visible rows", pausedRows.length > 0 && pausedRows.join(",") === (pausedFrame.match(/test-2-\d+ passed/g) ?? []).join(","));
     await act(async () => { await setup.mockInput.pressKeys(["l"]); });
     await flush();
     const finishedFrame = frameCheck("finished");

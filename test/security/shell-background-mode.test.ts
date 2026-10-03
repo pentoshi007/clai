@@ -8,8 +8,6 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("TOOL-002 shell.exec background mode", () => {
   it('background:"never" keeps an expensive-looking command in the foreground', async () => {
-    // `find /` normally auto-backgrounds; with background:"never" the caller
-    // gets real output in this turn. A tiny maxdepth keeps the test fast.
     const result = await shellExec(
       {
         command: "find / -maxdepth 0 -name '*'",
@@ -86,7 +84,7 @@ describe("TOOL-002 shell.exec background mode", () => {
     });
   });
 
-  it("background never overrides responder and persistent commands cannot delegate", async () => {
+  it("background never overrides responder and command heuristics do not change ownership", async () => {
     const start = vi.spyOn(jobManager, "startJob").mockResolvedValue({
       ok: true,
       output: "launch policy",
@@ -108,15 +106,15 @@ describe("TOOL-002 shell.exec background mode", () => {
     expect(foreground.backgroundJob).toBeUndefined();
     expect(start).not.toHaveBeenCalled();
 
-    await shellExec({ command: "npm run dev", responder: true }, {});
+    await shellExec({ command: "tcpdump -c 1", responder: true }, {});
     expect(start.mock.calls[0]?.[1]).toMatchObject({
-      responder: false,
-      wakeOnCompletion: false,
+      responder: true,
+      wakeOnCompletion: true,
     });
 
     start.mockClear();
     await shellExec(
-      { command: "npm run dev", background: "always", responder: true, name: "web" },
+      { command: "npm run dev", background: "always", name: "web" },
       {},
     );
     expect(start.mock.calls[0]?.[1]).toMatchObject({
@@ -126,8 +124,34 @@ describe("TOOL-002 shell.exec background mode", () => {
     });
   });
 
-  it("explains that timeoutMs does not apply when explicitly delegated", async () => {
-    vi.spyOn(jobManager, "startJob").mockResolvedValue({
+  it("enforces timeoutMs for a foreground command", async () => {
+    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setTimeout(() => console.log('finished'), 1500)")}`;
+    const result = await shellExec({ command, timeoutMs: 1000 }, {});
+    expect(result.ok).toBe(false);
+    expect(result.backgroundJob).toBeUndefined();
+    expect(result.output).toMatch(/timed out/i);
+  });
+
+  it.each([false, true])("ignores foreground timeoutMs on explicit background, responder=%s", async (responder) => {
+    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setTimeout(() => console.log('finished'), 1500)")}`;
+    const started = await shellExec(
+      { command, timeoutMs: 1000, background: "always", responder },
+      { sessionId: "background-timeout-regression" },
+    );
+    const id = started.backgroundJob?.id;
+    expect(id).toBeTruthy();
+    try {
+      expect(started.output).toMatch(/timeoutMs.*foreground|ignored.*background/i);
+      const result = await jobManager.waitForJob(id!, { timeoutMs: 5000 });
+      expect(result.output).not.toMatch(/still running/i);
+      expect(jobManager.getJob(id!)).toMatchObject({ status: "exited", exitCode: 0 });
+    } finally {
+      if (jobManager.getJob(id!)?.status === "running") await jobManager.stopJob(id!);
+    }
+  });
+
+  it("ignores foreground timeoutMs when explicitly delegated", async () => {
+    const start = vi.spyOn(jobManager, "startJob").mockResolvedValue({
       ok: true,
       output: "launch policy",
       backgroundJob: {
@@ -140,7 +164,7 @@ describe("TOOL-002 shell.exec background mode", () => {
       { command: "find / -name definitely-not-here-xyz", timeoutMs: 1234, responder: true },
       {},
     );
-    expect(result.output).toMatch(/timeoutMs=1234 does not apply/i);
-    expect(result.output).toMatch(/background:"never"/);
+    expect(start.mock.calls[0]?.[1]).not.toHaveProperty("timeoutMs");
+    expect(result.output).toMatch(/timeoutMs.*foreground|ignored.*background/i);
   });
 });

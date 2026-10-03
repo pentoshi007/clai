@@ -449,13 +449,43 @@ describe("durable job safety edges", () => {
     expect(restarted.getPendingNotifications("persist-retry")).toHaveLength(1);
   });
 
-  it("keeps timeout input inert and strips legacy timeoutAt on restart", async () => {
+  it("discards persisted execution deadlines when recovering a background job", async () => {
+    const { dir, manager } = await fixture();
+    const started = await manager.startJob(
+      `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setInterval(() => {}, 1000)")}`,
+    );
+    const id = started.backgroundJob!.id;
+    const registryPath = join(dir, "registry-v1.json");
+    const registry = JSON.parse(await readFile(registryPath, "utf8"));
+    registry.jobs.find((job: { id: string }) => job.id === id).executionDeadlineAt =
+      "2000-01-01T00:00:00.000Z";
+    await writeFile(registryPath, `${JSON.stringify(registry)}\n`);
+
+    const restarted = new JobManager(dir);
+    managers.push(restarted);
+    await sleep(100);
+    expect(restarted.getJob(id)).toMatchObject({ status: "running" });
+    expect(restarted.getJob(id)).not.toHaveProperty("executionDeadlineAt");
+    expect(await readFile(registryPath, "utf8")).not.toContain("executionDeadlineAt");
+  });
+
+  it("still enforces authorization expiry independently of shell timeouts", async () => {
+    const { manager } = await fixture();
+    const started = await manager.startJob(
+      `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setInterval(() => {}, 1000)")}`,
+      { authorization: { target: "example.com", expiresAt: new Date(Date.now() + 300).toISOString() } },
+    );
+    const id = started.backgroundJob!.id;
+    await waitForStatus(manager, id, ["killed"]);
+    expect(manager.getJob(id)!.artifacts.stderr.bytes).toBe(0);
+  });
+  it("strips legacy timeoutAt without assigning an unrequested deadline on restart", async () => {
     const { dir, manager } = await fixture();
     const started = await manager.startJob(
       `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
         "setTimeout(() => process.exit(0), 1000)",
       )}`,
-      { timeoutMs: 5 },
+      {},
     );
     const id = started.backgroundJob?.id;
     expect(id).toBeTruthy();

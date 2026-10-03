@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompletionRequest } from "../src/types.js";
+import { disposeFreebuffSessionManager } from "../src/llm/freebuff-session.js";
 
 const KEY_ONE = "freebuff-key-one-aaaaaaaaaaaaaaaa";
 const KEY_TWO = "freebuff-key-two-bbbbbbbbbbbbbbbb";
@@ -58,7 +59,8 @@ describe("Freebuff multi-key rotation", () => {
     ];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await disposeFreebuffSessionManager();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -74,7 +76,7 @@ describe("Freebuff multi-key rotation", () => {
       }
       usedKeys.push("two");
       if (url.includes("/freebuff/session/admission")) {
-        return new Response(JSON.stringify({ error: "session_superseded" }), { status: 409 });
+        return new Response(JSON.stringify({ status: "active", instanceId: "cli:rotation", model: "deepseek/deepseek-v4-flash", remainingMs: 3_600_000 }), { status: 200 });
       }
       if (url.includes("/agent-runs")) {
         return new Response(JSON.stringify({ runId: "run-rotate" }), { status: 200 });

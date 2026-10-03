@@ -1,12 +1,15 @@
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 import {
   currentIsolatedSessionAffinity,
   currentSessionAffinity,
 } from "./session-affinity.js";
 import { cacheAffinityKey } from "./cache-affinity.js";
+import { getDataDir } from "../store/paths.js";
 import type { ResponsesBodyExtrasContext } from "./responses-config.js";
 import { CHATGPT_SUBSCRIPTION_DISPLAY_NAME } from "./provider-identity.js";
 import { installedCodexVersion } from "./codex-client.js";
@@ -29,10 +32,35 @@ export interface CodexCredential {
 }
 
 let generatedCodexSessionId: string | undefined;
+let generatedInstallationId: string | undefined;
 
 export function defaultCodexSessionId(): string {
   generatedCodexSessionId ??= crypto.randomUUID();
   return generatedCodexSessionId;
+}
+
+export function codexInstallationId(): string {
+  if (generatedInstallationId) return generatedInstallationId;
+  const file = join(getDataDir(), "installation_id");
+  try {
+    const existing = readFileSync(file, "utf8").trim();
+    if (/^[0-9a-fA-F-]{36}$/.test(existing)) {
+      generatedInstallationId = existing;
+      return existing;
+    }
+  } catch {}
+  const created = crypto.randomUUID();
+  generatedInstallationId = created;
+  try {
+    mkdirSync(getDataDir(), { recursive: true });
+    writeFileSync(file, created, { mode: 0o644 });
+  } catch {}
+  return created;
+}
+
+export function codexWindowId(seed: string): string {
+  const digest = createHash("sha256").update(seed).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
 export interface CodexDeviceAuthStart {
@@ -110,6 +138,7 @@ export function codexRequestHeaders(
     "x-client-request-id": crypto.randomUUID(),
     ...(residency ? { "x-openai-internal-codex-residency": residency } : {}),
     "thread-id": affinity ?? session,
+    "x-codex-window-id": codexWindowId(affinity ?? session),
     ...(isSubagent ? { "x-openai-subagent": "collab_spawn" } : {}),
     ...extra,
   };

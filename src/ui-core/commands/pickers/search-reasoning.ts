@@ -18,7 +18,6 @@ const REASONING_DESCRIPTIONS: Record<string, string> = {
   high: "deep reasoning",
   xhigh: "maximum depth",
   max: "highest supported depth (falls back if rejected)",
-  ultra: "model-defined maximum reasoning",
 };
 
 export function handleSearch(services: AppServices, invocation: CommandInvocation): void {
@@ -140,8 +139,8 @@ export function reasoningOptionValues(
   provider: ProviderId,
   model: string,
 ): readonly string[] {
-  const scale = Object.keys(REASONING_DESCRIPTIONS).filter((value) =>
-    value !== "off" && (value !== "ultra" || provider === "codex"),
+  const scale = Object.keys(REASONING_DESCRIPTIONS).filter(
+    (value) => value !== "off",
   );
   const evidence = modelReasoningEvidence(provider, model);
   if (
@@ -188,7 +187,7 @@ function applyReasoning(services: AppServices, value: string): void {
     services.session.notice("info", "thinking → off");
     return;
   }
-  if (["minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(lower)) {
+  if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(lower)) {
     clearRouteReasoningRejection(services);
     setThinking({ enabled: true, effort: lower as ReasoningEffort });
     persistSessionThinking(services);
@@ -196,7 +195,7 @@ function applyReasoning(services: AppServices, value: string): void {
     warnUnacceptedEffort(services, lower);
     return;
   }
-  services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max|ultra]");
+  services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
 }
 
 function persistSessionThinking(services: AppServices): void {

@@ -26,6 +26,32 @@ afterEach(async () => {
 });
 
 describe("SubagentManager", () => {
+  it("tracks each attempt start through activity, settlement, acknowledgement, and restart", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const { manager, work } = controlled();
+    const first = manager.start(assignment);
+    await tick();
+    vi.setSystemTime(5000);
+    work[0]!.input.emit({ kind: "assistant", text: "Finding" });
+    expect(manager.get(first.id)).toMatchObject({ createdAt: 1000, startedAt: 1000, updatedAt: 5000 });
+    vi.setSystemTime(8000);
+    work[0]!.resolve("Report");
+    const settled = await manager.wait(first.id);
+    vi.setSystemTime(12_000);
+    manager.acknowledgeResult(first.id, 1);
+    expect(manager.get(first.id)).toMatchObject({ startedAt: 1000, updatedAt: 8000 });
+    const second = manager.restart(first.id);
+    expect(second).toMatchObject({ createdAt: 1000, startedAt: 12_000, updatedAt: 12_000, attempt: 2 });
+    expect(manager.get(first.id, 1)).toMatchObject({ startedAt: settled.startedAt, updatedAt: settled.updatedAt });
+    await tick();
+    vi.setSystemTime(14_000);
+    manager.stop(first.id);
+    vi.setSystemTime(15_000);
+    work[1]!.resolve("Late report");
+    expect(await manager.wait(first.id)).toMatchObject({ status: "stopped", startedAt: 12_000, updatedAt: 15_000 });
+  });
+
   it("accepts generated session IDs at a secret-prefix clock collision", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1789126537844);

@@ -28,6 +28,7 @@ export interface SubagentRun extends SubagentAssignment {
   readonly attempt: number;
   readonly status: SubagentStatus;
   readonly createdAt: number;
+  readonly startedAt?: number | undefined;
   readonly updatedAt: number;
   readonly events: readonly SubagentEvent[];
   readonly report?: string | undefined;

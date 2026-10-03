@@ -140,7 +140,9 @@ function parseEffortsFromOptions(entry: Record<string, unknown>): string[] | und
   }
   const effortObject = asRecord(entry.reasoning_effort);
   for (const value of stringList(effortObject?.values) ?? []) collected.push(value);
-  const deduped = [...new Set(collected)];
+  const deduped = [
+    ...new Set(collected.filter((value) => value.trim().toLowerCase() !== "ultra")),
+  ];
   return deduped.length > 0 ? deduped : undefined;
 }
 
@@ -168,7 +170,7 @@ function parseSupportedEfforts(
   if (!("supported_efforts" in reasoning)) return undefined;
   const raw = reasoning.supported_efforts;
   if (raw === null) return "any";
-  return stringList(raw);
+  return catalogEffortList(stringList(raw));
 }
 
 function parseReasoning(
@@ -214,10 +216,12 @@ function parseReasoning(
       facts.defaultEffort = entry.default_reasoning_level.trim();
     }
     const level = entry.default_reasoning_level.trim();
-    if (Array.isArray(facts.supportedEfforts) && !facts.supportedEfforts.includes(level)) {
-      facts.supportedEfforts = [...facts.supportedEfforts, level];
-    } else if (facts.supportedEfforts === undefined) {
-      facts.supportedEfforts = [level];
+    if (level.toLowerCase() !== "ultra") {
+      if (Array.isArray(facts.supportedEfforts) && !facts.supportedEfforts.includes(level)) {
+        facts.supportedEfforts = [...facts.supportedEfforts, level];
+      } else if (facts.supportedEfforts === undefined) {
+        facts.supportedEfforts = [level];
+      }
     }
   }
 
@@ -383,5 +387,9 @@ export function catalogEntriesFromPayload(payload: unknown): readonly unknown[] 
 export function catalogEffortList(
   efforts: CatalogSupportedEfforts | undefined,
 ): readonly string[] | undefined {
-  return efforts === undefined || efforts === "any" ? undefined : efforts;
+  if (efforts === undefined || efforts === "any") return undefined;
+  const filtered = efforts.filter(
+    (effort) => effort.trim().toLowerCase() !== "ultra",
+  );
+  return filtered.length > 0 ? filtered : undefined;
 }

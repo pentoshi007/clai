@@ -10,6 +10,20 @@ describe("tool.check", () => {
     expect(def.parameters.properties.name).toBeUndefined();
   });
 
+  it.each([21, 40])("accepts a batch of %s tools", async (count) => {
+    const tools = Array.from({ length: count }, (_, index) => `clai_missing_tool_${index}`);
+    const result = await toolCheckHandler({ tools });
+    expect(result.ok).toBe(true);
+    expect(result.output.match(/^✗ clai_missing_tool_/gm)).toHaveLength(count);
+    expect(getToolDefinition("tool.check")!.parameters.properties.tools).toMatchObject({ maxItems: 40 });
+  });
+
+  it("rejects more than 40 tools", async () => {
+    const result = await toolCheckHandler({ tools: Array.from({ length: 41 }, () => "node") });
+    expect(result.ok).toBe(false);
+    expect(result.output).toBe("tool.check accepts at most 40 tools per call.");
+  });
+
   it("accepts tools array", async () => {
     const result = await toolCheckHandler({ tools: ["node"] });
     expect(result.output).toMatch(/node/i);

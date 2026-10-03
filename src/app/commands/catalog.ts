@@ -70,12 +70,12 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/effort",
-    usage: "[on|off|none|minimal|low|medium|high|xhigh|max|ultra]",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
     description: "toggle thinking/effort (interactive picker if no arg)",
   },
   {
     command: "/reasoning",
-    usage: "[on|off|none|minimal|low|medium|high|xhigh|max|ultra]",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
     description: "alias for /effort",
   },
   {
@@ -148,8 +148,11 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/plan",
-    usage: "[view]",
     description: "switch to plan mode: design a plan you approve before anything runs",
+  },
+  {
+    command: "/view-plan",
+    description: "view the current plan without changing mode",
   },
   {
     command: "/implement",

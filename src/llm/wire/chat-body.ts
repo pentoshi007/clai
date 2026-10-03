@@ -28,6 +28,7 @@ import {
 import type { RequestPlanV1 } from "../request-plan.js";
 import { resolveSampling } from "../sampling.js";
 import { singleLeadingSystemMessages } from "../system-messages.js";
+import { freebuffMessages } from "../freebuff-wire.js";
 import { stripImagesFromMessages } from "./capability-errors.js";
 import {
   buildReasoningPayload,
@@ -327,6 +328,22 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
         }
       : undefined,
   );
+  if (options.providerId === "freebuff") {
+    return JSON.stringify({
+      ...safeBodyExtras(options.bodyExtras),
+      model: options.model,
+      messages: freebuffMessages(rawMessages),
+      ...(options.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
+      ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+      ...reasoning,
+      ...openAiToolBodyFields({
+        tools: options.tools,
+        toolChoice: options.toolChoice,
+        parallelToolCalls: options.parallelToolCalls,
+      }),
+      ...(options.stream ? { stream: true } : {}),
+    });
+  }
   if (options.providerId === "cline" && /claude|anthropic|qwen/i.test(options.model)) {
     for (let i = rawMessages.length - 1; i >= 0; i--) {
       if (rawMessages[i]?.role === "user") {
