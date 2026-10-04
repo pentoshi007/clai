@@ -25,10 +25,6 @@ const READ_ONLY_TOOLS = new Set([
   "http.fetch",
   "web.search",
   "fs.read",
-  "fs.list",
-  "fs.search",
-  "tool.check",
-  "wordlist.find",
   "image.ocr",
   "pdf.read",
 ]);
@@ -669,7 +665,7 @@ export class LoopGuard {
     }
     if (paths.length === 0) return;
     for (const sig of [...this.signatureCount.keys()]) {
-      if (!sig.startsWith("fs.read::") && !sig.startsWith("fs.list::")) continue;
+      if (!sig.startsWith("fs.read::")) continue;
       if (paths.some((p) => p.length > 1 && sig.includes(p))) {
         this.signatureCount.delete(sig);
         this.signatureSuccess.delete(sig);

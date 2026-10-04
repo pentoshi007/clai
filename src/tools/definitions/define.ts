@@ -6,11 +6,8 @@ const TIMED_TOOLS = new Set([
   "http.fetch",
   "web.fetch",
   "web.search",
-  "net.pingSweep",
-  "tool.check",
   "image.ocr",
   "pdf.read",
-  "fs.search",
 ]);
 
 export function def(

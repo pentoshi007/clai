@@ -1,5 +1,6 @@
 import { routeCompletionBudget } from "./output-budget.js";
 import { PARALLEL_SAFE_TOOLS } from "../../../tools/registry.js";
+import { isReadOnlyShellCall } from "../../../tools/read-only-shell.js";
 import type { BoundCall } from "../contracts.js";
 import type { EmptyResponseState } from "./empty-response.js";
 import { MAX_STEP_COMPLETION_TOKENS } from "../../reliability-policy.js";
@@ -681,8 +682,8 @@ export const runTurnRounds = async (
       const isParallelSafe = (c: ToolCall): boolean => {
         if (deps.mcpRuntime?.isParallelSafe(c.name)) return true;
         if (c.name === "subagent.start") return true;
+        if (isReadOnlyShellCall(c)) return true;
         if (
-          c.name === "tool.check" ||
           c.name === "shell.jobs" ||
           c.name === "shell.tail"
         ) {

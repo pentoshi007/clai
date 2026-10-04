@@ -19,7 +19,7 @@ describe("duplicated full-snapshot tool arguments", () => {
     accumulateOpenAiToolCallDelta(state, {
       index: 0,
       id: "call-1",
-      function: { name: "fs_list", arguments: snapshot },
+      function: { name: "fs_read", arguments: snapshot },
     });
     accumulateOpenAiToolCallDelta(state, {
       index: 0,
@@ -27,7 +27,7 @@ describe("duplicated full-snapshot tool arguments", () => {
     });
 
     const [call] = finalizeOpenAiToolCalls(state);
-    expect(call!.name).toBe("fs.list");
+    expect(call!.name).toBe("fs.read");
     expect(call!.args).toEqual({
       path: "/Users/aniketpandey/Desktop/indian-metro",
     });

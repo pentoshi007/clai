@@ -95,7 +95,6 @@ describe("audit#2 — shell.exec scanner commands auto-run", () => {
 });
 
 /* -------------------------------------------------------------------------
- * Audit follow-up #3 — fs.read/list/search are sandboxed.
  * ------------------------------------------------------------------------- */
 describe("audit#3 — fs reads are sandboxed", () => {
   it("fs.read refuses paths outside sandbox roots when sandboxReads=true", async () => {

@@ -112,7 +112,7 @@ describe("compaction-summary prompts", () => {
     expect(p).toMatch(/not current agent gates|gather-only|past that phase/i);
     expect(p).toMatch(/mid-token|COMPLETE short memory/i);
     expect(p).toMatch(/DEDUPLICATE/i);
-    expect(p).toMatch(/omit routine fs\.list/i);
+    expect(p).toMatch(/omit routine local inspection/i);
     expect(p).toMatch(/ACTIVE PLAN is injected separately/i);
     expect(p).toMatch(/revalidation of mutable workspace/i);
     expect(p).toMatch(/Resolve contradictions/i);

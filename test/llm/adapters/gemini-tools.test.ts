@@ -65,11 +65,11 @@ describe("gemini tools adapter", () => {
         content: "",
         toolCalls: [
           { id: "1", name: "fs.read", args: { path: "a" } },
-          { id: "2", name: "fs.list", args: {} },
+          { id: "2", name: "fs.read", args: {} },
         ],
       },
       { role: "tool", toolCallId: "1", name: "fs.read", content: "A" },
-      { role: "tool", toolCallId: "2", name: "fs.list", content: "B" },
+      { role: "tool", toolCallId: "2", name: "fs.read", content: "B" },
     ]);
     expect(contents[0]!.role).toBe("model");
     expect(contents[1]!.role).toBe("user");
@@ -85,7 +85,7 @@ describe("gemini tools adapter", () => {
   it("captures thoughtSignature from a functionCall part", () => {
     const parsed = parseGeminiFunctionCalls([
       {
-        functionCall: { name: "fs_list", args: {} },
+        functionCall: { name: "fs_read", args: {} },
         thoughtSignature: "sig-abc123",
       },
     ]);
@@ -94,7 +94,7 @@ describe("gemini tools adapter", () => {
 
   it("does not set thoughtSignature when the part has none (parallel calls)", () => {
     const parsed = parseGeminiFunctionCalls([
-      { functionCall: { name: "fs_list", args: {} } },
+      { functionCall: { name: "fs_read", args: {} } },
     ]);
     expect(parsed.toolCalls[0]!.thoughtSignature).toBeUndefined();
   });
@@ -108,7 +108,7 @@ describe("gemini tools adapter", () => {
           toolCalls: [
             {
               id: "1",
-              name: "fs.list",
+              name: "fs.read",
               args: {},
               thoughtSignature: "sig-abc123",
             },
@@ -129,7 +129,7 @@ describe("gemini tools adapter", () => {
       {
         role: "assistant",
         content: "",
-        toolCalls: [{ id: "1", name: "fs.list", args: {} }],
+        toolCalls: [{ id: "1", name: "fs.read", args: {} }],
       },
     ]);
     const modelParts = contents[0]!.parts as Array<{

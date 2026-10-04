@@ -213,7 +213,7 @@ describe("SubagentManager", () => {
     await tick();
     const checkpoint: SubagentCheckpoint = {
       messages: [{ role: "assistant", content: "private evidence", reasoningBlock: { text: "opaque provider artifact" } }],
-      pending: { native: true, next: 1, calls: [{ name: "fs.list", args: { path: "/tmp" } }] },
+      pending: { native: true, next: 1, calls: [{ name: "fs.read", args: { path: "/tmp" } }] },
     };
     const original = structuredClone(checkpoint);
     work[0]!.input.saveCheckpoint!(checkpoint);
@@ -241,11 +241,11 @@ describe("SubagentManager", () => {
     await tick();
     const checkpoint: SubagentCheckpoint = {
       messages: [
-        { role: "assistant", content: "", toolCalls: [{ id: "first", name: "fs.list", args: {} }, { id: "second", name: "fs.read", args: { path: "source.ts" } }] },
+        { role: "assistant", content: "", toolCalls: [{ id: "first", name: "fs.read", args: {} }, { id: "second", name: "fs.read", args: { path: "source.ts" } }] },
         { role: "tool", toolCallId: "first", content: "source.ts" },
       ],
       nativeTools: true,
-      pending: { native: true, next: 1, calls: [{ id: "first", name: "fs.list", args: {} }, { id: "second", name: "fs.read", args: { path: "source.ts" } }] },
+      pending: { native: true, next: 1, calls: [{ id: "first", name: "fs.read", args: {} }, { id: "second", name: "fs.read", args: { path: "source.ts" } }] },
     };
     work[0]!.input.emit({ kind: "tool", text: "source.ts:12: original evidence" });
     work[0]!.input.saveCheckpoint!(checkpoint);

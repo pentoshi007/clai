@@ -161,7 +161,7 @@ describe("native tool loop integration", () => {
           request.onToolCallDelta?.({
             index: 0,
             id: "call_bad_list",
-            name: "fs.list",
+            name: "fs.read",
             argumentsBytes: rawArguments.length,
           });
           return {
@@ -171,7 +171,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: "call_bad_list",
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: rawArguments },
                 rawArguments,
               },
@@ -202,7 +202,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: "call_good_list",
-                name: "fs.list",
+                name: "fs.read",
                 args: { path: cwd },
               },
             ],
@@ -266,7 +266,7 @@ describe("native tool loop integration", () => {
       round += 1;
       const calls = round === 1
         ? [
-            { name: "fs_searchcommentaryjson", args: { path: cwd, pattern: "retryLimit" } },
+            { name: "shell_execcommentaryjson", args: { cwd, command: "rg -n -- 'retryLimit' ." } },
             { name: "fs_readanalysisjson", args: { path: target } },
           ]
         : [{ name: "fs_editjson", args: { path: target, oldText: "retryLimit = 2", newText: "retryLimit = 3", expectedReplacements: 1 } }];
@@ -293,7 +293,7 @@ describe("native tool loop integration", () => {
       .toBe("export const retryLimit = 3;\r\nexport const backoffMs = 50;\r\n");
     expect(streamMock).toHaveBeenCalledTimes(3);
     expect(events.filter((event) => event.type === "tool-call").map((event) => event.name))
-      .toEqual(["fs.search", "fs.read", "fs.edit"]);
+      .toEqual(["shell.exec", "fs.read", "fs.edit"]);
     expect(events.filter((event) => event.type === "tool-result"))
       .toHaveLength(3);
     expect(events.some((event) => event.type === "tool-result" && event.ok === false)).toBe(false);
@@ -319,7 +319,7 @@ describe("native tool loop integration", () => {
           request.onToolCallDelta?.({
             index: 0,
             id: "call_incomplete_list",
-            name: "fs.list",
+            name: "fs.read",
             argumentsBytes: 12,
           });
           return {
@@ -336,7 +336,7 @@ describe("native tool loop integration", () => {
           ).toHaveLength(0);
           expect(request.tools).toBeUndefined();
           const text = `\`\`\`tool\n${JSON.stringify({
-            name: "fs.list",
+            name: "fs.read",
             args: { path: cwd },
           })}\n\`\`\``;
           onToken(text);
@@ -401,7 +401,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: `call_bad_${turn}`,
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: truncated },
                 rawArguments: truncated,
               },
@@ -413,7 +413,7 @@ describe("native tool loop integration", () => {
         if (turn === 3) {
           expect(request.tools).toBeUndefined();
           const text = `\`\`\`tool\n${JSON.stringify({
-            name: "fs.list",
+            name: "fs.read",
             args: { path: cwd },
           })}\n\`\`\``;
           onToken(text);
@@ -467,7 +467,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: `call_bad_${turn}`,
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: truncated },
                 rawArguments: truncated,
               },
@@ -479,7 +479,7 @@ describe("native tool loop integration", () => {
         if (turn === 3) {
           expect(request.tools).toBeUndefined();
           const text = `\`\`\`tool\n${JSON.stringify({
-            name: "fs.list",
+            name: "fs.read",
             args: { path: cwd },
           })}\n\`\`\``;
           onToken(text);
@@ -545,9 +545,9 @@ describe("native tool loop integration", () => {
             provider: "openai",
             model: "gpt-test",
             toolCalls: [
-              { id: "call_list", name: "fs.list", args: { path: cwd } },
+              { id: "call_list", name: "fs.read", args: { path: cwd } },
               { id: "call_read", name: "fs.read", args: { path: evidencePath } },
-              { id: "call_check", name: "tool.check", args: { tools: ["node"] } },
+              { id: "call_check", name: "shell.exec", args: { command: "command -v node", cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -645,7 +645,7 @@ describe("native tool loop integration", () => {
             provider: "gemini",
             model: "gemini-test",
             toolCalls: [
-              { id: "call_list_first", name: "fs.list", args: { path: cwd } },
+              { id: "call_list_first", name: "fs.read", args: { path: cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -859,7 +859,7 @@ describe("native tool loop integration", () => {
       async (request: CompletionRequest, onToken: (token: string) => void) => {
         turn += 1;
         if (turn === 1) {
-          const text = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">${cwd}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
+          const text = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">${cwd}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
           onToken(text);
           return {
             text,
@@ -1050,7 +1050,7 @@ describe("native tool loop integration", () => {
             text: "",
             provider: "openai",
             model: "gpt-test",
-            toolCalls: [{ id: "call_dynamic_1", name: "fs.list", args: { path: cwd } }],
+            toolCalls: [{ id: "call_dynamic_1", name: "fs.read", args: { path: cwd } }],
             finishReason: "tool_calls",
           };
         }
@@ -1060,7 +1060,7 @@ describe("native tool loop integration", () => {
             text: "",
             provider: "openai",
             model: "gpt-test",
-            toolCalls: [{ id: "call_dynamic_2", name: "fs.list", args: { path: cwd } }],
+            toolCalls: [{ id: "call_dynamic_2", name: "fs.read", args: { path: cwd } }],
             finishReason: "tool_calls",
           };
         }
@@ -1075,7 +1075,7 @@ describe("native tool loop integration", () => {
             text: "",
             provider: "openai",
             model: "gpt-test",
-            toolCalls: [{ id: "call_dynamic_3", name: "fs.list", args: { path: cwd } }],
+            toolCalls: [{ id: "call_dynamic_3", name: "fs.read", args: { path: cwd } }],
             finishReason: "tool_calls",
           };
         }
@@ -1161,7 +1161,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: `call_list_${turn}`,
-                name: "fs.list",
+                name: "fs.read",
                 args: { path: cwd },
               },
             ],
@@ -1169,7 +1169,7 @@ describe("native tool loop integration", () => {
           };
         }
         const toolCalls = request.messages.flatMap((message) => message.toolCalls ?? []);
-        expect(toolCalls.filter((call) => call.name === "fs.list")).toHaveLength(4);
+        expect(toolCalls.filter((call) => call.name === "fs.read")).toHaveLength(4);
         const recovery = request.messages.findLast(
           (message) => message.role === "user" && message.internal,
         );

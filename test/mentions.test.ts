@@ -182,7 +182,7 @@ describe("expandMentions", () => {
     expect(out.attachments[0]!.kind).toBe("directory");
     expect(out.attachments[0]!.content).toBeUndefined();
     expect(out.attachments[0]!.note).toContain("not expanded");
-    expect(out.attachments[0]!.note).toContain("fs.list");
+    expect(out.attachments[0]!.note).toContain("fs.read");
     expect(out.contextBlock).toBe("");
   });
 

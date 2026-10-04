@@ -90,9 +90,6 @@ const CLASSIC_TOOL_ALIASES: Record<string, string> = {
   write: "fs.write",
   edit: "fs.edit",
   multiedit: "fs.edit",
-  ls: "fs.list",
-  glob: "fs.list",
-  grep: "fs.search",
   webfetch: "web.fetch",
   websearch: "web.search",
 };

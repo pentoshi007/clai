@@ -266,7 +266,7 @@ export function expandMentions(
         path: absPath,
         kind: "directory",
         note:
-          "not expanded — explore on demand: fs.list {\"path\":\"<dir>\"} to see entries, then fs.read the files you need",
+          "not expanded — explore on demand: fs.read {\"path\":\"<dir>\"} to see entries, then fs.read the files you need",
       });
     } else if (kind === "missing") {
       attachments.push({

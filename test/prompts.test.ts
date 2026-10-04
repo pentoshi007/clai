@@ -24,7 +24,7 @@ describe("prompt rendering", () => {
     const prompt = renderAskSystemPrompt();
     expect(prompt).toContain("web.search");
     expect(prompt).toContain("READ-ONLY");
-    expect(prompt).toContain("CANNOT run shell commands");
+    expect(prompt).toContain("Only read-only local inspection/search commands may run here");
   });
 
   it("ask prompt includes OS info and current date/time", () => {
@@ -37,14 +37,14 @@ describe("prompt rendering", () => {
   });
 
   it("agent prompt includes tool list", () => {
-    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, tool.check");
+    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, shell.exec");
     expect(prompt).toContain("shell.exec");
     expect(prompt).toContain("fs.read");
-    expect(prompt).toContain("tool.check");
+    expect(prompt).toContain("shell.exec");
   });
 
   it("agent prompt requires exact fs.edit evidence before retrying", () => {
-    const prompt = renderAgentSystemPrompt("fs.read, fs.search, fs.edit");
+    const prompt = renderAgentSystemPrompt("fs.read, fs.read, fs.edit");
     expect(prompt).toContain("both the exact current oldText and intended newText");
     expect(prompt).toContain("never reconstruct it from memory or a stale preview");
     expect(prompt).toContain("do not repeat the same oldText");

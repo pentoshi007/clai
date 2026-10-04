@@ -134,10 +134,7 @@ export function toolFitsTaskClass(
   switch (cls) {
     case "explore":
       return (
-        toolName === "tool.check" ||
-        toolName === "fs.list" ||
         toolName === "fs.read" ||
-        toolName === "fs.search" ||
         toolName === "shell.exec"
       );
     case "scaffold":
@@ -173,7 +170,7 @@ export function toolFitsTaskClass(
     case "recon":
       return (
         Boolean(s?.remoteReconOk) ||
-        /^(dns\.lookup|whois\.lookup|http\.fetch|web\.fetch|net\.scan|pentest\.recon|net\.pingSweep|net\.context|tool\.batch)$/.test(
+        /^(dns\.lookup|whois\.lookup|http\.fetch|web\.fetch|net\.scan|pentest\.recon|net\.context|tool\.batch)$/.test(
           toolName,
         )
       );

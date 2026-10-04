@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { fsRead, fsSearch } from "../src/tools/fs.js";
+import { fsRead } from "../src/tools/fs.js";
 
 const dirs: string[] = [];
 
@@ -167,23 +167,5 @@ describe("fs.read smart windows", () => {
     expect(zero.ok).toBe(true);
     expect(zero.output).toContain("1: alpha");
     expect(zero.output).toMatch(/1-indexed|treated as 1/i);
-  });
-});
-
-describe("fs.search content hits", () => {
-  it("returns path:line style hits or a clear no-match header", async () => {
-    const dir = tempDir();
-    const path = join(dir, "findme.ts");
-    writeFileSync(path, "export function uniqueTokenXYZ() {}\n");
-    const result = await fsSearch("uniqueTokenXYZ", dir);
-    expect(result.ok).toBe(true);
-    // Either rg/grep found it, or environment lacks both (unlikely on CI/mac).
-    if (result.output?.includes("no matches")) {
-      // Acceptable only if tools missing — still must be ok:true soft no-match
-      expect(result.output).toMatch(/no matches/);
-    } else {
-      expect(result.output).toMatch(/uniqueTokenXYZ/);
-      expect(result.output).toMatch(/tip: fs\.read/i);
-    }
   });
 });

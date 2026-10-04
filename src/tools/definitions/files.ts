@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "../../types.js";
-import { def, emptyObject } from "./define.js";
+import { def } from "./define.js";
 
 export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
   def(
@@ -10,7 +10,7 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
       "(1) Small/unknown path → fs.read {path} only; small files return fully.",
       "(2) If output has auto-head or hasMore=true → you do NOT have the whole file; continue with the exact next offset/limit from the footer (do not re-call path-only).",
       "(3) Known line range → offset+limit or startLine+endLine (1-indexed inclusive).",
-      "(4) Looking for a symbol/string → pattern (regex or /pattern/i) with optional context, OR fs.search then fs.read around hit lines.",
+      "(4) Looking for a symbol/string → pattern (regex or /pattern/i) with optional context, OR search with shell.exec then fs.read around hit lines.",
       "(5) Prefer partial/pattern reads for large files — saves tokens and avoids re-reads.",
       "Lines in the body are numbered as N: text. Headers report path/range/matches/hasMore.",
     ].join(" "),
@@ -29,7 +29,7 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
         limit: {
           type: "integer",
           description:
-            "Max lines to return from offset (default 200 when paging)",
+            "Max lines when paging (default 200), or max directory entries (default 500)",
         },
         startLine: {
           type: "integer",
@@ -109,73 +109,8 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
     { mutates: true },
   ),
   def(
-    "fs.list",
-    "List directory entries.",
-    {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        maxEntries: { type: "integer" },
-      },
-      required: [],
-      additionalProperties: false,
-    },
-    { readOnly: true, askMode: true },
-  ),
-  def(
-    "fs.search",
-    [
-      "Search file contents by pattern (ripgrep-style regex, ripgrep or grep backend).",
-      "Returns path:line:text hits so you can follow up with fs.read offset/limit or pattern.",
-      "Alternation, groups and escaped metacharacters work as written; lookaround falls back to PCRE2, and a pattern that is not a valid regex is retried as a literal string with a note.",
-      "glob matches at any depth ('*.ts', 'src/**/*.tsx', '!**/*.test.ts'), and build/vendor directories are skipped.",
-    ].join(" "),
-    {
-      type: "object",
-      properties: {
-        pattern: { type: "string" },
-        path: { type: "string" },
-        maxMatches: {
-          type: "integer",
-          description: "Max hit lines (default 50)",
-        },
-        maxPerFile: {
-          type: "integer",
-          description: "Max hits per file (default 20)",
-        },
-        glob: {
-          type: "string",
-          description:
-            'Restrict to matching paths, ripgrep -g syntax (e.g. "*.ts", "src/**/*.tsx").',
-        },
-        caseInsensitive: { type: "boolean" },
-        fixedString: {
-          type: "boolean",
-          description: "Treat pattern as a literal string instead of a regex.",
-        },
-        context: {
-          type: "integer",
-          minimum: 0,
-          maximum: 10,
-          description: "Lines of context around each hit.",
-        },
-        filesOnly: {
-          type: "boolean",
-          description: "Return matching file paths only.",
-        },
-        hidden: {
-          type: "boolean",
-          description: "Include hidden files and directories.",
-        },
-      },
-      required: ["pattern"],
-      additionalProperties: false,
-    },
-    { readOnly: true, askMode: true },
-  ),
-  def(
     "fs.edit",
-    "Surgical in-place edit. Use only after reading or searching the current file and copying the exact oldText, including whitespace and line endings; if it is not known, use fs.read or fs.search first. After a no-match error, do not retry unchanged oldText.",
+    "Surgical in-place edit. Use only after reading or searching the current file and copying the exact oldText, including whitespace and line endings; if it is not known, use fs.read first. After a no-match error, do not retry unchanged oldText.",
     {
       type: "object",
       properties: {

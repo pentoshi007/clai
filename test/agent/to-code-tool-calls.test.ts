@@ -47,8 +47,8 @@ describe("to=... code: tool call parsing", () => {
   });
 
   it("handles case and quote variations", () => {
-    const c1 = parseToolCall('to="functions.fs_list" code:\n{"path":"src"}');
-    expect(c1?.name).toBe("fs.list");
+    const c1 = parseToolCall('to="functions.fs_read" code:\n{"path":"src"}');
+    expect(c1?.name).toBe("fs.read");
     expect(c1?.args).toEqual({ path: "src" });
 
     const c2 = parseToolCall('TO=task.update CODE: {"taskId":"t1"}');

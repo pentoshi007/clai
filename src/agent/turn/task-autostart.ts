@@ -1,6 +1,7 @@
 import type { ToolCall } from "../../types.js";
 import type { PlanTask, SessionPlan } from "../../store/plan.js";
 import { readyPlanTasks } from "../../store/plan.js";
+import { isReadOnlyShellCall } from "../../tools/read-only-shell.js";
 import {
   isPlanPreflightTool,
   isReadOnlyReconTool,
@@ -31,6 +32,7 @@ const needsAutostart = (plan: SessionPlan): boolean => {
 
 const gateIsSkipped = (plan: SessionPlan, call: ToolCall): boolean =>
   isPlanPreflightTool(call.name) ||
+  isReadOnlyShellCall(call) ||
   (plan.kind === "pentest" && isReadOnlyReconTool(call.name));
 
 export const selectAutostartTask = (

@@ -8,11 +8,6 @@ import { buildTestEnv, CANONICAL_TEST_ENV } from "../../scripts/run-tests.mjs";
 /**
  * Locale/timezone characterization (Phase 0, P0-02).
  *
- * Node fixes ICU collation, number formatting and the default timezone when the
- * process starts, so every case here runs `locale-probe.ts` in a child process
- * with an explicit environment. The probe drives real production surfaces
- * (`StreamRenderer`, `fsList`, `formatTokenCount`).
- *
  * Bare `Number.toLocaleString()` still follows the host ICU locale. Production
  * noninteractive token labels in `src/noninteractive/stream-blocks.ts` pin
  * `"en-US"` so compaction transcripts stay stable under `en_IN`.
@@ -31,7 +26,7 @@ interface ProbeReport {
     productionTokenCountCompact: string;
   };
   noninteractive: { compactionLines: string[] };
-  fsList: { order: string[]; header: string };
+  directoryRead: { order: string[]; header: string };
   collation: {
     isoTimestampOrder: string[];
     numericAwareOrder: string[];
@@ -97,8 +92,8 @@ describe("canonical test environment", () => {
     ]);
   });
 
-  it("orders fs.list numerically with hidden and directory entries included", () => {
-    expect(canonical.fsList.order).toEqual([
+  it("orders directory listing numerically with hidden and directory entries included", () => {
+    expect(canonical.directoryRead.order).toEqual([
       ".hidden",
       "dirA",
       "item1.txt",
@@ -106,7 +101,7 @@ describe("canonical test environment", () => {
       "Item3.txt",
       "item10.txt",
     ]);
-    expect(canonical.fsList.header).toMatch(/: 6 entries \(1 hidden included\)$/);
+    expect(canonical.directoryRead.header).toMatch(/: 6 entries \(1 hidden included\)$/);
   });
 
   it("keeps ISO timestamp ordering stable for job listings", () => {
@@ -155,10 +150,10 @@ describe("host-sensitive behavior under en_IN and Asia/Kolkata", () => {
     );
   });
 
-  it.skipIf(!hasIndianLocale)("keeps fs.list and job ordering identical", () => {
+  it.skipIf(!hasIndianLocale)("keeps directory listing and job ordering identical", () => {
     // Numeric-aware ICU collation and ISO-8601 comparison agree between the two
     // locales, so ordering is not a locale risk at this anchor.
-    expect(indian.fsList.order).toEqual(canonical.fsList.order);
+    expect(indian.directoryRead.order).toEqual(canonical.directoryRead.order);
     expect(indian.collation.numericAwareOrder).toEqual(
       canonical.collation.numericAwareOrder,
     );

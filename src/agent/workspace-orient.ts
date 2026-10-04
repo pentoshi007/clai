@@ -335,7 +335,7 @@ export function buildWorkspaceOrientation(
   }
 
   const lines = [
-    "WORKSPACE STATUS (runtime pre-check — treat as EXPLORE step 1; still fs.list deeper as needed):",
+    "WORKSPACE STATUS (runtime pre-check — treat as EXPLORE step 1; still inspect deeper directories with fs.read as needed):",
     "Rules derived from this snapshot:",
     "1. Process cwd may be the agent package tree — never write user app source there unless the user asked to modify this agent.",
     "2. If a target project path ALREADY EXISTS with project markers, CONTINUE that project (edit feature files). Do NOT re-run a scaffolder into it (scaffolders cancel on non-empty dirs).",
@@ -512,7 +512,7 @@ export function scaffoldTargetConflictMessage(
       `). Scaffolders refuse non-empty directories and print "Operation cancelled". ` +
       `Choose one: (A) CONTINUE the existing project — set work there with absolute paths, implement the requested feature, do NOT re-scaffold; ` +
       `(B) use a NEW empty subfolder name; or (C) only if the user asked to recreate from scratch, remove the directory first then scaffold. ` +
-      `fs.list the target before deciding.`
+      `Inspect the target directory with fs.read before deciding.`
     );
   }
   return undefined;

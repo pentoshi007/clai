@@ -6,7 +6,7 @@ const boundOf = (...names: string[]) =>
 
 describe("plan call deferral", () => {
   it("runs everything when no plan.create is present", () => {
-    const decision = decidePlanCallDeferral(boundOf("fs.read", "fs.list"));
+    const decision = decidePlanCallDeferral(boundOf("fs.read", "fs.read"));
     expect(decision).toEqual({
       runCount: 2,
       deferReason:
@@ -18,7 +18,7 @@ describe("plan call deferral", () => {
 
   it("runs only the gathering calls before plan.create", () => {
     const decision = decidePlanCallDeferral(
-      boundOf("net.pingSweep", "http.fetch", "plan.create", "fs.write"),
+      boundOf("shell.exec", "http.fetch", "plan.create", "fs.write"),
     );
     expect(decision.runCount).toBe(2);
     expect(decision.notice).toBe(

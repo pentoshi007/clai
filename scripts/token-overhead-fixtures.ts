@@ -19,7 +19,7 @@ export const tokenFixtures: TokenFixture[] = [
       "price.mjs": "export const subtotal = items => items.reduce((sum, item) => sum + item.price, 0);\n",
       "price.test.mjs": "import { strict as assert } from 'node:assert';\nimport { test } from 'node:test';\nimport { subtotal } from './price.mjs';\ntest('subtotal includes quantity', () => { assert.equal(subtotal([{ price: 5, quantity: 3 }, { price: 2, quantity: 2 }]), 19); assert.equal(subtotal([]), 0); });\n",
     },
-    prompts: ["Find subtotal using fs.search, inspect its current implementation and tests, and fix the quantity calculation with fs.edit. Preserve the empty-cart behavior and verify with node --test. This is a focused fix; do not add comments or dependencies."],
+    prompts: ["Find subtotal using shell.exec with rg or grep, inspect its current implementation and tests, and fix the quantity calculation with fs.edit. Preserve the empty-cart behavior and verify with node --test. This is a focused fix; do not add comments or dependencies."],
     verify: testPassed,
   },
   {

@@ -153,7 +153,7 @@ describe("agent plan gate enforcement", () => {
   it("allows safe read-only tool calls when no active plan exists", async () => {
     stream
       .mockImplementationOnce(
-        streamReply('```tool\n{"name":"fs.list","args":{"path":"/test"}}\n```')
+        streamReply('```tool\n{"name":"fs.read","args":{"path":"/test"}}\n```')
       )
       .mockImplementationOnce(
         streamReply('I see the files. Now I will stop.')
@@ -167,7 +167,7 @@ describe("agent plan gate enforcement", () => {
     });
 
     expect(runTool).toHaveBeenCalledTimes(1);
-    expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "fs.list" });
+    expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "fs.read" });
   });
 
   it("honors auto-confirm for writes inside the pinned project root", async () => {
@@ -270,7 +270,7 @@ describe("agent plan gate enforcement", () => {
 
   it("compares then suppresses repeated successful reads without reporting a failure", async () => {
     const repeated =
-      '```tool\n{"name":"fs.list","args":{"path":"/test"}}\n```';
+      '```tool\n{"name":"fs.read","args":{"path":"/test"}}\n```';
     stream
       .mockImplementationOnce(streamReply(repeated))
       .mockImplementationOnce(streamReply(repeated))

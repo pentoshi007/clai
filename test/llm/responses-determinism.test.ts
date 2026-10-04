@@ -22,9 +22,9 @@ const messages: ChatMessage[] = [
   {
     role: "assistant",
     content: "running",
-    toolCalls: [{ id: "call_1", name: "fs.list", args: { path: "/tmp" } }],
+    toolCalls: [{ id: "call_1", name: "fs.read", args: { path: "/tmp" } }],
   },
-  { role: "tool", content: "Tool fs.list result (exit=0, ok=true):\nok", toolCallId: "call_1", name: "fs.list", ok: true },
+  { role: "tool", content: "Tool fs.read result (exit=0, ok=true):\nok", toolCallId: "call_1", name: "fs.read", ok: true },
 ];
 
 describe("responses wire determinism", () => {

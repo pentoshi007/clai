@@ -24,8 +24,6 @@ import { toolRegistry_SHELL_1 } from "./handlers/shell-1.js";
 import { toolRegistry_FILES_1 } from "./handlers/files-1.js";
 import { toolRegistry_WEB } from "./handlers/web.js";
 import { SUBAGENT_TOOL_NAMES } from "./definitions/subagents.js";
-import { toolRegistry_NETWORK_3 } from "./handlers/network-3.js";
-import { toolRegistry_ORCHESTRATION_2 } from "./handlers/orchestration-2.js";
 import { toolRegistry_CONTEXT_2 } from "./handlers/context-2.js";
 import { toolRegistry_SHELL_3 } from "./handlers/shell-3.js";
 import { toolRegistry_FILES_2 } from "./handlers/files-2.js";
@@ -46,8 +44,6 @@ export const toolRegistry: Record<string, ToolHandler> = {
   ...toolRegistry_SHELL_1,
   ...toolRegistry_FILES_1,
   ...toolRegistry_WEB,
-  ...toolRegistry_NETWORK_3,
-  ...toolRegistry_ORCHESTRATION_2,
   ...toolRegistry_CONTEXT_2,
   ...toolRegistry_SHELL_3,
   ...toolRegistry_FILES_2,
@@ -168,12 +164,7 @@ export async function runToolCall(
 
 export const PARALLEL_SAFE_TOOLS = new Set([
   "fs.read",
-  "fs.list",
-  "fs.search",
   "http.fetch",
-  "net.pingSweep",
-  "tool.check",
-  "wordlist.find",
   "image.ocr",
   "image.view",
   "pdf.read",

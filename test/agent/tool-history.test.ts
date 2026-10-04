@@ -51,7 +51,7 @@ describe("tool-history", () => {
   it("allows empty text with tools", () => {
     const messages: ChatMessage[] = [];
     appendAssistantWithTools(messages, "", [
-      { id: "c1", name: "fs.list", args: {} },
+      { id: "c1", name: "fs.read", args: {} },
     ]);
     expect(messages[0]!.content).toBe("");
     expect(messages[0]!.toolCalls).toHaveLength(1);
@@ -210,9 +210,9 @@ describe("tool-history", () => {
       "../../src/agent/tool-history.js"
     );
     const fixed = ensureUniqueToolCallIds([
-      { id: "", name: "fs.list", args: {} },
+      { id: "", name: "fs.read", args: {} },
       { id: "same", name: "fs.read", args: { path: "a" } },
-      { id: "same", name: "tool.check", args: { tools: ["node"] } },
+      { id: "same", name: "shell.exec", args: { command: "command -v node" } },
     ]);
     expect(fixed[0]!.id.length).toBeGreaterThan(0);
     expect(fixed[1]!.id).toBe("same");
@@ -229,8 +229,8 @@ describe("tool-history", () => {
     // thrash-retried tools that already succeeded in the UI.
     const { SESSION_STATE_PREFIX } = await import("../../src/agent/session-state.js");
     const calls: NativeToolCall[] = [
-      { id: "chatcmpl-tool-a", name: "fs.list", args: { path: "/tmp" } },
-      { id: "chatcmpl-tool-b", name: "tool.check", args: { tools: ["node"] } },
+      { id: "chatcmpl-tool-a", name: "fs.read", args: { path: "/tmp" } },
+      { id: "chatcmpl-tool-b", name: "shell.exec", args: { command: "command -v node" } },
       { id: "chatcmpl-tool-c", name: "web.search", args: { query: "vite" } },
     ];
     const messages: ChatMessage[] = [
@@ -281,8 +281,8 @@ describe("tool-history", () => {
       "../../src/agent/injected-blocks.js"
     );
     const calls: NativeToolCall[] = [
-      { id: "chatcmpl-tool-a", name: "fs.list", args: { path: "/tmp" } },
-      { id: "chatcmpl-tool-b", name: "tool.check", args: { tools: ["node"] } },
+      { id: "chatcmpl-tool-a", name: "fs.read", args: { path: "/tmp" } },
+      { id: "chatcmpl-tool-b", name: "shell.exec", args: { command: "command -v node" } },
     ];
     const messages: ChatMessage[] = [
       { role: "system", content: "constitution" },
@@ -897,16 +897,16 @@ describe("reasoning signature adjacency (T620)", () => {
   it("keeps pairing valid when a replayed occurrence gets a synthetic id", () => {
     const messages: ChatMessage[] = [];
     appendAssistantWithTools(messages, "", [
-      { id: "gateway-reuse", name: "fs.list", args: { path: "." } },
+      { id: "gateway-reuse", name: "fs.read", args: { path: "." } },
     ]);
-    appendToolResult(messages, "gateway-reuse", "listed once", "fs.list", true);
+    appendToolResult(messages, "gateway-reuse", "listed once", "fs.read", true);
     const rewritten = ensureUniqueToolCallIds(
-      [{ id: "gateway-reuse", name: "fs.list", args: { path: "." } }],
+      [{ id: "gateway-reuse", name: "fs.read", args: { path: "." } }],
       toolCallIdsInHistory(messages),
     );
     expect(rewritten[0]!.id).not.toBe("gateway-reuse");
     appendAssistantWithTools(messages, "", rewritten);
-    appendToolResult(messages, rewritten[0]!.id, "replayed result", "fs.list", true);
+    appendToolResult(messages, rewritten[0]!.id, "replayed result", "fs.read", true);
     expect(hasOrphanToolMessages(messages)).toBe(false);
     expect(allToolCallsHaveResults(messages)).toBe(true);
     expect(validateToolProtocol(messages)).toEqual([]);
@@ -931,7 +931,7 @@ describe("reasoning signature adjacency (T620)", () => {
       position: { sequence: 0, placement: "assistant" },
     });
     writer.pushAssistantHistory(
-      '```tool\n{"name":"fs.list","args":{}}\n```',
+      '```tool\n{"name":"fs.read","args":{}}\n```',
       {
         reasoningBlock: { text: "deep reasoning steps" },
         reasoningArtifacts: [artifact],

@@ -70,7 +70,7 @@ function compileReadPattern(
       error:
         `Invalid regex pattern: ${msg}. ` +
         `Pass a JS regex source (escape special chars) or /pattern/flags. ` +
-        `For literal text with dots/parens, escape them (e.g. "foo\\\\.bar\\\\(") or use fs.search then fs.read with offset around the hit line.`,
+        `For literal text with dots/parens, escape them (e.g. "foo\\\\.bar\\\\(") or search with shell.exec then fs.read with offset around the hit line.`,
     };
   }
 }
@@ -318,7 +318,7 @@ export async function readByPattern(
     `matches=${shown}${capped ? `+` : ""} ` +
     `context=${context} bytes=${fileBytes}` +
     (truncatedScan
-      ? `\n# scan stopped at ${PATTERN_SCAN_MAX_BYTES} bytes (file large; narrow with startLine/endLine or use fs.search)`
+      ? `\n# scan stopped at ${PATTERN_SCAN_MAX_BYTES} bytes (file large; narrow with startLine/endLine or search with shell.exec)`
       : "") +
     (rangeEnd !== Number.POSITIVE_INFINITY
       ? `\n# searched lines ${rangeStart}-${rangeEnd === Number.POSITIVE_INFINITY ? "∞" : rangeEnd}`
@@ -328,7 +328,7 @@ export async function readByPattern(
     return {
       ok: true,
       output:
-        `${header}\n# no matches. Try a simpler pattern, caseInsensitive:true, or fs.search for multi-file hits.\n` +
+        `${header}\n# no matches. Try a simpler pattern, caseInsensitive:true, or shell.exec with rg/grep for multi-file hits.\n` +
         `# tip: fs.read with offset/limit to page, or omit pattern for full/auto-head read`,
       truncated: truncatedScan,
     };

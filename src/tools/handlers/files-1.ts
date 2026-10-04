@@ -1,25 +1,15 @@
-import { safeCwd } from "../../os/cwd.js";
 import {
-  fsEdit,
-  fsDelete,
-  fsList,
   fsRead,
-  fsSearch,
   fsWrite,
   fsWriteMany,
-  fsReplaceLines,
-  fsAppend,
   type FileWrite,
 } from "../fs.js";
-import { type ToolRunOptions, type ToolHandler } from "../tool-types.js";
+import { type ToolHandler } from "../tool-types.js";
 import {
   optionalBoolean,
   optionalNumber,
-  optionalResponseMode,
   optionalString,
-  requireNumber,
   requireString,
-  requireStringAllowEmpty,
 } from "./args.js";
 
 export const toolRegistry_FILES_1: Record<string, ToolHandler> = {
@@ -53,29 +43,5 @@ export const toolRegistry_FILES_1: Record<string, ToolHandler> = {
     }
     const files = raw as FileWrite[];
     return fsWriteMany(files, { confirmed: options?.confirmed });
-  },
-  async "fs.list"(args, options) {
-    return fsList(optionalString(args, "path") ?? safeCwd(), {
-      maxEntries: optionalNumber(args, "maxEntries"),
-      confirmed: options?.confirmed,
-    });
-  },
-  async "fs.search"(args, options) {
-    return fsSearch(
-      requireString(args, "pattern"),
-      optionalString(args, "path"),
-      {
-        confirmed: options?.confirmed,
-        maxMatches: optionalNumber(args, "maxMatches"),
-        maxPerFile: optionalNumber(args, "maxPerFile"),
-        glob: optionalString(args, "glob"),
-        caseInsensitive: optionalBoolean(args, "caseInsensitive"),
-        fixedString: optionalBoolean(args, "fixedString"),
-        context: optionalNumber(args, "context"),
-        filesOnly: optionalBoolean(args, "filesOnly"),
-        hidden: optionalBoolean(args, "hidden"),
-        timeoutMs: optionalNumber(args, "timeoutMs"),
-      },
-    );
   },
 };

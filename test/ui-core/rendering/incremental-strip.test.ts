@@ -46,7 +46,7 @@ describe("incremental tool-surface stripping (TUI-003)", () => {
       "before\n```tool\n{\"name\":\"fs.read\"}\n```\nafter",
       "text <tool_call name=\"x\">{\"a\":1}</tool_call> tail",
       "before\n<|tool_calls_section_begin|><|tool_call_begin|>functions.sysinfo:1<|tool_call_argument_begin|>{}<|tool_call_end|><|tool_calls_section_end|>\nafter",
-      `before\n<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">/tmp</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\nafter`,
+      `before\n<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">/tmp</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\nafter`,
       `before\n<|open|>tools<|sep|><|open|>call tool="fs.read" index="1"<|sep|><|open|>argument key="path" type="string"<|sep|>/tmp/a<|close|>argument><|close|>call><|close|>tools>\nafter`,
       `before\n<tool_calls:abc><tool_call:abc>web.search\n{"query":"term"}\n</tool_call:abc></tool_calls:abc>\nafter`,
       "leading\n\n\n\nblank runs collapse",
@@ -62,7 +62,7 @@ describe("incremental tool-surface stripping (TUI-003)", () => {
   it("never exposes fragmented pseudo-tool markers while streaming", () => {
     const cases = [
       `before\n<|tool_calls_section_begin|><|tool_call_begin|>functions.sysinfo:1<|tool_call_argument_begin|>{}<|tool_call_end|><|tool_calls_section_end|>\nafter`,
-      `before\n<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">/tmp</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\nafter`,
+      `before\n<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">/tmp</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\nafter`,
       `before\n<|open|>tools<|sep|><|open|>call tool="fs.read"<|sep|><|open|>argument key="path" type="string"<|sep|>/tmp/a<|close|>argument><|close|>call><|close|>tools>\nafter`,
       `before\n<tool_calls:abc><tool_call:abc>web.search\n{"query":"term"}\n</tool_call:abc></tool_calls:abc>\nafter`,
     ];

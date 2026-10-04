@@ -476,12 +476,7 @@ export const runSingleTool = async (
   let result: ToolResult;
   let liveBytes = 0;
   const printLive = (chunk: string): void => {
-    if (
-      call.name === "fs.read" ||
-      call.name === "fs.list" ||
-      call.name === "fs.search"
-    )
-      return;
+    if (call.name === "fs.read") return;
     if (!chunk) return;
     liveBytes += chunk.length;
     const indented = chunk.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");

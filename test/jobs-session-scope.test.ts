@@ -73,13 +73,13 @@ describe("session-scoped jobs", () => {
     );
     manager.registerJob(
       "ephem02",
-      ephemeralToolTrack("ephem02", "sess-a", "fs.list /tmp"),
+      ephemeralToolTrack("ephem02", "sess-a", "fs.read /tmp"),
     );
     const listed = manager.listJobs("sess-a");
     expect(listed.ok).toBe(true);
     expect(listed.output).toMatch(/No background jobs/);
     expect(listed.output).not.toContain("shell.jobs");
-    expect(listed.output).not.toContain("fs.list");
+    expect(listed.output).not.toContain("fs.read");
   });
 
   it("listJobs filters to the current session durable jobs only", async () => {

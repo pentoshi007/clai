@@ -83,7 +83,7 @@ describe("tool occurrence execution gate (T620)", () => {
             model: "gpt-test",
             toolCalls: [
               { id: "call_replayed", name: "shell.exec", args: { command, cwd } },
-              { id: "call_fresh_list", name: "fs.list", args: { path: cwd } },
+              { id: "call_fresh_list", name: "fs.read", args: { path: cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -151,7 +151,7 @@ describe("tool occurrence execution gate (T620)", () => {
             model: "gpt-test",
             toolCalls: [
               { id: "call_read_a", name: "fs.read", args: { path: join(cwd, "probe.txt") } },
-              { id: "call_list_b", name: "fs.list", args: { path: cwd } },
+              { id: "call_list_b", name: "fs.read", args: { path: cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -163,7 +163,7 @@ describe("tool occurrence execution gate (T620)", () => {
             model: "gpt-test",
             toolCalls: [
               { id: "call_read_a", name: "fs.read", args: { path: join(cwd, "probe.txt") } },
-              { id: "call_check_new", name: "tool.check", args: { tools: ["node"] } },
+              { id: "call_check_new", name: "shell.exec", args: { command: "command -v node", cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -221,7 +221,7 @@ describe("tool occurrence execution gate (T620)", () => {
                 name: "shell.exec",
                 args: { command: "node -e 'process.exit(7)'", cwd },
               },
-              { id: "call_scene_1", name: "fs.list", args: { path: cwd } },
+              { id: "call_scene_1", name: "fs.read", args: { path: cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -237,7 +237,7 @@ describe("tool occurrence execution gate (T620)", () => {
                 name: "shell.exec",
                 args: { command: "node -e 'console.log(\"recovered\")'", cwd },
               },
-              { id: "call_scene_2", name: "fs.list", args: { path: cwd } },
+              { id: "call_scene_2", name: "fs.read", args: { path: cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -285,7 +285,7 @@ describe("tool occurrence execution gate (T620)", () => {
             toolCalls: [
               {
                 id: "call_truncated",
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: truncated },
                 rawArguments: truncated,
               },

@@ -10,7 +10,7 @@ const RETIRED_TOOL_GUIDANCE: Readonly<Record<string, string>> = {
   "terminal.resize":
     "terminal.resize was removed. Set columns and rows when calling terminal.start.",
   "pkg.install":
-    "pkg.install was removed. Confirm the binary is missing with tool.check, then install it with shell.exec through the OS package manager.",
+    "pkg.install was removed. Check executable availability through shell.exec, then install it through the OS package manager.",
   sysinfo:
     "sysinfo was removed. OS, shell, and cwd are in REQUEST ENVIRONMENT; use shell.exec (uname -a, sw_vers, systeminfo) for anything else.",
 };

@@ -3,8 +3,9 @@ import { mkdtemp, writeFile, stat, readFile } from "node:fs/promises";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 import { OutputDecoder, spawnArgv, shellExec } from "../../src/tools/shell.js";
-import { fsEdit, fsAppend, fsSearch } from "../../src/tools/fs.js";
+import { fsEdit, fsAppend } from "../../src/tools/fs.js";
 import { getToolDefinitions } from "../../src/tools/definitions.js";
+import { runToolCall } from "../../src/tools/registry.js";
 
 let dir: string;
 let cwd: string;
@@ -71,7 +72,7 @@ describe("TOOL-003 timeoutMs is opt-in per tool", () => {
   it("omits timeoutMs from tools that ignore it", () => {
     const defs = getToolDefinitions();
     const byName = new Map(defs.map((d) => [d.name, d]));
-    for (const name of ["fs.read", "fs.write", "fs.list"]) {
+    for (const name of ["fs.read", "fs.write"]) {
       const props = byName.get(name)?.parameters.properties ?? {};
       expect(Object.keys(props)).not.toContain("timeoutMs");
     }
@@ -119,10 +120,20 @@ describe("TOOL-003 large-file mutation guards", () => {
   });
 });
 
-describe("TOOL-003 fs.search", () => {
+describe("TOOL-003 shell searches", () => {
+  it("treats no matches as successful evidence and preserves genuine search failures", async () => {
+    await writeFile(join(dir, "source.txt"), "answer = 42\n");
+    const empty = await runToolCall({ name: "shell.exec", args: { command: "rg -n -- 'missing-symbol' .", cwd: dir } });
+    expect(empty).toMatchObject({ ok: true, exitCode: 1 });
+    expect(empty.output).toContain("no matching lines");
+    const invalid = await runToolCall({ name: "shell.exec", args: { command: "rg --invalid-search-option 'answer' .", cwd: dir } });
+    expect(invalid.ok).toBe(false);
+    expect(invalid.exitCode).not.toBe(1);
+  });
+
   it("treats a leading-dash pattern as a pattern, not a flag", async () => {
     await writeFile(join(dir, "a.txt"), "keep --flaglike value\n", "utf8");
-    const result = await fsSearch("--flaglike", dir, { confirmed: true });
+    const result = await shellExec({ command: "rg -n -- '--flaglike' .", cwd: dir });
     expect(result.ok).toBe(true);
     expect(result.output).toMatch(/flaglike/);
   });
@@ -130,19 +141,11 @@ describe("TOOL-003 fs.search", () => {
   it("supports glob, case-insensitive and files-only filters", async () => {
     await writeFile(join(dir, "one.ts"), "export const Alpha = 1;\n", "utf8");
     await writeFile(join(dir, "two.md"), "alpha\n", "utf8");
-    const scoped = await fsSearch("alpha", dir, {
-      confirmed: true,
-      glob: "*.ts",
-      caseInsensitive: true,
-    });
+    const scoped = await shellExec({ command: "rg -n -i -g '*.ts' -- 'alpha' .", cwd: dir });
     expect(scoped.output).toMatch(/one\.ts/);
     expect(scoped.output).not.toMatch(/two\.md/);
 
-    const filesOnly = await fsSearch("alpha", dir, {
-      confirmed: true,
-      caseInsensitive: true,
-      filesOnly: true,
-    });
+    const filesOnly = await shellExec({ command: "rg -l -i -- 'alpha' .", cwd: dir });
     expect(filesOnly.output).not.toMatch(/:\d+:/);
   });
 });
