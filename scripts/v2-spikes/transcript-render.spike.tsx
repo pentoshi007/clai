@@ -26,9 +26,9 @@ import { check, makeResult, printResult, type SpikeResult } from "./harness.js";
 const scriptedEvents: AgentEvent[] = [
   { type: "turn-start", prompt: "list the repo files" },
   { type: "thinking-delta", text: "I should run " },
-  { type: "thinking-delta", text: "fs.list on the repo root." },
-  { type: "thinking-block", content: "I should run fs.list on the repo root." },
-  { type: "tool-call", id: "c1", name: "fs.list", argsDisplay: "." },
+  { type: "thinking-delta", text: "fs.read on the repo root." },
+  { type: "thinking-block", content: "I should run fs.read on the repo root." },
+  { type: "tool-call", id: "c1", name: "fs.read", argsDisplay: "." },
   ...Array.from({ length: 8 }, (_, i) => ({
     type: "tool-output" as const,
     id: "c1",
@@ -112,16 +112,16 @@ export async function runTranscriptRenderSpike(): Promise<SpikeResult> {
     const frame = setup.captureCharFrame();
     check(result, "user message rendered", frame.includes("list the repo files"));
     check(result, "assistant markdown rendered (bold marker consumed)", frame.includes("files") && !frame.includes("**files**"));
-    check(result, "tool card rendered with status", frame.includes("fs.list") && frame.includes("done (exit 0)"));
+    check(result, "tool card rendered with status", frame.includes("fs.read") && frame.includes("done (exit 0)"));
     check(result, "tool artifact path rendered as a link/path affordance", frame.includes("/tmp/clai-spike-output.txt"));
     check(result, "tool output collapsed by default (last chunk visible)", frame.includes("entry-7.ts"));
     check(result, "tool output collapsed hides earlier lines", !frame.includes("entry-0.ts"));
-    check(result, "completed thinking stays visible when enabled", frame.includes("I should run fs.list"));
+    check(result, "completed thinking stays visible when enabled", frame.includes("I should run fs.read"));
 
     keys.pressKey("t", { ctrl: true });
     await setup.flush();
     const afterThinking = setup.captureCharFrame();
-    check(result, "ctrl+t hides completed thinking", !afterThinking.includes("I should run fs.list"));
+    check(result, "ctrl+t hides completed thinking", !afterThinking.includes("I should run fs.read"));
 
     keys.pressKey("o", { ctrl: true });
     await setup.flush();

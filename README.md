@@ -280,7 +280,7 @@ recon / discovery  →  fingerprint stack  →  plan.create (kind=pentest)
 ```
 
 1. **Authorize once**, then optionally **define scope** — authorized targets, exclusions, allowed phases, rate/concurrency ceilings, and an expiry.
-2. **Recon first** (read-only discovery needs no plan): whois, DNS, `net.pingSweep`, `http.fetch`, and shell tools like `nmap`, `ffuf`, `nuclei`, `sqlmap` — orchestrated with durable checkpoints.
+2. **Recon first** (read-only discovery needs no plan): whois, DNS, `http.fetch`, and shell tools like `nmap`, `ffuf`, `nuclei`, `sqlmap` — orchestrated with durable checkpoints.
 3. **Analyze real evidence**, then `plan.create` with `kind=pentest` from actual ports/services/endpoints — then stop for your approval.
 4. `/implement` and execute task-by-task; expand the plan as new attack surface appears without wiping completed work.
 5. **Report** with structure — title, severity, evidence, reproduction, impact, remediation — and honest residual/untested notes.
@@ -322,7 +322,7 @@ You own authorization; `clai` gates risk on every action:
 
 | Level | Behavior |
 |-------|----------|
-| **safe** | Auto-runs read-only work: `fs.read/list/search`, `tool.check`, `http.fetch` GET, `web.search`/`web.fetch`, recon commands. |
+| **safe** | Auto-runs read-only work: `fs.read`, read-only shell inspections, `http.fetch` GET, `web.search`/`web.fetch`, recon commands. |
 | **confirm** | Applies the selected permission mode to mutations; filesystem scope can require approval even with `--yes` or a tool allow-list. |
 | **block** | Refuses destructive patterns (`rm -rf /`, fork bombs, exfiltration signatures) and SSRF-prone fetches. |
 
@@ -484,10 +484,10 @@ Use `/mcp` inside the interactive console to browse servers, inspect available t
 
 | Group | Tools |
 |-------|-------|
-| **Files** | `fs.read` · `fs.list` · `fs.search` · `fs.write` · `fs.writeMany` · `fs.edit` · `fs.replaceLines` · `fs.append` · `fs.delete` |
+| **Files** | `fs.read` · searches/listings via `shell.exec` · `fs.write` · `fs.writeMany` · `fs.edit` · `fs.replaceLines` · `fs.append` · `fs.delete` |
 | **Shell & jobs** | `shell.exec` (servers: `background:"always"` + `name`) · `shell.jobs` · `shell.tail` · `shell.wait` · `shell.stop` |
 | **Terminals** | `terminal.start` · `terminal.send` · `terminal.read` · `terminal.status` · `terminal.close` |
-| **Network** | `tool.check` (with the install command for this OS) · `net.pingSweep` · `wordlist.find` (pentest sessions; plus `nmap`, `ffuf`, etc. via shell) |
+| **Network** | `shell.exec` for executable lookup/versions, wordlist discovery, `nmap`, `ffuf`, and other reconnaissance |
 | **HTTP / web** | `http.fetch` (raw evidence) · `web.search` · `web.fetch` (readable) |
 | **Orchestration** | `subagent.start` · `subagent.list` · `subagent.wait` · `subagent.read` · `subagent.stop` — independent read-only tool calls in one response run in parallel |
 | **Plan** | `plan.create` · `plan.clear` · `task.add` · `task.update` · `task.move` · `agent.handoff` |

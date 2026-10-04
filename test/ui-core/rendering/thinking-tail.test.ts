@@ -60,7 +60,7 @@ describe("live thinking display (tool-surface hygiene)", () => {
 
   it("resumes painting once the surface closes and prose follows", () => {
     const content =
-      `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">.</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>` +
+      `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">.</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>` +
       "\nNow checking the raycast math for the platform edge.";
     const display = liveThinkingDisplay(content);
     expect(display).not.toContain("DSML");

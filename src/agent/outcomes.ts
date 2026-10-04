@@ -5,6 +5,7 @@ import { getDataDir } from "../store/paths.js";
 import { redactSecrets } from "../llm/provider.js";
 import { copyString } from "../os/copy-string.js";
 import { startsPersistentProcess } from "../tools/command-intent.js";
+import { isReadOnlyShellCall } from "../tools/read-only-shell.js";
 
 export type OutcomeKind = "answer" | "build" | "bugfix" | "operation" | "pentest";
 export type OutcomeStatus = "active" | "succeeded" | "partial" | "blocked" | "failed" | "aborted" | "paused_budget";
@@ -404,9 +405,10 @@ export function isCompletedReadOperation(
   tool: string,
   args: Record<string, unknown> = {},
 ): boolean {
-  if (/^(?:fs\.(?:read|list|search)|web\.(?:search|fetch)|shell\.(?:tail|jobs)|tool\.check|net\.context|pentest\.scanStatus|dns\.|whois\.)/.test(tool)) return true;
+  if (/^(?:fs\.read|web\.(?:search|fetch)|shell\.(?:tail|jobs)|net\.context|pentest\.scanStatus|dns\.|whois\.)/.test(tool)) return true;
   if (tool === "http.fetch") return /^(?:GET|HEAD|OPTIONS)$/i.test(String(args.method ?? "GET"));
   if (tool !== "shell.exec") return false;
+  if (isReadOnlyShellCall({ name: tool, args })) return true;
   const command = String(args.command ?? "");
   return /^\s*curl\b/i.test(command) &&
     !/(?:-X|--request)\s*(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-raw|-binary)?|-F|--form)(?:\s|=)/i.test(command);

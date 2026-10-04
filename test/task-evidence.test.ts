@@ -39,7 +39,6 @@ import {
   SESSION_STATE_PREFIX,
   upsertSessionStateMessage,
 } from "../src/agent/session-state.js";
-import { isProjectLocalNodeBin } from "../src/tools/capabilities.js";
 
 describe("task evidence / verify-before-done", () => {
   it("prefers SSRF-related pending task for og-image http.fetch", () => {
@@ -79,22 +78,22 @@ describe("task evidence / verify-before-done", () => {
     expect(classifyTaskTitle("Verify tools present")).toBe("explore");
   });
 
-  it("absorbs preflight tool.check into explore tasks", () => {
+  it("absorbs preflight shell.exec into explore tasks", () => {
     const title = "Check Node.js and npm availability";
-    expect(toolFitsTaskClass("tool.check", title)).toBe(true);
-    expect(toolFitsTaskClass("tool.check", "Create React project with Vite")).toBe(
+    expect(toolFitsTaskClass("shell.exec", title)).toBe(true);
+    expect(toolFitsTaskClass("fs.read", "Create React project with Vite")).toBe(
       false,
     );
     const led = absorbLooseWorkIntoLedger(null, "t1", title, [
-      { toolName: "tool.check" },
+      { toolName: "shell.exec" },
     ]);
     expect(led?.successWorkCount).toBe(1);
   });
 
-  it("does not absorb tool.check into an install task", () => {
+  it("does not absorb shell.exec into an install task", () => {
     const title = "Install dependencies (npm install)";
     const led = absorbLooseWorkIntoLedger(null, "t3", title, [
-      { toolName: "tool.check" },
+      { toolName: "shell.exec" },
     ]);
     expect(led?.successWorkCount ?? 0).toBe(0);
   });
@@ -177,7 +176,7 @@ describe("coding plan requirement helpers", () => {
     expect(userAskedForFeatureApp("just scaffold a blank next app")).toBe(
       false,
     );
-    expect(isBuildPrePlanAllowedTool("fs.list")).toBe(true);
+    expect(isBuildPrePlanAllowedTool("fs.read")).toBe(true);
     expect(isBuildPrePlanAllowedTool("plan.create")).toBe(true);
     expect(isBuildPrePlanAllowedTool("web.search")).toBe(true);
     expect(isBuildPrePlanAllowedTool("shell.exec")).toBe(false);
@@ -314,7 +313,7 @@ describe("typed task evidence", () => {
 
   it("records verify work including server start signals", () => {
     let led = openTaskLedger("t4");
-    led = recordTaskWorkSuccess(led, "t4", "fs.list");
+    led = recordTaskWorkSuccess(led, "t4", "fs.read");
     expect(led?.successWorkCount).toBe(1);
 
     led = recordTaskWorkSuccess(led, "t4", "shell.exec", {
@@ -375,12 +374,12 @@ describe("typed task evidence", () => {
     ).not.toBe("implement");
 
     let led = openTaskLedger("t2");
-    led = recordTaskWorkSuccess(led, "t2", "net.pingSweep", { remoteReconOk: true });
+    led = recordTaskWorkSuccess(led, "t2", "shell.exec", { remoteReconOk: true });
     expect(led?.successWorkCount).toBe(1);
     expect(led?.sawRemoteReconOk).toBe(true);
 
     let led2 = openTaskLedger("t2");
-    led2 = recordTaskWorkSuccess(led2, "t2", "fs.list");
+    led2 = recordTaskWorkSuccess(led2, "t2", "fs.read");
     expect(led2?.successWorkCount).toBe(1);
   });
 
@@ -514,17 +513,6 @@ describe("session state block", () => {
     expect(messages[0]!.content).toBe("CONSTITUTION");
     expect(messages[1]!.content).toContain("goal: old");
     expect(messages.at(-1)!.content).toContain("goal: new");
-  });
-});
-
-describe("tool.check local bin filter", () => {
-  it("detects project-local node_modules bins", () => {
-    expect(
-      isProjectLocalNodeBin(
-        "/Users/aniketpandey/Desktop/clai/node_modules/.bin/vite",
-      ),
-    ).toBe(true);
-    expect(isProjectLocalNodeBin("/opt/homebrew/bin/node")).toBe(false);
   });
 });
 

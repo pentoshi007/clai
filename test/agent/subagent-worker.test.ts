@@ -105,7 +105,7 @@ describe("isolated read-only subagent worker", () => {
     expect(requests[0]!.messages).toEqual(snapshots[0]);
     expect(requests[1]!.messages.slice(0, 2)).toEqual(snapshots[0]);
     expect(requests[0]!.tools).toBe(requests[1]!.tools);
-    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "http.fetch", "image.ocr", "image.view", "pdf.read", "shell.exec", "skill.list", "skill.load", "tool.check", "web.fetch", "web.search", "wordlist.find"]);
+    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.read", "http.fetch", "image.ocr", "image.view", "pdf.read", "shell.exec", "skill.list", "skill.load", "web.fetch", "web.search"]);
     expect(requests[0]!.messages[0]!.content).not.toContain(input.run.prompt);
     expect(requests[0]!.messages[0]!.content).not.toContain(cwd);
     expect(requests[0]!.messages[0]!.content.length).toBeLessThan(1800);
@@ -144,7 +144,7 @@ describe("isolated read-only subagent worker", () => {
   it("supports fenced tools with stable schemas in text mode", async () => {
     vi.mocked(resolveToolDialect).mockReturnValue("none");
     vi.mocked(streamWithProvider)
-      .mockResolvedValueOnce(completion('```tool\n{"name":"fs.search","args":{"path":"src","pattern":"answer"}}\n```'))
+      .mockResolvedValueOnce(completion('```tool\n{"name":"fs.read","args":{"path":"src/example.ts","pattern":"answer"}}\n```'))
       .mockResolvedValueOnce(completion());
     await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
     const first = vi.mocked(streamWithProvider).mock.calls[0]![0];
@@ -388,7 +388,7 @@ describe("isolated read-only subagent worker", () => {
     const tool = new Promise<ToolResult>((resolve) => { resolveTool = resolve; });
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [
       call("fs.read", { path: "src/example.ts" }, "first"),
-      call("fs.list", { path: "src" }, "second"),
+      call("fs.read", { path: "src" }, "second"),
     ]));
     vi.mocked(runToolCall).mockImplementation(async () => {
       dispatch();
@@ -515,7 +515,7 @@ describe("isolated read-only subagent worker", () => {
     const tool = new Promise<ToolResult>((resolve) => { release = resolve; });
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [
       call("fs.read", { path: "src/example.ts" }, "first"),
-      call("fs.list", { path: "src" }, "second"),
+      call("fs.read", { path: "src" }, "second"),
       call("web.search", { query: "public documentation" }, "third"),
     ])).mockResolvedValueOnce(completion());
     vi.mocked(runToolCall).mockResolvedValueOnce({ ok: true, output: "completed first evidence" }).mockImplementationOnce(async () => {
@@ -533,7 +533,7 @@ describe("isolated read-only subagent worker", () => {
     expect(checkpoint).toEqual(beforeStop);
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "resumed evidence" });
     await expect(runReadOnlySubagent({ ...input, checkpoint, run: { ...input.run, attempt: 2 } })).resolves.toBe(REPORT);
-    expect(vi.mocked(runToolCall).mock.calls.map(([call]) => call.name)).toEqual(["fs.read", "fs.list", "fs.list", "web.search"]);
+    expect(vi.mocked(runToolCall).mock.calls.map(([call]) => call.name)).toEqual(["fs.read", "fs.read", "fs.read", "web.search"]);
     const resumed = vi.mocked(streamWithProvider).mock.calls[1]![0];
     expect(resumed.messages.slice(0, beforeStop.messages.length)).toEqual(beforeStop.messages);
     expect(resumed.messages.filter((message) => message.role === "tool").map((message) => message.toolCallId)).toEqual(["first", "second", "third"]);

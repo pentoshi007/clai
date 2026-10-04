@@ -136,7 +136,7 @@ describe("anthropic tools adapter", () => {
       {
         type: "tool_use",
         id: "2",
-        name: "fs_list",
+        name: "fs_read",
         input: {},
       },
     ]);

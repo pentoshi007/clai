@@ -392,9 +392,9 @@ describe("phase 1 — secret-leak hardening", () => {
     ).toBe("safe");
   });
 
-  it("auto-approves wordlist.find (read-only local lookup)", () => {
+  it("auto-approves shell.exec (read-only local lookup)", () => {
     const result = classifyToolCall({
-      name: "wordlist.find",
+      name: "shell.exec",
       args: { query: "common.txt" },
     });
     expect(result.level).toBe("safe");

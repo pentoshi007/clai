@@ -142,9 +142,6 @@ export function isPortListeningOutput(command: string, output: string): boolean 
 }
 
 export function isRemoteReconToolCall(call: ToolCall): boolean {
-  if (call.name === "net.pingSweep") {
-    return true;
-  }
   if (call.name === "http.fetch" || call.name === "web.fetch") {
     const url = typeof call.args.url === "string" ? call.args.url : "";
     if (/^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(url)) {
@@ -182,12 +179,7 @@ export function isRemoteActiveTestCall(call: ToolCall): boolean {
 }
 
 export function isPlanPreflightTool(name: string): boolean {
-  return (
-    name === "tool.check" ||
-    name === "fs.list" ||
-    name === "fs.read" ||
-    name === "fs.search"
-  );
+  return name === "fs.read";
 }
 
 export function isReadOnlyReconTool(name: string): boolean {
@@ -195,9 +187,7 @@ export function isReadOnlyReconTool(name: string): boolean {
     isPlanPreflightTool(name) ||
     name === "http.fetch" ||
     name === "web.fetch" ||
-    name === "web.search" ||
-    name === "net.pingSweep" ||
-    name === "wordlist.find"
+    name === "web.search"
   );
 }
 
@@ -205,7 +195,6 @@ export function isBuildPrePlanAllowedTool(name: string): boolean {
   return (
     name === "plan.create" ||
     isPlanPreflightTool(name) ||
-    name === "fs.search" ||
     name === "web.search" ||
     name === "web.fetch"
   );

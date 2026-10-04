@@ -167,7 +167,7 @@ describe("buildResponsesBody assistant output identity", () => {
         {
           role: "assistant",
           content: "",
-          toolCalls: [{ id: "call_2", name: "fs_list", args: { path: "/t" } }],
+          toolCalls: [{ id: "call_2", name: "fs_read", args: { path: "/t" } }],
         },
       ],
     });
@@ -177,10 +177,10 @@ describe("buildResponsesBody assistant output identity", () => {
         id: assistantMessageId({
           role: "assistant",
           content: "",
-          toolCalls: [{ id: "call_2", name: "fs_list", args: { path: "/t" } }],
+          toolCalls: [{ id: "call_2", name: "fs_read", args: { path: "/t" } }],
         }),
         role: "assistant",
-        content: '[Tool call: fs_list]\n{"path":"/t"}',
+        content: '[Tool call: fs_read]\n{"path":"/t"}',
       },
     ]);
   });
@@ -192,7 +192,7 @@ describe("buildResponsesBody assistant output identity", () => {
         {
           role: "assistant",
           content: "",
-          toolCalls: [{ id: "call_2", name: "fs_list", args: { path: "/t" } }],
+          toolCalls: [{ id: "call_2", name: "fs_read", args: { path: "/t" } }],
         },
         { role: "user", content: "continue" },
       ],
@@ -202,7 +202,7 @@ describe("buildResponsesBody assistant output identity", () => {
     expect(input[1]).toMatchObject({
       type: "message",
       role: "assistant",
-      content: '[Tool call: fs_list]\n{"path":"/t"}',
+      content: '[Tool call: fs_read]\n{"path":"/t"}',
     });
   });
 

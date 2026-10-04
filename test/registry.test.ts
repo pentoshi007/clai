@@ -13,9 +13,6 @@ describe("tool registry", () => {
     expect(names).toContain("shell.exec");
     expect(names).toContain("fs.read");
     expect(names).toContain("fs.write");
-    expect(names).toContain("fs.list");
-    expect(names).toContain("fs.search");
-    expect(names).toContain("net.pingSweep");
     expect(names).toContain("http.fetch");
     for (const retired of ["sysinfo", "pkg.install", "tool.batch", "shell.start"]) {
       expect(names).not.toContain(retired);
@@ -30,8 +27,8 @@ describe("tool registry", () => {
     expect(names).toContain("pdf.read");
   });
 
-  it("fs.list returns directory listing for cwd", async () => {
-    const result = await toolRegistry["fs.list"]!({});
+  it("fs.read returns directory listing for cwd", async () => {
+    const result = await toolRegistry["fs.read"]!({ path: "." });
     expect(result.ok).toBe(true);
     expect(result.output).toContain("package.json");
   });

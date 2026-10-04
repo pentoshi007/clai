@@ -20,7 +20,7 @@ async function measure(checkout: string, native: boolean, compact: boolean, prom
     import(pathToFileURL(join(source, "agent/tool-call-parser.ts")).href) as Promise<typeof import("../src/agent/tool-call-parser.js")>,
   ]);
   const route = routing.createToolRouting({
-    mode: "agent", mcpPresent: false, pentestTools: false,
+    mode: "agent", mcpPresent: false,
     toolCalling: native ? "native" : "text", useCompactSystemPrompt: () => compact,
   });
   const system = route.buildStableSystemContent(native, "nvidia", "openai/gpt-oss-20b");

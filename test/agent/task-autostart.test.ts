@@ -89,12 +89,12 @@ describe("task autostart", () => {
 
   it("skips the gate for preflight tools", () => {
     expect(
-      selectAutostartTask(plan([task({})]), { name: "tool.check", args: {} }),
+      selectAutostartTask(plan([task({})]), { name: "shell.exec", args: { command: "command -v node" } }),
     ).toBeUndefined();
   });
 
   it("skips the gate for read-only recon on a pentest plan", () => {
-    const reconCall: ToolCall = { name: "net.pingSweep", args: { target: "192.168.1.0/24" } };
+    const reconCall: ToolCall = { name: "http.fetch", args: { url: "https://example.test" } };
     expect(
       selectAutostartTask(plan([task({})], { kind: "pentest" }), reconCall),
     ).toBeUndefined();

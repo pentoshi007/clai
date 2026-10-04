@@ -62,7 +62,7 @@ describe("buildFeedBlocks", () => {
     expect(byName.get("tool.batch")).toBe("batch");
   });
 
-  it("hides filesystem elapsed time except for fs.search", () => {
+  it("hides filesystem elapsed time while showing shell searches", () => {
     const item = transcriptItems(turn.state).find(
       (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
     );
@@ -70,7 +70,7 @@ describe("buildFeedBlocks", () => {
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
     expect(toolElapsed(ctx, { ...item!, name: "fs.read" })).toBeUndefined();
     expect(toolElapsed(ctx, { ...item!, name: "fs.write" })).toBeUndefined();
-    expect(toolElapsed(ctx, { ...item!, name: "fs.search" })).toBeDefined();
+    expect(toolElapsed(ctx, { ...item!, name: "shell.exec" })).toBeDefined();
     expect(toolElapsed(ctx, item!)).toBeDefined();
   });
 

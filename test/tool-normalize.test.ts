@@ -34,13 +34,11 @@ describe("normalizeToolCall — unknown CLI names → shell.exec", () => {
     expect(out.args.command).toBe("awk '{print $1}' data.txt");
   });
 
-  it("routes grep scalars to fs.search without synthesizing shell text (SEC-005)", () => {
-    const out = normalizeToolCall({
-      name: "grep",
-      args: { pattern: "TODO", path: "src" },
-    });
-    expect(out.name).toBe("fs.search");
-    expect(out.args).toEqual({ pattern: "TODO", path: "src" });
+  it("requires explicit shell arguments for CLI names instead of inferring search flags", () => {
+    const out = normalizeToolCall({ name: "grep", args: { pattern: "TODO", path: "src" } });
+    expect(out).toEqual({ name: "grep", args: { pattern: "TODO", path: "src" } });
+    const runnable = normalizeToolCall({ name: "grep", args: { argv: ["-Rn", "--", "TODO", "src"] } });
+    expect(runnable).toEqual({ name: "shell.exec", args: { command: "grep -Rn -- TODO src" } });
   });
 
   it("refuses content-shaped calls that would inject shell metacharacters", () => {
@@ -116,10 +114,10 @@ describe("normalizeToolCall — unknown CLI names → shell.exec", () => {
 
   it("unwraps object parameter envelopes after wire-name canonicalization", () => {
     const out = normalizeToolCall({
-      name: "fs_list",
+      name: "fs_read",
       args: { parameters: { path: "src" } },
     });
-    expect(out).toEqual({ name: "fs.list", args: { path: "src" } });
+    expect(out).toEqual({ name: "fs.read", args: { path: "src" } });
   });
 
   it("does not unwrap an envelope when it is a legitimate sibling field", () => {

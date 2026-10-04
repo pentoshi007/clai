@@ -14,9 +14,9 @@ import { planContextMessage } from "../src/agent/plan-tool.js";
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 describe("token overhead contracts", () => {
-  it("preserves every tool description, name, argument, alias, flag and validation constraint from v4.12.1", () => {
+  it("locks the retained tool catalog, arguments, flags and validation constraints", () => {
     expect(sha256(JSON.stringify(getToolDefinitions())))
-      .toBe("312d915ada4c2887f7598ea181b7987c4e604554fda3603bc1c68e15af894f68");
+      .toBe("d672b0dcaf89883b6a0f67213eced3697ef496958e4d98b1a7835d2e156d9f39");
   });
 
   it("keeps the complete catalog when compact mode is requested", () => {
@@ -26,7 +26,7 @@ describe("token overhead contracts", () => {
 
   it("keeps default native instruction and tool overhead below 22k estimated tokens", () => {
     const route = createToolRouting({
-      mode: "agent", mcpPresent: false, pentestTools: false,
+      mode: "agent", mcpPresent: false,
       toolCalling: "native", useCompactSystemPrompt: () => false,
     });
     const system = route.buildStableSystemContent(true, "nvidia", "openai/gpt-oss-20b");
@@ -50,7 +50,7 @@ describe("token overhead contracts", () => {
     }
     expect(full).not.toMatch(/\{\{[a-z_]+\}\}/);
     expect(full).toContain('fs.edit: {"path":"<file>","oldText":"<exact>","newText":"<replacement>"');
-    expect(full).toContain('fs.search: {"pattern":"<regex>","path":"<dir>"');
+    expect(full).toContain("rg -n --glob");
   });
 
   it("keeps the complete tool list visible when visual inspection is unavailable", () => {
@@ -65,18 +65,18 @@ describe("token overhead contracts", () => {
     }
   });
 
-  it("preserves the complete plan-mode directive and compaction/handoff instructions from v4.12.1", () => {
+  it("preserves full plan-mode and compaction requirements with current inspection guidance", () => {
     expect(sha256(planModeDirective())).toBe("f04a12a631b001920c96899cae3b013a7ac8ef9a60ee72c937b5782ba7371d5e");
     expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("717b5312b02d2ad9221be8e222a6b9c1b09e84072ed82e3de22ff8f0ed9b41c6");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "User asked to fix retry count. Read /project/state.mjs: retryLimit=2. fs.edit changed retryLimit to 3. node check.mjs exited 0.",
       durableState: "ACTIVE PLAN: t1 done; t2 pending: set backoffMs=100 without changing CRLF.",
-    }))).toBe("1cc28d48384053cb066c861e1e060716de02d414dcca362c14cef01dfad9f6c6");
+    }))).toBe("20a375f28a237852a4476e1bb8ba713db8f3186e1e1c6871e32b3faf598994bc");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "Read /project/package.json: Vite installed. Existing source has a mock payment form. Verified webhook route requires signature validation.",
       durableState: "ACTIVE PLAN: Implement signature validation; verify invalid signatures and replay protection.",
       purpose: "plan-implement",
-    }))).toBe("2cca2daca27bfa3c454f5edea87705abc85acb54a71bb0906ee461b58240ef23");
+    }))).toBe("48e73ee6344d7f3e89e874cfc587aea479339eb57228d31f03c8e46f573df56f");
   });
 
   it("injects full plan detail and acceptance criteria even with a small request-context budget", () => {
@@ -117,7 +117,7 @@ describe("token overhead contracts", () => {
   it("keeps the instructions and schema fingerprint through budget changes and appended recovery/delivery", () => {
     let compact = false;
     const route = createToolRouting({
-      mode: "agent", mcpPresent: true, pentestTools: false,
+      mode: "agent", mcpPresent: true,
       toolCalling: "native", useCompactSystemPrompt: () => compact,
     });
     const messages: ChatMessage[] = [

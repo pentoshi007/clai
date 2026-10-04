@@ -5,7 +5,7 @@ import { renderAgentSystemPrompt, renderCompactAgentSystemPrompt } from "../src/
 import { compileRequestPlan } from "../src/llm/request-plan.js";
 import type { ChatMessage } from "../src/types.js";
 
-const toolList = "shell.exec, shell.wait, shell.tail, shell.stop, job.read, tool.check";
+const toolList = "shell.exec, shell.wait, shell.tail, shell.stop, job.read";
 const variants = [
   ["legacy", () => renderAgentSystemPrompt(toolList, { stableEnvironment: true })],
   ["native", () => renderAgentSystemPrompt(toolList, { nativeTools: true, slimNative: false, stableEnvironment: true })],
@@ -39,11 +39,11 @@ describe("stable execution guidance", () => {
     expect(shell.parameters.properties.background).toMatchObject({ enum: ["auto", "never", "always"] });
     expect(shell.description).toContain("timeoutMs is ignored for background and Responder jobs");
     expect(shell.parameters.properties.timeoutMs.description).toContain("Ignored for background and Responder jobs");
-    expect(getToolDefinition("tool.check")!.parameters.properties.tools).toMatchObject({ maxItems: 40 });
+    expect(shell.parameters.required).toEqual(["command"]);
   });
 
   it.each(variants)("%s preserves cached instructions and tools across execution choices", (_name, render) => {
-    const tools = [getToolDefinition("shell.exec")!, getToolDefinition("tool.check")!];
+    const tools = [getToolDefinition("shell.exec")!, getToolDefinition("fs.read")!];
     const serializedTools = JSON.stringify(tools);
     const prefix: ChatMessage[] = [
       { role: "system", content: render() },

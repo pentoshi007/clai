@@ -75,6 +75,27 @@ describe("ask mode read-only research loop", () => {
     expect(stream).toHaveBeenCalledTimes(2);
   });
 
+  it("searches local files through one restricted shell call and preserves the request catalog", async () => {
+    const call = { name: "shell.exec", args: { command: "rg -n -- 'answer' src", cwd: "/project" } };
+    const reply = (text: string) => async (request: unknown, onToken: (token: string) => void) => ({
+      ...await streamReply(text)(request, onToken), provider: "openai", model: "gpt-4o-mini",
+    });
+    stream.mockImplementationOnce(reply('```tool\n' + JSON.stringify(call) + '\n```'))
+      .mockImplementationOnce(reply("The answer is exported by src/example.ts."));
+    runTool.mockResolvedValueOnce({ ok: true, output: "src/example.ts:1:export const answer = 42;" });
+    const out = await runAsk("inspect the answer export", { provider: "openai", model: "gpt-4o-mini" });
+    expect(out).toContain("src/example.ts");
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(runTool.mock.calls[0]![0]).toEqual(call);
+    expect(stream).toHaveBeenCalledTimes(2);
+    const [first, second] = stream.mock.calls.map(([request]) => request);
+    expect(second.messages[0]).toEqual(first.messages[0]);
+    expect(second.tools).toEqual(first.tools);
+    const shell = first.tools.find((tool: { name: string }) => tool.name === "shell.exec");
+    expect(Object.keys(shell.parameters.properties)).toEqual(["command", "cwd", "timeoutMs"]);
+    expect(shell.description).toContain("Read-only local inspection");
+  });
+
   it("feeds image.view pixels back as a user image turn before synthesis", async () => {
     const image = {
       mediaType: "image/png",
@@ -151,7 +172,7 @@ describe("ask mode read-only research loop", () => {
     });
   });
 
-  it("never executes a non-allowlisted tool like shell.exec in ask mode", async () => {
+  it("hands off mutating shell commands without executing them", async () => {
     stream.mockImplementationOnce(
       streamReply('```tool\n{"name":"shell.exec","args":{"command":"rm -rf /"}}\n```'),
     );

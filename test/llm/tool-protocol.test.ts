@@ -26,19 +26,18 @@ describe("tool-protocol helpers", () => {
     expect(toWireName("fs.writeMany")).toBe("fs_writeMany");
     expect(toSnakeWireName("fs.writeMany")).toBe("fs_write_many");
     expect(toSnakeWireName("fs.replaceLines")).toBe("fs_replace_lines");
-    expect(toSnakeWireName("net.pingSweep")).toBe("net_ping_sweep");
+    expect(toSnakeWireName("shell.exec")).toBe("shell_exec");
   });
 
   it("reverse-maps both camel and pure-snake wire forms", () => {
     registerWireNamesFor("fs.writeMany");
     registerWireNamesFor("fs.replaceLines");
-    registerWireNamesFor("net.pingSweep");
+    registerWireNamesFor("shell.exec");
     expect(fromWireName("fs_writeMany")).toBe("fs.writeMany");
     expect(fromWireName("fs_write_many")).toBe("fs.writeMany");
     expect(fromWireName("fs_replaceLines")).toBe("fs.replaceLines");
     expect(fromWireName("fs_replace_lines")).toBe("fs.replaceLines");
-    expect(fromWireName("net_pingSweep")).toBe("net.pingSweep");
-    expect(fromWireName("net_ping_sweep")).toBe("net.pingSweep");
+    expect(fromWireName("shell_exec")).toBe("shell.exec");
   });
 
   it("parses object and string arguments; flags invalid JSON", () => {
@@ -51,7 +50,7 @@ describe("tool-protocol helpers", () => {
   it("repairs JSON/channel suffixes only when the remaining name is registered", () => {
     expect(fromWireName("fs.editjson")).toBe("fs.edit");
     expect(fromWireName("fs_readanalysisjson")).toBe("fs.read");
-    expect(fromWireName("fs_searchcommentaryjson")).toBe("fs.search");
+    expect(fromWireName("fs_readcommentaryjson")).toBe("fs.read");
     expect(fromWireName("fs.editorjson")).toBe("fs.editorjson");
     registerWireNamesFor("fixture.realjson");
     expect(fromWireName("fixture_realjson")).toBe("fixture.realjson");
@@ -145,10 +144,10 @@ describe("tool-protocol helpers", () => {
     accumulateOpenAiToolCallDelta(state, {
       index: 1,
       id: "b",
-      function: { name: "fs_list", arguments: "{}" },
+      function: { name: "fs_read", arguments: "{}" },
     });
     const calls = finalizeOpenAiToolCalls(state);
-    expect(calls.map((c) => c.name)).toEqual(["fs.read", "fs.list"]);
+    expect(calls.map((c) => c.name)).toEqual(["fs.read", "fs.read"]);
   });
 
   it("detects tools-unsupported errors (true only for clear capability reject)", () => {

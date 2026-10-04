@@ -1,77 +1,76 @@
 # Token overhead changes
 
-Branch: `perf/reduce-token-overhead`. Baseline: `dbc5bcf8` (`v4.12.1`).
+Branch: `perf/remove-shell-redundant-tools`. This change starts at `66b699a8`, after the first token optimization. The original pre-optimization baseline is `dbc5bcf8` (`v4.12.1`).
 
-The final implementation removes repeated information from the default native request. Larger reductions were rejected when live comparisons increased tool calls or model rounds. The original detailed execution guidance, tool descriptions, compaction instructions and plan-mode instructions are retained.
+Five shell-redundant wrappers and their implementations, schemas, aliases, routing, rendering and instruction references have been removed. The remaining catalog contains 47 definitions; the configured NVIDIA `openai/gpt-oss-20b` agent route exposes 37 tools. HTTP fetching is byte-identical to the preceding version.
 
-## Where the context goes
+## Savings from this removal
 
-For the configured NVIDIA `openai/gpt-oss-20b` route, the original stable native instructions contain 37,120 characters. Its 40 OpenAI-format tool schemas contain another 33,829 characters. Fresh agent requests also repeat 5,431 characters of execution guidance and include the user task three times: the user message, outcome contract and task-state section.
-
-The native instructions now contain 36,654 characters. The repeated mode directive is 448 characters when the full execution contract already exists in the constitution. The tool schemas remain byte-identical. The user task is sent once, verbatim, in its original message.
-
-## Final measurements
-
-These are controlled request-assembly estimates using `ceil(characters / 3.3)`, excluding provider framing. They are not provider-reported usage, and should not be interpreted as the exact billed token counts or as a conversion of the reported 17k baseline. The long-task example adds approximately 5,000 characters of requirements.
+These are controlled request-assembly estimates using `ceil(characters / 3.3)`, excluding provider framing. They are not provider-reported or billed token counts, and do not convert the reported 17k baseline into an exact saving. The long-task example adds approximately 5,000 characters of requirements.
 
 | Request | Before estimate | After estimate | Difference |
 | --- | ---: | ---: | ---: |
-| Default native, short task | 23,507 | 21,780 | 1,727 fewer (7.35%) |
-| Default native, long task | 28,099 | 23,310 | 4,789 fewer (17.04%) |
-| Compact native, short task | 12,924 | 13,587 | 663 more |
-| Full text tools, short task | 17,173 | 15,747 | 1,426 fewer (8.30%) |
-| Compact text tools, short task | 3,864 | 3,809 | 55 fewer (1.44%) |
+| Default native, short task | 21,780 | 21,308 | 472 fewer (2.16%) |
+| Default native, long task | 23,310 | 22,839 | 471 fewer (2.02%) |
+| Compact native, short task | 13,587 | 12,992 | 595 fewer (4.38%) |
+| Full text tools, short task | 15,747 | 15,736 | 11 fewer (0.07%) |
+| Compact text tools, short task | 3,809 | 3,889 | 80 more (2.12%) |
 
-Compact native previously omitted three permitted tools on this route. Their complete schemas add 2,441 characters; retaining them costs 663 estimated tokens after the duplicated task text is removed. Text routes now explicitly list all 40 permitted tools rather than leaving six runner tools out of the available-name list. The original manual argument guidance is unchanged. A proposed full argument-catalog expansion for compact text was rejected during the offline audit because it substantially increased context.
+Default native schemas shrink from 33,829 to 31,544 characters: approximately 693 estimated tokens. Replacement shell guidance adds 729 characters, bringing the net reduction to 1,556 characters, or approximately 472 estimated tokens. Two removed wrappers were already excluded from the default route, so their schemas do not contribute to its saving.
 
-## Implementation
+Compact text has no attached native schema to shrink. Its explicit search and executable-check instructions cost more than the removed names. This increase is retained to explain correct searches and prevent additional discovery calls or ambiguous tool use.
 
-- `src/agent/turn/prompt-sections.ts` anchors the outcome contract to the actual user task and steering, removing the two repeated task copies and the repeated mode field.
-- `src/prompts/index.ts` reuses the detailed execution contract already in the full constitution. Compact constitutions retain the original full mode directive. The native name list is removed because those same tools are already attached as complete API schemas.
-- `src/tools/definitions/selection.ts` and `src/agent/turn/tool-routing.ts` keep the complete permitted tool catalog independently of input-budget changes. Permission, vision and MCP availability rules remain in place.
-- `src/agent/session-policy.ts` pins the initial compact/full prompt choice per provider/model during the session. A smaller initial context limit still selects the compact constitution; later budget changes cannot replace the established constitution.
-- Text routes receive a complete available-tool-name list alongside their original tool guidance. No discovery call or additional schema lookup is added. Routes without visual-input support keep the remaining tool names visible.
-- `src/llm/tool-protocol.ts` resolves observed formatting suffixes such as `fs.editjson` and `fs_readanalysisjson` only when the remaining name is registered. Real registered names take precedence. Edit arguments and malformed-argument handling are unchanged.
+## Combined savings since the original baseline
 
-No additional production model requests, discovery calls, search pagination, file reads or edit retries are introduced by the request-assembly code. Tool handlers, batching, tool-result limits, search/read limits and history retention are unchanged.
+| Request | Original estimate | Final estimate | Difference |
+| --- | ---: | ---: | ---: |
+| Default native, short task | 23,507 | 21,308 | 2,199 fewer (9.36%) |
+| Default native, long task | 28,099 | 22,839 | 5,260 fewer (18.72%) |
+| Compact native, short task | 12,924 | 12,992 | 68 more |
+| Full text tools, short task | 17,173 | 15,736 | 1,437 fewer (8.37%) |
+| Compact text tools, short task | 3,864 | 3,889 | 25 more |
 
-## Compaction, plans and cache checks
+The first optimization removed duplicate task text and the repeated mode execution contract from full constitutions. It also corrected incomplete compact catalogs. The final compact native request still includes complete schemas for all permitted tools, which explains its small increase over the original incomplete catalog.
 
-Compaction summaries, their budgets, durable work envelopes, accepted-plan detail, task acceptance criteria and plan-mode roadmap requirements are unchanged. Regression checks compare the complete tool definitions and the plan/compaction/handoff instruction strings with baseline SHA-256 hashes. A large-plan test verifies that full detail and acceptance criteria reach the model even with a small request-context budget.
+## Replacement behavior
 
-The existing append-only message history is preserved. Tests check unchanged prior wire-message prefixes across revisions, stable native schemas, budget changes, recovery/delivery messages, skills and MCP selection. Prompt choice is pinned during the active session; normal explicit provider/model or capability changes continue to use their own route and cache identity. Compaction still replaces history through its existing protocol.
+- Cross-file searches use foreground `shell.exec` with ripgrep, grep or PowerShell. Instructions cover literal/PCRE patterns, quoted globs, leading-dash patterns, bounded paths, batching and no-match exit status. Existing shell handling treats grep/ripgrep exit 1 as a successful empty observation and preserves genuine failures, including through RTK.
+- `fs.read` retains its existing directory listing implementation, sorting, hidden entries and default 500-entry limit. Its `limit` argument caps directory entries. File paging and edit validation are unchanged.
+- Executable paths and versions, wordlist discovery and LAN discovery use batched OS-appropriate shell commands. Guidance includes project-local binaries, package/binary name differences and ARP cache limitations.
+- Recognized read-only local shell calls can run alongside independent reads in one response. Mutating or unrecognized shell calls retain sequential execution. Read-only classification preserves completed-observation and task-preflight behavior.
+- Ask mode keeps local search through a restricted foreground shell schema and command classifier. Scripts, writes, network commands and jobs require agent mode. Child research tools retain their shell interface.
+- Remaining tool argument types, required fields, limits and permission flags are unchanged. Only file read/edit descriptions were updated to explain the replacements. There are no compatibility aliases advertising removed tools.
 
-The new native-loop integration check executes parallel search/read calls followed by an edit and final response in three model rounds. Every tool succeeds, the file preserves CRLF and unrelated content, and the system/tool schemas stay unchanged between rounds.
+## Plans, compaction and cache behavior
 
-## Live comparisons and limits
+Plan-mode instructions, accepted-plan detail, task acceptance criteria, summary budgets and the compaction system prompt are unchanged. Two compaction receipt examples now say "routine local inspection"; all summary requirements, sections and retention rules remain. Baseline hash checks cover the protected prompts, and a large-plan test verifies that full detail and acceptance criteria reach the model at a small input budget.
 
-Twelve matched task pairs covered search/edit, multiple edits, debugging, independent reads, background waiting and continuation with CRLF. The broader experimental prompt/schema-description rewrites reduced measured input substantially, but some comparisons added calls or rounds. Those rewrites were reverted.
+All permitted tools remain visible through complete native schemas or the complete text-route name list. No lazy discovery step is introduced. Schema selection remains independent of input-budget changes, and the initial compact/full choice stays pinned per provider/model for the session.
 
-The configured NVIDIA Responses endpoint rejected requests before task execution on both variants. Successful comparisons used a test-only switch to the existing chat-completions transport. Production transport and user configuration were not changed. NVIDIA reported no cached tokens in those runs; cache preservation is checked structurally rather than inferred from those reports.
+Changing the installed tool catalog necessarily establishes a new cache prefix when the upgraded version starts. Within an agent session, the system and schema prefixes remain stable through model rounds, budget changes and delivery/recovery messages under the existing capability rules. Existing conversation history is not rewritten to erase historical calls. Compaction retains its existing history replacement protocol.
 
-The final conservative implementation was measured offline and tested through the repository checks after the live-comparison budget was consumed. It has not received a separate live parity comparison. These checks establish the covered invariants and fixtures; they do not prove identical stochastic model behavior on every possible task.
+The native-loop integration fixture performs parallel shell search/read, then a surgical edit and final response in three model rounds with three successful tool calls. It checks CRLF preservation, unrelated content, zero tool errors and unchanged system/schema prefixes. Ask research uses one local search call followed by its answer without a discovery round.
 
 ## Validation
 
-- `node scripts/run-tests.mjs`: 8,252 passed, 14 skipped, zero failures across 783 files (782 passed, one skipped).
+- `node scripts/run-tests.mjs`: 8,236 passed, 14 skipped, zero failures across 780 files (779 passed, one skipped).
+- Final shell-classifier and consumer checks: 93 passed across six files after tightening output-writing options. Updated protocol/rendering fixtures: 181 passed across seven files.
 - `npm run build`: passed, including TypeScript compilation and prompt embedding.
-- New measurement/evaluation scripts: checked under the repository's strict TypeScript options.
+- Measurement/evaluation scripts: passed the repository's strict TypeScript options.
 - `node scripts/embed-prompts.mjs --check`: passed.
 - `node dist/index.js --version`: `4.12.1`.
-- Added code comments: zero.
+- Retained schema-contract comparison and HTTP byte comparison: passed.
+- Removed-reference audit includes tracked source, tests, documentation, CI and rebuilt distribution.
+- No code comments added.
+
+Earlier live experiments rejected broader prompt rewrites when tool calls or model rounds increased. Their limited comparison budget was consumed before the final implementation. This removal has been measured offline and exercised through repository tests; it has not received a separate live parity comparison. The fixtures establish their covered invariants and do not prove identical stochastic model behavior on every task.
 
 ## Reproduce
 
-Offline measurement needs no API calls:
+Offline measurement requires no model calls:
 
 ```sh
 node --import tsx scripts/measure-token-overhead.ts /path/to/baseline-checkout
 ```
 
-The optional live harness uses configured NVIDIA credentials, isolated disposable fixtures and at most twelve pairs per run:
-
-```sh
-node --import tsx scripts/evaluate-token-overhead.ts /path/to/baseline-checkout
-```
-
-`CLAI_EVAL_CHAT=1` selects the test-only chat transport. `CLAI_EVAL_PAIRS` lowers the pair count; `CLAI_EVAL_FIXTURES` selects comma-separated fixture names. Reports include verified outcomes, tool errors, tool calls, model rounds, token usage, prefix/schema stability and elapsed time. `comparisons.json` rejects candidates with additional calls/rounds, additional errors, edit/read/search errors or changed prefixes.
+Use `66b699a8` for this removal or `dbc5bcf8` for the combined comparison. Both checkouts need the repository dependencies available.

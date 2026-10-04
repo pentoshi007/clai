@@ -12,9 +12,8 @@ export function inferToolFromArgs(
   if (has("oldText") || has("newText")) return "fs.edit";
   if (has("position") && has("content") && has("path")) return "fs.append";
   if (has("content") && has("path")) return "fs.write";
-  if (has("pattern")) return "fs.search";
+  if (has("pattern") && has("path")) return "fs.read";
   if (has("query")) return "web.search";
-  if (has("tools")) return "tool.check";
   if (has("goal") && has("tasks")) return "plan.create";
   if (has("notificationId") || has("jobId")) return "job.read";
   if (

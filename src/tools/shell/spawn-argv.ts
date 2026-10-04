@@ -165,7 +165,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
           ok: false,
           exitCode: 127,
           output: notFound
-            ? `${args.command} was not found on PATH. Install it with the OS package manager (tool.check shows the command) or use a built-in tool instead.`
+            ? `${args.command} was not found on PATH. Install it with the OS package manager or use an available alternative.`
             : `Failed to launch ${args.command}: ${err.code ?? err.message}`,
         });
       }

@@ -45,13 +45,9 @@ describe("plan-awaiting-approval gate — allowed tools", () => {
       "plan.create",
       "task.update",
       "fs.read",
-      "fs.list",
-      "fs.search",
-      "tool.check",
       "web.search",
       "web.fetch",
       "http.fetch",
-      "wordlist.find",
     ]) {
       expect(isPreApprovalAllowedTool(tool)).toBe(true);
     }
@@ -65,7 +61,7 @@ describe("plan-awaiting-approval gate — allowed tools", () => {
       "fs.writeMany",
       "fs.edit",
       "fs.delete",
-      "net.pingSweep",
+      "shell.exec",
     ]) {
       expect(isPreApprovalAllowedTool(tool)).toBe(false);
     }
