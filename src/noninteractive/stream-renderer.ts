@@ -173,7 +173,6 @@ export class StreamRenderer {
       : buildToolOutputLines(
           this.ctx,
           { type: "tool-output", id: event.id, chunk: body, replace: true },
-          { name },
         );
     return [
       ...preview,

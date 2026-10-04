@@ -103,7 +103,7 @@ export function presentBatchSection(
   const compactFsRead = section.name === "fs.read" && !expanded && status !== "running";
   const presented = compactFsRead
     ? presentFsReadSection(bodyForPresent)
-    : presentOutput(bodyForPresent, undefined, expanded, section.name);
+    : presentOutput(bodyForPresent, undefined, expanded);
   const hasBody = bodyForPresent.trim().length > 0;
   let glyph = "✗";
   let statusLabel = "failed";
