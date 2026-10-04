@@ -243,12 +243,13 @@ describe("stream-blocks", () => {
     expect(buildThinkingBlockLines(ctxAt(80), event)[0]).toContain("secret");
   });
 
-  it("bounds tool output to three rows plus a hidden trailer, forty under verbose", () => {
+  it("shows the first output line and last two with a middle count, forty rows under verbose", () => {
     const body = Array.from({ length: 60 }, (_, i) => `line ${i}`).join("\n");
     const event = { type: "tool-output", id: "c1", chunk: body, replace: true } as const;
     const normal = buildToolOutputLines(ctxAt(80), event);
     expect(normal.filter((line) => !line.includes("+"))).toHaveLength(COLLAPSED_BODY_ROWS);
-    expect(normal.at(-1)).toMatch(/… \+\d+ lines/);
+    expect(normal[1]).toContain("… 57 more lines");
+    expect(normal.at(-1)).toContain("line 59");
 
     const loud = buildToolOutputLines(ctxAt(80, { verbosity: "verbose" }), event);
     expect(loud.length).toBeGreaterThan(COLLAPSED_BODY_ROWS);

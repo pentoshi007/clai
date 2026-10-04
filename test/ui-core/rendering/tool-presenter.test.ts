@@ -3,7 +3,6 @@ import { asToolCallId } from "../../../src/app/events/app-event.js";
 import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 import {
   cleanToolOutputLines,
-  evidencePreviewLines,
   presentFsReadArgs,
   presentOutput,
   presentTool,
@@ -211,15 +210,14 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
     const p = presentOutput(tenLines, undefined, false);
     // Compact card: head + gap + tail, so the end of the output (often the
     // actual result) stays visible without opening the pager.
-    expect(p.lines[0]).toBe("line 1");
-    expect(p.lines[1]).toBe("line 2");
-    expect(p.lines[2]).toBe("line 3");
-    expect(p.lines[3]).toBe("··· 4 lines more ···");
-    expect(p.lines[4]).toBe("line 8");
-    expect(p.lines[6]).toBe("line 10");
-    expect(p.lines).toHaveLength(7);
-    expect(p.hiddenAboveCount).toBe(4);
+    expect(p.lines).toEqual(["line 1", "… 7 more lines", "line 9", "line 10"]);
+    expect(p.hiddenAboveCount).toBe(7);
     expect(p.truncatedNotice).toBeUndefined();
+    expect(presentOutput(`${tenLines}\n`, undefined, false)).toEqual(p);
+    for (let count = 1; count <= 3; count++) {
+      const lines = Array.from({ length: count }, (_, index) => `short ${index + 1}`);
+      expect(presentOutput(lines.join("\n"), undefined, false).lines).toEqual(lines);
+    }
   });
 
   it("collapses markdown links to their titles for the card preview", () => {
@@ -263,7 +261,7 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
     expect(p.hiddenAboveCount).toBe(0);
   });
 
-  it("keeps web.search evidence at top when collapsed (R5)", () => {
+  it("uses the compact layout for search output and retains expanded evidence", () => {
     const body = [
       "duckduckgo: 5 results",
       "",
@@ -273,16 +271,12 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
       '  "url": "https://example-seo.example/pm"',
       ...Array.from({ length: 20 }, (_, i) => `noise line ${i}`),
     ].join("\n");
-    const p = presentOutput(body, undefined, false, "web.search");
-    expect(p.lines[0]).toMatch(/duckduckgo|results/i);
-    expect(p.lines.some((l) => l.includes("gov.uk"))).toBe(true);
-    expect(p.lines.some((l) => l.startsWith("···"))).toBe(true);
-    expect(p.lines.length).toBeLessThanOrEqual(7);
-    const ev = evidencePreviewLines("web.search", body.split("\n"));
-    expect(ev?.length).toBeGreaterThanOrEqual(2);
+    const p = presentOutput(body, undefined, false);
+    expect(p.lines).toEqual(["duckduckgo: 5 results", "… 23 more lines", "noise line 18", "noise line 19"]);
+    expect(presentOutput(body, undefined, true).lines.some((line) => line.includes("gov.uk"))).toBe(true);
   });
 
-  it("keeps web.fetch title/lede when collapsed (R5)", () => {
+  it("uses the compact layout for fetched output and retains the expanded page", () => {
     const body = [
       "HTTP 200 OK",
       "Title: Prime Minister - GOV.UK",
@@ -292,9 +286,9 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
       "Even more content.",
       ...Array.from({ length: 30 }, (_, i) => `paragraph ${i}`),
     ].join("\n");
-    const p = presentOutput(body, undefined, false, "web.fetch");
-    expect(p.lines[0]).toMatch(/HTTP 200|Title/i);
-    expect(p.lines.some((l) => /Prime Minister is the head/i.test(l))).toBe(
+    const p = presentOutput(body, undefined, false);
+    expect(p.lines).toEqual(["HTTP 200 OK", "… 33 more lines", "paragraph 28", "paragraph 29"]);
+    expect(presentOutput(body, undefined, true).lines.some((line) => /Prime Minister is the head/i.test(line))).toBe(
       true,
     );
   });

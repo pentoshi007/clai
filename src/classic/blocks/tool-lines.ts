@@ -195,13 +195,12 @@ export function buildToolBodyLines(
     source,
     ctx.spool.state(item.toolCallId),
     expanded,
-    item.name,
   );
   const cap =
     options.maxRows ??
     (expanded ? TOOL_EXPANDED_BODY_ROWS : TOOL_COLLAPSED_BODY_ROWS);
   const kept = presented.lines.slice(0, Math.max(0, cap));
-  const hidden = presented.lines.length - kept.length + presented.hiddenAboveCount;
+  const hidden = presented.lines.length - kept.length;
 
   const branch = ctx.ink.fg("hint", `  ${ctx.glyphs.bodyBranch} `);
   const budget = Math.max(1, ctx.width - BODY_INDENT);
