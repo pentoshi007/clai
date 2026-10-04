@@ -194,8 +194,9 @@ export interface OutputPresentation {
   readonly truncatedNotice: string | undefined;
 }
 
-export const TOOL_PREVIEW_HEAD_LINES = 3;
-export const TOOL_PREVIEW_TAIL_LINES = 3;
+export const TOOL_PREVIEW_HEAD_LINES = 1;
+export const TOOL_PREVIEW_TAIL_LINES = 2;
+const EXPANDED_OVERFLOW_LINES_PER_END = 3;
 const EXPANDED_SAFE_CHARS = 400_000;
 const EXPANDED_SAFE_LINES = 4_000;
 const SAMPLE_CHARS = 4_000;
@@ -232,7 +233,7 @@ function roughLineCount(raw: string): number {
   for (let i = 0; i < raw.length; i += 1) {
     if (raw.charCodeAt(i) === 10) n += 1;
   }
-  return n;
+  return raw.endsWith("\n") ? n - 1 : n;
 }
 
 const PRINTABLE_CARET_CSI = /\^\[\[[0-9;?]*[ -/]*[@-~]/g;
@@ -258,56 +259,28 @@ export function cleanToolOutputLines(raw: string): string[] {
   return out;
 }
 
-export function evidencePreviewLines(
-  toolName: string | undefined,
-  cleaned: readonly string[],
-): string[] | undefined {
-  if (!toolName || cleaned.length === 0) return undefined;
-  if (toolName === "web.search") {
-    const out: string[] = [];
-    for (const line of cleaned) {
-      if (out.length >= 6) break;
-      const t = line.trim();
-      if (!t) continue;
-      if (
-        out.length < 2 ||
-        /^https?:\/\//i.test(t) ||
-        /"title"\s*:/i.test(t) ||
-        /"url"\s*:/i.test(t) ||
-        /^\d+\.\s/.test(t) ||
-        /^[-*]\s/.test(t)
-      ) {
-        out.push(line);
-      } else if (out.length < 3) {
-        out.push(line);
-      }
-    }
-    return out.length >= 2 ? out.slice(0, 6) : undefined;
-  }
-  if (toolName === "web.fetch" || toolName === "http.fetch") {
-    const out: string[] = [];
-    let bodyLines = 0;
-    for (const line of cleaned) {
-      const t = line.trim();
-      if (!t) {
-        if (out.length > 0 && bodyLines > 0) break;
-        continue;
-      }
-      out.push(line);
-      if (out.length <= 2) continue;
-      bodyLines += 1;
-      if (bodyLines >= 4 || out.length >= 8) break;
-    }
-    return out.length >= 2 ? out : undefined;
-  }
-  return undefined;
+export function toolOutputGapLabel(hiddenLines: number): string {
+  return `… ${hiddenLines} more line${hiddenLines === 1 ? "" : "s"}`;
+}
+
+export function collapseOutputLines<T>(
+  lines: readonly T[],
+  gapLine: (hiddenLines: number) => T,
+  totalLines = lines.length,
+): { readonly lines: readonly T[]; readonly hiddenAboveCount: number } {
+  const head = lines.slice(0, TOOL_PREVIEW_HEAD_LINES);
+  const tail = lines.slice(Math.max(head.length, lines.length - TOOL_PREVIEW_TAIL_LINES));
+  const hiddenAboveCount = Math.max(0, totalLines - head.length - tail.length);
+  return {
+    lines: hiddenAboveCount > 0 ? [...head, gapLine(hiddenAboveCount), ...tail] : [...head, ...tail],
+    hiddenAboveCount,
+  };
 }
 
 export function presentOutput(
   tail: string,
   state: BoundedTextState | undefined,
   expanded: boolean,
-  toolName?: string,
 ): OutputPresentation {
   const totalLines = roughLineCount(tail);
   const truncatedNotice = state?.truncated
@@ -327,11 +300,11 @@ export function presentOutput(
           : 0;
       return { lines: cleaned, hiddenAboveCount: hidden, truncatedNotice };
     }
-    const head = cleaned.slice(0, TOOL_PREVIEW_HEAD_LINES);
-    const visibleTail = cleaned.slice(-TOOL_PREVIEW_TAIL_LINES);
+    const head = cleaned.slice(0, EXPANDED_OVERFLOW_LINES_PER_END);
+    const visibleTail = cleaned.slice(-EXPANDED_OVERFLOW_LINES_PER_END);
     const hiddenAboveCount = Math.max(
       0,
-      cleaned.length - TOOL_PREVIEW_HEAD_LINES - TOOL_PREVIEW_TAIL_LINES,
+      cleaned.length - EXPANDED_OVERFLOW_LINES_PER_END * 2,
     );
     return {
       lines: [...head, `··· ${hiddenAboveCount} lines more · open pager ···`, ...visibleTail],
@@ -342,41 +315,8 @@ export function presentOutput(
 
   const source = sampleEnds(tail, SAMPLE_CHARS);
   const cleaned = cleanToolOutputLines(source);
-  const headCount = TOOL_PREVIEW_HEAD_LINES;
-  const tailCount = TOOL_PREVIEW_TAIL_LINES;
-  const budget = headCount + tailCount;
-
-  let lines: string[];
-  let hiddenAboveCount = 0;
-
-  const evidence = !expanded
-    ? evidencePreviewLines(toolName, cleaned)
-    : undefined;
-
-  if (evidence && evidence.length > 0 && cleaned.length > budget) {
-    const rest = cleaned.length - evidence.length;
-    hiddenAboveCount = Math.max(0, totalLines - evidence.length, rest);
-    lines =
-      hiddenAboveCount > 0
-        ? [...evidence, `··· ${hiddenAboveCount} lines more ···`]
-        : evidence;
-  } else if (cleaned.length <= budget) {
-    lines = cleaned;
-    if (source !== tail && totalLines > cleaned.length) {
-      hiddenAboveCount = Math.max(0, totalLines - cleaned.length);
-    }
-  } else {
-    const head = cleaned.slice(0, headCount);
-    const visibleTail = cleaned.slice(-tailCount);
-    hiddenAboveCount = Math.max(
-      totalLines - headCount - tailCount,
-      cleaned.length - headCount - tailCount,
-    );
-    lines =
-      hiddenAboveCount > 0
-        ? [...head, `··· ${hiddenAboveCount} lines more ···`, ...visibleTail]
-        : [...head, ...visibleTail];
-  }
-
-  return { lines, hiddenAboveCount, truncatedNotice };
+  return {
+    ...collapseOutputLines(cleaned, toolOutputGapLabel, source === tail ? cleaned.length : totalLines),
+    truncatedNotice,
+  };
 }

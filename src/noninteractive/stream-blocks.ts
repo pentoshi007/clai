@@ -5,7 +5,7 @@ import { adaptPresenterGlyphs, glyphsFor } from "../classic/render/glyphs.js";
 import { createInkTheme, withColorMode, type ThemeToken } from "../classic/render/ink-theme.js";
 import { contentWidth } from "../classic/render/measure.js";
 import { wrapAnsiLine, wrapWithPrefixes } from "../classic/render/wrap.js";
-import { clampArgsDisplay, presentOutput } from "../ui-core/rendering/tool-presenter.js";
+import { clampArgsDisplay, presentOutput, TOOL_PREVIEW_HEAD_LINES, TOOL_PREVIEW_TAIL_LINES } from "../ui-core/rendering/tool-presenter.js";
 import { renderMarkdownLines } from "../ui-core/rendering/render-markdown-lines.js";
 import { sanitizeDisplayText } from "../ui-core/rendering/sanitize-display.js";
 import { liveThinkingDisplay } from "../ui-core/rendering/thinking-tail.js";
@@ -21,7 +21,7 @@ export interface StreamContextInput {
   readonly showThinking: boolean;
 }
 
-export const COLLAPSED_BODY_ROWS = 3;
+export const COLLAPSED_BODY_ROWS = TOOL_PREVIEW_HEAD_LINES + TOOL_PREVIEW_TAIL_LINES + 1;
 export const VERBOSE_BODY_ROWS = 40;
 
 export function createStreamContext(input: StreamContextInput): StreamContext {
@@ -150,13 +150,12 @@ export function buildToolStartLines(): readonly string[] {
 export function buildToolOutputLines(
   ctx: StreamContext,
   event: Extract<AgentEvent, { type: "tool-output" }>,
-  tool: { readonly name?: string | undefined } = {},
 ): readonly string[] {
   if (quiet(ctx)) return [];
-  const presented = presentOutput(event.chunk, undefined, verbose(ctx), tool.name);
+  const presented = presentOutput(event.chunk, undefined, verbose(ctx));
   const kept = presented.lines.slice(0, ctx.bodyRows);
   if (kept.length === 0) return [];
-  const hidden = presented.lines.length - kept.length + presented.hiddenAboveCount;
+  const hidden = presented.lines.length - kept.length;
 
   const branch = styled(ctx, `  ${ctx.glyphs.bodyBranch} `, { fg: "muted" });
   const pad = " ".repeat(BODY_INDENT);

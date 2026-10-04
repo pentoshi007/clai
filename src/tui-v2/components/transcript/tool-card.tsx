@@ -17,10 +17,10 @@ import {
 } from "../../../ui-core/rendering/batch-sections.js";
 import {
   presentFsReadArgs,
+  collapseOutputLines,
   presentOutput,
   presentTool,
-  TOOL_PREVIEW_HEAD_LINES,
-  TOOL_PREVIEW_TAIL_LINES,
+  toolOutputGapLabel,
 } from "../../../ui-core/rendering/tool-presenter.js";
 import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
 import { clipDiffCardText } from "../../../ui-core/rendering/file-diff-view.js";
@@ -37,6 +37,7 @@ import { useClickWithoutDrag } from "./use-click-without-drag.js";
 import { DiffActionButton, FileDiffBody } from "./file-diff-card.js";
 import {
   renderStyledMarkdownLines,
+  styleAnsiLine,
   styledLinesWeight,
   type StyledLine,
 } from "../../rendering/styled-markdown.js";
@@ -84,7 +85,7 @@ function OutputLines(props: {
   return (
     <>
       {lines.map((line, i) => {
-        const isGap = line.startsWith("···");
+        const isGap = line.startsWith("…") || line.startsWith("···");
         return (
           <text
             key={i}
@@ -298,12 +299,9 @@ export function ToolCard(props: {
     );
     if (rendered.length === 0) return null;
     if (expanded) return rendered.slice(0, 60);
-    const previewRows = TOOL_PREVIEW_HEAD_LINES + TOOL_PREVIEW_TAIL_LINES;
-    if (rendered.length <= previewRows) return rendered;
-    return [
-      ...rendered.slice(0, TOOL_PREVIEW_HEAD_LINES),
-      ...rendered.slice(-TOOL_PREVIEW_TAIL_LINES),
-    ];
+    return collapseOutputLines(rendered, (hiddenLines) =>
+      styleAnsiLine(toolOutputGapLabel(hiddenLines), theme.muted),
+    ).lines;
   }, [formatMdRead, item, tail, expanded, termWidth, theme, colorMode]);
 
   const presentsRawOutput =
@@ -311,7 +309,7 @@ export function ToolCard(props: {
   const { lines, hiddenAboveCount, truncatedNotice } = useMemo(
     () =>
       presentsRawOutput
-        ? presentOutput(tail, spool.state(item.toolCallId), expanded, item.name)
+        ? presentOutput(tail, spool.state(item.toolCallId), expanded)
         : EMPTY_OUTPUT,
     [presentsRawOutput, tail, spool, item.toolCallId, item.outputBytes, expanded, item.name],
   );
@@ -405,8 +403,6 @@ export function ToolCard(props: {
     } else if (isBatch) {
       footerHint =
         "click batch = all output · click sub-tool = that call · Ctrl+O expands all";
-    } else if (hiddenAboveCount > 0) {
-      footerHint = `+${hiddenAboveCount} more · click for full · Ctrl+O to expand`;
     } else {
       footerHint = "click for full · Ctrl+O to expand";
     }
