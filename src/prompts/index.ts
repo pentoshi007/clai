@@ -143,8 +143,6 @@ const agentNativeToolsHeader = `# TOOLS
 
 You have structured tools provided by the API. Call them via the platform tool interface. Do not invent tool names. Prefer the most specific tool. Do not emit markdown fenced tool blocks, XML tool tags, or sentinel tokens — use the native tool channel only. Independent read-only calls in one response run in parallel; dependent steps go in separate responses. Missing CLI: tool.check, then run its install hint with shell.exec. OS, shell, and cwd are in REQUEST ENVIRONMENT.
 
-Available tool names: {{tool_list}}
-
 # FILE POLICY
 
 Read: small files → fs.read {path}. Large/unknown → expect auto-head; if hasMore, continue with footer next offset/limit (never path-only again). Need a symbol → pattern or fs.search then offset around hits. Lines are 1-indexed (N: text). Write: prefer one complete fs.write for new/full rewrites; fs.writeMany for scaffolds; fs.edit for surgical edits; fs.append for ordered continuation when a complete file would exceed the output window. Send full literal chunks, wait for each receipt, and use after_bytes as the next expectedPriorBytes. Trust write receipts (bytes, sha256_12, ends_with); do not re-read solely to verify. Never claim a write without a successful tool result.
@@ -379,6 +377,12 @@ export function renderAgentSystemPrompt(
         : true;
     template = slim ? agentPromptNativeSlim : agentPromptNative;
   }
+  if (!options?.nativeTools) {
+    template = template.replace(
+      "# TOOLS (use these EXACT argument names)",
+      "# TOOLS (use these EXACT argument names)\n\nAvailable tools: {{tool_list}}",
+    );
+  }
   template = withPentestMethodology(template, options?.pentest === true);
   const rendered = render(template, {
     ...promptEnvironmentValues(Boolean(options?.stableEnvironment)),
@@ -470,7 +474,7 @@ export function planModeDirective(): string {
   ].join("\n");
 }
 
-export function agentModeDirective(): string {
+function detailedAgentModeDirective(): string {
   return [
     "AGENT MODE — you are able to act, and you decide each turn whether acting is what the user asked for.",
     "",
@@ -511,5 +515,13 @@ export function agentModeDirective(): string {
     "- A bounded request stays bounded. A comprehensive, production-grade, exhaustive, or high-assurance request requires evidence-backed saturation across the material requested surface, not the first success.",
     "- Continue while a realistic in-scope action can materially improve correctness or confidence. Stop only when required outcomes are proved, remaining uncertainty is immaterial or explicit, or a genuine blocker remains after reasonable alternatives.",
     "- Do not stop mid-build or mid-investigation merely to ask whether to continue inside an already-clear boundary. Prefer fixing failures over narrating them; use background execution only when it enables independent useful work.",
+  ].join("\n");
+}
+
+export function agentModeDirective(options?: { executionRulesInSystem?: boolean }): string {
+  if (!options?.executionRulesInSystem) return detailedAgentModeDirective();
+  return [
+    "AGENT MODE — answer questions with grounded analysis; act on clear directives to change, fix, build, run, or continue. A build verb inside a question does not authorize edits. Ask only when intent is genuinely ambiguous.",
+    "Apply the professional execution, scope, task, and verification rules in the system instructions. Deliver the verified requested outcome; disclose incomplete criteria or blockers. Plans are working memory, not permission gates.",
   ].join("\n");
 }

@@ -1,7 +1,6 @@
 import type { ToolDefinition } from "../../types.js";
 import { TOOL_DEFINITIONS } from "./aggregate.js";
 import { NON_REGISTRY_TOOL_NAMES } from "../definitions.js";
-import { SUBAGENT_TOOL_NAMES } from "./subagents.js";
 
 export const byName = new Map(TOOL_DEFINITIONS.map((d) => [d.name, d]));
 
@@ -17,50 +16,6 @@ export function getToolDefinitions(filter?: {
   if (filter?.names) {
     const allow = new Set(filter.names);
     defs = defs.filter((d) => allow.has(d.name));
-  }
-  if (filter?.compact) {
-    const core = new Set([
-      ...SUBAGENT_TOOL_NAMES,
-      "fs.read",
-      "fs.write",
-      "fs.writeMany",
-      "fs.list",
-      "fs.search",
-      "fs.edit",
-      "fs.append",
-      "fs.delete",
-      "shell.exec",
-      "shell.jobs",
-      "shell.tail",
-      "shell.wait",
-      "shell.stop",
-      "terminal.start",
-      "terminal.send",
-      "terminal.read",
-      "terminal.status",
-      "terminal.list",
-      "terminal.close",
-      "web.search",
-      "web.fetch",
-      "http.fetch",
-      "net.pingSweep",
-      "wordlist.find",
-      "tool.check",
-      "image.view",
-      "image.ocr",
-      "skill.load",
-      "skill.list",
-      "mcp.call",
-      "mcp.list",
-      "mcp.tools",
-      "instructions.record",
-      "plan.create",
-      "task.add",
-      "task.move",
-      "job.read",
-      "task.update",
-    ]);
-    defs = defs.filter((d) => core.has(d.name));
   }
   return defs.map((d) => ({ ...d }));
 }

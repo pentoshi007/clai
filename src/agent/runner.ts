@@ -350,6 +350,7 @@ export async function runAgentTurn(
       pentestTools: await exposePentestTools(session, classification.pentestLikeTurn),
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
+      compactPromptModes: session.compactPromptModes ??= new Map(),
     });
     const routeToolNames = toolRouting.routeToolNames;
     const resolveNativeTools = toolRouting.resolveNativeTools;
@@ -435,6 +436,9 @@ export async function runAgentTurn(
         projectContext,
         destinationHint,
         isPlanMode,
+        executionRulesInSystem: buildStableSystemContent(nativeToolsActive).includes(
+          "Professional execution method — applies to every domain",
+        ),
         buildLikeTurn,
         informationalQuery,
         idleOrSocialPrompt,

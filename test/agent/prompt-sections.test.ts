@@ -44,7 +44,7 @@ describe("prompt sections", () => {
     expect(withSkill[0]).toMatchObject({ kind: "context", mandatory: true });
   });
 
-  it("appends outcome, plan, and scope defaults then the task state", () => {
+  it("appends outcome, plan, and scope defaults without repeating the user request", () => {
     const sections = buildPromptSections({
       systemSections: [],
       selectedSkillNames: [],
@@ -56,15 +56,13 @@ describe("prompt sections", () => {
       "outcome",
       "plan",
       "scope",
-      "context",
     ]);
-    expect(sections[0]!.content).toContain("OUTCOME CONTRACT\nGoal: explain this");
+    expect(sections[0]!.content).toContain("OUTCOME CONTRACT");
+    expect(sections[0]!.content).toContain("latest user task");
+    expect(sections.map((section) => section.content).join("\n")).not.toContain("explain this");
     expect(sections[1]!.content).toContain("PLAN PROTOCOL");
     expect(sections[2]!.content).toContain(
       "No active remote-security scope applies to this turn.",
-    );
-    expect(sections.at(-1)!.content).toBe(
-      "TASK STATE\nMode: ask. Current request: explain this",
     );
     expect(sections.every((section) => section.mandatory)).toBe(true);
   });
@@ -81,7 +79,7 @@ describe("prompt sections", () => {
       mode: "plan",
     });
 
-    expect(sections).toHaveLength(4);
-    expect(sections.at(-1)!.kind).toBe("context");
+    expect(sections).toHaveLength(3);
+    expect(sections.at(-1)!.kind).toBe("scope");
   });
 });

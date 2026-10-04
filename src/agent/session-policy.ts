@@ -5,12 +5,14 @@ export interface SessionPolicy {
   allow: Set<string>;
   pentestAuthorized: { value: boolean };
   sessionId: string;
+  compactPromptModes?: Map<string, boolean>;
   planApproved: { value: boolean };
 }
 
 export function createSessionPolicy(sessionId?: string): SessionPolicy {
   return {
     allow: new Set(),
+    compactPromptModes: new Map(),
     pentestAuthorized: { value: false },
     sessionId:
       sessionId ??

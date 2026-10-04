@@ -3,7 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatImage, CompletionRequest, CompletionResult } from "../../src/types.js";
-import { clearTextOnlyModels } from "../../src/llm/tool-protocol.js";
+import {
+  accumulateOpenAiToolCallDelta,
+  clearTextOnlyModels,
+  finalizeOpenAiToolCalls,
+} from "../../src/llm/tool-protocol.js";
 
 const streamMock = vi.fn();
 
@@ -136,8 +140,9 @@ describe("native tool loop integration", () => {
       expect(requestContext).toContain("OUTCOME CONTRACT");
       expect(requestContext).toContain("PLAN PROTOCOL");
       expect(requestContext).toContain("ENGAGEMENT SCOPE");
-      expect(requestContext).toContain("TASK STATE");
-      expect(requestContext).toContain("write hello.ts with n=42");
+      expect(requestContext).toContain("latest user task");
+      expect(requestContext).not.toContain("write hello.ts with n=42");
+      expect(request.messages.some((message) => message.role === "user" && message.content === "write hello.ts with n=42")).toBe(true);
     }
     // No fence protocol required in first model response
     expect(streamMock.mock.calls[0]![0].tools?.length).toBeGreaterThan(0);
@@ -250,6 +255,53 @@ describe("native tool loop integration", () => {
     );
     expect(toolCallIds.size).toBe(2);
     expect([...toolCallIds].every((id) => id && toolResultIds.has(id))).toBe(true);
+  });
+
+  it("executes suffixed search, read and edit calls without retries or CRLF changes", async () => {
+    const target = join(cwd, "state.mjs");
+    await writeFile(target, "export const retryLimit = 2;\r\nexport const backoffMs = 50;\r\n");
+    const events: Array<{ type: string; ok?: boolean; name?: string }> = [];
+    let round = 0;
+    streamMock.mockImplementation(async (): Promise<CompletionResult> => {
+      round += 1;
+      const calls = round === 1
+        ? [
+            { name: "fs_searchcommentaryjson", args: { path: cwd, pattern: "retryLimit" } },
+            { name: "fs_readanalysisjson", args: { path: target } },
+          ]
+        : [{ name: "fs_editjson", args: { path: target, oldText: "retryLimit = 2", newText: "retryLimit = 3", expectedReplacements: 1 } }];
+      const state = new Map();
+      if (round < 3) {
+        calls.forEach((call, index) => accumulateOpenAiToolCallDelta(state, {
+          index, id: `suffix-${round}-${index}`,
+          function: { name: call.name, arguments: JSON.stringify(call.args) },
+        }));
+      }
+      return {
+        text: round < 3 ? "" : "Updated retryLimit; preserved backoff and CRLF.",
+        provider: "openai", model: "gpt-4o-mini",
+        ...(round < 3 ? { toolCalls: finalizeOpenAiToolCalls(state) } : {}),
+        finishReason: round < 3 ? "tool_calls" : "stop",
+      };
+    });
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    await runAgentLoop("Change retryLimit from 2 to 3 in state.mjs; preserve CRLF and backoffMs.", {
+      provider: "openai", model: "gpt-4o-mini", maxSteps: 4,
+      onEvent: (event) => events.push(event),
+    });
+    expect(await readFile(target, "utf8"))
+      .toBe("export const retryLimit = 3;\r\nexport const backoffMs = 50;\r\n");
+    expect(streamMock).toHaveBeenCalledTimes(3);
+    expect(events.filter((event) => event.type === "tool-call").map((event) => event.name))
+      .toEqual(["fs.search", "fs.read", "fs.edit"]);
+    expect(events.filter((event) => event.type === "tool-result"))
+      .toHaveLength(3);
+    expect(events.some((event) => event.type === "tool-result" && event.ok === false)).toBe(false);
+    const requests = streamMock.mock.calls.map(([request]) => request as CompletionRequest);
+    for (const request of requests.slice(1)) {
+      expect(request.messages[0]).toEqual(requests[0]!.messages[0]);
+      expect(request.tools).toEqual(requests[0]!.tools);
+    }
   });
 
   it("closes an abandoned streamed native call and falls back to text tools", async () => {

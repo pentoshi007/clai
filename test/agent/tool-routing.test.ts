@@ -79,6 +79,19 @@ describe("tool routing", () => {
     }
   });
 
+  it.each([false, true])("keeps every permitted tool when compact=%s", (mcpPresent) => {
+    const route = routing({ mcpPresent });
+    const full = route.selectToolDefs(true, false, "nvidia", "test-model")!;
+    const compact = route.selectToolDefs(true, true, "nvidia", "test-model")!;
+    expect(JSON.stringify(compact)).toBe(JSON.stringify(full));
+    expect(full.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(route.routeToolNames("nvidia", "test-model")),
+    );
+    expect(full.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["fs.replaceLines", "shell.wait", "plan.clear", "terminal.send"]),
+    );
+  });
+
   it("retains the MCP wrapper in compact native tool sets", () => {
     const defs = routing({ mcpPresent: true }).selectToolDefs(
       true,
@@ -89,18 +102,17 @@ describe("tool routing", () => {
     expect(defs?.some((definition) => definition.name === "mcp.call")).toBe(true);
   });
 
-  it("selects the compact constitution only when compact prompts are enabled", () => {
-    const full = routing().buildStableSystemContent(
-      true,
-      "nvidia",
-      "test-model",
-    );
-    const compact = routing({
-      useCompactSystemPrompt: () => true,
+  it.each([false, true])("pins the initial compact=%s choice across turn budgets", (initial) => {
+    const compactPromptModes = new Map<string, boolean>();
+    const first = routing({
+      compactPromptModes,
+      useCompactSystemPrompt: () => initial,
     }).buildStableSystemContent(true, "nvidia", "test-model");
-
-    expect(full.length).toBeGreaterThan(0);
-    expect(compact.length).toBeGreaterThan(0);
-    expect(compact).not.toBe(full);
+    const second = routing({
+      compactPromptModes,
+      useCompactSystemPrompt: () => !initial,
+    }).buildStableSystemContent(true, "nvidia", "test-model");
+    expect(second).toBe(first);
+    expect(first.includes("Professional execution method — applies to every domain")).toBe(!initial);
   });
 });
