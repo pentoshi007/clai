@@ -1,5 +1,14 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { readOnlyShellCommands } from "./patterns.js";
+import {
+  commandIndex,
+  commandName,
+  deleteCommands,
+  delegatedCommandWords,
+  embeddedCommandTexts,
+  invokesDeleteCommand,
+  wordsInvokeCommand,
+} from "./shell-command-words.js";
 import { permissionShellSyntax, type PermissionWord } from "./shell-permission-words.js";
 
 export interface FilesystemTarget {
@@ -17,28 +26,11 @@ export interface ShellFilesystemEffects {
   filesystemOnly: boolean;
 }
 
-const deleteCommands = new Set(["rm", "rmdir", "unlink", "del", "erase", "remove-item"]);
 const writeCommands = new Set(["touch", "mkdir", "cp", "mv", "install", "tee", "truncate", "chmod", "chown", "chgrp"]);
 const shells = new Set(["sh", "bash", "dash", "zsh", "ksh"]);
-const wrappers = new Set(["command", "exec", "env", "sudo", "nohup", "time", "stdbuf", "nice", "timeout"]);
-const wrapperValueOptions = new Set(["-u", "--unset", "-g", "--group", "--user", "-i", "-o", "-e", "--input", "--output", "--error", "-n", "--adjustment", "-k", "--kill-after", "-s", "--signal"]);
-
-function commandIndex(words: readonly PermissionWord[]): number {
-  let index = 0;
-  while (index < words.length) {
-    while (/^[A-Za-z_]\w*=/.test(words[index]?.value ?? "")) index++;
-    const command = basename(words[index]?.value ?? "").toLowerCase();
-    if (!wrappers.has(command)) return index;
-    index++;
-    while (words[index]?.value.startsWith("-")) {
-      const option = words[index++]!.value;
-      if (option === "--") break;
-      if (wrapperValueOptions.has(option)) index++;
-    }
-    if (command === "timeout") index++;
-  }
-  return index;
-}
+const gitValueOptions = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"]);
+const gitRelocatingOptions = /^(?:-C|--git-dir|--work-tree)(?:=|$)/;
+const gitNonDestructiveRemoval = /^(?:--cached|--dry-run|-[a-z]*n[a-z]*)$/;
 
 function operands(words: readonly PermissionWord[]): PermissionWord[] {
   const values: PermissionWord[] = [];
@@ -76,17 +68,49 @@ function collectWriteTargets(command: string, args: readonly PermissionWord[], c
   effects.uncertainWrite ||= destinations.length === 0 || args.some(({ dynamic, value }) => dynamic || /^-t|^--(?:target-directory|reference|size)(?:=|$)/.test(value));
 }
 
+function gitSubcommandIndex(args: readonly PermissionWord[]): number {
+  let index = 0;
+  while (index < args.length && args[index]!.value.startsWith("-")) {
+    index += gitValueOptions.has(args[index]!.value) ? 2 : 1;
+  }
+  return index < args.length ? index : -1;
+}
+
+function recordGitRemoval(args: readonly PermissionWord[], cwd: string, effects: ShellFilesystemEffects): boolean {
+  const subcommand = gitSubcommandIndex(args);
+  if (subcommand < 0 || args[subcommand]!.value !== "rm") return false;
+  const removalArgs = args.slice(subcommand + 1);
+  if (removalArgs.some(({ value }) => gitNonDestructiveRemoval.test(value))) return true;
+  recordDeletion("rm", args.slice(0, subcommand), removalArgs, cwd, effects);
+  effects.uncertainDelete ||= args.slice(0, subcommand).some(({ value }) => gitRelocatingOptions.test(value));
+  return true;
+}
+
+function recordDeletion(
+  command: string, head: readonly PermissionWord[], args: readonly PermissionWord[], cwd: string, effects: ShellFilesystemEffects,
+): void {
+  const files = operands(args);
+  effects.deletes.push(...files.map((word) => target(word, cwd)));
+  effects.uncertainDelete ||= head.some(({ dynamic }) => dynamic) || files.length === 0 || args.some(({ dynamic }) => dynamic)
+    || (command === "rmdir" && args.some(({ value }) => /^-[a-z]*p|^--parents$/.test(value)));
+}
+
 function analyzeSegment(
   words: readonly PermissionWord[], cwd: string, effects: ShellFilesystemEffects, depth: number,
 ): void {
   const head = commandIndex(words);
-  const command = basename(words[head]?.value ?? "").toLowerCase();
+  const command = commandName(words[head]);
   const args = words.slice(head + 1);
-  const files = operands(args);
   if (deleteCommands.has(command)) {
-    effects.deletes.push(...files.map((word) => target(word, cwd)));
-    effects.uncertainDelete ||= words[head]?.dynamic === true || files.length === 0 || args.some(({ dynamic }) => dynamic)
-      || (command === "rmdir" && args.some(({ value }) => /^-[a-z]*p|^--parents$/.test(value)));
+    recordDeletion(command, words.slice(head, head + 1), args, cwd, effects);
+    return;
+  }
+  if (command === "git" && recordGitRemoval(args, cwd, effects)) return;
+  const files = operands(args);
+  const delegated = delegatedCommandWords(command, args);
+  const delegatedDeletion = delegated.some((nested) => wordsInvokeCommand(nested, deleteCommands));
+  if (command === "xargs" && delegatedDeletion) {
+    effects.uncertainDelete = true;
     return;
   }
   if (shells.has(command)) {
@@ -102,17 +126,13 @@ function analyzeSegment(
     return;
   }
   if (command === "find") {
-    const deleting = args.some(({ value }) => value === "-delete" || deleteCommands.has(basename(value)));
+    const deleting = delegatedDeletion || args.some(({ value }) => value === "-delete");
     if (deleting) {
       const roots = args.slice(0, args.findIndex(({ value }) => value.startsWith("-")));
       effects.deletes.push(...roots.map((word) => target(word, cwd)));
       effects.uncertainDelete ||= roots.length === 0 || args.some(({ value }) => value !== "-delete" && /^(?:-L|-exec|-execdir|-ok|-okdir)$/.test(value));
       return;
     }
-  }
-  if (command === "xargs" && args.some(({ value }) => deleteCommands.has(basename(value)))) {
-    effects.uncertainDelete = true;
-    return;
   }
   if (writeCommands.has(command)) {
     collectWriteTargets(command, args, cwd, effects);
@@ -125,9 +145,9 @@ function analyzeSegment(
   }
   const literalOutput = command === "echo" || command === "printf";
   if (words[head]?.dynamic || ["eval", "source", "."].includes(command)) effects.uncertainDelete = true;
-  if (words.some(({ value, dynamic }) => dynamic && /\b(?:rm|unlink|rmdir)\b/.test(value))) effects.uncertainDelete = true;
-  if (!literalOutput && args.some(({ value }) => deleteCommands.has(basename(value)) || /\b(?:rm|unlink|rmdir)\s/.test(value))) effects.uncertainDelete = true;
-  if (!literalOutput && args.some(({ value }) => writeCommands.has(basename(value)))) effects.uncertainWrite = true;
+  if (words.some(({ value, dynamic }) => dynamic && invokesDeleteCommand(value))) effects.uncertainDelete = true;
+  if (embeddedCommandTexts(command, args).some(invokesDeleteCommand)) effects.uncertainDelete = true;
+  if (delegated.some((nested) => wordsInvokeCommand(nested, writeCommands))) effects.uncertainWrite = true;
   effects.filesystemOnly &&= literalOutput || command === "true" || readOnlyShellCommands.has(command);
 }
 
@@ -151,7 +171,7 @@ export function shellFilesystemEffects(command: string, cwd: string, depth = 0):
       withoutRedirects.push(word);
     }
     const head = commandIndex(withoutRedirects);
-    const base = basename(withoutRedirects[head]?.value ?? "").toLowerCase();
+    const base = commandName(withoutRedirects[head]);
     if (base === "cd" || base === "pushd" || base === "popd") {
       const directory = withoutRedirects[head + 1];
       if (base === "cd" && directory && !directory.dynamic && withoutRedirects.length === head + 2 && !segment.piped && syntax.successChain) {
@@ -166,7 +186,7 @@ export function shellFilesystemEffects(command: string, cwd: string, depth = 0):
     || /\bCDPATH\s*=/.test(command)
     || syntax.segments.some(({ words }) => ["eval", "source", ".", "function"].includes(words[0]?.value ?? ""));
   if (syntax.uncertain || uncertainCwd || changesEnvironment) {
-    effects.uncertainDelete ||= effects.deletes.length > 0 || /\b(?:rm|unlink|rmdir)\b/.test(command);
+    effects.uncertainDelete ||= effects.deletes.length > 0 || invokesDeleteCommand(command);
     effects.uncertainWrite ||= effects.writes.length > 0;
     effects.filesystemOnly = false;
   }
