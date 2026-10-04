@@ -35,6 +35,7 @@ import { scopeContextMessage } from "../scope-context.js";
 export interface SystemSectionInput {
   readonly prompt: string;
   readonly mode: Mode;
+  readonly executionRulesInSystem?: boolean;
   readonly plan: SessionPlan | undefined;
   readonly history: readonly ChatMessage[] | undefined;
   readonly previousTurn: PreviousTurnSignal | undefined;
@@ -143,7 +144,7 @@ const workflowSections = (input: SystemSectionInput): string[] => {
   if (input.isPlanMode) {
     sections.push(planModeDirective());
   } else if (input.mode === "agent") {
-    sections.push(agentModeDirective());
+    sections.push(agentModeDirective({ executionRulesInSystem: input.executionRulesInSystem === true }));
   }
   if (workNotIdle && !input.isPlanMode) sections.push(buildWorkflowDirective());
   if (input.isPlanMode && workNotIdle) sections.push(buildWorkflowDirective());

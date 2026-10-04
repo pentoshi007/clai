@@ -42,8 +42,9 @@ describe("per-prompt request context trim", () => {
     const { messages } = compose("do the first thing");
     const block = requestContextOf(messages);
     expect(block).toContain("OUTCOME CONTRACT");
-    expect(block).toContain("do the first thing");
-    expect(block).toContain("TASK STATE");
+    expect(block).not.toContain("do the first thing");
+    expect(messages.findLast((message) => message.role === "user")?.content).toBe("do the first thing");
+    expect(block).not.toContain("TASK STATE");
     expect(block).toContain(STABLE_BOILERPLATE);
   });
 
@@ -53,9 +54,10 @@ describe("per-prompt request context trim", () => {
     const second = compose("do the second thing", history as ChatMessage[]);
     const block = requestContextOf(second.messages);
     expect(block).toContain("OUTCOME CONTRACT");
-    expect(block).toContain("do the second thing");
+    expect(block).not.toContain("do the second thing");
+    expect(second.messages.findLast((message) => message.role === "user")?.content).toBe("do the second thing");
     expect(block).not.toContain("do the first thing");
-    expect(block).toContain("TASK STATE");
+    expect(block).not.toContain("TASK STATE");
     expect(block).not.toContain(STABLE_BOILERPLATE);
     expect(block.length).toBeLessThan(requestContextOf(first.messages).length);
   });
@@ -70,7 +72,8 @@ describe("per-prompt request context trim", () => {
     const second = compose("do the second thing", compacted);
     const block = requestContextOf(second.messages);
     expect(block).toContain(STABLE_BOILERPLATE);
-    expect(block).toContain("do the second thing");
+    expect(block).not.toContain("do the second thing");
+    expect(second.messages.findLast((message) => message.role === "user")?.content).toBe("do the second thing");
   });
 
   it("keeps the timeline a pure append of the previous request", () => {

@@ -48,6 +48,25 @@ describe("tool-protocol helpers", () => {
     expect(parseToolArguments("{broken")._parseError).toBe(true);
   });
 
+  it("repairs JSON/channel suffixes only when the remaining name is registered", () => {
+    expect(fromWireName("fs.editjson")).toBe("fs.edit");
+    expect(fromWireName("fs_readanalysisjson")).toBe("fs.read");
+    expect(fromWireName("fs_searchcommentaryjson")).toBe("fs.search");
+    expect(fromWireName("fs.editorjson")).toBe("fs.editorjson");
+    registerWireNamesFor("fixture.realjson");
+    expect(fromWireName("fixture_realjson")).toBe("fixture.realjson");
+  });
+
+  it("keeps literal edit arguments when a streamed tool name contains formatting suffixes", () => {
+    const state = new Map();
+    const args = { path: "queue.mjs", oldText: "count - 1", newText: "count", expectedReplacements: 1 };
+    accumulateOpenAiToolCallDelta(state, {
+      index: 0, id: "format-suffix", function: { name: "fs_editjson", arguments: JSON.stringify(args) },
+    });
+    expect(finalizeOpenAiToolCalls(state)).toMatchObject([{ name: "fs.edit", args }]);
+    expect(parseToolArguments('{"path":"queue.mjs","newText":')._parseError).toBe(true);
+  });
+
   it("recovers malformed native arguments leniently instead of failing the call", () => {
     expect(parseToolArguments('{"command":"echo line1\nline2"}')).toEqual({
       command: "echo line1\nline2",
