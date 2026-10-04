@@ -78,8 +78,8 @@ describe("presentBatchSection / summary", () => {
     expect(collapsed.glyph).toBe("✓");
     expect(collapsed.name).toBe("shell.exec");
     expect(collapsed.lines[0]).toBe("line 1");
-    expect(collapsed.lines.some((l) => l.startsWith("···"))).toBe(true);
-    expect(collapsed.lines.length).toBeLessThanOrEqual(7);
+    expect(collapsed.lines.some((line) => line.startsWith("…"))).toBe(true);
+    expect(collapsed.lines).toHaveLength(4);
     expect(collapsed.hiddenAboveCount).toBeGreaterThan(0);
 
     const expanded = presentBatchSection(section, true);
@@ -111,7 +111,7 @@ describe("presentBatchSection / summary", () => {
     expect(expanded.lines.length).toBe(401);
   });
 
-  it("applies per-tool evidence previews to batch sub-calls", () => {
+  it("applies the compact head and tail layout to batch sub-calls", () => {
     const body = [
       "# web.search query=\"kiro context\"",
       "1. First result",
@@ -122,8 +122,12 @@ describe("presentBatchSection / summary", () => {
       { index: 3, name: "web.search", ok: true, status: "ok", exitCode: 0, body },
       false,
     );
-    expect(collapsed.lines.length).toBeLessThanOrEqual(7);
-    expect(collapsed.lines).toContain("https://example.com/one");
+    expect(collapsed.lines).toEqual([
+      '# web.search query="kiro context"',
+      "… 40 more lines",
+      "snippet line 38",
+      "snippet line 39",
+    ]);
   });
 
   it("marks failed sections with ✗ and failed label", () => {

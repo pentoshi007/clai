@@ -121,7 +121,7 @@ describe("buildFeedBlocks", () => {
     expect(text).not.toContain(context);
   });
 
-  it("shows three head and tail lines in collapsed tool output", () => {
+  it("shows the first line, hidden count, and last two lines in collapsed tool output", () => {
     const previewTurn = scriptedTurn();
     const source = transcriptItems(previewTurn.state).find(
       (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
@@ -134,11 +134,13 @@ describe("buildFeedBlocks", () => {
     const ctx = blockContextFor(previewTurn.state, feedView(previewTurn, { columns: 80 }));
     const text = buildToolLines(ctx, source!).map(stripAnsi).join("\n");
     expect(text).toContain("preview line 1");
-    expect(text).toContain("preview line 3");
-    expect(text).toContain("preview line 8");
+    expect(text).toContain("preview line 9");
     expect(text).toContain("preview line 10");
-    expect(text).not.toContain("preview line 4");
-    expect(text).toContain("+4 lines");
+    expect(text).not.toContain("preview line 2");
+    expect(text).not.toContain("preview line 8");
+    expect(text).toContain("… 7 more lines");
+    expect(text.indexOf("preview line 1")).toBeLessThan(text.indexOf("… 7 more lines"));
+    expect(text.indexOf("… 7 more lines")).toBeLessThan(text.indexOf("preview line 9"));
   });
 
   it("contains abnormally long output lines without touching normal ones", () => {
