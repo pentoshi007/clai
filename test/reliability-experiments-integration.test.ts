@@ -54,7 +54,7 @@ describe("reliability experiment integration", () => {
     const p = renderAgentSystemPrompt("fs.read, shell.exec", {
       nativeTools: true,
     });
-    expect(p).toContain("Available tool names:");
+    expect(p).toContain("structured tools provided by the API");
     expect(p).toContain("FILE POLICY");
     // Fence protocol teaching stays out of native.
     expect(p).not.toContain("```tool");

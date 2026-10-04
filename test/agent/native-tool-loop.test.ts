@@ -3,7 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatImage, CompletionRequest, CompletionResult } from "../../src/types.js";
-import { clearTextOnlyModels } from "../../src/llm/tool-protocol.js";
+import {
+  accumulateOpenAiToolCallDelta,
+  clearTextOnlyModels,
+  finalizeOpenAiToolCalls,
+} from "../../src/llm/tool-protocol.js";
 
 const streamMock = vi.fn();
 
@@ -136,8 +140,9 @@ describe("native tool loop integration", () => {
       expect(requestContext).toContain("OUTCOME CONTRACT");
       expect(requestContext).toContain("PLAN PROTOCOL");
       expect(requestContext).toContain("ENGAGEMENT SCOPE");
-      expect(requestContext).toContain("TASK STATE");
-      expect(requestContext).toContain("write hello.ts with n=42");
+      expect(requestContext).toContain("latest user task");
+      expect(requestContext).not.toContain("write hello.ts with n=42");
+      expect(request.messages.some((message) => message.role === "user" && message.content === "write hello.ts with n=42")).toBe(true);
     }
     // No fence protocol required in first model response
     expect(streamMock.mock.calls[0]![0].tools?.length).toBeGreaterThan(0);
@@ -156,7 +161,7 @@ describe("native tool loop integration", () => {
           request.onToolCallDelta?.({
             index: 0,
             id: "call_bad_list",
-            name: "fs.list",
+            name: "fs.read",
             argumentsBytes: rawArguments.length,
           });
           return {
@@ -166,7 +171,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: "call_bad_list",
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: rawArguments },
                 rawArguments,
               },
@@ -197,7 +202,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: "call_good_list",
-                name: "fs.list",
+                name: "fs.read",
                 args: { path: cwd },
               },
             ],
@@ -252,6 +257,53 @@ describe("native tool loop integration", () => {
     expect([...toolCallIds].every((id) => id && toolResultIds.has(id))).toBe(true);
   });
 
+  it("executes suffixed search, read and edit calls without retries or CRLF changes", async () => {
+    const target = join(cwd, "state.mjs");
+    await writeFile(target, "export const retryLimit = 2;\r\nexport const backoffMs = 50;\r\n");
+    const events: Array<{ type: string; ok?: boolean; name?: string }> = [];
+    let round = 0;
+    streamMock.mockImplementation(async (): Promise<CompletionResult> => {
+      round += 1;
+      const calls = round === 1
+        ? [
+            { name: "shell_execcommentaryjson", args: { cwd, command: "rg -n -- 'retryLimit' ." } },
+            { name: "fs_readanalysisjson", args: { path: target } },
+          ]
+        : [{ name: "fs_editjson", args: { path: target, oldText: "retryLimit = 2", newText: "retryLimit = 3", expectedReplacements: 1 } }];
+      const state = new Map();
+      if (round < 3) {
+        calls.forEach((call, index) => accumulateOpenAiToolCallDelta(state, {
+          index, id: `suffix-${round}-${index}`,
+          function: { name: call.name, arguments: JSON.stringify(call.args) },
+        }));
+      }
+      return {
+        text: round < 3 ? "" : "Updated retryLimit; preserved backoff and CRLF.",
+        provider: "openai", model: "gpt-4o-mini",
+        ...(round < 3 ? { toolCalls: finalizeOpenAiToolCalls(state) } : {}),
+        finishReason: round < 3 ? "tool_calls" : "stop",
+      };
+    });
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    await runAgentLoop("Change retryLimit from 2 to 3 in state.mjs; preserve CRLF and backoffMs.", {
+      provider: "openai", model: "gpt-4o-mini", maxSteps: 4,
+      onEvent: (event) => events.push(event),
+    });
+    expect(await readFile(target, "utf8"))
+      .toBe("export const retryLimit = 3;\r\nexport const backoffMs = 50;\r\n");
+    expect(streamMock).toHaveBeenCalledTimes(3);
+    expect(events.filter((event) => event.type === "tool-call").map((event) => event.name))
+      .toEqual(["shell.exec", "fs.read", "fs.edit"]);
+    expect(events.filter((event) => event.type === "tool-result"))
+      .toHaveLength(3);
+    expect(events.some((event) => event.type === "tool-result" && event.ok === false)).toBe(false);
+    const requests = streamMock.mock.calls.map(([request]) => request as CompletionRequest);
+    for (const request of requests.slice(1)) {
+      expect(request.messages[0]).toEqual(requests[0]!.messages[0]);
+      expect(request.tools).toEqual(requests[0]!.tools);
+    }
+  });
+
   it("closes an abandoned streamed native call and falls back to text tools", async () => {
     await writeFile(join(cwd, "metro.txt"), "ready", "utf8");
     const events: Array<{ type: string; id?: string; name?: string; reason?: string }> = [];
@@ -267,7 +319,7 @@ describe("native tool loop integration", () => {
           request.onToolCallDelta?.({
             index: 0,
             id: "call_incomplete_list",
-            name: "fs.list",
+            name: "fs.read",
             argumentsBytes: 12,
           });
           return {
@@ -284,7 +336,7 @@ describe("native tool loop integration", () => {
           ).toHaveLength(0);
           expect(request.tools).toBeUndefined();
           const text = `\`\`\`tool\n${JSON.stringify({
-            name: "fs.list",
+            name: "fs.read",
             args: { path: cwd },
           })}\n\`\`\``;
           onToken(text);
@@ -349,7 +401,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: `call_bad_${turn}`,
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: truncated },
                 rawArguments: truncated,
               },
@@ -361,7 +413,7 @@ describe("native tool loop integration", () => {
         if (turn === 3) {
           expect(request.tools).toBeUndefined();
           const text = `\`\`\`tool\n${JSON.stringify({
-            name: "fs.list",
+            name: "fs.read",
             args: { path: cwd },
           })}\n\`\`\``;
           onToken(text);
@@ -415,7 +467,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: `call_bad_${turn}`,
-                name: "fs.list",
+                name: "fs.read",
                 args: { _parseError: true, _raw: truncated },
                 rawArguments: truncated,
               },
@@ -427,7 +479,7 @@ describe("native tool loop integration", () => {
         if (turn === 3) {
           expect(request.tools).toBeUndefined();
           const text = `\`\`\`tool\n${JSON.stringify({
-            name: "fs.list",
+            name: "fs.read",
             args: { path: cwd },
           })}\n\`\`\``;
           onToken(text);
@@ -493,9 +545,9 @@ describe("native tool loop integration", () => {
             provider: "openai",
             model: "gpt-test",
             toolCalls: [
-              { id: "call_list", name: "fs.list", args: { path: cwd } },
+              { id: "call_list", name: "fs.read", args: { path: cwd } },
               { id: "call_read", name: "fs.read", args: { path: evidencePath } },
-              { id: "call_check", name: "tool.check", args: { tools: ["node"] } },
+              { id: "call_check", name: "shell.exec", args: { command: "command -v node", cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -593,7 +645,7 @@ describe("native tool loop integration", () => {
             provider: "gemini",
             model: "gemini-test",
             toolCalls: [
-              { id: "call_list_first", name: "fs.list", args: { path: cwd } },
+              { id: "call_list_first", name: "fs.read", args: { path: cwd } },
             ],
             finishReason: "tool_calls",
           };
@@ -807,7 +859,7 @@ describe("native tool loop integration", () => {
       async (request: CompletionRequest, onToken: (token: string) => void) => {
         turn += 1;
         if (turn === 1) {
-          const text = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">${cwd}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
+          const text = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">${cwd}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
           onToken(text);
           return {
             text,
@@ -998,7 +1050,7 @@ describe("native tool loop integration", () => {
             text: "",
             provider: "openai",
             model: "gpt-test",
-            toolCalls: [{ id: "call_dynamic_1", name: "fs.list", args: { path: cwd } }],
+            toolCalls: [{ id: "call_dynamic_1", name: "fs.read", args: { path: cwd } }],
             finishReason: "tool_calls",
           };
         }
@@ -1008,7 +1060,7 @@ describe("native tool loop integration", () => {
             text: "",
             provider: "openai",
             model: "gpt-test",
-            toolCalls: [{ id: "call_dynamic_2", name: "fs.list", args: { path: cwd } }],
+            toolCalls: [{ id: "call_dynamic_2", name: "fs.read", args: { path: cwd } }],
             finishReason: "tool_calls",
           };
         }
@@ -1023,7 +1075,7 @@ describe("native tool loop integration", () => {
             text: "",
             provider: "openai",
             model: "gpt-test",
-            toolCalls: [{ id: "call_dynamic_3", name: "fs.list", args: { path: cwd } }],
+            toolCalls: [{ id: "call_dynamic_3", name: "fs.read", args: { path: cwd } }],
             finishReason: "tool_calls",
           };
         }
@@ -1109,7 +1161,7 @@ describe("native tool loop integration", () => {
             toolCalls: [
               {
                 id: `call_list_${turn}`,
-                name: "fs.list",
+                name: "fs.read",
                 args: { path: cwd },
               },
             ],
@@ -1117,7 +1169,7 @@ describe("native tool loop integration", () => {
           };
         }
         const toolCalls = request.messages.flatMap((message) => message.toolCalls ?? []);
-        expect(toolCalls.filter((call) => call.name === "fs.list")).toHaveLength(4);
+        expect(toolCalls.filter((call) => call.name === "fs.read")).toHaveLength(4);
         const recovery = request.messages.findLast(
           (message) => message.role === "user" && message.internal,
         );

@@ -25,7 +25,7 @@ const TURNS: ReadonlyArray<{ readonly prompt: string; readonly steps: readonly S
     prompt: "Review the repository package.json and tell me the package name and version.",
     steps: [
       { tool: "fs.read", args: { path: "package.json" } },
-      { tool: "fs.list", args: { path: "src" } },
+      { tool: "fs.read", args: { path: "src" } },
       { text: "The package is @pentoshi/clai." },
     ],
   },
@@ -39,7 +39,7 @@ const TURNS: ReadonlyArray<{ readonly prompt: string; readonly steps: readonly S
   {
     prompt: "Thanks. One more check: what is in the test directory?",
     steps: [
-      { tool: "fs.list", args: { path: "test" } },
+      { tool: "fs.read", args: { path: "test" } },
       { tool: "fs.read", args: { path: "vitest.config.ts" } },
       { text: "The test directory holds the vitest suites." },
     ],

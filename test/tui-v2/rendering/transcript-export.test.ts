@@ -16,7 +16,7 @@ function buildState() {
   );
   state = applyAppEvent(
     state,
-    seq.build("tool-call", { toolCallId: asToolCallId("c1"), name: "fs.list", argsDisplay: "." }, undefined),
+    seq.build("tool-call", { toolCallId: asToolCallId("c1"), name: "fs.read", argsDisplay: "." }, undefined),
   );
   state = applyAppEvent(
     state,
@@ -37,7 +37,7 @@ describe("renderTranscriptPlainText (V2-057)", () => {
   it("renders user/tool/assistant content in order", () => {
     const text = renderTranscriptPlainText(buildState());
     expect(text).toContain("You:\nlist files");
-    expect(text).toContain("Tool: fs.list . — done");
+    expect(text).toContain("Tool: fs.read . — done");
     expect(text).toContain("3 files");
     expect(text).toContain("artifact: /tmp/out.txt");
     expect(text).toContain("Assistant:\nFound 3 files.");

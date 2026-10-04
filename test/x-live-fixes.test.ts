@@ -48,14 +48,14 @@ describe("X1 sanitize tool names", () => {
 });
 
 describe("X2 multi-tool stream isolation", () => {
-  it("keeps parallel indices isolated (tool_check vs fs_write)", () => {
+  it("keeps parallel indices isolated (shell_exec vs fs_write)", () => {
     const state = new Map();
     accumulateOpenAiToolCallDelta(state, {
       index: 0,
       id: "a",
       function: {
-        name: "tool_check",
-        arguments: '{"tools":["npm","node"]}',
+        name: "shell_exec",
+        arguments: '{"command":"command -v npm node"}',
       },
     });
     accumulateOpenAiToolCallDelta(state, {
@@ -68,8 +68,8 @@ describe("X2 multi-tool stream isolation", () => {
     });
     const calls = finalizeOpenAiToolCalls(state);
     expect(calls).toHaveLength(2);
-    expect(calls[0]!.name).toBe("tool.check");
-    expect(calls[0]!.args).toEqual({ tools: ["npm", "node"] });
+    expect(calls[0]!.name).toBe("shell.exec");
+    expect(calls[0]!.args).toEqual({ command: "command -v npm node" });
     expect(calls[1]!.name).toBe("fs.write");
     expect(calls[1]!.args).toEqual({
       path: "App.jsx",
@@ -81,15 +81,15 @@ describe("X2 multi-tool stream isolation", () => {
     const state = new Map();
     accumulateOpenAiToolCallDelta(state, {
       index: 0,
-      function: { name: "tool_check", arguments: '{"tools":[' },
+      function: { name: "shell_exec", arguments: '{"command":"' },
     });
     // Corrupt stream tries to rename same index
     accumulateOpenAiToolCallDelta(state, {
       index: 0,
-      function: { name: "fs_write", arguments: '"npm"]}' },
+      function: { name: "fs_write", arguments: 'command -v npm"}' },
     });
     const calls = finalizeOpenAiToolCalls(state);
-    expect(calls[0]!.name).toBe("tool.check");
+    expect(calls[0]!.name).toBe("shell.exec");
   });
 });
 

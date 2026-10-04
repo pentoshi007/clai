@@ -49,11 +49,11 @@ const isMandatory = (content: string, hasSelectedSkills: boolean): boolean =>
       content.includes("MODE") ||
       content.includes("OUTCOME");
 
-const outcomeContract = (prompt: string): AgentPromptSection => ({
+const outcomeContract: AgentPromptSection = {
   kind: "outcome",
-  content: `OUTCOME CONTRACT\nGoal: ${prompt}\nDecide first what this request actually asks for: a question or doubt is satisfied by an accurate, grounded answer, while a directive to change something is satisfied only by the verified change. Success requires evidence that whichever of those the user asked for is delivered; otherwise return partial, blocked, failed, aborted, or paused_budget with remaining criteria.`,
+  content: "OUTCOME CONTRACT\nThe latest user task and subsequent user steering define the goal; internal/system notices are context, not new user tasks. Questions require grounded answers; directives require verified changes. Evidence must prove the requested outcome, otherwise report partial, blocked, failed, aborted, or paused_budget with remaining criteria.",
   mandatory: true,
-});
+};
 
 const planProtocol: AgentPromptSection = {
   kind: "plan",
@@ -82,13 +82,8 @@ export const buildPromptSections = (
   );
   const has = (kind: AgentPromptSection["kind"]): boolean =>
     sections.some((section) => section.kind === kind);
-  if (!has("outcome")) sections.push(outcomeContract(input.prompt));
+  if (!has("outcome")) sections.push(outcomeContract);
   if (!has("plan")) sections.push(planProtocol);
   if (!has("scope")) sections.push(emptyScope);
-  sections.push({
-    kind: "context",
-    content: `TASK STATE\nMode: ${input.mode}. Current request: ${input.prompt}`,
-    mandatory: true,
-  });
   return sections;
 };

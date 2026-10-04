@@ -83,27 +83,27 @@ describe("LoopGuard", () => {
     const guard = new LoopGuard();
     const list = { path: "/tmp/project" };
 
-    guard.recordAttempt(0, "fs.list", list, true, 0, "a.txt");
-    expect(guard.shouldBlock("fs.list", list).block).toBe(false);
-    guard.recordAttempt(1, "fs.list", list, true, 0, "a.txt");
-    expect(guard.shouldBlock("fs.list", list).block).toBe(false);
-    guard.recordAttempt(2, "fs.list", list, true, 0, "a.txt");
-    expect(guard.shouldBlock("fs.list", list).block).toBe(true);
+    guard.recordAttempt(0, "fs.read", list, true, 0, "a.txt");
+    expect(guard.shouldBlock("fs.read", list).block).toBe(false);
+    guard.recordAttempt(1, "fs.read", list, true, 0, "a.txt");
+    expect(guard.shouldBlock("fs.read", list).block).toBe(false);
+    guard.recordAttempt(2, "fs.read", list, true, 0, "a.txt");
+    expect(guard.shouldBlock("fs.read", list).block).toBe(true);
 
-    guard.recordAttempt(3, "tool.check", { tools: ["node"] }, true, 0, "node 26");
-    expect(guard.shouldBlock("fs.list", list).block).toBe(false);
+    guard.recordAttempt(3, "shell.exec", { command: "command -v node" }, true, 0, "/usr/bin/node");
+    expect(guard.shouldBlock("fs.read", list).block).toBe(false);
   });
 
   it("suppresses a twice-unchanged successful read without affecting mutations", () => {
     const guard = new LoopGuard();
     const args = { path: "/tmp/blog" };
-    guard.recordAttempt(0, "fs.list", args, true, 0, "a\nb\n");
-    expect(guard.shouldBlock("fs.list", args).block).toBe(false);
-    guard.recordAttempt(1, "fs.list", args, true, 0, "a\nb\n");
-    expect(guard.shouldBlock("fs.list", args).block).toBe(false);
-    guard.recordAttempt(2, "fs.list", args, true, 0, "a\nb\n");
+    guard.recordAttempt(0, "fs.read", args, true, 0, "a\nb\n");
+    expect(guard.shouldBlock("fs.read", args).block).toBe(false);
+    guard.recordAttempt(1, "fs.read", args, true, 0, "a\nb\n");
+    expect(guard.shouldBlock("fs.read", args).block).toBe(false);
+    guard.recordAttempt(2, "fs.read", args, true, 0, "a\nb\n");
 
-    expect(guard.shouldBlock("fs.list", args)).toMatchObject({
+    expect(guard.shouldBlock("fs.read", args)).toMatchObject({
       block: true,
       kind: "unchanged-success",
     });
@@ -113,8 +113,8 @@ describe("LoopGuard", () => {
   it("returns the prior successful observation for suppressed recovery", () => {
     const guard = new LoopGuard();
     const args = { path: "/tmp/blog" };
-    guard.recordAttempt(0, "fs.list", args, true, 0, "a\nb\n");
-    expect(guard.getPriorObservation("fs.list", args)).toBe("a\nb");
+    guard.recordAttempt(0, "fs.read", args, true, 0, "a\nb\n");
+    expect(guard.getPriorObservation("fs.read", args)).toBe("a\nb");
   });
 
   it("treats whitespace-normalized commands as equivalent for failure tracking", () => {
@@ -214,13 +214,13 @@ describe("LoopGuard", () => {
     expect(planResult.reason).toBeUndefined();
   });
 
-  it("allows one fs.list retry after successful scaffold work", () => {
+  it("allows one fs.read retry after successful scaffold work", () => {
     const guard = new LoopGuard();
     const listArgs = { path: "/Users/me/Desktop/blogging-app" };
-    guard.recordAttempt(0, "fs.list", listArgs, false, 1, "missing");
-    expect(guard.shouldBlock("fs.list", listArgs).block).toBe(false);
-    guard.recordAttempt(1, "fs.list", listArgs, false, 1, "missing");
-    expect(guard.shouldBlock("fs.list", listArgs).block).toBe(true);
+    guard.recordAttempt(0, "fs.read", listArgs, false, 1, "missing");
+    expect(guard.shouldBlock("fs.read", listArgs).block).toBe(false);
+    guard.recordAttempt(1, "fs.read", listArgs, false, 1, "missing");
+    expect(guard.shouldBlock("fs.read", listArgs).block).toBe(true);
     guard.recordAttempt(
       2,
       "shell.exec",
@@ -230,7 +230,7 @@ describe("LoopGuard", () => {
       },
       true,
     );
-    const retry = guard.shouldBlock("fs.list", listArgs);
+    const retry = guard.shouldBlock("fs.read", listArgs);
     expect(retry.block).toBe(false);
   });
 
@@ -325,8 +325,8 @@ describe("LoopGuard", () => {
   it("warns then suppresses an identical consecutive sequence even when outcomes keep changing", () => {
     const guard = new LoopGuard();
     const seq = [
-      { name: "fs.search", args: { pattern: "continueQueue", path: "/src" } },
-      { name: "fs.list", args: { path: "/src/components" } },
+      { name: "fs.read", args: { pattern: "continueQueue", path: "/src" } },
+      { name: "fs.read", args: { path: "/src/components" } },
     ];
 
     guard.observeActionSequence(seq);
@@ -352,7 +352,7 @@ describe("LoopGuard", () => {
     expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: false });
     guard.completeActionSequence(seq, true, "body");
     guard.observeActionSequence([
-      { name: "fs.list", args: { path: "/tmp" } },
+      { name: "fs.read", args: { path: "/tmp" } },
     ]);
     expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: false });
   });
@@ -373,7 +373,7 @@ describe("LoopGuard", () => {
     const guard = new LoopGuard();
     const seq = [
       { name: "fs.append", args: { path: "events.log", content: "x\n" } },
-      { name: "fs.list", args: { path: "." } },
+      { name: "fs.read", args: { path: "." } },
     ];
 
     guard.observeActionSequence(seq);
@@ -419,15 +419,15 @@ describe("LoopGuard", () => {
   it("resetAllSequenceCounts clears per-call unchanged observation state", () => {
     const guard = new LoopGuard();
     const args = { path: "/tmp/poll" };
-    guard.recordAttempt(0, "fs.list", args, true, 0, "same");
-    guard.recordAttempt(1, "fs.list", args, true, 0, "same");
-    guard.recordAttempt(2, "fs.list", args, true, 0, "same");
-    expect(guard.shouldBlock("fs.list", args).block).toBe(true);
+    guard.recordAttempt(0, "fs.read", args, true, 0, "same");
+    guard.recordAttempt(1, "fs.read", args, true, 0, "same");
+    guard.recordAttempt(2, "fs.read", args, true, 0, "same");
+    expect(guard.shouldBlock("fs.read", args).block).toBe(true);
 
     guard.resetAllSequenceCounts();
-    expect(guard.shouldBlock("fs.list", args).block).toBe(false);
-    guard.recordAttempt(3, "fs.list", args, true, 0, "same");
-    expect(guard.shouldBlock("fs.list", args).block).toBe(false);
+    expect(guard.shouldBlock("fs.read", args).block).toBe(false);
+    guard.recordAttempt(3, "fs.read", args, true, 0, "same");
+    expect(guard.shouldBlock("fs.read", args).block).toBe(false);
   });
 
   it("allows a sequence separated by progress-changing actions", () => {

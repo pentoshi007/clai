@@ -32,7 +32,7 @@ describe("native tool call cards", () => {
 
   it("creates unshown cards when the stream opened none", () => {
     const h = harness();
-    syncNativeToolCallCards(h.ports, [native("fs.read"), native("fs.list")]);
+    syncNativeToolCallCards(h.ports, [native("fs.read"), native("fs.read")]);
     expect(h.ports.deferredToolCalls).toHaveLength(2);
     expect(h.ports.deferredToolCalls[0]!.shown).toBe(false);
     expect(h.ports.callIds).toEqual(["tool-1", "tool-2"]);
@@ -71,7 +71,7 @@ describe("native tool call cards", () => {
       { eventId: "tool-1", call: { name: "fs.read", args: {} }, shown: true },
     ];
     const h = harness(existing);
-    syncNativeToolCallCards(h.ports, [native("fs.read"), native("fs.list")]);
+    syncNativeToolCallCards(h.ports, [native("fs.read"), native("fs.read")]);
     expect(h.ports.deferredToolCalls).toHaveLength(2);
     expect(h.ports.deferredToolCalls[1]!.shown).toBe(false);
   });

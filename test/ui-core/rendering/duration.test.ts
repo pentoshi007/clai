@@ -85,7 +85,7 @@ describe("toolElapsedLabel", () => {
     ).toBeUndefined();
   });
 
-  it("hides elapsed time for filesystem tools except fs.search", () => {
+  it("hides filesystem elapsed time while showing shell searches", () => {
     expect(
       toolElapsedLabel(tool({ name: "fs.read", status: "running" }), 13_000),
     ).toBeUndefined();
@@ -96,7 +96,7 @@ describe("toolElapsedLabel", () => {
       ),
     ).toBeUndefined();
     expect(
-      toolElapsedLabel(tool({ name: "fs.search", status: "running" }), 13_000),
+      toolElapsedLabel(tool({ name: "shell.exec", status: "running" }), 13_000),
     ).toBe("12s");
     expect(
       toolElapsedLabel(tool({ name: "shell.exec", status: "running" }), 13_000),

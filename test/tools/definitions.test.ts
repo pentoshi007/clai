@@ -29,10 +29,8 @@ describe("tool definitions", () => {
     // Models may emit pure snake_case for multi-word segments.
     expect(fromWireName("fs_write_many")).toBe("fs.writeMany");
     expect(fromWireName("fs_replace_lines")).toBe("fs.replaceLines");
-    expect(fromWireName("net_ping_sweep")).toBe("net.pingSweep");
     expect(canonicalNameFor("fs_write_many")).toBe("fs.writeMany");
     expect(canonicalNameFor("fs_replace_lines")).toBe("fs.replaceLines");
-    expect(canonicalNameFor("net_ping_sweep")).toBe("net.pingSweep");
   });
 
   it("ask mode excludes mutators", () => {
@@ -88,12 +86,6 @@ describe("tool definitions", () => {
     expect(mode.enum).toEqual(["readable", "raw"]);
   });
 
-  it("tool.check schema uses tools not name", () => {
-    const check = TOOL_DEFINITIONS.find((d) => d.name === "tool.check")!;
-    expect(check.parameters.required).toEqual(["tools"]);
-    expect(check.parameters.properties.tools).toBeDefined();
-  });
-
   it("labels background jobs on shell.exec instead of a separate start tool", () => {
     const exec = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.exec")!;
     expect(exec.parameters.properties.timeoutMs).toBeDefined();
@@ -135,8 +127,6 @@ describe("tool definitions", () => {
     const names = new Set(compact.map((d) => d.name));
     for (const n of [
       "http.fetch",
-      "net.pingSweep",
-      "wordlist.find",
       "web.search",
       "fs.write",
       "shell.exec",

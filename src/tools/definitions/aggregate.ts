@@ -2,8 +2,6 @@ import type { ToolDefinition } from "../../types.js";
 import { TOOL_DEFINITIONS_CONTEXT_2 } from "./context-2.js";
 import { def, emptyObject } from "./define.js";
 import { TOOL_DEFINITIONS_FILES } from "./files.js";
-import { TOOL_DEFINITIONS_NETWORK } from "./network.js";
-import { TOOL_DEFINITIONS_ORCHESTRATION } from "./orchestration.js";
 import { TOOL_DEFINITIONS_SHELL } from "./shell.js";
 import { TOOL_DEFINITIONS_TERMINAL } from "./terminal.js";
 import { TOOL_DEFINITIONS_SUBAGENTS } from "./subagents.js";
@@ -13,10 +11,8 @@ import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_FILES,
   ...TOOL_DEFINITIONS_SHELL,
-  ...TOOL_DEFINITIONS_NETWORK,
   ...TOOL_DEFINITIONS_WEB_1,
   ...TOOL_DEFINITIONS_WEB_2,
-  ...TOOL_DEFINITIONS_ORCHESTRATION,
   ...TOOL_DEFINITIONS_CONTEXT_2,
   ...TOOL_DEFINITIONS_SUBAGENTS,
   def(

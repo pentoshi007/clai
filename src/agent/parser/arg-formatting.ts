@@ -1,4 +1,3 @@
-import { safeCwd } from "../../os/cwd.js";
 import type { ToolCall } from "../../types.js";
 
 export function formatFsReadLineRange(
@@ -130,14 +129,12 @@ export function formatToolArgs(call: ToolCall): string {
     const preview = names.slice(0, 4).join(", ");
     return `${names.length} file(s)${preview ? `: ${preview}${names.length > 4 ? ", …" : ""}` : ""}`;
   }
-  if (call.name === "fs.search") return String(call.args.pattern ?? "");
   if (call.name === "image.ocr" || call.name === "pdf.read")
     return String(call.args.path ?? "");
   if (call.name === "http.fetch" || call.name === "web.fetch")
     return String(call.args.url ?? "");
   if (call.name === "web.search") return String(call.args.query ?? "");
   if (call.name === "pkg.install") return String(call.args.tool ?? "");
-  if (call.name === "fs.list") return String(call.args.path ?? safeCwd());
   if (call.name === "tool.batch") {
     const raw = call.args.calls;
     const list = Array.isArray(raw) ? raw : [];

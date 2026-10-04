@@ -43,11 +43,11 @@ describe("subagent presentation", () => {
       { kind: "assistant", text: 'Inspecting the worker.\n```tool\n{"name":"fs.read","args":{"path":"src/worker.ts"}}\n```' },
       { kind: "tool", text: 'Calling fs.read: {"path":"src/worker.ts","offset":81,"limit":80,"lines":true}' },
       { kind: "tool", text: "Success: 81: export const PRIVATE_FILE_BODY = 42;\n# hasMore=true next={\"offset\":161,\"limit\":80}" },
-      { kind: "tool", text: 'Calling fs.search: {"path":"src","pattern":"orchestrat.*","glob":"**/*.ts"}' },
+      { kind: "tool", text: 'Calling fs.read: {"path":"src","pattern":"orchestrat.*","glob":"**/*.ts"}' },
       { kind: "tool", text: "Success: src/worker.ts:81: PRIVATE_FILE_BODY" },
     ]));
     expect(text).toContain('✓ fs.read src/worker.ts (offset=81, limit=80, lines=true)');
-    expect(text).toContain('✓ fs.search src (pattern="orchestrat.*", glob="**/*.ts")');
+    expect(text).toContain('✓ fs.read src (pattern="orchestrat.*", glob="**/*.ts")');
     expect(text).toContain("Inspecting the worker.");
     expect(text).not.toMatch(/PRIVATE_FILE_BODY|```tool|\[tool\]|hasMore|In progress/);
   });

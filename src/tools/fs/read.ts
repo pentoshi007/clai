@@ -51,7 +51,7 @@ export async function fsRead(
   try {
     const st = await stat(resolved);
     if (st.isDirectory()) {
-      const listed = await fsList(resolved, {
+      const listed = await readDirectory(resolved, {
         maxEntries:
           options.limit && options.limit > 0 ? options.limit : undefined,
         confirmed: options.confirmed,
@@ -60,7 +60,7 @@ export async function fsRead(
         ...listed,
         output:
           `Path is a directory (not a file): ${resolved}\n` +
-          `Listing contents (use fs.list for dirs, fs.read for files):\n\n` +
+          `Listing contents:\n\n` +
           (listed.output ?? ""),
       };
     }
@@ -149,7 +149,7 @@ export async function fsRead(
   }
 }
 
-export async function fsList(
+async function readDirectory(
   path: string,
   options: {
     maxEntries?: number | undefined;
@@ -207,7 +207,7 @@ export async function fsList(
     const msg = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      output: `fs.list failed: ${msg}`,
+      output: `Directory read failed: ${msg}`,
       exitCode: 1,
     };
   }

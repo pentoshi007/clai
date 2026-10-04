@@ -71,7 +71,7 @@ describe("task work signals", () => {
 
   it("keeps remote recon and active testing separate from local runtime", () => {
     const recon = readTaskWorkSignals(
-      { name: "net.pingSweep", args: { target: "192.168.1.0/24" } },
+      { name: "shell.exec", args: { command: "nmap -sn 192.168.1.0/24" } },
       "",
     );
     expect(recon.remoteReconOk).toBe(true);

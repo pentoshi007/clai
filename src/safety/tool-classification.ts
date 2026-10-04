@@ -20,8 +20,6 @@ export function classifyToolCall(
 
   if (
     call.name === "fs.read" ||
-    call.name === "fs.list" ||
-    call.name === "fs.search" ||
     call.name === "mcp.list" ||
     call.name === "mcp.tools"
   ) {
@@ -105,14 +103,6 @@ export function classifyToolCall(
   }
 
 
-  if (call.name === "tool.check") {
-    return { level: "safe", reason: "Read-only tool availability check" };
-  }
-
-  if (call.name === "wordlist.find") {
-    return { level: "safe", reason: "Read-only local wordlist lookup" };
-  }
-
   if (call.name === "image.ocr") {
     return { level: "safe", reason: "Read-only local image OCR" };
   }
@@ -125,13 +115,6 @@ export function classifyToolCall(
     return {
       level: "safe",
       reason: "Read-only local PDF text extraction (with OCR fallback)",
-    };
-  }
-
-  if (call.name === "net.pingSweep") {
-    return {
-      level: "safe",
-      reason: "Read-only local network sweep",
     };
   }
 

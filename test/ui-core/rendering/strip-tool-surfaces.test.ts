@@ -26,11 +26,11 @@ describe("stripToolCallSurfaces", () => {
   });
 
   it("removes complete and partial DSML tool surfaces", () => {
-    const complete = `Inspecting.\n<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">.</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
+    const complete = `Inspecting.\n<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">.</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
     expect(stripToolCallSurfaces(complete).trim()).toBe("Inspecting.");
     expect(
       isToolFenceOnlyText(
-        `<|DSML|tool_calls><|DSML|invoke name="fs.list"><|DSML|parameter name="path" string="true">.`,
+        `<|DSML|tool_calls><|DSML|invoke name="fs.read"><|DSML|parameter name="path" string="true">.`,
       ),
     ).toBe(true);
   });
@@ -49,7 +49,7 @@ describe("stripToolCallSurfaces", () => {
   it("detects fence-only text", () => {
     expect(
       isToolFenceOnlyText(
-        '```tool\n{"name":"fs.list","args":{"path":"."}}\n```',
+        '```tool\n{"name":"fs.read","args":{"path":"."}}\n```',
       ),
     ).toBe(true);
     expect(isToolFenceOnlyText("Just prose.")).toBe(false);

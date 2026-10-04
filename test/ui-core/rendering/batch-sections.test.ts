@@ -55,7 +55,7 @@ describe("parseBatchSections", () => {
   });
 
   it("handles CRLF and empty bodies", () => {
-    const raw = "── #1 fs.read [ok exit=0]\r\n\r\n── #2 fs.list [ok exit=0]\r\n";
+    const raw = "── #1 fs.read [ok exit=0]\r\n\r\n── #2 fs.read [ok exit=0]\r\n";
     const sections = parseBatchSections(raw);
     expect(sections).toHaveLength(2);
     expect(sections[0]!.body).toBe("");
