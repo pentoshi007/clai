@@ -72,7 +72,7 @@ describe("looksLikePentestTask", () => {
 
 describe("renderAgentSystemPrompt — pentest planning guidance", () => {
   const toolList =
-    "shell.exec, fs.read, net.pingSweep, http.fetch, plan.create, task.update";
+    "shell.exec, fs.read, shell.exec, http.fetch, plan.create, task.update";
 
   it("renders evidence-driven pentest guidance without a fixed tool sequence", () => {
     const prompt = renderAgentSystemPrompt(toolList, { pentest: true });

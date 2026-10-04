@@ -232,7 +232,7 @@ describe("tools – http.fetch", () => {
 });
 
 import { shellExec } from "../src/tools/shell.js";
-import { fsRead, fsList } from "../src/tools/fs.js";
+import { fsRead } from "../src/tools/fs.js";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -261,21 +261,21 @@ describe("fs.read — size caps (secret-path gate removed)", () => {
   });
 });
 
-describe("fs.list — entry caps (secret-path gate removed)", () => {
+describe("fs.read — directory entry caps (secret-path gate removed)", () => {
   it("does not hard-refuse listing ~/.ssh", async () => {
     try {
-      await fsList("~/.ssh");
+      await fsRead("~/.ssh");
     } catch (err) {
       expect(String(err)).not.toMatch(/secret path/i);
     }
   });
 
   it("includes hidden entries in a deterministic listing", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clai-fslist-hidden-"));
+    const dir = mkdtempSync(join(tmpdir(), "clai-directory-read-hidden-"));
     writeFileSync(join(dir, "visible.txt"), "visible");
     writeFileSync(join(dir, ".hidden.txt"), "hidden");
 
-    const result = await fsList(dir);
+    const result = await fsRead(dir);
 
     expect(result.ok).toBe(true);
     expect(result.output).toContain("2 entries (1 hidden included)");
@@ -287,12 +287,12 @@ describe("fs.list — entry caps (secret-path gate removed)", () => {
   });
 
   it("truncates large directories at maxEntries", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clai-fslist-"));
+    const dir = mkdtempSync(join(tmpdir(), "clai-directory-read-"));
     for (let i = 0; i < 20; i += 1) {
       writeFileSync(join(dir, `f${i}.txt`), "x");
     }
     mkdirSync(join(dir, "sub"));
-    const result = await fsList(dir, { maxEntries: 5 });
+    const result = await fsRead(dir, { limit: 5 });
     expect(result.ok).toBe(true);
     expect(result.truncated).toBe(true);
     expect(result.output).toMatch(/entries omitted/);

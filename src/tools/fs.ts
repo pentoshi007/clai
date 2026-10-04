@@ -18,9 +18,8 @@ import { buildFileChange } from "./file-diff.js";
 import { describeWrite } from "./fs/mutations.js";
 import { ensureWriteAllowed } from "./fs/internals.js";
 import { resolvePath } from "./fs/internals-2.js";
-export { fsList, fsRead } from "./fs/read.js";
+export { fsRead } from "./fs/read.js";
 export { fsAppend, fsDelete, fsEdit, fsWriteMany } from "./fs/mutations.js";
-export { fsSearch } from "./fs/search.js";
 
 let atomicWriteCounter = 0;
 const fileMutationLanes = new Map<string, Promise<void>>();

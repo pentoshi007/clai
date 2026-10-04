@@ -144,7 +144,7 @@ describe("hydrateFromMessages", () => {
         toolCalls: [
           {
             id: "call_1",
-            name: "fs.list",
+            name: "fs.read",
             args: { path: "." },
           },
         ],
@@ -152,7 +152,7 @@ describe("hydrateFromMessages", () => {
       {
         role: "tool",
         toolCallId: "call_1",
-        name: "fs.list",
+        name: "fs.read",
         content: "a.ts\nb.ts",
         ok: true,
       },

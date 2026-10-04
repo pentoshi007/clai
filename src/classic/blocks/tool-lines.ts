@@ -10,9 +10,7 @@ import {
   TOOL_PREVIEW_HEAD_LINES,
   TOOL_PREVIEW_TAIL_LINES,
 } from "../../ui-core/rendering/tool-presenter.js";
-import { fsSearchHitsLabel, presentFsSearchOutput } from "../../ui-core/rendering/fs-search-summary.js";
 import { shouldShowToolElapsed } from "../../ui-core/rendering/duration.js";
-import { relativeDisplayPath } from "../../ui-core/rendering/file-diff-view.js";
 import { clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
@@ -36,7 +34,7 @@ export const TOOL_EXPANDED_BODY_ROWS = 40;
 export const TOOL_LIVE_BODY_ROWS = 8;
 const BODY_INDENT = 4;
 const FIELD_INDENT = "  ";
-const SUMMARY_TOOLS: ReadonlySet<string> = new Set(["fs.read", "fs.search"]);
+const SUMMARY_TOOLS: ReadonlySet<string> = new Set(["fs.read"]);
 
 const STATUS_TOKEN: Record<ToolStatus, ThemeToken> = {
   queued: "muted",
@@ -147,22 +145,9 @@ function fsReadHeaderLines(ctx: BlockContext, item: ToolItem, presented: Present
   return lines;
 }
 
-function fsSearchHeaderLines(ctx: BlockContext, item: ToolItem, presented: Presented): string[] {
-  const summary = presentFsSearchOutput(ctx.spool.tail(item.toolCallId), presented.argsDisplay);
-  const lines = headline(ctx, item, presented, undefined);
-  if (summary.pattern) lines.push(...fieldLines(ctx, "pattern", summary.pattern, "inputBorder"));
-  if (summary.path) lines.push(...fieldLines(ctx, "path", summary.path, "inputBorder"));
-  if (item.status === "ok") {
-    lines.push(...fieldLines(ctx, "hits", fsSearchHitsLabel(summary), summary.hits > 0 ? "success" : "muted"));
-  }
-  for (const note of summary.notes) lines.push(...fieldLines(ctx, "note", note, "activity"));
-  return lines;
-}
-
 export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
   const presented = presentTool(item);
   if (item.name === "fs.read") return fsReadHeaderLines(ctx, item, presented);
-  if (item.name === "fs.search") return fsSearchHeaderLines(ctx, item, presented);
   const args = argLines(presented);
   if (args.length === 1 && inlineFits(ctx, item, presented, args[0]!)) {
     return headline(ctx, item, presented, args[0]);
@@ -186,22 +171,8 @@ export function outputToggleLabel(expanded: boolean): string {
 
 function bodySource(ctx: BlockContext, item: ToolItem): string {
   const tail = ctx.spool.tail(item.toolCallId);
-  if (item.name === "fs.search" && tail.trim().length > 0) {
-    return presentFsSearchOutput(tail).body.join("\n");
-  }
   const detail = item.status === "blocked" ? item.reason : item.summary;
   return tail.trim().length > 0 ? tail : (detail ?? "");
-}
-
-const SEARCH_HIT = /^(.+?)([:-])(\d+)\2(.*)$/;
-
-function paintBodyLine(ctx: BlockContext, item: ToolItem, raw: string): string {
-  const text = adaptPresenterGlyphs(raw, ctx.ink.unicode);
-  const hit = item.name === "fs.search" ? SEARCH_HIT.exec(text) : null;
-  if (!hit) return ctx.ink.fg("toolText", text);
-  const [, path, mark, line, rest] = hit;
-  const location = `${ctx.ink.fg("inputBorder", relativeDisplayPath(path!))}${ctx.ink.fg("hint", `${mark}${line}${mark}`)}`;
-  return `${location}${ctx.ink.fg(mark === ":" ? "toolText" : "muted", rest!)}`;
 }
 
 export function buildToolBodyLines(
@@ -238,7 +209,7 @@ export function buildToolBodyLines(
 
   const lines: string[] = [];
   for (const [index, raw] of kept.entries()) {
-    const painted = paintBodyLine(ctx, item, raw);
+    const painted = ctx.ink.fg("toolText", adaptPresenterGlyphs(raw, ctx.ink.unicode));
     for (const [row, chunk] of wrapBoundedRows(ctx, painted, budget, lineRows).entries()) {
       const prefix = index === 0 && row === 0 ? branch : indent;
       lines.push(trimTrailingSpaces(`${prefix}${chunk}`));

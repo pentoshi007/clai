@@ -22,6 +22,7 @@ import { safeCwd } from "../os/cwd.js";
 import { parseAllToolCalls, formatToolArgs, looksLikePromptLeak } from "../agent/runner.js";
 import { runToolCall } from "../tools/registry.js";
 import { getToolDefinitions } from "../tools/definitions.js";
+import { isReadOnlyShellCall } from "../tools/read-only-shell.js";
 import {
   appendAssistantWithTools,
   appendToolResult,
@@ -76,10 +77,8 @@ function researchResultSummary(call: ToolCall, ok: boolean): string {
       return "page fetched";
     case "fs.read":
       return "read";
-    case "fs.list":
-      return "listed";
-    case "fs.search":
-      return "searched";
+    case "shell.exec":
+      return "inspection complete";
     case "image.view":
       return "image attached for visual inspection";
     default:
@@ -93,14 +92,18 @@ const ASK_RESEARCH_TOOLS = new Set([
   "web.search",
   "web.fetch",
   "fs.read",
-  "fs.list",
-  "fs.search",
+  "shell.exec",
   "image.view",
 ]);
 
 const ASK_MAX_RESEARCH_ROUNDS = 5;
 const ASK_MAX_TOOLS_PER_ROUND = 4;
 const ASK_TOOL_OUTPUT_CAP = 6000;
+
+function isResearchCall(call: ToolCall): boolean {
+  return ASK_RESEARCH_TOOLS.has(call.name) &&
+    (call.name !== "shell.exec" || isReadOnlyShellCall(call));
+}
 
 const EXPLICIT_FRESH_RE =
   /\b(?:web\s*search|search\s+(?:the\s+)?(?:web|internet|online)|look\s*up|latest|current|today|now|recent|verify|check\s+(?:online|the\s+web|internet))\b/i;
@@ -111,8 +114,11 @@ const CHANGING_TECH_RE =
 
 function truncateToolOutput(text: string, toolName?: string): string {
   if (toolName === "web.fetch") return text;
+  const guidance = toolName === "web.search"
+    ? "call web.fetch on a specific url for more"
+    : "narrow the local search or use fs.read offset/limit/pattern for details";
   return text.length > ASK_TOOL_OUTPUT_CAP
-    ? `${text.slice(0, ASK_TOOL_OUTPUT_CAP)}\n…[truncated — call web.fetch on a specific url for more]`
+    ? `${text.slice(0, ASK_TOOL_OUTPUT_CAP)}\n…[truncated — ${guidance}]`
     : text;
 }
 
@@ -291,6 +297,17 @@ async function resolveAskAnswer(
           (definition.name !== "image.view" ||
             modelSupportsVision(routeProvider, routeModel)),
       ),
+      ...getToolDefinitions({ names: ["shell.exec"] }).map((tool) => ({
+        ...tool,
+        readOnly: true,
+        mutates: false,
+        description: "Read-only local inspection and search in the foreground. Use rg/grep, directory listing, executable lookup, or PowerShell Get-ChildItem/Select-String. Scripts, writes, network commands and background jobs require agent mode.",
+        parameters: {
+          ...tool.parameters,
+          properties: Object.fromEntries(Object.entries(tool.parameters.properties)
+            .filter(([key]) => ["command", "cwd", "timeoutMs"].includes(key))),
+        },
+      })),
       ...getToolDefinitions({ names: ["agent.handoff"] }),
     ];
   };
@@ -392,11 +409,11 @@ async function resolveAskAnswer(
       allCalls.map((_, i) => syntheticToolCallId(i));
     const researchCalls = allCalls
       .map((call, sourceIndex) => ({ call, sourceIndex }))
-      .filter(({ call }) => ASK_RESEARCH_TOOLS.has(call.name));
+      .filter(({ call }) => isResearchCall(call));
     if (researchCalls.length === 0) {
       
       const actionCalls = allCalls.filter(
-        (call) => !ASK_RESEARCH_TOOLS.has(call.name),
+        (call) => !isResearchCall(call),
       );
       if (actionCalls.length > 0) {
        
@@ -513,7 +530,7 @@ async function resolveAskAnswer(
     if (historyNativeCalls.length) {
       for (const [sourceIndex, omitted] of allCalls.entries()) {
         if (completedNativeCallIndices.has(sourceIndex)) continue;
-        const reason = ASK_RESEARCH_TOOLS.has(omitted.name)
+        const reason = isResearchCall(omitted)
           ? `Skipped ${omitted.name}: Ask mode executes at most ${ASK_MAX_TOOLS_PER_ROUND} read-only tools per research round.`
           : `Skipped ${omitted.name}: it is not a read-only research tool and cannot be combined with this research tool-call group.`;
         appendToolResult(

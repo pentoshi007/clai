@@ -20,10 +20,10 @@ describe("child tools for context gathering", () => {
   it("uses real registry search and read without changing parent cwd or project root", async () => {
     const cwd = process.cwd();
     const project = getActiveProjectRoot();
-    const search = await prepareReadOnlyCall(root, { name: "fs.search", args: { path: "src", pattern: "answer" } });
+    const search = await prepareReadOnlyCall(root, { name: "shell.exec", args: { command: "rg -n -- 'answer' src" } });
     const result = await executeReadOnlyCall(root, search, runToolCall, { confirmed: true });
     expect(result.ok).toBe(true);
-    expect(result.output).toContain(join(root, "src/example.ts"));
+    expect(result.output).toContain("src/example.ts");
     expect(result.output).not.toContain("# no matches");
     const read = await prepareReadOnlyCall(root, { name: "fs.read", args: { path: "src/example.ts", offset: 1, limit: 10 } });
     const evidence = await executeReadOnlyCall(root, read, runToolCall, { confirmed: true });

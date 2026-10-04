@@ -111,7 +111,7 @@ describe("loop guard auto-recovery", () => {
       remainingCriteria: ["continue with a different action"],
       reason: "repeated identical action sequence",
       loopGuardStop: {
-        calls: 'fs.search {"pattern":"continueQueue"}',
+        calls: 'fs.read {"pattern":"continueQueue"}',
         observation: "PRIOR-OUTPUT-BODY",
         signature,
       },

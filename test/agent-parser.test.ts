@@ -358,12 +358,12 @@ describe("Kimi K2 sentinel-token tool-call format", () => {
 describe("DeepSeek DSML tool-call format", () => {
   it("parses the exact fullwidth-bar DSML call emitted after reasoning degradation", () => {
     const text = `<｜DSML｜tool_calls>
-<｜DSML｜invoke name="fs.list">
+<｜DSML｜invoke name="fs.read">
 <｜DSML｜parameter name="path" string="true">/Users/aniketpandey/Desktop/copypaste</｜DSML｜parameter>
 </｜DSML｜invoke>
 </｜DSML｜tool_calls>`;
     expect(parseToolCall(text, { strict: true })).toEqual({
-      name: "fs.list",
+      name: "fs.read",
       args: { path: "/Users/aniketpandey/Desktop/copypaste" },
     });
     expect(textBeforeToolCall(`Inspecting.\n${text}`)).toBe("Inspecting.");
@@ -392,9 +392,9 @@ describe("DeepSeek DSML tool-call format", () => {
   it("does not execute truncated DSML or throw on an out-of-range entity", () => {
     const truncated = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.write"><｜DSML｜parameter name="path" string="true">x`;
     expect(parseToolCall(truncated, { strict: true })).toBeUndefined();
-    const complete = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.list"><｜DSML｜parameter name="path" string="true">&#x110000;</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
+    const complete = `<｜DSML｜tool_calls><｜DSML｜invoke name="fs.read"><｜DSML｜parameter name="path" string="true">&#x110000;</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`;
     expect(parseToolCall(complete, { strict: true })).toEqual({
-      name: "fs.list",
+      name: "fs.read",
       args: { path: "&#x110000;" },
     });
   });
@@ -485,7 +485,7 @@ describe("open/sep/close pseudo tool-call format (Kimi via some gateways)", () =
     '<|open|>call tool="fs.read" index="1"' + S,
     '<|open|>argument key="path" type="string"' + S + "/tmp/a.ts" + C("argument"),
     C("call"),
-    '<|open|>call tool="fs.list" index="2"' + S,
+    '<|open|>call tool="fs.read" index="2"' + S,
     '<|open|>argument key="path" type="string"' + S + "/tmp" + C("argument"),
     C("call") + C("tools"),
   ].join("\n");
@@ -507,7 +507,7 @@ describe("open/sep/close pseudo tool-call format (Kimi via some gateways)", () =
   it("parses multiple open/sep/close calls in document order", () => {
     expect(parseAllToolCalls(multi)).toEqual([
       { name: "fs.read", args: { path: "/tmp/a.ts" } },
-      { name: "fs.list", args: { path: "/tmp" } },
+      { name: "fs.read", args: { path: "/tmp" } },
     ]);
     expect(stripSentinelTokens("done." + single)).toBe("done.");
     expect(stripSentinelTokens(single)).toBe("");
@@ -798,8 +798,6 @@ describe("bare-JSON tool-call recovery", () => {
   });
 
   it("still flags a lone ambiguous path object as argsOnly", () => {
-    // A lone `path` could be fs.read / fs.list / pdf.read / image.ocr — too
-    // ambiguous to infer, so we still nudge for a properly named tool call.
     const result = recognizeBareToolJson('{"path":"/Users/x/notes.txt"}');
     expect(result?.argsOnly).toBe(true);
     expect(result?.call).toBeUndefined();
@@ -890,9 +888,7 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
   // barriers. Mirrors the runner's real predicate at the shape level.
   const READ_ONLY = new Set([
     "fs.read",
-    "fs.list",
-    "fs.search",
-    "net.pingSweep",
+    "shell.exec",
     "http.fetch",
     "web.fetch",
     "web.search",
@@ -904,12 +900,12 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
 
   it("groups consecutive read-only calls to run in parallel", () => {
     const groups = groupToolCallsForExecution(
-      [call("net.pingSweep"), call("web.search"), call("http.fetch")],
+      [call("shell.exec"), call("web.search"), call("http.fetch")],
       safe,
     );
     expect(groups).toHaveLength(1);
     expect(groups[0]!.map((c) => c.name)).toEqual([
-      "net.pingSweep",
+      "shell.exec",
       "web.search",
       "http.fetch",
     ]);
@@ -942,7 +938,7 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
       READ_ONLY.has(c.name);
     const groups = groupToolCallsForExecution(
       [
-        call("net.pingSweep"),
+        call("shell.exec"),
         call("http.fetch"),
         call("web.search"),
         call("web.search"),
@@ -960,7 +956,7 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
     const groups = groupToolCallsForExecution(
       [
         call("task.update"),
-        call("net.pingSweep"),
+        call("shell.exec"),
         call("web.search"),
         call("task.update"),
       ],
@@ -968,7 +964,7 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
     );
     expect(groups.map((g) => g.map((c) => c.name))).toEqual([
       ["task.update"],
-      ["net.pingSweep", "web.search"],
+      ["shell.exec", "web.search"],
       ["task.update"],
     ]);
   });
@@ -984,11 +980,11 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
   it("caps a parallel group at maxGroupSize (spilling into a second group)", () => {
     const groups = groupToolCallsForExecution(
       [
-        call("net.pingSweep"),
-        call("net.pingSweep"),
-        call("net.pingSweep"),
-        call("net.pingSweep"),
-        call("net.pingSweep"),
+        call("shell.exec"),
+        call("shell.exec"),
+        call("shell.exec"),
+        call("shell.exec"),
+        call("shell.exec"),
       ],
       safe,
       4,

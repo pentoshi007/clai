@@ -106,10 +106,10 @@ describe("scratch-only writes bypass the plan gate", () => {
     expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "fs.write" });
   });
 
-  it("allows fs.list (read-only) when no plan exists", async () => {
+  it("allows fs.read (read-only) when no plan exists", async () => {
     stream
       .mockImplementationOnce(
-        streamReply('```tool\n{"name":"fs.list","args":{"path":"."}}\n```'),
+        streamReply('```tool\n{"name":"fs.read","args":{"path":"."}}\n```'),
       )
       .mockImplementationOnce(streamReply("listed"));
 
@@ -127,6 +127,6 @@ describe("scratch-only writes bypass the plan gate", () => {
     });
 
     expect(runTool).toHaveBeenCalledTimes(1);
-    expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "fs.list" });
+    expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "fs.read" });
   });
 });

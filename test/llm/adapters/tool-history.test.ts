@@ -51,7 +51,7 @@ describe("tool history portability", () => {
         content: "",
         toolCalls: [
           { id: "call_1", name: "fs.read", args: {} },
-          { id: "call_2", name: "fs.list", args: {} },
+          { id: "call_2", name: "fs.read", args: {} },
         ],
       },
       { role: "tool", toolCallId: "call_1", name: "fs.read", content: "output" },

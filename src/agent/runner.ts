@@ -16,7 +16,6 @@ import {
 } from "../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { claimDiscardedAttemptUsage } from "../llm/operation-usage.js";
-import { exposePentestTools } from "./turn/pentest-tools.js";
 import { createStreamRecoveryState } from "./stream-recovery.js";
 import type {
   SingleToolResult,
@@ -347,9 +346,9 @@ export async function runAgentTurn(
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
-      pentestTools: await exposePentestTools(session, classification.pentestLikeTurn),
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
+      compactPromptModes: session.compactPromptModes ??= new Map(),
     });
     const routeToolNames = toolRouting.routeToolNames;
     const resolveNativeTools = toolRouting.resolveNativeTools;
@@ -435,6 +434,9 @@ export async function runAgentTurn(
         projectContext,
         destinationHint,
         isPlanMode,
+        executionRulesInSystem: buildStableSystemContent(nativeToolsActive).includes(
+          "Professional execution method — applies to every domain",
+        ),
         buildLikeTurn,
         informationalQuery,
         idleOrSocialPrompt,

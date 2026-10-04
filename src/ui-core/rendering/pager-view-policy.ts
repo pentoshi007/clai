@@ -69,8 +69,7 @@ export function shouldDefaultFormattedView(
     tool.startsWith("dns.") ||
     tool.startsWith("whois.") ||
     tool === "pkg.install" ||
-    tool === "tool.batch" ||
-    tool === "tool.check"
+    tool === "tool.batch"
   ) {
     return false;
   }

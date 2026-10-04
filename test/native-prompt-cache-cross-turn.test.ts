@@ -140,7 +140,8 @@ describe.each([0, 1, 2, 12])("native wire cache prefix across revisions (%i tool
             expect(serialized).toContain(`result ${revision}.${step}`);
           }
         }
-        expect(serialized.split(REQUEST_CONTEXT_PREFIX)).toHaveLength(turn + 1);
+        const contextCount = messages.filter((message) => message.role === "system" && message.content.startsWith(REQUEST_CONTEXT_PREFIX)).length;
+        expect(serialized.split(REQUEST_CONTEXT_PREFIX)).toHaveLength(contextCount + 1);
         previous = body;
         history = buildTurnHistory(messages, `completed revision ${turn}`);
       }

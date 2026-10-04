@@ -24,7 +24,7 @@ describe("prompt rendering", () => {
     const prompt = renderAskSystemPrompt();
     expect(prompt).toContain("web.search");
     expect(prompt).toContain("READ-ONLY");
-    expect(prompt).toContain("CANNOT run shell commands");
+    expect(prompt).toContain("Only read-only local inspection/search commands may run here");
   });
 
   it("ask prompt includes OS info and current date/time", () => {
@@ -37,14 +37,14 @@ describe("prompt rendering", () => {
   });
 
   it("agent prompt includes tool list", () => {
-    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, tool.check");
+    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, shell.exec");
     expect(prompt).toContain("shell.exec");
     expect(prompt).toContain("fs.read");
-    expect(prompt).toContain("tool.check");
+    expect(prompt).toContain("shell.exec");
   });
 
   it("agent prompt requires exact fs.edit evidence before retrying", () => {
-    const prompt = renderAgentSystemPrompt("fs.read, fs.search, fs.edit");
+    const prompt = renderAgentSystemPrompt("fs.read, fs.read, fs.edit");
     expect(prompt).toContain("both the exact current oldText and intended newText");
     expect(prompt).toContain("never reconstruct it from memory or a stale preview");
     expect(prompt).toContain("do not repeat the same oldText");
@@ -145,19 +145,27 @@ describe("prompt rendering", () => {
     expect(prompt).toMatch(/append the next phase.*instead of replacing completed work/is);
   });
 
-  it("agentModeDirective requires adaptive evidence-driven execution and proportionate task tracking", () => {
-    const d = agentModeDirective();
-    expect(d).toMatch(/working memory, not permission gates/i);
-    expect(d).toMatch(/substantial multi-phase work benefits from coordination/i);
-    expect(d).toMatch(/execute easy-to-medium work directly/i);
-    expect(d).toMatch(/entire roadmap\/folder\/program/i);
-    expect(d).toMatch(/FRAME:[\s\S]*MODEL:[\s\S]*COVER:[\s\S]*DECIDE:/i);
-    expect(d).toMatch(/Methods and tools are options, not a fixed sequence/i);
-    expect(d).toMatch(/Never mark done on hope/i);
-    expect(d).toMatch(/task\.add[\s\S]*preempt[\s\S]*pending/i);
-    expect(d).toMatch(/positive, negative, boundary, integration, and regression paths/i);
-    expect(d).toMatch(/automated checks|runtime\/integration proof/i);
-    expect(d).toMatch(/RECONCILE:[\s\S]*original request/i);
+  it("agentModeDirective preserves intent and delegates shared execution rules to the constitution", () => {
+    const directive = agentModeDirective({ executionRulesInSystem: true });
+    expect(directive).toContain("answer questions with grounded analysis");
+    expect(directive).toContain("act on clear directives");
+    expect(directive).toContain("A build verb inside a question does not authorize edits");
+    expect(directive).toContain("professional execution, scope, task, and verification rules");
+    expect(directive).toContain("working memory, not permission gates");
+    const constitution = renderAgentSystemPrompt("task.add, fs.read, fs.edit");
+    expect(constitution).toMatch(/Frame the outcome[\s\S]*Model the system[\s\S]*Map material coverage/);
+    expect(constitution).toMatch(/Verify independently[\s\S]*Reconcile before stopping/);
+    expect(constitution).toContain("positive, negative, boundary, integration, and regression");
+    expect(constitution).toMatch(/task\.add/);
+    expect(constitution).toContain('task.update(state:"pending")');
+  });
+
+  it("compact constitutions retain the full adaptive mode directive", () => {
+    const directive = agentModeDirective();
+    expect(directive).toContain("Adaptive professional loop");
+    expect(directive).toContain("whole boundary and continue across phase transitions");
+    expect(directive).toContain("test positive, negative, boundary, integration, and regression paths");
+    expect(directive).toContain("Pair each task with its completion evidence");
   });
 
   it("planModeDirective is decision-ready planning with coverage and branch conditions", () => {

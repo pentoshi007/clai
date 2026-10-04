@@ -335,8 +335,6 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
 
   if (
     call.name === "fs.read" ||
-    call.name === "fs.list" ||
-    call.name === "fs.search" ||
     call.name === "fs.edit" ||
     call.name === "fs.append" ||
     call.name === "pdf.read"

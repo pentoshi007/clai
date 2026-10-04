@@ -9,7 +9,6 @@
  *
  * It exercises real production surfaces (not re-implementations):
  *   - `StreamRenderer` (noninteractive) for compaction token rendering;
- *   - `fsList` for directory ordering and entry counts;
  *   - `formatTokenCount` for the locale-pinned `en-US` formatter;
  *   - the collation and date primitives used by job ordering.
  *
@@ -21,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { StreamRenderer } from "../../src/noninteractive/stream-renderer.js";
-import { fsList } from "../../src/tools/fs.js";
+import { fsRead } from "../../src/tools/fs.js";
 import { formatTokenCount } from "../../src/llm/token-usage.js";
 import { fakeClock, fakeStream, FIXTURE_OUTCOME, scriptedEvents } from "../noninteractive/fixture.js";
 
@@ -50,16 +49,16 @@ function renderNoninteractiveStderr(): string {
 }
 
 /** Lists a deterministic fixture directory through the production tool. */
-async function probeFsList(): Promise<{ order: string[]; header: string }> {
+async function probeDirectoryRead(): Promise<{ order: string[]; header: string }> {
   const dir = mkdtempSync(join(tmpdir(), "clai-locale-probe-"));
   try {
     for (const name of LIST_FIXTURE_NAMES) writeFileSync(join(dir, name), "x");
     mkdirSync(join(dir, "dirA"));
-    const result = await fsList(dir, { confirmed: true });
+    const result = await fsRead(dir, { confirmed: true });
     const lines = result.output.split("\n");
-    const header = lines[0] ?? "";
+    const header = lines.find((line) => /: \d+ entries/.test(line)) ?? "";
     const order = lines
-      .slice(1)
+      .filter((line) => /^(?:dir|file)\s+/.test(line))
       .map((line) => line.replace(/^(?:dir|file)\s+/, "").replace(/ \[hidden\]$/, ""));
     return { order, header };
   } finally {
@@ -94,7 +93,7 @@ async function main(): Promise<void> {
       productionTokenCountCompact: formatTokenCount(120000, true),
     },
     noninteractive: { compactionLines },
-    fsList: await probeFsList(),
+    directoryRead: await probeDirectoryRead(),
     collation: {
       // Production job ordering compares ISO-8601 timestamps with
       // `String.prototype.localeCompare`.

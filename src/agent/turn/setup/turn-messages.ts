@@ -46,6 +46,7 @@ export const dropSectionsAlreadyInHistory = (
   if (sent.length === 0) return [...sections];
   const kept = sections.filter(
     (section) =>
+      section.kind === "outcome" ||
       section.content.startsWith("ORCHESTRATION:") ||
       section.content.startsWith("MCP TOOL CONTEXT") ||
       section.content.includes(prompt) ||

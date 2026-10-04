@@ -1,20 +1,13 @@
 import {
   fsEdit,
   fsDelete,
-  fsList,
-  fsRead,
-  fsSearch,
-  fsWrite,
-  fsWriteMany,
   fsReplaceLines,
   fsAppend,
-  type FileWrite,
 } from "../fs.js";
-import { type ToolRunOptions, type ToolHandler } from "../tool-types.js";
+import { type ToolHandler } from "../tool-types.js";
 import {
   optionalBoolean,
   optionalNumber,
-  optionalResponseMode,
   optionalString,
   requireNumber,
   requireString,

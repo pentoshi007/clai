@@ -5,12 +5,14 @@ export interface SessionPolicy {
   allow: Set<string>;
   pentestAuthorized: { value: boolean };
   sessionId: string;
+  compactPromptModes?: Map<string, boolean>;
   planApproved: { value: boolean };
 }
 
 export function createSessionPolicy(sessionId?: string): SessionPolicy {
   return {
     allow: new Set(),
+    compactPromptModes: new Map(),
     pentestAuthorized: { value: false },
     sessionId:
       sessionId ??
@@ -25,13 +27,9 @@ const PRE_APPROVAL_ALLOWED_TOOLS = new Set<string>([
   "job.read",
   "task.update",
   "fs.read",
-  "fs.list",
-  "fs.search",
-  "tool.check",
   "web.search",
   "web.fetch",
   "http.fetch",
-  "wordlist.find",
   "image.ocr",
   "pdf.read",
   "shell.jobs",

@@ -61,7 +61,7 @@ export function compactionElapsedLabel(
 }
 
 export function shouldShowToolElapsed(toolName: string): boolean {
-  return !toolName.startsWith("fs.") || toolName === "fs.search";
+  return !toolName.startsWith("fs.");
 }
 
 export function toolElapsedLabel(

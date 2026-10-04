@@ -136,6 +136,11 @@ export function fromWireName(wire: string): string | undefined {
   if (!cleaned) return undefined;
   const registered = resolveRegistered(cleaned);
   if (registered) return registered;
+  const withoutFormatSuffix = cleaned.replace(/(?:analysis|commentary)?json$/i, "");
+  if (withoutFormatSuffix !== cleaned) {
+    const formatted = resolveRegistered(withoutFormatSuffix);
+    if (formatted) return formatted;
+  }
   const prefix = longestRegisteredPrefix(cleaned);
   if (prefix) return wireToCanonical.get(prefix);
   if (wireToCanonical.has(wire)) return wireToCanonical.get(wire);

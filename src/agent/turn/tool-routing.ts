@@ -3,7 +3,6 @@ import type { ToolCallingMode } from "../../llm/tool-protocol.js";
 import { modelSupportsVision, resolveToolDialect } from "../../llm/capabilities.js";
 import { availableToolNames } from "../../tools/registry.js";
 import {
-  getCompactToolDefinitions,
   getToolDefinitions,
   mcpAgentToolNames,
   RUNNER_META_TOOL_NAMES,
@@ -13,14 +12,13 @@ import {
   renderCompactAgentSystemPrompt,
 } from "../../prompts/index.js";
 import { getReliabilityPolicy } from "../reliability-policy.js";
-import { PENTEST_TOOL_NAMES } from "./pentest-tools.js";
 
 export interface ToolRoutingInput {
   readonly mode: Mode;
   readonly mcpPresent: boolean;
-  readonly pentestTools: boolean;
   readonly toolCalling: ToolCallingMode | undefined;
   readonly useCompactSystemPrompt: () => boolean;
+  readonly compactPromptModes?: Map<string, boolean>;
 }
 
 export interface ToolRouting {
@@ -46,19 +44,19 @@ const nameAllowed = (
   name: string,
   provider: ProviderId,
   model: string,
-  pentestTools: boolean,
 ): boolean => {
   if (name === "image.view") return modelSupportsVision(provider, model);
-  if (PENTEST_TOOL_NAMES.has(name)) return pentestTools;
   return true;
 };
 
 export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
+  const compactPromptModes = input.compactPromptModes ?? new Map<string, boolean>();
   const routeToolNames = (provider: ProviderId, model: string): string[] =>
     [
       ...availableToolNames(),
+      ...RUNNER_META_TOOL_NAMES,
       ...(input.mcpPresent ? mcpAgentToolNames(input.mode === "ask") : []),
-    ].filter((name) => nameAllowed(name, provider, model, input.pentestTools));
+    ].filter((name) => nameAllowed(name, provider, model));
 
   const resolveNativeTools = (
     provider: ProviderId,
@@ -70,14 +68,12 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
 
   const selectToolDefs = (
     native: boolean,
-    compact: boolean,
+    _compact: boolean,
     provider: ProviderId,
     model: string,
   ): ToolDefinition[] | undefined => {
     if (!native) return undefined;
-    const base = [
-      ...(compact ? getCompactToolDefinitions() : getToolDefinitions()),
-    ];
+    const base = getToolDefinitions();
     const allow = new Set([
       ...routeToolNames(provider, model),
       ...RUNNER_META_TOOL_NAMES,
@@ -91,7 +87,10 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     model: string,
   ): string => {
     const reliability = getReliabilityPolicy();
-    const render = input.useCompactSystemPrompt()
+    const route = JSON.stringify([provider, model]);
+    const compact = compactPromptModes.get(route) ?? input.useCompactSystemPrompt();
+    compactPromptModes.set(route, compact);
+    const render = compact
       ? renderCompactAgentSystemPrompt
       : renderAgentSystemPrompt;
     return render(routeToolNames(provider, model).join(", "), {

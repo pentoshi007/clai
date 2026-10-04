@@ -216,9 +216,9 @@ describe("output policy — no generic keyword reducer", () => {
     expect(ctxOut).not.toMatch(/Reduced output/i);
     expect(ctxOut).not.toMatch(/lines omitted/i);
   });
-  it("formatToolContext keeps fs.list verbatim", () => {
+  it("formatToolContext keeps fs.read verbatim", () => {
     const ctxOut = formatToolContext(
-      { name: "fs.list", args: { path: "/tmp" } },
+      { name: "fs.read", args: { path: "/tmp" } },
       {
         ok: true,
         output: "file a\nfile b\nfile c",

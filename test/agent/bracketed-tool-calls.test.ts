@@ -24,8 +24,8 @@ const TRANSCRIPT_CALLS = `[Tool call: shell_exec]
 echo; echo '--- service.json ---'; cat ~/.config/opencode/service.json 2>/dev/null | head -c 400; echo; echo '--- version ---';
 ~/.opencode/bin/opencode --version 2>&1 | head -5","timeoutMs":60000}
  
-[Tool call: tool_check]
-{"tools":["mitmdump","mitmproxy","curl","tcpdump","openssl","node","bun","strings","jq","sqlite3","strace","bpftrace"]}
+[Tool call: shell_exec]
+{"command":"command -v mitmdump mitmproxy curl tcpdump openssl node bun strings jq sqlite3 strace bpftrace"}
  
 [Tool call: shell_exec]
 {"command":"ls -lat ~/projects/clai/src/providers/ 2>/dev/null | head -30; echo '--- find files mentioning zen ---'; grep -rln 'zen'
@@ -65,7 +65,7 @@ describe("tool.batch streaming arguments accumulation", () => {
     const state = new Map();
     const chunks = [
       '{"calls": [',
-      '{"name": "fs.list", "args": {"path": "/home"}}',
+      '{"name": "fs.read", "args": {"path": "/home"}}',
       "]}",
     ];
 
@@ -80,7 +80,7 @@ describe("tool.batch streaming arguments accumulation", () => {
     expect(call).toBeDefined();
     expect(call!.args._parseError).toBeUndefined();
     expect(call!.args).toEqual({
-      calls: [{ name: "fs.list", args: { path: "/home" } }],
+      calls: [{ name: "fs.read", args: { path: "/home" } }],
     });
   });
 });
@@ -103,15 +103,15 @@ describe("bracketed tool-call parsing", () => {
     expect(calls[0]!.args.timeoutMs).toBe(60000);
     expect(calls[1]!.name).toBe("shell.exec");
     expect(calls[1]!.args.command).toContain("opencode.jsonc");
-    expect(calls[2]!.name).toBe("tool.check");
-    expect(calls[2]!.args.tools).toContain("mitmdump");
+    expect(calls[2]!.name).toBe("shell.exec");
+    expect(calls[2]!.args.command).toContain("mitmdump");
     expect(calls[3]!.name).toBe("shell.exec");
     expect(calls[3]!.args.command).toContain("find files mentioning zen");
   });
 
   it("parses bracketed tool calls with alternative case and format spellings", () => {
-    const c1 = parseToolCall('[tool_call: fs_list]\n{"path":"."}');
-    expect(c1?.name).toBe("fs.list");
+    const c1 = parseToolCall('[tool_call: fs_read]\n{"path":"."}');
+    expect(c1?.name).toBe("fs.read");
     expect(c1?.args).toEqual({ path: "." });
 
     const c2 = parseToolCall('[TOOL CALL: web_search]\n{"query":"vitest"}');
