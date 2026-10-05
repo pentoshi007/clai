@@ -7,6 +7,7 @@ import type { Readable } from "node:stream";
 import type { ToolResult } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
 import { safeCwd } from "../os/cwd.js";
+import { augmentedPathEnv } from "../os/command.js";
 import { getJobsDir } from "../store/paths.js";
 import { resolveShell } from "./shell.js";
 import { terminateProcessTree } from "../os/process-tree.js";
@@ -701,7 +702,7 @@ export class JobManager {
     const stdoutArtifact = join(this.jobsDir, `${prefix}.stdout.log`);
     const stderrArtifact = join(this.jobsDir, `${prefix}.stderr.log`);
     const makeReceipt = (path: string): JobArtifactReceipt => ({ path, chunks: [], bytes: 0, droppedBytes: 0, redacted: false, sha256: "" });
-    const safeDisplay = redactSecrets(commandDisplay(command));
+    const safeDisplay = redactSecrets(options?.requestedCommand ?? commandDisplay(command));
     const monitor = options?.monitor !== undefined || options?.profile !== undefined || options?.estimatedSeconds !== undefined
       ? {
           ...(options?.monitor ?? {}),
@@ -752,6 +753,9 @@ export class JobManager {
     let launchConfirmed = false;
     try {
       const detached = process.platform !== "win32";
+      const environment = options?.env
+        ? { env: { ...process.env, PATH: augmentedPathEnv(), ...options.env } }
+        : {};
       const spawnChild = (): ChildProcess =>
         typeof command === "string"
           ? spawn(command, {
@@ -759,12 +763,14 @@ export class JobManager {
               detached,
               shell: shell!,
               stdio: ["ignore", "pipe", "pipe"],
+              ...environment,
             })
           : spawn(command.command, command.argv, {
               cwd,
               detached,
               shell: false,
               stdio: [command.stdinText === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+              ...environment,
             });
       let child = spawnChild();
       const stdout = new RotatingRedactedWriter(job.artifacts.stdout);
@@ -836,6 +842,7 @@ export class JobManager {
         };
       }
       launchConfirmed = true;
+      options?.onSpawn?.();
 
       if (typeof command !== "string" && command.stdinText !== undefined) {
         child.stdin?.end(command.stdinText);

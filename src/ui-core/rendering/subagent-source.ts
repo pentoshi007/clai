@@ -7,6 +7,9 @@ import {
 } from "./artifact-pager-source.js";
 import { SUBAGENT_TOOL_CONTINUATION_INDENT } from "./subagent-presentation.js";
 import { subagentDurationLabel } from "./duration.js";
+import { formatToolArgs } from "../../agent/parser/arg-formatting.js";
+import { presentFsReadArgs } from "./tool-presenter.js";
+import { parseFsReadSections } from "../../tools/fs/read-sections.js";
 
 function assistantText(text: string): string {
   return text.replace(/```tool\b[^\n]*\n?[\s\S]*?(?:```|$)/gi, "").trim();
@@ -20,6 +23,14 @@ function describeToolCall(name: string, rawArgs: string): string {
   let args: unknown;
   try { args = JSON.parse(rawArgs); } catch { return `→ ${name} ${rawArgs}`; }
   if (!args || typeof args !== "object" || Array.isArray(args)) return `→ ${name} ${rawArgs}`;
+  if (name === "fs.read" && Array.isArray((args as Record<string, unknown>).files)) {
+    const read = presentFsReadArgs(formatToolArgs({ name, args: args as Record<string, unknown> }));
+    const files = read.files ?? [read];
+    return [`→ ${name}`, ...files.flatMap((file, index) => [
+      ...(file.options ? [`options: ${file.options}`] : []),
+      `${read.files ? `file ${index + 1}/${files.length}` : "file"}: ${file.path}`,
+    ])].join("\n");
+  }
   const fields = Object.entries(args);
   const target = fields.find(([key]) => key === "path" || key === "url" || key === "command");
   const options = fields.filter(([key]) => key !== target?.[0]).map(([key, value]) => `${key}=${JSON.stringify(value)}`);
@@ -42,9 +53,24 @@ function activity(run: SubagentRun): string[] {
       if (text && !finalReport && text !== lines.at(-1)) lines.push(text);
     } else if (event.kind === "tool") {
       const call = toolCall(event.text);
+      const reads = parseFsReadSections(event.text);
       if (call) {
         lines.push(call);
         pendingTool = lines.length - 1;
+      } else if (reads.length > 0) {
+        if (pendingTool !== undefined) {
+          let display = lines[pendingTool]!.replace(/^→/, reads.every((read) => read.ok) ? "✓" : "✗");
+          for (const read of reads) {
+            display = display.replace(new RegExp(`(^\\s*file ${read.index}/${read.total}: )`, "m"), `$1${read.ok ? "✓" : "✗"} `);
+          }
+          lines[pendingTool] = display;
+        } else {
+          lines.push(...reads.map((read) => `  ${read.ok ? "✓" : "✗"} file ${read.index}/${read.total}: ${read.path}`));
+        }
+        for (const read of reads.filter((entry) => !entry.ok)) {
+          lines.push(`  ✗ ${read.path}: ${read.body.split("\n")[0]?.slice(0, 240) ?? "read failed"}`);
+        }
+        pendingTool = undefined;
       } else if (/^Success:/.test(event.text)) {
         if (pendingTool !== undefined) lines[pendingTool] = lines[pendingTool]!.replace(/^→/, "✓");
         else lines.push("✓ Read-only tool completed");

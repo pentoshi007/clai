@@ -185,6 +185,7 @@ export async function applySessionResume(
     persistenceRevision: record.revision,
     provider,
     model,
+    transcript: record.transcript,
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.workspaceFolder

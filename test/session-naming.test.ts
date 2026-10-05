@@ -1,28 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { SessionNamer } from "../src/app/controllers/session-naming.js";
-import { SessionController } from "../src/app/controllers/session-controller.js";
-import { createTurnOutcome } from "../src/agent/turn-outcome.js";
+import { DEFAULT_NAMING_MODEL, DEFAULT_NAMING_PROVIDER, resolveNamingRoute, SessionNamer } from "../src/app/controllers/session-naming.js";
 import type { ChatMessage } from "../src/types.js";
-import type { TranscriptItem } from "../src/app/ports/transcript-item.js";
+import type { NamingPromptWindow } from "../src/store/session-prompts.js";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-function user(text: string): ChatMessage {
-  return { role: "user", content: text };
-}
-
-function assistant(text: string): ChatMessage {
-  return { role: "assistant", content: text };
-}
+const requestText = (messages: ChatMessage[]) => messages[1]!.content;
 
 function makeNamer() {
   const calls: ChatMessage[][] = [];
   const titles: string[] = [];
   const state = {
-    fail: false,
-    enabled: true,
-    response:
-      "SUMMARY: user is fixing the router bug\nTITLE: Fix the router bug",
+    fail: false, enabled: true,
+    response: "SUMMARY: user is fixing the router bug\nTITLE: Fix the router bug",
+    window: { count: 0, prompts: [] } as NamingPromptWindow,
   };
   const namer = new SessionNamer({
     complete: async (messages) => {
@@ -32,163 +22,80 @@ function makeNamer() {
     },
     applyTitle: (title) => titles.push(title),
     enabled: () => state.enabled,
+    prompts: async () => state.window,
   });
-  return { namer, calls, titles, state };
-}
-
-function requestText(messages: ChatMessage[]): string {
-  return String(messages[1]?.content ?? "");
+  const submit = (text: string) => {
+    state.window = {
+      count: state.window.count + 1,
+      prompts: [...state.window.prompts, { number: state.window.count + 1, preview: text }],
+    };
+    namer.noteUserPrompt(true);
+  };
+  return { namer, calls, titles, state, submit };
 }
 
 describe("SessionNamer", () => {
-  it("does not name before the second user-sent prompt", async () => {
-    const { namer, calls, titles } = makeNamer();
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("hello"), assistant("hi")]);
-    await flush();
-    expect(calls).toHaveLength(0);
-    expect(titles).toHaveLength(0);
-  });
-
-  it("names the session after the second user-sent prompt", async () => {
-    const { namer, calls, titles } = makeNamer();
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
+  it("names on each new user prompt without waiting for assistant replies", async () => {
+    const { submit, calls, titles } = makeNamer();
+    submit("fix the router bug");
     await flush();
     expect(calls).toHaveLength(1);
     expect(titles).toEqual(["Fix the router bug"]);
+    submit("add regression tests");
+    await flush();
+    submit("research prompt caching");
+    await flush();
+    expect(calls).toHaveLength(3);
+    expect(requestText(calls[2]!)).toContain("research prompt caching");
+    expect(titles).toEqual(["Fix the router bug"]);
   });
 
-  it("ignores auto agent requests", async () => {
-    const { namer, calls } = makeNamer();
-    for (let i = 0; i < 5; i++) namer.noteUserPrompt(false);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
+  it("ignores automatic requests and does not repeat naming for an unchanged prompt count", async () => {
+    const { namer, calls, submit } = makeNamer();
+    namer.noteUserPrompt(false);
+    namer.maybeRename();
     await flush();
     expect(calls).toHaveLength(0);
-  });
-
-  it("re-evaluates every third user prompt after the first naming", async () => {
-    const { namer, calls } = makeNamer();
-    const history = [user("fix the router bug"), assistant("done")];
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
+    submit("real user request");
+    await flush();
+    namer.maybeRename();
     await flush();
     expect(calls).toHaveLength(1);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
-    await flush();
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
-    await flush();
-    expect(calls).toHaveLength(1);
-    namer.noteUserPrompt(true);
-    history.push(user("now add tests for it"), assistant("tests added"));
-    namer.maybeRename(history);
-    await flush();
-    expect(calls).toHaveLength(2);
   });
 
-  it("carries the previous summary and title into the next naming request", async () => {
-    const { namer, calls } = makeNamer();
-    const history = [user("fix the router bug"), assistant("done")];
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
+  it("carries earlier user task themes, summary, and title into subsequent names", async () => {
+    const { calls, submit } = makeNamer();
+    submit("fix the router bug");
     await flush();
-    for (let i = 0; i < 3; i++) namer.noteUserPrompt(true);
-    namer.maybeRename([
-      ...history,
-      user("now add tests"),
-      assistant("tests added"),
-    ]);
+    submit("research compaction");
     await flush();
-    expect(calls).toHaveLength(2);
     const text = requestText(calls[1]!);
+    expect(text).toContain("fix the router bug");
+    expect(text).toContain("research compaction");
     expect(text).toContain("Previous title: Fix the router bug");
-    expect(text).toContain(
-      "Previous summary: user is fixing the router bug",
-    );
-  });
-
-  it("keeps earlier tasks in every naming request instead of sending only the latest task", async () => {
-    const { namer, calls } = makeNamer();
-    const history = [user("first question"), assistant("first answer")];
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
-    await flush();
-    for (let i = 0; i < 3; i++) namer.noteUserPrompt(true);
-    namer.maybeRename([
-      ...history,
-      user("second question"),
-      assistant("second answer"),
-    ]);
-    await flush();
-    const text = requestText(calls[1]!);
-    expect(text).toContain("second question");
-    expect(text).toContain("first question");
+    expect(text).toContain("Previous summary: user is fixing the router bug");
     expect(calls[1]![0]!.content).toContain("not just the latest task");
-    expect(calls[1]![0]!.content).toContain("earlier and newer work");
+    expect(calls[1]![0]!.content).toContain("Only user prompts are supplied");
+    expect(text).not.toContain("Assistant context");
   });
 
-  it("includes early, middle, and latest requests when the conversation exceeds the old tail window", async () => {
-    const { namer, calls } = makeNamer();
-    const history = Array.from({ length: 30 }, (_, index) => [
-      user(`Task-${index}: ${"details ".repeat(100)}`),
-      assistant("Long implementation output ".repeat(100)),
-    ]).flat();
+  it("uses bounded prompt excerpts supplied by persistent storage", async () => {
+    const { namer, state, calls } = makeNamer();
+    state.window = {
+      count: 50000,
+      prompts: Array.from({ length: 16 }, (_, index) => ({
+        number: index === 15 ? 50000 : index + 1,
+        preview: `Task-${index}: ${"details ".repeat(60)}`,
+      })),
+    };
     namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
     await flush();
     const text = requestText(calls[0]!);
-    for (let index = 0; index < 30; index++) expect(text).toContain(`Task-${index}:`);
+    expect(text).toContain("Session user prompts: 50000");
+    expect(text).toContain("Prompt 50000:");
+    expect(text).toContain("Task-0:");
+    expect(text).toContain("Task-15:");
     expect(text.length).toBeLessThan(4300);
-  });
-
-  it("retains tasks observed before naming when compaction replaces the history with an equal-length window", async () => {
-    const { namer, calls } = makeNamer();
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("Implement authentication"), assistant("done")]);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("Improve billing"), assistant("done")]);
-    await flush();
-    expect(requestText(calls[0]!)).toContain("Implement authentication");
-    expect(requestText(calls[0]!)).toContain("Improve billing");
-    for (let index = 0; index < 3; index++) namer.noteUserPrompt(true);
-    namer.maybeRename([user("Add deployment checks"), assistant("done")]);
-    await flush();
-    for (const task of ["Implement authentication", "Improve billing", "Add deployment checks"]) {
-      expect(requestText(calls[1]!)).toContain(task);
-    }
-  });
-
-  it("restores earlier tasks from nested compacted transcript items without exposing tool output or reasoning", async () => {
-    const calls: ChatMessage[][] = [];
-    const namer = new SessionNamer({
-      complete: async (messages) => { calls.push(messages); return "TITLE: Authentication, Billing and Deployment"; },
-      applyTitle: () => undefined,
-      enabled: () => true,
-      transcript: () => [{ kind: "compacted", id: "outer", done: true, summary: "Recent billing work", originalItems: [
-        { kind: "compacted", id: "inner", done: true, summary: "Earlier work", originalItems: [
-          { kind: "user", id: "first", done: true, text: "Implement authentication" },
-          { kind: "thinking", id: "private", done: true, content: "Private reasoning" },
-          { kind: "tool", id: "tool", name: "fs.read", argsDisplay: "", output: "Private tool output", status: "ok", done: true },
-        ] },
-        { kind: "user", id: "second", done: true, text: "Improve billing" },
-      ] }],
-    });
-    namer.restore("Billing improvements");
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("Add deployment checks")]);
-    await flush();
-    const text = requestText(calls[0]!);
-    for (const task of ["Implement authentication", "Improve billing", "Add deployment checks"]) expect(text).toContain(task);
-    expect(text).not.toContain("Private reasoning");
-    expect(text).not.toContain("Private tool output");
   });
 
   it.each(["reset", "restore", "manual", "disabled"] as const)("ignores an old naming response after %s", async (action) => {
@@ -198,10 +105,10 @@ describe("SessionNamer", () => {
     const namer = new SessionNamer({
       complete: () => new Promise<string>((resolve) => { release = resolve; }),
       applyTitle: (title) => titles.push(title), enabled: () => enabled,
+      prompts: async () => ({ count: 1, prompts: [{ number: 1, preview: "Old task" }] }),
     });
     namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("Old session task")]);
+    await flush();
     if (action === "manual") namer.markManual();
     else if (action === "disabled") enabled = false;
     else if (action === "restore") namer.restore("Another session");
@@ -211,326 +118,128 @@ describe("SessionNamer", () => {
     expect(titles).toEqual([]);
   });
 
-  it("keeps the previous title when the naming request fails and retries after one more prompt", async () => {
-    const { namer, calls, titles, state } = makeNamer();
+  it("keeps the prior title on failure or invalid output and retries on the next prompt", async () => {
+    const { submit, calls, titles, state } = makeNamer();
     state.fail = true;
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
+    submit("fix the router bug");
     await flush();
-    expect(calls).toHaveLength(1);
     expect(titles).toHaveLength(0);
     state.fail = false;
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
+    state.response = "no title supplied";
+    submit("try again");
     await flush();
-    expect(calls).toHaveLength(2);
-    expect(titles).toEqual(["Fix the router bug"]);
-  });
-
-  it("stops auto-naming after a manual name", async () => {
-    const { namer, calls } = makeNamer();
-    namer.markManual();
-    for (let i = 0; i < 3; i++) namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
-    await flush();
-    expect(calls).toHaveLength(0);
-  });
-
-  it("reset restarts the cadence", async () => {
-    const { namer, calls } = makeNamer();
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
-    await flush();
-    expect(calls).toHaveLength(1);
-    namer.reset();
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("new topic"), assistant("ok")]);
-    await flush();
-    expect(calls).toHaveLength(1);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("new topic"), assistant("ok")]);
-    await flush();
-    expect(calls).toHaveLength(2);
-  });
-
-  it("restore keeps the loaded title and restarts the cadence", async () => {
-    const { namer, calls } = makeNamer();
-    namer.restore("Loaded title");
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("continue the work"), assistant("ok")]);
-    await flush();
-    expect(calls).toHaveLength(1);
-    expect(requestText(calls[0]!)).toContain("Previous title: Loaded title");
-  });
-
-  it("sanitizes model output", async () => {
-    const { namer, titles, state } = makeNamer();
+    expect(titles).toHaveLength(0);
     state.response = 'SUMMARY: s\nTITLE: "Fix the router bug."';
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
+    submit("add tests");
     await flush();
+    expect(calls).toHaveLength(3);
     expect(titles).toEqual(["Fix the router bug"]);
   });
 
-  it("does not run two naming requests concurrently", async () => {
+  it("coalesces newer prompts while busy and suppresses a title from a stale prompt window", async () => {
+    const releases: Array<(value: string) => void> = [];
     const calls: ChatMessage[][] = [];
     const titles: string[] = [];
-    let release: (() => void) | undefined;
+    let text = "First task";
     const namer = new SessionNamer({
-      complete: async (messages) => {
+      prompts: async () => ({ count: 1, prompts: [{ number: 1, preview: text }] }),
+      complete: (messages) => {
         calls.push(messages);
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        return "SUMMARY: s\nTITLE: Fix the router bug";
+        return new Promise<string>((resolve) => releases.push(resolve));
       },
-      applyTitle: (title) => titles.push(title),
-      enabled: () => true,
+      applyTitle: (title) => titles.push(title), enabled: () => true,
     });
     namer.noteUserPrompt(true);
+    await flush();
+    text = "Latest task";
     namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
-    await flush();
+    namer.noteUserPrompt(true);
     expect(calls).toHaveLength(1);
-    release!();
+    releases[0]!("SUMMARY: First task\nTITLE: First task");
     await flush();
-    expect(titles).toEqual(["Fix the router bug"]);
+    expect(titles).toEqual([]);
+    expect(calls).toHaveLength(2);
+    expect(requestText(calls[1]!)).toContain("Latest task");
+    releases[1]!("TITLE: Latest task");
+    await flush();
+    expect(titles).toEqual(["Latest task"]);
   });
 
-  it("does not let an old request release the new session's naming lock", async () => {
+  it("does not let an old request release a newer session's naming lock", async () => {
     const releases: Array<(value: string) => void> = [];
     const titles: string[] = [];
     const namer = new SessionNamer({
+      prompts: async () => ({ count: 1, prompts: [{ number: 1, preview: "task" }] }),
       complete: () => new Promise<string>((resolve) => releases.push(resolve)),
       applyTitle: (title) => titles.push(title), enabled: () => true,
     });
-    for (const topic of ["Old task", "New task"]) {
-      namer.reset();
-      namer.noteUserPrompt(true);
-      namer.noteUserPrompt(true);
-      namer.maybeRename([user(topic)]);
-    }
+    namer.noteUserPrompt(true);
+    await flush();
+    namer.restore("Loaded title");
+    namer.noteUserPrompt(true);
+    await flush();
     releases[0]!("TITLE: Old task");
     await flush();
-    namer.maybeRename([user("New task")]);
+    namer.maybeRename();
     expect(releases).toHaveLength(2);
     releases[1]!("TITLE: New task");
     await flush();
     expect(titles).toEqual(["New task"]);
   });
 
-  it("keeps an exceptionally long request overview bounded", async () => {
-    const { namer, calls } = makeNamer();
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(Array.from({ length: 3000 }, (_, index) => user(`Task ${index} ${"details".repeat(100)}`)));
+  it("skips naming after a manual title or when history is disabled", async () => {
+    const manual = makeNamer();
+    manual.namer.markManual();
+    manual.submit("new task");
+    const disabled = makeNamer();
+    disabled.state.enabled = false;
+    disabled.submit("new task");
     await flush();
-    expect(requestText(calls[0]!).length).toBeLessThan(4300);
+    expect(manual.calls).toHaveLength(0);
+    expect(disabled.calls).toHaveLength(0);
   });
 
-  it("skips naming when disabled", async () => {
-    const { namer, calls, state } = makeNamer();
-    state.enabled = false;
-    for (let i = 0; i < 3; i++) namer.noteUserPrompt(true);
-    namer.maybeRename([user("fix the router bug"), assistant("done")]);
-    await flush();
-    expect(calls).toHaveLength(0);
-  });
-
-  it("skips internal and tool messages in the transcript", async () => {
-    const { namer, calls } = makeNamer();
-    const history: ChatMessage[] = [
-      user("real question"),
-      {
-        role: "tool",
-        content: "tool output",
-        toolCallId: "call_1",
-        name: "fs.read",
-      } as ChatMessage,
-      { role: "user", content: "internal note", internal: true } as ChatMessage,
-      assistant("real answer"),
-    ];
-    namer.noteUserPrompt(true);
-    namer.noteUserPrompt(true);
-    namer.maybeRename(history);
-    await flush();
-    const text = requestText(calls[0]!);
-    expect(text).toContain("real question");
-    expect(text).toContain("real answer");
-    expect(text).not.toContain("tool output");
-    expect(text).not.toContain("internal note");
-  });
-});
-
-describe("session controller naming wiring", () => {
-  function makeSession(namingCalls: ChatMessage[][], savedNames: unknown[], getTranscriptSnapshot?: () => TranscriptItem[]) {
-    return new SessionController({
-      agent: {
-        async runTurn() {
-          return createTurnOutcome({
-            status: "succeeded",
-            answer: "ok",
-            steps: 1,
-            remainingCriteria: [],
-          });
-        },
-      },
-      persistence: {
-        async saveSession(_messages: readonly ChatMessage[], options?: { name?: string | undefined }) {
-          savedNames.push(options?.name);
-        },
-        async loadPlan() {
-          return undefined;
-        },
-        async savePlan() {},
-        async deletePlan() {},
-      },
-      emit: () => undefined,
-      getTranscriptSnapshot,
-      sessionId: `naming-test-${Math.random().toString(36).slice(2, 8)}`,
-      titleCompleter: async (messages) => {
-        namingCalls.push(messages);
-        return "SUMMARY: user is fixing the router bug\nTITLE: Fix the router bug";
-      },
+  it("handles a storage failure without attempting an auxiliary request", async () => {
+    let calls = 0;
+    const namer = new SessionNamer({
+      prompts: async () => { throw new Error("unavailable storage"); },
+      complete: async () => { calls++; return "TITLE: Ignored"; },
+      applyTitle: () => undefined, enabled: () => true,
     });
-  }
-
-  it("uses the durable transcript rather than just the compacted model history", async () => {
-    const namingCalls: ChatMessage[][] = [];
-    const session = makeSession(namingCalls, [], () => [
-      { kind: "user", id: "early", text: "Implement authentication", done: true },
-    ]);
-    try {
-      session.loadHistory([user("Improve billing")], { title: "Billing" });
-      await session.submit("first follow-up");
-      await session.submit("second follow-up");
-      await flush();
-      expect(requestText(namingCalls[0]!)).toContain("Implement authentication");
-      expect(requestText(namingCalls[0]!)).toContain("Improve billing");
-    } finally {
-      session.dispose();
-    }
-  });
-
-  it("names the session after the second user prompt and persists the generated title", async () => {
-    const namingCalls: ChatMessage[][] = [];
-    const savedNames: unknown[] = [];
-    const session = makeSession(namingCalls, savedNames);
-    (session as unknown as { history: ChatMessage[] }).history = [
-      user("fix the router bug"),
-      assistant("done"),
-    ];
-    await session.submit("first prompt");
+    namer.noteUserPrompt(true);
     await flush();
-    expect(namingCalls).toHaveLength(0);
-    await session.submit("second prompt");
-    await flush();
-    await flush();
-    expect(namingCalls).toHaveLength(1);
-    expect(session.getState().title).toBe("Fix the router bug");
-    expect(savedNames).toContain("Fix the router bug");
-    session.dispose();
-  });
-
-  it("does not count auto agent requests (displayPrompt null)", async () => {
-    const namingCalls: ChatMessage[][] = [];
-    const savedNames: unknown[] = [];
-    const session = makeSession(namingCalls, savedNames);
-    (session as unknown as { history: ChatMessage[] }).history = [
-      user("fix the router bug"),
-      assistant("done"),
-    ];
-    await session.submit("implement the plan", { displayPrompt: null });
-    await session.submit("keep going", { displayPrompt: null });
-    await flush();
-    expect(namingCalls).toHaveLength(0);
-    session.dispose();
+    expect(calls).toBe(0);
   });
 });
 
 describe("resolveNamingRoute", () => {
   const base = { defaultProvider: "free" as const };
+  const defaults = { provider: DEFAULT_NAMING_PROVIDER, model: DEFAULT_NAMING_MODEL };
 
-  it("uses the configured naming route when set", async () => {
-    const { resolveNamingRoute } = await import(
-      "../src/app/controllers/session-naming.js"
-    );
-    expect(
-      resolveNamingRoute(
-        { provider: "free", model: "free-1/mimo-v2.5-free" },
-        {
-          ...base,
-          namingProvider: "openai",
-          namingModel: "gpt-4o-mini",
-        },
-      ),
-    ).toEqual({ provider: "openai", model: "gpt-4o-mini" });
+  it("uses the configured naming route", () => {
+    expect(resolveNamingRoute({ provider: "codex", model: "main" }, {
+      ...base, namingProvider: "openai", namingModel: "gpt-4o-mini",
+    })).toEqual({ provider: "openai", model: "gpt-4o-mini" });
   });
 
-  it("defaults to kilo-auto instead of the session route when unconfigured", async () => {
-    const { resolveNamingRoute, DEFAULT_NAMING_PROVIDER, DEFAULT_NAMING_MODEL } =
-      await import("../src/app/controllers/session-naming.js");
-    expect(
-      resolveNamingRoute(
-        { provider: "free", model: "free-1/mimo-v2.5-free" },
-        base,
-      ),
-    ).toEqual({ provider: DEFAULT_NAMING_PROVIDER, model: DEFAULT_NAMING_MODEL });
-    expect(
-      resolveNamingRoute(
-        { provider: "bynara", model: "bynara/qwen3.8-27b" },
-        { defaultProvider: "bynara" as const },
-      ),
-    ).toEqual({ provider: DEFAULT_NAMING_PROVIDER, model: DEFAULT_NAMING_MODEL });
+  it("uses an independent default rather than the main route", () => {
+    expect(resolveNamingRoute({ provider: "free", model: "free-1/mimo-v2.5-free" }, base)).toEqual(defaults);
+    expect(resolveNamingRoute({ provider: "bynara", model: "qwen3.8" }, { defaultProvider: "bynara" })).toEqual(defaults);
   });
 
-  it("honors a lone naming model on the default naming provider", async () => {
-    const { resolveNamingRoute } = await import(
-      "../src/app/controllers/session-naming.js"
-    );
-    const resolved = resolveNamingRoute(
-      { provider: "bynara", model: "bynara/qwen3.8-27b" },
-      {
-        ...base,
-        namingModel: "free-2/stepfun/step-3.7-flash:free",
-      },
-    );
-    expect(resolved).toEqual({
-      provider: "free",
-      model: "free-2/stepfun/step-3.7-flash:free",
+  it("honors a lone naming model on the default naming provider", () => {
+    expect(resolveNamingRoute({}, { ...base, namingModel: "free-2/stepfun/step-3.7-flash:free" })).toEqual({
+      provider: "free", model: "free-2/stepfun/step-3.7-flash:free",
     });
   });
 
-  it("ignores an unknown configured provider", async () => {
-    const { resolveNamingRoute, DEFAULT_NAMING_PROVIDER, DEFAULT_NAMING_MODEL } =
-      await import("../src/app/controllers/session-naming.js");
-    const resolved = resolveNamingRoute(
-      { provider: "free", model: "free-1/mimo-v2.5-free" },
-      {
-        ...base,
-        namingProvider: "no-such-provider" as never,
-      },
-    );
-    expect(resolved).toEqual({
-      provider: DEFAULT_NAMING_PROVIDER,
-      model: DEFAULT_NAMING_MODEL,
-    });
+  it("ignores an unknown naming provider", () => {
+    expect(resolveNamingRoute({}, { ...base, namingProvider: "no-such-provider" as never })).toEqual(defaults);
   });
 
-  it("resolves the naming provider default model when no naming model is set", async () => {
-    const { resolveNamingRoute } = await import(
-      "../src/app/controllers/session-naming.js"
-    );
-    const resolved = resolveNamingRoute(
-      { provider: "free", model: "free-1/mimo-v2.5-free" },
-      { ...base, namingProvider: "openai" },
-    );
-    expect(resolved.provider).toBe("openai");
-    expect(typeof resolved.model).toBe("string");
+  it("resolves a configured naming provider's default model", () => {
+    const result = resolveNamingRoute({}, { ...base, namingProvider: "openai" });
+    expect(result.provider).toBe("openai");
+    expect(typeof result.model).toBe("string");
   });
 });

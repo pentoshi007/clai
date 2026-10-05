@@ -12,6 +12,7 @@ import type { ChatMessage, NativeToolCall, ToolCall, ToolResult } from "../../ty
 import { estimateMessagesTokens, estimateToolSchemaTokens, RESERVED_OUTPUT_TOKENS } from "../request-accounting.js";
 import { looksLikeTruncatedToolCall, parseAllToolCalls } from "../tool-call-parser.js";
 import { boundedOutput, executeReadOnlyCall, prepareReadOnlyCall, READ_ONLY_TOOLS } from "./read-only-tools.js";
+import { boundFsReadOutput, isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 import { subagentReportStatus } from "./report.js";
 import {
   adaptSubagentHistory,
@@ -174,9 +175,12 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
           signal.throwIfAborted();
           result = { ok: false, output: error instanceof Error ? error.message : String(error) };
         }
-        let output = boundedOutput(`${result.ok ? "Success" : "Error"}: ${result.output}`);
+        const multipleFiles = call.name === "fs.read" && isFsReadMultiOutput(result.output);
+        let output = boundedOutput(`${result.ok ? "Success" : "Error"}:${multipleFiles ? "\n" : " "}${result.output}`);
         const allowance = Math.max(256, Math.floor((researchLimit - estimate()) * 3.3) - 1024);
-        if (output.length > allowance) output = `${output.slice(0, allowance)}\n[Evidence truncated to reserve report context; coverage is incomplete.]`;
+        if (output.length > allowance) output = multipleFiles
+          ? boundFsReadOutput(output, allowance)
+          : `${output.slice(0, allowance)}\n[Evidence truncated to reserve report context; coverage is incomplete.]`;
         emit({ kind: "tool", text: output });
         messages.push(pending.native
           ? { role: "tool", content: output, name: call.name, toolCallId: (call as NativeToolCall).id, ok: result.ok }

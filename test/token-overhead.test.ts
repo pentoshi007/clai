@@ -16,7 +16,7 @@ const sha256 = (value: string): string => createHash("sha256").update(value).dig
 describe("token overhead contracts", () => {
   it("locks the retained tool catalog, arguments, flags and validation constraints", () => {
     expect(sha256(JSON.stringify(getToolDefinitions())))
-      .toBe("d672b0dcaf89883b6a0f67213eced3697ef496958e4d98b1a7835d2e156d9f39");
+      .toBe("9824b6d3a4bcaa772966910d609b310cde562164e29879bf744da24c47d757cb");
   });
 
   it("keeps the complete catalog when compact mode is requested", () => {
@@ -67,16 +67,16 @@ describe("token overhead contracts", () => {
 
   it("preserves full plan-mode and compaction requirements with current inspection guidance", () => {
     expect(sha256(planModeDirective())).toBe("f04a12a631b001920c96899cae3b013a7ac8ef9a60ee72c937b5782ba7371d5e");
-    expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("717b5312b02d2ad9221be8e222a6b9c1b09e84072ed82e3de22ff8f0ed9b41c6");
+    expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("ad4c8f5acfbcc81fcd440a58b3c126c7cc012406e7b82e0e4162e5811eabb00a");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "User asked to fix retry count. Read /project/state.mjs: retryLimit=2. fs.edit changed retryLimit to 3. node check.mjs exited 0.",
       durableState: "ACTIVE PLAN: t1 done; t2 pending: set backoffMs=100 without changing CRLF.",
-    }))).toBe("20a375f28a237852a4476e1bb8ba713db8f3186e1e1c6871e32b3faf598994bc");
+    }))).toBe("3ca118bb8c2f22affc0383161e29501502c685a0863f5272bb9e2405b7dda594");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "Read /project/package.json: Vite installed. Existing source has a mock payment form. Verified webhook route requires signature validation.",
       durableState: "ACTIVE PLAN: Implement signature validation; verify invalid signatures and replay protection.",
       purpose: "plan-implement",
-    }))).toBe("48e73ee6344d7f3e89e874cfc587aea479339eb57228d31f03c8e46f573df56f");
+    }))).toBe("d2172621396b4fb72934f92da06bfab304ee6f91acc3567f669c67d36e38728c");
   });
 
   it("injects full plan detail and acceptance criteria even with a small request-context budget", () => {

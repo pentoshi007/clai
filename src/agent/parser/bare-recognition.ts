@@ -7,7 +7,13 @@ export function inferToolFromArgs(
   const has = (key: string): boolean =>
     Object.prototype.hasOwnProperty.call(obj, key);
   if (has("command") || has("cmd")) return undefined;
-  if (has("files")) return "fs.writeMany";
+  if (has("files")) {
+    const files = obj.files;
+    if (!Array.isArray(files) || files.length === 0) return undefined;
+    if (files.every((file) => file && typeof file === "object" && typeof file.content === "string")) return "fs.writeMany";
+    if (files.every((file) => file && typeof file === "object" && typeof file.path === "string" && !("content" in file))) return "fs.read";
+    return undefined;
+  }
   if (has("startLine") && has("endLine") && has("path")) return "fs.replaceLines";
   if (has("oldText") || has("newText")) return "fs.edit";
   if (has("position") && has("content") && has("path")) return "fs.append";

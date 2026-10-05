@@ -9,6 +9,7 @@ import {
 } from "../tools/policies/output-policy.js";
 import type { ToolCall, ToolResult } from "../types.js";
 import { getReliabilityPolicy } from "./reliability-policy.js";
+import { boundFsReadOutput, isFsReadMultiOutput } from "../tools/fs/read-sections.js";
 
 function safeArtifactName(name: string): string {
   return (
@@ -340,6 +341,13 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
     call.name === "pdf.read"
   ) {
     const cap = fsPassthroughCapChars();
+    if (call.name === "fs.read" && isFsReadMultiOutput(output)) {
+      const body = boundFsReadOutput(output, cap);
+      const footer = body !== output && result.outputPath
+        ? `\n\n[Full multi-file output: ${result.outputPath}. Each file above is an independent read; clipped sections have incomplete coverage.]`
+        : "";
+      return [failLine, body + footer].filter(Boolean).join("\n").trim();
+    }
     const { text, truncated } = summarizeOutput(output, cap, { preferErrors });
     const body =
       text +

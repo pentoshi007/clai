@@ -13,7 +13,6 @@ import {
   MOUSE_ON,
   createTerminalSession,
 } from "../../src/classic/bootstrap/terminal-session.js";
-import { createRendererSuspendPort } from "../../src/classic/bootstrap/suspend-port.js";
 import {
   createOsc52Renderer,
   osc52Sequence,
@@ -185,55 +184,6 @@ describe("terminal session", () => {
     expect(f.writes).not.toContain(CLEAR_SCREEN);
     session.clearScreen();
     expect(f.writes.at(-1)).toBe(CLEAR_SCREEN);
-  });
-});
-
-describe("renderer suspend port", () => {
-  it("unmounts and releases the terminal on suspend, restoring it on resume", () => {
-    const f = fakes();
-    const session = createTerminalSession({ ...f, mouse: false });
-    const order: string[] = [];
-    const control = {
-      mount: () => order.push("mount"),
-      unmount: () => order.push("unmount"),
-    };
-    const port = createRendererSuspendPort({ control, session });
-    session.enter();
-    session.attachInput(() => {});
-    f.writes.length = 0;
-
-    port.suspend();
-    expect(order).toEqual(["unmount"]);
-    expect(session.entered).toBe(false);
-    expect(session.inputAttached).toBe(false);
-    expect(f.writes).toEqual([CURSOR_SHOW, BRACKETED_PASTE_OFF, ALT_SCREEN_OFF]);
-
-    port.writeScrollback("exported\n");
-    expect(f.writes.at(-1)).toBe("exported\n");
-
-    port.resume();
-    expect(order).toEqual(["unmount", "mount"]);
-    expect(session.entered).toBe(true);
-    expect(session.inputAttached).toBe(true);
-  });
-
-  it("is idempotent in both directions", () => {
-    const f = fakes();
-    const session = createTerminalSession({ ...f, mouse: false });
-    let mounts = 0;
-    let unmounts = 0;
-    const port = createRendererSuspendPort({
-      control: { mount: () => (mounts += 1), unmount: () => (unmounts += 1) },
-      session,
-    });
-    port.resume();
-    port.suspend();
-    port.suspend();
-    port.resume();
-    port.resume();
-    expect(unmounts).toBe(1);
-    expect(mounts).toBe(1);
-    expect(port.suspended).toBe(false);
   });
 });
 

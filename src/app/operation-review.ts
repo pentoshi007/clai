@@ -33,7 +33,7 @@ function stringSections(value: unknown, label = "args"): string[] {
 function resolvedPaths(call: ToolCall): string[] {
   if (!call.name.startsWith("fs.")) return [];
   const paths: string[] = typeof call.args.path === "string" ? [call.args.path] : [];
-  if (call.name === "fs.writeMany" && Array.isArray(call.args.files)) {
+  if ((call.name === "fs.writeMany" || call.name === "fs.read") && Array.isArray(call.args.files)) {
     for (const entry of call.args.files) {
       if (entry && typeof entry === "object" && "path" in entry && typeof entry.path === "string") paths.push(entry.path);
     }

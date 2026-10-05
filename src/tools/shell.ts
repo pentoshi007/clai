@@ -16,6 +16,7 @@ export interface ShellExecArgs {
   command: string;
   requestedCommand?: string | undefined;
   env?: Readonly<Record<string, string>> | undefined;
+  onSpawn?: (() => void) | undefined;
   cwd?: string | undefined;
   timeoutMs?: number | undefined;
   signal?: AbortSignal | undefined;

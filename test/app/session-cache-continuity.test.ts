@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,6 +96,58 @@ function wire(request: CompletionRequest, dialect: WireDialect): unknown[] {
 }
 
 describe("production session cache continuity", () => {
+  it.each<[ProviderId, string, WireDialect]>([
+    ["explabs", "gpt-5.6-luna", "chat"],
+    ["explabs", "gpt-5.6-luna", "responses"],
+    ["openai", "gpt-5", "responses"],
+  ])("keeps %s %s %s tools, settings and rendered prefixes unchanged across single/multi reads and compaction", async (provider, model, dialect) => {
+    const paths = [join(directory, "one.ts"), join(directory, "two.ts")];
+    await Promise.all(paths.map((path, index) => writeFile(path, `export const value = ${index};\n`)));
+    const requests: CompletionRequest[] = [];
+    const affinities: Array<string | undefined> = [];
+    stream.mockImplementation(async (request: CompletionRequest, onToken: (text: string) => void, options?: StreamWithProviderOptions) => {
+      requests.push(successfulRequestSnapshot(provider, model, request));
+      affinities.push(currentSessionAffinity());
+      options?.onSuccessfulRequest?.(successfulRequestSnapshot(provider, model, request));
+      if (requests.length <= 2) {
+        const args = requests.length === 1
+          ? { path: paths[0], offset: 1, limit: 1 }
+          : { files: [{ path: paths[0], pattern: "export" }, { path: paths[1], startLine: 1, endLine: 1 }] };
+        return { provider, model, text: "", finishReason: "tool_calls", toolCalls: [{ id: `read-${requests.length}`, name: "fs.read", args }] };
+      }
+      onToken(summary);
+      return { provider, model, text: summary, finishReason: "stop" };
+    });
+    complete.mockImplementation(async (request: CompletionRequest) => {
+      requests.push({ ...successfulRequestSnapshot(provider, model, request), purpose: request.purpose });
+      affinities.push(currentSessionAffinity());
+      return { provider, model, text: summary, finishReason: "stop" };
+    });
+    session = new SessionController({
+      agent: createCurrentAgentPort(), mode: "ask", provider, model, sessionId: `read-cache-${provider}-${dialect}`,
+      emit: () => {}, noHistory: true,
+      persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    });
+    session.setContextLimitTokens(1_000_000);
+    expect((await session.submit(`Read these two files and explain them. This is research only.\n${"Relevant request evidence. ".repeat(2000)}`)).status).toBe("completed");
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[2]!.messages)).toContain("# fs.read file=2/2");
+    expect((await session.compact(undefined, 2, undefined, { persist: false })).summarized).toBe(true);
+    expect(requests).toHaveLength(4);
+    expect(requests[3]!.purpose).toBe("compaction");
+    for (let index = 1; index < requests.length; index += 1) {
+      const previous = requests[index - 1]!;
+      const next = requests[index]!;
+      const prefix = wire(previous, dialect);
+      expect(wire(next, dialect).slice(0, prefix.length)).toEqual(prefix);
+      expect(next.tools).toEqual(previous.tools);
+      expect(next.thinking).toEqual(previous.thinking);
+      expect(next.toolChoice).toEqual(previous.toolChoice);
+      expect(next.parallelToolCalls).toEqual(previous.parallelToolCalls);
+    }
+    expect(new Set(affinities)).toEqual(new Set([`read-cache-${provider}-${dialect}`]));
+  }, 30_000);
+
   it.each<[ProviderId, string, WireDialect, "manual" | "automatic"]>([
     ["kiro", "claude-opus-5.5-thinking", "kiro", "manual"],
     ["kiro", "claude-sonnet-4.5-thinking", "kiro", "automatic"],
@@ -127,8 +179,8 @@ describe("production session cache continuity", () => {
       model,
       sessionId: `cache-${provider}-${dialect}`,
       emit: () => {},
-      noHistory: true,
-      titleCompleter: async () => "Cache continuity",
+      noHistory: false,
+      titleCompleter: async () => "TITLE: Cache continuity",
       persistence: {
         saveSession: async () => {},
         loadPlan: async () => undefined,

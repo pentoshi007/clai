@@ -5,27 +5,17 @@ import {
   type FileWrite,
 } from "../fs.js";
 import { type ToolHandler } from "../tool-types.js";
-import {
-  optionalBoolean,
-  optionalNumber,
-  optionalString,
-  requireString,
-} from "./args.js";
+import { requireString } from "./args.js";
+import { parseFsReadInput } from "../fs/read-input.js";
+import { fsReadMany } from "../fs/read-many.js";
 
 export const toolRegistry_FILES_1: Record<string, ToolHandler> = {
   async "fs.read"(args, options) {
-    return fsRead(requireString(args, "path"), {
-      maxBytes: optionalNumber(args, "maxBytes"),
-      offset: optionalNumber(args, "offset"),
-      limit: optionalNumber(args, "limit"),
-      startLine: optionalNumber(args, "startLine"),
-      endLine: optionalNumber(args, "endLine"),
-      pattern: optionalString(args, "pattern"),
-      context: optionalNumber(args, "context"),
-      maxMatches: optionalNumber(args, "maxMatches"),
-      caseInsensitive: optionalBoolean(args, "caseInsensitive"),
-      confirmed: options?.confirmed,
-    });
+    const input = parseFsReadInput(args);
+    if (!input.ok) return { ok: false, exitCode: 1, output: input.error };
+    if (input.multiple) return fsReadMany(input.files, options);
+    const { path, ...filters } = input.files[0]!;
+    return fsRead(path, { ...filters, confirmed: options?.confirmed, signal: options?.signal });
   },
   async "fs.write"(args, options) {
     return fsWrite(

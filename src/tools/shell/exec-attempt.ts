@@ -190,6 +190,7 @@ export async function shellExecAttempt(
 
     const abort = (): void => terminate("abort");
 
+    child.once("spawn", () => args.onSpawn?.());
     child.stdout?.on("data", (chunk: Buffer) => append(chunk, "stdout"));
     child.stderr?.on("data", (chunk: Buffer) => append(chunk, "stderr"));
     child.on("error", (error) => {

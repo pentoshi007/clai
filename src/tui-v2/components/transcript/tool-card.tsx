@@ -45,6 +45,8 @@ import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/ob
 import { shouldDefaultFormattedView } from "../../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.js";
 import { selectableRowStyle } from "./selectable-line.js";
+import { parseFsReadSections } from "../../../tools/fs/read-sections.js";
+import { middleClipText, renderColumns } from "../../../ui-core/rendering/text-width.js";
 
 const MARKDOWN_PREVIEWS = new ObjectRenderCache<ToolItem, StyledLine[]>(24 * 1024 * 1024);
 
@@ -114,9 +116,10 @@ function BatchSubCard(props: {
   expanded: boolean;
   parentExpanded: boolean;
   onOpen: (section: BatchSection) => void;
+  contentWidth: number;
 }): ReactNode {
-  const { section, theme, expanded, parentExpanded, onOpen } = props;
-  const presented = presentBatchSection(section, expanded);
+  const { section, theme, expanded, parentExpanded, onOpen, contentWidth } = props;
+  const presented = presentBatchSection(section, expanded, contentWidth);
   const status = section.status ?? (section.ok ? "ok" : "fail");
   const borderFg =
     status === "running"
@@ -233,7 +236,7 @@ export function ToolCard(props: {
   const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
     presentTool(item);
   const isFsRead = item.name === "fs.read";
-  const fsReadArgs = isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined;
+  const fsReadArgs = useMemo(() => isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined, [isFsRead, item.argsDisplay]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (item.status !== "running" && item.status !== "queued") return;
@@ -242,6 +245,7 @@ export function ToolCard(props: {
   }, [item.status]);
   const elapsedLabel = toolElapsedLabel(item, now);
   const tail = spool.tail(item.toolCallId);
+  const fsReadSections = useMemo(() => fsReadArgs?.files ? parseFsReadSections(tail) : [], [fsReadArgs, tail]);
   const fileChanges = item.fileChanges;
   const fileChangeStats = fileChangeLineStats(fileChanges);
   const isWriteMany = item.name === "fs.writeMany";
@@ -566,18 +570,34 @@ export function ToolCard(props: {
 
       {isFsRead ? (
         <box style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
-          {fsReadArgs?.options ? (
-            <box style={{ flexDirection: "row", width: "100%" }}>
-              <text selectable style={{ fg: theme.muted }}>options: </text>
-              <text selectable style={{ fg: theme.inputBorder }}>{fsReadArgs.options}</text>
-            </box>
-          ) : null}
-          {fsReadArgs?.path ? (
-            <box style={{ flexDirection: "row", width: "100%" }}>
-              <text selectable style={{ fg: theme.muted }}>file: </text>
-              <LinkableText text={fsReadArgs.path} theme={theme} fg={theme.inputBorder} selectable />
-            </box>
-          ) : null}
+          {(fsReadArgs?.files ?? (fsReadArgs ? [fsReadArgs] : [])).map((file, index, files) => {
+            const section = fsReadSections.find((entry) => entry.index === index + 1);
+            const glyph = section ? `${section.ok ? "✓" : "✗"} ` : "";
+            const label = fsReadArgs?.files ? `file ${index + 1}/${files.length}` : "file";
+            const pathBudget = Math.max(8, (contentWidth ?? termWidth - 6) - renderColumns(`${label}: ${glyph}`));
+            const path = middleClipText(file.path, pathBudget);
+            const options = file.options ? middleClipText(file.options, Math.max(8, (contentWidth ?? termWidth - 6) - 9) * 2) : undefined;
+            return (
+              <box key={index} style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
+                {options ? (
+                  <box style={{ flexDirection: "row", width: "100%" }}>
+                    <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>options: </text>
+                    <text selectable style={{ fg: theme.inputBorder, flexShrink: 1, minWidth: 0 }}>{options}</text>
+                  </box>
+                ) : null}
+                {file.path ? (
+                  <box style={{ flexDirection: "row", width: "100%" }}>
+                    <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>{`${label}: ${glyph}`}</text>
+                    {path === file.path ? (
+                      <LinkableText text={path} theme={theme} fg={section?.ok === false ? theme.diffDel : theme.inputBorder} selectable />
+                    ) : (
+                      <text selectable style={{ fg: section?.ok === false ? theme.diffDel : theme.inputBorder, height: 1 }}>{path}</text>
+                    )}
+                  </box>
+                ) : null}
+              </box>
+            );
+          })}
         </box>
       ) : argsDisplay && argsLabel ? (
         <box
@@ -620,6 +640,7 @@ export function ToolCard(props: {
               expanded={batchExpanded}
               parentExpanded={batchExpanded}
               onOpen={openSection}
+              contentWidth={Math.max(8, diffPaneWidth - 6)}
             />
           ))
         : null}

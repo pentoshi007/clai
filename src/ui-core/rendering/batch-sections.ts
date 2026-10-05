@@ -1,5 +1,7 @@
 
 import { cleanToolOutputLines, presentOutput } from "./tool-presenter.js";
+import { parseFsReadSections } from "../../tools/fs/read-sections.js";
+import { middleClipText, renderColumns } from "./text-width.js";
 
 export type BatchSectionStatus = "ok" | "fail" | "cancelled" | "running";
 
@@ -81,11 +83,23 @@ export interface BatchSectionPresentation {
   readonly hasBody: boolean;
 }
 
-function presentFsReadSection(body: string): {
+function presentFsReadSection(body: string, columns?: number): {
   readonly lines: readonly string[];
   readonly hiddenAboveCount: number;
 } {
   const cleaned = cleanToolOutputLines(body);
+  const sections = parseFsReadSections(body);
+  if (sections.length > 0) {
+    const lines = sections.flatMap((section) => {
+      const prefix = `${section.ok ? "✓" : "✗"} file ${section.index}/${section.total}: `;
+      const path = columns === undefined ? section.path : middleClipText(section.path, Math.max(1, columns - renderColumns(prefix)));
+      const title = `${prefix}${path}`;
+      const header = section.body.match(/^# fs\.read path=.*?(?= lines=| pattern=| bytes=)(.*)$/m)?.[1]?.trim();
+      const detail = section.ok ? header : section.body.split("\n")[0];
+      return detail ? [title, detail] : [title];
+    });
+    return { lines, hiddenAboveCount: Math.max(0, cleaned.length - lines.length) };
+  }
   const header = cleaned.find((line) => /^#\s*fs\.read\b/.test(line.trim()));
   const lines = header ? [header] : cleaned.slice(0, 1);
   return { lines, hiddenAboveCount: Math.max(0, cleaned.length - lines.length) };
@@ -94,6 +108,7 @@ function presentFsReadSection(body: string): {
 export function presentBatchSection(
   section: BatchSection,
   expanded: boolean,
+  columns?: number,
 ): BatchSectionPresentation {
   const status = section.status ?? (section.ok ? "ok" : "fail");
   const bodyForPresent =
@@ -102,7 +117,7 @@ export function presentBatchSection(
       : section.body;
   const compactFsRead = section.name === "fs.read" && !expanded && status !== "running";
   const presented = compactFsRead
-    ? presentFsReadSection(bodyForPresent)
+    ? presentFsReadSection(bodyForPresent, columns)
     : presentOutput(bodyForPresent, undefined, expanded);
   const hasBody = bodyForPresent.trim().length > 0;
   let glyph = "✗";

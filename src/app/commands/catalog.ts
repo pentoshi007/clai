@@ -97,6 +97,7 @@ export const slashCommands: SlashCommand[] = [
     description: "browse past sessions",
   },
   { command: "/save", usage: "<name>", description: "save session" },
+  { command: "/prompts", description: "browse this session's user prompts with timestamps, models, providers, and effort" },
   { command: "/reset", description: "clear all saved history" },
   { command: "/cwd", usage: "<path>", description: "change working directory" },
   {

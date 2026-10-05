@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateConfig } from "../src/store/config.js";
 import { getDataDir } from "../src/store/paths.js";
 import { toolRegistry } from "../src/tools/registry.js";
+import { jobManager } from "../src/tools/jobs.js";
 import {
   detectRtk,
   forgetRtk,
@@ -15,7 +16,7 @@ import {
   rtkPathEnv,
 } from "../src/tools/rtk/binary.js";
 import { runRtkMaintenance, type RtkMaintenanceState } from "../src/tools/rtk/install.js";
-import { prepareRtkExecution, rtkRewriteCount } from "../src/tools/rtk/rewrite.js";
+import { prepareRtkExecution, rtkExecutionCount } from "../src/tools/rtk/rewrite.js";
 import { FAKE_RTK_MARKER, installFakeRtk, type FakeRtk } from "./helpers/fake-rtk.js";
 
 const maintenance = vi.hoisted(() => ({ current: undefined as RtkMaintenanceState | undefined }));
@@ -54,11 +55,18 @@ describe.skipIf(process.platform === "win32")("rtk command rewriting", () => {
     expect(await rtk.invocations()).toEqual([]);
   });
 
+  it("does not count an aborted preparation", async () => {
+    const sessionId = `rtk-aborted-${basename(rtk.dir)}`;
+    expect(await prepareRtkExecution("git status", AbortSignal.abort(), sessionId)).toEqual({ command: "git status" });
+    expect(rtkExecutionCount(sessionId)).toBe(0);
+    expect((await rtk.invocations()).filter((line) => line === "git status")).toEqual([]);
+  });
+
   it("runs the rewritten command with rtk's hook warning suppressed", async () => {
-    const before = rtkRewriteCount();
+    const before = rtkExecutionCount();
     const execution = await prepareRtkExecution("git status");
-    expect(execution).toEqual({ command: "rtk git status", env: RTK_EXEC_ENV });
-    expect(rtkRewriteCount()).toBe(before + 1);
+    expect(execution).toEqual({ command: "rtk git status", env: RTK_EXEC_ENV, onSpawn: expect.any(Function) });
+    expect(rtkExecutionCount()).toBe(before);
   });
 
   it("asks rtk about the trimmed command", async () => {
@@ -79,9 +87,9 @@ describe.skipIf(process.platform === "win32")("rtk command rewriting", () => {
     ["a multi-line rewrite", "fake-multiline"],
     ["an empty rewrite", "fake-silent"],
   ])("keeps the original command for %s", async (_label, command) => {
-    const before = rtkRewriteCount();
+    const before = rtkExecutionCount();
     expect(await prepareRtkExecution(command)).toEqual({ command });
-    expect(rtkRewriteCount()).toBe(before);
+    expect(rtkExecutionCount()).toBe(before);
   });
 
   it.each([
@@ -109,9 +117,9 @@ describe.skipIf(process.platform === "win32")("rtk command rewriting", () => {
     "cd /tmp && rtk git diff --no-compact",
     "bash -c 'rtk recall 7f79db136968'",
   ])("gives a follow-up command that invokes rtk itself rtk's environment: %s", async (command) => {
-    const before = rtkRewriteCount();
+    const before = rtkExecutionCount();
     expect(await prepareRtkExecution(command)).toEqual({ command, env: RTK_EXEC_ENV });
-    expect(rtkRewriteCount()).toBe(before);
+    expect(rtkExecutionCount()).toBe(before);
   });
 
   it.each([
@@ -178,6 +186,21 @@ describe.skipIf(process.platform === "win32")("rtk installed outside PATH", () =
       env: { ...process.env, ...execution.env },
     });
     expect(stdout).toContain(`${FAKE_RTK_MARKER} git status`);
+  });
+
+  it("keeps background execution on the verified binary instead of a PATH impostor", async () => {
+    const sessionId = `rtk-offpath-${basename(fake.dir)}`;
+    const started = await toolRegistry["shell.exec"]!(
+      { command: "git status", background: "always" },
+      { sessionId },
+    );
+    const id = started.backgroundJob?.id;
+    if (!id) throw new Error(started.output);
+    const result = await jobManager.waitForJob(id, { timeoutMs: 5_000 });
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain(`${FAKE_RTK_MARKER} git status`);
+    expect(result.output).not.toContain("impostor");
+    expect(rtkExecutionCount(sessionId)).toBe(1);
   });
 
   it("keeps rtk reachable for the follow-up commands its own output suggests", async () => {
@@ -313,6 +336,77 @@ describe.skipIf(process.platform === "win32")("shell.exec with rtk compression",
     expect(result.output).toContain(`${FAKE_RTK_MARKER} grep`);
     expect(result.outputPath).toBeDefined();
     expect(basename(result.outputPath!)).toMatch(/-grep\.txt$/);
+  });
+
+  it("does not count a command that fails to launch", async () => {
+    const before = rtkExecutionCount();
+    const result = await toolRegistry["shell.exec"]!({ command: "git status", cwd: join(workdir, "missing") });
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("INVALID_CWD");
+    expect(rtkExecutionCount()).toBe(before);
+  });
+
+  it("does not count a background command with an invalid working directory", async () => {
+    const sessionId = `rtk-invalid-job-${basename(workdir)}`;
+    const result = await toolRegistry["shell.exec"]!(
+      { command: "git status", cwd: join(workdir, "missing"), background: "always" },
+      { sessionId },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("INVALID_CWD");
+    expect(rtkExecutionCount(sessionId)).toBe(0);
+    expect((await rtk.invocations()).filter((line) => line === "git status")).toEqual([]);
+  });
+
+  it.each([{ background: "always" }, { responder: true }])("does not launch or count an expired authorized job: %j", async (mode) => {
+    const sessionId = `rtk-expired-${basename(workdir)}`;
+    const result = await toolRegistry["shell.exec"]!(
+      { command: "git status", cwd: workdir, ...mode },
+      { sessionId, engagementAuthorization: { target: "example.com", expiresAt: "2000-01-01T00:00:00.000Z" } },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatch(/authorization.*expired/i);
+    expect(rtkExecutionCount(sessionId)).toBe(0);
+    expect((await rtk.invocations()).filter((line) => line === "git status")).toEqual([]);
+  });
+
+  it("counts executions against their owning conversation rather than the process", async () => {
+    const sessionId = `rtk-session-${basename(workdir)}`;
+    expect(rtkExecutionCount(sessionId)).toBe(0);
+    await toolRegistry["shell.exec"]!({ command: "git status", cwd: workdir }, { sessionId });
+    expect(rtkExecutionCount(sessionId)).toBe(1);
+    expect(rtkExecutionCount(`${sessionId}-new`)).toBe(0);
+    expect(rtkExecutionCount(sessionId)).toBe(1);
+  });
+
+  it.each([
+    { background: "always" },
+    { responder: true },
+  ])("compresses explicitly delegated commands and preserves their receipts: %j", async (mode) => {
+    const sessionId = `rtk-job-${basename(workdir)}`;
+    const started = await toolRegistry["shell.exec"]!(
+      { command: "git status", cwd: workdir, ...mode },
+      { sessionId, taskId: "t4", delegationId: sessionId },
+    );
+    const id = started.backgroundJob?.id;
+    if (!id) throw new Error(started.output);
+    const result = await jobManager.waitForJob(id, { timeoutMs: 5_000 });
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain(`${FAKE_RTK_MARKER} git status`);
+    expect(result.output).toContain("hook-warning=1");
+    expect(jobManager.getJob(id)).toMatchObject({
+      commandDisplay: "git status",
+      ownerSessionId: sessionId,
+      taskId: "t4",
+      responder: "responder" in mode && mode.responder === true,
+    });
+    expect(rtkExecutionCount(sessionId)).toBe(1);
+    const duplicate = await toolRegistry["shell.exec"]!(
+      { command: "git status", cwd: workdir, ...mode },
+      { sessionId, taskId: "t4", delegationId: sessionId },
+    );
+    expect(duplicate.backgroundJob?.id).toBe(id);
+    expect(rtkExecutionCount(sessionId)).toBe(1);
   });
 
   it("behaves identically to the unmodified run apart from the compressed body", async () => {

@@ -505,6 +505,22 @@ describe("classic command parity (W12)", () => {
     }
   });
 
+  spec(["prompts"], "/prompts opens the shared disk pager with prompt metadata", async () => {
+    const { services } = open();
+    await services.session.promptHistory.append({
+      content: "Research the cache prefix", timestamp: 1791110400000,
+      provider: "codex", model: "prompt-model", effort: "high",
+    });
+    await run(services, "prompts");
+    const overlay = services.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind === "pager") {
+      expect(overlay.title).toBe("Session prompts");
+      expect(overlay.markdown).toBe("force");
+      expect((await overlay.source!.readPage(0)).body).toContain("Research the cache prefix");
+    }
+  });
+
   spec(["skills"], "/skills opens the skill picker, or explains where skills live", async () => {
     const { services } = open();
     await run(services, "skills");

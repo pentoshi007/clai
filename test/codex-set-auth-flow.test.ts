@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   startCodexBrowserAuth: vi.fn(),
   startCodexDeviceAuth: vi.fn(),
   pollCodexDeviceAuth: vi.fn(),
+  maybeRefreshCodexCredential: vi.fn(),
   appendProviderKey: vi.fn(),
   replaceProviderKey: vi.fn(),
   setProviderKeys: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("../src/llm/codex-auth.js", async (importOriginal) => {
     startCodexBrowserAuth: h.startCodexBrowserAuth,
     startCodexDeviceAuth: h.startCodexDeviceAuth,
     pollCodexDeviceAuth: h.pollCodexDeviceAuth,
+    maybeRefreshCodexCredential: h.maybeRefreshCodexCredential,
   };
 });
 
@@ -112,6 +114,7 @@ describe("codex /set auth flow", () => {
       pollIntervalSeconds: 5,
     });
     h.pollCodexDeviceAuth.mockReset().mockResolvedValue(NEW_CREDENTIAL);
+    h.maybeRefreshCodexCredential.mockReset().mockResolvedValue(undefined);
     h.appendProviderKey.mockReset().mockImplementation(async (_p: string, value: string) => {
       h.stored.push({ id: `k${h.stored.length}`, value, createdAt: 0 });
       return "fallback" as const;
@@ -203,6 +206,32 @@ describe("codex /set auth flow", () => {
     expect(h.replaceProviderKey).toHaveBeenCalledWith("codex", oldKey, NEW_KEY);
     expect(h.stored[0]).toMatchObject({ id: "k0", value: NEW_KEY, disabled: true });
     expect(notices.some((text) => text.startsWith("refreshed ChatGPT Subscription account "))).toBe(true);
+  });
+
+  it("refreshes the embedded token before reauthentication and preserves sibling slots", async () => {
+    const old = encodeCodexKey({ ...credential("acc-old-aaaaaaaaaaaa", "acct-old"), refreshToken: "fixture-refresh" });
+    const fresh = encodeCodexKey({ ...credential("acc-fresh-aaaaaaaaaa", "acct-old"), refreshToken: "rotated-refresh" });
+    const sibling = { id: "k1", value: NEW_KEY, createdAt: 1 };
+    h.stored.push({ id: "k0", value: old, createdAt: 0, disabled: true }, sibling);
+    h.maybeRefreshCodexCredential.mockResolvedValue(fresh);
+    const { services } = makeServices([{ action: "refresh", slotId: "k0" }, undefined]);
+    const { openLlmKeysEditor } = await import("../src/ui-core/commands/key-commands.js");
+    await openLlmKeysEditor(services as never, "codex");
+    expect(h.maybeRefreshCodexCredential).toHaveBeenCalledWith(old);
+    expect(h.startCodexDeviceAuth).not.toHaveBeenCalled();
+    expect(h.stored[0]).toMatchObject({ id: "k0", value: fresh, createdAt: 0, disabled: true });
+    expect(h.stored[1]).toEqual(sibling);
+  });
+
+  it("falls back to sign-in when an embedded refresh token is rejected", async () => {
+    const old = encodeCodexKey({ ...credential("acc-old-aaaaaaaaaaaa", "acct-old"), refreshToken: "fixture-refresh" });
+    h.stored.push({ id: "k0", value: old, createdAt: 0 });
+    const { services } = makeServices([{ action: "refresh", slotId: "k0" }, undefined]);
+    const { openLlmKeysEditor } = await import("../src/ui-core/commands/key-commands.js");
+    await openLlmKeysEditor(services as never, "codex");
+    expect(h.maybeRefreshCodexCredential).toHaveBeenCalledWith(old);
+    expect(h.startCodexDeviceAuth).toHaveBeenCalledOnce();
+    expect(h.replaceProviderKey).toHaveBeenCalledWith("codex", old, NEW_KEY);
   });
 
   it("saves star/disable/remove edits on untouched rows without invalid-token errors", async () => {

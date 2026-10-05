@@ -2,6 +2,7 @@ import type { ToolResult } from "../../types.js";
 import type { FsReadOptions } from "../fs.js";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
+import { clipReadText, DEFAULT_READ_MAX_BYTES, ReadOutputBudget } from "./read-budget.js";
 
 export const DEFAULT_LINE_WINDOW = 200;
 
@@ -17,14 +18,21 @@ const HARD_PATTERN_CONTEXT = 20;
 
 async function* iterateFileLines(
   resolved: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string, void, undefined> {
   const stream = createReadStream(resolved, { encoding: "utf8" });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  const stop = (): void => { rl.close(); stream.destroy(); };
+  signal?.addEventListener("abort", stop, { once: true });
   try {
+    signal?.throwIfAborted();
     for await (const line of rl) {
+      signal?.throwIfAborted();
       yield line;
     }
+    signal?.throwIfAborted();
   } finally {
+    signal?.removeEventListener("abort", stop);
     rl.close();
     stream.destroy();
   }
@@ -162,23 +170,32 @@ export async function readLineWindow(
   limit: number,
   fileBytes: number,
   note?: string,
+  maxBytes = DEFAULT_READ_MAX_BYTES,
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
   const collected: string[] = [];
+  const budget = new ReadOutputBudget(maxBytes);
   let lineNo = 0;
   let totalLines = 0;
   let reachedEnd = true;
+  let clippedLine: number | undefined;
 
-  for await (const line of iterateFileLines(resolved)) {
+  for await (const line of iterateFileLines(resolved, signal)) {
     lineNo += 1;
     totalLines = lineNo;
     if (lineNo < start) continue;
     if (collected.length < limit) {
-      collected.push(`${lineNo}: ${line}`);
-    } else {
-      if (lineNo >= start + limit + 200_000) {
+      const numbered = `${lineNo}: ${line}`;
+      const text = budget.take(numbered);
+      if (text !== undefined) collected.push(text);
+      if (budget.truncated) {
         reachedEnd = false;
+        if (text !== undefined) clippedLine = lineNo;
         break;
       }
+    } else {
+      reachedEnd = false;
+      break;
     }
   }
 
@@ -204,11 +221,14 @@ export async function readLineWindow(
     `# fs.read path=${resolved} lines=${first}-${last} of ${totalLabel} bytes=${fileBytes}` +
     (note ? `\n# ${note}` : "");
   const next = hasMore
-    ? `\n# hasMore=true next=${JSON.stringify({ offset: last + 1, limit })}`
+    ? `\n# hasMore=true next=${JSON.stringify({ offset: clippedLine ?? last + 1, limit })}`
     : `\n# hasMore=false`;
+  const byteNotice = budget.truncated
+    ? `\n# Content capped at maxBytes=${maxBytes}${clippedLine ? `; line ${clippedLine} is incomplete` : ""}. Narrow the range, or read this file alone with a larger maxBytes.`
+    : "";
   return {
     ok: true,
-    output: `${header}\n${collected.join("\n")}${next}`,
+    output: `${header}\n${collected.join("\n")}${byteNotice}${next}`,
     truncated: hasMore,
   };
 }
@@ -250,6 +270,8 @@ export async function readByPattern(
   }
 
   const ring: string[] = [];
+  const maxBytes = options.maxBytes ?? DEFAULT_READ_MAX_BYTES;
+  const budget = new ReadOutputBudget(maxBytes);
   const matchBlocks: string[] = [];
   let matches = 0;
   let lineNo = 0;
@@ -264,26 +286,32 @@ export async function readByPattern(
     currentBlock = [];
   };
 
-  for await (const line of iterateFileLines(resolved)) {
+  const appendLine = (number: number, line: string): void => {
+    const text = budget.take(`${number}: ${line}`);
+    if (text !== undefined) currentBlock.push(text);
+  };
+
+  for await (const line of iterateFileLines(resolved, options.signal)) {
     lineNo += 1;
+    if (lineNo > rangeEnd && pendingAfter === 0) break;
     bytesSeen += Buffer.byteLength(line, "utf8") + 1;
     if (bytesSeen > PATTERN_SCAN_MAX_BYTES) {
       truncatedScan = true;
       break;
     }
 
-    ring.push(line);
+    ring.push(clipReadText(line, maxBytes));
     if (ring.length > context + 1) ring.shift();
 
     const inRange = lineNo >= rangeStart && lineNo <= rangeEnd;
+    re.lastIndex = 0;
     const isMatch = inRange && re.test(line);
 
     if (pendingAfter > 0 && !isMatch) {
-      currentBlock.push(`${lineNo}: ${line}`);
+      appendLine(lineNo, line);
+      if (budget.truncated) break;
       pendingAfter -= 1;
       if (pendingAfter === 0) flushBlock();
-      if (matches >= maxMatches && pendingAfter === 0) {
-      }
       continue;
     }
 
@@ -294,11 +322,12 @@ export async function readByPattern(
         const startCtx = before.slice(Math.max(0, before.length - context));
         const ctxStartLine = lineNo - startCtx.length;
         for (let i = 0; i < startCtx.length; i += 1) {
-          currentBlock.push(`${ctxStartLine + i}: ${startCtx[i]}`);
+          appendLine(ctxStartLine + i, startCtx[i]!);
         }
       }
-      currentBlock.push(`${lineNo}: ${line}`);
+      appendLine(lineNo, line);
       matches += 1;
+      if (budget.truncated) break;
       pendingAfter = context;
       if (pendingAfter === 0) flushBlock();
       continue;
@@ -309,7 +338,7 @@ export async function readByPattern(
       break;
     }
   }
-  if (pendingAfter > 0) flushBlock();
+  flushBlock();
 
   const capped = matches > maxMatches;
   const shown = Math.min(matches, maxMatches);
@@ -335,12 +364,14 @@ export async function readByPattern(
   }
 
   const body = matchBlocks.join("\n--\n");
-  const footer = capped
+  const footer = budget.truncated
+    ? `\n# hasMore=true (content capped at maxBytes=${maxBytes}; a match or its context is incomplete. Narrow the pattern/range, or read this file alone with a larger maxBytes.)`
+    : capped
     ? `\n# hasMore=true (capped at maxMatches=${maxMatches}; raise maxMatches up to ${HARD_PATTERN_MAX_MATCHES} or narrow the range)`
     : `\n# hasMore=false`;
   return {
     ok: true,
     output: `${header}\n${body}${footer}`,
-    truncated: truncatedScan || capped,
+    truncated: truncatedScan || capped || budget.truncated,
   };
 }

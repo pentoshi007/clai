@@ -1,4 +1,6 @@
 import { getConfig } from "../../store/config.js";
+import { createRtkExecutionRecorder } from "../../store/rtk-usage.js";
+export { rtkExecutionCount } from "../../store/rtk-usage.js";
 import { hasStructuredReducer } from "../policies/output-policy.js";
 import { looksInteractiveStdin } from "../shell.js";
 import { detectRtk, forgetRtk, RTK_EXEC_ENV, rtkPathEnv, runRtk, type RtkStatus } from "./binary.js";
@@ -7,6 +9,7 @@ import { rtkMaintenance } from "./install.js";
 export interface RtkExecution {
   readonly command: string;
   readonly env?: Readonly<Record<string, string>> | undefined;
+  readonly onSpawn?: (() => void) | undefined;
 }
 
 const REWRITE_TIMEOUT_MS = 2_000;
@@ -16,10 +19,6 @@ const CMD_EXE_METACHARACTERS = /[&|<>^%"()!\r\n]/;
 const RTK_INVOCATION = /(?:^|[^\w./-])rtk(?:\.exe)?(?![\w./-])/i;
 
 type ReadyRtk = Extract<RtkStatus, { state: "ready" }>;
-
-let rewriteCount = 0;
-
-export const rtkRewriteCount = (): number => rewriteCount;
 
 export const rtkEnabled = (): boolean => getConfig().rtk === true;
 
@@ -37,6 +36,7 @@ const executionEnv = (status: ReadyRtk): Readonly<Record<string, string>> =>
 export async function prepareRtkExecution(
   command: string,
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<RtkExecution> {
   const original = { command };
   const trimmed = command.trim();
@@ -60,6 +60,5 @@ export async function prepareRtkExecution(
   ) {
     return unchanged;
   }
-  rewriteCount += 1;
-  return { command: rewritten, env };
+  return { command: rewritten, env, onSpawn: createRtkExecutionRecorder(sessionId) };
 }

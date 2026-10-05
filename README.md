@@ -25,7 +25,7 @@ Why people pick it over other agent CLIs:
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
 - **Real building & debugging.** Scaffolds apps, edits code surgically, installs packages, runs builds/tests, starts dev servers as background jobs, and probes them before reporting success.
 - **Durable plans.** `plan.create` / `task.update` drive a live checklist that survives context compaction and reloads with `/history` — the agent works task-by-task and won't fake completion.
-- **State-preserving compaction.** Automatic and manual `/compact` keep the latest user request verbatim alongside a deterministic work envelope: subagents (id, title, status, and a digest of results already read), live and finished background jobs, Responder-delegated tasks with their read state, touched files, and any credentials you supplied for the task. Before each model dispatch, clai estimates the current assembled request, including the incoming prompt and tool schemas, calibrated with provider-reported usage when available; it does not ask the model to guess its context size. Injected system blocks cannot displace the latest prompt, and successful manual compaction is saved even when the message count stays unchanged. When the history fits the model's window, the summary request replays the cached conversation prefix, so compaction is mostly a cache read.
+- **State-preserving compaction.** `/compact` leads with the latest conversation and its research conclusions, then appends a historical **Last 3 user prompts** section (up to three real prompts, oldest first; prompts over 8,000 characters use labeled head/tail excerpts). Completed turns become memory without a raw assistant/tool tail; unfinished requests remain verbatim with the necessary tool pairs. A deterministic work envelope carries subagents (id, title, status, and digests of results already read), live and finished jobs, Responder tasks and read state, touched files, and supplied credentials. Before dispatch, clai estimates the assembled request, including the incoming prompt and tool schemas, calibrated with provider-reported usage when available. Injected state cannot displace an unfinished request or tool group, and successful manual compaction is saved even when the message count stays unchanged. When replay fits, compaction preserves the last successful request's exact prefix, model, effort, and tool controls, appending newer history and summary instructions afterward so that prefix remains eligible for cache reuse.
 - **Durable agent sessions.** Interactive sessions run behind a local broker, so an agent keeps working after `/minimise`, an SSH disconnect, or switching to another history session; `clai --resume <id>` reattaches to the same live UI and output stream.
 - **Persistent interactive terminals.** Conversation-owned PTY or pipe sessions keep REPLs such as Python, Metasploit, Meterpreter, database consoles, and debuggers open across model turns.
 - **Native + text tool calling.** Uses provider-native function calling where available, with a text-fence fallback (`toolCalling: auto|native|text`).
@@ -237,6 +237,7 @@ In the interactive console:
 - **Token-saving shell output** *(opt-in)* — `/rtk on` routes foreground `shell.exec` commands through [rtk](https://github.com/rtk-ai/rtk) via `rtk rewrite`, so the model reads compact output. Only the executed command changes: the model's tool call, approvals, and history keep the original, and the system prompt and tool schemas never change, so the prompt cache prefix is never invalidated. Background jobs, interactive/PTY sessions, sudo, and commands clai already reduces (nmap, ffuf, …) are never rewritten; if rtk is missing, busy updating, or fails, commands run unmodified. No rtk yet? `/rtk install` (or **Install rtk** on the `/rtk` screen) uses Homebrew, else rtk's checksum-verified installer, else cargo (winget, else cargo, on Windows) in the background; `/rtk update` upgrades through whichever tool installed it. rtk is found even when its directory is not on `PATH`, and a same-named impostor binary is skipped. All rewrite rules live in rtk itself, so updating rtk never requires a clai release.
 - **Free-only mode** *(opt-in)* — `/freeonly on` restricts fallback strictly to free tiers (Free, Gemini, OpenRouter, NIM, Bynara, Hetzner, and the free-lane subscription providers) so you never accidentally spend.
 - **Usage visibility** — `/usage` shows token consumption per provider and model, including cache reads and writes, so you can see what a session actually cost. It counts every billed request: subagents, title generation, compaction, and retried attempts whose stream died after the provider had already billed the prompt.
+- **Session prompts** — `/prompts` opens a searchable pager in Classic and native OpenTUI, with a separate section for each sent user prompt and its timestamp, provider, model, and effort. Prompts persist through compaction and reloads; queued drafts are recorded when sent, and recoverable older prompts are imported with unknown metadata marked. The disk-backed journal is paged in 16 KiB slices. Naming runs separately on new user prompts using bounded excerpts and a cumulative topic summary, without adding the journal to the main agent's context or changing its cache prefix. Private mode and `--no-history` disable prompt persistence and naming; session deletion and history reset remove the journal. Recognized credentials are redacted before storage.
 
 ---
 
@@ -408,6 +409,7 @@ Interactive sessions run behind a local broker so an agent continues working acr
 | `/jobs` | View background jobs (also `Ctrl+J`) |
 | `/compact` · `/context` · `/usage` | Compact history · context size · token usage per provider/model |
 | `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle management |
+| `/prompts` | Browse this session's user prompts, timestamps, provider/model, and effort |
 | `/allow <tool>` · `/disallow <tool>` · `/permissions` | Tool permission management |
 | `/cwd <path>` | Change working directory |
 | `/think` · `/thinking` | Show thinking from the last response |
@@ -481,6 +483,15 @@ Use `/mcp` inside the interactive console to browse servers, inspect available t
 ---
 
 ## Built-in tools
+
+`fs.read` accepts either one path with its filters, or up to six necessary files with independent filters:
+
+```json
+{"path":"src/app.ts","offset":1,"limit":80}
+{"files":[{"path":"src/app.ts","offset":1,"limit":80},{"path":"src/config.ts","pattern":"export","context":2}]}
+```
+
+Use one format per call. In `files` mode, put every file's options inside its entry and omit top-level path/options. Results preserve input order and each file's status, including successful reads when another fails. Reads use bounded concurrency and share a 256 KiB content budget; narrow the filters when coverage is incomplete. Classic and native OpenTUI show each path and its options together, with the complete separated output in the pager. Choosing single or multiple files does not change the tool schema or system prefix.
 
 | Group | Tools |
 |-------|-------|

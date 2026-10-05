@@ -239,7 +239,9 @@ async function applyPrivacy(services: AppServices, raw: string): Promise<void> {
     return;
   }
   if (sub === "clear-history") {
+    await services.session.promptHistory.flush().catch(() => undefined);
     const result = await clearAllHistory();
+    services.session.resetPromptHistory();
     notice(
       services,
       "info",
@@ -258,11 +260,13 @@ async function applyPrivacy(services: AppServices, raw: string): Promise<void> {
     return;
   }
   if (sub === "clear-all") {
+    await services.session.promptHistory.flush().catch(() => undefined);
     const [historyResult, logResult, artifactResult] = await Promise.all([
       clearAllHistory(),
       clearAuditLogs(),
       clearArtifacts(),
     ]);
+    services.session.resetPromptHistory();
     notice(
       services,
       "info",
