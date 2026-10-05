@@ -454,10 +454,11 @@ describe("classic command parity (W12)", () => {
     await vi.waitFor(() => expect(notices(services).length).toBeGreaterThan(0));
   });
 
-  spec(["minimise", "minimize"], "/minimise and /minimize request durable detach", async () => {
+  spec(["minimise", "minimize", "minmize"], "minimise commands request durable detach", async () => {
     const requestMinimise = vi.fn(() => true);
     const { services } = open({ requestMinimise });
     expect(services.commands.resolve("minimize")).toBe("minimise");
+    expect(services.commands.resolve("minmize")).toBe("minimise");
     await run(services, "minimize");
     expect(requestMinimise).toHaveBeenCalledOnce();
   });

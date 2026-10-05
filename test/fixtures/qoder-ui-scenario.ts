@@ -108,6 +108,7 @@ export async function exerciseQoderUi(driver: QoderUiDriver, fixture: ReturnType
   assert.notEqual(parseQoderCredential(stored.keys[0]!.value).accessToken, parseQoderCredential(first.value).accessToken);
   assert.equal(stored.keys[1]?.value, sibling.value);
   await driver.key("remove"); await driver.key("save"); await waitOverlay("none");
+  await wait(async () => (await getProviderKeys("qoder")).keys.length === 1, "account removal persistence");
   stored = await getProviderKeys("qoder");
   assert.equal(stored.keys.length, 1); assert.equal(stored.keys[0]?.id, sibling.id); assert.equal(stored.activeIndex, 0);
 

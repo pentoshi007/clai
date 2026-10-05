@@ -596,13 +596,20 @@ describe("session runtime host hardening", () => {
     const first = await openTestClient(runtime.metadata, "shared-large", { columns: 140, rows: 45 });
     let second: TestClient | undefined;
     try {
+      await waitFor(async () => first.output().includes("command-runtime-ready") ? true : undefined);
       second = await openTestClient(runtime.metadata, "shared-small", { columns: 80, rows: 20 });
+      if (process.platform !== "win32") {
+        await waitFor(async () => first.output().includes("resize:80x20") ? true : undefined);
+      }
       second.terminal.write("d");
       await waitFor(async () => first.output().includes("query-size:80x20") && second?.output().includes("query-size:80x20") ? true : undefined);
       expect(first.frames.some((frame) => frame.type === "detached")).toBe(false);
       second.dispose();
       await waitFor(async () => first.frames.at(-1)?.type === "input-owner" &&
         (first.frames.at(-1) as { active: boolean }).active ? true : undefined);
+      if (process.platform !== "win32") {
+        await waitFor(async () => first.output().includes("resize:140x45") ? true : undefined);
+      }
       first.terminal.write("d");
       await waitFor(async () => first.output().includes("query-size:140x45") ? true : undefined);
       await waitFor(async () => (await readRuntimeMetadata(runtime.sessionId))?.attached ? true : undefined);
@@ -659,6 +666,28 @@ describe("session runtime host hardening", () => {
       }
     }
   }, 10_000);
+
+  it("keeps the shared runtime alive when another viewer switches sessions", async () => {
+    const runtime = await startCommandRuntime();
+    if (!runtime) return;
+    const first = await openTestClient(runtime.metadata, "switch-staying");
+    const second = await openTestClient(runtime.metadata, "switch-leaving");
+    try {
+      second.terminal.write("x");
+      await waitFor(async () => second.frames.some((frame) => frame.type === "switch") ? true : undefined);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(await probeRuntime(runtime.metadata)).toBe(true);
+      expect(first.frames.some((frame) => frame.type === "exit" || frame.type === "detached")).toBe(false);
+      first.terminal.write("a");
+      await waitFor(async () => first.output().includes("input:a") ? true : undefined);
+      first.terminal.write("q");
+      await waitForRuntimeExit(runtime);
+    } finally {
+      first.dispose();
+      second.dispose();
+      if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
+    }
+  }, 12_000);
 
   it("starts idle cleanup when only the terminal half closes", async () => {
     const runtime = await startCommandRuntime({

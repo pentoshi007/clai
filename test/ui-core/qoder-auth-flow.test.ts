@@ -84,7 +84,7 @@ async function choosePat(app: AppServices): Promise<void> {
 beforeEach(() => {
   h.keys = []; h.activeIndex = 0;
   for (const fn of Object.values(h)) if (typeof fn === "function") fn.mockReset();
-  for (const name of ["DISPLAY", "WAYLAND_DISPLAY", "SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT", "CI"]) vi.stubEnv(name, "");
+  for (const name of ["DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET", "SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT", "CI", "CLAI_NO_BROWSER", "BROWSER", "DEBIAN_FRONTEND"]) vi.stubEnv(name, "");
   h.start.mockResolvedValue({ authUrl: "https://qoder.com/device/selectAccounts?challenge=fixture" });
   h.poll.mockResolvedValue(credential()); h.pat.mockResolvedValue(credential()); h.import.mockResolvedValue(credential());
   h.browser.mockResolvedValue(undefined); h.refresh.mockResolvedValue(credential());
@@ -120,6 +120,7 @@ afterEach(() => {
 describe("Qoder shared UI sign-in", () => {
   it.each([false, true])("prioritizes the environment-appropriate method (desktop=%s)", async (desktop) => {
     vi.stubEnv("DISPLAY", desktop ? ":1" : "");
+    vi.stubEnv("SSH_CONNECTION", desktop ? "" : "fixture ssh");
     const app = services();
     const result = runQoderAuthForUI(app);
     const state = app.overlay.getState();

@@ -46,6 +46,7 @@ afterEach(() => {
 describe("shared OAuth method selection and cancellation", () => {
   it.each([false, true])("selects the ChatGPT method default for desktop=%s", async (desktop) => {
     vi.stubEnv("DISPLAY", desktop ? ":1" : "");
+    vi.stubEnv("SSH_CONNECTION", desktop ? "" : "fixture ssh");
     const app = services(); const result = runCodexAuthForUI(app);
     const state = app.overlay.getState();
     if (state.kind !== "picker") throw new Error("missing method picker");

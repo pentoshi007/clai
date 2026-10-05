@@ -498,7 +498,7 @@ async function attachRuntime(
     if (!terminal.write(bytes)) stdin.pause();
   };
   const onTerminalDrain = (): void => {
-    if (!settled && !exitPending) stdin.resume();
+    if (!settled && !exitPending && (!claimingInput || pendingInputBytes < 64 * 1024)) stdin.resume();
   };
   const onTerminalError = (): void => {
     if (exitPending) return;
