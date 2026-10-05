@@ -1,4 +1,4 @@
-import { statSync, openSync, readSync, closeSync } from "node:fs";
+import { readArtifactTail } from "../../app/events/artifact-output.js";
 import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import {
   getSession,
@@ -39,34 +39,6 @@ export interface ResumeOutcome {
 }
 
 const CANDIDATE_LIMIT = 500;
-
-const MAX_RESTORED_ARTIFACT_OUTPUT_CHARS = 256 * 1024;
-
-function readArtifactTail(path: string): string | undefined {
-  let fd: number | undefined;
-  try {
-    const size = statSync(path).size;
-    if (size <= 0) return undefined;
-    const bytesToRead = Math.min(size, MAX_RESTORED_ARTIFACT_OUTPUT_CHARS * 4);
-    fd = openSync(path, "r");
-    const buffer = Buffer.allocUnsafe(bytesToRead);
-    const start = size - bytesToRead;
-    const bytesRead = readSync(fd, buffer, 0, bytesToRead, start);
-    let text = buffer.subarray(0, bytesRead).toString("utf8");
-    if (start > 0) {
-      const newline = text.indexOf("\n");
-      if (newline >= 0) text = text.slice(newline + 1);
-    }
-    if (text.length > MAX_RESTORED_ARTIFACT_OUTPUT_CHARS) {
-      text = text.slice(text.length - MAX_RESTORED_ARTIFACT_OUTPUT_CHARS);
-    }
-    return text.trim().length > 0 ? text : undefined;
-  } catch {
-    return undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
 
 export function restoreArtifactOutputs(
   state: TranscriptState,

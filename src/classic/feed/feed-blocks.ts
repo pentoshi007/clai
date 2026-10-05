@@ -6,7 +6,7 @@ import type {
   TranscriptItem,
   TranscriptState,
 } from "../../ui-core/state/transcript-types.js";
-import { isFileDiffExpanded, isItemExpanded, transcriptItems } from "../../ui-core/state/transcript-types.js";
+import { isFileDiffExpanded, isItemExpanded } from "../../ui-core/state/transcript-types.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { contentWidth } from "../render/measure.js";
 import { EMPTY_SPOOL, type BlockContext, type SpoolReader } from "../blocks/block-context.js";
@@ -45,6 +45,7 @@ export interface FeedBlock {
 }
 
 export const INTRO_ITEM_ID = "intro";
+const toolKinds = new WeakMap<Extract<TranscriptItem, { kind: "tool" }>, BlockKind>();
 
 export interface FeedViewInput {
   readonly columns: number;
@@ -68,8 +69,11 @@ export function blockContextFor(state: TranscriptState, view: FeedViewInput): Bl
 }
 
 export function toolBlockKind(item: Extract<TranscriptItem, { kind: "tool" }>): BlockKind {
-  if (isBatchToolName(item.name)) return "batch";
-  return presentTool(item).isFileDiff ? "diff" : "tool";
+  const cached = toolKinds.get(item);
+  if (cached) return cached;
+  const kind = isBatchToolName(item.name) ? "batch" : presentTool(item).isFileDiff ? "diff" : "tool";
+  toolKinds.set(item, kind);
+  return kind;
 }
 
 function isOpen(item: TranscriptItem): boolean {
@@ -131,7 +135,7 @@ interface BlockInputs {
   readonly ink: InkTheme;
   readonly expanded: boolean;
   readonly diffExpanded: boolean;
-  readonly output: string | undefined;
+  readonly output: string | number | undefined;
   readonly now: number | undefined;
 }
 
@@ -164,7 +168,7 @@ function blockInputs(ctx: BlockContext, item: TranscriptItem, kind: BlockKind): 
     ink: ctx.ink,
     expanded: isItemExpanded(ctx.state, item),
     diffExpanded: tool ? isFileDiffExpanded(ctx.state, item.id) : false,
-    output: tool ? ctx.spool.tail(tool.toolCallId) : undefined,
+    output: tool ? ctx.spool.version?.(tool.toolCallId) ?? ctx.spool.tail(tool.toolCallId) : undefined,
     now: isOpen(item) ? ctx.now : undefined,
   };
 }
@@ -258,7 +262,9 @@ export function buildFeedBlocks(
   }
 
   const next = new Map<string, CachedBlock>();
-  for (const item of transcriptItems(state)) {
+  for (const id of state.order) {
+    const item = state.byId.get(id);
+    if (!item) continue;
     if (item.kind === "tool" && shouldHideQuietMetaToolInChat(item.name, item.status)) {
       continue;
     }

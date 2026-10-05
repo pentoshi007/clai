@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import type { SubagentRun, SubagentWorkerInput } from "../../src/agent/subagents
 import { SubagentInbox } from "../../src/agent/turn/subagent-inbox.js";
 import { FileSubagentStore, restoreSubagentRun } from "../../src/store/subagents.js";
 import type { ChatMessage } from "../../src/types.js";
+import { createSubagentPagerSource } from "../../src/ui-core/rendering/subagent-source.js";
 
 const managers: SubagentManager[] = [];
 const roots: string[] = [];
@@ -38,6 +39,52 @@ afterEach(async () => {
 });
 
 describe("durable subagent summary recovery", () => {
+  it("restores unacknowledged earlier attempts separately from the latest child after process replacement", async () => {
+    const { work, createManager } = fixture();
+    const manager = createManager();
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve(report);
+    await manager.wait(run.id);
+    manager.restart(run.id);
+    await tick();
+    work[1]!.resolve(report.replace("Ownership is checked", "Route inputs are checked"));
+    await manager.wait(run.id);
+    manager.dispose();
+    const restored = createManager();
+    expect(restored.get(run.id)?.attempt).toBe(2);
+    expect(restored.get(run.id, 1)?.report).toBe(report);
+    expect(restored.pendingResults().map((run) => run.attempt).sort()).toEqual([1, 2]);
+    restored.acknowledgeResult(run.id, 1);
+    restored.dispose();
+    const final = createManager();
+    expect(final.pendingResults().map((run) => run.attempt)).toEqual([2]);
+    expect(final.get(run.id, 1)?.resultAcknowledged).toBe(true);
+  });
+
+  it("retains the full paged activity log beyond the in-memory event window", async () => {
+    const { work, createManager } = fixture();
+    const manager = createManager();
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.input.emit({ kind: "assistant", text: "sk-first", append: true });
+    work[0]!.input.emit({ kind: "assistant", text: "second", append: true });
+    for (let index = 0; index < 150; index++) work[0]!.input.emit({ kind: "tool", text: `Read evidence ${index}: ${"x".repeat(2000)}` });
+    work[0]!.resolve(report);
+    await manager.wait(run.id);
+    expect(manager.get(run.id)?.events.length).toBeLessThanOrEqual(96);
+    const path = manager.activityPath(run.id)!;
+    const content = readFileSync(path, "utf8");
+    expect(content).toContain("Read evidence 0:");
+    expect(content).toContain("Read evidence 149:");
+    expect(content).not.toContain("sk-firstsecond");
+    const source = createSubagentPagerSource(manager, run.id, 1024);
+    expect((await source.readPage(0)).body).toContain("Read evidence 0:");
+    expect((await source.search("Read evidence 149:"))?.body).toContain("Read evidence 149:");
+    source.dispose();
+    manager.dispose();
+    expect(createManager().activityPath(run.id)).toBe(path);
+  });
   it("retains the last report through restart, activity eviction, stop, reload, and disabled delegation", async () => {
     const { work, createManager } = fixture();
     const manager = createManager();

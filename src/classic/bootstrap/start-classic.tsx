@@ -60,7 +60,7 @@ export async function startClassic(
   const servicesRef: { current: AppServices | undefined } = { current: undefined };
   const wiringRef: { current: ClassicAppWiring | undefined } = { current: undefined };
   const lifecycleRef: { current: RendererLifecycle | undefined } = { current: undefined };
-  const runtimeBridge = createRuntimeChildBridge();
+  const runtimeBridge = createRuntimeChildBridge(true);
   if (runtimeBridge) await runtimeBridge.connect();
   let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   let instance: Instance | undefined;
@@ -85,6 +85,14 @@ export async function startClassic(
       current.cleanup();
     },
   };
+  const requestRepaint = (): boolean => {
+    if (!instance) return false;
+    control.unmount();
+    session.clearScreen();
+    control.mount();
+    return Boolean(instance);
+  };
+  runtimeBridge?.setRepaintHandler(requestRepaint);
 
   const seeded = await seedSessionModel(options.sessionId, {
     provider: options.provider,
@@ -101,12 +109,7 @@ export async function startClassic(
     sessionId: options.sessionId,
     capabilities,
     requestMinimise: () => runtimeBridge?.minimise() ?? false,
-    requestRedraw: () => {
-      control.unmount();
-      session.clearScreen();
-      control.mount();
-      return true;
-    },
+    requestRedraw: requestRepaint,
     requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
       runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
     clipboard: createOsc52ClipboardPort({
@@ -212,6 +215,7 @@ export async function startClassic(
       runtimeBridge,
       services,
       () => void lifecycle.shutdownAndExit(0),
+      requestRepaint,
     );
   }
 

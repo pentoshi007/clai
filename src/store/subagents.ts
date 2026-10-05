@@ -9,6 +9,7 @@ import { getHistoryDir } from "./paths.js";
 export const SUBAGENT_LIMITS = Object.freeze({ records: 24, events: 96, chars: 128_000, report: 4 * 1024 * 1024, title: 120, prompt: 12_000, context: 24_000 });
 const MAX_FILE_BYTES = 6 * (2 * SUBAGENT_LIMITS.report + SUBAGENT_LIMITS.chars) + 65_536;
 const FILE_NAME = /^[a-f0-9]{64}\.json$/;
+const ATTEMPT_FILE_NAME = /^attempt-[a-f0-9]{64}\.json$/;
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 export function sanitizeSubagentText(value: string): string {
@@ -58,6 +59,7 @@ export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
     report,
     lastKnownSummary,
     resultAcknowledged: run.resultAcknowledged,
+    deliveredReportChars: run.deliveredReportChars === undefined ? undefined : Math.min(run.deliveredReportChars, (report ?? lastKnownSummary?.report ?? "").length),
     error: run.error === undefined ? undefined : clean(run.error, 4096),
   };
   let remaining = SUBAGENT_LIMITS.chars - [base.title, base.prompt, base.context, base.followup?.prompt, base.followup?.context, base.cwd, base.provider, base.model, base.error, base.id, base.parentSessionId].reduce<number>((sum, value) => sum + (value?.length ?? 0), 0);
@@ -101,6 +103,8 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
     && (run.report === undefined || (bounded(run.report, SUBAGENT_LIMITS.report) && Buffer.byteLength(run.report) <= SUBAGENT_LIMITS.report))
     && (run.error === undefined || bounded(run.error, 4096))
     && (run.resultAcknowledged === undefined || typeof run.resultAcknowledged === "boolean")
+    && (run.deliveredReportChars === undefined || (Number.isSafeInteger(run.deliveredReportChars) && run.deliveredReportChars >= 0 &&
+      run.deliveredReportChars <= (run.report ?? run.lastKnownSummary?.report ?? "").length))
     && Array.isArray(run.events) && run.events.length <= SUBAGENT_LIMITS.events
     && run.events.every((event) => event && ["assistant", "tool", "notice"].includes(event.kind)
       && Number.isSafeInteger(event.sequence) && event.sequence >= 0 && Number.isFinite(event.timestamp)
@@ -117,11 +121,12 @@ export function restoreSubagentRun(value: unknown, parentSessionId: string): Sub
     events: value.events.map(({ sequence, kind, text, timestamp }) => ({ sequence, kind, text, timestamp })),
     report: value.report, error: value.error, lastKnownSummary: value.lastKnownSummary,
     resultAcknowledged: value.resultAcknowledged,
+    deliveredReportChars: value.deliveredReportChars,
     recovery: value.events.length || value.report || value.lastKnownSummary ? "history" : "fresh",
   };
   if (run.status !== "running" && run.status !== "stopping") return sanitizeSubagentRun(run);
   return sanitizeSubagentRun({
-    ...run, status: "stopped", report: undefined, resultAcknowledged: false, error: "Interrupted before completion; restart explicitly.",
+    ...run, status: "stopped", report: undefined, resultAcknowledged: false, deliveredReportChars: 0, error: "Interrupted before completion; restart explicitly.",
     events: [...run.events, { sequence: Math.max(0, ...run.events.map((event) => event.sequence)) + 1, kind: "notice", text: "Interrupted before completion; restart explicitly.", timestamp: Date.now() }],
   });
 }
@@ -150,14 +155,14 @@ export class FileSubagentStore implements SubagentStore {
     return directory;
   }
 
-  private files(directory: string): string[] {
+  private files(directory: string, attempts = false): string[] {
     const result: string[] = [];
     const handle = opendirSync(directory);
     try {
       while (true) {
         const entry = handle.readSync();
         if (!entry) break;
-        if (entry.isFile() && FILE_NAME.test(entry.name)) result.push(entry.name);
+        if (entry.isFile() && (attempts ? ATTEMPT_FILE_NAME : FILE_NAME).test(entry.name)) result.push(entry.name);
       }
     } finally {
       handle.closeSync();
@@ -180,7 +185,8 @@ export class FileSubagentStore implements SubagentStore {
       }
       if (length > stat.size) return undefined;
       const data: unknown = JSON.parse(buffer.subarray(0, length).toString("utf8"));
-      if (validRun(data, parentSessionId) && name === `${hash(data.id)}.json`) return data;
+      if (validRun(data, parentSessionId) &&
+          (name === `${hash(data.id)}.json` || name === `attempt-${hash(`${data.id}:${data.attempt}`)}.json`)) return data;
     } catch {
     } finally {
       if (fd !== undefined) closeSync(fd);
@@ -222,6 +228,56 @@ export class FileSubagentStore implements SubagentStore {
     });
     files.sort((a, b) => Number(b.active) - Number(a.active) || Number(b.name === `${hash(run.id)}.json`) - Number(a.name === `${hash(run.id)}.json`) || b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || b.id.localeCompare(a.id));
     for (const file of files.filter((file) => !file.active).slice(SUBAGENT_LIMITS.records)) rmSync(join(directory, file.name), { force: true });
+  }
+
+  loadAttempts(parentSessionId: string): readonly SubagentRun[] {
+    const directory = this.directory(parentSessionId);
+    if (!directory) return [];
+    return this.files(directory, true).flatMap((name) => {
+      const run = this.read(directory, name, parentSessionId);
+      return run ? [run] : [];
+    });
+  }
+
+  saveAttempt(run: SubagentRun): void {
+    if (!validRun(run, run.parentSessionId)) throw new Error("Invalid subagent attempt");
+    const directory = this.directory(run.parentSessionId, true)!;
+    const temporary = join(directory, `.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(temporary, JSON.stringify(sanitizeSubagentRun(run)), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      renameSync(temporary, join(directory, `attempt-${hash(`${run.id}:${run.attempt}`)}.json`));
+    } finally {
+      rmSync(temporary, { force: true });
+    }
+  }
+
+  activityPath(parentSessionId: string, id: string): string | undefined {
+    const directory = this.directory(parentSessionId);
+    if (!directory) return undefined;
+    const path = join(directory, `${hash(id)}.activity.txt`);
+    try {
+      const info = lstatSync(path);
+      return info.isFile() && !info.isSymbolicLink() ? path : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  appendActivity(run: SubagentRun, events: readonly SubagentEvent[]): void {
+    if (!validRun(run, run.parentSessionId)) throw new Error("Invalid subagent activity owner");
+    const directory = this.directory(run.parentSessionId, true)!;
+    const fd = openSync(join(directory, `${hash(run.id)}.activity.txt`), constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+    try {
+      const info = fstatSync(fd);
+      if (!info.isFile()) throw new Error("Unsafe subagent activity file");
+      const header = info.size === 0
+        ? `# ${run.title}\nAgent: ${run.id}\nWorkspace: ${run.cwd}\n\n## Assignment\n${run.prompt}\n${run.context ? `\n## Context\n${run.context}\n` : ""}\n## Activity\n`
+        : "";
+      const body = events.map((event) => `\n### Attempt ${run.attempt} · ${event.sequence} · ${event.kind}\n${event.text}\n`).join("");
+      writeFileSync(fd, sanitizeSubagentText(header + body), "utf8");
+    } finally {
+      closeSync(fd);
+    }
   }
 
   remove(parentSessionId: string): void {

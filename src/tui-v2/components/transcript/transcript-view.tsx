@@ -108,7 +108,9 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   const state = useTranscriptState(services.transcript);
   const sessionRunning = useSessionField(services.session, selectRunning);
   const sessionId = useSessionField(services.session, selectSessionId);
-  const items = useMemo(() => transcriptItems(state), [state]);
+  const itemCount = state.order.length;
+  const tailId = state.order.at(-1);
+  const tailItem = tailId ? state.byId.get(tailId) : undefined;
   const { width: termWidth } = useTerminalDimensionsContext();
   const paneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const introWidth = Math.max(40, paneWidth);
@@ -116,20 +118,20 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   const mountWindow = useMemo(
     () =>
       resolveTranscriptMountWindow(
-        items.length,
+        itemCount,
         windowStart,
         DEFAULT_TRANSCRIPT_MOUNT_ROWS,
       ),
-    [items.length, windowStart],
+    [itemCount, windowStart],
   );
   const mountedItems = useMemo(
-    () => items.slice(mountWindow.start, mountWindow.end),
-    [items, mountWindow.start, mountWindow.end],
+    () => transcriptItems(state, mountWindow.start, mountWindow.end),
+    [state, mountWindow.start, mountWindow.end],
   );
   const internalScrollRef = useRef<ScrollBoxRenderable>(null);
   const scrollRef = (externalScrollRef ?? internalScrollRef) as React.RefObject<ScrollBoxRenderable | null>;
   const closeOverlay = useRef<(() => void) | undefined>(undefined);
-  const lastTailId = useRef(items.at(-1)?.id);
+  const lastTailId = useRef(tailItem?.id);
   const followBottom = useRef(true);
   const [followSticky, setFollowSticky] = useState(true);
   const wasRunning = useRef(false);
@@ -171,6 +173,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     spool: services.session.spool,
     scrollRef,
     focused,
+    sessionId,
   });
 
   function clearNativeSelection(): boolean {
@@ -340,7 +343,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       return;
     }
     const tail = resolveTranscriptMountWindow(
-      items.length,
+      itemCount,
       undefined,
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
     );
@@ -364,7 +367,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     jump: { itemId?: string; edge?: "top" | "bottom" },
   ): boolean {
     const resolved = resolveTranscriptMountWindow(
-      items.length,
+      itemCount,
       nextStart,
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
     );
@@ -379,7 +382,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   function showOlderWindow(): boolean {
     if (mountWindow.olderCount === 0 || windowShiftPending.current) return false;
     const next = shiftTranscriptWindowStart(
-      items.length,
+      itemCount,
       mountWindow.start,
       "older",
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
@@ -391,7 +394,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   function showNewerWindow(): boolean {
     if (mountWindow.newerCount === 0 || windowShiftPending.current) return false;
     const next = shiftTranscriptWindowStart(
-      items.length,
+      itemCount,
       mountWindow.start,
       "newer",
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
@@ -422,9 +425,9 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   useEffect(() => {
     if (sessionFingerprint === lastSessionFp.current) return;
     lastSessionFp.current = sessionFingerprint;
-    lastTailId.current = items.at(-1)?.id;
+    lastTailId.current = tailItem?.id;
     setFollowing(true);
-  }, [sessionFingerprint, items.length]);
+  }, [sessionFingerprint, itemCount]);
 
   useEffect(() => {
     const running = sessionRunning || Boolean(state.runningStatus);
@@ -435,13 +438,13 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   }, [sessionRunning, state.runningStatus]);
 
   useEffect(() => {
-    const tailId = items.at(-1)?.id;
+    const tailId = tailItem?.id;
     const tailChanged = tailId !== lastTailId.current;
     lastTailId.current = tailId;
     if (pointerGestureActive.current) return;
 
     if (tailChanged) {
-      const last = items.at(-1);
+      const last = tailItem;
       if (last?.kind === "user") {
         setFollowing(true);
       }
@@ -458,21 +461,21 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         setFollowing(true);
       }
     }
-  }, [followKey, items]);
+  }, [followKey, tailItem]);
 
   useEffect(() => {
-    if (items.length > 0) return;
+    if (itemCount > 0) return;
     const sb = scrollRef.current;
     if (sb) sb.scrollTo(0);
     followBottom.current = true;
-  }, [items.length, introWidth]);
+  }, [itemCount, introWidth]);
 
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
     sb.verticalScrollBar.visible = false;
     sb.horizontalScrollBar.visible = false;
-  }, [items.length, introWidth]);
+  }, [itemCount, introWidth]);
 
   function scrollMainBy(dy: number): void {
     if (!Number.isFinite(dy) || dy === 0) return;
@@ -494,7 +497,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
 
   useEffect(() => {
     return registerTranscriptScrollPort(scrollMainBy);
-  }, [items.length, mountWindow.start, mountWindow.end]);
+  }, [itemCount, mountWindow.start, mountWindow.end]);
 
   useEffect(() => {
     return registerTranscriptJumpHandlers(
@@ -515,7 +518,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         queueMicrotask(() => publishScrollRemainder(scrollRef.current));
       },
     );
-  }, [items.length, mountWindow.start, mountWindow.end]);
+  }, [itemCount, mountWindow.start, mountWindow.end]);
 
   useEffect(() => {
     const tick = (): void => {
@@ -594,13 +597,13 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     if (!match) return;
     clearNativeSelection();
     setFollowing(false);
-    const itemIndex = items.findIndex((item) => item.id === match.itemId);
+    const itemIndex = state.order.indexOf(match.itemId);
     if (
       itemIndex >= 0 &&
       (itemIndex < mountWindow.start || itemIndex >= mountWindow.end)
     ) {
       const start = transcriptWindowStartForItem(
-        items.length,
+        itemCount,
         itemIndex,
         DEFAULT_TRANSCRIPT_MOUNT_ROWS,
       );
@@ -833,7 +836,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         ref={scrollRef}
         focused={focused}
         stickyScroll={followSticky}
-        stickyStart={items.length > 0 ? "bottom" : "top"}
+        stickyStart={itemCount > 0 ? "bottom" : "top"}
         viewportCulling
         scrollY
         scrollX={false}

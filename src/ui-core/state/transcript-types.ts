@@ -172,9 +172,15 @@ export function isFileDiffExpanded(state: TranscriptState, toolItemId: string): 
   return state.expandFileDiffsGlobal;
 }
 
-export function transcriptItems(state: TranscriptState): TranscriptItem[] {
+export function transcriptItems(
+  state: TranscriptState,
+  start = 0,
+  end = state.order.length,
+): TranscriptItem[] {
   const items: TranscriptItem[] = [];
-  for (const id of state.order) {
+  const limit = Math.min(state.order.length, end);
+  for (let index = Math.max(0, start); index < limit; index += 1) {
+    const id = state.order[index]!;
     const item = state.byId.get(id);
     if (item) items.push(item);
   }

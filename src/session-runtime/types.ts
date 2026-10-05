@@ -85,6 +85,7 @@ export type RuntimeClientFrame =
       readonly rows: number;
     }
   | { readonly type: "detach" }
+  | { readonly type: "claim-input" }
   | { readonly type: "ping" };
 
 export type RuntimeChildFrame =
@@ -112,6 +113,7 @@ export type RuntimeChildFrame =
 
 export type RuntimeHostFrame =
   | { readonly type: "pong" }
+  | { readonly type: "input-owner"; readonly active: boolean }
   | { readonly type: "shutdown" }
   | { readonly type: "repaint"; readonly requestId: string }
   | {

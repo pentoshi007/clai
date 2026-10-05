@@ -10,6 +10,7 @@ import type { ReasoningControlSurface } from "../reasoning-controls.js";
 
 export type ReasoningStyle =
   | "openai"
+  | "qoder"
   | "nvidia"
   | "openrouter"
   | "agentrouter"
@@ -61,6 +62,11 @@ export function buildReasoningPayload(
   providerId?: ProviderId | undefined,
   control?: ReasoningControlContext | undefined,
 ): Record<string, unknown> {
+  if (style === "qoder") {
+    if (!reasoning) return {};
+    const enabled = reasoning.enabled && reasoning.effort !== "none";
+    return { reasoning_effort: enabled ? reasoning.effort : "none", enable_thinking: enabled };
+  }
   if (control) {
     return {
       ...emitReasoningControls({

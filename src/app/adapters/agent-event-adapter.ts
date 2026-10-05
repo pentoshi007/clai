@@ -8,6 +8,7 @@ import {
   type TurnId,
 } from "../events/app-event.js";
 import type { OutputSpool } from "../events/event-buffer.js";
+import { readArtifactTail } from "../events/artifact-output.js";
 import type { EventSequencer } from "../events/sequencer.js";
 import { isQuietMetaTool, shouldHideQuietMetaToolInChat } from "./quiet-meta-tools.js";
 
@@ -178,6 +179,10 @@ export class AgentEventAdapter {
       }
       case "tool-result": {
         const toolCallId = this.toolCallId(event.id);
+        if (event.artifactPath) {
+          const path = event.artifactPath;
+          this.spool.retainArtifact(toolCallId, () => readArtifactTail(path));
+        }
         const buffered = this.bufferedMetaTools.get(toolCallId);
         if (buffered) {
           const status = event.ok ? "ok" : "failed";

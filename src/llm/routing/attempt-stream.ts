@@ -40,6 +40,7 @@ import {
   preservedFailure,
   reasoningWireKey,
   requestForRoute,
+  retireRejectedReasoningReplay,
   revertVisionSubstitution,
   runRecordedProviderAttempt,
   successfulRequestSnapshot,
@@ -284,10 +285,12 @@ export async function tryStreamOnce(
         `ℹ ${providerId}/${model} rejected replayed reasoning — retrying without it`,
       );
       try {
-        return await runAttempt(
+        const result = await runAttempt(
           withoutReasoningReplay(activeRequest),
           "adaptation",
         );
+        retireRejectedReasoningReplay(request.messages, providerId, model);
+        return result;
       } catch (retryError) {
         throw markStreamEmittedBytes(
           preservedFailure(retryError, error),

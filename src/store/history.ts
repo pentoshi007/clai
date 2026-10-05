@@ -31,6 +31,12 @@ export type { HistorySummary } from "./history-index.js";
 
 const FALLBACK_SESSION_NAME_LIMIT = 96;
 
+export interface HistorySessionLocation {
+  readonly cwd: string;
+  readonly workspaceFolder?: string | undefined;
+  readonly workspaceCode?: string | undefined;
+}
+
 function fallbackSessionName(messages: ChatMessage[]): string | undefined {
   const firstUser = messages.find(
     (message) => message.role === "user" && !isInternalChatMessage(message),
@@ -43,7 +49,7 @@ function fallbackSessionName(messages: ChatMessage[]): string | undefined {
   return preview + (firstUser.content.length > FALLBACK_SESSION_NAME_LIMIT ? "…" : "");
 }
 
-function workspaceFieldsFromActive(existing?: HistoryRecord): {
+function workspaceFieldsFromActive(existing?: HistoryRecord, location?: HistorySessionLocation): {
   workspaceFolder?: string | undefined;
   workspaceCode?: string | undefined;
 } {
@@ -51,6 +57,12 @@ function workspaceFieldsFromActive(existing?: HistoryRecord): {
     return {
       workspaceFolder: existing.workspaceFolder,
       workspaceCode: existing.workspaceCode,
+    };
+  }
+  if (location) {
+    return {
+      ...(location.workspaceFolder ? { workspaceFolder: location.workspaceFolder } : {}),
+      ...(location.workspaceCode ? { workspaceCode: location.workspaceCode } : {}),
     };
   }
   const active = getActiveSessionWorkspace();
@@ -207,11 +219,12 @@ export async function saveSession(
   writerGeneration?: string | undefined,
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
+  location?: HistorySessionLocation | undefined,
 ): Promise<HistoryRecord> {
   if (!name) name = fallbackSessionName(messages);
 
   const now = new Date().toISOString();
-  const workspace = workspaceFieldsFromActive();
+  const workspace = workspaceFieldsFromActive(undefined, location);
   const record: HistoryRecord = {
     id: newId(),
     ...(writerGeneration ? { writerGeneration } : {}),
@@ -222,7 +235,7 @@ export async function saveSession(
     name,
     createdAt: now,
     updatedAt: now,
-    cwd: safeCwd(),
+    cwd: location?.cwd ?? safeCwd(),
     messages: scrubMessages(messages),
     transcript: scrubTranscript(transcript),
     ...(contextUsage ? { contextUsage } : {}),
@@ -285,6 +298,7 @@ export async function upsertSession(
   writerGeneration?: string | undefined,
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
+  location?: HistorySessionLocation | undefined,
 ): Promise<HistoryRecord> {
   const existing = await existingSessionHeader(id);
   const requestedRevision =
@@ -293,7 +307,7 @@ export async function upsertSession(
       : undefined;
   const derivedName = fallbackSessionName(messages);
   const now = new Date().toISOString();
-  const workspace = workspaceFieldsFromActive(existing);
+  const workspace = workspaceFieldsFromActive(existing, location);
   const effectiveWriterGeneration =
     writerGeneration ?? existing?.writerGeneration;
   const record: HistoryRecord = {
@@ -307,7 +321,7 @@ export async function upsertSession(
     name: name ?? existing?.name ?? derivedName,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
-    cwd: safeCwd(),
+    cwd: location?.cwd ?? safeCwd(),
     messages: scrubMessages(messages),
     transcript: scrubTranscript(transcript),
     ...(contextUsage

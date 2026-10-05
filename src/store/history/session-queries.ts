@@ -160,6 +160,12 @@ export async function getSession(
     if (indexed) return hydrateHistoryRecord(indexed);
   }
 
+  const active = await findHistoryRecordStreaming<HistoryRecord>(jsonlFilePath(), sessionId);
+  if (active) {
+    void rebuildHistoryIndex<HistoryRecord>(jsonlFilePath(), jsonlIndexFilePath());
+    return hydrateHistoryRecord(active);
+  }
+
   const db = await loadDatabase();
   if (db) {
     try {
@@ -173,17 +179,6 @@ export async function getSession(
     }
   }
 
-  const active = await findHistoryRecordStreaming<HistoryRecord>(
-    jsonlFilePath(),
-    sessionId,
-  );
-  if (active) {
-    void rebuildHistoryIndex<HistoryRecord>(
-      jsonlFilePath(),
-      jsonlIndexFilePath(),
-    );
-    return hydrateHistoryRecord(active);
-  }
   const archived = await findHistoryRecordStreaming<HistoryRecord>(
     archiveFilePath(),
     sessionId,

@@ -1,5 +1,6 @@
 import { applyImageViewAvailability } from "../../prompts/index.js";
 import type {
+  ChatMessage,
   CompletionRequest,
   CompletionResult,
   GenerationAttemptReason,
@@ -30,6 +31,7 @@ import {
 import { withSendableImages } from "../wire/image-payloads.js";
 import { isModelNotFoundError, shouldContinueEffortLadder } from "./error-classification.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
+import { legacyReasoningBlockFromArtifacts } from "../reasoning-artifacts.js";
 
 export function successfulRequestSnapshot(
   provider: ProviderId,
@@ -91,7 +93,6 @@ export function withoutReasoningReplay(
       const {
         reasoningArtifacts: _reasoningArtifacts,
         reasoningBlock: _reasoningBlock,
-        responsesReplay: _responsesReplay,
         ...rest
       } = message;
       const toolCalls = message.toolCalls?.map((call) => {
@@ -100,10 +101,47 @@ export function withoutReasoningReplay(
       });
       return {
         ...rest,
+        ...(message.responsesReplay ? {
+          responsesReplay: { ...message.responsesReplay, items: message.responsesReplay.items.filter((item) => item.type !== "reasoning") },
+        } : {}),
         ...(toolCalls ? { toolCalls } : {}),
       };
     }),
   };
+}
+
+export function retireRejectedReasoningReplay(
+  messages: ChatMessage[],
+  provider: ProviderId,
+  model: string,
+): void {
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]!;
+    if (!message.reasoningArtifacts?.length && !message.reasoningBlock && !message.responsesReplay &&
+        !message.toolCalls?.some((call) => call.thoughtSignature)) continue;
+    const replay = message.responsesReplay;
+    const matchingReplay = replay?.provider === provider && replay.model === model;
+    const artifacts = message.reasoningArtifacts;
+    const retained = artifacts?.filter((artifact) =>
+      !(artifact.provenance.provider === provider && (!artifact.provenance.model || artifact.provenance.model === model)),
+    );
+    const changedArtifacts = retained?.length !== artifacts?.length;
+    const legacy = !artifacts?.length && (!replay || matchingReplay);
+    if (!matchingReplay && !changedArtifacts && !legacy) continue;
+    const unsigned = withoutReasoningReplay({ messages: [message] }).messages[0]!;
+    messages[index] = {
+      ...unsigned,
+      ...(retained?.length ? { reasoningArtifacts: retained, reasoningBlock: legacyReasoningBlockFromArtifacts(retained) } : {}),
+      ...(!matchingReplay && replay ? { responsesReplay: replay } : {}),
+      ...(!legacy && message.toolCalls ? { toolCalls: message.toolCalls.map((call, callIndex) => {
+        const rejected = artifacts?.some((artifact) => !retained?.includes(artifact) && artifact.kind === "thought-signature" &&
+          (artifact.position.toolCallId === call.id || artifact.position.toolCallIndex === callIndex));
+        if (!rejected) return call;
+        const { thoughtSignature: _signature, ...rest } = call;
+        return rest;
+      }) } : {}),
+    };
+  }
 }
 
 export function reasoningWireKey(

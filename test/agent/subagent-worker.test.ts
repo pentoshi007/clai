@@ -249,7 +249,7 @@ describe("isolated read-only subagent worker", () => {
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
     let round = 0;
     vi.mocked(streamWithProvider).mockImplementation(async () => completion("", [call("web.search", { query: `query ${++round}` }, `call-${round}`)]));
-    await expect(runReadOnlySubagent(input)).rejects.toThrow("request context budget exhausted");
+    await expect(runReadOnlySubagent(input)).rejects.toThrow(/context budget exhausted|no research progress/);
     const requests = vi.mocked(streamWithProvider).mock.calls.map(([request]) => request);
     expect(requests.every((request) => request.toolChoice === "auto")).toBe(true);
     const reportRequest = requests.find(isCompacting)!;
@@ -419,12 +419,12 @@ describe("isolated read-only subagent worker", () => {
     expect(vi.mocked(streamWithProvider).mock.calls[1]?.[0]).toMatchObject({ toolChoice: "auto" });
   });
 
-  it("allows more than three report repairs and further evidence gathering", async () => {
+  it("stops repeated report repairs before they can resend the context indefinitely", async () => {
     for (let index = 0; index < 5; index++) vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("I still need evidence"));
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [call("fs.read", { path: "src/example.ts" })])).mockResolvedValueOnce(completion());
-    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
-    expect(streamWithProvider).toHaveBeenCalledTimes(7);
-    expect(runToolCall).toHaveBeenCalledOnce();
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("no research progress");
+    expect(streamWithProvider).toHaveBeenCalledTimes(3);
+    expect(runToolCall).not.toHaveBeenCalled();
     expect(vi.mocked(streamWithProvider).mock.calls.every(([request]) => request.toolChoice === "auto")).toBe(true);
   });
 
@@ -445,10 +445,11 @@ describe("isolated read-only subagent worker", () => {
     "I will investigate next",
     REPORT.replace(/src\/example.ts:1/g, "the source file"),
     REPORT.slice(0, REPORT.indexOf("## Coverage gaps")) + "## Coverage gaps!",
-  ])("fails closed when context runs out without a valid report", async (text) => {
+  ])("stops repeated invalid reports without exhausting the context", async (text) => {
     vi.mocked(effectiveContextWindowTokens).mockReturnValue(8192);
     vi.mocked(streamWithProvider).mockResolvedValue(completion(text));
-    await expect(runReadOnlySubagent(input)).rejects.toThrow("context budget exhausted");
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("no research progress");
+    expect(streamWithProvider).toHaveBeenCalledTimes(3);
     expect(checkpoint?.finished).not.toBe(true);
   });
 

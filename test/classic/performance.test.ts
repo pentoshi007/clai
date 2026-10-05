@@ -90,6 +90,19 @@ describe("classic performance safeguards", () => {
     }
   });
 
+  it("does not read old tool artifacts on each render after caching their rows", () => {
+    const turn = scriptedTurn();
+    const cache = new FeedBlockCache();
+    const view = feedView(turn, { columns: 80 });
+    const read = vi.spyOn(turn.spool, "tail");
+    const first = buildFeedBlocks(turn.state, view, cache);
+    read.mockClear();
+    const again = buildFeedBlocks(turn.state, view, cache);
+    expect(read).not.toHaveBeenCalled();
+    expect(again).toEqual(first);
+    read.mockRestore();
+  });
+
   it("plans a viewport over a very long feed without materialising every row", () => {
     const blocks = Array.from({ length: 5_000 }, (_, index) => ({
       key: `0:item-${index}`,

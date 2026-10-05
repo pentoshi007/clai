@@ -11,6 +11,7 @@ import { wrapAnsiLineBounded } from "../render/wrap.js";
 export interface SpoolReader {
   tail(toolCallId: ToolCallId): string;
   state(toolCallId: ToolCallId): BoundedTextState | undefined;
+  version?(toolCallId: ToolCallId): number;
 }
 
 export const EMPTY_SPOOL: SpoolReader = {

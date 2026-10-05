@@ -11,6 +11,21 @@ import {
 import { QoderSigner } from "./qoder-signer.js";
 import { parseQoderCredential as parseCredential, type QoderCredential } from "./qoder-credential.js";
 import { withQoderCredential } from "./qoder-refresh.js";
+import { currentSessionAffinity } from "../session-affinity.js";
+import { sessionCacheAffinityKey } from "../cache-affinity.js";
+import { emitStreamReasoningArtifacts, emitStreamReasoningDelta } from "../stream-events.js";
+import { parseOpenAiUsage, withReasoningObservation } from "../token-usage.js";
+import { compatibleReasoningArtifacts, openAiReasoningText } from "../wire/reasoning-artifacts.js";
+import { openAiToolBodyFields } from "../adapters/openai-tools.js";
+import { toOpenAiMessages } from "../wire/chat-body.js";
+import { createReasoningArtifactReplayTarget } from "../reasoning-artifacts.js";
+import { buildReasoningPayload } from "../wire/reasoning-payload.js";
+import {
+  accumulateOpenAiToolCallDelta,
+  finalizeOpenAiToolCalls,
+  fromWireName,
+  type OpenAiToolCallAccumulator,
+} from "../tool-protocol.js";
 export { encodeQoderCredential, qoderCredentialFromImport, type QoderCredential } from "./qoder-credential.js";
 
 interface QoderCatalogEntry {
@@ -99,22 +114,6 @@ function stripTransportHeaders(headers: Record<string, string>): void {
   delete headers["Content-Length"];
 }
 
-function qoderNativeMessages(
-  request: CompletionRequest,
-): Array<Record<string, unknown>> {
-  return request.messages
-    .filter((message) => message.role !== "system")
-    .map((message) =>
-      message.role === "tool"
-        ? {
-            role: "tool",
-            content: message.content,
-            ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-          }
-        : { role: message.role, content: message.content },
-    );
-}
-
 function messageText(message: { content: string }): string {
   return message.content;
 }
@@ -185,15 +184,17 @@ async function fetchQoderModels(credential: QoderCredential): Promise<string[]> 
 interface QoderStreamDelta {
   content?: string;
   reasoning_content?: string;
+  reasoning?: string;
+  thinking?: string;
   tool_calls?: Array<{
     index?: number;
     id?: string;
-    function?: { name?: string; arguments?: string };
+    function?: { name?: string; arguments?: string | Record<string, unknown> };
   }>;
 }
 
 /** Qoder keeps the SSE connection open after the last token; bound the wait. */
-const STREAM_IDLE_MS = 15_000;
+const STREAM_IDLE_MS = 120_000;
 
 interface IdleGuard {
   race<T>(value: Promise<T>): Promise<T>;
@@ -259,12 +260,20 @@ async function runQoderStream(
   request: CompletionRequest,
   credential: QoderCredential,
   onToken: (token: string) => void,
+  onSemanticOutput: () => void = () => {},
 ): Promise<CompletionResult> {
   const model = request.model ?? defaultModels.qoder;
   const modelKey = qoderWireModelKey(model);
   const requestId = crypto.randomUUID();
   const requestSetId = crypto.randomUUID();
-  const sessionId = crypto.randomUUID();
+  const affinity = currentSessionAffinity();
+  const sessionKey = affinity ? sessionCacheAffinityKey(affinity).slice(5, 37) : undefined;
+  const sessionId = sessionKey
+    ? `${sessionKey.slice(0, 8)}-${sessionKey.slice(8, 12)}-5${sessionKey.slice(13, 16)}-8${sessionKey.slice(17, 20)}-${sessionKey.slice(20)}`
+    : crypto.randomUUID();
+  const reasoningControls = buildReasoningPayload(request.thinking, "qoder");
+  const reasoningEnabled = reasoningControls.enable_thinking !== false;
+  const { tools, ...toolParameters } = openAiToolBodyFields(request);
   const lastUser = [...request.messages]
     .reverse()
     .find((message) => message.role === "user");
@@ -276,7 +285,7 @@ async function runQoderStream(
     session_id: sessionId,
     stream: true,
     chat_task: "FREE_INPUT",
-    chat_context: qoderChatView(userText, modelKey, true),
+    chat_context: qoderChatView(userText, modelKey, reasoningEnabled),
     is_reply: true,
     is_retry: false,
     source: 1,
@@ -291,18 +300,24 @@ async function runQoderStream(
       model: "",
       format: "openai",
       is_vl: true,
-      is_reasoning: true,
+      is_reasoning: reasoningEnabled,
       api_key: "",
       url: "",
       source: "system",
       max_input_tokens: 180000,
     },
-    messages: qoderNativeMessages(request),
-    tools: [],
+    system: request.messages.filter((message) => message.role === "system")
+      .map((message) => ({ type: "text", text: message.content })),
+    messages: toOpenAiMessages(request.messages, true, {
+      target: createReasoningArtifactReplayTarget({ provider: "qoder", model, endpoint: QODER_INFERENCE_ORIGIN, dialect: "openai-compatible" }),
+      observe: request.onReasoningArtifactReplayDecision,
+      forceScope: request.forceReasoningReplay,
+    }),
+    tools: tools ?? [],
     parameters: {
       max_tokens: request.maxTokens ?? 4096,
-      reasoning_effort: "medium",
-      enable_thinking: true,
+      ...reasoningControls,
+      ...toolParameters,
     },
     business: {
       product: "cli",
@@ -348,12 +363,14 @@ async function runQoderStream(
       response.status,
     );
   }
-const reader = response.body.getReader();
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
-  let promptTokens = 0;
-  let completionTokens = 0;
+  let reasoning = "";
+  const toolCallState = new Map<number, OpenAiToolCallAccumulator>();
+  let usage: CompletionResult["usage"];
+  let finishReason = "stop";
   let finished = false;
   const idle = createIdleGuard();
   try {
@@ -361,40 +378,63 @@ const reader = response.body.getReader();
       let result: ReadableStreamReadResult<Uint8Array>;
       try {
         result = await idle.race(reader.read());
-      } catch {
-        // No frame within the idle window: the server holds the SSE open, so end.
-        break;
+      } catch (error) {
+        request.signal?.throwIfAborted();
+        throw error;
       }
       if (result.done) break;
       idle.reset();
       buffer += decoder.decode(result.value, { stream: true });
-      let index = buffer.indexOf("\n\n");
-      while (index >= 0) {
-        const frame = buffer.slice(0, index);
-        buffer = buffer.slice(index + 2);
+      let boundary = /\r?\n\r?\n/.exec(buffer);
+      while (boundary) {
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary[0].length);
+        if (/^data:\s*\[DONE\]\s*$/m.test(frame)) finished = true;
         const raw = extractWrapperBody(frame);
         if (raw) {
+          let chunk: {
+            choices?: Array<{ delta?: QoderStreamDelta; finish_reason?: string }>;
+            usage?: unknown;
+          } | undefined;
           try {
-            const chunk = JSON.parse(raw) as {
-              choices?: Array<{ delta?: QoderStreamDelta; finish_reason?: string }>;
-              usage?: { prompt_tokens?: number; completion_tokens?: number };
-            };
+            chunk = JSON.parse(raw);
+          } catch {}
+          if (chunk) {
             const choice = chunk.choices?.[0];
-            if (choice?.delta?.reasoning_content) onToken(choice.delta.reasoning_content);
+            const reasoningDelta = openAiReasoningText(choice?.delta);
+            if (reasoningDelta) {
+              reasoning += reasoningDelta;
+              onSemanticOutput();
+              emitStreamReasoningDelta(request.onStreamEvent, reasoningDelta);
+              if (!request.onStreamEvent) onToken(reasoningDelta);
+            }
             if (choice?.delta?.content) {
               text += choice.delta.content;
+              onSemanticOutput();
               onToken(choice.delta.content);
             }
-            if (choice?.finish_reason) finished = true;
-            if (chunk.usage) {
-              promptTokens = chunk.usage.prompt_tokens ?? promptTokens;
-              completionTokens = chunk.usage.completion_tokens ?? completionTokens;
+            for (const entry of choice?.delta?.tool_calls ?? []) {
+              const delta = accumulateOpenAiToolCallDelta(toolCallState, entry);
+              onSemanticOutput();
+              const largeArgumentTick = !delta.nameBecameKnown && delta.argumentsBytes > 0 &&
+                delta.argumentsBytes % 4096 < (typeof entry.function?.arguments === "string" ? entry.function.arguments.length : 0);
+              if (delta.nameBecameKnown || largeArgumentTick) {
+                request.onToolCallDelta?.({
+                  index: delta.index,
+                  ...(delta.id ? { id: delta.id } : {}),
+                  ...(delta.name ? { name: fromWireName(delta.name) ?? delta.name } : {}),
+                  argumentsBytes: delta.argumentsBytes,
+                });
+              }
             }
-          } catch {
-            // Non-JSON keep-alive frame; ignore.
+            if (choice?.finish_reason) {
+              finishReason = choice.finish_reason;
+              finished = true;
+            }
+            usage = parseOpenAiUsage(chunk.usage) ?? usage;
           }
         }
-        index = buffer.indexOf("\n\n");
+        boundary = /\r?\n\r?\n/.exec(buffer);
       }
       if (finished) break;
     }
@@ -406,26 +446,29 @@ const reader = response.body.getReader();
       // Stream already released.
     }
   }
+  const toolCalls = finalizeOpenAiToolCalls(toolCallState);
+  const reasoningArtifacts = compatibleReasoningArtifacts({
+    providerId: "qoder", model, baseUrl: QODER_INFERENCE_ORIGIN, toolCalls,
+    ...(reasoning ? { reasoning: { text: reasoning, sequence: 0 } } : {}),
+  });
+  emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
   return {
     text,
     model,
     provider: "qoder",
     api: "chat-completions",
-    toolCalls: [],
-    finishReason: "stop",
-    usage: {
-      promptTokens,
-      completionTokens,
-      totalTokens: promptTokens + completionTokens,
-      exact: promptTokens > 0 || completionTokens > 0,
-    },
+    toolCalls,
+    finishReason,
+    ...(reasoning ? { reasoningBlock: { text: reasoning } } : {}),
+    ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
+    ...(usage ? { usage: withReasoningObservation(usage, reasoning.length > 0) } : {}),
   };
 }
 
 export const qoderProvider: LlmProvider = {
   id: "qoder",
   displayName: "Qoder",
-  reasoningStyle: "openai",
+  reasoningStyle: "qoder",
   defaultModel: defaultModels.qoder,
   envVar: "QODER_API_KEY",
   validateKey: (key: string) => {
@@ -474,10 +517,7 @@ export const qoderProvider: LlmProvider = {
     let emittedOutput = false;
     return withQoderCredential(
       auth,
-      (credential) => runQoderStream(request, credential, (token) => {
-        emittedOutput = true;
-        onToken(token);
-      }),
+      (credential) => runQoderStream(request, credential, onToken, () => { emittedOutput = true; }),
       onStatus,
       () => !emittedOutput && !request.signal?.aborted,
     );

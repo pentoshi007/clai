@@ -3,6 +3,7 @@ import { SubagentInbox } from "../../src/agent/turn/subagent-inbox.js";
 import { SubagentManager } from "../../src/agent/subagents/manager.js";
 import type { ChatMessage } from "../../src/types.js";
 import type { SubagentWorkerInput } from "../../src/agent/subagents/types.js";
+import { runSubagentTool } from "../../src/agent/subagents/tools.js";
 
 const managers: SubagentManager[] = [];
 const settlements: (() => void)[] = [];
@@ -63,6 +64,108 @@ describe("SubagentInbox", () => {
     expect(manager.pendingResults()).toHaveLength(1);
     expect(inbox.prepare({ maxRequestTokens: 10_000, estimateTokens })).toHaveLength(1);
     expect(messages[2]!.content).toContain("Verified report");
+  });
+
+  it("acknowledges the report only after every page reaches a successful request", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    const run = start();
+    await tick();
+    const report = "A".repeat(24_000) + "B".repeat(24_000) + "Final evidence";
+    work[0]!.resolve(report);
+    await manager.wait(run.id);
+    const delivered: string[] = [];
+    for (const offset of [0, 24_000, 48_000]) {
+      const pages = inbox.prepare({ maxRequestTokens: 100_000, estimateTokens });
+      expect(pages).toHaveLength(1);
+      expect(pages[0]?.offset).toBe(offset);
+      const page = JSON.parse(pages[0]!.message.content.split("\n").at(-1)!);
+      delivered.push(page.report);
+      const request = structuredClone(messages);
+      inbox.acknowledge(pages, request.filter((message) => message.content !== pages[0]!.message.content));
+      expect(manager.pendingResults()).toHaveLength(1);
+      inbox.acknowledge(pages, request);
+      expect(manager.get(run.id)?.deliveredReportChars).toBe(offset + page.report.length);
+    }
+    expect(delivered.join("")).toBe(report);
+    expect(manager.pendingResults()).toEqual([]);
+    expect(manager.get(run.id)?.resultAcknowledged).toBe(true);
+  });
+
+  it("acknowledges contiguous pages delivered together through tools in a single successful request", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    const run = start();
+    await tick();
+    work[0]!.resolve("First evidence. ".repeat(2000));
+    await manager.wait(run.id);
+    const context = { manager, provider: "openai" as const, model: "test", cwd: "/tmp" };
+    for (const offset of [24_000, 0]) {
+      const result = await runSubagentTool({ name: "subagent.read", args: { id: run.id, view: "report", offset } }, context, new AbortController().signal);
+      messages.push({ role: "tool", content: result.output, subagentReceipt: result.subagentReceipt });
+    }
+    const deliveries = inbox.prepare({ maxRequestTokens: 100_000, estimateTokens });
+    expect(messages).toHaveLength(4);
+    expect(manager.pendingResults()).toHaveLength(1);
+    inbox.acknowledge(deliveries, structuredClone(messages));
+    expect(manager.pendingResults()).toEqual([]);
+  });
+
+  it("redelivers an acknowledgement whose parent history was lost before persistence", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    const run = start();
+    await tick();
+    work[0]!.resolve("Durable evidence");
+    await manager.wait(run.id);
+    inbox.acknowledge(inbox.prepare({ maxRequestTokens: 10_000, estimateTokens }));
+    expect(manager.pendingResults()).toEqual([]);
+    messages.splice(2);
+    const resumed = new SubagentInbox(manager, "parent", messages);
+    expect(manager.pendingResults()).toHaveLength(1);
+    expect(resumed.prepare({ maxRequestTokens: 10_000, estimateTokens })[0]?.message.content).toContain("Durable evidence");
+  });
+
+  it("keeps delivered conclusions after compaction without re-reading the report", async () => {
+    const { manager, work, messages, inbox, start } = setup();
+    const run = start();
+    await tick();
+    work[0]!.resolve("Verified finding in src/main.ts:42");
+    await manager.wait(run.id);
+    inbox.acknowledge(inbox.prepare({ maxRequestTokens: 10_000, estimateTokens }));
+    messages.splice(2);
+    messages.push({ role: "system", content: `DURABLE WORK ENVELOPE\nRead-only subagents: [${run.id}] Research (completed, attempt 1, result read) — Verified finding` });
+    const resumed = new SubagentInbox(manager, "parent", messages);
+    expect(resumed.prepare({ maxRequestTokens: 10_000, estimateTokens })).toEqual([]);
+    const prefix = structuredClone(messages);
+    resumed.prepareInventory();
+    expect(messages.slice(0, prefix.length)).toEqual(prefix);
+    expect(messages.at(-1)?.content).toContain("src/main.ts:42");
+    resumed.prepareInventory();
+    expect(messages).toHaveLength(prefix.length + 1);
+  });
+
+  it("recovers legacy acknowledgements that cannot prove the whole report was delivered", () => {
+    const run = { id: "legacy-child", parentSessionId: "parent", attempt: 1, status: "completed" as const,
+      title: "Research", prompt: "Inspect the source", cwd: "/tmp", provider: "openai" as const, model: "test",
+      createdAt: 1, updatedAt: 2, events: [], report: "Legacy evidence. ".repeat(2000), resultAcknowledged: true };
+    const manager = new SubagentManager("parent", { store: { load: () => [run], save: () => undefined, remove: () => undefined } });
+    managers.push(manager);
+    const messages: ChatMessage[] = [{ role: "system", content: `DURABLE WORK ENVELOPE\n[legacy-child] Research (completed, attempt 1, result read) — Legacy finding` }];
+    const inbox = new SubagentInbox(manager, "parent", messages);
+    expect(manager.pendingResults()).toHaveLength(1);
+    expect(inbox.prepare({ maxRequestTokens: 100_000, estimateTokens })[0]?.offset).toBe(0);
+  });
+
+  it("delivers stopped summaries even when new delegation is disabled", async () => {
+    const { manager, work, inbox, start } = setup();
+    const run = start();
+    await tick();
+    work[0]!.input.saveSummary!("Status: partial\n## Findings\nVerified source evidence is retained, but the investigation is incomplete.\n## Evidence\nsrc/main.ts:42 contains the inspected behavior.\n## Next steps\nInspect the consumer.\n## Coverage gaps\nThe consumer has not been read.");
+    manager.setEnabled(false);
+    work[0]!.resolve("Interrupted");
+    await manager.wait(run.id);
+    const pages = inbox.prepare({ maxRequestTokens: 10_000, estimateTokens });
+    expect(pages[0]?.message.content).toContain("src/main.ts:42");
+    inbox.acknowledge(pages);
+    expect(manager.pendingResults()).toEqual([]);
   });
 
   it("bounds large reports to remaining request space and supplies a continuation cursor", async () => {

@@ -9,6 +9,8 @@ export function runtimeSessionBusy(state: SessionState): boolean {
     state.compacting ||
     state.queued.length > 0 ||
     state.responder.running > 0 ||
+    (state.subagents?.running ?? 0) > 0 ||
+    (state.subagents?.pendingDelivery ?? 0) > 0 ||
     state.responder.ready > 0 ||
     state.responder.delivered > 0
   );
@@ -19,7 +21,8 @@ export function runtimeSessionActive(state: SessionState): boolean {
     state.running ||
     state.compacting ||
     state.queued.length > 0 ||
-    state.responder.running > 0
+    state.responder.running > 0 ||
+    (state.subagents?.running ?? 0) > 0
   );
 }
 

@@ -134,7 +134,9 @@ async function purgeCurrentSession(
 
 function sessionIsBusy(services: AppServices): boolean {
   const state = services.session.getState();
-  return state.running || state.compacting;
+  return state.running || state.compacting || state.queued.length > 0 ||
+    state.responder.running > 0 || (state.subagents?.running ?? 0) > 0 ||
+    (state.subagents?.pendingDelivery ?? 0) > 0;
 }
 
 function forkFreshSession(services: AppServices): boolean {
@@ -179,9 +181,11 @@ async function resetToFreshSession(services: AppServices): Promise<void> {
 }
 
 export async function handleNew(services: AppServices): Promise<void> {
-  const messages = services.session.messages;
-  if (!getConfig().privateMode && messages.some((m) => m.role === "user")) {
-    await services.session.persistNow().catch(() => undefined);
+  if (services.session.canResumeFromHistory()) {
+    const previousId = services.session.sessionId;
+    void services.session.persistNow().catch(() => {
+      notice(services, "warn", `could not save previous session ${previousId}`);
+    });
   }
   if (sessionIsBusy(services) && forkFreshSession(services)) {
     return;

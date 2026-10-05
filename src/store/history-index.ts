@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { open, readFile, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
+import { compareHistoryFreshness } from "./history/freshness.js";
 
 export interface HistorySummary {
   id: string;
@@ -79,8 +80,10 @@ async function writeHistoryIndexFile(
   jsonlPath: string,
   indexPath: string,
   entries: readonly HistoryIndexEntry[],
+  expectedSource?: { size: number; mtimeMs: number } | undefined,
 ): Promise<void> {
   const source = await stat(jsonlPath);
+  if (expectedSource && (source.size !== expectedSource.size || source.mtimeMs !== expectedSource.mtimeMs)) return;
   const index: HistoryIndexFile = {
     schemaVersion: 1,
     source: { size: source.size, mtimeMs: source.mtimeMs },
@@ -114,7 +117,12 @@ export async function appendIndexedHistoryRecord<T extends HistoryRecordShape>(
   let offset = 0;
   try {
     offset = (await handle.stat()).size;
-    await handle.write(line, 0, line.length, offset);
+    let written = 0;
+    while (written < line.length) {
+      const result = await handle.write(line, written, line.length - written, offset + written);
+      if (result.bytesWritten <= 0) throw new Error("Failed to append session history");
+      written += result.bytesWritten;
+    }
     await handle.sync().catch(() => undefined);
   } finally {
     await handle.close();
@@ -309,8 +317,11 @@ export async function rebuildHistoryIndexWithStatus<
   indexPath: string,
 ): Promise<HistoryIndexRebuildResult> {
   const byId = new Map<string, HistoryIndexEntry>();
+  const source = await stat(jsonlPath).catch(() => undefined);
   const scan = await scanHistoryJsonl<T>(jsonlPath, (record, offset, length) => {
     if (!record?.id) return;
+    const previous = byId.get(record.id);
+    if (previous && compareHistoryFreshness(record, previous.summary) <= 0) return;
     byId.set(record.id, {
       id: record.id,
       offset,
@@ -320,7 +331,7 @@ export async function rebuildHistoryIndexWithStatus<
   });
   const entries = [...byId.values()];
   try {
-    await writeHistoryIndexFile(jsonlPath, indexPath, entries);
+    if (source) await writeHistoryIndexFile(jsonlPath, indexPath, entries, source);
   } catch {
   }
   return { entries, malformed: scan.malformed };
@@ -339,7 +350,7 @@ export async function findHistoryRecordStreaming<T extends HistoryRecordShape>(
 ): Promise<T | undefined> {
   let found: T | undefined;
   await scanHistoryJsonl<T>(jsonlPath, (record) => {
-    if (record.id === id) found = record;
+    if (record.id === id && (!found || compareHistoryFreshness(record, found) > 0)) found = record;
   });
   return found;
 }

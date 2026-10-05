@@ -174,6 +174,13 @@ export interface ResponsesReplay {
   readonly items: readonly Record<string, unknown>[];
 }
 
+export interface SubagentResultReceipt {
+  readonly id: string;
+  readonly attempt: number;
+  readonly offset: number;
+  readonly length: number;
+}
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -186,6 +193,7 @@ export interface ChatMessage {
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
   responsesReplay?: ResponsesReplay | undefined;
   internal?: boolean | undefined;
+  subagentReceipt?: SubagentResultReceipt | undefined;
   compaction?: {
     readonly recentUserPrompts: readonly CompactedUserPrompt[];
   } | undefined;
@@ -439,4 +447,5 @@ export interface ToolResult {
     | import("./interactive-session/types.js").InteractiveSessionToolResult
     | undefined;
   images?: ChatImage[] | undefined;
+  subagentReceipt?: SubagentResultReceipt | undefined;
 }

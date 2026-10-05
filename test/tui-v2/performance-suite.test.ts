@@ -20,6 +20,8 @@ import { applyAppEvent } from "../../src/ui-core/state/transcript-reducer.js";
 import { TranscriptStore } from "../../src/ui-core/state/transcript-store.js";
 import {
   EMPTY_TRANSCRIPT_STATE,
+  transcriptItems,
+  type TranscriptItem,
   type TranscriptState,
 } from "../../src/ui-core/state/transcript-types.js";
 
@@ -39,6 +41,27 @@ function sequencer() {
 }
 
 describe("V2-091 performance suite (Node pure paths)", () => {
+  it("reads only the mounted window from a 100,000-item transcript", () => {
+    class CountingItems extends Map<string, TranscriptItem> {
+      reads = 0;
+      override get(id: string): TranscriptItem | undefined {
+        this.reads += 1;
+        return super.get(id);
+      }
+    }
+    const byId = new CountingItems();
+    const order = Array.from({ length: 100_000 }, (_, index) => {
+      const id = `user-${index}`;
+      byId.set(id, { id, kind: "user", text: `prompt ${index}`, sequence: index, timestamp: 0, turnId: undefined });
+      return id;
+    });
+    const state = { ...EMPTY_TRANSCRIPT_STATE, order, byId };
+    const window = transcriptItems(state, 99_880, 100_000);
+    expect(window).toHaveLength(120);
+    expect(byId.reads).toBe(120);
+    expect(window[0]?.id).toBe("user-99880");
+    expect(state.order).toHaveLength(100_000);
+  });
   it(`folds ${TEN_K} assistant-delta events within ${FOLD_BUDGET_MS}ms`, () => {
     const seq = sequencer();
     const turnId = asTurnId("turn-perf");

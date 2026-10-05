@@ -1,4 +1,5 @@
 import { realpath, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { resolveToolDialect } from "../../llm/capability/tool-dialect.js";
 import { effectiveContextWindowTokens, modelMaxOutputTokens } from "../../llm/context-windows.js";
 import { lowestReasoningPreference } from "../../llm/lowest-reasoning.js";
@@ -14,6 +15,7 @@ import { looksLikeTruncatedToolCall, parseAllToolCalls } from "../tool-call-pars
 import { boundedOutput, executeReadOnlyCall, prepareReadOnlyCall, READ_ONLY_TOOLS } from "./read-only-tools.js";
 import { boundFsReadOutput, isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 import { subagentReportStatus } from "./report.js";
+import { retireRejectedReasoningReplay } from "../../llm/routing/attempt-request.js";
 import {
   adaptSubagentHistory,
   markSubagentRouteFailure,
@@ -99,6 +101,8 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
   let researchLimit = 0;
   let activeRouteIndex = 0;
   let reportReason = checkpoint?.reportReason;
+  let modelOnlyRounds = checkpoint?.modelOnlyRounds ?? 0;
+  const repeatedEvidence = new Map(checkpoint?.repeatedEvidence ?? []);
   let pending = checkpoint?.pending ? structuredClone(checkpoint.pending) : undefined;
   const followupUpdate = followup ?? checkpoint?.pendingFollowup;
   let pendingFollowup = followupUpdate ? { ...run.followup, ...followupUpdate } : !checkpoint ? run.followup : undefined;
@@ -138,7 +142,12 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
   };
   prepareRoute(candidates[0]!, 0);
   const estimate = (): number => estimateMessagesTokens(messages) + schemaTokens;
-  const save = (finished = false): void => saveCheckpoint?.({ messages, nativeTools: native, reportReason, pending, pendingFollowup, finished });
+  const save = (finished = false): void => saveCheckpoint?.({ messages, nativeTools: native, reportReason, pending, pendingFollowup, finished, modelOnlyRounds, repeatedEvidence: [...repeatedEvidence] });
+  const repair = (): void => {
+    modelOnlyRounds += 1;
+    save();
+    if (modelOnlyRounds >= 3) throw new Error("Subagent made no research progress across three report or truncation repairs; retained evidence is available in its summary and activity log.");
+  };
   const synthesize = (reason: string): void => {
     if (reportReason) return;
     reportReason = reason;
@@ -147,6 +156,8 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
     save();
   };
   if (checkpoint?.finished) {
+    modelOnlyRounds = 0;
+    repeatedEvidence.clear();
     reportReason = undefined;
     pending = undefined;
     messages.push({ role: "user", content: "The parent explicitly restarted this assignment. Continue from the retained evidence, address remaining coverage gaps, and produce an updated report. Reuse gathered evidence where still relevant." });
@@ -158,6 +169,7 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
   for (;;) {
     signal.throwIfAborted();
     if (pending) {
+      let novelEvidence = false;
       while (pending.next < pending.calls.length) {
         signal.throwIfAborted();
         const call = pending.calls[pending.next]!;
@@ -182,19 +194,31 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
           ? boundFsReadOutput(output, allowance)
           : `${output.slice(0, allowance)}\n[Evidence truncated to reserve report context; coverage is incomplete.]`;
         emit({ kind: "tool", text: output });
+        const fingerprint = createHash("sha256").update(JSON.stringify([call.name, call.args, output])).digest("hex");
+        const repeats = (repeatedEvidence.get(fingerprint) ?? 0) + 1;
+        repeatedEvidence.set(fingerprint, repeats);
+        if (repeatedEvidence.size > 128) repeatedEvidence.delete(repeatedEvidence.keys().next().value!);
+        if (result.ok && repeats === 1) {
+          modelOnlyRounds = 0;
+          novelEvidence = true;
+        }
         messages.push(pending.native
           ? { role: "tool", content: output, name: call.name, toolCallId: (call as NativeToolCall).id, ok: result.ok }
           : { role: "user", content: `Untrusted tool result for ${call.name}:\n${output}` });
         pending = { ...pending, next: pending.next + 1 };
         save();
+        if (repeats >= 8) throw new Error("Subagent repeated the same tool and unchanged evidence eight times; retained evidence is available in its summary and activity log.");
       }
       pending = undefined;
+      if (!novelEvidence) repair();
       save();
     }
     if (pendingFollowup) {
       messages.push(followupMessage(pendingFollowup));
       pendingFollowup = undefined;
       reportReason = undefined;
+      modelOnlyRounds = 0;
+      repeatedEvidence.clear();
       save();
     }
     if (estimate() + compactionReserve >= researchLimit) synthesize("model context window requires compaction");
@@ -231,6 +255,9 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
           }, {
             allowProviderFallback: false, adoptFallback: false, maxRetries: 0, retryRateLimits: false,
             onStatus: (text) => { if (!signal.aborted && responseOpen) emit({ kind: "notice", text: boundedOutput(text) }); },
+            onSuccessfulRequest: (snapshot) => {
+              if (snapshot.forceReasoningReplay === false) retireRejectedReasoningReplay(messages, snapshot.provider, snapshot.model);
+            },
             ...(recordOperationUsage ? { onOperationUsage: recordOperationUsage } : {}),
           }));
           signal.throwIfAborted();
@@ -246,10 +273,16 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
       },
     }))).value;
     if (Buffer.byteLength(completion.text) > MAX_RESPONSE_BYTES || Buffer.byteLength(JSON.stringify([completion.toolCalls, completion.reasoningArtifacts, completion.reasoningBlock])) > MAX_RESPONSE_BYTES) throw new Error("Incomplete report: response exceeds the transport safety limit");
+    if (completion.text) {
+      const internalReport = (reportReason && subagentReportStatus(completion.text) !== "completed") ||
+        /^Status: partial\b/i.test(completion.text.trimStart()) || completion.finishReason === "length";
+      emit({ kind: internalReport ? "notice" : "assistant", text: completion.text, append: false });
+    }
     if (completion.finishReason === "length") {
       messages.push({ role: "assistant", content: completion.text });
       messages.push({ role: "user", content: `The response was truncated; incomplete tool calls were not executed. ${reportReason ? "Return a shorter evidence-backed report without tools." : "Use shorter responses/tool arguments. Continue the scoped investigation if evidence is missing, otherwise return the required report."} Do not invent evidence.` });
       save();
+      repair();
       continue;
     }
     if (completion.toolCalls?.length) {
@@ -257,14 +290,12 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
       if (ids.some((id) => typeof id !== "string" || !id.trim()) || new Set(ids).size !== ids.length) throw new Error("Incomplete report: invalid native tool call ids");
     }
     const calls = completion.toolCalls?.length ? completion.toolCalls : fencedCalls(completion.text);
-    if (calls.length && completion.text && !reportReason && !/^Status: (?:complete|partial)\b/i.test(completion.text.trimStart())) {
-      emit({ kind: "assistant", text: completion.text, append: false });
-    }
     messages.push({
       role: "assistant", content: completion.text,
       ...(completion.toolCalls?.length ? { toolCalls: structuredClone(completion.toolCalls) } : {}),
       ...(completion.reasoningArtifacts ? { reasoningArtifacts: structuredClone(completion.reasoningArtifacts) } : {}),
       ...(completion.reasoningBlock ? { reasoningBlock: structuredClone(completion.reasoningBlock) } : {}),
+      ...(completion.responsesReplay ? { responsesReplay: structuredClone(completion.responsesReplay) } : {}),
     });
     pending = calls.length ? { calls, native: Boolean(completion.toolCalls?.length), next: 0 } : undefined;
     save();
@@ -272,11 +303,11 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
       const status = subagentReportStatus(completion.text);
       if (completion.finishReason !== "tool_calls" && status === "completed") {
         save(true);
-        emit({ kind: "assistant", text: completion.text, append: false });
         return completion.text;
       }
       if (completion.finishReason !== "tool_calls" && status === "partial") {
         saveSummary?.(completion.text);
+        repair();
         if (reportReason) {
           const retained: ChatMessage[] = [
             ...messages.slice(0, 2),
@@ -294,6 +325,7 @@ async function runAttempt({ run, emit, checkpoint, saveCheckpoint, saveSummary, 
         }
         messages.push({ role: "user", content: "The assignment is not finished. Use the retained evidence to resolve the remaining in-scope gaps and deliver the requested result. Do not gather unrelated context or repeat completed research. A partial report is not a final answer; continue working with the available tools." });
       } else {
+        repair();
         messages.push({ role: "user", content: `The response is not a valid report. Return all four required sections with substantive evidence citations. ${reportReason ? "Compact existing evidence without tools; use Status: partial only as a continuation checkpoint if unfinished." : "Continue the scoped investigation if evidence is missing; use Status: complete only when the requested deliverable is answered."} Do not invent evidence or promise future work.` });
       }
       save();

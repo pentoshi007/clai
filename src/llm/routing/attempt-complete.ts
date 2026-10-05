@@ -34,6 +34,7 @@ import {
   preflightEffort,
   reasoningWireKey,
   requestForRoute,
+  retireRejectedReasoningReplay,
   revertVisionSubstitution,
   runRecordedProviderAttempt,
   withoutImages,
@@ -142,10 +143,12 @@ export async function tryCompleteOnce(
       onStatus?.(
         `ℹ ${providerId}/${model} rejected replayed reasoning — retrying without it`,
       );
-      return await runAttempt(
+      const result = await runAttempt(
         withoutReasoningReplay(activeRequest),
         "adaptation",
       );
+      retireRejectedReasoningReplay(request.messages, providerId, model);
+      return result;
     }
     if (
       isMissingReasoningContentError(error) &&
