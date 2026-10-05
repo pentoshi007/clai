@@ -83,7 +83,8 @@ describe("parent subagent tool boundary", () => {
     expect(data(waited.output)).toMatchObject({ status: "partial", recovery: "exact", reportAvailable: true });
     expect(data(waited.output).report).toBe(partial.report);
     expect(manager.wait).toHaveBeenCalledWith(run.id, undefined, signal);
-    expect(manager.acknowledgeResult).toHaveBeenCalledWith(run.id, run.attempt);
+    expect(manager.acknowledgeResult).not.toHaveBeenCalled();
+    expect(waited.subagentReceipt).toEqual({ id: run.id, attempt: run.attempt, offset: 0, length: partial.report!.length });
   });
 
   it("joins the first available child without requiring an ID or a deadline", async () => {
@@ -92,7 +93,8 @@ describe("parent subagent tool boundary", () => {
     expect(result.ok).toBe(true);
     expect(data(result.output)).toMatchObject({ id: run.id, report: run.report });
     expect(manager.waitAny).toHaveBeenCalledWith(undefined, undefined, signal);
-    expect(manager.acknowledgeResult).toHaveBeenCalledWith(run.id, run.attempt);
+    expect(manager.acknowledgeResult).not.toHaveBeenCalled();
+    expect(result.subagentReceipt).toEqual({ id: run.id, attempt: run.attempt, offset: 0, length: run.report!.length });
     manager.waitAny.mockResolvedValue(undefined);
     expect(data((await runSubagentTool({ name: "subagent.wait", args: {} }, context, signal)).output).status).toBe("idle");
   });
@@ -163,7 +165,7 @@ describe("parent subagent tool boundary", () => {
       const last = data((await runSubagentTool({ name: "subagent.read", args: { id: child.id, attempt: first.attempt, view: "report", offset: first.nextOffset } }, context, signal)).output);
       expect(first.report + last.report).toBe(report);
       expect(last.attempt).toBe(1);
-      expect(manager.pendingResults()).toEqual([expect.objectContaining({ attempt: 2 })]);
+      expect(manager.pendingResults().map((run) => run.attempt)).toEqual([1, 2]);
     } finally {
       manager.dispose();
     }

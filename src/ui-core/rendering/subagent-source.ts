@@ -2,6 +2,7 @@ import type { SubagentManager } from "../../agent/subagents/manager.js";
 import type { SubagentRun } from "../../agent/subagents/types.js";
 import {
   createTextPagerSource,
+  createArtifactPagerSource,
   DEFAULT_ARTIFACT_PAGE_BYTES,
   type ArtifactPagerSource,
 } from "./artifact-pager-source.js";
@@ -165,7 +166,7 @@ export function watchSubagents(
 }
 
 export function createSubagentPagerSource(
-  manager: Pick<SubagentManager, "get" | "subscribe">,
+  manager: Pick<SubagentManager, "get" | "subscribe"> & Partial<Pick<SubagentManager, "activityPath">>,
   id: string,
   pageBytes = DEFAULT_ARTIFACT_PAGE_BYTES,
 ): ArtifactPagerSource {
@@ -178,6 +179,14 @@ export function createSubagentPagerSource(
   const watchers = new Set<() => void>();
   const active = (): ArtifactPagerSource => {
     if (disposed) throw new Error("subagent pager source is disposed");
+    const activityPath = manager.activityPath?.(id);
+    if (activityPath) {
+      if (delegate?.path !== activityPath) {
+        delegate?.dispose();
+        delegate = createArtifactPagerSource(activityPath, pageBytes);
+      }
+      return delegate;
+    }
     const run = manager.get(id);
     const now = Date.now();
     const nextDuration = run ? subagentDurationLabel(run, now) : undefined;

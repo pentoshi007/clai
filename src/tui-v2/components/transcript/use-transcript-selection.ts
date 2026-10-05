@@ -20,6 +20,7 @@ interface TranscriptSelectionOptions {
   readonly spool: OutputSpool;
   readonly scrollRef: RefObject<ScrollBoxRenderable | null>;
   readonly focused: boolean;
+  readonly sessionId: string;
 }
 
 interface PointerState {
@@ -47,14 +48,25 @@ const MULTI_CLICK_WINDOW_MS = 450;
 export function useTranscriptSelection(
   options: TranscriptSelectionOptions,
 ): TranscriptSelectionBinding {
-  const { services, state, spool, scrollRef, focused } = options;
+  const { services, state, spool, scrollRef, focused, sessionId } = options;
   const documentRef = useRef<SemanticDocument>({ blocks: [] });
   const pointerRef = useRef<PointerState | undefined>(undefined);
   const clickRef = useRef<ClickState | undefined>(undefined);
 
   const stateRef = useRef(state);
   const builtForRef = useRef<TranscriptState | undefined>(undefined);
+  const documentSession = useRef(sessionId);
   stateRef.current = state;
+
+  useEffect(() => {
+    if (documentSession.current === sessionId) return;
+    documentSession.current = sessionId;
+    documentRef.current = { blocks: [] };
+    builtForRef.current = undefined;
+    pointerRef.current = undefined;
+    clickRef.current = undefined;
+    services.selection.setDocument("transcript", documentRef.current);
+  }, [sessionId, services.selection]);
 
   function ensureDocument(): SemanticDocument {
     const current = stateRef.current;

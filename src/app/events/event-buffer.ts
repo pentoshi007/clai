@@ -38,6 +38,12 @@ export class BoundedText {
     this.append(text);
   }
 
+  restore(text: string, state: Pick<BoundedTextState, "totalBytes" | "droppedBytes">): void {
+    this.replace(text);
+    this.total = Math.max(this.total, state.totalBytes);
+    this.dropped = Math.max(this.dropped, state.droppedBytes);
+  }
+
   get tail(): string {
     return this.tailBuf;
   }
@@ -70,8 +76,48 @@ export type DeferredOutput = () => string | undefined;
 export class OutputSpool {
   private readonly byTool = new Map<ToolCallId, BoundedText>();
   private readonly deferred = new Map<ToolCallId, DeferredOutput>();
+  private readonly reloaders = new Map<ToolCallId, DeferredOutput>();
+  private readonly residentArtifacts = new Set<ToolCallId>();
+  private readonly released = new Map<ToolCallId, Pick<BoundedTextState, "totalBytes" | "droppedBytes">>();
+  private readonly versions = new Map<ToolCallId, number>();
+  private residentCharsValue = 0;
 
-  constructor(private readonly maxCharsPerTool = 256 * 1024) {}
+  constructor(
+    private readonly maxCharsPerTool = 256 * 1024,
+    private readonly maxResidentChars = 8 * 1024 * 1024,
+  ) {
+    if (!(maxResidentChars > 0)) throw new RangeError("maxResidentChars must be positive");
+  }
+
+  get residentChars(): number {
+    return this.residentCharsValue;
+  }
+
+  version(toolCallId: ToolCallId): number {
+    return this.versions.get(toolCallId) ?? 0;
+  }
+
+  private changed(toolCallId: ToolCallId): void {
+    this.versions.set(toolCallId, this.version(toolCallId) + 1);
+    this.released.delete(toolCallId);
+    this.reloaders.delete(toolCallId);
+    this.residentArtifacts.delete(toolCallId);
+  }
+
+  private trim(protectedId?: ToolCallId): void {
+    if (this.residentCharsValue <= this.maxResidentChars) return;
+    for (const id of this.residentArtifacts) {
+      const buffer = this.byTool.get(id);
+      const reload = this.reloaders.get(id);
+      if (id === protectedId || !buffer || !reload) continue;
+      this.released.set(id, { totalBytes: buffer.totalBytes, droppedBytes: buffer.droppedBytes });
+      this.residentCharsValue -= buffer.tail.length;
+      this.byTool.delete(id);
+      this.residentArtifacts.delete(id);
+      this.deferred.set(id, reload);
+      if (this.residentCharsValue <= this.maxResidentChars) break;
+    }
+  }
 
   private bufferFor(toolCallId: ToolCallId): BoundedText {
     let buffer = this.byTool.get(toolCallId);
@@ -91,15 +137,36 @@ export class OutputSpool {
       } catch {
         text = undefined;
       }
-      if (text !== undefined) this.bufferFor(toolCallId).replace(text);
+      if (text !== undefined) {
+        const buffer = this.bufferFor(toolCallId);
+        this.residentCharsValue -= buffer.tail.length;
+        const released = this.released.get(toolCallId);
+        if (released) buffer.restore(text, released);
+        else buffer.replace(text);
+        this.residentCharsValue += buffer.tail.length;
+        this.released.delete(toolCallId);
+        this.residentArtifacts.add(toolCallId);
+        this.trim(toolCallId);
+      } else {
+        this.deferred.set(toolCallId, load);
+      }
     }
-    return this.byTool.get(toolCallId);
+    const buffer = this.byTool.get(toolCallId);
+    if (buffer && this.reloaders.has(toolCallId)) {
+      this.residentArtifacts.delete(toolCallId);
+      this.residentArtifacts.add(toolCallId);
+    }
+    return buffer;
   }
 
   append(toolCallId: ToolCallId, chunk: string): OutputChunkRef {
     this.resolve(toolCallId);
+    this.changed(toolCallId);
     const buffer = this.bufferFor(toolCallId);
+    this.residentCharsValue -= buffer.tail.length;
     buffer.append(chunk);
+    this.residentCharsValue += buffer.tail.length;
+    this.trim(toolCallId);
     return {
       toolCallId,
       chunkBytes: Buffer.byteLength(chunk, "utf8"),
@@ -109,8 +176,12 @@ export class OutputSpool {
 
   replace(toolCallId: ToolCallId, text: string): OutputChunkRef {
     this.deferred.delete(toolCallId);
+    this.changed(toolCallId);
     const buffer = this.bufferFor(toolCallId);
+    this.residentCharsValue -= buffer.tail.length;
     buffer.replace(text);
+    this.residentCharsValue += buffer.tail.length;
+    this.trim(toolCallId);
     return {
       toolCallId,
       chunkBytes: Buffer.byteLength(text, "utf8"),
@@ -120,6 +191,17 @@ export class OutputSpool {
 
   defer(toolCallId: ToolCallId, load: DeferredOutput): void {
     this.deferred.set(toolCallId, load);
+    this.reloaders.set(toolCallId, load);
+    if (this.byTool.has(toolCallId)) this.residentArtifacts.add(toolCallId);
+    this.versions.set(toolCallId, this.version(toolCallId) + 1);
+    this.trim();
+  }
+
+  retainArtifact(toolCallId: ToolCallId, load: DeferredOutput): void {
+    this.reloaders.set(toolCallId, load);
+    if (this.byTool.has(toolCallId)) this.residentArtifacts.add(toolCallId);
+    else this.deferred.set(toolCallId, load);
+    this.trim();
   }
 
   tail(toolCallId: ToolCallId): string {
@@ -141,5 +223,10 @@ export class OutputSpool {
   clear(): void {
     this.byTool.clear();
     this.deferred.clear();
+    this.reloaders.clear();
+    this.residentArtifacts.clear();
+    this.released.clear();
+    this.versions.clear();
+    this.residentCharsValue = 0;
   }
 }

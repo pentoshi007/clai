@@ -96,6 +96,10 @@ export const createToolResultRecorder = (ports: ToolResultRecorderPorts) => ({
     } else {
       ports.messages.push({ role: "tool", content: toolContent });
     }
+    if (record.result.subagentReceipt && deduped.content.includes(record.result.output)) {
+      const message = ports.messages.at(-1);
+      if (message) message.subagentReceipt = record.result.subagentReceipt;
+    }
     const deferred = deferredImageMessage(record.call, record.result);
     if (deferred) ports.deferredPostToolMessages.push(deferred);
   },

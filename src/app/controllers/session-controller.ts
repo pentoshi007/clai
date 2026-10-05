@@ -57,6 +57,7 @@ import { prefetchProviderCatalog } from "../../llm/catalog-prefetch.js";
 import { publishRouteReasoningVocabulary } from "../../llm/route-vocabulary.js";
 import { getConfig, getProviderModel } from "../../store/config.js";
 import { beginSessionWorkspace, getActiveSessionWorkspace, type SessionWorkspace } from "../../store/session-workspace.js";
+import { safeCwd } from "../../os/cwd.js";
 import { materializeHistoryImages } from "../../store/history.js";
 import {
   runSessionCompaction,
@@ -855,8 +856,6 @@ export class SessionController implements Disposable {
       return;
     }
     const generation = this.lifecycleGeneration;
-    await this.promptHistoryValue.flush().catch(() => undefined);
-    if (generation !== this.lifecycleGeneration) return;
     if (!hasPersistableHistory(this.history)) {
       return;
     }
@@ -872,7 +871,8 @@ export class SessionController implements Disposable {
       this.usageLedger.persist(),
     );
     const persistedHistory = projectToolHistory(this.history).messages;
-    await this.persistence.save(persistedHistory, {
+    const workspace = getActiveSessionWorkspace();
+    const saved = this.persistence.save(persistedHistory, {
       sessionId: this.sessionIdValue,
       name: name ?? this.sessionTitle,
       transcript: this.deps.getTranscriptSnapshot?.(),
@@ -880,9 +880,14 @@ export class SessionController implements Disposable {
       ...(this.provider ? { provider: this.provider } : {}),
       ...(this.model ? { model: this.model } : {}),
       thinking: { ...getConfig().thinking },
+      location: {
+        cwd: safeCwd(),
+        ...(workspace ? { workspaceFolder: workspace.folderName, workspaceCode: workspace.code } : {}),
+      },
       ...(contextUsage ? { contextUsage } : {}),
     });
-    this.settlePersistedResponderResults();
+    await Promise.all([saved, this.promptHistoryValue.flush().catch(() => undefined)]);
+    if (generation === this.lifecycleGeneration) this.settlePersistedResponderResults();
   }
 
   estimateContext(): { messages: number; tokens: number } {

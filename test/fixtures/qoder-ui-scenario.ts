@@ -53,7 +53,7 @@ export async function exerciseQoderUi(driver: QoderUiDriver, fixture: ReturnType
 
   const defaultProvider = getConfig().defaultProvider;
   assert.equal((await getProviderKeys("qoder")).keys.length, 0);
-  invoke("providers"); await waitOverlay("picker");
+  invoke("provider"); await waitOverlay("picker");
   let state = app.overlay.getState();
   assert.ok(state.kind === "picker" && state.request.options[0]?.value === "headless");
   const methods = await driver.frame();

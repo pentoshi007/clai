@@ -80,6 +80,49 @@ describe("transcript persist base", () => {
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
   });
 
+  it("updates streamed text and completed tools across repeated autosaves after resume", () => {
+    const full = fullTranscript();
+    const store = new TranscriptStore();
+    store.hydrate(hydrateFromClassicTranscript(full.slice(2)).state, { persistBase: full });
+    const seq = new EventSequencer(asSessionId("s1"));
+    store.dispatch(seq.build("turn-started", { prompt: "continue" }, undefined));
+    store.dispatch(seq.build("assistant-delta", { text: "Reading" }, undefined));
+    const first = snapshot(store);
+    store.dispatch(seq.build("assistant-delta", { text: " the source" }, undefined));
+    const toolCallId = asToolCallId("resume-read");
+    store.dispatch(seq.build("tool-call", { toolCallId, name: "fs.read", argsDisplay: "src/main.ts" }, undefined));
+    const second = snapshot(store);
+    store.dispatch(seq.build("tool-result", { toolCallId, ok: true, exitCode: 0, summary: "Source read" }, undefined));
+    const third = snapshot(store);
+    expect(first.find((item) => item.kind === "assistant" && item.text === "Reading")).toBeDefined();
+    expect(second.find((item) => item.kind === "assistant" && item.text === "Reading the source")).toBeDefined();
+    expect(third.find((item) => item.kind === "tool")).toMatchObject({ status: "ok", summary: "Source read", exitCode: 0 });
+    expect(third.slice(0, full.length)).toEqual(full);
+    expect(snapshot(store)).toEqual(third);
+    expect(new Set(third.map((item) => item.id)).size).toBe(third.length);
+    expect(hydrateFromClassicTranscript(third).state.order).toHaveLength(third.length);
+  });
+
+  it("keeps saved live items when a bounded view later drops them", () => {
+    const full = fullTranscript();
+    const store = new TranscriptStore(3);
+    store.hydrate(hydrateFromClassicTranscript(full.slice(-2)).state, { persistBase: full });
+    const seq = new EventSequencer(asSessionId("s1"));
+    store.dispatch(seq.build("turn-started", { prompt: "continue" }, undefined));
+    store.dispatch(seq.build("assistant-delta", { text: "resumed" }, undefined));
+    snapshot(store);
+    store.dispatch(seq.build("assistant-delta", { text: " answer" }, undefined));
+    snapshot(store);
+    store.dispatch(seq.build("assistant-message", { messageId: seq.ids.message(), text: "resumed answer" }, undefined));
+    snapshot(store);
+    store.dispatch(seq.build("turn-started", { prompt: "next" }, undefined));
+    store.dispatch(seq.build("assistant-delta", { text: "second answer" }, undefined));
+    const saved = snapshot(store);
+    expect(saved.some((item) => item.kind === "assistant" && item.text === "resumed answer")).toBe(true);
+    expect(saved.some((item) => item.kind === "assistant" && item.text === "second answer")).toBe(true);
+    expect(saved.slice(0, full.length)).toEqual(full);
+  });
+
   it("keeps the base across in-session rehydrates that omit persistBase", () => {
     const full = fullTranscript();
     const store = new TranscriptStore();

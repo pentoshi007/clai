@@ -34,6 +34,7 @@ export interface SubagentRun extends SubagentAssignment {
   readonly report?: string | undefined;
   readonly lastKnownSummary?: SubagentSummary | undefined;
   readonly resultAcknowledged?: boolean | undefined;
+  readonly deliveredReportChars?: number | undefined;
   readonly error?: string | undefined;
   readonly recovery?: "exact" | "history" | "fresh" | undefined;
   readonly followup?: SubagentFollowup | undefined;
@@ -55,6 +56,8 @@ export interface SubagentCheckpoint {
   readonly nativeTools?: boolean | undefined;
   readonly reportReason?: string | undefined;
   readonly finished?: boolean | undefined;
+  readonly modelOnlyRounds?: number | undefined;
+  readonly repeatedEvidence?: readonly [string, number][] | undefined;
   readonly pendingFollowup?: SubagentFollowup | undefined;
   readonly pending?: {
     readonly calls: readonly ToolCall[];
@@ -86,4 +89,8 @@ export interface SubagentStore {
   load(parentSessionId: string): readonly SubagentRun[];
   save(run: SubagentRun): void;
   remove(parentSessionId: string): void;
+  loadAttempts?(parentSessionId: string): readonly SubagentRun[];
+  saveAttempt?(run: SubagentRun): void;
+  appendActivity?(run: SubagentRun, events: readonly SubagentEvent[]): void;
+  activityPath?(parentSessionId: string, id: string): string | undefined;
 }

@@ -46,6 +46,7 @@ import {
 } from "./types.js";
 
 const CLIENT_BACKPRESSURE_BYTES = 1024 * 1024;
+const MAX_CLIENT_OUTPUT_BYTES = 8 * 1024 * 1024;
 const METADATA_DEBOUNCE_MS = 50;
 const FINAL_OUTPUT_DRAIN_MS = 3_000;
 const CHILD_REPAINT_TIMEOUT_MS = 5_000;
@@ -65,6 +66,7 @@ interface ActiveClient {
   channel?: JsonFrameChannel | undefined;
   terminal?: Socket | undefined;
   output?: TerminalAttachOutput | undefined;
+  dimensions?: TerminalDimensions | undefined;
 }
 
 function errorText(error: unknown): string {
@@ -133,7 +135,7 @@ export async function resizeRuntimeTransport(
 function clientFrame(value: unknown): RuntimeClientFrame | undefined {
   if (!value || typeof value !== "object") return undefined;
   const frame = value as Partial<RuntimeClientFrame>;
-  if (frame.type === "ping" || frame.type === "detach") {
+  if (frame.type === "ping" || frame.type === "detach" || frame.type === "claim-input") {
     return frame as RuntimeClientFrame;
   }
   if (
@@ -241,6 +243,8 @@ export class SessionRuntimeHost {
   private readonly connections = new Set<Socket>();
   private transport: SessionTransport | undefined;
   private client: ActiveClient | undefined;
+  private readonly clients = new Map<string, ActiveClient>();
+  private readonly pendingClients = new Map<string, ActiveClient>();
   private childSocket: Socket | undefined;
   private childChannel: JsonFrameChannel | undefined;
   private childSupportsRepaint = false;
@@ -255,10 +259,11 @@ export class SessionRuntimeHost {
   private expectedExitCode: number | undefined;
   private metadataTimer: ReturnType<typeof setTimeout> | undefined;
   private metadataDirty = false;
-  private outputPausedFor: Socket | undefined;
-  private outputDrainHandler: (() => void) | undefined;
+  private readonly outputDrains = new Map<Socket, () => void>();
   private metadataWrites: Promise<void> = Promise.resolve();
   private inputWrites: Promise<unknown> = Promise.resolve();
+  private resizeWrites: Promise<boolean> = Promise.resolve(true);
+  private currentDimensions: TerminalDimensions | undefined;
   private statusWrites: Promise<unknown> = Promise.resolve();
   private closing = false;
   private cleaning = false;
@@ -291,7 +296,7 @@ export class SessionRuntimeHost {
       const outcome = await this.exitPromise;
       this.exitOutcome = outcome;
       await this.flushTerminalOutput();
-      this.sendToClient({
+      this.broadcastFrame({
         type: "exit",
         exitCode: outcome.exitCode ?? 1,
         ...(outcome.signal ? { signal: outcome.signal } : {}),
@@ -432,11 +437,15 @@ export class SessionRuntimeHost {
       socket.destroy();
       return;
     }
-    if (this.client) {
-      this.disconnectClient("taken-over");
+    if (this.pendingClients.size + this.clients.size >= 16 || this.clients.has(clientId) || this.pendingClients.has(clientId)) {
+      socket.destroy();
+      return;
     }
     const client: ActiveClient = { id: clientId, control: socket };
-    this.client = client;
+    this.pendingClients.set(clientId, client);
+    socket.setTimeout(10_000, () => {
+      if (this.pendingClients.get(client.id) === client) socket.destroy();
+    });
     this.acknowledge(socket);
     client.channel = new JsonFrameChannel(
       socket,
@@ -453,19 +462,25 @@ export class SessionRuntimeHost {
     rest: Buffer,
     dimensions: TerminalDimensions | undefined,
   ): Promise<void> {
-    const client = this.client;
-    if (!client || !auth.clientId || client.id !== auth.clientId) {
+    const client = auth.clientId ? this.pendingClients.get(auth.clientId) ?? this.clients.get(auth.clientId) : undefined;
+    if (!client || client.control.destroyed) {
       socket.destroy();
       return;
     }
-    if (dimensions && !(await this.resize(dimensions))) {
+    const previousDimensions = client.dimensions;
+    client.dimensions = dimensions ?? client.dimensions ?? { columns: this.payload.columns, rows: this.payload.rows };
+    if (!(await this.resize(this.sharedDimensions(client)))) {
+      client.dimensions = previousDimensions;
       socket.destroy();
       return;
     }
-    if (this.client !== client) {
+    if (client.control.destroyed || (this.clients.get(client.id) !== client && this.pendingClients.get(client.id) !== client)) {
       socket.destroy();
       return;
     }
+    this.pendingClients.delete(client.id);
+    client.control.setTimeout(0);
+    this.clients.set(client.id, client);
     if (client.terminal) {
       client.output?.dispose();
       this.releaseOutputBackpressure(client.terminal);
@@ -477,6 +492,7 @@ export class SessionRuntimeHost {
     );
     client.terminal = socket;
     client.output = output;
+    this.setInputOwner(client);
     this.attached = true;
     this.cancelIdleTimer();
     await this.writeMetadataNow();
@@ -521,7 +537,7 @@ export class SessionRuntimeHost {
       this.childSocket = undefined;
       this.childSupportsRepaint = false;
     });
-    if (this.client?.terminal) void this.requestChildRepaint();
+    if (this.attached) void this.requestChildRepaint();
   }
 
   private requestChildRepaint(): Promise<boolean> {
@@ -550,7 +566,7 @@ export class SessionRuntimeHost {
   }
 
   private handleClientFrame(client: ActiveClient, value: unknown): void {
-    if (this.client !== client) return;
+    if (this.clients.get(client.id) !== client) return;
     const frame = clientFrame(value);
     if (!frame) return;
     if (frame.type === "ping") {
@@ -558,11 +574,18 @@ export class SessionRuntimeHost {
       return;
     }
     if (frame.type === "detach") {
-      this.disconnectClient("requested");
+      this.disconnectClient("requested", client);
+      return;
+    }
+    if (frame.type === "claim-input") {
+      if (client.terminal && !client.terminal.destroyed) this.setInputOwner(client);
       return;
     }
     const dimensions = dimensionsOf(frame);
-    if (dimensions) void this.resize(dimensions);
+    if (dimensions) {
+      client.dimensions = dimensions;
+      void this.resize(this.sharedDimensions());
+    }
   }
 
   private handleChildFrame(value: unknown): void {
@@ -644,12 +667,17 @@ export class SessionRuntimeHost {
   private publishOutput(bytes: Uint8Array): void {
     this.replay.append(bytes);
     this.terminalModes.observe(bytes);
-    this.client?.output?.push(bytes);
+    for (const client of this.clients.values()) client.output?.push(bytes);
   }
 
   private writeToTerminal(terminal: Socket, bytes: Uint8Array): void {
     if (!terminal.writable || terminal.destroyed) return;
     const writable = terminal.write(bytes);
+    if (terminal.writableLength > MAX_CLIENT_OUTPUT_BYTES) {
+      const client = [...this.clients.values()].find((candidate) => candidate.terminal === terminal);
+      if (client) this.disconnectClient("connection-lost", client);
+      return;
+    }
     if (
       !writable ||
       terminal.writableLength >= CLIENT_BACKPRESSURE_BYTES
@@ -659,31 +687,40 @@ export class SessionRuntimeHost {
   }
 
   private applyOutputBackpressure(terminal: Socket): void {
-    if (this.outputPausedFor === terminal) return;
-    this.releaseOutputBackpressure();
-    this.outputPausedFor = terminal;
-    this.transport?.pauseOutput();
+    if (this.outputDrains.has(terminal)) return;
     const drain = (): void => this.releaseOutputBackpressure(terminal);
-    this.outputDrainHandler = drain;
+    this.outputDrains.set(terminal, drain);
     terminal.once("drain", drain);
+    this.updateOutputBackpressure();
   }
 
   private releaseOutputBackpressure(terminal?: Socket): void {
-    if (!this.outputPausedFor) return;
-    if (terminal && this.outputPausedFor !== terminal) return;
-    if (this.outputDrainHandler) {
-      this.outputPausedFor.off("drain", this.outputDrainHandler);
+    if (terminal) {
+      const drain = this.outputDrains.get(terminal);
+      if (drain) terminal.off("drain", drain);
+      this.outputDrains.delete(terminal);
+    } else {
+      for (const [socket, drain] of this.outputDrains) socket.off("drain", drain);
+      this.outputDrains.clear();
     }
-    this.outputPausedFor = undefined;
-    this.outputDrainHandler = undefined;
-    this.transport?.resumeOutput();
+    this.updateOutputBackpressure();
+  }
+
+  private updateOutputBackpressure(): void {
+    const terminals = [...this.clients.values()].flatMap((client) =>
+      client.terminal && !client.terminal.destroyed ? [client.terminal] : []);
+    if (terminals.length > 0 && terminals.every((terminal) => this.outputDrains.has(terminal))) {
+      this.transport?.pauseOutput();
+    } else {
+      this.transport?.resumeOutput();
+    }
   }
 
   private async flushTerminalOutput(): Promise<void> {
-    this.client?.output?.finish(false);
+    for (const client of this.clients.values()) client.output?.finish(false);
     const deadline = Date.now() + FINAL_OUTPUT_DRAIN_MS;
     while (Date.now() < deadline) {
-      const paused = this.outputPausedFor;
+      const paused = this.outputDrains.keys().next().value;
       if (paused) {
         await new Promise<void>((resolve) => {
           let settled = false;
@@ -711,29 +748,26 @@ export class SessionRuntimeHost {
           timeout.unref?.();
         }),
       ]);
-      if (!this.outputPausedFor) break;
+      if (this.outputDrains.size === 0) break;
     }
     this.releaseOutputBackpressure();
-    const terminal = this.client?.terminal;
-    if (
-      !terminal ||
-      terminal.destroyed ||
-      terminal.writableEnded ||
-      !terminal.writable
-    ) return;
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        resolve();
-      };
-      const timeout = setTimeout(finish, 1_000);
-      timeout.unref?.();
-      terminal.once("close", finish);
-      terminal.end(finish);
-    });
+    await Promise.all([...this.clients.values()].map(async (client) => {
+      const terminal = client.terminal;
+      if (!terminal || terminal.destroyed || terminal.writableEnded || !terminal.writable) return;
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          resolve();
+        };
+        const timeout = setTimeout(finish, 1_000);
+        timeout.unref?.();
+        terminal.once("close", finish);
+        terminal.end(finish);
+      });
+    }));
   }
 
   private queueInput(bytes: Uint8Array): void {
@@ -744,28 +778,71 @@ export class SessionRuntimeHost {
   }
 
   private resize(dimensions: TerminalDimensions): Promise<boolean> {
-    return resizeRuntimeTransport(this.transport, dimensions);
+    const resized = this.resizeWrites.then(async () => {
+      if (this.currentDimensions?.columns === dimensions.columns && this.currentDimensions.rows === dimensions.rows) return true;
+      const accepted = await resizeRuntimeTransport(this.transport, dimensions);
+      if (accepted) this.currentDimensions = dimensions;
+      return accepted;
+    });
+    this.resizeWrites = resized.catch(() => false);
+    return resized;
+  }
+
+  private sharedDimensions(candidate?: ActiveClient): TerminalDimensions {
+    let columns = candidate?.dimensions?.columns ?? Number.POSITIVE_INFINITY;
+    let rows = candidate?.dimensions?.rows ?? Number.POSITIVE_INFINITY;
+    for (const client of this.clients.values()) {
+      if (!client.terminal || client.terminal.destroyed || !client.dimensions) continue;
+      columns = Math.min(columns, client.dimensions.columns);
+      rows = Math.min(rows, client.dimensions.rows);
+    }
+    return {
+      columns: Number.isFinite(columns) ? columns : this.payload.columns,
+      rows: Number.isFinite(rows) ? rows : this.payload.rows,
+    };
+  }
+
+  private setInputOwner(client: ActiveClient | undefined): void {
+    this.client = client;
+    for (const candidate of this.clients.values()) {
+      candidate.channel?.send({ type: "input-owner", active: candidate === client });
+    }
+  }
+
+  private refreshAttachment(): void {
+    const attached = [...this.clients.values()].filter((client) => client.terminal && !client.terminal.destroyed);
+    this.attached = attached.length > 0;
+    if (!this.client?.terminal || this.client.terminal.destroyed || !this.clients.has(this.client.id)) {
+      this.setInputOwner(attached.at(-1));
+    }
+    this.updateOutputBackpressure();
+    if (this.attached) void this.resize(this.sharedDimensions());
+    this.queueMetadata();
+    this.scheduleIdleTimer();
   }
 
   private clientClosed(client: ActiveClient, socket: Socket): void {
+    if (socket === client.control && this.pendingClients.get(client.id) === client) {
+      this.pendingClients.delete(client.id);
+      client.channel?.dispose();
+      return;
+    }
+    if (this.clients.get(client.id) !== client) return;
+    if (client.control === socket) {
+      this.closeClientSockets(client);
+      return;
+    }
     if (client.terminal === socket) {
       client.output?.dispose();
       client.output = undefined;
       client.terminal = undefined;
       this.releaseOutputBackpressure(socket);
-      if (this.client === client) {
-        this.attached = false;
-        this.queueMetadata();
-        this.scheduleIdleTimer();
-      }
+      this.refreshAttachment();
     }
-    if (client.control === socket) client.channel?.dispose();
-    if (this.client !== client) return;
-    if (!client.control.destroyed || client.terminal) return;
-    this.client = undefined;
-    this.attached = false;
-    this.queueMetadata();
-    this.scheduleIdleTimer();
+  }
+
+  private broadcastFrame(frame: RuntimeHostFrame): void {
+    for (const client of this.clients.values()) client.channel?.send(frame);
   }
 
   private sendToClient(frame: RuntimeHostFrame): void {
@@ -774,20 +851,19 @@ export class SessionRuntimeHost {
 
   private disconnectClient(
     reason: Extract<RuntimeHostFrame, { type: "detached" }>["reason"],
+    client = this.client,
   ): void {
-    this.sendToClient({
+    client?.channel?.send({
       type: "detached",
       reason,
       sessionId: this.sessionId,
     });
-    this.closeClientSockets();
+    this.closeClientSockets(client);
   }
 
-  private closeClientSockets(): void {
-    const client = this.client;
+  private closeClientSockets(client = this.client): void {
     if (!client) return;
-    this.client = undefined;
-    this.attached = false;
+    this.clients.delete(client.id);
     client.output?.dispose();
     this.releaseOutputBackpressure(client.terminal);
     client.channel?.dispose();
@@ -797,8 +873,7 @@ export class SessionRuntimeHost {
       client.terminal?.destroy();
       client.control.destroy();
     }, 250).unref?.();
-    this.queueMetadata();
-    this.scheduleIdleTimer();
+    this.refreshAttachment();
   }
 
   private scheduleIdleTimer(): void {
@@ -931,12 +1006,13 @@ export class SessionRuntimeHost {
     if (this.livenessTimer) clearTimeout(this.livenessTimer);
     this.releaseOutputBackpressure();
     this.removeSignals();
-    this.closeClientSockets();
+    for (const client of this.clients.values()) this.closeClientSockets(client);
     this.failChildRepaints();
     this.childChannel?.dispose();
     this.childSocket?.destroy();
     for (const socket of this.connections) socket.destroy();
     this.connections.clear();
+    this.pendingClients.clear();
     await closeServer(this.server);
     if (!this.exitOutcome && this.transport) {
       await this.transport.requestTreeTermination("forceful").catch(() => undefined);

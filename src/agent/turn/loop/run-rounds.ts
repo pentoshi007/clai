@@ -57,6 +57,7 @@ import type { TurnOutcome } from "../../turn-outcome.js";
 import type { TurnLoopDeps } from "./deps.js";
 import { resolveAnswerPath } from "./answer-path.js";
 import { SubagentInbox, SubagentInboxCapacityError } from "../subagent-inbox.js";
+import { retireRejectedReasoningReplay } from "../../../llm/routing/attempt-request.js";
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
 import { providerContextMeasurement } from "../provider-measurement.js";
 import { stripToolCallSurfaces } from "../../../ui-core/rendering/strip-tool-surfaces.js";
@@ -96,6 +97,7 @@ export const runTurnRounds = async (
     } else {
 
       await deps.maybeAutoCompact("auto-token-budget");
+      subagentInbox.prepareInventory();
       const responderDelivery = deps.refreshResponderInbox();
       const inboxLimit = resolveEffectiveContextLimit({
         provider: deps.loop.provider,
@@ -119,6 +121,7 @@ export const runTurnRounds = async (
         deps.loop.step === 0 ? "waiting" : `step ${deps.loop.step + 1}`;
       deps.emit({ type: "status", text: streamLabel });
       let toolsAttached = false;
+      let submittedMessages: readonly import("../../../types.js").ChatMessage[] | undefined;
       const streamSession = createStreamSession({
         emitStatus: (text) => deps.emit({ type: "status", text }),
         emitAssistantDelta: (text) => deps.emit({ type: "assistant-delta", text }),
@@ -131,6 +134,8 @@ export const runTurnRounds = async (
         nativeToolsAttached: () => toolsAttached,
         mcpRuntime: deps.mcpRuntime,
         onSuccessfulRequest: (snapshot) => {
+          submittedMessages = snapshot.messages;
+          if (snapshot.forceReasoningReplay === false) retireRejectedReasoningReplay(deps.messages, snapshot.provider, snapshot.model);
           deps.loop.lastSuccessfulRequestSnapshot = snapshot;
           deps.options.onSuccessfulRequest?.(snapshot);
         },
@@ -149,7 +154,7 @@ export const runTurnRounds = async (
       if (requested.kind === "continue") continue;
       const completion = requested.completion;
       deps.options.signal?.throwIfAborted();
-      subagentInbox.acknowledge(subagentDeliveries);
+      subagentInbox.acknowledge(subagentDeliveries, submittedMessages ?? deps.messages);
       toolsAttached = requested.toolsAttached;
       if (responderDelivery) {
         if (!jobManager.markDelivered(responderDelivery.id, deps.session.sessionId)) {

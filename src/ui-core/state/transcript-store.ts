@@ -220,9 +220,14 @@ export class TranscriptStore {
     if (this.persistBase.length === 0) {
       return fresh;
     }
-    const merged = [...this.persistBase, ...fresh];
+    const updates = new Map(fresh.map((item) => [item.id, item]));
+    const merged = this.persistBase.map((item) => {
+      const update = updates.get(item.id);
+      updates.delete(item.id);
+      return update ?? item;
+    });
+    merged.push(...updates.values());
     this.persistBase = merged;
-    this.persistHydratedIds = new Set(merged.map((item) => item.id));
     return merged;
   }
 

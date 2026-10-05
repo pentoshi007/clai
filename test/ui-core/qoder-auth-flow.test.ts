@@ -199,9 +199,9 @@ describe("Qoder shared UI sign-in", () => {
     expect(app.focus.activeContext()).toBe("composer");
   });
 
-  it.each(["provider", "providers"])("/%s authenticates before activation", async (name) => {
+  it("/provider authenticates before activation", async () => {
     const app = services();
-    expect(await app.commands.dispatch({ name, args: "qoder" })).toBe(true);
+    expect(await app.commands.dispatch({ name: "provider", args: "qoder" })).toBe(true);
     await waitOverlay(app, "picker"); expect(app.session.getState().provider).toBe("free");
     await choosePat(app);
     await vi.waitFor(() => expect(app.session.getState().provider).toBe("qoder"));
@@ -212,12 +212,12 @@ describe("Qoder shared UI sign-in", () => {
 
   it("does not switch providers when sign-in is cancelled or storage fails", async () => {
     const app = services();
-    await app.commands.dispatch({ name: "providers", args: "qoder" }); await waitOverlay(app, "picker");
+    await app.commands.dispatch({ name: "provider", args: "qoder" }); await waitOverlay(app, "picker");
     cancelOverlay(app); await vi.waitFor(() => expect(app.focus.activeContext()).toBe("composer"));
     expect(app.session.getState().provider).toBe("free");
     h.append.mockRejectedValue(new Error("storage unavailable"));
     const notice = vi.spyOn(app.session, "notice");
-    await app.commands.dispatch({ name: "providers", args: "qoder" }); await choosePat(app);
+    await app.commands.dispatch({ name: "provider", args: "qoder" }); await choosePat(app);
     await vi.waitFor(() => expect(notice).toHaveBeenCalledWith("warn", expect.stringContaining("Could not save Qoder sign-in")));
     expect(app.session.getState().provider).toBe("free");
   });

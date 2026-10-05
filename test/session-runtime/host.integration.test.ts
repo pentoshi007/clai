@@ -88,7 +88,7 @@ async function channel(
 }
 
 describe("session runtime host integration", () => {
-  it("replays output, transfers control, and minimises without killing the child", async () => {
+  it("replays output to multiple viewers and minimises one without killing the child", async () => {
     const capability = await probePtyCapability();
     const bun = findBunExecutable();
     if (!capability.available && !bun) return;
@@ -160,7 +160,7 @@ describe("session runtime host integration", () => {
     secondTerminal.socket.resume();
 
     await waitFor(async () =>
-      firstFrames.some((frame) => frame.type === "detached" && frame.reason === "taken-over")
+      firstFrames.some((frame) => frame.type === "input-owner" && frame.active === false)
         ? true
         : undefined,
     );
@@ -340,6 +340,7 @@ async function startCommandRuntime(options: {
 async function openTestClient(
   metadata: RuntimeMetadata,
   id: string,
+  dimensions?: { readonly columns: number; readonly rows: number },
 ): Promise<TestClient> {
   const controlConnection = await channel(
     metadata.socketPath,
@@ -359,6 +360,7 @@ async function openTestClient(
     metadata.token,
     "client-terminal",
     id,
+    dimensions,
   );
   let output = terminalConnection.rest.toString("utf8");
   controlConnection.socket.on("error", () => undefined);
@@ -497,7 +499,39 @@ describe("session runtime host hardening", () => {
     }
   }, 12_000);
 
-  it("rejects a wrong token and isolates old-terminal input after takeover", async () => {
+  it("preserves the current terminal until a replacement finishes terminal authentication", async () => {
+    const runtime = await startCommandRuntime();
+    if (!runtime) return;
+    const current = await openTestClient(runtime.metadata, "current-client");
+    const candidate = await channel(runtime.metadata.socketPath, runtime.metadata.token, "client-control", "candidate-client");
+    let invalid: Socket | undefined;
+    let replacement: Socket | undefined;
+    try {
+      expect(current.frames.some((frame) => frame.type === "detached")).toBe(false);
+      invalid = await connectRuntimeSocket(runtime.metadata.socketPath);
+      sendFrame(invalid, { version: RUNTIME_PROTOCOL_VERSION, type: "auth", role: "client-terminal", token: runtime.metadata.token,
+        clientId: "candidate-client", columns: 19, rows: 30 });
+      await expect(readFirstFrame(invalid)).rejects.toThrow();
+      current.terminal.write("d");
+      await waitFor(async () => current.output().includes("query-size:100x30") ? true : undefined);
+      expect(current.frames.some((frame) => frame.type === "detached")).toBe(false);
+      const attached = await channel(runtime.metadata.socketPath, runtime.metadata.token, "client-terminal", "candidate-client");
+      replacement = attached.socket;
+      replacement.resume();
+      await waitFor(async () => current.frames.some((frame) => frame.type === "input-owner" && frame.active === false) ? true : undefined);
+      expect(await probeRuntime(runtime.metadata)).toBe(true);
+      replacement.write("q");
+      await waitForRuntimeExit(runtime);
+    } finally {
+      invalid?.destroy();
+      replacement?.destroy();
+      candidate.socket.destroy();
+      current.dispose();
+      if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
+    }
+  }, 12_000);
+
+  it("rejects a wrong token, broadcasts live output, and transfers input ownership", async () => {
     const runtime = await startCommandRuntime();
     if (!runtime) return;
     let first: TestClient | undefined;
@@ -530,7 +564,7 @@ describe("session runtime host hardening", () => {
       );
       await waitFor(async () =>
         first?.frames.some(
-          (frame) => frame.type === "detached" && frame.reason === "taken-over",
+          (frame) => frame.type === "input-owner" && frame.active === false,
         )
           ? true
           : undefined,
@@ -538,7 +572,14 @@ describe("session runtime host hardening", () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
       expect(second.output()).not.toContain("input:a");
       expect(second.output()).toContain("input:b");
-      second.terminal.write("q");
+      await waitFor(async () => first?.output().includes("input:b") ? true : undefined);
+      expect(first.frames.some((frame) => frame.type === "detached")).toBe(false);
+      sendFrame(first.control, { type: "claim-input" });
+      await waitFor(async () => first?.frames.at(-1)?.type === "input-owner" &&
+        (first.frames.at(-1) as { active: boolean }).active ? true : undefined);
+      first.terminal.write("a");
+      await waitFor(async () => second?.output().includes("input:a") ? true : undefined);
+      first.terminal.write("q");
       await waitForRuntimeExit(runtime);
     } finally {
       first?.dispose();
@@ -546,6 +587,32 @@ describe("session runtime host hardening", () => {
       if (await readRuntimeMetadata(runtime.sessionId)) {
         await stopCommandRuntime(runtime);
       }
+    }
+  }, 12_000);
+
+  it("fits both viewers and restores the remaining terminal after the owner disconnects", async () => {
+    const runtime = await startCommandRuntime();
+    if (!runtime) return;
+    const first = await openTestClient(runtime.metadata, "shared-large", { columns: 140, rows: 45 });
+    let second: TestClient | undefined;
+    try {
+      second = await openTestClient(runtime.metadata, "shared-small", { columns: 80, rows: 20 });
+      second.terminal.write("d");
+      await waitFor(async () => first.output().includes("query-size:80x20") && second?.output().includes("query-size:80x20") ? true : undefined);
+      expect(first.frames.some((frame) => frame.type === "detached")).toBe(false);
+      second.dispose();
+      await waitFor(async () => first.frames.at(-1)?.type === "input-owner" &&
+        (first.frames.at(-1) as { active: boolean }).active ? true : undefined);
+      first.terminal.write("d");
+      await waitFor(async () => first.output().includes("query-size:140x45") ? true : undefined);
+      await waitFor(async () => (await readRuntimeMetadata(runtime.sessionId))?.attached ? true : undefined);
+      expect(await probeRuntime(runtime.metadata)).toBe(true);
+      first.terminal.write("q");
+      await waitForRuntimeExit(runtime);
+    } finally {
+      first.dispose();
+      second?.dispose();
+      if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
     }
   }, 12_000);
 

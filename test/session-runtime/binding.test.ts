@@ -44,6 +44,8 @@ describe("runtimeSessionBusy", () => {
     { responder: { ...state().responder, running: 1, mode: "listening" as const } },
     { responder: { ...state().responder, ready: 1, mode: "listening" as const } },
     { responder: { ...state().responder, delivered: 1, mode: "listening" as const } },
+    { subagents: { enabled: true, running: 1, settled: 0, total: 1, pendingDelivery: 0 } },
+    { subagents: { enabled: true, running: 0, settled: 1, total: 1, pendingDelivery: 1 } },
   ])("keeps active work alive for $running$compacting", (overrides) => {
     expect(runtimeSessionBusy(state(overrides as Partial<SessionState>))).toBe(true);
   });
@@ -64,6 +66,7 @@ describe("runtimeSessionActive", () => {
     { compacting: true },
     { queued: ["next"] },
     { responder: { ...state().responder, running: 1, mode: "listening" as const } },
+    { subagents: { enabled: true, running: 1, settled: 0, total: 1, pendingDelivery: 0 } },
   ])("protects live or queued user work", (overrides) => {
     expect(runtimeSessionActive(state(overrides as Partial<SessionState>))).toBe(true);
   });

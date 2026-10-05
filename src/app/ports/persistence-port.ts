@@ -1,6 +1,6 @@
 import type { ChatMessage, ProviderId, ReasoningPreference } from "../../types.js";
 import type { SessionPlan } from "../../store/plan.js";
-import type { PersistedContextUsage } from "../../store/history.js";
+import type { HistorySessionLocation, PersistedContextUsage } from "../../store/history.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import type { TranscriptItem } from "./transcript-item.js";
 
@@ -15,6 +15,7 @@ export interface SaveSessionOptions {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly thinking?: ReasoningPreference | undefined;
+  readonly location?: HistorySessionLocation | undefined;
 }
 
 

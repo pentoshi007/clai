@@ -13,6 +13,9 @@ type Child = {
   controller?: AbortController | undefined;
   persistenceTimer?: ReturnType<typeof setTimeout> | undefined;
   checkpoint?: SubagentCheckpoint | undefined;
+  activity: SubagentEvent[];
+  assistantActivity?: SubagentEvent | undefined;
+  assistantText?: string | undefined;
 };
 type Waiter = { check: () => void; reject: (error: Error) => void };
 const terminal = (status: SubagentRun["status"]): boolean => status !== "running" && status !== "stopping";
@@ -49,13 +52,15 @@ export class SubagentManager {
     this.onOperationUsage = options.onOperationUsage;
     if (this.store) {
       try {
-        for (const value of this.store.load(parentSessionId)) {
+        const restored = [...(this.store.loadAttempts?.(parentSessionId) ?? []), ...this.store.load(parentSessionId)];
+        for (const value of restored.sort((a, b) => a.attempt - b.attempt)) {
           const run = restoreSubagentRun(value, parentSessionId);
           if (!run) continue;
           try {
-            this.children.set(run.id, { run, assignment: this.assignment(run) });
+            this.children.set(run.id, { run, assignment: this.assignment(run), activity: [] });
             this.settledAttempts.set(`${run.id}:${run.attempt}`, this.snapshot(run));
             if (!run.resultAcknowledged) this.results.set(`${run.id}:${run.attempt}`, this.snapshot(run));
+            else this.results.delete(`${run.id}:${run.attempt}`);
           } catch {
           }
         }
@@ -111,7 +116,7 @@ export class SubagentManager {
   private startAssigned(assignment: SubagentAssignment): SubagentRun {
     this.assertLaunchModels();
     const now = Date.now();
-    const child: Child = { assignment, run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, startedAt: now, updatedAt: now, events: [] } };
+    const child: Child = { assignment, activity: [], run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, startedAt: now, updatedAt: now, events: [] } };
     this.children.set(child.run.id, child);
     this.launch(child);
     return this.snapshot(child.run);
@@ -148,13 +153,49 @@ export class SubagentManager {
     return Object.freeze([...this.results.values()]);
   }
 
-  acknowledgeResult(id: string, attempt: number): void {
-    this.results.delete(`${id}:${attempt}`);
+  settledResults(): readonly SubagentRun[] {
+    return Object.freeze([...this.settledAttempts.values()]);
+  }
+
+  activityPath(id: string): string | undefined {
+    return this.children.has(id) ? this.store?.activityPath?.(this.parentSessionId, id) : undefined;
+  }
+
+  acknowledgeResult(id: string, attempt: number, offset?: number, length?: number): void {
+    const key = `${id}:${attempt}`;
+    const previous = this.settledAttempts.get(key);
+    if (!previous || !terminal(previous.status)) return;
+    const reportLength = (previous.report ?? previous.lastKnownSummary?.report ?? "").length;
+    const delivered = previous.deliveredReportChars ?? (previous.resultAcknowledged ? reportLength : 0);
+    if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0 || offset > delivered ||
+        !Number.isSafeInteger(length) || length! < 0 || offset + length! > reportLength)) return;
+    const deliveredReportChars = offset === undefined ? reportLength : Math.max(delivered, offset + length!);
+    if (deliveredReportChars === delivered && previous.resultAcknowledged === (deliveredReportChars >= reportLength)) return;
+    const run = this.snapshot({ ...previous, deliveredReportChars, resultAcknowledged: deliveredReportChars >= reportLength });
+    this.settledAttempts.set(key, run);
+    if (run.resultAcknowledged) this.results.delete(key);
+    else this.results.set(key, run);
     const child = this.children.get(id);
-    if (child?.run.attempt === attempt && terminal(child.run.status) && !child.run.resultAcknowledged) {
-      child.run = { ...child.run, resultAcknowledged: true };
+    if (child?.run.attempt === attempt && terminal(child.run.status)) {
+      child.run = run;
       this.changed(child, true);
+    } else {
+      this.store?.saveAttempt?.(run);
     }
+  }
+
+  requeueResult(id: string, attempt: number): void {
+    const key = `${id}:${attempt}`;
+    const previous = this.settledAttempts.get(key);
+    if (!previous) return;
+    const run = this.snapshot({ ...previous, resultAcknowledged: false, deliveredReportChars: 0 });
+    this.settledAttempts.set(key, run);
+    this.results.set(key, run);
+    const child = this.children.get(id);
+    if (child?.run.attempt === attempt) {
+      child.run = run;
+      this.changed(child, true);
+    } else this.store?.saveAttempt?.(run);
   }
 
   private child(id: string): Child {
@@ -182,11 +223,12 @@ export class SubagentManager {
     const previous = child.run;
     const now = Date.now();
     this.settledAttempts.set(`${previous.id}:${previous.attempt}`, this.snapshot(previous));
+    this.store?.saveAttempt?.(this.snapshot(previous));
     const summary = `Attempt ${previous.attempt}: ${previous.status}\n${previous.report ?? previous.error ?? "No report"}`;
     const events = [...previous.events, { kind: "notice" as const, text: summary, timestamp: Date.now(), sequence: (previous.events.at(-1)?.sequence ?? 0) + 1 }];
     if (followup) events.push({ kind: "notice", text: `Parent follow-up for attempt ${previous.attempt + 1}:\n${JSON.stringify(followup)}`, timestamp: Date.now(), sequence: events.at(-1)!.sequence + 1 });
     if (followup && child.checkpoint) child.checkpoint = { ...child.checkpoint, pendingFollowup: followup };
-    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report || previous.lastKnownSummary ? "history" : "fresh", report: undefined, resultAcknowledged: false, error: undefined, startedAt: now, updatedAt: now, events: this.boundEvents(events) };
+    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report || previous.lastKnownSummary ? "history" : "fresh", report: undefined, resultAcknowledged: false, deliveredReportChars: 0, error: undefined, startedAt: now, updatedAt: now, events: this.boundEvents(events) };
     this.launch(child, followup);
     return this.snapshot(child.run);
   }
@@ -214,6 +256,7 @@ export class SubagentManager {
   private launch(child: Child, followup?: SubagentFollowup): void {
     const controller = new AbortController();
     child.assistantSequence = undefined;
+    child.assistantText = undefined;
     child.controller = controller;
     inFlight.set(controller, fingerprint(this.parentSessionId, child.assignment));
     const inputRun = this.snapshot(child.run);
@@ -231,17 +274,31 @@ export class SubagentManager {
       const events = [...child.run.events];
       const previous = events.at(-1);
       const now = Date.now();
-      if (event.kind === "assistant" && event.append && child.assistantSequence !== undefined) {
-        const index = events.findIndex((entry) => entry.sequence === child.assistantSequence);
-        if (index < 0) return;
-        const assistant = events[index]!;
-        events[index] = { ...assistant, text: (assistant.text + event.text.slice(0, SUBAGENT_LIMITS.chars)).slice(0, SUBAGENT_LIMITS.chars), timestamp: now };
+      if (event.kind === "assistant") child.assistantText = event.append && child.assistantText !== undefined
+        ? child.assistantText + event.text : event.text;
+      const eventText = event.kind === "assistant" ? child.assistantText! : event.text;
+      const assistantIndex = event.kind === "assistant" && event.append && child.assistantSequence !== undefined
+        ? events.findIndex((entry) => entry.sequence === child.assistantSequence) : -1;
+      if (assistantIndex >= 0) {
+        const assistant = events[assistantIndex]!;
+        events[assistantIndex] = { ...assistant, text: eventText.slice(0, SUBAGENT_LIMITS.chars), timestamp: now };
       } else {
         const sequence = (previous?.sequence ?? 0) + 1;
-        events.push({ sequence, kind: event.kind, text: event.text.slice(0, SUBAGENT_LIMITS.chars), timestamp: now });
+        events.push({ sequence, kind: event.kind, text: eventText.slice(0, SUBAGENT_LIMITS.chars), timestamp: now });
         if (event.kind === "assistant") child.assistantSequence = sequence;
       }
       child.run = { ...child.run, updatedAt: now, events: this.boundEvents(events) };
+      if (event.kind === "assistant") {
+        if (event.append && child.assistantActivity) {
+          child.assistantActivity = { ...child.assistantActivity, text: eventText, timestamp: now };
+        } else {
+          this.finishAssistantActivity(child);
+          child.assistantActivity = { sequence: child.assistantSequence!, kind: "assistant", text: eventText, timestamp: now };
+        }
+      } else {
+        this.finishAssistantActivity(child);
+        child.activity.push({ sequence: events.at(-1)!.sequence, kind: event.kind, text: event.text, timestamp: now });
+      }
       this.changed(child);
     };
     void Promise.resolve().then(() => {
@@ -281,6 +338,7 @@ export class SubagentManager {
     if (child.controller !== controller) return;
     child.controller = undefined;
     if (this.children.get(child.run.id) !== child) return;
+    this.finishAssistantActivity(child);
     const stopped = controller.signal.aborted;
     const failed = !stopped && (error !== undefined || typeof report !== "string" || !report.trim());
     const status = typeof report === "string" ? subagentReportStatus(report) : undefined;
@@ -293,6 +351,7 @@ export class SubagentManager {
         lastKnownSummary: stopped || failed || invalidReport || oversized ? child.run.lastKnownSummary
           : { attempt: child.run.attempt, status: status ?? "completed", report: report! },
         resultAcknowledged: false,
+        deliveredReportChars: 0,
         error: stopped ? "Stopped by parent" : oversized ? "Worker report exceeds the storage safety limit" : invalidReport ? "Worker returned an invalid report" : failed ? sanitizeSubagentText(error instanceof Error ? error.message : error === undefined ? "Worker returned no report" : String(error)).slice(0, 4096) : undefined,
       });
     } catch (failure) {
@@ -302,6 +361,8 @@ export class SubagentManager {
       });
     }
     if (!this.disposed) {
+      child.activity.push({ sequence: (child.run.events.at(-1)?.sequence ?? 0) + 1, kind: "notice", timestamp: Date.now(),
+        text: `${child.run.status} · attempt ${child.run.attempt}${child.run.error ? `\n${child.run.error}` : ""}${child.run.report ? `\n\n## Report\n${child.run.report}` : ""}` });
       this.settledAttempts.set(`${child.run.id}:${child.run.attempt}`, this.snapshot(child.run));
       this.results.set(`${child.run.id}:${child.run.attempt}`, this.snapshot(child.run));
       this.changed(child, true);
@@ -393,7 +454,12 @@ export class SubagentManager {
     child.persistenceTimer = undefined;
     if (!this.store) return;
     try {
+      if (child.activity.length && this.store.appendActivity) {
+        this.store.appendActivity(this.snapshot(child.run), child.activity);
+        child.activity = [];
+      }
       this.store.save(this.snapshot(child.run));
+      if (terminal(child.run.status)) this.store.saveAttempt?.(this.snapshot(child.run));
     } catch (error) {
       const text = `History save failed: ${sanitizeSubagentText(error instanceof Error ? error.message : String(error)).slice(0, 1024)}`;
       if (child.run.events.at(-1)?.text !== text) child.run = { ...child.run, events: this.boundEvents([...child.run.events, { kind: "notice", text, timestamp: Date.now(), sequence: (child.run.events.at(-1)?.sequence ?? 0) + 1 }]) };
@@ -401,11 +467,18 @@ export class SubagentManager {
     }
   }
 
+  private finishAssistantActivity(child: Child): void {
+    if (!child.assistantActivity) return;
+    child.activity.push(child.assistantActivity);
+    child.assistantActivity = undefined;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.active = false;
     for (const child of this.children.values()) {
       this.stop(child.run.id);
+      this.finishAssistantActivity(child);
       this.flush(child);
     }
     this.disposed = true;

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   readFirstFrame: vi.fn(),
   findLiveRuntime: vi.fn(),
+  probeRuntime: vi.fn(),
   probePtyCapability: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock("../../src/session-runtime/protocol.js", async (importOriginal) => ({
 vi.mock("../../src/session-runtime/discovery.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/session-runtime/discovery.js")>()),
   findLiveRuntime: mocks.findLiveRuntime,
+  probeRuntime: mocks.probeRuntime,
 }));
 
 vi.mock("../../src/interactive-session/transport-node-pty.js", async (importOriginal) => ({
@@ -151,6 +153,7 @@ describe("durable client terminal handoff", () => {
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     mocks.probePtyCapability.mockResolvedValue({ available: true, platform: process.platform });
     mocks.findLiveRuntime.mockImplementation(async (id: string) => metadata(id));
+    mocks.probeRuntime.mockResolvedValue(false);
     mocks.connect.mockResolvedValueOnce(control).mockResolvedValueOnce(terminal);
     mocks.readFirstFrame.mockImplementation(async (socket: Socket) => ({
       value: { version: 1, type: "ack", sessionId: "first" },
@@ -280,6 +283,19 @@ describe("durable client terminal handoff", () => {
     expect(input.listenerCount("data")).toBe(0);
     expect(terminal.listenerCount("data")).toBe(0);
     expect(output.writes).toContain(`${TERMINAL_MODE_RESET}\u001b[?1049l`);
+  });
+
+  it("keeps a failed live attachment from starting a second foreground session", async () => {
+    terminal.rest = Buffer.from("\u001b[?1049h");
+    output.throwOnReplay = true;
+    mocks.probeRuntime.mockResolvedValue(true);
+    expect(await run()).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("clai --resume first"));
+    expect(vi.mocked(process.stderr.write).mock.calls.some(([text]) => String(text).includes("using foreground mode"))).toBe(false);
+    expect(control.destroyed).toBe(true);
+    expect(terminal.destroyed).toBe(true);
+    expect(input.rawChanges).toEqual([true, false]);
   });
 
   it("closes both channels and restores raw mode when terminal authentication fails", async () => {

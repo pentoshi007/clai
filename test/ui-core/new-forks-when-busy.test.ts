@@ -12,6 +12,8 @@ import type {
   RunTurnRequest,
 } from "../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
+import type { SaveSessionOptions } from "../../src/app/ports/persistence-port.js";
+import type { ChatMessage } from "../../src/types.js";
 
 class SilentAgent implements AgentPort {
   async runTurn(
@@ -110,6 +112,47 @@ describe("/new while a turn is running", () => {
 
     expect(requestSessionSwitch).not.toHaveBeenCalled();
     expect(resetSpy).toHaveBeenCalledWith({ mintNewId: true });
+    services.dispose();
+  });
+
+  it("opens a fresh session before a slow save finishes and keeps the previous snapshot", async () => {
+    const services = makeServices(() => false);
+    const messages: ChatMessage[] = [{ role: "user", content: "old request" }, { role: "assistant", content: "old answer" }];
+    services.session.loadHistory(messages, { provider: "ollama", model: "fixture-model" });
+    const originalId = services.session.sessionId;
+    const originalWorkspace = services.session.workspace;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const saved: Array<{ messages: readonly ChatMessage[]; options?: SaveSessionOptions }> = [];
+    const save = vi.spyOn(persistence, "saveSession").mockImplementation(async (snapshot, options) => {
+      saved.push({ messages: snapshot, ...(options ? { options } : {}) });
+      await gate;
+    });
+    try {
+      await handleNew(services);
+      expect(services.session.sessionId).not.toBe(originalId);
+      expect(services.session.messages).toHaveLength(0);
+      await vi.waitFor(() => expect(saved).toHaveLength(1));
+      expect(saved[0]!.messages).toEqual(messages);
+      expect(saved[0]!.options).toMatchObject({ sessionId: originalId,
+        location: { workspaceFolder: originalWorkspace?.folderName, workspaceCode: originalWorkspace?.code } });
+      expect(saved[0]!.options?.location?.workspaceFolder).not.toBe(services.session.workspace?.folderName);
+    } finally {
+      release();
+      save.mockRestore();
+      services.dispose();
+    }
+  });
+
+  it("keeps running subagents in the previous runtime when the main turn is idle", async () => {
+    const switchSession = vi.fn(() => true);
+    const services = makeServices(switchSession);
+    const base = services.session.getState();
+    vi.spyOn(services.session, "getState").mockReturnValue({ ...base, subagents: { ...base.subagents, running: 1 } });
+    const reset = vi.spyOn(services.session, "reset");
+    await handleNew(services);
+    expect(switchSession).toHaveBeenCalledWith(expect.any(String), false, true);
+    expect(reset).not.toHaveBeenCalled();
     services.dispose();
   });
 });

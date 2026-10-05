@@ -14,6 +14,7 @@ import {
   probeRuntime,
 } from "./discovery.js";
 import { enforceIdleRuntimeCap } from "./reaper.js";
+import { pendingRuntimeInputCommand, runtimeInputCommand } from "./input-commands.js";
 import {
   RUNTIME_CHILD_ENV,
   RUNTIME_DISABLE_ENV,
@@ -67,6 +68,12 @@ type AttachOutcome =
     }
   | { readonly kind: "switch"; readonly sessionId: string; readonly fresh: boolean };
 
+class LiveRuntimeAttachError extends Error {
+  constructor(readonly sessionId: string, cause: unknown) {
+    super(`Could not attach to live session ${sessionId}: ${runtimeFallbackMessage(cause)}`, { cause });
+  }
+}
+
 export interface DurableInteractiveOptions {
   readonly entryPath: string;
   readonly childArgs: readonly string[];
@@ -114,6 +121,7 @@ function hostFrame(value: unknown): RuntimeHostFrame | undefined {
     return frame as RuntimeHostFrame;
   }
   if (frame.type === "pong") return frame as RuntimeHostFrame;
+  if (frame.type === "input-owner" && typeof frame.active === "boolean") return frame as RuntimeHostFrame;
   return undefined;
 }
 
@@ -395,6 +403,11 @@ async function attachRuntime(
   const terminal = terminalConnection.socket;
   let settled = false;
   let exitPending = false;
+  let ownsInput = true;
+  let claimingInput = false;
+  let observerInput = "";
+  let pendingInput: Buffer[] = [];
+  let pendingInputBytes = 0;
   let channel: JsonFrameChannel | undefined;
   let controlCloseTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveOutcome: ((value: AttachOutcome) => void) | undefined;
@@ -410,6 +423,20 @@ async function attachRuntime(
   const receive = (value: unknown): void => {
     const frame = hostFrame(value);
     if (!frame || frame.type === "pong") return;
+    if (frame.type === "input-owner") {
+      ownsInput = frame.active;
+      observerInput = "";
+      if (ownsInput && claimingInput) {
+        claimingInput = false;
+        const input = pendingInput;
+        pendingInput = [];
+        pendingInputBytes = 0;
+        for (const bytes of input) terminal.write(bytes);
+        if (terminal.writableNeedDrain) process.stdin.pause();
+        else process.stdin.resume();
+      }
+      return;
+    }
     if (frame.type === "switch") {
       settle({ kind: "switch", sessionId: frame.sessionId, fresh: frame.fresh === true });
       return;
@@ -446,6 +473,28 @@ async function attachRuntime(
   const stdin = process.stdin;
   const onInput = (bytes: Buffer): void => {
     if (settled || exitPending) return;
+    const text = bytes.toString("latin1");
+    const command = runtimeInputCommand(text) ?? (!ownsInput ? runtimeInputCommand(observerInput + text) : undefined);
+    if (command === "claim-input") {
+      observerInput = "";
+      claimingInput = !ownsInput;
+      channel?.send({ type: "claim-input" });
+      return;
+    }
+    if (!ownsInput) {
+      if (command === "detach") {
+        channel?.send({ type: "detach" });
+        settle({ kind: "detach", reason: "requested", sessionId: metadata.sessionId });
+      } else if (claimingInput) {
+        pendingInput.push(Buffer.from(bytes));
+        pendingInputBytes += bytes.length;
+        if (pendingInputBytes >= 64 * 1024) stdin.pause();
+      } else {
+        const combined = observerInput + text;
+        observerInput = pendingRuntimeInputCommand(combined) ? combined : "";
+      }
+      return;
+    }
     if (!terminal.write(bytes)) stdin.pause();
   };
   const onTerminalDrain = (): void => {
@@ -551,7 +600,13 @@ async function runRuntimeClient(
       if (interrupted) return interrupted;
       const metadata = await ensureRuntime(options, target);
       if (interrupted) return interrupted;
-      const outcome = await attachRuntime(metadata, altScreen, controller.signal);
+      let outcome: AttachOutcome;
+      try {
+        outcome = await attachRuntime(metadata, altScreen, controller.signal);
+      } catch (error) {
+        if (await probeRuntime(metadata)) throw new LiveRuntimeAttachError(metadata.sessionId, error);
+        throw error;
+      }
       if (interrupted) return interrupted;
       if (outcome.kind !== "switch") return outcome;
       await resetTerminal(altScreen);
@@ -639,6 +694,11 @@ export async function tryRunDurableInteractive(
     reportDetach(outcome);
     return true;
   } catch (error) {
+    if (error instanceof LiveRuntimeAttachError) {
+      process.stderr.write(`${error.message}. Reattach with: clai --resume ${error.sessionId}\n`);
+      process.exitCode = 1;
+      return true;
+    }
     process.stderr.write(
       `Durable session runtime unavailable (${runtimeFallbackMessage(error)}); using foreground mode.\n`,
     );

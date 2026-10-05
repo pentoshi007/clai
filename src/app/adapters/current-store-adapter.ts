@@ -30,6 +30,7 @@ export function createCurrentPersistencePort(): PersistencePort {
           options.writerGeneration,
           options.previousTurn,
           sessionModel,
+          options.location,
         );
         return;
       }
@@ -42,6 +43,7 @@ export function createCurrentPersistencePort(): PersistencePort {
         options?.writerGeneration,
         options?.previousTurn,
         sessionModel,
+        options?.location,
       );
     },
     loadPlan: (sessionId) => loadPlan(sessionId),

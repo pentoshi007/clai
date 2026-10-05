@@ -8,6 +8,8 @@ import type { HistorySourceEntry, HistorySummary } from "../history-index.js";
 import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
 import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { compareHistoryFreshness } from "./freshness.js";
+export { compareHistoryFreshness, historyRevision, historyWriterGeneration } from "./freshness.js";
 
 export function jsonlFilePath(): string {
   return join(historyDirPath(), "history.jsonl");
@@ -83,45 +85,6 @@ let recoveryPromise: Promise<void> | undefined;
 function updatedAtMs(record: Pick<HistoryRecord, "updatedAt" | "createdAt">): number {
   const t = Date.parse(record.updatedAt || record.createdAt || "");
   return Number.isFinite(t) ? t : 0;
-}
-
-export function historyRevision(record: Pick<HistoryRecord, "revision"> | undefined): number {
-  const revision = record?.revision;
-  return typeof revision === "number" &&
-    Number.isSafeInteger(revision) &&
-    revision > 0
-    ? revision
-    : 0;
-}
-
-export function historyWriterGeneration(
-  record: Pick<HistoryRecord, "writerGeneration"> | undefined,
-): string | undefined {
-  const generation = record?.writerGeneration;
-  return typeof generation === "string" && generation.length > 0
-    ? generation
-    : undefined;
-}
-
-type HistoryFreshness = Pick<HistoryRecord, "writerGeneration" | "revision" | "createdAt" | "updatedAt">;
-
-export function compareHistoryFreshness(
-  left: HistoryFreshness,
-  right: HistoryFreshness,
-): number {
-  const leftGeneration = historyWriterGeneration(left);
-  const rightGeneration = historyWriterGeneration(right);
-  if (leftGeneration || rightGeneration) {
-    if (!leftGeneration) return -1;
-    if (!rightGeneration) return 1;
-    const generationDelta = leftGeneration.localeCompare(rightGeneration);
-    if (generationDelta !== 0) return generationDelta;
-  }
-
-  const revisionDelta = historyRevision(left) - historyRevision(right);
-  if (revisionDelta !== 0) return revisionDelta;
-  if (historyRevision(left) > 0) return 0;
-  return updatedAtMs(left) - updatedAtMs(right);
 }
 
 export function dedupeHistoryById(
