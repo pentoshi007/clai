@@ -103,7 +103,7 @@ describe("SessionController provider catalog refresh", () => {
       expect(session.getState().contextSnapshot?.limit).toMatchObject({
         source: "model-catalog",
         tokens: 1_000_000,
-        compactTriggerTokens: 700_000,
+        compactTriggerTokens: 800_000,
       });
     });
     session.dispose();

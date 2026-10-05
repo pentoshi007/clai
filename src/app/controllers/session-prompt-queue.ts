@@ -6,6 +6,7 @@ import {
 
 export interface TurnDisplayOptions {
   displayPrompt?: string | null | undefined;
+  internal?: boolean | undefined;
 }
 
 interface SessionPromptQueueDeps {
@@ -112,7 +113,7 @@ export class SessionPromptQueue {
 
   enqueuePriority(prompt: string, displayPrompt?: string | undefined): void {
     const options =
-      displayPrompt === undefined ? undefined : { displayPrompt };
+      { internal: true, ...(displayPrompt !== undefined ? { displayPrompt } : {}) };
     const entry = this.createEntry(prompt, options, false);
     if (!entry) return;
     this.items.unshift(entry);

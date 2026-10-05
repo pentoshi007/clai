@@ -44,10 +44,15 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
         requestSecret: options?.requestSecret,
       });
       if (elevated && !elevated.prepared) return elevated.result;
+      const execution = await prepareRtkExecution(command, options?.signal, options?.sessionId);
       const job = await jobManager.startJob(
-        elevated?.prepared ? elevated.spec : command,
+        elevated?.prepared ? elevated.spec : execution.command,
         {
           cwd,
+          requestedCommand: command,
+          env: execution.env,
+          onSpawn: execution.onSpawn,
+          authorization: options?.engagementAuthorization,
           name: optionalString(args, "name"),
           ...responderJobOptions(options),
           responder,
@@ -82,11 +87,12 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       }
     }
 
-    const execution = await prepareRtkExecution(command, options?.signal);
+    const execution = await prepareRtkExecution(command, options?.signal, options?.sessionId);
     return shellExec({
       command: execution.command,
       requestedCommand: command,
       env: execution.env,
+      onSpawn: execution.onSpawn,
       cwd: optionalString(args, "cwd"),
       timeoutMs,
       signal: options?.signal,

@@ -35,6 +35,10 @@ const CREDENTIAL_PATTERN = new RegExp(
   "gi",
 );
 
+export function redactUserCredentialsFromMemory(content: string): string {
+  return content.replace(new RegExp(CREDENTIAL_PATTERN.source, "gi"), "[redacted user credential]");
+}
+
 const IDENTITY_LINE = new RegExp(
   String.raw`^(?:user(?:name)?|login|e-?mail|account(?:[\s_-]?(?:id|name))?|host(?:name)?|url|endpoint|base[\s_-]?url|tenant|project(?:[\s_-]?id)?|region|client[\s_-]?id|org(?:anization)?(?:[\s_-]?id)?|database|db(?:[\s_-]?name)?|port)\s*[:=]\s*\S`,
   "i",

@@ -15,6 +15,8 @@ import { clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
 import { wrapAnsiLine } from "../render/wrap.js";
+import { parseFsReadSections } from "../../tools/fs/read-sections.js";
+import { middleClipText } from "../../ui-core/rendering/text-width.js";
 import { layoutWidth } from "../render/measure.js";
 import {
   clipRow,
@@ -138,10 +140,20 @@ function fieldLines(ctx: BlockContext, label: string, value: string, token: Them
 }
 
 function fsReadHeaderLines(ctx: BlockContext, item: ToolItem, presented: Presented): string[] {
-  const args = presentFsReadArgs(presented.argsDisplay);
+  const args = presentFsReadArgs(item.argsDisplay);
   const lines = headline(ctx, item, presented, undefined);
-  if (args.options) lines.push(...fieldLines(ctx, "options", args.options, "inputBorder"));
-  if (args.path) lines.push(...fieldLines(ctx, "file", args.path, "inputBorder"));
+  const files = args.files ?? [args];
+  const sections = args.files ? parseFsReadSections(ctx.spool.tail(item.toolCallId)) : [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index]!;
+    const section = sections.find((entry) => entry.index === index + 1);
+    const glyph = section ? `${section.ok ? ctx.glyphs.toolOk : ctx.glyphs.toolFailed} ` : "";
+    const label = args.files ? `file ${index + 1}/${files.length}` : "file";
+    const pathBudget = Math.max(8, ctx.width - FIELD_INDENT.length - label.length - 2 - layoutWidth(glyph));
+    const path = middleClipText(file.path, pathBudget);
+    if (file.options) lines.push(...fieldLines(ctx, "options", file.options, "inputBorder"));
+    if (path) lines.push(...fieldLines(ctx, label, `${glyph}${path}`, section?.ok === false ? "diffDel" : "inputBorder"));
+  }
   return lines;
 }
 

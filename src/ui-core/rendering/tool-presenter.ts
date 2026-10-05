@@ -7,6 +7,7 @@ import {
   type FileChangeKind,
 } from "../../tools/file-diff.js";
 import { sanitizeDisplayText } from "./sanitize-display.js";
+import { MAX_FS_READ_FILES } from "../../tools/fs/read-input.js";
 
 const STATUS_GLYPH: Record<ToolStatus, string> = {
   queued: "○",
@@ -72,18 +73,31 @@ export function clampArgsDisplay(raw: string | undefined): string | undefined {
 export interface FsReadArgsPresentation {
   readonly path: string;
   readonly options: string | undefined;
+  readonly files?: readonly FsReadArgsPresentation[];
+}
+
+function presentFsReadFile(parsed: Record<string, unknown>): FsReadArgsPresentation | undefined {
+  if (typeof parsed.path !== "string") return undefined;
+  const options = Object.entries(parsed)
+    .filter(([key, value]) => key !== "path" && value !== undefined)
+    .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
+    .join(" · ");
+  return { path: sanitizeDisplayText(parsed.path), options: options ? sanitizeDisplayText(options) : undefined };
 }
 
 function optionsFromFsReadJson(raw: string): FsReadArgsPresentation | undefined {
   if (!raw.startsWith("{")) return undefined;
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.path !== "string") return undefined;
-    const options = Object.entries(parsed)
-      .filter(([key, value]) => key !== "path" && value !== undefined)
-      .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
-      .join(" · ");
-    return { path: parsed.path, options: options || undefined };
+    if (Array.isArray(parsed.files)) {
+      const files = parsed.files.slice(0, MAX_FS_READ_FILES).flatMap((file) => {
+        if (!file || typeof file !== "object" || Array.isArray(file)) return [];
+        const presented = presentFsReadFile(file as Record<string, unknown>);
+        return presented ? [presented] : [];
+      });
+      return { path: `${parsed.files.length} file${parsed.files.length === 1 ? "" : "s"}`, options: undefined, files };
+    }
+    return presentFsReadFile(parsed);
   } catch {
     return undefined;
   }

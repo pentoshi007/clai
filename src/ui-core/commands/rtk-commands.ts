@@ -11,13 +11,14 @@ import {
   type RtkMaintenanceState,
   type RtkProgress,
 } from "../../tools/rtk/install.js";
-import { rtkEnabled, rtkRewriteCount } from "../../tools/rtk/rewrite.js";
+import { rtkEnabled, rtkExecutionCount } from "../../tools/rtk/rewrite.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
 
 const USAGE = "usage: /rtk [on|off|status|install|update]";
 
 interface RtkView {
+  readonly sessionId: string;
   readonly enabled: boolean;
   readonly status?: RtkStatus | undefined;
   readonly gain?: RtkGain | undefined;
@@ -58,12 +59,20 @@ const rtkTitle = ({ enabled, status }: RtkView): string => {
   return `RTK · ${enabled ? "on" : "off"}${inactive ? " · inactive" : ""}`;
 };
 
-const gainLine = (gain: RtkGain | undefined): string =>
-  gain && gain.commands > 0
-    ? `${formatTokenCount(gain.savedTokens, true)} tokens saved overall (${Math.round(gain.savingsPct)}%)`
-    : "no savings recorded yet";
+const gainLine = (gain: RtkGain | undefined): string => {
+  if (!gain) return "RTK savings unavailable";
+  if (gain.commands === 0) return "no global RTK history yet";
+  return `${formatTokenCount(gain.savedTokens, true)} estimated tokens saved globally (${Math.round(gain.savingsPct)}%)`;
+};
 
-const statusOption = ({ status, gain, maintenance }: RtkView): PickerOption => {
+const executionLine = (sessionId: string): string => {
+  const count = rtkExecutionCount(sessionId);
+  return count === undefined
+    ? "RTK session count unavailable"
+    : `${plural(count, "automatic RTK run")} this session`;
+};
+
+const statusOption = ({ sessionId, status, gain, maintenance }: RtkView): PickerOption => {
   if (maintenance) {
     const pct =
       maintenance.totalBytes && maintenance.totalBytes > 0 && maintenance.receivedBytes !== undefined
@@ -92,8 +101,8 @@ const statusOption = ({ status, gain, maintenance }: RtkView): PickerOption => {
         value: "refresh",
         label: `rtk ${status.version}`,
         icon: "◇",
-        tone: "accent",
-        description: `${plural(rtkRewriteCount(), "command")} compressed this session · ${gainLine(gain)} · select to refresh`,
+        tone: gain === undefined ? "warn" : "accent",
+        description: `${executionLine(sessionId)} · ${gainLine(gain)} · select to refresh`,
       };
     case "incompatible":
       return {
@@ -158,11 +167,11 @@ const rtkOptions = (view: RtkView): PickerOption[] => [
   ...maintenanceOption(view),
 ];
 
-const loadView = async (): Promise<RtkView> => {
+const loadView = async (sessionId: string): Promise<RtkView> => {
   const maintenance = rtkMaintenance();
   const status = await detectRtk(true);
   const gain = status.state === "ready" ? await readRtkGain(status.path) : undefined;
-  return { enabled: rtkEnabled(), status, gain, ...(maintenance ? { maintenance } : {}) };
+  return { sessionId, enabled: rtkEnabled(), status, gain, ...(maintenance ? { maintenance } : {}) };
 };
 
 const compressionHint = (): string => (rtkEnabled() ? "" : " · turn compression on with /rtk on");
@@ -253,31 +262,39 @@ function applyRtk(services: AppServices, enabled: boolean): Promise<void> {
 }
 
 async function reportStatus(services: AppServices): Promise<void> {
-  const view = await loadView();
+  const view = await loadView(services.session.sessionId);
+  if (services.session.sessionId !== view.sessionId) return;
   const status = view.status!;
   const detail = view.maintenance
     ? `${progressive(view.maintenance.action)} rtk${view.maintenance.installer ? ` via ${view.maintenance.installer}` : ""}…`
     : status.state === "ready"
-      ? `${statusLine(status)} · ${plural(rtkRewriteCount(), "command")} compressed this session · ${gainLine(view.gain)}`
+      ? `${statusLine(status)} · ${executionLine(view.sessionId)} · ${gainLine(view.gain)}`
       : statusLine(status);
+  const statisticsUnavailable = status.state === "ready" && view.gain === undefined;
+  const inactiveEnabled = view.enabled && status.state !== "ready";
   services.session.notice(
-    status.state === "ready" || !view.enabled ? "info" : "warn",
+    statisticsUnavailable || inactiveEnabled ? "warn" : "info",
     `${rtkTitle(view)} · ${detail}`,
   );
 }
 
 function openRtkScreen(services: AppServices): void {
+  const sessionId = services.session.sessionId;
+  let refreshGeneration = 0;
   const pending = (): RtkView => {
     const maintenance = rtkMaintenance();
-    return { enabled: rtkEnabled(), ...(maintenance ? { maintenance } : {}) };
+    return { sessionId, enabled: rtkEnabled(), ...(maintenance ? { maintenance } : {}) };
   };
   const isOpen = (): boolean => {
     const state = services.overlay.getState();
-    return state.kind === "picker" && state.onSelect === onSelect;
+    return services.session.sessionId === sessionId && state.kind === "picker" && state.onSelect === onSelect;
   };
   const refresh = (): void => {
-    void loadView().then((view) => {
-      if (isOpen()) services.overlay.replacePickerOptions(rtkOptions(view), rtkTitle(view));
+    const generation = ++refreshGeneration;
+    void loadView(sessionId).then((view) => {
+      if (generation === refreshGeneration && isOpen()) {
+        services.overlay.replacePickerOptions(rtkOptions(view), rtkTitle(view));
+      }
     });
   };
   const onSelect = (value: string): void => {
@@ -297,6 +314,7 @@ function openRtkScreen(services: AppServices): void {
       title: rtkTitle(view),
       twoLine: true,
       searchDescription: true,
+      preserveSelection: true,
       options: rtkOptions(view),
     },
     onSelect,

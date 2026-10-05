@@ -99,6 +99,9 @@ import {
   type SessionUsageReport,
 } from "./session-usage-ledger.js";
 import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
+import { SessionPromptStore } from "../../store/session-prompts.js";
+import { legacySessionPrompts } from "./session-prompt-history.js";
+import { isInternalChatMessage } from "../../types.js";
 
 export interface SubagentsRuntimeState {
   readonly enabled: boolean;
@@ -179,6 +182,8 @@ export class SessionController implements Disposable {
   private compactAbort: AbortController | undefined;
   private sessionTitle: string | undefined;
   private readonly namer: SessionNamer;
+  private promptHistoryValue: SessionPromptStore;
+  private promptHistoryErrorReported = false;
   private lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
@@ -197,6 +202,7 @@ export class SessionController implements Disposable {
 
   constructor(private readonly deps: SessionControllerDeps) {
     this.sessionIdValue = asSessionId(deps.sessionId ?? mintSessionId());
+    this.promptHistoryValue = new SessionPromptStore(this.sessionIdValue);
     this.persistence = new SessionPersistenceQueue(deps.persistence);
     this.provider = deps.provider;
     this.model = deps.model;
@@ -259,8 +265,8 @@ export class SessionController implements Disposable {
         this.notifyState();
         void this.persistNow().catch(() => undefined);
       },
-      enabled: () => !this.deps.noHistory && !getConfig().privateMode,
-      transcript: deps.getTranscriptSnapshot,
+      enabled: () => this.isPromptHistoryEnabled(),
+      prompts: () => this.promptHistoryValue.namingWindow(),
     });
     if (deps.jobs) {
       this.responder = new SessionResponder({
@@ -296,6 +302,20 @@ export class SessionController implements Disposable {
 
   get sessionId(): SessionId {
     return this.sessionIdValue;
+  }
+
+  get promptHistory(): SessionPromptStore {
+    return this.promptHistoryValue;
+  }
+
+  isPromptHistoryEnabled(): boolean {
+    return !this.deps.noHistory && !getConfig().privateMode;
+  }
+
+  resetPromptHistory(): void {
+    this.promptHistoryValue = new SessionPromptStore(this.sessionIdValue);
+    this.promptHistoryErrorReported = false;
+    this.namer.restore(this.sessionTitle);
   }
 
   getState(): SessionState {
@@ -524,6 +544,7 @@ export class SessionController implements Disposable {
       workspaceCode?: string | undefined;
       provider?: ProviderId | undefined;
       model?: string | undefined;
+      transcript?: readonly ClassicTranscriptItem[] | undefined;
     } = {},
   ): void {
     this.beginLifecycleGeneration();
@@ -535,7 +556,6 @@ export class SessionController implements Disposable {
     this.prompts.clear();
     this.spool.clear();
     this.sessionTitle = options.title;
-    this.namer.restore(options.title);
     this.lastContextCompactionId = undefined;
     const restored = restoredContextSnapshot(
       this.usageTarget,
@@ -560,6 +580,12 @@ export class SessionController implements Disposable {
       this.policy = createSessionPolicy(this.sessionIdValue);
       this.persistence.rebind(options.persistenceRevision);
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
+    }
+    this.resetPromptHistory();
+    if (this.isPromptHistoryEnabled()) {
+      const generation = this.lifecycleGeneration;
+      void this.promptHistoryValue.seed(legacySessionPrompts(messages, options.transcript))
+        .catch((error) => this.reportPromptHistoryError(error, generation));
     }
     this.replaceSubagents();
     beginSessionWorkspace({
@@ -641,7 +667,6 @@ export class SessionController implements Disposable {
     this.restoredPreviousTurn = undefined;
     this.prompts.clear();
     this.sessionTitle = undefined;
-    this.namer.reset();
     this.setContextSnapshot(undefined);
     this.lastContextCompactionId = undefined;
     this.usageLedger.clear();
@@ -658,6 +683,7 @@ export class SessionController implements Disposable {
       this.lastMainRequestSnapshot = undefined;
       publishRouteReasoningVocabulary(this.provider, this.model);
     }
+    this.resetPromptHistory();
     this.policy = createSessionPolicy(this.sessionIdValue);
     this.replaceSubagents();
     this.notifyState();
@@ -828,6 +854,9 @@ export class SessionController implements Disposable {
       this.settlePersistedResponderResults();
       return;
     }
+    const generation = this.lifecycleGeneration;
+    await this.promptHistoryValue.flush().catch(() => undefined);
+    if (generation !== this.lifecycleGeneration) return;
     if (!hasPersistableHistory(this.history)) {
       return;
     }
@@ -890,7 +919,6 @@ export class SessionController implements Disposable {
   }
 
   enqueue(prompt: string, opts?: TurnDisplayOptions): void {
-    this.namer.noteUserPrompt(opts?.displayPrompt !== null);
     this.prompts.enqueue(prompt, opts);
   }
 
@@ -943,7 +971,6 @@ export class SessionController implements Disposable {
   }
 
   async submit(prompt: string, opts?: TurnDisplayOptions): Promise<TurnResult> {
-    this.namer.noteUserPrompt(opts?.displayPrompt !== null);
     this.responder?.activate();
     this.subagentDelivery.activate();
     this.loopRecovery.clear();
@@ -960,6 +987,7 @@ export class SessionController implements Disposable {
       displayPrompt?: string | null | undefined;
       materializeHistoryImages?: boolean | undefined;
       onStarted?: (() => void) | undefined;
+      internal?: boolean | undefined;
     },
   ): Promise<TurnResult> {
     const config = getConfig();
@@ -996,6 +1024,19 @@ export class SessionController implements Disposable {
     for (const issue of built.imageIssues) this.notice("warn", issue);
     const request = built.request;
     const turnGeneration = this.lifecycleGeneration;
+    const userPrompt = opts?.displayPrompt ?? prompt;
+    if (this.isPromptHistoryEnabled() && opts?.displayPrompt !== null && !opts?.internal &&
+        userPrompt.trim() && !isInternalChatMessage({ role: "user", content: userPrompt })) {
+      void this.promptHistoryValue.append({
+        content: userPrompt,
+        timestamp: this.contextTimestamp(),
+        provider: request.provider ?? provider,
+        model: request.model ?? model,
+        effort: config.thinking.enabled ? config.thinking.effort : "off",
+      }).then(() => {
+        if (turnGeneration === this.lifecycleGeneration) this.namer.noteUserPrompt(true);
+      }).catch((error) => this.reportPromptHistoryError(error, turnGeneration));
+    }
     this.activeTurnGeneration = turnGeneration;
     this.unsettledTurns += 1;
     try {
@@ -1036,7 +1077,6 @@ export class SessionController implements Disposable {
       ) {
         await this.persistNow();
       }
-      if (sameGeneration) this.namer.maybeRename(this.history);
       for (const listener of this.turnEndListeners) listener(result);
       if (sameGeneration) this.prompts.settle(result);
       return result;
@@ -1062,6 +1102,12 @@ export class SessionController implements Disposable {
       });
   }
 
+  private reportPromptHistoryError(error: unknown, generation: number): void {
+    if (generation !== this.lifecycleGeneration || this.promptHistoryErrorReported) return;
+    this.promptHistoryErrorReported = true;
+    this.notice("warn", `could not save session prompts: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   private beginLifecycleGeneration(): void {
     this.lifecycleGeneration += 1;
     this.lastTurnResult = undefined;
@@ -1079,6 +1125,7 @@ export class SessionController implements Disposable {
 
   dispose(): void {
     this.beginLifecycleGeneration();
+    this.namer.reset();
     this.subagentDelivery.dispose();
     this.subagentsValue.dispose();
     this.fenceInteractiveOwner(this.sessionIdValue);

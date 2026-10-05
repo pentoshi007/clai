@@ -179,6 +179,12 @@ export class OverlayController {
     this.notify();
   }
 
+  replacePagerBody(body: string): void {
+    if (this.state.kind !== "pager") return;
+    this.state = { ...this.state, body };
+    this.notify();
+  }
+
   openPager(
     title: string,
     body: string,

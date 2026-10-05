@@ -205,6 +205,7 @@ export function resolveFsToolPath(path: string): string {
 }
 
 export interface FsReadOptions {
+  signal?: AbortSignal | undefined;
   maxBytes?: number | undefined;
   confirmed?: boolean | undefined;
   offset?: number | undefined;

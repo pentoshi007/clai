@@ -2,11 +2,13 @@ import { isAbsolute, resolve } from "node:path";
 import { TOOL_DEFINITIONS } from "../../tools/definitions.js";
 import type { ToolRunOptions } from "../../tools/tool-types.js";
 import type { ToolCall, ToolDefinition, ToolResult } from "../../types.js";
+import { FS_READ_OPTION_KEYS } from "../../tools/fs/read-input.js";
+import { boundFsReadOutput, isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 
 export const TOOL_OUTPUT_LIMIT = 12_000;
 
 const fields: Record<string, readonly string[]> = {
-  "fs.read": ["path", "offset", "limit", "startLine", "endLine", "pattern", "context", "maxMatches", "caseInsensitive", "maxBytes"],
+  "fs.read": ["path", ...FS_READ_OPTION_KEYS, "files"],
   "web.search": ["query", "maxResults", "timeoutMs"],
   "web.fetch": ["url", "maxBytes", "timeoutMs", "responseMode", "responsePart"],
   "http.fetch": ["url", "maxBytes", "timeoutMs", "responseMode", "responsePart"],
@@ -19,7 +21,7 @@ const fields: Record<string, readonly string[]> = {
 };
 
 const descriptions: Record<string, string> = {
-  "fs.read": "Read a text file with numbered lines or list a directory. Use pattern for one file; use shell.exec with rg or grep for multiple files.",
+  "fs.read": 'Read one text file/directory: {"path":"src/app.ts","offset":1,"limit":80}. Optional 1–6 necessary known files: {"files":[{"path":"src/app.ts","limit":80},{"path":"src/config.ts","pattern":"export","context":2}]}. Use exactly one of path or files; filters belong directly inside each file entry in files mode. Lines are 1-indexed; pattern is a non-empty JS regex. Follow each file’s status and hasMore/clipping; retry only needed failed/unfinished reads. Use a single path when sufficient.',
   "web.search": "Search the web for current information.",
   "web.fetch": "Fetch a public URL as readable text.",
   "http.fetch": "GET-only HTTP evidence for public targets.",
@@ -37,6 +39,14 @@ export function isSubagentBlockedTool(name: string): boolean {
   return !READ_ONLY_TOOL_NAMES.has(name);
 }
 
+function withoutSchemaDescriptions(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(withoutSchemaDescriptions);
+  if (!schema || typeof schema !== "object") return schema;
+  return Object.fromEntries(Object.entries(schema)
+    .filter(([key]) => key !== "description")
+    .map(([key, value]) => [key, withoutSchemaDescriptions(value)]));
+}
+
 export const READ_ONLY_TOOLS: ToolDefinition[] = TOOL_DEFINITIONS
   .filter((tool) => Object.hasOwn(fields, tool.name))
   .map((tool) => ({
@@ -47,6 +57,7 @@ export const READ_ONLY_TOOLS: ToolDefinition[] = TOOL_DEFINITIONS
       properties: Object.fromEntries(Object.entries(tool.parameters.properties)
         .filter(([key]) => fields[tool.name]!.includes(key))
         .map(([key, schema]) => {
+          if (tool.name === "fs.read") return [key, withoutSchemaDescriptions(schema)];
           const { description: _dropped, ...rest } = schema as Record<string, unknown>;
           return [key, rest];
         })),
@@ -55,6 +66,7 @@ export const READ_ONLY_TOOLS: ToolDefinition[] = TOOL_DEFINITIONS
   }));
 
 export function boundedOutput(text: string): string {
+  if (isFsReadMultiOutput(text)) return boundFsReadOutput(text, TOOL_OUTPUT_LIMIT);
   const suffix = "\n[Output truncated; narrow the query or page the file. Coverage is incomplete.]";
   return text.length > TOOL_OUTPUT_LIMIT
     ? text.slice(0, TOOL_OUTPUT_LIMIT - suffix.length) + suffix
@@ -67,11 +79,24 @@ export async function confinedPath(root: string, value: unknown = "."): Promise<
 }
 
 function prepareFsRead(root: string, args: Record<string, unknown>): Record<string, unknown> {
-  const rawPath = typeof args.path === "string" && args.path.trim() ? args.path.trim() : ".";
-  const path = isAbsolute(rawPath) ? resolve(rawPath) : resolve(root, rawPath);
-  const maxBytes = typeof args.maxBytes === "number" ? Math.min(args.maxBytes, TOOL_OUTPUT_LIMIT) : TOOL_OUTPUT_LIMIT;
+  if (Array.isArray(args.files)) {
+    return { ...args, files: args.files.map((file) => file && typeof file === "object" && !Array.isArray(file)
+      ? prepareFsReadFile(root, file as Record<string, unknown>)
+      : file) };
+  }
+  return prepareFsReadFile(root, args);
+}
+
+function prepareFsReadFile(root: string, args: Record<string, unknown>): Record<string, unknown> {
+  const rawPath = typeof args.path === "string" && args.path.trim() ? args.path : undefined;
+  const path = rawPath ? (isAbsolute(rawPath) ? resolve(rawPath) : resolve(root, rawPath)) : args.path;
+  const rawMaxBytes = typeof args.maxBytes === "string" && args.maxBytes.trim() ? Number(args.maxBytes) : args.maxBytes;
+  const maxBytes = typeof rawMaxBytes === "number" && Number.isFinite(rawMaxBytes)
+    ? Math.min(rawMaxBytes, TOOL_OUTPUT_LIMIT)
+    : args.maxBytes ?? TOOL_OUTPUT_LIMIT;
   const safe: Record<string, unknown> = { ...args, path, maxBytes };
-  if (typeof args.limit === "number") safe.limit = Math.min(Math.max(1, args.limit), 300);
+  const limit = typeof args.limit === "string" && args.limit.trim() ? Number(args.limit) : args.limit;
+  if (typeof limit === "number" && Number.isFinite(limit)) safe.limit = Math.min(Math.max(1, limit), 300);
   return safe;
 }
 
@@ -116,13 +141,17 @@ export async function executeReadOnlyCall(root: string, call: ToolCall, execute:
   let safe = call;
   if (call.args && typeof call.args === "object" && !Array.isArray(call.args)) {
     const args = { ...call.args };
-    if (typeof args.path === "string" && args.path.trim()) {
-      args.path = isAbsolute(args.path) ? resolve(args.path) : resolve(root, args.path);
+    if (call.name === "fs.read") {
+      safe = { ...call, args: prepareFsRead(root, args) };
+    } else {
+      if (typeof args.path === "string" && args.path.trim()) {
+        args.path = isAbsolute(args.path) ? resolve(args.path) : resolve(root, args.path);
+      }
+      if (Array.isArray(args.paths)) {
+        args.paths = args.paths.map((p) => typeof p === "string" && p.trim() ? (isAbsolute(p) ? resolve(p) : resolve(root, p)) : p);
+      }
+      safe = { ...call, args };
     }
-    if (Array.isArray(args.paths)) {
-      args.paths = args.paths.map((p) => typeof p === "string" && p.trim() ? (isAbsolute(p) ? resolve(p) : resolve(root, p)) : p);
-    }
-    safe = { ...call, args };
   }
   options.signal?.throwIfAborted();
   const result = await execute(safe, options);

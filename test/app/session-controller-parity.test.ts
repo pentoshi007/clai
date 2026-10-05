@@ -486,11 +486,12 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(request.messages?.at(-1)?.content).toContain(
       "entire conversation above this instruction",
     );
-    // Recent tail kept; memory inserted.
-    expect(session.messages.slice(-2).map((m) => m.content)).toEqual([
-      "follow-up after resume",
-      "follow-up answer",
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0]?.compaction?.recentUserPrompts).toEqual([
+      { content: "history prompt one" },
+      { content: "follow-up after resume" },
     ]);
+    expect(session.messages[0]?.content).toContain("## Last 3 user prompts");
     expect(
       session.messages.some(
         (m) =>
@@ -575,13 +576,13 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     });
     if (completed?.type === "compaction-completed") {
-      expect(completed.payload.afterTokens).toBe(115_030);
+      expect(completed.payload.afterTokens).toBe(115_114);
     }
     expect(session.getState().contextSnapshot).toMatchObject({
-      contextTokens: 115_030,
+      contextTokens: 115_114,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe("ctx ~115,030/200k 58%");
+    expect(session.getState().contextChip).toBe("ctx ~115,114/200k 58%");
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );
@@ -727,7 +728,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     }
   });
 
-  it.each([true, false])("persists compaction with an assistant-only recent tail (user request: %s)", async (hasUser) => {
+  it.each([true, false])("persists completed turns as memory with historical prompts (user request: %s)", async (hasUser) => {
     const saved: ChatMessage[][] = [];
     const persistence: PersistencePort = {
       async saveSession(messages) {
@@ -760,21 +761,18 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     expect(result.summarized).toBe(true);
     expect(session.messages.some(isCompactionMemoryMessage)).toBe(true);
-    expect(session.messages.some((m) => m.role === "user")).toBe(hasUser);
-    if (hasUser) {
-      expect(result.after).toBe(result.before);
-      expect(session.messages.find((m) => m.role === "user")?.content).toBe(
-        "build the app " + "x".repeat(400),
-      );
-    }
+    expect(session.messages.every((m) => m.role === "system")).toBe(true);
+    expect(session.messages[0]?.compaction?.recentUserPrompts).toEqual(
+      hasUser ? [{ content: "build the app " + "x".repeat(400) }] : [],
+    );
     expect(saved.length).toBeGreaterThan(0);
-    expect(saved.at(-1)?.some((m) => m.role === "user")).toBe(hasUser);
+    expect(saved.at(-1)?.some((m) => m.role === "user")).toBe(false);
     expect(
       saved.at(-1)?.some((m) => m.content.includes("Session memory from compacted")),
     ).toBe(true);
     session.loadHistory(saved.at(-1) ?? [], { sessionId: "sess-tail-no-user" });
     expect(session.messages.some(isCompactionMemoryMessage)).toBe(true);
-    expect(session.messages.some((m) => m.role === "user")).toBe(hasUser);
+    expect(session.messages.some((m) => m.role === "user")).toBe(false);
     session.dispose();
   });
 

@@ -120,7 +120,9 @@ export function cleanArgsLabel(
 }
 
 export function pathFromArgsDisplay(argsDisplay: string | undefined): string | undefined {
-  const label = presentFsReadArgs(argsDisplay).path;
+  const args = presentFsReadArgs(argsDisplay);
+  if (args.files) return undefined;
+  const label = args.path;
   if (!label || label.includes("\0") || /[\r\n]/.test(label) || label.includes("://")) {
     return undefined;
   }

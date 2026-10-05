@@ -3,6 +3,7 @@ import {
   AUTO_COMPACT_HEADROOM_TOKENS,
   autoCompactHeadroomTokens,
   autoCompactTriggerTokens,
+  resolveRequestBudget,
 } from "../src/agent/request-budget.js";
 import {
   resolveEffectiveContextLimit,
@@ -30,7 +31,7 @@ afterEach(() => {
 });
 
 describe("reliability policy (E1–E6)", () => {
-  it("E1: auto compaction triggers at 70% of the effective window, within the safe headroom", () => {
+  it("E1: model/default windows retain their ratio and safe headroom", () => {
     expect(autoCompactTriggerTokens()).toBe(140_000);
     expect(
       autoCompactTriggerTokens({
@@ -86,7 +87,7 @@ describe("reliability policy (E1–E6)", () => {
         Math.min(24_576, Math.floor(customLimit * 0.25)) -
         2_048;
       const expected = Math.min(
-        Math.floor(customLimit * 0.7),
+        Math.floor(customLimit * 0.8),
         modelSafe - autoCompactHeadroomTokens(modelSafe),
       );
       expect(trigger).toBe(expected);
@@ -94,21 +95,25 @@ describe("reliability policy (E1–E6)", () => {
     }
   });
 
-  it("E1: a session model window compacts at exactly 70%", () => {
+  it("E1: session overrides use 80% while retaining model headroom", () => {
     expect(
       autoCompactTriggerTokens({
         provider: "tokenrouter",
         model: "custom-1m",
         contextLimitTokens: 1_000_000,
       }),
-    ).toBe(700_000);
+    ).toBe(800_000);
     expect(
-      autoCompactTriggerTokens({
+      resolveRequestBudget({
         provider: "tokenrouter",
         model: "custom-253k",
         contextLimitTokens: 253_000,
       }),
-    ).toBe(177_100);
+    ).toMatchObject({
+      configured: 202_400,
+      effectiveTrigger: 202_400,
+      clampedByModel: false,
+    });
   });
 
   it("E2: fs passthrough default is tiered 64k not 400k", () => {

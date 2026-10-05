@@ -17,6 +17,7 @@ import {
   type BlockContext,
 } from "./block-context.js";
 import { hintRows, outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
+import { isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 
 export const BATCH_COLLAPSED_ROWS = 8;
 const SUB_INDENT = 2;
@@ -60,7 +61,8 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   for (const section of shown) {
     const status = section.status ?? (section.ok ? "ok" : "fail");
     const token = SECTION_TOKEN[status] ?? "muted";
-    const presented = presentBatchSection(section, expanded);
+    const multiRead = section.name === "fs.read" && isFsReadMultiOutput(section.body);
+    const presented = presentBatchSection(section, multiRead ? false : expanded, ctx.width - SUB_BODY_INDENT);
     const glyph = ctx.ink.fg(token, sectionGlyph(ctx, status));
     const name = ctx.ink.fg("cyan", section.name);
     const suffix =
@@ -70,15 +72,14 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     lines.push(
       alignEnds(`${subIndent}${glyph} ${name}`, suffix, ctx.width, ctx.glyphs.ellipsis),
     );
-    if (!expanded || !presented.hasBody) continue;
+    if ((!expanded && !multiRead) || !presented.hasBody) continue;
     const budget = Math.max(1, ctx.width - SUB_BODY_INDENT);
-    const summaryRow = presented.lines.find((line) => line.trim().length > 0);
-    if (summaryRow === undefined) continue;
-    const text = adaptPresenterGlyphs(summaryRow, ctx.ink.unicode);
-    for (const chunk of wrapBoundedRows(ctx, text, budget, EXPANDED_LINE_ROWS)) {
-      lines.push(
-        trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolText", chunk)}`),
-      );
+    const rows = multiRead ? presented.lines : presented.lines.filter((line) => line.trim().length > 0).slice(0, 1);
+    for (const row of rows) {
+      const text = adaptPresenterGlyphs(row, ctx.ink.unicode);
+      for (const chunk of wrapBoundedRows(ctx, text, budget, EXPANDED_LINE_ROWS)) {
+        lines.push(trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolText", chunk)}`));
+      }
     }
   }
 

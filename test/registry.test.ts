@@ -93,9 +93,10 @@ describe("tool registry", () => {
     expect(result.output).toContain("dpi must be");
   });
 
-  it("tool handler throws on missing required string arg", async () => {
-    await expect(toolRegistry["fs.read"]!({})).rejects.toThrow(
-      "must be a non-empty string",
-    );
+  it("fs.read returns a failure receipt for a missing path", async () => {
+    const result = await toolRegistry["fs.read"]!({});
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("fs.read.path must be a non-empty string");
   });
 });

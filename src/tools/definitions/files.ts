@@ -1,69 +1,12 @@
 import type { ToolDefinition } from "../../types.js";
 import { def } from "./define.js";
+import { FS_READ_DESCRIPTION, FS_READ_PARAMETERS } from "./fs-read.js";
 
 export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
   def(
     "fs.read",
-    [
-      "Read a text file (or list a directory if path is a dir).",
-      "Decision guide:",
-      "(1) Small/unknown path → fs.read {path} only; small files return fully.",
-      "(2) If output has auto-head or hasMore=true → you do NOT have the whole file; continue with the exact next offset/limit from the footer (do not re-call path-only).",
-      "(3) Known line range → offset+limit or startLine+endLine (1-indexed inclusive).",
-      "(4) Looking for a symbol/string → pattern (regex or /pattern/i) with optional context, OR search with shell.exec then fs.read around hit lines.",
-      "(5) Prefer partial/pattern reads for large files — saves tokens and avoids re-reads.",
-      "Lines in the body are numbered as N: text. Headers report path/range/matches/hasMore.",
-    ].join(" "),
-    {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: "File path (absolute, relative, or ~)",
-        },
-        offset: {
-          type: "integer",
-          description:
-            "1-indexed start line for paging (alias: startLine). 0 is accepted and treated as 1.",
-        },
-        limit: {
-          type: "integer",
-          description:
-            "Max lines when paging (default 200), or max directory entries (default 500)",
-        },
-        startLine: {
-          type: "integer",
-          description: "1-indexed inclusive start line (alias of offset)",
-        },
-        endLine: {
-          type: "integer",
-          description: "1-indexed inclusive end line",
-        },
-        pattern: {
-          type: "string",
-          description:
-            'Match windows: JS regex source ("function\\\\s+foo") or /pattern/flags. Use for symbols/strings instead of loading the whole file.',
-        },
-        context: {
-          type: "integer",
-          description: "Lines of context around each pattern match (default 2)",
-        },
-        maxMatches: {
-          type: "integer",
-          description: "Max pattern matches (default 20, max 100)",
-        },
-        caseInsensitive: {
-          type: "boolean",
-          description: "Case-insensitive pattern match (or use /pattern/i)",
-        },
-        maxBytes: {
-          type: "integer",
-          description: "Hard max bytes for full reads of small/medium files",
-        },
-      },
-      required: ["path"],
-      additionalProperties: false,
-    },
+    FS_READ_DESCRIPTION,
+    FS_READ_PARAMETERS,
     { readOnly: true, askMode: true },
   ),
   def(

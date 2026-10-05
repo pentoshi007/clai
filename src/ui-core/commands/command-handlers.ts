@@ -33,6 +33,7 @@ import { handleInfo, handleKeys, handleSet, handleUnset } from "./key-commands.j
 import { handleMcp } from "./mcp-commands.js";
 import { handleSkills } from "./skill-commands.js";
 import { handleRtk } from "./rtk-commands.js";
+import { handlePrompts } from "./prompt-commands.js";
 import { handleSubagents, handleOrchestration } from "./subagent-commands.js";
 import {
   handleHistory,
@@ -109,6 +110,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("think", () => handleThink(services));
   c.setHandler("context", () => handleContext(services));
   c.setHandler("usage", () => handleUsage(services));
+  c.setHandler("prompts", () => handlePrompts(services));
   c.setHandler("compact", () => void handleCompact(services));
   c.setHandler("skills", (i) => void handleSkills(services, i));
   c.setHandler("mcp", (i) => handleMcp(services, i));
@@ -125,7 +127,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("update", () => void handleUpdate(services));
   c.setHandler("help", () => handleHelp(services));
   c.setHandler("shortcuts", () => handleShortcuts(services));
-  c.setHandler("minimise", () => void handleMinimise(services));
+  c.setHandler("minimise", () => handleMinimise(services));
   c.setHandler("redraw", () => handleRedraw(services));
   c.setHandler("exit", () => handleExit(services));
   c.setHandler("set", (i) => void handleSet(services, i));

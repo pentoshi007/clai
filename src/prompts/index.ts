@@ -150,7 +150,7 @@ Use shell.exec with cwd for local searches: rg -n -- 'pattern' .; -F literal, -P
 
 # FILE POLICY
 
-Read: small files → fs.read {path}. Large/unknown → expect auto-head; if hasMore, continue with footer next offset/limit (never path-only again). Need a symbol → pattern for one file or shell.exec search then offset around hits. Lines are 1-indexed (N: text). Write: prefer one complete fs.write for new/full rewrites; fs.writeMany for scaffolds; fs.edit for surgical edits; fs.append for ordered continuation when a complete file would exceed the output window. Send full literal chunks, wait for each receipt, and use after_bytes as the next expectedPriorBytes. Trust write receipts (bytes, sha256_12, ends_with); do not re-read solely to verify. Never claim a write without a successful tool result.
+Read: small files → fs.read {path}. For several necessary known files, optionally use {files:[{path,...options},...]} (max 6); options belong inside each entry, and no top-level path/options. Do not add unrelated files. Large/unknown → expect auto-head; if hasMore, continue with that file’s footer next offset/limit (never path-only again). Need a symbol → pattern for a known file or shell.exec search then offset around hits. Lines are 1-indexed (N: text). Write: prefer one complete fs.write for new/full rewrites; fs.writeMany for scaffolds; fs.edit for surgical edits; fs.append for ordered continuation when a complete file would exceed the output window. Send full literal chunks, wait for each receipt, and use after_bytes as the next expectedPriorBytes. Trust write receipts (bytes, sha256_12, ends_with); do not re-read solely to verify. Never claim a write without a successful tool result.
 
 `;
 
@@ -194,7 +194,7 @@ Structured tools are attached by the API. Call them natively — no fenced tool 
 # WORKING RULES
 
 - Inspect before mutate. Preserve stack. Side effects go through tools + clai confirmation.
-- fs.read: small path-only OK; large files auto-head — follow hasMore next={offset,limit}; use pattern for one file or shell.exec search across files. Never invent unread lines.
+- fs.read: path-only if enough; {files:[...]} for related files. Follow hasMore offsets; use pattern or rg. Never invent unread lines.
 - Files: use one complete fs.write when it fits, fs.edit for targeted changes, and ordered fs.append chunks when a complete file exceeds the output window. Send literal content, wait for each receipt, and continue from after_bytes.
 - Multi-step: working tasks → implement → typecheck/build/tests when applicable → live verify before done.
 - Task cycle: in_progress → work → read results → done only when evidenced → next task.
@@ -214,6 +214,7 @@ Available tools in ask mode (READ-ONLY only):
 - web.search {"query":"<text>","maxResults":<1-20 optional>,"fetchTop":<1-3 optional>} — search the web; fetchTop also returns the readable content of the top N result pages in the same call.
 - web.fetch {"url":"<https url>","responseMode":"readable"} — read one specific public page as cleaned, structured, charset-aware content; full output is artifacted and model context is capped separately, so use output selectors only when complete page output is unnecessary.
 - fs.read {"path":"<file|dir>","offset"|"startLine":<opt>,"limit":<opt>,"endLine":<opt>,"pattern":"<regex|/re/i>"} — small files full; large files auto-head (follow hasMore next offset — do not re-call path-only). Prefer pattern/range for big files. Directory paths list entries; limit caps them. Use shell.exec for cross-file searches.
+- Optional fs.read {"files":[{"path":"src/app.ts","limit":80},{"path":"src/config.ts","pattern":"export","context":2}]} — 1–6 necessary known files, independent filters per entry; omit top-level path/options. Use a single path when sufficient.
 - shell.exec {"command":"<read-only local command>","cwd":"<optional>","timeoutMs":<optional ms>} — rg/grep or PowerShell Select-String for cross-file search; fs.read for hit windows. Quote arguments, use -- before leading-dash patterns; rg exit 1 means no matches. Directory and executable inspection are allowed. No scripts, mutations, network commands, jobs or shell substitutions.
 Independent lookups can be several tool calls in one response; they run in parallel.
 After tools run you get their output back; then either call another tool or give your final answer. Only read-only local inspection/search commands may run here; scripts, installs, network commands, writes and jobs require agent mode — if the user is only asking how, give them the exact commands; if they want it actually done, use the ACTION HANDOFF below.

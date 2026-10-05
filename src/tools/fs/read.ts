@@ -12,8 +12,7 @@ import {
   resolveLineWindow,
 } from "./read-window.js";
 import { open, readdir, stat } from "node:fs/promises";
-
-const DEFAULT_READ_MAX_BYTES = 8 * 1024 * 1024;
+import { DEFAULT_READ_MAX_BYTES, ReadOutputBudget } from "./read-budget.js";
 
 const SOFT_FULL_READ_BYTES = 256 * 1024;
 
@@ -44,6 +43,11 @@ export async function fsRead(
   path: string,
   options: FsReadOptions = {},
 ): Promise<ToolResult> {
+  options.signal?.throwIfAborted();
+  const maxBytes = options.maxBytes ?? DEFAULT_READ_MAX_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    return { ok: false, output: "fs.read maxBytes must be a positive integer.", exitCode: 1 };
+  }
   const resolved = resolveReadPath(path);
   ensureReadAllowed(resolved, path, options.confirmed);
 
@@ -55,6 +59,7 @@ export async function fsRead(
         maxEntries:
           options.limit && options.limit > 0 ? options.limit : undefined,
         confirmed: options.confirmed,
+        maxBytes,
       });
       return {
         ...listed,
@@ -99,10 +104,9 @@ export async function fsRead(
   if (wantsWindow) {
     const win = resolveLineWindow(options);
     if (!win.ok) return { ok: false, output: win.error, exitCode: 1 };
-    return readLineWindow(resolved, win.start, win.limit, fileBytes, win.note);
+    return readLineWindow(resolved, win.start, win.limit, fileBytes, win.note, maxBytes, options.signal);
   }
 
-  const maxBytes = options.maxBytes ?? DEFAULT_READ_MAX_BYTES;
   if (fileBytes > SOFT_FULL_READ_BYTES) {
     const result = await readLineWindow(
       resolved,
@@ -111,17 +115,22 @@ export async function fsRead(
       fileBytes,
       `auto-head: file is ${fileBytes} bytes (>${SOFT_FULL_READ_BYTES}); returning first ${DEFAULT_LINE_WINDOW} lines. ` +
         `Use offset/limit, startLine/endLine, or pattern= to fetch more without loading the whole file.`,
+      maxBytes,
+      options.signal,
     );
     return { ...result, truncated: true };
   }
 
   const handle = await open(resolved, "r");
   try {
+    options.signal?.throwIfAborted();
     const st = await handle.stat();
     const cap = Math.min(st.size, maxBytes);
     const buffer = Buffer.alloc(cap);
     const { bytesRead } = await handle.read(buffer, 0, cap, 0);
-    const text = buffer.subarray(0, bytesRead).toString("utf8");
+    options.signal?.throwIfAborted();
+    const truncated = st.size > maxBytes;
+    const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(buffer.subarray(0, bytesRead), { stream: truncated });
     const lineCount = text.length === 0 ? 0 : text.split(/\r?\n/).length;
     if (lineCount > SOFT_FULL_READ_LINES && st.size <= maxBytes) {
       return readLineWindow(
@@ -131,9 +140,10 @@ export async function fsRead(
         fileBytes,
         `auto-head: file has ${lineCount} lines (>${SOFT_FULL_READ_LINES}); returning first ${DEFAULT_LINE_WINDOW}. ` +
           `Use offset/limit or pattern= for the rest.`,
+        maxBytes,
+        options.signal,
       );
     }
-    const truncated = st.size > maxBytes;
     const suffix = truncated
       ? `\n# truncated at ${maxBytes.toLocaleString()} bytes of ${st.size.toLocaleString()} — page with offset/limit or pattern= instead of re-reading the whole file`
       : "";
@@ -154,6 +164,7 @@ async function readDirectory(
   options: {
     maxEntries?: number | undefined;
     confirmed?: boolean | undefined;
+    maxBytes?: number | undefined;
   } = {},
 ): Promise<ToolResult> {
   const resolved = resolveReadPath(path);
@@ -167,7 +178,7 @@ async function readDirectory(
     const hiddenCount = sorted.filter((entry) =>
       entry.name.startsWith("."),
     ).length;
-    const truncated = sorted.length > maxEntries;
+    let truncated = sorted.length > maxEntries;
     const visible = truncated ? sorted.slice(0, maxEntries) : sorted;
     if (visible.length === 0) {
       return {
@@ -176,16 +187,17 @@ async function readDirectory(
         truncated,
       };
     }
-    const lines = [
-      `Directory ${resolved}: ${sorted.length.toLocaleString()} entr${sorted.length === 1 ? "y" : "ies"} (${hiddenCount.toLocaleString()} hidden included)`,
-      ...visible.map(
-        (entry) =>
-          `${entry.isDirectory() ? "dir " : "file"} ${entry.name}${entry.name.startsWith(".") ? " [hidden]" : ""}`,
-      ),
-    ];
+    const lines = [`Directory ${resolved}: ${sorted.length.toLocaleString()} entr${sorted.length === 1 ? "y" : "ies"} (${hiddenCount.toLocaleString()} hidden included)`];
+    const budget = new ReadOutputBudget(options.maxBytes);
+    let shown = 0;
+    for (const entry of visible) {
+      const text = budget.take(`${entry.isDirectory() ? "dir " : "file"} ${entry.name}${entry.name.startsWith(".") ? " [hidden]" : ""}`);
+      if (text !== undefined) { lines.push(text); shown += 1; }
+      if (budget.truncated) { truncated = true; break; }
+    }
     if (truncated) {
       lines.push(
-        `... (${(sorted.length - maxEntries).toLocaleString()} entries omitted of ${sorted.length.toLocaleString()})`,
+        `... (${(sorted.length - shown).toLocaleString()} entries omitted of ${sorted.length.toLocaleString()}${budget.truncated ? "; content byte limit reached, possibly within the last entry" : ""})`,
       );
     }
     return {

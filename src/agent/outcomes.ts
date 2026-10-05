@@ -419,6 +419,11 @@ export function normalizeOperationArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   if (tool !== "fs.read") return args;
+  if (Array.isArray(args.files)) {
+    return { ...args, files: args.files.map((file) => file && typeof file === "object" && !Array.isArray(file)
+      ? normalizeOperationArgs(tool, file as Record<string, unknown>)
+      : file) };
+  }
   const normalized = { ...args };
   if (
     typeof normalized.startLine === "number" &&

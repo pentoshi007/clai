@@ -145,6 +145,9 @@ export interface BackgroundSpawnSpec {
 }
 
 export interface StartJobOptions extends JobLinkMetadata {
+  requestedCommand?: string | undefined;
+  env?: Readonly<Record<string, string>> | undefined;
+  onSpawn?: (() => void) | undefined;
   cwd?: string | undefined;
   name?: string | undefined;
   ownerSessionId?: string | undefined;

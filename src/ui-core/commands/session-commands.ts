@@ -71,6 +71,7 @@ export function handleMode(services: AppServices, mode: Mode): void {
 
 export async function handleClear(services: AppServices): Promise<void> {
   const purgedId = services.session.sessionId;
+  const pendingPrompts = services.session.promptHistory.flush().catch(() => undefined);
   const purgedWorkspace = getActiveSessionWorkspace()?.folderName;
   const beforeProvider = services.session.getState().provider;
   const beforeModel = services.session.getState().model;
@@ -89,6 +90,7 @@ export async function handleClear(services: AppServices): Promise<void> {
   flash(services, "Session cleared", { key: "session", level: "success" });
   await services.plan.load(services.session.sessionId).catch(() => undefined);
 
+  await pendingPrompts;
   const outcome = await purgeCurrentSession(purgedId, purgedWorkspace);
   if (outcome === "failed") {
     notice(
@@ -504,7 +506,9 @@ export async function handleSave(
 export async function handleReset(services: AppServices): Promise<void> {
   services.session.subagents.purge();
   services.session.subagents.setEnabled(false);
+  await services.session.promptHistory.flush().catch(() => undefined);
   const result = await clearAllHistory();
+  services.session.resetPromptHistory();
   notice(services, "info", `history cleared · ${result.detail || "ok"}`);
 }
 
