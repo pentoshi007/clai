@@ -203,7 +203,7 @@ describe("compaction admission", () => {
   it("audits admission diagnostics with estimate, calibration, and provider truth", async () => {
     const audit = vi.fn();
     await planCompactionAdmission(
-      ports({ audit, measureRequestTokens: () => 150_000 }),
+      ports({ audit, measureRequestTokens: () => trigger }),
     );
     expect(audit).toHaveBeenCalledWith(
       "agent.compact.admission",
@@ -211,7 +211,7 @@ describe("compaction admission", () => {
         estimatedTokens: trigger,
         tokenMeasurement: "provider-reported",
         triggerTokens: trigger,
-        providerMeasuredTokens: 150_000,
+        providerMeasuredTokens: trigger,
       }),
     );
   });

@@ -13,16 +13,12 @@ const tuiV2Root = join(here, "..", "..", "src", "tui-v2");
  * composer/transcript/picker/modal/pager/jobs/plan/overlay renderable
  * adapters, and the React store bindings may. This keeps the application/
  * controller/reducer logic testable under Node and swappable behind the same
- * ports if the adapter ever changes. `pager-export.ts` is a deliberate,
- * narrow exception to the raw-terminal-write rule: exporting pager content to
- * real scrollback/`$EDITOR` needs the actual stdout, gated behind the
- * `RendererSuspendPort` it's injected rather than importing `@opentui/*`.
+ * ports if the adapter ever changes.
  */
 const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "hooks", "terminal-dimensions.tsx"),
   join(tuiV2Root, "app", "App.tsx"),
   join(tuiV2Root, "bootstrap", "start-tui-v2.ts"),
-  join(tuiV2Root, "bootstrap", "pager-export.ts"),
   join(tuiV2Root, "bootstrap", "patch-opentui-text.ts"),
   join(tuiV2Root, "components", "transcript", "use-native-selection-copy.ts"),
   join(tuiV2Root, "components", "transcript", "use-click-without-drag.ts"),

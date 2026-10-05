@@ -24,9 +24,7 @@ const REACT_IMPORT = /from\s+["']react["']/;
 const TERMINAL_WRITE = /process\.stdout\.write|process\.stderr\.write|process\.stdin\.setRawMode/;
 const RENDERER_TREE_IMPORT = /from\s+["'][^"']*\/(?:tui-v2|classic|noninteractive)\//;
 const REPL_IMPORT = /from\s+["'][^"']*\/repl(?:\.js|\/[^"']*)["']/;
-const TERMINAL_WRITE_ALLOWED = new Set([
-  join(uiCoreRoot, "ports", "pager-export-port.ts"),
-]);
+const TERMINAL_WRITE_ALLOWED = new Set<string>();
 
 describe("src/ui-core stays renderer-neutral", () => {
   const files = existsSync(uiCoreRoot) ? walk(uiCoreRoot) : [];

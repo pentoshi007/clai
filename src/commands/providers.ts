@@ -31,6 +31,7 @@ import {
   pollClineDeviceAuth,
   startClineDeviceAuth,
 } from "../llm/cline-auth.js";
+export { authQoder } from "./qoder.js";
 import type { ClineOAuthTokens } from "../llm/cline-auth.js";
 import {
   importExistingOmnirushAuth,

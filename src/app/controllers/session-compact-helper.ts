@@ -155,6 +155,7 @@ export async function runSessionCompaction(
     options.contextLimitTokens,
   );
   const instruction = buildDirectCompactionPrompt({
+    messages: history,
     ...(options.durableEnvelope ? { durableState: options.durableEnvelope } : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });

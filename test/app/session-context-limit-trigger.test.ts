@@ -137,17 +137,46 @@ describe("auto-compaction trigger follows custom context limits", () => {
     controller.dispose();
   });
 
-  it("compacts against the provider window when a custom limit exceeds it", () => {
+  it("overrides a provider window without changing measured usage and restores it on reset", () => {
     modules.registerModelCatalogFacts(PROVIDER, { id: MODEL, contextTokens: 200_000 });
     const controller = session();
+    controller.recordTokenUsage(
+      { promptTokens: 90_000, completionTokens: 100, totalTokens: 90_100, exact: true },
+      MODEL,
+      PROVIDER,
+    );
     controller.setContextLimitTokens(500_000);
 
+    expect(controller.getState()).toMatchObject({
+      contextLimit: {
+        source: "session-override",
+        tokens: 500_000,
+        requestedTokens: 500_000,
+        providerTokens: 200_000,
+        compactTriggerTokens: 400_000,
+      },
+      contextUsage: { contextTokens: 90_000, contextLimit: 500_000, exact: true },
+      contextChip: "ctx 90,000/500k 18%",
+    });
+    const reopened = session();
+    expect(reopened.getState().contextUsage?.contextLimit).toBe(500_000);
+    reopened.dispose();
+
+    modules.registerModelCatalogFacts(PROVIDER, { id: MODEL, contextTokens: 250_000 });
     expect(controller.getState().contextLimit).toMatchObject({
-      source: "session-override",
-      tokens: 200_000,
-      requestedTokens: 500_000,
-      providerTokens: 200_000,
-      compactTriggerTokens: 140_000,
+      tokens: 500_000,
+      providerTokens: 250_000,
+      compactTriggerTokens: 400_000,
+    });
+    controller.setContextLimitTokens(undefined);
+    expect(controller.getState()).toMatchObject({
+      contextLimit: {
+        source: "model-catalog",
+        tokens: 250_000,
+        compactTriggerTokens: 200_000,
+      },
+      contextUsage: { contextTokens: 90_000, contextLimit: 250_000, exact: true },
+      contextChip: "ctx 90,000/250k 36%",
     });
     controller.dispose();
   });

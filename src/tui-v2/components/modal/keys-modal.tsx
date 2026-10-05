@@ -71,7 +71,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     return existingCount > 0 ? Math.min(stored, existingCount - 1) : 0;
   });
   const [focusIdx, setFocusIdx] = useState(() =>
-    Math.max(0, request.initialKeys.length),
+    request.addViaPicker ? 0 : Math.max(0, request.initialKeys.length),
   );
   const inputRefs = useRef<Map<number, InputRenderable | null>>(new Map());
   const prefilled = useRef(false);
@@ -193,7 +193,12 @@ export function KeysModal(props: KeysModalProps): ReactNode {
   function refreshRow(index: number): void {
     const row = rows[index];
     if (!request.refreshable || !row?.slotId) return;
-    services.overlay.answerKeys({ action: "refresh", slotId: row.slotId });
+    services.overlay.answerKeys({
+      action: "refresh",
+      slotId: row.slotId,
+      rows: buildKeysSaveRows(syncFromInputs(), request.addViaPicker === true),
+      activeIndex: activeKeyIdx,
+    });
   }
 
   useKeyboard((key: KeyEvent) => {
@@ -202,6 +207,31 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     if (chord === "escape") {
       key.preventDefault();
       services.overlay.answerKeys(undefined);
+      return;
+    }
+    if (request.addViaPicker && (chord === "up" || chord === "down")) {
+      key.preventDefault();
+      if (rows.length > 0) setFocusIdx((index) => (index + (chord === "up" ? -1 : 1) + rows.length) % rows.length);
+      return;
+    }
+    if (request.addViaPicker && chord === "space") {
+      key.preventDefault();
+      if (rows[focusIdx]?.slotId) setActiveKeyIdx(focusIdx);
+      return;
+    }
+    if (request.addViaPicker && chord === "d") {
+      key.preventDefault();
+      toggleDisabled(focusIdx);
+      return;
+    }
+    if (request.addViaPicker && chord === "ctrl+x") {
+      key.preventDefault();
+      if (rows[focusIdx]) removeRow(focusIdx);
+      return;
+    }
+    if (request.addViaPicker && chord === "r" && request.refreshable) {
+      key.preventDefault();
+      refreshRow(focusIdx);
       return;
     }
     if (chord === "ctrl+a") {
@@ -233,6 +263,9 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
   const typedCount = rows.filter((r) => r.text.trim().length > 0).length;
   const showActiveToggle = existingCount > 1;
+  const pickerInstruction = itemLabel === "model" ? "choose models from the catalogue" : `sign in to add an ${itemLabel}`;
+  const pickerAddLabel = itemLabel === "model" ? "add from models" : `add ${itemLabel}`;
+  const pickerShortcuts = `↑↓:select  ·  enter / ^a:${pickerAddLabel}  ·  space:active  ·  d:disable  ·  ^x:remove`;
 
   return (
     <box
@@ -268,7 +301,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       <text
         content={
           request.addViaPicker
-            ? `${existingCount} stored · choose models from the catalogue${showActiveToggle ? " · ★ = active" : ""}`
+            ? `${existingCount} stored · ${pickerInstruction}${showActiveToggle ? " · ★ = active" : ""}`
             : existingCount > 0
               ? `${existingCount} stored · type to replace a slot · + adds another (max ${MAX_PROVIDER_KEYS})${showActiveToggle ? " · ★ = active" : ""}`
               : `Nothing stored yet · paste one or more ${itemLabelPlural} (max ${MAX_PROVIDER_KEYS})`
@@ -285,8 +318,8 @@ export function KeysModal(props: KeysModalProps): ReactNode {
             style={{ flexDirection: "row", width: "100%", alignItems: "center" }}
           >
             <text
-              content={`${index + 1}. `}
-              style={{ fg: theme.muted, width: 4, flexShrink: 0 }}
+              content={request.addViaPicker ? `${focusIdx === index ? "›" : " "} ${index + 1}. ` : `${index + 1}. `}
+              style={{ fg: theme.muted, width: request.addViaPicker ? 5 : 4, flexShrink: 0 }}
             />
             <text
               content={row.disabled ? " ⊘ " : " ○ "}
@@ -369,7 +402,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
 
       <box style={{ flexDirection: "row", width: "100%" }}>
         <text
-          content={request.addViaPicker ? " + add from models " : " + add "}
+          content={request.addViaPicker ? ` + ${pickerAddLabel} ` : " + add "}
           style={{
             fg: theme.background,
             bg: ACCENT,
@@ -406,7 +439,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       </box>
 
       <text
-        content={`${request.addViaPicker ? "enter:add from models  ·  ^a:add from models" : "enter:save  ·  ^a / +:add"}  ·  ✕:remove${request.refreshable ? "  ·  ↻:refresh" : ""}${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
+        content={`${request.addViaPicker ? pickerShortcuts : "enter:save  ·  ^a / +:add"}  ·  ^enter:save${request.refreshable ? "  ·  r / ↻:refresh" : ""}${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
         style={{ fg: theme.muted, attributes: TextAttributes.DIM }}
       />
     </box>

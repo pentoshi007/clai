@@ -47,8 +47,6 @@ const PANEL_ACTIONS: readonly ActionId[] = [
   "pager.search",
   "pager.next-match",
   "pager.prev-match",
-  "pager.export-scrollback",
-  "pager.export-editor",
   "pager.copy",
   "pager.toggle-follow",
   "pager.format",

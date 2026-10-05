@@ -258,8 +258,6 @@ export function pagerKey(input: PagerKeyInput): PanelKeyResult<PagerPanelState> 
   if (chord === "f") return handled({ ...state, format: "formatted" });
   if (chord === "r") return handled({ ...state, format: "raw" });
   if (chord === "l" && input.live) return handled({ ...state, follow: !state.follow });
-  if (chord === "s") return handled(state, { kind: "pager-export-scrollback" });
-  if (chord === "e") return handled(state, { kind: "pager-export-editor" });
   if (chord === "c") return handled(state, { kind: "copy", text: input.body });
   if (chord === "q") return handled(state, { kind: "close" });
   return unhandled(state);
@@ -330,8 +328,6 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
         "f fmt",
         "r raw",
         ...(input.live === true ? ["l follow"] : []),
-        "s scroll",
-        "e ed",
         "c copy",
         "q",
       ];

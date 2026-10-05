@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveRequestBudget } from "../../src/agent/request-budget.js";
+import { resolveEffectiveContextLimit } from "../../src/agent/request-accounting.js";
 import {
   contextSnapshotForRoute,
   recordContextUsageSnapshot,
@@ -32,7 +33,7 @@ afterEach(() => {
 });
 
 describe("provider context windows", () => {
-  it("prefers custom then provider, and clamps custom to provider", () => {
+  it("prefers explicit custom limits over provider-advertised limits", () => {
     registerWindow();
     expect(resolveContextWindow({ provider: "kiro", model })).toEqual({
       tokens: 1_000_000,
@@ -60,12 +61,31 @@ describe("provider context windows", () => {
         contextLimitTokens: 2_000_000,
       }),
     ).toMatchObject({
-      tokens: 1_000_000,
+      tokens: 2_000_000,
       source: "session-override",
       providerTokens: 1_000_000,
       overrideTokens: 2_000_000,
-      clampedToProvider: true,
+      clampedToProvider: false,
     });
+  });
+
+  it.each(["claude-sonnet-4", "unknown-model"])(
+    "overrides the detected window for %s and resets to detection",
+    (model) => {
+      expect(resolveContextWindow({ provider: "anthropic", model, contextLimitTokens: 500_000 }))
+        .toMatchObject({ tokens: 500_000, source: "session-override" });
+      expect(resolveContextWindow({ provider: "anthropic", model }))
+        .toMatchObject({ tokens: 200_000 });
+    },
+  );
+
+  it("applies explicit overrides to provider-specific context tables and request accounting", () => {
+    const route = { provider: "tokenrouter" as const, model: "minimax-m3" };
+    expect(resolveContextWindow(route)).toMatchObject({ tokens: 524_288, source: "provider" });
+    expect(resolveContextWindow({ ...route, contextLimitTokens: 1_000_000 }))
+      .toMatchObject({ tokens: 1_000_000, source: "session-override", providerTokens: 524_288 });
+    expect(resolveEffectiveContextLimit({ ...route, contextLimitTokens: 1_000_000 }))
+      .toMatchObject({ limitTokens: 1_000_000, source: "session-override" });
   });
 
   it("ignores undersized overrides and distinguishes table and default windows", () => {
@@ -112,17 +132,17 @@ describe("provider ratio usage", () => {
 });
 
 describe("provider-window compaction and display", () => {
-  it("compacts at 70% of the provider-advertised window", () => {
+  it("compacts at 80% of the provider-advertised window", () => {
     registerWindow();
     expect(resolveRequestBudget({ provider: "kiro", model })).toMatchObject({
       windowTokens: 1_000_000,
       windowSource: "provider",
-      configured: 700_000,
-      effectiveTrigger: 700_000,
+      configured: 800_000,
+      effectiveTrigger: 800_000,
     });
   });
 
-  it("uses 70% of a custom window after provider clamping", () => {
+  it("uses 80% of a custom window even above the advertised limit", () => {
     registerWindow();
     expect(
       resolveRequestBudget({
@@ -130,14 +150,19 @@ describe("provider-window compaction and display", () => {
         model,
         contextLimitTokens: 500_000,
       }),
-    ).toMatchObject({ configured: 350_000, effectiveTrigger: 350_000 });
+    ).toMatchObject({ configured: 400_000, effectiveTrigger: 400_000 });
     expect(
       resolveRequestBudget({
         provider: "kiro",
         model,
         contextLimitTokens: 2_000_000,
       }),
-    ).toMatchObject({ configured: 700_000, effectiveTrigger: 700_000 });
+    ).toMatchObject({
+      windowTokens: 2_000_000,
+      windowSource: "session-override",
+      configured: 1_600_000,
+      effectiveTrigger: 1_600_000,
+    });
   });
 
   it("keeps provider-derived tokens while custom limits change the denominator", () => {
@@ -168,7 +193,7 @@ describe("provider-window compaction and display", () => {
       limit: {
         source: "model-catalog",
         tokens: 1_000_000,
-        compactTriggerTokens: 700_000,
+        compactTriggerTokens: 800_000,
       },
     });
     expect(
@@ -184,7 +209,7 @@ describe("provider-window compaction and display", () => {
     );
     expect(customSnapshot).toMatchObject({
       contextTokens: 125_000,
-      limit: { tokens: 500_000, compactTriggerTokens: 350_000 },
+      limit: { tokens: 500_000, compactTriggerTokens: 400_000 },
     });
     expect(
       formatContextChip(toLegacyContextUsage(customSnapshot), { compact: true }),

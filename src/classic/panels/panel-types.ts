@@ -49,7 +49,5 @@ export interface PanelControllerDeps {
   readonly onEditPrompt: (text: string) => void;
   readonly onHidePlan: () => void;
   readonly onRevealItem: (itemId: string) => void;
-  readonly exportScrollback?: ((body: string) => void) | undefined;
-  readonly exportEditor?: ((body: string) => void) | undefined;
   readonly now?: (() => number) | undefined;
 }

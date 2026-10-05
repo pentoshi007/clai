@@ -45,6 +45,7 @@ export const executeAutomaticCompaction = (
     budgetTokens: 0,
     keepRecent: input.keepRecent,
     singleAdmission: true,
+    preserveActiveTurn: true,
     ...(input.forceDirectSinglePass ? { forceDirectSinglePass: true } : {}),
     ...(input.forcePrefixSlice ? { forcePrefixSlice: true } : {}),
     singlePassInputBudgetTokens: Math.max(

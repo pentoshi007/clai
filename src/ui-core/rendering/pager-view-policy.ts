@@ -1,6 +1,7 @@
 
 import type { FileChange } from "../../tools/file-diff.js";
 import { looksLikeMarkdown } from "./pager-source.js";
+import { isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 
 const MARKDOWN_EXT = /\.(md|markdown|mdx)$/i;
 
@@ -47,6 +48,7 @@ export function shouldDefaultFormattedView(
   const tool = (input.toolName ?? "").toLowerCase();
   const path = input.path;
   const body = input.body ?? "";
+  if (tool === "fs.read" && isFsReadMultiOutput(body)) return false;
 
   if (
     tool === "fs.read" ||

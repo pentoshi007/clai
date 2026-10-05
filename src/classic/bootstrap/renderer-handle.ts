@@ -1,6 +1,10 @@
 import type { RendererHandle } from "../../ui-core/bootstrap/lifecycle.js";
-import type { InkMountControl } from "./suspend-port.js";
 import type { TerminalDataListener, TerminalSession } from "./terminal-session.js";
+
+interface InkMountControl {
+  mount(): void;
+  unmount(): void;
+}
 
 export type ClassicTerminalSession = Pick<
   TerminalSession,

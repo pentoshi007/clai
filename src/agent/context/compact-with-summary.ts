@@ -4,6 +4,12 @@ import { hasReasoningMarker } from "../../llm/reasoning-marker.js";
 import { ACTIVE_SKILLS_PREFIX } from "../../skills/catalog.js";
 import { compactionSourcePrefixEnd } from "./compaction-source-prefix.js";
 import { latestUserMessage } from "./latest-user-message.js";
+import {
+  compactionRecencyAnchors,
+  hasCompletedConversationTurn,
+  recentUserPrompts,
+  renderRecentUserPrompts,
+} from "./compaction-recent-history.js";
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import {
@@ -50,6 +56,7 @@ export interface CompactOptions {
   singleAdmission?: boolean | undefined;
   forceDirectSinglePass?: boolean | undefined;
   forcePrefixSlice?: boolean | undefined;
+  preserveActiveTurn?: boolean | undefined;
 }
 
 export type CompactionStrategy =
@@ -122,12 +129,22 @@ export async function compactMessagesWithSummary(
   const isForced = options.budgetTokens === 0;
 
   let keepRecent = Math.max(2, options.keepRecent ?? DEFAULT_KEEP_RECENT);
+  const completedTurn = options.preserveActiveTurn !== true &&
+    hasCompletedConversationTurn(messages);
+  const recentPrompts = recentUserPrompts(messages);
+  const recencyAnchors = compactionRecencyAnchors(messages);
   const firstMessage = messages[0];
   const preserveSystemHead =
     firstMessage?.role === "system" &&
     !isCompactionMemoryMessage(firstMessage);
   const start = preserveSystemHead ? 1 : 0;
-  let tailStart = Math.max(start, messages.length - keepRecent);
+  let recentEnd = messages.length;
+  while (recentEnd > start && messages[recentEnd - 1]?.role === "system") {
+    recentEnd -= 1;
+  }
+  let tailStart = completedTurn
+    ? messages.length
+    : Math.max(start, recentEnd - keepRecent);
   tailStart = expandKeepStartForToolPairs(messages, tailStart);
   let older = messages.slice(start, tailStart);
 
@@ -229,6 +246,7 @@ export async function compactMessagesWithSummary(
     .filter(Boolean)
     .join("\n\n---\n\n");
   const directPrompt = buildDirectCompactionPrompt({
+    messages,
     ...(options.durableEnvelope?.trim()
       ? { durableState: options.durableEnvelope.trim() }
       : {}),
@@ -253,6 +271,7 @@ export async function compactMessagesWithSummary(
         directInputTokens <= singlePassInputBudget));
   const serializedPrompt = buildCompactionUserPrompt({
     messageTranscript: "",
+    recencyAnchors,
     ...(durableState ? { durableState } : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
@@ -359,6 +378,7 @@ export async function compactMessagesWithSummary(
         messageTranscript: visualCoversOlderHistory ? "" : messageTranscript,
         durableState: durableState || undefined,
         purpose: options.purpose,
+        recencyAnchors,
       }),
       { phase: "single" },
     );
@@ -429,6 +449,7 @@ export async function compactMessagesWithSummary(
         messageTranscript: sliceTranscript,
         durableState: durableState || undefined,
         purpose: options.purpose,
+        recencyAnchors,
       }),
       { phase: "single" },
     );
@@ -459,6 +480,7 @@ export async function compactMessagesWithSummary(
         partials,
         ...(durableState ? { durableState } : {}),
         ...(options.purpose ? { purpose: options.purpose } : {}),
+        recencyAnchors,
       }),
       { phase: "reduce", total: chunks.length },
     );
@@ -483,7 +505,7 @@ export async function compactMessagesWithSummary(
   }
 
   const head = preserveSystemHead ? [messages[0]!] : [];
-  const protectedUser = latestUserMessage(messages);
+  const protectedUser = completedTurn ? undefined : latestUserMessage(messages);
   let rawTail = [...retainedMiddle, ...messages.slice(tailStart)];
   if (protectedUser && !rawTail.includes(protectedUser)) {
     rawTail.unshift(protectedUser);
@@ -510,7 +532,13 @@ export async function compactMessagesWithSummary(
   const memoryPrefix = compactionMemoryPrefixForPurpose(options.purpose);
   const memoryMsg: ChatMessage = {
     role: "system",
-    content: `${memoryPrefix}\n\n${summary}`,
+    content: [memoryPrefix, summary, renderRecentUserPrompts(recentPrompts, protectedUser)]
+      .filter(Boolean).join("\n\n"),
+    compaction: {
+      recentUserPrompts: recentPrompts
+        .filter((prompt) => !prompt.message || !rawTail.includes(prompt.message))
+        .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
+    },
   };
   const envelopeMsg: ChatMessage | undefined = options.durableEnvelope?.trim()
     ? { role: "system", content: options.durableEnvelope.trim() }

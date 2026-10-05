@@ -233,6 +233,7 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /qwen[^/]*-vl/i,
     /vision/i,
   ],
+  qoder: [/qwen/i, /vision/i, /gpt/i, /claude/i, /glm/i, /kimi/i, /deepseek/i],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {

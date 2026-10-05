@@ -18,6 +18,7 @@ export const AUTO_COMPACT_HEADROOM_TOKENS =
   COMPACTION_MAX_COMPLETION_TOKENS + COMPACTION_INPUT_SAFETY_TOKENS;
 
 export const AUTO_COMPACT_CONTEXT_RATIO = 0.7;
+export const AUTO_COMPACT_PROVIDER_OR_CUSTOM_CONTEXT_RATIO = 0.8;
 
 export interface RequestBudgetTarget {
   readonly provider?: ProviderId | undefined;
@@ -71,7 +72,12 @@ export function resolveRequestBudget(
     model: target.model,
     contextLimitTokens: target.contextLimitTokens,
   });
-  const configured = Math.floor(window.tokens * AUTO_COMPACT_CONTEXT_RATIO);
+  const usesProviderOrCustomWindow =
+    window.source === "provider" || window.source === "session-override";
+  const ratio = usesProviderOrCustomWindow
+    ? AUTO_COMPACT_PROVIDER_OR_CUSTOM_CONTEXT_RATIO
+    : AUTO_COMPACT_CONTEXT_RATIO;
+  const configured = Math.floor(window.tokens * ratio);
   const modelSafe = effectiveSafeTokensForWindow(window.tokens);
   const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
   return {

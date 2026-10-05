@@ -16,6 +16,8 @@ import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
 import type { KeysEditorAnswer } from "../controllers/overlay-controller.js";
 import {notice, openEndpointsEditor, openSearchKeysEditor, resolveEditorRowsDetailed} from "./keys/editors.js";
+import { pickAuthMethod } from "./keys/auth-picker.js";
+import { openQoderKeysFlow } from "./keys/qoder.js";
 import {
   maybeRefreshClineToken,
   pollClineDeviceAuth,
@@ -24,7 +26,9 @@ import {
 } from "../../llm/cline-auth.js";
 import {
   codexKeyFromAccessToken,
+  decodeCodexKey,
   encodeCodexKey,
+  maybeRefreshCodexCredential,
   pollCodexDeviceAuth,
   startCodexBrowserAuth,
   startCodexDeviceAuth,
@@ -458,7 +462,7 @@ export async function runClineAuthForUI(
     return undefined;
   }
 
-  void openSystemBrowser(start.verificationUrl).catch(() => {});
+  if (!isHeadlessEnvironment()) void openSystemBrowser(start.verificationUrl).catch(() => {});
 
   services.overlay.openPager(
     "Cline sign-in",
@@ -538,38 +542,31 @@ async function promptCodexApiKey(services: AppServices): Promise<string | undefi
   return key;
 }
 
-function pickCodexAuthMethod(
+async function pickCodexAuthMethod(
   services: AppServices,
 ): Promise<"browser" | "headless" | "apikey" | undefined> {
-  return new Promise((resolve) => {
-    const opened = services.overlay.openPicker(
+  const browser = {
+    value: "browser",
+    label: "Sign in with ChatGPT (browser)",
+    description: "opens auth.openai.com in your browser",
+  };
+  const headless = {
+    value: "headless",
+    label: "Sign in with ChatGPT (headless)",
+    description: "device code — works on remote/SSH machines",
+  };
+  const method = await pickAuthMethod(services, {
+    title: "ChatGPT Subscription sign-in method",
+    options: [
+      ...(isHeadlessEnvironment() ? [headless, browser] : [browser, headless]),
       {
-        title: "ChatGPT Subscription sign-in method",
-        options: [
-          {
-            value: "browser",
-            label: "Sign in with ChatGPT (browser)",
-            description: "opens auth.openai.com in your browser",
-          },
-          {
-            value: "headless",
-            label: "Sign in with ChatGPT (headless)",
-            description: "device code — works on remote/SSH machines",
-          },
-          {
-            value: "apikey",
-            label: "Manually enter access token / API key",
-            description: "paste an existing Chatgpt Subscription token",
-          },
-        ],
+        value: "apikey",
+        label: "Manually enter access token / API key",
+        description: "paste an existing ChatGPT Subscription token",
       },
-      (value) => {
-        services.overlay.close();
-        resolve(value as "browser" | "headless" | "apikey");
-      },
-    );
-    if (!opened) resolve(undefined);
+    ],
   });
+  return method === "browser" || method === "headless" || method === "apikey" ? method : undefined;
 }
 
 export async function runCodexAuthForUI(
@@ -659,7 +656,7 @@ export async function runCodexDeviceAuthForUI(
     return undefined;
   }
 
-  void openSystemBrowser(start.verificationUrl).catch(() => {});
+  if (!isHeadlessEnvironment()) void openSystemBrowser(start.verificationUrl).catch(() => {});
 
   services.overlay.openPager(
     "ChatGPT Subscription sign-in",
@@ -1408,6 +1405,18 @@ async function saveOAuthKeys(
   );
 }
 
+async function refreshStoredCodexAccount(services: AppServices, slot: ProviderKeySlot): Promise<boolean> {
+  if (!decodeCodexKey(slot.value)?.refreshToken) return false;
+  notice(services, "info", "refreshing ChatGPT Subscription account…");
+  const fresh = await maybeRefreshCodexCredential(slot.value);
+  if (!fresh) return false;
+  const replaced = await replaceProviderKey("codex", slot.value, fresh);
+  notice(services, replaced ? "info" : "warn", replaced
+    ? "refreshed ChatGPT Subscription account"
+    : "ChatGPT Subscription account was not found");
+  return true;
+}
+
 async function openCodexKeysFlow(services: AppServices): Promise<void> {
   let { keys, activeIndex } = await loadOAuthKeys("codex");
   for (;;) {
@@ -1450,6 +1459,10 @@ async function openCodexKeysFlow(services: AppServices): Promise<void> {
     }
     if (answer.action === "refresh") {
       const selected = keys.find((key) => key.id === answer.slotId);
+      if (selected && await refreshStoredCodexAccount(services, selected)) {
+        ({ keys, activeIndex } = await loadOAuthKeys("codex"));
+        continue;
+      }
       if (selected) {
         const credential = await runCodexAuthForUI(services);
         const manualKey = (credential as { manualKey?: string } | undefined)?.manualKey;
@@ -2012,6 +2025,11 @@ export async function openLlmKeysEditor(
     }
     updateConfig({ ollamaHost: host.trim() });
     notice(services, "info", `saved ollama host → ${host.trim()}`);
+    return;
+  }
+
+  if (id === "qoder") {
+    await openQoderKeysFlow(services);
     return;
   }
 

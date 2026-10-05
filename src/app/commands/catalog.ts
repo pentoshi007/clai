@@ -40,6 +40,11 @@ export const slashCommands: SlashCommand[] = [
     description: "switch provider or open picker",
   },
   {
+    command: "/providers",
+    usage: "[name]",
+    description: "alias for /provider",
+  },
+  {
     command: "/set",
     usage: "[provider] [key]",
     description: "manage multi API keys (editor) or append one key",

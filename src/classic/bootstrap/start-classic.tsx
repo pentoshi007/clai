@@ -19,7 +19,6 @@ import {
   type ResumeTarget,
 } from "../../ui-core/bootstrap/session-resume.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
-import { createPagerExportPort } from "../../ui-core/ports/pager-export-port.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
@@ -27,7 +26,6 @@ import { ClassicApp } from "../app/ClassicApp.js";
 import { createClassicAppWiring, type ClassicAppWiring } from "../app/app-wiring.js";
 import { createOsc52Renderer } from "./osc52-renderer.js";
 import { createClassicRenderer } from "./renderer-handle.js";
-import { createRendererSuspendPort, type InkMountControl } from "./suspend-port.js";
 import { createTerminalSession } from "./terminal-session.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
@@ -67,7 +65,7 @@ export async function startClassic(
   let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   let instance: Instance | undefined;
 
-  const control: InkMountControl = {
+  const control = {
     mount() {
       const services = servicesRef.current;
       const wiring = wiringRef.current;
@@ -88,7 +86,6 @@ export async function startClassic(
     },
   };
 
-  const suspendPort = createRendererSuspendPort({ control, session });
   const seeded = await seedSessionModel(options.sessionId, {
     provider: options.provider,
     model: options.model,
@@ -117,7 +114,6 @@ export async function startClassic(
       fallback: createSystemClipboardPort(),
       enabled: capabilities.osc52,
     }),
-    pagerExport: createPagerExportPort(suspendPort),
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   servicesRef.current = services;

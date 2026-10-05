@@ -92,12 +92,6 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
       return;
     case "pager-search":
       return;
-    case "pager-export-scrollback":
-      deps.exportScrollback?.(snapshot.pagerBody);
-      return;
-    case "pager-export-editor":
-      deps.exportEditor?.(snapshot.pagerBody);
-      return;
     case "search-open":
       context.closeSearch();
       deps.onRevealItem(effect.itemId);

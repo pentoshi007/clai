@@ -18,6 +18,7 @@ import type { FeedBlock } from "../feed/feed-blocks.js";
 import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
 import type { TranscriptPointerGeometry } from "../feed/transcript-selection.js";
 import type { PaintPacing } from "./paint-pacing.js";
+import type { ContextLimitHitRegion } from "../chrome/context-limit-editor.js";
 
 export interface ResizeSource {
   readonly columns?: number | undefined;
@@ -96,6 +97,7 @@ export interface WiringHost {
   branchValue: string | undefined;
   contextLimitEditingValue: boolean;
   contextLimitDraftValue: string;
+  contextLimitHitRegion: ContextLimitHitRegion | undefined;
   branchRefreshTimer: ReturnType<typeof setInterval> | undefined;
   branchRefreshRequest: number;
   lastPaintAt: number;
@@ -137,8 +139,6 @@ export interface WiringHost {
   updateTranscriptDocument(): void;
   selectAllTranscript(): void;
   copyTranscript(): Promise<void>;
-  exportScrollback(body: string): void;
-  exportEditor(body: string): Promise<void>;
   bumpFeedGeneration(): void;
   disarmEscapeIfIdle(): void;
   needsCadence(): boolean;

@@ -98,6 +98,9 @@ export const providerAliases: Record<string, ProviderId> = {
   cline: "cline",
   "cline-bot": "cline",
   "cline.ai": "cline",
+  qoder: "qoder",
+  "qoder-cli": "qoder",
+  "qoder.ai": "qoder",
   codex: "codex",
   chatgpt: "codex",
   "chatgpt-subscription": "codex",
@@ -166,6 +169,7 @@ export const defaultModels: Record<ProviderId, string> = {
   kiro: "claude-sonnet-4.5",
   omnirush: "gpt-6-astra",
   tokenharbor: "claude-sonnet-5.5",
+  qoder: "auto",
 };
 
 export const retiredModelReplacements: Partial<
@@ -238,4 +242,5 @@ export const envVars: Record<ProviderId, string | undefined> = {
   kiro: "KIRO_API_KEY",
   omnirush: "OMNIRUSH_API_KEY",
   tokenharbor: "TOKENHARBOR_API_KEY",
+  qoder: "QODER_API_KEY",
 };

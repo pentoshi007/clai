@@ -17,6 +17,7 @@ import {
   type PagerPanelState,
 } from "../../../src/classic/panels/pager-panel.js";
 import { colorInk, createHarness, ink, rowsOf } from "./harness.js";
+import type { ArtifactPagerSource } from "../../../src/ui-core/rendering/artifact-pager-source.js";
 
 const BODY = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n");
 
@@ -332,13 +333,13 @@ describe("pager keys", () => {
     expect(live.state.follow).toBe(true);
   });
 
-  it("exports, copies, and closes through effects", () => {
-    expect(press(PAGER_INITIAL_STATE, "s").effects).toEqual([
-      { kind: "pager-export-scrollback" },
-    ]);
-    expect(press(PAGER_INITIAL_STATE, "e").effects).toEqual([
-      { kind: "pager-export-editor" },
-    ]);
+  it("ignores removed export shortcuts while retaining copy and close", () => {
+    for (const chord of ["s", "e", "ctrl+s", "ctrl+e", "ctrl+shift+s", "ctrl+shift+e"]) {
+      const result = press(PAGER_INITIAL_STATE, chord);
+      expect(result.handled).toBe(false);
+      expect(result.effects).toEqual([]);
+      expect(result.state).toBe(PAGER_INITIAL_STATE);
+    }
     expect(press(PAGER_INITIAL_STATE, "c").effects).toEqual([
       { kind: "copy", text: BODY },
     ]);
@@ -397,11 +398,41 @@ describe("pager controller wiring", () => {
     expect(harness.panels.getSnapshot().pager.follow).toBe(false);
   });
 
-  it("exports through the injected ports", () => {
+  it("leaves the pager and terminal untouched by removed export keys", () => {
     const harness = createHarness();
     harness.overlay.openPager("out", BODY);
-    harness.press("s");
-    harness.press("e");
-    expect(harness.exports).toEqual([`scrollback:${BODY}`, `editor:${BODY}`]);
+    const snapshot = harness.panels.getSnapshot();
+    for (const chord of ["s", "e", "ctrl+s", "ctrl+e", "ctrl+shift+s", "ctrl+shift+e"]) harness.press(chord);
+    expect(harness.panels.getSnapshot().pagerBody).toBe(snapshot.pagerBody);
+    expect(harness.panels.getSnapshot().pager).toEqual(snapshot.pager);
+    expect(harness.copied).toEqual([]);
+    expect(harness.toasts).toEqual([]);
+    expect(harness.overlay.getState().kind).toBe("pager");
+  });
+
+  it("only loads a source's full body for copy, not for removed exports", async () => {
+    const readAll = vi.fn(async () => BODY);
+    const dispose = vi.fn();
+    const source: ArtifactPagerSource = {
+      path: "memory://paged",
+      pageBytes: 1024,
+      readPage: async () => ({ body: BODY, offset: 0, nextOffset: BODY.length, totalBytes: BODY.length, pageNumber: 1, pageCount: 1 }),
+      search: async () => undefined,
+      readAll,
+      dispose,
+    };
+    const harness = createHarness();
+    harness.overlay.openPager("out", BODY, source);
+    await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerBody).toBe(BODY));
+    for (const chord of ["s", "e", "ctrl+s", "ctrl+e"]) harness.press(chord);
+    await Promise.resolve();
+    expect(readAll).not.toHaveBeenCalled();
+    expect(harness.overlay.getState().kind).toBe("pager");
+    harness.press("c");
+    await vi.waitFor(() => expect(harness.copied).toEqual([BODY]));
+    expect(readAll).toHaveBeenCalledOnce();
+    harness.press("q");
+    expect(harness.overlay.getState().kind).toBe("none");
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });

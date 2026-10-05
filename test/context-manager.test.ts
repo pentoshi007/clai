@@ -63,7 +63,7 @@ describe("phase 9 — context manager", () => {
     expect(out).toEqual(msgs);
   });
 
-  it("creates semantic memory while preserving recent messages", async () => {
+  it("creates semantic memory while preserving messages in an active turn", async () => {
     const msgs: ChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
       role: index % 2 === 0 ? "user" as const : "assistant" as const,
       content: `message-${index}-` + "very-long-dummy-content-to-exceed-token-limits-and-make-compaction-worthwhile-".repeat(10),
@@ -75,7 +75,7 @@ describe("phase 9 — context manager", () => {
       expect(prompt).toContain("message-0-");
       expect(prompt).toContain("## User goals");
       return "The user selected PostgreSQL and implementation remains pending.";
-    }, { keepRecent: 8 }, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
+    }, { keepRecent: 8, preserveActiveTurn: true }, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
     expect(result.summarized).toBe(true);
     expect(result.messages[0]?.content).toContain("PostgreSQL");
     expect(result.messages.slice(-8)).toEqual(msgs.slice(-8));
@@ -96,7 +96,7 @@ describe("phase 9 — context manager", () => {
         return "## Work completed\nRepository inspected.\n## Remaining work\nContinue.";
       },
       { budgetTokens: 0, keepRecent: 2 },
-      "USER INTENT/PROMPT:\ninspect the repository\n\nASSISTANT RESPONSE:\nI inspected package.json.",
+      "USER INTENT/PROMPT:\ninspect the repository\n\nASSISTANT RESPONSE:\nI inspected package.json.\n\nUSER INTENT/PROMPT:\nrecent request\n\nASSISTANT RESPONSE:\nrecent reply",
     );
 
     expect(prompt).toContain("inspect the repository");
@@ -132,10 +132,11 @@ describe("phase 9 — context manager", () => {
     expect(result.summarized).toBe(true);
     expect(seenPrompt).toContain("from history: map the network");
     expect(seenPrompt).toContain("new after resume: exploit host A");
-    // Older model turns (not in the keepRecent tail) must still be summarized.
     expect(seenPrompt).toMatch(/from history: found 3 hosts|OLDER MODEL TURNS/);
-    // keepRecent=2 → last user+assistant preserved verbatim.
-    expect(result.messages.slice(-2)).toEqual(history.slice(-2));
+    expect(seenPrompt).toContain("new: got hashes");
+    expect(result.messages.every((message) => message.role === "system")).toBe(true);
+    expect(result.messages[0]?.content).toContain("## Last 3 user prompts");
+    expect(result.messages[0]?.content).toContain("> new: dump creds");
     expect(result.messages.some((m) => m.content.includes("User goals: map network"))).toBe(
       true,
     );
@@ -192,7 +193,7 @@ describe("phase 9 — context manager", () => {
       msgs,
       async () =>
         "## User goals\nAssess target.example\n## Work completed\nMany http.fetch probes; stack nginx.\n## Remaining work\nAuth testing\n## Current state\nRecon mid\n## Decisions and constraints\nRemote only\n## Commands/tools and results\nhttp.fetch GETs\n## Open risks / failures\nnone",
-      { budgetTokens: 0, keepRecent: 2 },
+      { budgetTokens: 0, keepRecent: 5, preserveActiveTurn: true },
     );
 
     expect(result.summarized).toBe(true);
@@ -200,6 +201,7 @@ describe("phase 9 — context manager", () => {
     expect(result.afterTokens).toBeLessThan(before * 0.5);
     // Soft-trim oversized dumps; keep non-empty tool results and recent user.
     const toolMsgs = result.messages.filter((m) => m.role === "tool");
+    expect(toolMsgs).toHaveLength(2);
     for (const t of toolMsgs) {
       expect(t.content.length).toBeGreaterThan(0);
       expect(t.content.length).toBeLessThan(fatTool.length);

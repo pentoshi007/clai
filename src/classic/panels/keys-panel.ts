@@ -123,7 +123,10 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
   if (chord === "r" && input.request.refreshable && !isAddRow) {
     const slotId = state.rows[state.cursor]?.slotId;
     if (slotId) {
-      return handled(state, { kind: "keys", answer: { action: "refresh", slotId } });
+      return handled(state, {
+        kind: "keys",
+        answer: { action: "refresh", slotId, rows: pickerRows(state), activeIndex: state.activeIndex },
+      });
     }
   }
   if (chord === "d") {
@@ -136,11 +139,14 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
   if (chord === "ctrl+d") {
     if (isAddRow || state.rows.length === 0) return handled(state);
     const rows = state.rows.filter((_, index) => index !== state.cursor);
+    let activeIndex = state.activeIndex;
+    if (state.cursor < activeIndex) activeIndex -= 1;
+    else if (state.cursor === activeIndex) activeIndex = 0;
     return handled({
       ...state,
       rows,
       cursor: Math.min(state.cursor, rows.length),
-      activeIndex: Math.max(0, Math.min(state.activeIndex, rows.length - 1)),
+      activeIndex: Math.max(0, Math.min(activeIndex, rows.length - 1)),
     });
   }
   if (chord === "ctrl+r") {
@@ -196,6 +202,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
   });
 
   const body: string[] = [];
+  const addLabel = input.request.itemLabel === "model" ? "+ add from models" : `+ add ${keysItemLabel(input.request)}`;
   for (let index = window.top; index < Math.min(count, window.top + window.height); index += 1) {
     const active = index === state.cursor;
     const addRow = index >= state.rows.length;
@@ -206,7 +213,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
           ink,
           width,
           columns: input.columns,
-          label: `    ${state.rows.length + 1}  ${editing ? state.draft : input.request.addViaPicker ? "+ add from models" : `+ add ${keysItemLabel(input.request)}`}`,
+          label: `    ${state.rows.length + 1}  ${editing ? state.draft : addLabel}`,
           active,
           labelToken: editing ? "foreground" : "muted",
         }),

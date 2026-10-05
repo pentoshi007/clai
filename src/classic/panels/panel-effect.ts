@@ -29,8 +29,6 @@ export type PanelEffect =
   | { readonly kind: "job-stop"; readonly jobId: string }
   | { readonly kind: "pager-page"; readonly offset: number }
   | { readonly kind: "pager-search"; readonly query: string; readonly reverse: boolean }
-  | { readonly kind: "pager-export-scrollback" }
-  | { readonly kind: "pager-export-editor" }
   | { readonly kind: "search-open"; readonly itemId: string }
   | { readonly kind: "plan-hide" }
   | { readonly kind: "toast"; readonly text: string };

@@ -180,6 +180,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /reason/i,
     /thinking/i,
   ],
+  qoder: [/qwen/i, /reason/i, /thinking/i, /glm/i, /deepseek/i],
 };
 
 export function endpointAcceptedEfforts(

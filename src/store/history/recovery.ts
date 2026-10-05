@@ -3,8 +3,8 @@ import type { TranscriptItem } from "../../app/ports/transcript-item.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../../llm/reasoning-artifacts.js";
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
 import type { ChatMessage, ProviderId, ReasoningPreference } from "../../types.js";
-import { readValidatedHistoryIndex, rebuildHistoryIndexWithStatus, scanHistoryJsonl, writeIndexedJsonl } from "../history-index.js";
-import type { HistorySummary } from "../history-index.js";
+import { historySummary, readValidatedHistoryIndex, rebuildHistoryIndexWithStatus, rewriteIndexedHistorySources, scanHistoryJsonl } from "../history-index.js";
+import type { HistorySourceEntry, HistorySummary } from "../history-index.js";
 import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
 import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -80,12 +80,12 @@ export function hydrateHistoryRecord(record: HistoryRecord): HistoryRecord {
 
 let recoveryPromise: Promise<void> | undefined;
 
-function updatedAtMs(record: HistoryRecord): number {
+function updatedAtMs(record: Pick<HistoryRecord, "updatedAt" | "createdAt">): number {
   const t = Date.parse(record.updatedAt || record.createdAt || "");
   return Number.isFinite(t) ? t : 0;
 }
 
-export function historyRevision(record: HistoryRecord | undefined): number {
+export function historyRevision(record: Pick<HistoryRecord, "revision"> | undefined): number {
   const revision = record?.revision;
   return typeof revision === "number" &&
     Number.isSafeInteger(revision) &&
@@ -95,7 +95,7 @@ export function historyRevision(record: HistoryRecord | undefined): number {
 }
 
 export function historyWriterGeneration(
-  record: HistoryRecord | undefined,
+  record: Pick<HistoryRecord, "writerGeneration"> | undefined,
 ): string | undefined {
   const generation = record?.writerGeneration;
   return typeof generation === "string" && generation.length > 0
@@ -103,9 +103,11 @@ export function historyWriterGeneration(
     : undefined;
 }
 
+type HistoryFreshness = Pick<HistoryRecord, "writerGeneration" | "revision" | "createdAt" | "updatedAt">;
+
 export function compareHistoryFreshness(
-  left: HistoryRecord,
-  right: HistoryRecord,
+  left: HistoryFreshness,
+  right: HistoryFreshness,
 ): number {
   const leftGeneration = historyWriterGeneration(left);
   const rightGeneration = historyWriterGeneration(right);
@@ -186,6 +188,45 @@ export async function backupActiveHistory(): Promise<void> {
   }
 }
 
+async function scanRecoverySource(path: string): Promise<{
+  entries: HistorySourceEntry[];
+  malformed: boolean;
+}> {
+  const byId = new Map<string, HistorySourceEntry>();
+  const scan = await scanHistoryJsonl<HistoryRecord>(path, (record, offset, length) => {
+    if (!record?.id) return;
+    const summary = historySummary(record);
+    const previous = byId.get(record.id);
+    if (previous && compareHistoryFreshness(summary, previous.entry.summary) <= 0) return;
+    byId.set(record.id, { path, entry: { id: record.id, offset, length, summary } });
+  });
+  return { entries: [...byId.values()], malformed: scan.malformed };
+}
+
+function mergeRecoveryEntries(
+  target: Map<string, HistorySourceEntry>,
+  entries: readonly HistorySourceEntry[],
+): void {
+  for (const source of entries) {
+    const previous = target.get(source.entry.id);
+    if (!previous || compareHistoryFreshness(source.entry.summary, previous.entry.summary) > 0) {
+      target.set(source.entry.id, source);
+    }
+  }
+}
+
+async function readRecoveryBackup(sources: string[]): Promise<HistorySourceEntry[]> {
+  const names = await readdir(backupDirPath()).catch(() => [] as string[]);
+  const backups = names.filter((name) => name.startsWith("history-") && name.endsWith(".jsonl")).sort().reverse();
+  for (const name of backups) {
+    const scan = await scanRecoverySource(join(backupDirPath(), name)).catch(() => undefined);
+    if (!scan?.entries.length) continue;
+    sources.push(`history-backups/${name}`);
+    return scan.entries;
+  }
+  return [];
+}
+
 export async function recoverOrphanedHistory(): Promise<{
   recovered: number;
   sources: string[];
@@ -196,103 +237,47 @@ export async function recoverOrphanedHistory(): Promise<{
   try {
     const activePath = jsonlFilePath();
     const activeExists = await safeExists(activePath);
-    const tempNames = await readdir(historyDirPath())
-      .then((names) =>
-        names.filter(
-          (name) =>
-            name.startsWith("history.jsonl.") && name.endsWith(".tmp"),
-        ),
-      )
-      .catch(() => [] as string[]);
+    const names = await readdir(historyDirPath()).catch(() => [] as string[]);
+    const tempNames = names.filter((name) => name.startsWith("history.jsonl.") && name.endsWith(".tmp"));
     if (activeExists && tempNames.length === 0) {
-      const indexed = await readValidatedHistoryIndex(
-        activePath,
-        jsonlIndexFilePath(),
-      );
+      const indexed = await readValidatedHistoryIndex(activePath, jsonlIndexFilePath());
       if (indexed) return { recovered: 0, sources };
-      const rebuilt = await rebuildHistoryIndexWithStatus<HistoryRecord>(
-        activePath,
-        jsonlIndexFilePath(),
-      );
+      const rebuilt = await rebuildHistoryIndexWithStatus<HistoryRecord>(activePath, jsonlIndexFilePath());
       if (!rebuilt.malformed) return { recovered: 0, sources };
     }
-    let activeCorrupt = false;
-    let active: HistoryRecord[] = [];
-    if (activeExists) {
-      try {
-        const scan = await scanLatestHistoryRecords(activePath);
-        active = scan.records;
-        activeCorrupt = scan.malformed;
-      } catch (error: any) {
-        if (error?.code === "EACCES") handlePermissionError(error);
-        activeCorrupt = true;
+    const active = activeExists
+      ? await scanRecoverySource(activePath)
+      : { entries: [], malformed: false };
+    const activeById = new Map(active.entries.map((source) => [source.entry.id, source]));
+    const merged = new Map(activeById);
+    if (!activeExists || active.malformed) mergeRecoveryEntries(merged, await readRecoveryBackup(sources));
+    for (const name of tempNames) {
+      const path = join(historyDirPath(), name);
+      const scan = await scanRecoverySource(path).catch(() => undefined);
+      if (!scan) continue;
+      if (scan.entries.length === 0) {
+        await rm(path, { force: true }).catch(() => undefined);
+        continue;
       }
+      mergeRecoveryEntries(merged, scan.entries);
+      sources.push(name);
+      tempSources.push(path);
     }
-
-    const backupRecords: HistoryRecord[] = [];
-    if (!activeExists || activeCorrupt) {
-      try {
-        const backups = (await readdir(backupDirPath()))
-          .filter((name) => name.startsWith("history-") && name.endsWith(".jsonl"))
-          .sort()
-          .reverse();
-        for (const name of backups) {
-          const rows = await readJsonlRecordsFrom(join(backupDirPath(), name));
-          if (rows.length === 0) continue;
-          backupRecords.push(...rows);
-          sources.push(`history-backups/${name}`);
-          break;
-        }
-      } catch {
-      }
-    }
-
-    const extras: HistoryRecord[] = [];
-    try {
-      const names = await readdir(historyDirPath());
-      for (const name of names) {
-        if (!name.startsWith("history.jsonl.") || !name.endsWith(".tmp")) {
-          continue;
-        }
-        const path = join(historyDirPath(), name);
-        const rows = await readJsonlRecordsFrom(path);
-        if (rows.length === 0) {
-          await rm(path, { force: true }).catch(() => undefined);
-          continue;
-        }
-        extras.push(...rows);
-        sources.push(name);
-        tempSources.push(name);
-      }
-    } catch {
-    }
-
-    const activeById = new Map(active.map((record) => [record.id, record]));
-    const merged = dedupeHistoryById([...active, ...backupRecords, ...extras]);
-    const recoveredCount = merged.filter((record) => {
-      const previous = activeById.get(record.id);
-      return !previous || compareHistoryFreshness(record, previous) > 0;
+    const recoveredCount = [...merged.values()].filter((source) => {
+      const previous = activeById.get(source.entry.id);
+      return !previous || compareHistoryFreshness(source.entry.summary, previous.entry.summary) > 0;
     }).length;
-    const needsRewrite =
-      activeCorrupt ||
-      (!activeExists && backupRecords.length > 0) ||
-      recoveredCount > 0;
-    if (!needsRewrite) return { recovered: 0, sources };
-
-    await mkdir(historyDirPath(), { recursive: true });
-    await fixOwner(historyDirPath());
-    if (activeExists && !activeCorrupt) await backupActiveHistory();
-    const sorted = sortHistoryByUpdatedDesc(merged);
-    sorted.reverse();
-    await writeIndexedJsonl(activePath, jsonlIndexFilePath(), sorted);
-    await Promise.all([
-      fixOwner(activePath),
-      fixOwner(jsonlIndexFilePath()),
-    ]);
-
-    for (const name of tempSources) {
-      await rm(join(historyDirPath(), name), { force: true }).catch(() => undefined);
+    if (active.malformed || recoveredCount > 0) {
+      await mkdir(historyDirPath(), { recursive: true });
+      await fixOwner(historyDirPath());
+      if (activeExists && !active.malformed) await backupActiveHistory();
+      const sorted = [...merged.values()].sort((a, b) => updatedAtMs(b.entry.summary) - updatedAtMs(a.entry.summary)).reverse();
+      await rewriteIndexedHistorySources(activePath, jsonlIndexFilePath(), sorted);
+      await Promise.all([fixOwner(activePath), fixOwner(jsonlIndexFilePath())]);
+    } else if (activeExists) {
+      await rebuildHistoryIndexWithStatus<HistoryRecord>(activePath, jsonlIndexFilePath());
     }
+    for (const path of tempSources) await rm(path, { force: true }).catch(() => undefined);
     return { recovered: recoveredCount, sources };
   } finally {
     await releaseLock();

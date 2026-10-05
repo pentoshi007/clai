@@ -21,6 +21,11 @@ function request(): CompletionRequest {
     messages: [
       { role: "system", content: "Stable rules" },
       {
+        role: "system",
+        content: "Session memory from compacted earlier turns:\n\nPrior research completed.",
+        compaction: { recentUserPrompts: [{ content: "Explain the prior failure." }] },
+      },
+      {
         role: "user",
         content: "Inspect the screenshot",
         images: [{ mediaType: "image/png", dataBase64: "aW1hZ2U=" }],

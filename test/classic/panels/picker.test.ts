@@ -24,6 +24,19 @@ function render(request: PickerRequest, state = pickerInitialState(request), col
 }
 
 describe("picker panel rows", () => {
+  it("renders the Qoder inference URL and preserves provider selection", () => {
+    const request: PickerRequest = {
+      title: "Providers",
+      searchDescription: false,
+      options: [{ value: "qoder", label: "Qoder", description: "(https://api1.qoder.sh)" }],
+    };
+    for (const columns of [80, 120]) {
+      expect(render(request, pickerInitialState(request), columns).rows.join("\n")).toContain("https://api1.qoder.sh");
+    }
+    expect(pickerKey({ request, state: pickerInitialState(request), chord: "enter", rows: 8 }).effects)
+      .toContainEqual({ kind: "picker-select", value: "qoder" });
+  });
+
   it("starts on the active option and titles the frame", () => {
     const { view, rows } = render(MODELS);
     expect(view.frame.title).toBe("Select model");

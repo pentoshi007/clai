@@ -265,7 +265,7 @@ describe("automatic compaction single-admission policy", () => {
     const history = smallHistory();
     history.splice(1, 1, {
       role: "user",
-      content: "x ".repeat(330_000),
+      content: "x ".repeat(270_000),
     });
     const original = structuredClone(history);
     const events: AgentEvent[] = [];
@@ -275,7 +275,7 @@ describe("automatic compaction single-admission policy", () => {
       model: "test-model",
       history,
       maxSteps: 1,
-      contextLimitTokens: 300_000,
+      contextLimitTokens: 220_000,
       onEvent: (event) => events.push(event),
     });
 

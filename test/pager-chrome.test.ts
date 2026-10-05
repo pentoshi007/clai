@@ -5,7 +5,7 @@ import { renderColumns } from "../src/ui-core/rendering/text-width.js";
 describe("padChromeRow", () => {
   it("returns exactly width columns", () => {
     const row = padChromeRow(
-      "↑↓:scroll  ·  ^r:search  ·  n/N:next  ·  c:copy  ·  e:editor  ·  q/esc:close  ·  find:npm 1/2",
+      "↑↓:scroll  ·  ^r:search  ·  n/N:next  ·  c:copy  ·  q/esc:close  ·  find:npm 1/2",
       "11 lines · top",
       80,
     );

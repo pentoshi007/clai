@@ -43,6 +43,11 @@ describe("queued prompt chords (W12)", () => {
       expect(services.session.getState().queued).not.toContain("second"),
     );
     await vi.waitFor(() => expect(wiring.getSnapshot().queueSelected).toBe(0));
+    await vi.waitFor(() => {
+      const state = services.session.getState();
+      expect(state.queued).toHaveLength(0);
+      expect(state.running).toBe(false);
+    });
   });
 
   it("edit takes the prompt out of the queue and into the composer", async () => {

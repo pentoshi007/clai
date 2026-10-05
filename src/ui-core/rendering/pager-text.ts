@@ -1,3 +1,4 @@
+import { isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 
 export function stripPagerLineGutters(body: string): string {
   if (!body) return body;
@@ -16,6 +17,7 @@ export function stripPagerLineGutters(body: string): string {
 
 export function extractFsReadFileBody(raw: string): string {
   if (!raw) return "";
+  if (isFsReadMultiOutput(raw)) return raw;
   const lines = raw.replace(/\r\n/g, "\n").split("\n");
   const body: string[] = [];
   for (const line of lines) {

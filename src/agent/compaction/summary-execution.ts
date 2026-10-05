@@ -257,7 +257,7 @@ const MIN_SALVAGEABLE_SUMMARY_CHARS = 600;
 const MAX_SALVAGE_TRIMMED_LINES = 40;
 
 const TRUNCATION_NOTICE =
-  "\n\n(This memory was cut short by the model's summary output limit; the most recent turns are retained in full below it.)";
+  "\n\n(This memory was cut short by the model's summary output limit; some session details may be missing.)";
 
 export function salvageTruncatedSummary(summary: string): string | undefined {
   const lines = normalizeCompactionSummary(summary).split("\n");
@@ -281,6 +281,7 @@ export function comparableMessage(message: ChatMessage): string {
     reasoningBlock: _reasoningBlock,
     reasoningArtifacts: _reasoningArtifacts,
     responsesReplay: _responsesReplay,
+    compaction: _compaction,
     ...rest
   } = message;
   return JSON.stringify(rest);

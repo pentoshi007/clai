@@ -192,7 +192,7 @@ const runAdmittedCompaction = async (
     });
     ports.notify(
       "warn",
-      `context is still ~${candidateTokens.toLocaleString()} tokens after compaction (limit ~${compactTrigger.toLocaleString()}) — largest block: ${dominant}`,
+      `context is still ~${candidateTokens.toLocaleString("en-US")} tokens after compaction (limit ~${compactTrigger.toLocaleString("en-US")}) — largest block: ${dominant}`,
     );
     ports.writeFailed(
       compactionId,
@@ -230,7 +230,7 @@ const runAdmittedCompaction = async (
     });
     ports.notify(
       "warn",
-      `compacted request would still exceed the effective safe context limit (~${finalFit.accounting.requestTokens.toLocaleString()} > ~${(finalFit.accounting.limit.effectiveSafeTokens ?? 0).toLocaleString()} tokens) — largest block: ${dominant}; run /compact or trim large outputs`,
+      `compacted request would still exceed the effective safe context limit (~${finalFit.accounting.requestTokens.toLocaleString("en-US")} > ~${(finalFit.accounting.limit.effectiveSafeTokens ?? 0).toLocaleString("en-US")} tokens) — largest block: ${dominant}; run /compact or trim large outputs`,
     );
     ports.writeFailed(
       compactionId,
@@ -268,8 +268,8 @@ const runAdmittedCompaction = async (
   );
   const tokenLabel =
     measurement === "provider-reported"
-      ? `${beforeTokens.toLocaleString()} tokens → ~${afterTokens.toLocaleString()} tokens`
-      : `~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens`;
+      ? `${beforeTokens.toLocaleString("en-US")} tokens → ~${afterTokens.toLocaleString("en-US")} tokens`
+      : `~${beforeTokens.toLocaleString("en-US")} → ~${afterTokens.toLocaleString("en-US")} tokens`;
   ports.notify(
     "info",
     `context auto-compacted to fit the window (${tokenLabel})${result.strategy === "emergency_prefix_slice" ? " — oldest slice only (lower confidence); run /compact for a full summary" : ""}`,

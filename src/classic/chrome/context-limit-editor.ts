@@ -1,6 +1,22 @@
 import { parseContextLimitInput } from "../../ui-core/rendering/context-limit.js";
 import { clipToWidth } from "../render/ansi-text.js";
 import type { InkTheme } from "../render/ink-theme.js";
+import type { MouseEvent } from "../input/key-event.js";
+
+export interface ContextLimitHitRegion {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+}
+
+export function contextLimitChipPressed(
+  region: ContextLimitHitRegion | undefined,
+  event: MouseEvent,
+): boolean {
+  return region !== undefined && event.button === "left" && !event.release &&
+    !event.drag && event.scroll === undefined && event.y === region.top &&
+    event.x >= region.left && event.x < region.left + region.width;
+}
 
 export interface ContextLimitEditorState {
   readonly editing: boolean;

@@ -41,7 +41,6 @@ export interface Harness {
   readonly edited: string[];
   readonly revealed: string[];
   readonly hidden: number[];
-  readonly exports: string[];
   readonly stopped: string[];
   jobs: BackgroundJob[];
   plan: SessionPlan | undefined;
@@ -90,7 +89,6 @@ export function createHarness(
   const edited: string[] = [];
   const revealed: string[] = [];
   const hidden: number[] = [];
-  const exports: string[] = [];
   const stopped: string[] = [];
 
   const state = {
@@ -117,8 +115,6 @@ export function createHarness(
     onEditPrompt: (text) => edited.push(text),
     onHidePlan: () => hidden.push(1),
     onRevealItem: (id) => revealed.push(id),
-    exportScrollback: (body) => exports.push(`scrollback:${body}`),
-    exportEditor: (body) => exports.push(`editor:${body}`),
   });
 
   return {
@@ -130,7 +126,6 @@ export function createHarness(
     edited,
     revealed,
     hidden,
-    exports,
     stopped,
     get jobs() {
       return state.jobs;

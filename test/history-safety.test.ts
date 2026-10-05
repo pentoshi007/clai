@@ -243,6 +243,48 @@ describe("history recovery from orphan temps", () => {
   });
 });
 
+describe("indexed orphan recovery boundaries", () => {
+  it("keeps the freshest revision and canonical equal-revision source", async () => {
+    const { getJsonlHistoryPath, getSession, recoverOrphanedHistory } = await import("../src/store/history.js");
+    const main = getJsonlHistoryPath();
+    writeFileSync(main, [
+      sample("same", "2026-01-01T00:00:00.000Z", "canonical", 5),
+      sample("upgraded", "2026-01-01T00:00:00.000Z", "old", 4),
+    ].map((record) => JSON.stringify(record)).join("\n") + "\n");
+    writeFileSync(`${main}.99999.revision.tmp`, [
+      sample("same", "2026-02-01T00:00:00.000Z", "equal", 5),
+      sample("same", "2026-03-01T00:00:00.000Z", "stale", 3),
+      sample("upgraded", "2025-01-01T00:00:00.000Z", "fresh", 6),
+    ].map((record) => JSON.stringify(record)).join("\n") + "\n");
+    expect((await recoverOrphanedHistory()).recovered).toBe(1);
+    expect(await getSession("same")).toMatchObject({ name: "canonical", revision: 5 });
+    expect(await getSession("upgraded")).toMatchObject({ name: "fresh", revision: 6 });
+  });
+
+  it("preserves complete final records without trailing newlines across sources", async () => {
+    const { getJsonlHistoryPath, getSession, recoverOrphanedHistory } = await import("../src/store/history.js");
+    const main = getJsonlHistoryPath();
+    writeFileSync(main, JSON.stringify(sample("active", "2026-01-01T00:00:00.000Z")));
+    writeFileSync(`${main}.99999.no-newline.tmp`, JSON.stringify(sample("restored", "2026-02-01T00:00:00.000Z")));
+    expect((await recoverOrphanedHistory()).recovered).toBe(1);
+    expect(await getSession("active")).toMatchObject({ id: "active" });
+    expect(await getSession("restored")).toMatchObject({ id: "restored" });
+    expect(readFileSync(main, "utf8").trim().split("\n")).toHaveLength(2);
+  });
+
+  it("cleans a stale orphan without rewriting or dropping active history", async () => {
+    const { getJsonlHistoryPath, recoverOrphanedHistory } = await import("../src/store/history.js");
+    const main = getJsonlHistoryPath();
+    const orphan = `${main}.99999.stale.tmp`;
+    const active = JSON.stringify(sample("same", "2026-01-01T00:00:00.000Z", "canonical", 8)) + "\n";
+    writeFileSync(main, active);
+    writeFileSync(orphan, JSON.stringify(sample("same", "2026-02-01T00:00:00.000Z", "stale", 7)) + "\n");
+    expect((await recoverOrphanedHistory()).recovered).toBe(0);
+    expect(readFileSync(main, "utf8")).toBe(active);
+    expect(existsSync(orphan)).toBe(false);
+  });
+});
+
 describe("destructive history clear", () => {
   it("clearAllHistory removes every recoverable history copy", async () => {
     const {
