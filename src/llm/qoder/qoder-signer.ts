@@ -1,5 +1,10 @@
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { isBunRuntime } from "../../os/bun-runtime.js";
 import { QODER_SIGNER_GLUE_JS_BASE64 } from "./signer-glue.generated.js";
 import {
   QODER_SIGNER_WASM_GZIP_BASE64,
@@ -84,12 +89,28 @@ function loadSignerRuntime(): Promise<QoderGlueModule> {
   if (runtimePromise) return runtimePromise;
   runtimePromise = (async () => {
     const source = Buffer.from(QODER_SIGNER_GLUE_JS_BASE64, "base64").toString("utf8");
-    const dataUrl = `data:text/javascript;base64,${Buffer.from(source, "utf8").toString("base64")}`;
-    const module = (await import(dataUrl)) as QoderGlueModule;
+    const module = await importSignerGlue(source);
     await module.default({ module_or_path: signerWasmBytes() });
     return module;
-  })();
+  })().catch((error) => {
+    runtimePromise = undefined;
+    throw error;
+  });
   return runtimePromise;
+}
+
+async function importSignerGlue(source: string): Promise<QoderGlueModule> {
+  if (!isBunRuntime()) {
+    return await import(`data:text/javascript;base64,${Buffer.from(source, "utf8").toString("base64")}`) as QoderGlueModule;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "clai-qoder-signer-"));
+  try {
+    const file = join(directory, "signer.mjs");
+    await writeFile(file, source, { mode: 0o600, flag: "wx" });
+    return await import(pathToFileURL(file).href) as QoderGlueModule;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 export function loadSignerModule(): Promise<QoderGlueModule> {

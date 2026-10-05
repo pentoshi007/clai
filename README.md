@@ -380,7 +380,7 @@ The interactive console provides streaming chat, nested tool cards, file diffs, 
 
 Interactive sessions run behind a local broker so an agent continues working across terminal disconnects:
 
-- **`/minimise`** (or `/minimize`) detaches immediately and returns you to your shell without interrupting the turn. It displays the session ID and resume command.
+- **`/minimise`** (also `/minimize` and `/minmize`) detaches immediately and returns you to your shell without interrupting the turn. It displays the session ID and resume command.
 - **SSH disconnects:** If an SSH session drops, reconnect and run `clai --resume <id>` (or `clai -c` to continue the latest session in the current directory).
 - **Multiple terminals:** Resume the same live session in several terminals to share its live screen. The newest attachment controls input; press **Ctrl+]** in another terminal to take control. Press **Ctrl+C** in a viewing terminal to detach. The shared screen fits the smallest attached terminal. Closing a viewer keeps the agent and other viewers running.
 - **`/history`** lists all active, attached, and detached sessions.
@@ -415,7 +415,7 @@ Interactive sessions run behind a local broker so an agent continues working acr
 | `/cwd <path>` | Change working directory |
 | `/think` · `/thinking` | Show thinking from the last response |
 | `/privacy [...]` | Private mode · clear history, logs, or artifacts |
-| `/minimise` · `/minimize` | Detach terminal while the session runs in background |
+| `/minimise` · `/minimize` · `/minmize` | Detach terminal while the session runs in background |
 | `/update` · `/help` · `/shortcuts` · `/exit` | Utilities and exit |
 
 ---

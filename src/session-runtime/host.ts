@@ -613,7 +613,9 @@ export class SessionRuntimeHost {
       });
       this.closeClientSockets();
       if (frame.closeCurrent) {
-        setTimeout(() => this.requestGracefulStop(), 80).unref?.();
+        setTimeout(() => {
+          if (!this.attached) this.requestGracefulStop();
+        }, 80).unref?.();
       }
       return;
     }

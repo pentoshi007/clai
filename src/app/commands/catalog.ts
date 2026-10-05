@@ -184,6 +184,7 @@ export const slashCommands: SlashCommand[] = [
     description: "detach this terminal while the session keeps running",
   },
   { command: "/minimize", description: "alias for /minimise" },
+  { command: "/minmize", description: "alias for /minimise" },
   {
     command: "/redraw",
     description: "repaint the screen if the terminal cleared or scrambled it (also F5)",

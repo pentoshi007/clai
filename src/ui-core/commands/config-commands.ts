@@ -433,7 +433,7 @@ export function handleShortcuts(services: AppServices): void {
 }
 
 export async function handleMinimise(services: AppServices): Promise<void> {
-  await services.session.persistNow().catch(() => undefined);
+  void services.session.persistNow().catch(() => undefined);
   if (services.requestMinimise()) return;
   notice(
     services,

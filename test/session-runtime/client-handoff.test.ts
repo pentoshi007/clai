@@ -62,6 +62,10 @@ class Socket extends EventEmitter {
   rest = Buffer.alloc(0);
   readonly writes: Array<string | Buffer> = [];
 
+  get writableNeedDrain(): boolean {
+    return this.backpressured;
+  }
+
   write(bytes: string | Buffer): boolean {
     this.writes.push(bytes);
     return !this.backpressured;
@@ -296,6 +300,43 @@ describe("durable client terminal handoff", () => {
     expect(control.destroyed).toBe(true);
     expect(terminal.destroyed).toBe(true);
     expect(input.rawChanges).toEqual([true, false]);
+  });
+
+  it("keeps pending input bounded until ownership is granted, even if the terminal drains", async () => {
+    const running = run();
+    await attached();
+    control.frame({ type: "input-owner", active: false });
+    input.write("\x1d");
+    const pending = Buffer.alloc(64 * 1024, "x");
+    input.write(pending);
+    expect(input.isPaused()).toBe(true);
+    expect(terminal.writes.filter(Buffer.isBuffer)).toHaveLength(0);
+    terminal.emit("drain");
+    expect(input.isPaused()).toBe(true);
+    terminal.backpressured = true;
+    control.frame({ type: "input-owner", active: true });
+    expect(terminal.writes.filter(Buffer.isBuffer)).toEqual([pending]);
+    expect(input.isPaused()).toBe(true);
+    terminal.backpressured = false;
+    terminal.emit("drain");
+    expect(input.isPaused()).toBe(false);
+    detach();
+    expect(await running).toBe(true);
+  });
+
+  it("lets a passive viewer claim input with a fragmented terminal shortcut", async () => {
+    const running = run();
+    await attached();
+    control.frame({ type: "input-owner", active: false });
+    input.write("\x1b[93;");
+    input.write("5u");
+    input.write("follow-up\r");
+    expect(control.writes.map(String)).toContain('{"type":"claim-input"}\n');
+    expect(terminal.writes.filter(Buffer.isBuffer)).toHaveLength(0);
+    control.frame({ type: "input-owner", active: true });
+    expect(terminal.writes.filter(Buffer.isBuffer).map(String)).toEqual(["follow-up\r"]);
+    detach();
+    expect(await running).toBe(true);
   });
 
   it("closes both channels and restores raw mode when terminal authentication fails", async () => {
