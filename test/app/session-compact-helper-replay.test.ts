@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MIN_CUSTOM_CONTEXT_LIMIT_TOKENS } from "../../src/llm/context-windows.js";
 import type { ChatMessage } from "../../src/types.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
+import { estimateMessagesTokens, isCompactionMemoryMessage } from "../../src/agent/context-manager.js";
 
 const complete = vi.fn();
 const stream = vi.fn();
@@ -101,6 +102,32 @@ describe("runSessionCompaction cache-preserving replay", () => {
     expect(last.content).toContain("entire conversation above this instruction");
     expect(sent.temperature).toBe(0.7);
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
+  });
+
+  it("appends recent research guidance after the cached prefix and commits memory without completed raw turns", async () => {
+    complete.mockResolvedValueOnce(okResult());
+    const history: ChatMessage[] = [
+      ...SNAPSHOT.messages,
+      { role: "assistant", content: "RTK fixes completed and verified." },
+      { role: "user", content: "How is compaction cache-friendly? Research only." },
+      { role: "assistant", content: "Keep the captured request prefix and generation settings." },
+      { role: "user", content: "Is the raw recent-message tail necessary?" },
+      { role: "assistant", content: "Summary-only history is fine at a completed-turn boundary." },
+    ];
+    const { options, committed } = harness(history);
+    await runSessionCompaction(options);
+
+    const sent = complete.mock.calls[0]![0] as { messages: ChatMessage[]; thinking: unknown };
+    expect(sent.messages.slice(0, SNAPSHOT.messages.length)).toEqual(SNAPSHOT.messages);
+    expect(sent.messages.slice(SNAPSHOT.messages.length, -1)).toEqual(history.slice(SNAPSHOT.messages.length));
+    expect(sent.messages.at(-1)?.content).toContain("Research only.");
+    expect(sent.messages.at(-1)?.content).toContain("Summary-only history is fine");
+    expect(sent.thinking).toEqual(SNAPSHOT.thinking);
+    expect(committed[0]?.every((message) => message.role === "system")).toBe(true);
+    const memory = committed[0]?.find(isCompactionMemoryMessage);
+    expect(memory?.content).toContain("## Last 3 user prompts");
+    expect(memory?.content).toContain("> Is the raw recent-message tail necessary?");
+    expect(memory?.compaction?.recentUserPrompts).toHaveLength(3);
   });
 
   it("keeps restored request accounting instead of replacing it with a stale replay", async () => {
@@ -272,7 +299,7 @@ describe("runSessionCompaction cache-preserving replay", () => {
       { role: "user", content: "now compact" },
     ];
     const events: AnyAppEvent[] = [];
-    const { options } = harness(history);
+    const { options, committed } = harness(history);
 
     await runSessionCompaction({
       ...options,
@@ -290,6 +317,6 @@ describe("runSessionCompaction cache-preserving replay", () => {
         ? completed.payload.afterTokens
         : 0;
     expect(afterTokens).toBeGreaterThan(0);
-    expect(afterTokens).toBeLessThan(500);
+    expect(afterTokens).toBe(estimateMessagesTokens(committed[0]!));
   });
 });

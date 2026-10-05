@@ -52,6 +52,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   kiro: "free-cloud",
   omnirush: "free-cloud",
   tokenharbor: "paid-cloud",
+  qoder: "free-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

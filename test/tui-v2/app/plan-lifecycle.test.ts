@@ -266,7 +266,7 @@ describe("plan lifecycle (PLAN-004, F-021/023, V2-070)", () => {
       }),
     });
     seedDraft(services);
-    const heavy = "research evidence ".repeat(1_200);
+    const heavy = "research evidence ".repeat(6_000);
     const messages: ChatMessage[] = [
       { role: "user", content: heavy },
       { role: "assistant", content: heavy },

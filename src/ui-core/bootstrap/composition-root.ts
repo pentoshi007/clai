@@ -36,7 +36,6 @@ import { safeCwd } from "../../os/cwd.js";
 import { TranscriptStore } from "../state/transcript-store.js";
 import { serializeForHistory } from "../state/transcript-hydrate.js";
 import { PlanController } from "../../app/controllers/plan-controller.js";
-import type { PagerExportPort } from "../ports/pager-export-port.js";
 import { createOverlayConfirmPort, createOverlaySecretPort } from "./overlay-ports.js";
 import {
   detectCapabilities,
@@ -48,13 +47,6 @@ import {
   bindOmnirushSessionUpload,
   type OmnirushSessionUploadBinding,
 } from "../../llm/omnirush-session-upload.js";
-
-function noopPagerExportPort(): PagerExportPort {
-  return {
-    exportToScrollback: () => ({ ok: false, error: "no renderer attached" }),
-    exportToEditor: async () => ({ ok: false, error: "no renderer attached" }),
-  };
-}
 
 export interface AppPorts {
   readonly agent: AgentPort;
@@ -81,7 +73,6 @@ export interface CompositionOptions {
   readonly captureEvents?: boolean | undefined;
   readonly capabilities?: TerminalCapabilityReport | undefined;
   readonly copyOnRelease?: boolean | undefined;
-  readonly pagerExport?: PagerExportPort | undefined;
   readonly requestExit?: (() => void) | undefined;
   readonly requestMinimise?: (() => boolean) | undefined;
   readonly requestRedraw?: (() => boolean) | undefined;
@@ -110,7 +101,6 @@ export interface AppServices {
   readonly overlay: OverlayController;
   readonly interruptible: InterruptibleController;
   readonly cancel: CancelCoordinator;
-  readonly pagerExport: PagerExportPort;
   readonly requestExit: () => void;
   readonly requestMinimise: () => boolean;
   readonly requestRedraw: () => boolean;
@@ -355,7 +345,6 @@ export function createCompositionRoot(
 
   const commands = buildDefaultCommandRegistry();
   const router = new ActionRouter();
-  const pagerExport = options.pagerExport ?? noopPagerExportPort();
   const capabilities =
     options.capabilities ??
     (typeof process !== "undefined"
@@ -386,7 +375,6 @@ export function createCompositionRoot(
     overlay,
     interruptible,
     cancel,
-    pagerExport,
     requestExit: options.requestExit ?? (() => {}),
     requestMinimise: options.requestMinimise ?? (() => false),
     requestRedraw: options.requestRedraw ?? (() => false),

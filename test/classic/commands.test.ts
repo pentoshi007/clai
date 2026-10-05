@@ -148,6 +148,12 @@ describe("classic command parity (W12)", () => {
     }
   });
 
+  spec(["providers"], "/providers opens the provider picker", async () => {
+    const { services } = open();
+    await run(services, "providers");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
+  });
+
   spec(["set"], "/set with no arguments opens the credential picker", async () => {
     const { services } = open();
     void run(services, "set");

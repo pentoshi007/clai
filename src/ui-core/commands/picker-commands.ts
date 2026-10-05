@@ -352,6 +352,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   copilot: "https://api.githubcopilot.com",
   kiro: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
   omnirush: "https://omnirush.ai/omnirush/v1",
+  qoder: "https://api1.qoder.sh",
   tokenharbor: "https://tokenharbor.ai/v1",
 };
 
@@ -435,7 +436,22 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
     const configured =
       next === "ollama" || next === "free" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
     if (!configured) {
-      if (next === "cline") {
+      if (next === "qoder") {
+        services.overlay.close();
+        const { runQoderAuthForUI } = await import("./keys/qoder.js");
+        const { storeQoderAccount } = await import("../../llm/qoder/qoder-accounts.js");
+        const credential = await runQoderAuthForUI(services);
+        if (!credential) {
+          services.session.notice("info", "cancelled · provider unchanged");
+          return;
+        }
+        try {
+          await storeQoderAccount(credential, true);
+        } catch (error) {
+          services.session.notice("warn", `Could not save Qoder sign-in: ${error instanceof Error ? error.message : String(error)} · provider unchanged`);
+          return;
+        }
+      } else if (next === "cline") {
         services.overlay.close();
         const { runClineAuthForUI } = await import("./key-commands.js");
         const tokens = await runClineAuthForUI(services);

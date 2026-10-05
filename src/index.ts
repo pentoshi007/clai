@@ -20,6 +20,7 @@ import {
   authCopilot,
   authKiro,
   authFreebuff,
+  authQoder,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
 import {
@@ -62,7 +63,7 @@ interface GlobalOptions {
   provider?: string | undefined;
   model?: string | undefined;
   yes?: boolean | undefined;
-  noHistory?: boolean | undefined;
+  history?: boolean | undefined;
   showThinking?: boolean | undefined;
   verbose?: boolean | undefined;
   quiet?: boolean | undefined;
@@ -191,7 +192,7 @@ async function oneShot(
       provider,
       model,
       modelExplicit: options.model !== undefined,
-      noHistory: options.noHistory,
+      noHistory: options.history === false,
       ...(resume ? { resume } : {}),
     });
     return;
@@ -222,7 +223,7 @@ async function oneShot(
     model: resolved.model,
     mode: resolved.mode,
     yes: options.yes,
-    noHistory: options.noHistory,
+    noHistory: options.history === false,
     showThinking: options.showThinking,
     verbose: options.verbose,
     quiet: options.quiet,
@@ -481,12 +482,13 @@ async function main(): Promise<void> {
   program
     .command("auth")
     .description(
-      "authenticate a provider via browser/device flow (Freebuff, Cline, Chatgpt Subscription, Github Copilot, Kiro, Omnirush)",
+      "authenticate a provider via browser/device flow (Qoder, Freebuff, Cline, ChatGPT Subscription, Github Copilot, Kiro, Omnirush)",
     )
-    .argument("<provider>", "provider id (freebuff, cline, chatgpt, copilot, kiro, omnirush)")
-    .option("--import", "import an existing app sign-in (Freebuff/Cline/Chatgpt Subscription/Github Copilot/Kiro/Omnirush)")
-    .option("--browser", "authenticate via browser (default for Chatgpt Subscription)")
-    .option("--headless", "authenticate via headless/device code flow")
+    .argument("<provider>", "provider id (qoder, freebuff, cline, chatgpt, copilot, kiro, omnirush)")
+    .option("--import", "import an existing app sign-in (Qoder/Freebuff/Cline/ChatGPT Subscription/Github Copilot/Kiro/Omnirush)")
+    .option("--browser", "authenticate via browser")
+    .option("--headless", "authenticate via headless/device flow")
+    .option("--pat", "prompt securely for a Qoder personal access token")
     .action(
       async (
         provider: string,
@@ -494,6 +496,7 @@ async function main(): Promise<void> {
           import?: boolean | undefined;
           browser?: boolean | undefined;
           headless?: boolean | undefined;
+          pat?: boolean | undefined;
         },
       ) => {
         const id = provider.trim().toLowerCase();
@@ -544,6 +547,16 @@ async function main(): Promise<void> {
           id.includes("omnirush")
         ) {
           await authOmnirush("omnirush", options);
+          return;
+        }
+        if (
+          id === "qoder" ||
+          id === "qoder-cli" ||
+          id === "qodercli" ||
+          id === "qoder.ai" ||
+          id.includes("qoder")
+        ) {
+          await authQoder("qoder", options);
           return;
         }
         await authCline(provider, options);

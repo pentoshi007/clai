@@ -63,8 +63,8 @@ const PAGER_HELP_SHORT =
 const PAGER_HELP_MIN = "^r:search  ·  q/esc:close";
 
 const PAGER_FOOTER_FULL =
-  "f:format  ·  r:raw  ·  c:copy  ·  drag:select  ·  s:scrollback  ·  e:editor";
-const PAGER_FOOTER_SHORT = "f:format  ·  r:raw  ·  c:copy  ·  s:scrollback  ·  e:editor";
+  "f:format  ·  r:raw  ·  c:copy  ·  drag:select";
+const PAGER_FOOTER_SHORT = "f:format  ·  r:raw  ·  c:copy";
 
 export { bodyOnlyForCopy } from "./pager-line.js";
 
@@ -150,17 +150,18 @@ export function Pager(props: PagerProps): ReactNode {
   const [matchIndex, setMatchIndex] = useState(-1);
   const [scrollHint, setScrollHint] = useState("top");
   const canFollow = typeof source?.watch === "function";
-  const [following, setFollowing] = useState(canFollow);
+  const startFollowing = canFollow && (source?.isGrowing?.() ?? true);
+  const [following, setFollowing] = useState(startFollowing);
   const matches = useMemo(
     () => findPagerMatches(searchLines, query),
     [searchLines, query],
   );
-  const [exportError, setExportError] = useState<string | undefined>(undefined);
+  const [pagerError, setPagerError] = useState<string | undefined>(undefined);
   const [statusFlash, setStatusFlash] = useState<string | undefined>(undefined);
   const hasQuery = query.trim().length > 0;
 
   useEffect(() => {
-    setFollowing(canFollow);
+    setFollowing(startFollowing);
     if (!source) {
       setDisplayBody(body);
       setArtifactPage(undefined);
@@ -174,13 +175,24 @@ export function Pager(props: PagerProps): ReactNode {
       setArtifactPage(page);
       setDisplayBody(page.body || "(no output yet)");
     }).catch((error) => {
-      if (active) setExportError(error instanceof Error ? error.message : String(error));
+      if (active) setPagerError(error instanceof Error ? error.message : String(error));
     }).finally(() => { if (active) setPageBusy(false); });
     return () => { active = false; };
-  }, [body, source, canFollow]);
+  }, [body, source, canFollow, startFollowing]);
 
   const artifactOffset = useRef(0);
+  const pendingPageScroll = useRef<"top" | "bottom" | undefined>(undefined);
   artifactOffset.current = artifactPage?.offset ?? 0;
+
+  function applyPendingPageScroll(): void {
+    const scroll = pendingPageScroll.current;
+    const box = scrollRef.current;
+    if (!scroll || !box) return;
+    box.scrollTo(scroll === "bottom" ? Math.max(0, box.scrollHeight - box.viewport.height) : 0);
+    refreshScrollHint();
+  }
+
+  useEffect(() => { applyPendingPageScroll(); }, [display]);
 
   useEffect(() => {
     if (!source?.watch) return;
@@ -206,7 +218,7 @@ export function Pager(props: PagerProps): ReactNode {
           setDisplayBody(page.body || "(no output yet)");
         })
         .catch((error) => {
-          if (active) setExportError(error instanceof Error ? error.message : String(error));
+          if (active) setPagerError(error instanceof Error ? error.message : String(error));
         })
         .finally(() => {
           reading = false;
@@ -233,21 +245,12 @@ export function Pager(props: PagerProps): ReactNode {
     setPageBusy(true);
     try {
       const page = await source.readPage(offset);
+      pendingPageScroll.current = scroll;
       setArtifactPage(page);
       setDisplayBody(page.body || "(no output)");
       setMatchIndex(-1);
-      queueMicrotask(() => {
-        const box = scrollRef.current;
-        if (!box) return;
-        if (scroll === "bottom") {
-          const max = Math.max(0, box.scrollHeight - (box.viewport?.height ?? 0));
-          box.scrollTo(max);
-        } else {
-          box.scrollTo(0);
-        }
-      });
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : String(error));
+      setPagerError(error instanceof Error ? error.message : String(error));
     } finally {
       setPageBusy(false);
     }
@@ -259,7 +262,7 @@ export function Pager(props: PagerProps): ReactNode {
 
   function flash(message: string, ms = 1800): void {
     setStatusFlash(message);
-    setExportError(undefined);
+    setPagerError(undefined);
     setTimeout(() => setStatusFlash((cur) => (cur === message ? undefined : cur)), ms);
   }
 
@@ -268,14 +271,19 @@ export function Pager(props: PagerProps): ReactNode {
     if (!sb) return;
     sb.verticalScrollBar.visible = false;
     sb.horizontalScrollBar.visible = false;
+    const onResize = (): void => {
+      applyPendingPageScroll();
+      pendingPageScroll.current = undefined;
+      refreshScrollHint();
+    };
     sb.verticalScrollBar.on("change", refreshScrollHint);
-    sb.content.on("resize", refreshScrollHint);
-    sb.viewport.on("resize", refreshScrollHint);
+    sb.content.on("resize", onResize);
+    sb.viewport.on("resize", onResize);
     refreshScrollHint();
     return () => {
       sb.verticalScrollBar.off("change", refreshScrollHint);
-      sb.content.off("resize", refreshScrollHint);
-      sb.viewport.off("resize", refreshScrollHint);
+      sb.content.off("resize", onResize);
+      sb.viewport.off("resize", onResize);
     };
   }, []);
 
@@ -378,28 +386,10 @@ export function Pager(props: PagerProps): ReactNode {
     setMatchIndex(-1);
   }
 
-  async function runExport(
-    promise: Promise<{ ok: boolean; error?: string }> | { ok: boolean; error?: string },
-    okMessage: string,
-  ): Promise<void> {
-    try {
-      const result = await promise;
-      if (result.ok) {
-        flash(okMessage, 2400);
-        setExportError(undefined);
-      } else {
-        setExportError(result.error ?? "export failed");
-        setStatusFlash(undefined);
-      }
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : String(error));
-      setStatusFlash(undefined);
-    }
-  }
-
   useKeyboard((key) => {
     if (key.defaultPrevented || key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
+    pendingPageScroll.current = undefined;
 
     if (searchOpen) {
       if (chord === "escape") {
@@ -458,7 +448,7 @@ export function Pager(props: PagerProps): ReactNode {
         refreshScrollHint();
         break;
       case "pager.bottom":
-        if (source && artifactPage && artifactPage.pageNumber < artifactPage.pageCount) {
+        if (source && artifactPage && artifactPage.nextOffset < artifactPage.totalBytes) {
           void loadArtifactPage(
             Math.max(0, artifactPage.totalBytes - source.pageBytes),
             "bottom",
@@ -481,16 +471,6 @@ export function Pager(props: PagerProps): ReactNode {
       case "pager.prev-match":
         if (source && hasQuery) void moveArtifactSearch(true);
         else if (matches.length > 0) jumpToMatch(prevPagerMatch(matches, matchIndex));
-        break;
-      case "pager.export-scrollback":
-        void fullBody().then((full) => runExport(
-          services.pagerExport.exportToScrollback(title, full),
-          "exported to terminal scrollback (scroll up after exit)",
-        )).catch((error) => setExportError(error instanceof Error ? error.message : String(error)));
-        break;
-      case "pager.export-editor":
-        void fullBody().then((full) => runExport(services.pagerExport.exportToEditor(full), "opened in editor"))
-          .catch((error) => setExportError(error instanceof Error ? error.message : String(error)));
         break;
       case "pager.copy":
         void fullBody()
@@ -591,8 +571,8 @@ export function Pager(props: PagerProps): ReactNode {
   const followLabel = growing
     ? following ? "● following" : "❙❙ paused (running)"
     : "finished";
-  const footerLeft = exportError
-    ? `export failed: ${exportError}`
+  const footerLeft = pagerError
+    ? `pager error: ${pagerError}`
     : statusFlash
       ? statusFlash
       : hasQuery
@@ -600,8 +580,6 @@ export function Pager(props: PagerProps): ReactNode {
         : canFollow
           ? fitOneLine(
               [
-                `l:${following ? "pause" : "follow"}  ·  ${followLabel}  ·  c:copy  ·  s:scrollback  ·  e:editor`,
-                `l:${following ? "pause" : "follow"}  ·  ${followLabel}  ·  c:copy  ·  e:editor`,
                 `l:${following ? "pause" : "follow"}  ·  ${followLabel}  ·  c:copy`,
                 `l:follow  ·  ${followLabel}`,
                 followLabel,
@@ -610,8 +588,6 @@ export function Pager(props: PagerProps): ReactNode {
             )
           : fitOneLine(
             [
-              `f:format  ·  r:raw  ·  view:${viewLabel}  ·  c:copy  ·  s:scrollback  ·  e:editor`,
-              `f:format  ·  r:raw  ·  view:${viewLabel}  ·  c:copy  ·  e:editor`,
               `f:format  ·  r:raw  ·  view:${viewLabel}  ·  c:copy`,
               `f:fmt  ·  r:raw  ·  ${viewLabel}`,
               PAGER_FOOTER_SHORT,
@@ -792,7 +768,7 @@ export function Pager(props: PagerProps): ReactNode {
           selectable={false}
           content={footerLine}
           style={{
-            fg: exportError ? theme.mode : theme.muted,
+            fg: pagerError ? theme.mode : theme.muted,
             height: 1,
             width: "100%",
           }}

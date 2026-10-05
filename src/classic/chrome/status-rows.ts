@@ -91,6 +91,18 @@ function contextSegment(input: StatusViewInput, density: StatusDensity): string 
   return input.ink.fg("userBorder", chip);
 }
 
+export function contextLimitChipColumns(
+  input: StatusViewInput,
+): { readonly left: number; readonly width: number } | undefined {
+  if (input.contextLimitEditing || input.allocatedRows <= 0) return undefined;
+  const columns = Math.max(1, Math.floor(input.columns));
+  const contentWidth = Math.max(1, columns - STATUS_INSET_COLUMNS * 2);
+  const chip = contextSegment(input, statusDensityForWidth(columns));
+  const width = chip === undefined ? 0 : layoutWidth(chip);
+  if (width === 0 || width + 2 > contentWidth) return undefined;
+  return { left: columns - STATUS_INSET_COLUMNS - width, width };
+}
+
 const MODE_PLATE: Readonly<Record<Mode, ThemeToken>> = {
   agent: "chipTeal",
   ask: "chipIndigo",

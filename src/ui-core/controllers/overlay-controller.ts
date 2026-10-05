@@ -74,7 +74,7 @@ export interface KeysEditorRequest {
 export type KeysEditorAnswer =
   | { readonly action: "save"; readonly rows: readonly { slotId?: string; value: string; disabled?: boolean }[]; readonly activeIndex?: number | undefined }
   | { readonly action: "reset" }
-  | { readonly action: "refresh"; readonly slotId: string }
+  | { readonly action: "refresh"; readonly slotId: string; readonly rows?: readonly { slotId?: string; value: string; disabled?: boolean }[] | undefined; readonly activeIndex?: number | undefined }
   | { readonly action: "pick"; readonly rows: readonly { slotId?: string; value: string; disabled?: boolean }[]; readonly activeIndex?: number | undefined };
 
 export interface PromptActionsRequest {

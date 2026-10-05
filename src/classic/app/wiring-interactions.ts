@@ -1,6 +1,6 @@
 import { consumePlanSuggestionInput } from "../../ui-core/plan/plan-lifecycle.js";
 import { notify } from "../../ui-core/notify.js";
-import { contextLimitInput } from "../chrome/context-limit-editor.js";
+import { contextLimitChipPressed, contextLimitInput } from "../chrome/context-limit-editor.js";
 import { formatPlanPagerDocument } from "../../ui-core/rendering/plan-view.js";
 import { openToolOutputPager } from "../../ui-core/rendering/open-tool-output.js";
 import {
@@ -177,6 +177,10 @@ export function handlePanelKey(
 }
 
 export function handleMouse(host: WiringHost, event: MouseEvent): void {
+  if (!host.panels.isOpen() && contextLimitChipPressed(host.contextLimitHitRegion, event)) {
+    host.startContextLimitEditing();
+    return;
+  }
   handleTranscriptMouse(host, event);
 }
 
@@ -442,18 +446,6 @@ export async function copyTranscript(host: WiringHost): Promise<void> {
   } else {
     notify(host.services, "Copy failed", { level: "warn", key: "copy" });
   }
-}
-
-export function exportScrollback(host: WiringHost, body: string): void {
-  const overlay = host.services.overlay.getState();
-  const title = overlay.kind === "pager" ? overlay.title : "Pager";
-  const result = host.services.pagerExport.exportToScrollback(title, body);
-  if (!result.ok) notify(host.services, result.error ?? "Scrollback export failed", { level: "warn" });
-}
-
-export async function exportEditor(host: WiringHost, body: string): Promise<void> {
-  const result = await host.services.pagerExport.exportToEditor(body);
-  if (!result.ok) notify(host.services, result.error ?? "Editor export failed", { level: "warn" });
 }
 
 export function bumpFeedGeneration(host: WiringHost): void {

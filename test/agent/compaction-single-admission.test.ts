@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
+import { compactionRecencyAnchors } from "../../src/agent/context/compaction-recent-history.js";
 import {
   installTransport,
   isResponsesProbe,
@@ -539,17 +540,21 @@ describe("single-admission chunking strategies", () => {
   });
 
   it("hard-bounds a forced prefix slice to a positive input budget", async () => {
+    const history = largeHistory();
     const fixedInputTokens = estimateMessagesTokens([
       { role: "system", content: COMPACTION_SYSTEM_PROMPT },
       {
         role: "user",
-        content: buildCompactionUserPrompt({ messageTranscript: "" }),
+        content: buildCompactionUserPrompt({
+          messageTranscript: "",
+          recencyAnchors: compactionRecencyAnchors(history),
+        }),
       },
     ]);
     const inputBudget = fixedInputTokens + 50;
     let measuredInputTokens = 0;
     const result = await compactMessagesWithSummary(
-      largeHistory(),
+      history,
       async (prompt) => {
         measuredInputTokens = estimateMessagesTokens([
           { role: "system", content: COMPACTION_SYSTEM_PROMPT },

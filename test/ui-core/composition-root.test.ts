@@ -441,7 +441,7 @@ describe("createCompositionRoot", () => {
           limit: {
             source: "model-catalog",
             tokens: 1_000_000,
-            compactTriggerTokens: 700_000,
+            compactTriggerTokens: 800_000,
           },
         },
       });
@@ -451,7 +451,7 @@ describe("createCompositionRoot", () => {
       const text = notice?.type === "notice" ? notice.payload.text : "";
       expect(text).toContain("provider-reported ~125,000 tokens");
       expect(text).toContain("limit 1,000,000 (provider)");
-      expect(text).toContain("auto-compact at 700,000 (70%)");
+      expect(text).toContain("auto-compact at 800,000 (80%)");
     } finally {
       services.dispose();
       clearModelCatalogFacts();

@@ -962,6 +962,31 @@ SETUP (pick one)
   with automatic rotation on auth/quota errors.
 
 Docs: https://docs.cline.bot`,
+  qoder: `Qoder — Qoder's native signed inference gateway (Qwen, GLM, Kimi, DeepSeek)
+
+WHAT IT IS
+  Qoder's first-party gateway used by the Qoder CLI (qodercli). Requests are
+  signed with Qoder's own WebAssembly signer (Cosy-* headers + Signature) so
+  clai is wire-identical to qodercli. Native SSE streaming with reasoning.
+
+  Base URL   https://api1.qoder.sh (inference) · https://openapi.qoder.sh (catalog)
+  Auth       import an existing qodercli sign-in (token + machine identity)
+  Endpoints  /algo/api/v2/service/pro/sse/agent_chat_generation · /api/v2/model/list
+
+MODELS
+  /model lists the live catalog (cached up to 30 minutes) with the price
+  multiplier qodercli shows. A 0.00 multiplier is tagged ":free":
+    qfmodel:free        Qwen3.8-Flash — free
+    qmodel_38max:free   Qwen3.8-Max   — free
+    auto:0.5x gmodel:0.8x smodel:8x   paid tiers (Qoder Credits)
+  The ":free" / ":Nx" suffix is display-only and stripped before the request.
+
+SETUP
+  1. Sign in with the Qoder CLI:  qodercli login
+  2. Import that sign-in into clai:  clai auth qoder --import
+     (or paste the JSON credential with:  clai set qoder <credential>)
+
+Docs: https://docs.qoder.com/cli/overview`,
   freebuff: `Freebuff — free coding agent on the Codebuff backend
 
 WHAT IT IS

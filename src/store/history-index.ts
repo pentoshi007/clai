@@ -23,6 +23,11 @@ export interface HistoryIndexEntry {
   summary: HistorySummary;
 }
 
+export interface HistorySourceEntry {
+  path: string;
+  entry: HistoryIndexEntry;
+}
+
 interface HistoryIndexFile {
   schemaVersion: 1;
   source: { size: number; mtimeMs: number };
@@ -355,15 +360,19 @@ async function copyEntryRanges(
     for (const entry of entries) {
       let remaining = entry.length;
       let position = entry.offset;
+      let lastByte = 0;
       while (remaining > 0) {
         const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, remaining), position);
         if (bytesRead === 0) throw new Error(`history record ${entry.id} is shorter than indexed`);
-        await destination.write(buffer, 0, bytesRead);
+        await destination.writeFile(buffer.subarray(0, bytesRead));
+        lastByte = buffer[bytesRead - 1]!;
         remaining -= bytesRead;
         position += bytesRead;
       }
-      copied.push({ ...entry, offset });
-      offset += entry.length;
+      const length = entry.length + (lastByte === 0x0a ? 0 : 1);
+      if (length > entry.length) await destination.writeFile("\n");
+      copied.push({ ...entry, offset, length });
+      offset += length;
     }
   } finally {
     await source.close();
@@ -392,11 +401,33 @@ export async function rewriteIndexedJsonl(
   indexPath: string,
   entries: readonly HistoryIndexEntry[],
 ): Promise<void> {
+  await rewriteIndexedHistorySources(
+    jsonlPath,
+    indexPath,
+    entries.map((entry) => ({ path: jsonlPath, entry })),
+  );
+}
+
+export async function rewriteIndexedHistorySources(
+  jsonlPath: string,
+  indexPath: string,
+  sources: readonly HistorySourceEntry[],
+): Promise<void> {
   const jsonlTemp = `${jsonlPath}.${process.pid}.${randomUUID()}.tmp`;
   const handle = await open(jsonlTemp, "wx", 0o600);
-  let copied: HistoryIndexEntry[];
+  const copied: HistoryIndexEntry[] = [];
+  let offset = 0;
   try {
-    copied = await copyEntryRanges(jsonlPath, handle, entries, 0);
+    for (let index = 0; index < sources.length;) {
+      const path = sources[index]!.path;
+      const entries: HistoryIndexEntry[] = [];
+      do {
+        entries.push(sources[index++]!.entry);
+      } while (index < sources.length && sources[index]!.path === path);
+      const group = await copyEntryRanges(path, handle, entries, offset);
+      copied.push(...group);
+      offset += historyIndexLiveBytes(group);
+    }
     await handle.sync();
   } catch (error) {
     await handle.close();

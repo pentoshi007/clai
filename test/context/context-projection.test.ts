@@ -350,7 +350,7 @@ describe("exactness lifetime", () => {
         source: "session-override",
         tokens: 1_000_000,
         requestedTokens: 1_000_000,
-        compactTriggerTokens: 700_000,
+        compactTriggerTokens: 800_000,
       },
     });
   });

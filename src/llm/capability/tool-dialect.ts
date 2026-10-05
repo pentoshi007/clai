@@ -38,6 +38,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   kiro: "openai",
   omnirush: "openai",
   tokenharbor: "openai",
+  qoder: "openai",
 };
 
 const nativeToolsDenylist: RegExp[] = [

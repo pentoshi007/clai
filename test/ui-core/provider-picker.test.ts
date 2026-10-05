@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { handleProvider } from "../../src/ui-core/commands/picker-commands.js";
 import {
@@ -15,6 +19,40 @@ import type {
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { filterPickerOptions } from "../../src/ui-core/rendering/picker-filter.js";
 import type { PickerOption } from "../../src/ui-core/state/types.js";
+import { getProvider } from "../../src/llm/router.js";
+import { getConfig } from "../../src/store/config.js";
+import type { ProviderId } from "../../src/types.js";
+import { resetSessionModelCache } from "../../src/store/session-model.js";
+
+vi.mock("../../src/store/keys.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/store/keys.js")>();
+  return {
+    ...actual,
+    getProviderKeys: async (provider: ProviderId) => provider === "qoder"
+      ? { keys: [{ id: "test-qoder-slot", value: JSON.stringify({ uid: "picker-test", accessToken: "fixture-access", machineId: "fixture-machine", machineToken: "fixture-token", encryptUserInfo: "fixture-signature", key: "fixture-key" }), createdAt: 1 }], activeIndex: 0, source: "fallback" as const }
+      : actual.getProviderKeys(provider),
+    getProviderSecret: async (provider: ProviderId) => provider === "qoder"
+      ? { value: JSON.stringify({ uid: "picker-test", accessToken: "fixture-access", machineId: "fixture-machine", machineToken: "fixture-token", encryptUserInfo: "fixture-signature", key: "fixture-key" }), source: "fallback" as const }
+      : actual.getProviderSecret(provider),
+  };
+});
+
+let modelDir: string;
+let previousModelDir: string | undefined;
+
+beforeEach(() => {
+  modelDir = mkdtempSync(join(tmpdir(), "clai-provider-picker-"));
+  previousModelDir = process.env.CLAI_SESSION_MODEL_DIR;
+  process.env.CLAI_SESSION_MODEL_DIR = modelDir;
+  resetSessionModelCache();
+});
+
+afterEach(async () => {
+  resetSessionModelCache();
+  if (previousModelDir === undefined) delete process.env.CLAI_SESSION_MODEL_DIR;
+  else process.env.CLAI_SESSION_MODEL_DIR = previousModelDir;
+  await rm(modelDir, { recursive: true, force: true });
+});
 
 class SilentAgent implements AgentPort {
   async runTurn(
@@ -78,6 +116,24 @@ async function openProviderPicker(services: AppServices): Promise<{
 }
 
 describe("/provider search is scoped to provider names", () => {
+  it("selects Qoder through the shared picker callback without changing the global provider", async () => {
+    const services = makeServices();
+    const defaultProvider = getConfig().defaultProvider;
+    const listModels = vi.spyOn(getProvider("qoder"), "listModels").mockResolvedValue(["qfmodel:free"]);
+    try {
+      handleProvider(services, { name: "provider", args: "" });
+      await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
+      services.overlay.selectPicker("qoder");
+      await vi.waitFor(() => expect(services.session.getState().provider).toBe("qoder"));
+      await vi.waitFor(() => expect(listModels).toHaveBeenCalled());
+      expect(getConfig().defaultProvider).toBe(defaultProvider);
+      expect(services.session.getState().model).toBe("qfmodel:free");
+    } finally {
+      listModels.mockRestore();
+      services.dispose();
+    }
+  });
+
   it("does not search the configured model of each provider", async () => {
     const services = makeServices();
     const picker = await openProviderPicker(services);
@@ -104,6 +160,10 @@ describe("/provider search is scoped to provider names", () => {
     expect(openai?.description).toBe("(https://api.openai.com/v1)");
     const omnirush = picker.options.find((option) => option.value === "omnirush");
     expect(omnirush?.description).toBe("(https://omnirush.ai/omnirush/v1)");
+    const qoder = picker.options.find((option) => option.value === "qoder");
+    expect(qoder?.description).toBe("(https://api1.qoder.sh)");
+    expect(filterPickerOptions([...picker.options], "qoder", { searchDescription: false })).toEqual([qoder]);
+    expect(filterPickerOptions([...picker.options], "api1.qoder.sh", { searchDescription: false })).toEqual([]);
     const matched = filterPickerOptions([...picker.options], bynara!.description!, {
       searchDescription: picker.searchDescription ?? true,
     });

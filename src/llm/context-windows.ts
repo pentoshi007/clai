@@ -130,13 +130,12 @@ export function resolveContextWindow(input: {
   const override = positiveTokens(input.contextLimitTokens);
   const withProvider = providerTokens !== undefined ? { providerTokens } : {};
   if (override !== undefined && override >= MIN_CUSTOM_CONTEXT_LIMIT_TOKENS) {
-    const clamped = providerTokens !== undefined && override > providerTokens;
     return {
-      tokens: clamped ? providerTokens : override,
+      tokens: override,
       source: "session-override",
       ...withProvider,
       overrideTokens: override,
-      clampedToProvider: clamped,
+      clampedToProvider: false,
     };
   }
   if (providerTokens !== undefined) {

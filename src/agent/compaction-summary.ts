@@ -1,7 +1,8 @@
 
 import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
 import { requestTokenCalibration } from "../llm/token-estimate-calibration.js";
-import type { ProviderId } from "../types.js";
+import type { ChatMessage, ProviderId } from "../types.js";
+import { compactionRecencyAnchors } from "./context/compaction-recent-history.js";
 
 export const COMPACTION_SYSTEM_PROMPT = `You are a session-memory compressor for an autonomous coding and security agent.
 
@@ -11,6 +12,7 @@ You are SUMMARIZING a past session, NOT continuing it. Do not answer the user, d
 
 Rules:
 - Fidelity over style. Never invent tool results, file contents, findings, URLs, ports, or completions.
+- CURRENT TOPIC: Lead with the latest user topic and the latest answer or unfinished request. Earlier compacted memories and completed plans are background, not evidence that their old objective is still active. Preserve the recent research findings and answers even when no code changed.
 - Prefer concrete artifacts: absolute paths, commands (short form), exit outcomes, HTTP status, plan task ids/states, job ids, open ports, confirmed vs unconfirmed findings.
 - LENGTH: aim for ~1800–3600 tokens of dense structured bullets — preserve every consequential fact, but finish every section and bullet within budget rather than cutting mid-sentence. Prefer one precise mention over repeated coverage.
 - DETAIL LEVEL: mechanism-level specificity. For code changes name the file path with line anchors, what changed, the before→after behavior, and the verification evidence (which tests/typecheck/build status prove it). For debugging name the root cause, each failed approach, and why it failed. For research name exact findings with their evidence. For pending work give the next concrete step a cold reader can execute immediately. A reader resuming with no other context must not need to re-discover anything recorded below.
@@ -26,6 +28,7 @@ export interface CompactionPromptParts {
   messageTranscript: string;
   durableState?: string | undefined;
   purpose?: "default" | "plan-implement" | undefined;
+  recencyAnchors?: string | undefined;
 }
 
 export function buildCompactionUserPrompt(parts: CompactionPromptParts): string {
@@ -86,11 +89,13 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
     );
   } else {
     sections.push(
-      "Create a complete but compact continuation memory of the session below.",
-      "Treat resumed history and newer turns as one continuous conversation.",
-      "Open with a single ORIENTATION line — current objective plus status (done / in progress / blocked) — so the resuming agent reorients in one read. Keep it to one line; the details belong in the sections below, not restated here.",
+      "Create a complete but compact continuation memory. Treat resumed history and newer turns as one continuous session. Summarize; never answer the user, continue work, invent results, or emit tool calls/transcript receipts.",
+      "Open with a single ORIENTATION line about the LATEST user topic and its status (answered / in progress / blocked). Derive it from the newest conversation, not the goal of an older completed plan or prior compacted memory.",
+      "For research-only or explanatory questions, preserve the actual answers, findings, code paths, evidence, and caveats. An answered question does not authorize implementation or resuming unrelated fixes.",
+      "Earlier compacted memories are historical, fallible summaries. Resolve their claims against newer messages and verified state; never promote a speculative interpretation of an old approval into a current task.",
       "",
       "Organize under these exact section headings (skip a section only if empty):",
+      "## Latest conversation",
       "## User goals",
       "## Key facts and environment",
       "## Decisions and constraints",
@@ -102,34 +107,19 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
       "## Relevant files",
       "## Open risks / failures",
       "",
-      "How to fill sections (resume-quality critical — write for a reader with zero prior context):",
-      "- User goals: the objective plus hard constraints the user imposed verbatim or near-verbatim (style rules, forbiddens, scope limits), and the requested execution boundary (entire program/all phases versus a named phase versus unspecified).",
-      "- Key facts and environment: mechanism-level truths discovered during the session — API/data shapes and field semantics, regex or parser behaviors, gate conditions and flag interactions, environment quirks (broken credentials, unavailable services, tool versions), and anything verified empirically, plus user-supplied values the remaining work needs (endpoints, test accounts, ids, config values) verbatim except secret values. Each bullet must let the resumer act without re-verifying.",
-      "- Delegated work: keep every subagent, background job, and Responder task id with its title. For results the session already read, record the conclusions that matter for the remaining work inline in the section where they are used (Key facts, Work completed, Current state) — not as a separate dump. Results not yet read are re-delivered after resume — list them as pending, never as read.",
-      "- Decisions and constraints: each decision with its rationale and source (user directive, discovered evidence, tool constraint), not just the decision itself.",
-      "- Work completed: one bullet per change/result with file path and line anchors, what changed, before→after behavior, and explicit verification evidence (test counts, exit codes, commands that passed, or 'not yet verified'). Group as Completed, then any reverted/abandoned changes with why.",
-      "- In flight / blocked: edits made but not verified, designs decided but not applied, and blocked items with the exact missing piece — including the concrete next edit already determined but not yet performed.",
-      "- Commands/tools and results: key commands with outcomes; notable failures with root cause and how many attempts before success/abandonment so the resumer does not retry dead ends.",
-      "- Current state: what is true at compaction time — running servers/jobs (ids, ports), dirty worktree state, open handles, last observed outputs.",
-      "- Remaining work: an ordered, numbered list of concrete next steps — each step names the action, the file/line or artifact it applies to, and the verification command that proves it done. Do not restate plan tasks already recorded in the live plan; record the deltas and execution detail.",
-      "- Relevant files: path → role, what changed there, and line anchors worth resuming from. Include test files with their pass/fail state.",
-      "- Open risks / failures: unresolved bugs, known-broken neighbors left untouched, suspicious observations not yet explained.",
-      "",
-      "Preserve: user intentions, decisions, constraints, requested execution boundary (entire program/all phases versus a named phase versus unspecified), referenced roadmap/plan/task/index paths, stack/package manager,",
-      "commands and key results, plan task states/hierarchy, errors and failed approaches,",
-      "Responder notification ids, linked task/parent ids, job/PID/status, subagent ids/titles, durable artifact paths, and the authoritative consumed/analyzed state from RESPONDER RESULT LEDGER entries. Never describe consumed=true ledger entries as unread, pending, or needing another artifact read.",
-      "servers/jobs still running, and exactly what remains.",
-      "",
-      "AVOID BLOAT — this memory is prepended to a context that re-injects fresh ACTIVE PLAN, SESSION STATE, and ENGAGEMENT SCOPE after compaction:",
-      "- DEDUPLICATE: state each fact once in its best section. Never repeat the same path, command, decision, or finding across multiple sections.",
-      "- Do NOT restate the full plan or list every task under Remaining work — the live ACTIVE PLAN is re-injected separately. Record only deltas: the next task, blockers, dependency/order caveats, and states not obvious from the plan.",
-      "- Do NOT reproduce long user prompts verbatim. Capture the goal and hard constraints concisely under User goals.",
-      "- Omit routine local inspection receipts and transient logs whose result is already captured. Prefer dense bullets over prose.",
+      "Write for a reader with zero prior context:",
+      "- Latest conversation: prioritize the last three user topics, the answers/findings/changes for each, evidence, caveats, decisions, and unresolved questions. Research conclusions matter even when no files changed.",
+      "- Goals/constraints: preserve user intent, hard limits, requested execution boundary, referenced roadmap/plan/task/index paths, and each decision's rationale and source.",
+      "- Facts/completed work: mechanism-level specificity — API/data shapes, parser/gate behavior, environment/stack/package manager, file paths and line anchors, before→after behavior, and verification commands/results (or 'not yet verified'). Keep reusable artifacts and user-supplied nonsecret values.",
+      "- In flight/remaining: confirmed unfinished commitments, blockers, next concrete action and verification. Distinguish unverified edits from unapplied designs and historical failures. Do not infer new implementation from research questions.",
+      "- Commands/risks: informative failures, causes, failed approaches and outcomes. Current state: dirty worktree, running servers/jobs, ids/PIDs/ports, and last observed results.",
+      "- Delegated work: preserve subagent/job/Responder ids, titles, task/parent ids, statuses, and conclusions of results already read. RESPONDER RESULT LEDGER consumed/analyzed state is authoritative; never describe consumed=true entries as unread or needing another artifact read. Unread results remain pending.",
+      "- DEDUPLICATE: each fact once. Compress older completed work to reusable state and evidence. Fresh ACTIVE PLAN, SESSION STATE and ENGAGEMENT SCOPE are re-injected; do not repeat their full plan/tasks or routine inspection receipts.",
+      "- Do NOT reproduce long user prompts verbatim; capture goals and hard constraints concisely.",
+      "- Do not write a Last 3 user prompts section; the application appends it from the actual user messages after generating the memory.",
       "",
       "PHASE AWARENESS under Decisions and constraints:",
-      "- If earlier turns were plan-mode research, do not elevate gather-only / await-accept / no-implement rules as permanent forever-constraints for agent execution.",
-      "- Durable engagement policy (scope, remote target, non-destructive default) may still be listed as current.",
-      "- Prefer labeling historical plan-mode gates as \"(plan-mode only; superseded after accept)\" when they appear in the material.",
+      "- Gather-only / await-accept / no-implement gates are historical after plan acceptance; standing engagement policy and current research-only scope still apply.",
     );
   }
 
@@ -140,6 +130,8 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
     "- Anything the material shows as already done belongs under Work completed / Current state. NEVER list completed work under Remaining work, In flight, or as a next step — a resuming agent will redo it.",
     "- Take the LATEST state of any fact that changed during the session. If an approach was adopted and later reverted, replaced, or abandoned, record the final choice as current and the earlier one as superseded with the reason.",
     "- Remaining work must contain only steps the material shows as genuinely not yet performed. If nothing remains, say so explicitly.",
+    "- Distinguish confirmed unfinished work from historical failures and speculative to-dos. Preserve genuine outstanding commitments, but do not invent tasks from an ambiguous old approval or reopen completed work because it dominated the earlier history.",
+    "- DURABLE STATE is authoritative for its recorded plan/task/job/result statuses and standing constraints. A completed plan does not determine the current conversation topic, and an older goal does not override newer research-only scope.",
   );
 
   const target =
@@ -147,22 +139,25 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
   sections.push(target);
 
   if (durable) {
-    sections.push("", "DURABLE STATE (trust this over older chatter):", durable);
+    sections.push("", "DURABLE STATE (authoritative for recorded statuses; current topic comes from the latest conversation):", durable);
   }
 
   sections.push("", "SESSION MATERIAL:", "", transcript);
+  if (parts.recencyAnchors) sections.push("", parts.recencyAnchors);
   return sections.join("\n");
 }
 
 export function buildDirectCompactionPrompt(input: {
   readonly durableState?: string | undefined;
   readonly purpose?: "default" | "plan-implement" | undefined;
+  readonly messages?: readonly ChatMessage[] | undefined;
 }): string {
   return buildCompactionUserPrompt({
     messageTranscript:
       "The session material is the entire conversation above this instruction, up to and including the most recent turn. Summarize all of it; do not treat this instruction as session content.",
     ...(input.durableState ? { durableState: input.durableState } : {}),
     ...(input.purpose ? { purpose: input.purpose } : {}),
+    ...(input.messages ? { recencyAnchors: compactionRecencyAnchors(input.messages) } : {}),
   });
 }
 
@@ -256,6 +251,7 @@ export function buildCompactionReducePrompt(input: {
   readonly partials: readonly string[];
   readonly durableState?: string | undefined;
   readonly purpose?: "default" | "plan-implement" | undefined;
+  readonly recencyAnchors?: string | undefined;
 }): string {
   const merged = input.partials
     .map((part, index) => `REGION ${index + 1}:\n${part}`)
@@ -264,6 +260,7 @@ export function buildCompactionReducePrompt(input: {
     messageTranscript: merged,
     ...(input.durableState ? { durableState: input.durableState } : {}),
     ...(input.purpose ? { purpose: input.purpose } : {}),
+    ...(input.recencyAnchors ? { recencyAnchors: input.recencyAnchors } : {}),
   });
 }
 

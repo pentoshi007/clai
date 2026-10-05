@@ -25,6 +25,7 @@ export const selectCompactionReplaySnapshot = (
     baseRequest: input.snapshot,
     history: input.history,
     prompt: buildDirectCompactionPrompt({
+      messages: input.history,
       ...(input.durableEnvelope
         ? { durableState: input.durableEnvelope }
         : {}),

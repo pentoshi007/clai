@@ -256,9 +256,11 @@ describe("LLM compaction integration shape", () => {
     expect(stages[0]?.sourceMessages).toHaveLength(messages.length);
     expect(stages[0]?.sourceMessages?.[1]).toBe(messages[1]);
     expect(stages[0]?.sourceMessages?.at(-1)).toBe(messages.at(-1));
-    expect(stages[0]?.prompt).not.toContain("large history");
+    expect(stages[0]?.prompt.length).toBeLessThan(15_000);
+    expect(stages[0]?.prompt).toContain("RECENT CONVERSATION ANCHORS");
     expect(result.summarized).toBe(true);
-    expect(result.messages.slice(-2)).toEqual(messages.slice(-2));
+    expect(result.messages.map((message) => message.role)).toEqual(["system", "system"]);
+    expect(result.messages.find(isCompactionMemoryMessage)?.content).toContain("> recent request");
   });
 
   it("keeps every region while bounding a manual compaction to map-reduce", async () => {

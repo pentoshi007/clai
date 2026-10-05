@@ -81,8 +81,6 @@ export const ACTION_IDS = [
   "pager.search",
   "pager.next-match",
   "pager.prev-match",
-  "pager.export-scrollback",
-  "pager.export-editor",
   "pager.copy",
   "pager.toggle-follow",
   "pager.format",

@@ -50,7 +50,7 @@ export interface PickerKeyInput {
 
 export function isPrintable(chord: string, text: string | undefined): boolean {
   if (text === undefined || text.length === 0) return false;
-  if (chord.includes("+")) return false;
+  if (/(?:^|\+)(?:ctrl|alt|meta|super|hyper)(?:\+|$)/.test(chord)) return false;
   return [...text].every((char) => char >= " " && char !== "\x7f");
 }
 

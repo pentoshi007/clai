@@ -9,6 +9,7 @@ import { archiveFilePath, loadDatabase } from "./sqlite-backend.js";
 import { open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { join } from "node:path";
+import { removeSessionPrompts } from "../session-prompts.js";
 
 export async function clearAllHistory(): Promise<{
   cleared: boolean;
@@ -43,6 +44,7 @@ export async function clearAllHistory(): Promise<{
         name === "history-archive.jsonl" ||
         name === "history-backups" ||
         name === "subagents" ||
+        name === "prompts" ||
         name.startsWith("history-cleared-") ||
         (name.startsWith("history.jsonl.") && name.endsWith(".tmp")),
     );
@@ -244,6 +246,7 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
   let deletedFromArchive = false;
   let deletedFromBackup = false;
   let deletedFromSqlite = false;
+  let deletedPrompts = false;
   let historyWriteFailed = false;
   await queueJsonlWrite(async () => {
     deletedFromJsonl = await removeSessionFromActiveHistory(id);
@@ -281,13 +284,14 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
   }
 
   try {
+    deletedPrompts = await removeSessionPrompts(id);
     const { createSubagentStore } = await import("../subagents.js");
     createSubagentStore().remove(id);
   } catch (error) {
-    return { deleted: false, detail: `could not remove subagent history: ${error instanceof Error ? error.message : String(error)}` };
+    return { deleted: false, detail: `could not remove session prompt/subagent history: ${error instanceof Error ? error.message : String(error)}` };
   }
   invalidateSessionListCache();
-  if (!deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite) {
+  if (!deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite && !deletedPrompts) {
     const existing = await getSession(id);
     if (existing) return { deleted: false, detail: "failed to delete" };
     return { deleted: false, detail: "session not found" };

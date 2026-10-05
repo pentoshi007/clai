@@ -99,8 +99,6 @@ const ACTION_LABELS: Partial<Record<ActionId, string>> = {
   "pager.search": "Search in pager",
   "pager.next-match": "Next search match",
   "pager.prev-match": "Previous search match",
-  "pager.export-scrollback": "Export to scrollback",
-  "pager.export-editor": "Open in editor",
   "pager.copy": "Copy pager body",
   "pager.format": "Formatted markdown view",
   "pager.raw": "Raw text view",

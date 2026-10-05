@@ -11,6 +11,7 @@ import {
 } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { latestUserMessage } from "./context/latest-user-message.js";
+import { withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
 import {
   estimateImageTokens,
   estimateMessagesTokens,
@@ -121,7 +122,7 @@ export function shouldApplyAutoCompact(input: {
   if (!input.summarized) return false;
   if (input.afterTokens >= input.beforeTokens) return false;
   if (hasOrphanToolMessages([...input.afterMessages])) return false;
-  const body = input.summaryBody.trim();
+  const body = withoutRecentUserPrompts(input.summaryBody);
   if (!body) return false;
   if (
     input.beforeTokens >= AUTO_COMPACT_STUB_BEFORE_TOKENS &&

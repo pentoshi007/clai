@@ -32,6 +32,7 @@ export const providerIds = [
   "kiro",
   "omnirush",
   "tokenharbor",
+  "qoder",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];
@@ -185,6 +186,14 @@ export interface ChatMessage {
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
   responsesReplay?: ResponsesReplay | undefined;
   internal?: boolean | undefined;
+  compaction?: {
+    readonly recentUserPrompts: readonly CompactedUserPrompt[];
+  } | undefined;
+}
+
+export interface CompactedUserPrompt {
+  readonly content: string;
+  readonly truncated?: boolean | undefined;
 }
 
 export function isInternalChatMessage(message: ChatMessage): boolean {

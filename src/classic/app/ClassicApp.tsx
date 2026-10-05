@@ -20,7 +20,7 @@ import { composerFrame, composerTextRowsWanted } from "../chrome/composer-frame.
 import { responderVisible } from "../chrome/responder-row.js";
 import { subagentsVisible } from "../chrome/subagents-row.js";
 import { allocateChrome, type ChromeDemand } from "../chrome/row-budget.js";
-import { statusRowsWanted } from "../chrome/status-rows.js";
+import { contextLimitChipColumns, statusRowsWanted, type StatusViewInput } from "../chrome/status-rows.js";
 import { gutterShellWidth, horizontalPadding, SCROLLBAR_GUTTER_COLS } from "../render/shell-width.js";
 import { LiveTail } from "../feed/LiveTail.js";
 import { ScrollbarGutter } from "../feed/ScrollbarGutter.js";
@@ -132,6 +132,37 @@ export function ClassicApp(
   const frame = composerFrame({ columns: shellWidth, allocatedRows: layout.composer, text: composer.state.text, mode: session.mode, phase, unicode: feed.ink.unicode, metaLabel });
   const blinkOn = Math.floor(snapshot.animationTick / 2) % 2 === 0;
   const frameWithBlink = { ...frame, showCaret: frame.showCaret && blinkOn };
+  const statusInput: StatusViewInput = {
+    ink: feed.ink,
+    columns: shellWidth,
+    allocatedRows: layout.status,
+    mode: session.mode,
+    contextChip: session.contextChip,
+    contextUsage: session.contextUsage,
+    contextLimitEditing: wiring.contextLimitEditingValue,
+    contextLimitDraft: wiring.contextLimitDraftValue,
+    running: session.running,
+    compacting: session.compacting,
+    activity: snapshot.transcript.runningStatus,
+    cancelArmed: snapshot.cancelArmed,
+    tick: snapshot.tick + snapshot.animationTick,
+    hasDraft: composer.state.text.length > 0,
+    queued: session.queued.length,
+    planVisible: snapshot.planVisible,
+    hasActivePlan: plan !== undefined,
+    thinkingExpanded: snapshot.transcript.expandThinkingGlobal,
+    outputExpanded: snapshot.transcript.expandOutputGlobal,
+  };
+  const chipColumns = expanded ? undefined : contextLimitChipColumns(statusInput);
+  const chipLeft = chipColumns === undefined ? undefined : shellPadding + chipColumns.left;
+  const chipWidth = chipColumns?.width ?? 0;
+  const statusTop = (standaloneLabel === undefined ? 0 : 1) + layout.total - layout.status;
+  useEffect(() => {
+    wiring.contextLimitHitRegion = chipLeft === undefined
+      ? undefined
+      : { left: chipLeft, top: statusTop, width: chipWidth };
+    return () => { wiring.contextLimitHitRegion = undefined; };
+  }, [wiring, chipLeft, statusTop, chipWidth]);
 
   useEffect(() => wiring.observeFeed(feed, selectionDocument), [wiring, feed, selectionDocument]);
   useEffect(
@@ -183,7 +214,7 @@ export function ClassicApp(
         ) : null}
         <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} accentSpans={composer.mentionSpans} />
       </Box>,
-      status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} thinkingExpanded={snapshot.transcript.expandThinkingGlobal} outputExpanded={snapshot.transcript.expandOutputGlobal} />,
+      status: <StatusBar {...statusInput} />,
     }} />
     </Box>
     <ScrollbarGutter ink={feed.ink} window={feed.window} rows={layout.liveTail} offsetTop={(standaloneLabel === undefined ? 0 : 1) + layout.toast} />

@@ -40,6 +40,7 @@ import { mimoProvider } from "../mimo.js";
 import { glmProvider } from "../glm.js";
 import { minimaxProvider } from "../minimax.js";
 import { clineProvider } from "../cline.js";
+import { qoderProvider } from "../qoder/qoder.js";
 import { codexProvider } from "../codex.js";
 import { copilotProvider } from "../copilot.js";
 import { kiroProvider } from "../kiro.js";
@@ -80,6 +81,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   kiro: kiroProvider,
   omnirush: omnirushProvider,
   tokenharbor: tokenharborProvider,
+  qoder: qoderProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -115,6 +117,7 @@ const fallbackOrder: ProviderId[] = [
   "kiro",
   "omnirush",
   "tokenharbor",
+  "qoder",
 ];
 
 function allFallbackIds(): ProviderId[] {

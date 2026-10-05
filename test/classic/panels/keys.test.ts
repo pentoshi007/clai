@@ -128,6 +128,13 @@ describe("keys keys", () => {
     expect(state.activeIndex).toBe(0);
   });
 
+  it("preserves the active account when removing an earlier row", () => {
+    const state: KeysPanelState = { ...keysInitialState(REQUEST), cursor: 0, activeIndex: 1 };
+    const removed = press(state, "ctrl+d").state;
+    expect(removed.activeIndex).toBe(0);
+    expect(removed.rows[removed.activeIndex]?.slotId).toBe("k2");
+  });
+
   it("saves kept, replaced, and new rows", async () => {
     const harness = createHarness();
     const answer = harness.overlay.openKeysEditor(REQUEST);
@@ -159,7 +166,12 @@ describe("keys keys", () => {
     const result = press(keysInitialState(request), "r", undefined, request);
     expect(result.effects[0]).toEqual({
       kind: "keys",
-      answer: { action: "refresh", slotId: "k1" },
+      answer: {
+        action: "refresh",
+        slotId: "k1",
+        rows: REQUEST.initialKeys.map((key) => ({ slotId: key.id, value: key.masked, disabled: false })),
+        activeIndex: 0,
+      },
     });
   });
 

@@ -79,6 +79,7 @@ export class ClassicAppWiring implements WiringHost {
   branchValue: string | undefined;
   contextLimitEditingValue = false;
   contextLimitDraftValue = "";
+  contextLimitHitRegion: WiringHost["contextLimitHitRegion"] = undefined;
   branchRefreshTimer: ReturnType<typeof setInterval> | undefined;
   branchRefreshRequest = 0;
   lastPaintAt = 0;
@@ -142,8 +143,6 @@ export class ClassicAppWiring implements WiringHost {
       },
       onHidePlan: () => this.setPlanVisible(false),
       onRevealItem: (itemId) => this.revealItem(itemId),
-      exportScrollback: (body) => this.exportScrollback(body),
-      exportEditor: (body) => void this.exportEditor(body),
       now: this.now,
     });
 
@@ -406,14 +405,6 @@ export class ClassicAppWiring implements WiringHost {
 
   copyTranscript(): Promise<void> {
     return interactions.copyTranscript(this);
-  }
-
-  exportScrollback(body: string): void {
-    interactions.exportScrollback(this, body);
-  }
-
-  exportEditor(body: string): Promise<void> {
-    return interactions.exportEditor(this, body);
   }
 
   bumpFeedGeneration(): void {

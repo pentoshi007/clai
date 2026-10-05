@@ -35,7 +35,7 @@ import {
   textEditorPaste,
 } from "./text-editor-panel.js";
 import { OVERLAY_MIN_ROWS } from "../chrome/row-budget.js";
-import { panelBodyHeight } from "./panel-frame.js";
+import { PagerSourceController } from "./pager-source-controller.js";
 
 export type { PanelControllerDeps, PanelKind, PanelSnapshot } from "./panel-types.js";
 
@@ -44,9 +44,7 @@ export class PanelController {
   private readonly listeners = new Set<() => void>();
   private tracked: OverlayState;
   private unsubscribe: (() => void) | undefined;
-  private unwatchPager: (() => void) | undefined;
-  private pullPager: (() => void) | undefined;
-  private pagerOffset = 0;
+  private readonly pagerSource: PagerSourceController;
 
   constructor(private readonly deps: PanelControllerDeps) {
     this.tracked = deps.overlay.getState();
@@ -58,6 +56,15 @@ export class PanelController {
       textEditor: textEditorInitialState(),
       search: undefined,
     };
+    this.pagerSource = new PagerSourceController({
+      overlay: deps.overlay,
+      clipboard: deps.clipboard,
+      rows: deps.rows,
+      onToast: deps.onToast,
+      snapshot: () => this.snapshot,
+      publish: (snapshot) => this.publish(snapshot),
+      pagerView: (body, overlay) => this.pagerView(body, overlay),
+    });
     this.unsubscribe = deps.overlay.subscribe(() => this.onOverlayChange());
     this.syncOverlay(this.tracked);
   }
@@ -72,9 +79,7 @@ export class PanelController {
   };
 
   dispose(): void {
-    this.unwatchPager?.();
-    this.unwatchPager = undefined;
-    this.pullPager = undefined;
+    this.pagerSource.dispose();
     this.unsubscribe?.();
     this.unsubscribe = undefined;
     this.listeners.clear();
@@ -170,6 +175,7 @@ export class PanelController {
       }
       case "pager": {
         const view = this.pagerView(snapshot.pagerBody, snapshot.overlay);
+        if (this.pagerSource.handleKey(chord, snapshot.overlay, view)) return true;
         const result = pagerKey({
           state: snapshot.pager,
           chord,
@@ -182,7 +188,14 @@ export class PanelController {
         });
         if (!result.handled) return false;
         this.publish({ ...snapshot, pager: result.state });
-        if (result.state.follow && !snapshot.pager.follow) this.pullPager?.();
+        this.pagerSource.searchOnKey(
+          snapshot.overlay,
+          snapshot.pager,
+          chord,
+          result.state,
+          view.searchLines,
+        );
+        if (result.state.follow && !snapshot.pager.follow) this.pagerSource.follow();
         this.apply(result.effects);
         return true;
       }
@@ -310,9 +323,7 @@ export class PanelController {
   }
 
   private syncOverlay(state: OverlayState): void {
-    this.unwatchPager?.();
-    this.unwatchPager = undefined;
-    this.pullPager = undefined;
+    this.pagerSource.deactivate();
     const base: PanelSnapshot = {
       ...this.snapshot,
       overlay: state,
@@ -335,7 +346,6 @@ export class PanelController {
       }
       case "pager": {
         const pagerMarkdown = resolvePagerMarkdownMode(state.body, state.markdown);
-        this.pagerOffset = 0;
         this.publish({
           ...base,
           pager: {
@@ -347,9 +357,7 @@ export class PanelController {
           pagerMarkdown,
           pagerLive: state.source?.watch !== undefined,
         });
-        if (state.source?.watch) {
-          this.watchPager(state);
-        } else if (state.source) void this.loadPagerPage(state, 0);
+        this.pagerSource.activate(state);
         return;
       }
       case "jobs":
@@ -381,73 +389,6 @@ export class PanelController {
     }
   }
 
-  private async loadPagerPage(state: OverlayState, offset: number): Promise<void> {
-    if (state.kind !== "pager" || !state.source) return;
-    try {
-      const page = await state.source.readPage(offset);
-      if (this.deps.overlay.getState() !== state) return;
-      this.pagerOffset = page.offset;
-      this.publish({ ...this.snapshot, pagerBody: page.body });
-    } catch {
-      this.deps.onToast("could not read artifact page");
-    }
-  }
-
-  private watchPager(state: Extract<OverlayState, { kind: "pager" }>): void {
-    const source = state.source!;
-    this.pagerOffset = 0;
-    let active = true;
-    let reading = false;
-    let pending = false;
-    const pull = (): void => {
-      if (!active) return;
-      if (reading) {
-        pending = true;
-        return;
-      }
-      reading = true;
-      const follow = this.snapshot.pager.follow;
-      const growing = source.isGrowing?.() ?? true;
-      const pageRead = follow && source.readTail
-        ? source.readTail()
-        : source.readPage(this.pagerOffset);
-      void pageRead.then((page) => {
-        if (!active || this.deps.overlay.getState() !== state) return;
-        if (follow !== this.snapshot.pager.follow) {
-          pending = true;
-          return;
-        }
-        const lines = this.pagerView(page.body, state).lines;
-        const maxCaret = Math.max(0, lines.length - 1);
-        const maxTop = Math.max(0, lines.length - panelBodyHeight(this.deps.rows()));
-        this.pagerOffset = page.offset;
-        this.publish({
-          ...this.snapshot,
-          pagerBody: page.body,
-          pager: {
-            ...this.snapshot.pager,
-            caret: follow ? maxCaret : Math.min(this.snapshot.pager.caret, maxCaret),
-            top: follow ? maxTop : Math.min(this.snapshot.pager.top, maxTop),
-            follow: follow && growing,
-          },
-        });
-      }).catch(() => undefined).finally(() => {
-        reading = false;
-        if (pending) {
-          pending = false;
-          pull();
-        }
-      });
-    };
-    const unwatch = source.watch!(pull);
-    this.pullPager = pull;
-    this.unwatchPager = () => {
-      active = false;
-      unwatch();
-    };
-    pull();
-  }
-
   private pagerView(body: string, overlay: OverlayState): PagerViewModel {
     const format = this.snapshot.pager.format;
     const diff = pagerDiffOptions(overlay);
@@ -460,7 +401,7 @@ export class PanelController {
       snapshot: this.snapshot,
       closeSearch: () => this.closeSearch(),
       openJobTail: (jobId) => openPanelJobTail(this.deps, jobId),
-      loadPagerPage: (offset) => void this.loadPagerPage(this.snapshot.overlay, offset),
+      loadPagerPage: (offset) => this.pagerSource.load(this.snapshot.overlay, offset),
     });
   }
 

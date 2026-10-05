@@ -30,7 +30,6 @@ import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { installTerminalRescue } from "../../os/terminal-rescue.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
-import { createPagerExportPort } from "./pager-export.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
@@ -160,7 +159,6 @@ export async function startTuiV2(
       fallback: fallbackClipboard,
       enabled: capabilities.osc52,
     }),
-    pagerExport: createPagerExportPort(renderer),
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   attachCommandHandlers(services);

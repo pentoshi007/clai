@@ -1,6 +1,6 @@
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
 import { getConfig } from "../config.js";
-import { appendIndexedHistoryRecord, appendIndexedRanges, readIndexedHistoryRecord, readValidatedHistoryIndex, rewriteIndexedJsonl, writeIndexedJsonl } from "../history-index.js";
+import { appendIndexedHistoryRecord, appendIndexedRanges, readIndexedHistoryRecord, readValidatedHistoryIndex, rebuildHistoryIndex, rewriteIndexedJsonl, writeIndexedJsonl } from "../history-index.js";
 import type { HistoryIndexEntry, HistorySummary } from "../history-index.js";
 import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
 import { backupActiveHistory, compareHistoryFreshness, dedupeHistoryById, ensureHistoryRecovered, HistoryRecord, hydrateHistoryRecord, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, readJsonlRecordsFrom, sortHistoryByUpdatedDesc } from "./recovery.js";
@@ -177,22 +177,10 @@ async function upsertJsonlUnderLock(
   await mkdir(historyDirPath(), { recursive: true });
   await fixOwner(historyDirPath());
 
-  const entries = await readValidatedHistoryIndex(
+  const entries = (await readValidatedHistoryIndex(
     jsonlFilePath(),
     jsonlIndexFilePath(),
-  );
-  if (!entries) {
-    const current = await readJsonlRecordsFrom(jsonlFilePath());
-    const index = current.findIndex((item) => item.id === record.id);
-    const existing = index >= 0 ? current[index] : undefined;
-    if (existing && compareHistoryFreshness(record, existing) <= 0) {
-      return existing;
-    }
-    if (index >= 0) current[index] = record;
-    else current.push(record);
-    await writeJsonlAtomic(current, current.length);
-    return record;
-  }
+  )) ?? await rebuildHistoryIndex<HistoryRecord>(jsonlFilePath(), jsonlIndexFilePath());
 
   const existingEntry = entries.find((entry) => entry.id === record.id);
   if (

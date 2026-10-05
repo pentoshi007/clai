@@ -78,6 +78,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("rtk", (i) => handleRtk(services, i));
   c.setHandler("model", (i) => handleModel(services, i));
   c.setHandler("provider", (i) => handleProvider(services, i));
+  c.setHandler("providers", (i) => handleProvider(services, i));
   c.setHandler("search", (i) => handleSearch(services, i));
   c.setHandler("effort", (i) => handleReasoning(services, i));
   c.setHandler("history", (i) => handleHistory(services, i));

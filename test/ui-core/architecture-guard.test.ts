@@ -18,7 +18,6 @@ function walk(dir: string): string[] {
 
 const uiCoreDir = join(root, "src/ui-core");
 const CONTROL_SEQUENCE_ALLOWED = new Set([
-  join(uiCoreDir, "ports", "pager-export-port.ts"),
   join(uiCoreDir, "rendering", "markdown.ts"),
 ]);
 

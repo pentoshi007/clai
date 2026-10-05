@@ -7,8 +7,8 @@ import { assembleRequest } from "../../src/agent/turn/loop/request-assembly.js";
 describe("default and custom compaction targets", () => {
   it.each([
     { contextLimitTokens: undefined, trigger: 280_000 },
-    { contextLimitTokens: 253_000, trigger: 177_100 },
-    { contextLimitTokens: 1_000_000, trigger: 700_000 },
+    { contextLimitTokens: 253_000, trigger: 202_400 },
+    { contextLimitTokens: 1_000_000, trigger: 800_000 },
   ].flatMap((window) => [-1, 0, 1].map((offset) => ({
     ...window,
     tokens: window.trigger + offset,
@@ -46,8 +46,8 @@ describe("default and custom compaction targets", () => {
         contextLimitTokens: 400_000,
       }),
     ).toMatchObject({
-      configured: 280_000,
-      effectiveTrigger: 280_000,
+      configured: 320_000,
+      effectiveTrigger: 320_000,
       windowSource: "session-override",
     });
   });
@@ -62,9 +62,9 @@ describe("default and custom compaction targets", () => {
       .toMatchObject({ windowTokens: 200_000, windowSource: "default", effectiveTrigger: 140_000 });
   });
 
-  it("clamps small windows below 70% so output and compaction headroom still fit", () => {
+  it("clamps small windows below 80% so output and compaction headroom still fit", () => {
     expect(resolveRequestBudget({ contextLimitTokens: 32_768 }))
-      .toMatchObject({ configured: 22_937, effectiveTrigger: 16_896, clampedByModel: true });
+      .toMatchObject({ configured: 26_214, effectiveTrigger: 16_896, clampedByModel: true });
   });
 
   it.each([NaN, Infinity, -Infinity])("ignores invalid custom limits: %s", (contextLimitTokens) => {

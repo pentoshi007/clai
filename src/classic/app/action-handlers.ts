@@ -129,8 +129,6 @@ export class ClassicActionHandlers {
       case "pager.search":
       case "pager.next-match":
       case "pager.prev-match":
-      case "pager.export-scrollback":
-      case "pager.export-editor":
       case "pager.copy":
       case "pager.toggle-follow":
       case "pager.format":
