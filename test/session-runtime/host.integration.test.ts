@@ -590,6 +590,33 @@ describe("session runtime host hardening", () => {
     }
   }, 12_000);
 
+  it("accepts every input batch from both terminals without an ownership handshake", async () => {
+    const runtime = await startCommandRuntime();
+    if (!runtime) return;
+    const first = await openTestClient(runtime.metadata, "input-first");
+    let second: TestClient | undefined;
+    try {
+      await waitFor(async () => first.output().includes("command-runtime-ready") ? true : undefined);
+      second = await openTestClient(runtime.metadata, "input-second");
+      sendFrame(first.control, { type: "input", data: "invalid!" });
+      for (let index = 0; index < 32; index += 1) {
+        sendFrame(first.control, { type: "input", data: Buffer.from("a").toString("base64") });
+        sendFrame(second.control, { type: "input", data: Buffer.from("b").toString("base64") });
+      }
+      await waitFor(async () => [first, second!].every((client) =>
+        (client.output().match(/input:a/g)?.length ?? 0) === 32 &&
+        (client.output().match(/input:b/g)?.length ?? 0) === 32) ? true : undefined);
+      expect(first.frames.some((frame) => frame.type === "detached")).toBe(false);
+      expect(second.frames.some((frame) => frame.type === "detached")).toBe(false);
+      sendFrame(first.control, { type: "input", data: Buffer.from("q").toString("base64") });
+      await waitForRuntimeExit(runtime);
+    } finally {
+      first.dispose();
+      second?.dispose();
+      if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
+    }
+  }, 12_000);
+
   it("fits both viewers and restores the remaining terminal after the owner disconnects", async () => {
     const runtime = await startCommandRuntime();
     if (!runtime) return;

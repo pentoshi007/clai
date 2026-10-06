@@ -70,6 +70,7 @@ export interface RuntimeAckFrame {
   readonly version: typeof RUNTIME_PROTOCOL_VERSION;
   readonly type: "ack";
   readonly sessionId: string;
+  readonly sharedInput?: boolean | undefined;
 }
 
 export interface RuntimeErrorFrame {
@@ -79,6 +80,7 @@ export interface RuntimeErrorFrame {
 }
 
 export type RuntimeClientFrame =
+  | { readonly type: "input"; readonly data: string }
   | {
       readonly type: "resize";
       readonly columns: number;

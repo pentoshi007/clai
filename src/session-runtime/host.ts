@@ -67,6 +67,7 @@ interface ActiveClient {
   terminal?: Socket | undefined;
   output?: TerminalAttachOutput | undefined;
   dimensions?: TerminalDimensions | undefined;
+  inputBytes?: number | undefined;
 }
 
 function errorText(error: unknown): string {
@@ -136,6 +137,16 @@ function clientFrame(value: unknown): RuntimeClientFrame | undefined {
   if (!value || typeof value !== "object") return undefined;
   const frame = value as Partial<RuntimeClientFrame>;
   if (frame.type === "ping" || frame.type === "detach" || frame.type === "claim-input") {
+    return frame as RuntimeClientFrame;
+  }
+  if (
+    frame.type === "input" &&
+    typeof frame.data === "string" &&
+    frame.data.length > 0 &&
+    frame.data.length <= 44 * 1024 &&
+    frame.data.length % 4 === 0 &&
+    /^[A-Za-z0-9+/]+={0,2}$/.test(frame.data)
+  ) {
     return frame as RuntimeClientFrame;
   }
   if (
@@ -424,6 +435,7 @@ export class SessionRuntimeHost {
       version: RUNTIME_PROTOCOL_VERSION,
       type: "ack",
       sessionId: this.sessionId,
+      sharedInput: true,
     });
   }
 
@@ -579,6 +591,14 @@ export class SessionRuntimeHost {
     }
     if (frame.type === "claim-input") {
       if (client.terminal && !client.terminal.destroyed) this.setInputOwner(client);
+      return;
+    }
+    if (frame.type === "input") {
+      if (!client.terminal || client.terminal.destroyed) return;
+      const bytes = Buffer.from(frame.data, "base64");
+      if (bytes.toString("base64") !== frame.data) return;
+      this.setInputOwner(client);
+      this.queueInput(bytes, client);
       return;
     }
     const dimensions = dimensionsOf(frame);
@@ -772,11 +792,26 @@ export class SessionRuntimeHost {
     }));
   }
 
-  private queueInput(bytes: Uint8Array): void {
+  private queueInput(bytes: Uint8Array, source?: ActiveClient): void {
     const copy = Buffer.from(bytes);
+    if (source) {
+      source.inputBytes = (source.inputBytes ?? 0) + copy.length;
+      if (source.inputBytes >= 64 * 1024) source.control.pause();
+    }
     this.inputWrites = this.inputWrites
       .then(() => this.transport?.write(copy))
-      .catch(() => undefined);
+      .then((result) => {
+        if (source && result?.status !== "delivered" && !this.closing) this.disconnectClient("connection-lost", source);
+      })
+      .catch(() => {
+        if (source && !this.closing) this.disconnectClient("connection-lost", source);
+      })
+      .finally(() => {
+        if (source) {
+          source.inputBytes = Math.max(0, (source.inputBytes ?? 0) - copy.length);
+          if (source.inputBytes < 32 * 1024 && !source.control.destroyed) source.control.resume();
+        }
+      });
   }
 
   private resize(dimensions: TerminalDimensions): Promise<boolean> {
@@ -805,6 +840,7 @@ export class SessionRuntimeHost {
   }
 
   private setInputOwner(client: ActiveClient | undefined): void {
+    if (this.client === client) return;
     this.client = client;
     for (const candidate of this.clients.values()) {
       candidate.channel?.send({ type: "input-owner", active: candidate === client });

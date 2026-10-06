@@ -21,8 +21,19 @@ import type { OutputSpool } from "../../app/events/event-buffer.js";
 import type { AppServices } from "./composition-root.js";
 
 export type ResumeTarget =
-  | { readonly kind: "latest" }
+  | { readonly kind: "latest"; readonly scope?: "global" | undefined }
   | { readonly kind: "id"; readonly id: string };
+
+export function resolveResumeOption(options: {
+  resume?: string | boolean | undefined;
+  continue?: boolean | undefined;
+}): ResumeTarget | undefined {
+  if (typeof options.resume === "string" && options.resume.trim()) {
+    return { kind: "id", id: options.resume.trim() };
+  }
+  if (options.resume) return { kind: "latest", scope: "global" };
+  return options.continue ? { kind: "latest" } : undefined;
+}
 
 export interface ResumeResolution {
   readonly record: HistoryRecord | undefined;
@@ -58,15 +69,15 @@ function sameDirectory(left: string, right: string): boolean {
   return left.replace(/[\\/]+$/, "") === right.replace(/[\\/]+$/, "");
 }
 
-async function resolveLatest(): Promise<ResumeResolution> {
-  const summaries = await listSessionSummaries(CANDIDATE_LIMIT, {
+async function resolveLatest(scope: "global" | undefined): Promise<ResumeResolution> {
+  const summaries = await listSessionSummaries(scope === "global" ? 1 : CANDIDATE_LIMIT, {
     recovery: "blocking",
   });
   if (summaries.length === 0) {
     return { record: undefined, error: "no saved sessions yet" };
   }
   const cwd = safeCwd();
-  const here = summaries.find((summary) => sameDirectory(summary.cwd, cwd));
+  const here = scope === "global" ? undefined : summaries.find((summary) => sameDirectory(summary.cwd, cwd));
   const chosen = here ?? summaries[0];
   if (!chosen) {
     return { record: undefined, error: "no saved sessions yet" };
@@ -119,7 +130,7 @@ export async function resolveResumeTarget(
 ): Promise<ResumeResolution> {
   try {
     return target.kind === "latest"
-      ? await resolveLatest()
+      ? await resolveLatest(target.scope)
       : await resolveById(target.id);
   } catch (error) {
     return {

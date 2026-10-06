@@ -50,7 +50,7 @@ import {
   UI_FLAG_CHOICES,
   resolveUiChoice,
 } from "./ui-core/bootstrap/ui-selection.js";
-import type { ResumeTarget } from "./ui-core/bootstrap/session-resume.js";
+import { resolveResumeOption, type ResumeTarget } from "./ui-core/bootstrap/session-resume.js";
 import { resumeCommand } from "./ui-core/rendering/exit-summary.js";
 import { warnOnce } from "./ui/warn-once.js";
 import { tryRunDurableInteractive } from "./session-runtime/client.js";
@@ -70,16 +70,8 @@ interface GlobalOptions {
   tui?: boolean | undefined;
   classic?: boolean | undefined;
   ui?: string | undefined;
-  resume?: string | undefined;
+  resume?: string | boolean | undefined;
   continue?: boolean | undefined;
-}
-
-function resolveResumeOption(
-  options: GlobalOptions,
-): ResumeTarget | undefined {
-  const id = options.resume?.trim();
-  if (id) return { kind: "id", id };
-  return options.continue ? { kind: "latest" } : undefined;
 }
 
 function modeOption(): Option {
@@ -266,8 +258,8 @@ async function main(): Promise<void> {
     .option("--tui", "launch OpenTUI; ignored when a prompt is supplied")
     .option("--classic", "launch classic UI; ignored when a prompt is supplied")
     .option(
-      "--resume <sessionId>",
-      "resume a saved session by id (accepts a unique id prefix); ignored when a prompt is supplied",
+      "--resume [sessionId]",
+      "resume the latest session, or a session by id (accepts a unique id prefix); ignored when a prompt is supplied",
     )
     .option(
       "-c, --continue",
