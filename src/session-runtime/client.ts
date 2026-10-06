@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
 import type { Socket } from "node:net";
 import type { ResumeTarget } from "../ui-core/bootstrap/session-resume.js";
 import { resolveResumeTarget } from "../ui-core/bootstrap/session-resume.js";
@@ -8,13 +9,15 @@ import { probePtyCapability } from "../interactive-session/transport-node-pty.js
 import { safeCwd } from "../os/cwd.js";
 import { findBunExecutable, isBunRuntime } from "../os/bun-runtime.js";
 import { getConfig } from "../store/config.js";
+import { listSessionSummaries } from "../store/history.js";
 import {
   findLiveRuntime,
   latestLiveRuntime,
   probeRuntime,
 } from "./discovery.js";
 import { enforceIdleRuntimeCap } from "./reaper.js";
-import { pendingRuntimeInputCommand, runtimeInputCommand } from "./input-commands.js";
+import { runtimeInputCommand } from "./input-commands.js";
+import { RuntimeInputStream } from "./input-stream.js";
 import {
   RUNTIME_CHILD_ENV,
   RUNTIME_DISABLE_ENV,
@@ -55,8 +58,9 @@ export function terminalRestoreSequence(altScreenActive: boolean): string {
 
 interface RuntimeTarget {
   readonly sessionId: string;
+  readonly cwd?: string | undefined;
   readonly resumeId?: string | undefined;
-  readonly resumeLatest?: boolean | undefined;
+  readonly resumeLatest?: "directory" | "global" | undefined;
 }
 
 type AttachOutcome =
@@ -200,13 +204,16 @@ async function startRuntimeHost(
   const childArgs = [
     ...options.childArgs,
     ...(target.resumeId ? ["--resume", target.resumeId] : []),
-    ...(target.resumeLatest ? ["--continue"] : []),
+    ...(target.resumeLatest ? [target.resumeLatest === "global" ? "--resume" : "--continue"] : []),
   ];
   const childLaunch = selfLaunchSpec(options.entryPath, childArgs);
+  const cwd = target.cwd && (await stat(target.cwd).catch(() => undefined))?.isDirectory()
+    ? target.cwd
+    : safeCwd();
   const payload: RuntimeHostPayload = {
     version: RUNTIME_PROTOCOL_VERSION,
     sessionId: target.sessionId,
-    cwd: safeCwd(),
+    cwd,
     launch: childLaunch,
     columns: terminalColumns(),
     rows: terminalRows(),
@@ -276,13 +283,25 @@ async function initialTarget(
 ): Promise<RuntimeTarget> {
   if (!resume) return { sessionId: mintSessionId() };
   if (resume.kind === "latest") {
+    if (resume.scope === "global") {
+      const [live, summaries] = await Promise.all([
+        latestLiveRuntime(),
+        listSessionSummaries(1, { recovery: "blocking" }),
+      ]);
+      const saved = summaries[0];
+      if (live && (!saved || live.sessionId === saved.id || live.updatedAt >= saved.updatedAt)) {
+        return { sessionId: live.sessionId };
+      }
+      if (saved) return { sessionId: saved.id, resumeId: saved.id, cwd: saved.cwd };
+      return { sessionId: mintSessionId(), resumeLatest: "global" };
+    }
     const live = await latestLiveRuntime(safeCwd());
     if (live) return { sessionId: live.sessionId };
     const resolved = await resolveResumeTarget(resume);
     if (resolved.record) {
       return { sessionId: resolved.record.id, resumeId: resolved.record.id };
     }
-    return { sessionId: mintSessionId(), resumeLatest: true };
+    return { sessionId: mintSessionId(), resumeLatest: "directory" };
   }
   const live = await findLiveRuntime(resume.id);
   if (live) return { sessionId: live.sessionId };
@@ -401,11 +420,11 @@ async function attachRuntime(
   }
   const control = controlConnection.socket;
   const terminal = terminalConnection.socket;
+  const sharedInput = (terminalConnection.first.value as RuntimeAckFrame).sharedInput === true;
   let settled = false;
   let exitPending = false;
   let ownsInput = true;
   let claimingInput = false;
-  let observerInput = "";
   let pendingInput: Buffer[] = [];
   let pendingInputBytes = 0;
   let channel: JsonFrameChannel | undefined;
@@ -425,14 +444,13 @@ async function attachRuntime(
     if (!frame || frame.type === "pong") return;
     if (frame.type === "input-owner") {
       ownsInput = frame.active;
-      observerInput = "";
       if (ownsInput && claimingInput) {
         claimingInput = false;
         const input = pendingInput;
         pendingInput = [];
         pendingInputBytes = 0;
         for (const bytes of input) terminal.write(bytes);
-        if (terminal.writableNeedDrain) process.stdin.pause();
+        if (terminal.writableNeedDrain || control.writableNeedDrain) process.stdin.pause();
         else process.stdin.resume();
       }
       return;
@@ -471,34 +489,44 @@ async function attachRuntime(
   };
 
   const stdin = process.stdin;
-  const onInput = (bytes: Buffer): void => {
+  const inputStream = new RuntimeInputStream((bytes, reply) => {
     if (settled || exitPending) return;
-    const text = bytes.toString("latin1");
-    const command = runtimeInputCommand(text) ?? (!ownsInput ? runtimeInputCommand(observerInput + text) : undefined);
+    if (reply) {
+      if (ownsInput && !terminal.write(bytes)) stdin.pause();
+      return;
+    }
+    const command = runtimeInputCommand(bytes.toString("latin1"));
     if (command === "claim-input") {
-      observerInput = "";
       claimingInput = !ownsInput;
       channel?.send({ type: "claim-input" });
       return;
     }
-    if (!ownsInput) {
-      if (command === "detach") {
-        channel?.send({ type: "detach" });
-        settle({ kind: "detach", reason: "requested", sessionId: metadata.sessionId });
-      } else if (claimingInput) {
-        pendingInput.push(Buffer.from(bytes));
-        pendingInputBytes += bytes.length;
-        if (pendingInputBytes >= 64 * 1024) stdin.pause();
-      } else {
-        const combined = observerInput + text;
-        observerInput = pendingRuntimeInputCommand(combined) ? combined : "";
+    if (sharedInput) {
+      for (let offset = 0; offset < bytes.length; offset += 32 * 1024) {
+        if (!channel?.send({ type: "input", data: bytes.subarray(offset, offset + 32 * 1024).toString("base64") })) {
+          onTerminalError();
+          return;
+        }
       }
+      if (control.writableNeedDrain) stdin.pause();
+      return;
+    }
+    if (!ownsInput || claimingInput) {
+      pendingInput.push(Buffer.from(bytes));
+      pendingInputBytes += bytes.length;
+      if (!claimingInput) {
+        claimingInput = true;
+        if (!channel?.send({ type: "claim-input" })) onTerminalError();
+      }
+      if (pendingInputBytes >= 64 * 1024) stdin.pause();
       return;
     }
     if (!terminal.write(bytes)) stdin.pause();
-  };
+  });
+  const onInput = (bytes: Buffer): void => inputStream.push(bytes);
   const onTerminalDrain = (): void => {
-    if (!settled && !exitPending && (!claimingInput || pendingInputBytes < 64 * 1024)) stdin.resume();
+    if (!settled && !exitPending && !terminal.writableNeedDrain && !control.writableNeedDrain &&
+      (!claimingInput || pendingInputBytes < 64 * 1024)) stdin.resume();
   };
   const onTerminalError = (): void => {
     if (exitPending) return;
@@ -510,6 +538,7 @@ async function attachRuntime(
   };
   const onOutput = (bytes: Buffer): void => {
     if (settled) return;
+    inputStream.observeOutput(bytes);
     if (!writeOutput(altScreen, bytes)) terminal.pause();
   };
   const onStdoutDrain = (): void => {
@@ -539,6 +568,7 @@ async function attachRuntime(
       controlConnection.first.rest,
     );
     control.once("close", onControlClose);
+    control.on("drain", onTerminalDrain);
     stdin.on("data", onInput);
     stdin.once("end", onInputEnd);
     terminal.on("drain", onTerminalDrain);
@@ -549,6 +579,7 @@ async function attachRuntime(
     signal.addEventListener("abort", onTerminate, { once: true });
     if (signal.aborted) onTerminate();
     if (!settled) {
+      inputStream.observeOutput(terminalConnection.first.rest);
       const writable = terminalConnection.first.rest.length === 0 ||
         writeOutput(altScreen, terminalConnection.first.rest);
       if (writable) terminal.resume();
@@ -558,8 +589,10 @@ async function attachRuntime(
   } finally {
     settled = true;
     channel?.dispose();
+    inputStream.dispose();
     if (controlCloseTimer) clearTimeout(controlCloseTimer);
     control.off("close", onControlClose);
+    control.off("drain", onTerminalDrain);
     stdin.off("data", onInput);
     stdin.off("end", onInputEnd);
     terminal.off("drain", onTerminalDrain);

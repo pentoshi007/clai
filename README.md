@@ -381,8 +381,8 @@ The interactive console provides streaming chat, nested tool cards, file diffs, 
 Interactive sessions run behind a local broker so an agent continues working across terminal disconnects:
 
 - **`/minimise`** (also `/minimize` and `/minmize`) detaches immediately and returns you to your shell without interrupting the turn. It displays the session ID and resume command.
-- **SSH disconnects:** If an SSH session drops, reconnect and run `clai --resume <id>` (or `clai -c` to continue the latest session in the current directory).
-- **Multiple terminals:** Resume the same live session in several terminals to share its live screen. The newest attachment controls input; press **Ctrl+]** in another terminal to take control. Press **Ctrl+C** in a viewing terminal to detach. The shared screen fits the smallest attached terminal. Closing a viewer keeps the agent and other viewers running.
+- **SSH disconnects:** If an SSH session drops, reconnect and run `clai --resume` for the latest session, `clai --resume <id>` for a specific session, or `clai -c` to continue the latest session in the current directory. Bare `--resume` restores a saved session's original working directory when it is available.
+- **Multiple terminals:** Resume the same live session in several terminals to share its live screen and type immediately from any attachment. Prompts, shortcuts, and mouse input reach one running agent; terminal replies are forwarded from one attachment. The shared screen fits the smallest attached terminal. `/minimise` or closing a terminal keeps the agent and other terminals running.
 - **`/history`** lists all active, attached, and detached sessions.
 
 ---
@@ -428,7 +428,7 @@ clai [prompt...]                       # interactive UI, or one-shot with a prom
   -y/--yes  --no-history
   --show-thinking  --verbose  --quiet    # one-shot stream controls
   --tui  --classic
-  --resume <sessionId>  -c/--continue    # reattach live or reopen saved session
+  --resume [sessionId]  -c/--continue    # latest session, specific session, or latest here
 
 clai auth <provider>                   # OAuth sign-in: cline, chatgpt, copilot, kiro
                                        #   --import · --browser · --headless

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   findLiveRuntime: vi.fn(),
   probeRuntime: vi.fn(),
   probePtyCapability: vi.fn(),
+  latestLiveRuntime: vi.fn(),
+  listSessionSummaries: vi.fn(),
 }));
 
 vi.mock("../../src/session-runtime/protocol.js", async (importOriginal) => ({
@@ -27,6 +29,12 @@ vi.mock("../../src/session-runtime/discovery.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/session-runtime/discovery.js")>()),
   findLiveRuntime: mocks.findLiveRuntime,
   probeRuntime: mocks.probeRuntime,
+  latestLiveRuntime: mocks.latestLiveRuntime,
+}));
+
+vi.mock("../../src/store/history.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/store/history.js")>()),
+  listSessionSummaries: mocks.listSessionSummaries,
 }));
 
 vi.mock("../../src/interactive-session/transport-node-pty.js", async (importOriginal) => ({
@@ -335,6 +343,97 @@ describe("durable client terminal handoff", () => {
     expect(terminal.writes.filter(Buffer.isBuffer)).toHaveLength(0);
     control.frame({ type: "input-owner", active: true });
     expect(terminal.writes.filter(Buffer.isBuffer).map(String)).toEqual(["follow-up\r"]);
+    detach();
+    expect(await running).toBe(true);
+  });
+
+  it("automatically claims an older host when an attachment starts typing", async () => {
+    const running = run();
+    await attached();
+    control.frame({ type: "input-owner", active: false });
+    input.write("follow-up\r");
+    expect(control.writes.map(String)).toContain('{"type":"claim-input"}\n');
+    expect(terminal.writes.filter(Buffer.isBuffer)).toHaveLength(0);
+    control.frame({ type: "input-owner", active: true });
+    expect(terminal.writes.filter(Buffer.isBuffer).map(String)).toEqual(["follow-up\r"]);
+    detach();
+    expect(await running).toBe(true);
+  });
+
+  function enableSharedInput(): void {
+    mocks.readFirstFrame.mockImplementation(async (socket: Socket) => ({
+      value: { version: 1, type: "ack", sessionId: "first", sharedInput: true },
+      rest: socket.rest,
+    }));
+  }
+
+  function submittedInput(): Buffer {
+    return Buffer.concat(control.writes.map(String).map((text) => JSON.parse(text) as { type: string; data?: string })
+      .filter((frame) => frame.type === "input").map((frame) => Buffer.from(frame.data!, "base64")));
+  }
+
+  it("submits from any attachment while ownership changes, including Ctrl+C", async () => {
+    enableSharedInput();
+    const running = run();
+    await attached();
+    control.frame({ type: "input-owner", active: false });
+    input.write("first");
+    control.frame({ type: "input-owner", active: true });
+    input.write(" second");
+    control.frame({ type: "input-owner", active: false });
+    input.write("\r\x03");
+    expect(submittedInput().toString()).toBe("first second\r\x03");
+    expect(terminal.writes.filter(Buffer.isBuffer)).toHaveLength(0);
+    expect(control.writes.map(String).some((text) => text.includes('"claim-input"') || text.includes('"detach"'))).toBe(false);
+    detach();
+    expect(await running).toBe(true);
+  });
+
+  it("bounds input frames and waits for control drain when submitting a large paste", async () => {
+    enableSharedInput();
+    const running = run();
+    await attached();
+    control.frame({ type: "input-owner", active: false });
+    control.backpressured = true;
+    const paste = `\x1b[200~${"界\x1b[12;40R".repeat(10_000)}\x1b[201~`;
+    input.write(paste);
+    expect(submittedInput().toString()).toBe(paste);
+    expect(control.writes.every((text) => Buffer.byteLength(text) <= 64 * 1024)).toBe(true);
+    expect(input.isPaused()).toBe(true);
+    terminal.emit("drain");
+    expect(input.isPaused()).toBe(true);
+    control.backpressured = false;
+    control.emit("drain");
+    expect(input.isPaused()).toBe(false);
+    detach();
+    expect(await running).toBe(true);
+  });
+
+  it("ignores a viewer's terminal replies and forwards replies only from the active terminal", async () => {
+    enableSharedInput();
+    const running = run();
+    await attached();
+    control.frame({ type: "input-owner", active: false });
+    input.write("\x1b[?1;");
+    input.write("2c\x1b[12;40R");
+    expect(submittedInput()).toHaveLength(0);
+    expect(terminal.writes.filter(Buffer.isBuffer)).toHaveLength(0);
+    control.frame({ type: "input-owner", active: true });
+    input.write("\x1b[?1;2c");
+    expect(terminal.writes.filter(Buffer.isBuffer).map(String)).toEqual(["\x1b[?1;2c"]);
+    detach();
+    expect(await running).toBe(true);
+  });
+
+  it.each(["live", "saved"])("selects the newest %s session globally for bare resume", async (newest) => {
+    const live = { ...metadata("live"), cwd: "/another-project", updatedAt: newest === "live" ? "2026-02-02T00:00:00.000Z" : "2026-01-01T00:00:00.000Z" };
+    mocks.latestLiveRuntime.mockResolvedValue(live);
+    mocks.listSessionSummaries.mockResolvedValue([{ id: "saved", updatedAt: "2026-02-01T00:00:00.000Z" }]);
+    const running = tryRunDurableInteractive({ entryPath: "/tmp/clai-entry.js", childArgs: [], resume: { kind: "latest", scope: "global" } });
+    await attached();
+    expect(mocks.latestLiveRuntime).toHaveBeenCalledWith();
+    expect(mocks.listSessionSummaries).toHaveBeenCalledWith(1, { recovery: "blocking" });
+    expect(mocks.findLiveRuntime).toHaveBeenCalledWith(newest);
     detach();
     expect(await running).toBe(true);
   });

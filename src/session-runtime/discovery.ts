@@ -110,11 +110,11 @@ export async function findLiveRuntime(
 }
 
 export async function latestLiveRuntime(
-  cwd: string,
+  cwd?: string,
 ): Promise<RuntimeMetadata | undefined> {
-  const normalized = cwd.replace(/[\\/]+$/, "");
+  const normalized = cwd?.replace(/[\\/]+$/, "");
   return (await listLiveRuntimeMetadata()).find(
-    (record) => record.cwd.replace(/[\\/]+$/, "") === normalized,
+    (record) => normalized === undefined || record.cwd.replace(/[\\/]+$/, "") === normalized,
   );
 }
 
