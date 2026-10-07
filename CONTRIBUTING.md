@@ -36,7 +36,8 @@ The tests use fixtures, isolated storage, and a mocked browser launcher; provide
 | `npm run test:deterministic` | Run Vitest with the canonical locale and timezone. |
 | `npm run test:host -- test/environment` | Check environment behavior under the host's locale and timezone. |
 | `npm run test:classic:pty` | Run the provider-independent POSIX terminal smoke test; requires Python 3. |
-| `npm run test:bun` | Run native OpenTUI smoke and parity checks through Bun. |
+| `npm run test:bun` | Run native OpenTUI, buffered PTY input, and parity checks through Bun. |
+| `npm run test:bun:session` | Verify complete UTF-8 input delivery through Bun's real PTY buffer. |
 | `npm run embed-prompts:check` | Check that embedded prompts match their source Markdown. |
 | `npm run release:verify` | Validate dependency pins, lockfile, and release metadata. |
 | `npm run compile` | Build native release binaries through Bun. |

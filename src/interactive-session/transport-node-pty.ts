@@ -364,14 +364,12 @@ class BunPtyTransport extends BasePtyTransport {
   }
 
   async write(bytes: Uint8Array): Promise<DeliveryResult> {
-    if (this.inputClosed || this.outcome || this.terminal.closed) {
+    if (this.inputClosed || this.outcome || this.disposed || this.terminal.closed) {
       return { status: "not-delivered", deliveredBytes: 0 };
     }
     try {
-      const deliveredBytes = this.terminal.write(bytes);
-      return deliveredBytes === bytes.length
-        ? { status: "delivered", deliveredBytes }
-        : { status: "unknown", deliveredBytes };
+      this.terminal.write(bytes);
+      return { status: "delivered", deliveredBytes: bytes.length };
     } catch (cause) {
       return { status: "unknown", deliveredBytes: 0, cause };
     }
