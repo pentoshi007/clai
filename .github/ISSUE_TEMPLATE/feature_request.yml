@@ -1,51 +1,44 @@
-name: 💡 Feature Request
-description: Suggest a new feature or improvement for clai
+name: Feature request
+description: Propose a feature or improve an existing workflow.
 title: "[Feature]: "
 labels: ["enhancement"]
-assignees: []
 
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thank you for suggesting a feature! Please fill out the sections below to help us understand your idea.
-
   - type: textarea
     id: problem
     attributes:
-      label: Problem Statement
-      description: Is your feature request related to a problem? Describe it clearly.
-      placeholder: "I'm always frustrated when..."
+      label: Problem or workflow
+      description: Explain what you are trying to accomplish and the current limitation.
     validations:
       required: true
 
   - type: textarea
     id: solution
     attributes:
-      label: Proposed Solution
-      description: Describe the solution or feature you'd like to see.
+      label: Proposed behavior
+      description: Describe how clai should behave, with an example when useful.
     validations:
       required: true
 
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives Considered
-      description: Have you considered any alternative solutions or workarounds?
+      label: Alternatives
+      description: Describe any existing workarounds or other approaches considered.
 
   - type: dropdown
     id: area
     attributes:
       label: Area
-      description: Which area of clai does this relate to?
       options:
-        - CLI / UX
-        - AI Providers
-        - Tool System
-        - Pentesting / Security
-        - Task Planning
-        - Configuration
-        - Installation / Distribution
+        - CLI or terminal interface
+        - Session persistence or shared attachments
+        - Providers or authentication
+        - Tools, MCP, or skills
+        - Planning or subagents
+        - Security testing or permissions
+        - Configuration or privacy
+        - Installation or distribution
         - Documentation
         - Performance
         - Other
@@ -53,13 +46,13 @@ body:
   - type: textarea
     id: additional
     attributes:
-      label: Additional Context
-      description: Add any other context, mockups, or screenshots about the feature request here.
+      label: Additional context
+      description: Include examples or relevant details without credentials or private data.
 
   - type: checkboxes
     id: checklist
     attributes:
-      label: Checklist
+      label: Existing requests
       options:
-        - label: I have searched existing issues and feature requests to ensure this has not already been suggested.
+        - label: I searched existing issues and feature requests for this idea.
           required: true
