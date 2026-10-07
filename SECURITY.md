@@ -1,62 +1,33 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Supported releases
 
-We release patches for security vulnerabilities in the following versions:
+Security fixes are delivered in the latest maintained release. Update to the [latest release](https://github.com/pentoshi007/clai/releases/latest) before reproducing an issue when practical. Older releases do not have a guaranteed backport schedule.
 
-| Version | Supported          |
-|---------|--------------------|
-| 3.x     | :white_check_mark: |
-| 2.x     | :x:                |
-| 1.x     | :x:                |
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+GitHub private vulnerability reporting is currently disabled for this repository, and no dedicated security email address is published. To arrange a private reporting channel, open a [security contact request](https://github.com/pentoshi007/clai/issues/new?template=security_contact.yml) directed to [pentoshi007](https://github.com/pentoshi007). Include only a general description of the affected component and a request for private contact. Do not post exploit details, credentials, or private data in that issue.
 
-**Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
+Once a private channel is established, include:
 
-Instead, please report them responsibly through one of the following channels:
+- The clai version, OS, installation method, and affected component.
+- Reproduction steps or a minimal proof of concept.
+- Expected behavior, actual behavior, and potential impact.
+- Relevant configuration, permission mode, or engagement scope with secrets removed.
+- A suggested fix, if available.
 
-### Preferred: GitHub Private Vulnerability Reporting
+Coordinate disclosure with the maintainer while the report is validated and a fix is prepared. Response and remediation times depend on severity and maintainer availability. Reporters can request attribution or remain anonymous.
 
-Use [GitHub's private vulnerability reporting](https://github.com/pentoshi007/clai/security/advisories/new) to submit a report directly. This ensures the report stays confidential until a fix is available.
+## Execution and storage boundaries
 
-### Alternative: Email
+clai executes tools with the privileges of the user running it. Tool classification, confirmation prompts, mode restrictions, and engagement scope are application policies; they are not an OS sandbox.
 
-If you prefer email, contact **[pentoshi007](https://github.com/pentoshi007)** directly via GitHub. Please include the word **"SECURITY"** in the subject line.
+Fresh configurations use **auto-allow** permissions. Confirmation behavior varies between `default`, `auto-allow`, and `full-access`; deletion is not universally subject to a prompt. See [modes and permissions](README.md#modes-and-permissions) for the user-facing policy. Hard safety blocks and configured scope checks still apply.
 
-## What to Include
+Saved API credentials and account tokens are retained in **plaintext** at `~/.clai/keys.json`, with restricted permissions (`0600` on POSIX). The OS keyring is also used when available, but the recovery file remains on disk. Access by the same user or a privileged process is outside that file's protection boundary.
 
-To help us triage and respond quickly, please include:
+History, prompt journals, logs, and tool artifacts can contain project data and command results. Private mode and `--no-history` disable chat persistence but do not erase previously saved data or prevent necessary provider requests. Recognized secrets are redacted in supported paths; this is not a guarantee that every arbitrary secret is removed.
 
-- **Description** of the vulnerability
-- **Type** of issue (e.g., command injection, path traversal, credential exposure, dependency vulnerability)
-- **Affected component** (e.g., tool execution, provider key handling, scope enforcement)
-- **Steps to reproduce** or a proof-of-concept
-- **Impact** assessment — what an attacker could achieve
-- **Suggested fix** (if you have one)
+Hosted providers receive the request context and relevant tool results. MCP servers, shell commands, and installed skills can interact with external services according to their configuration. OmniRush's optional metadata upload is described in [PROVIDERS.md](PROVIDERS.md#omnirush-lifecycle-uploads).
 
-## Response Timeline
-
-| Stage | Target |
-|-------|--------|
-| Acknowledgment | Within **48 hours** |
-| Initial assessment | Within **5 business days** |
-| Fix & disclosure | Within **90 days** (coordinated disclosure) |
-
-We follow [coordinated vulnerability disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure) practices. We will work with you to understand and validate the issue, develop a fix, and coordinate public disclosure.
-
-## Security-Related Design Decisions
-
-clai includes several security-conscious features:
-
-- **Safety gate classification** — every tool action is classified as `safe`, `confirm`, or `block`; destructive operations always require confirmation
-- **Engagement scope enforcement** — authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection
-- **No credential storage in plaintext** — API keys are stored via the system keyring when available
-
-## Recognition
-
-We appreciate the security research community's efforts in helping keep clai and its users safe. Contributors who responsibly report valid security issues will be acknowledged in our release notes (unless they prefer to remain anonymous).
-
----
-
-Thank you for helping keep **clai** and its users safe.
+Use [GitHub Issues](https://github.com/pentoshi007/clai/issues) for ordinary bugs that do not disclose a vulnerability. Review any diagnostic material before publishing it.

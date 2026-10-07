@@ -1,206 +1,101 @@
 # Contributing to clai
 
-First off, thank you for considering contributing to **clai**! Every contribution — whether it's a bug report, feature request, documentation improvement, or code change — helps make this project better for everyone.
+Contributions can improve the CLI, providers, tools, terminal interfaces, tests, or documentation. Keep a change focused, explain its effect on users, and include validation appropriate to the work.
 
-## Table of Contents
+Use [Issues](https://github.com/pentoshi007/clai/issues) for reproducible bugs and feature requests, and [Discussions](https://github.com/pentoshi007/clai/discussions) for questions. Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities through the process in [SECURITY.md](SECURITY.md).
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [Project Structure](#project-structure)
-- [Making Changes](#making-changes)
-- [Commit Guidelines](#commit-guidelines)
-- [Pull Request Process](#pull-request-process)
-- [Reporting Bugs](#reporting-bugs)
-- [Requesting Features](#requesting-features)
-- [Style Guide](#style-guide)
-- [Community](#community)
+## Source setup
 
-## Code of Conduct
+Install Node.js 22 or later and npm. Bun is needed for OpenTUI development, native UI checks, and compiled release binaries; the [CI workflow](.github/workflows/ci.yml) specifies the version used for conformance checks. Classic development can run through Node and `tsx`.
 
-This project and everyone participating in it is governed by our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to **[pentoshi007](https://github.com/pentoshi007)**.
+Fork the repository, then clone your fork and install the locked dependencies:
 
-## Getting Started
-
-1. **Fork** the repository on GitHub.
-2. **Clone** your fork locally:
-   ```bash
-   git clone https://github.com/<your-username>/clai.git
-   cd clai
-   ```
-3. **Add the upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/pentoshi007/clai.git
-   ```
-4. **Create a branch** for your work:
-   ```bash
-   git checkout -b feat/my-feature
-   ```
-
-## Development Setup
-
-### Prerequisites
-
-| Tool | Version |
-|------|---------|
-| Node.js | ≥ 22 |
-| npm | ≥ 9 |
-| Git | ≥ 2.30 |
-
-### Install Dependencies
-
-```bash
-npm install
+```sh
+git clone https://github.com/<your-username>/clai.git
+cd clai
+git remote add upstream https://github.com/pentoshi007/clai.git
+git switch -c docs/session-guide
+npm ci
+npm run dev
 ```
 
-### Useful Commands
+`npm run dev` prefers Bun when available. Use `npm run dev -- --classic` for Classic, or `npm run dev:node -- --classic` to run it explicitly through Node.
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start in development mode |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run typecheck` | Run type checking without emitting files |
-| `npm test` | Run the full test suite via Vitest |
-| `npm run test:classic:pty` | Run the provider-independent POSIX classic PTY smoke |
-| `npm run compile` | Compile the five Bun release targets |
-| `npm run release:verify` | Validate release metadata and artifact declarations |
-| `npm run doctor` | Run built-in diagnostics |
+The tests use fixtures and isolated storage; provider credentials are not required for the standard suites. For manual provider testing, configure a test account or export the relevant environment variables as described in [PROVIDERS.md](PROVIDERS.md).
 
-### Environment Variables
+## Development commands
 
-Copy the example environment file and fill in any required values:
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Run the source entrypoint, preferring Bun. |
+| `npm run dev:bun` | Run source through Bun explicitly. |
+| `npm run dev:node` | Run source through Node and `tsx`. |
+| `npm run typecheck` | Check TypeScript without emitting files. |
+| `npm run build` | Embed prompts and compile JavaScript to `dist/`. |
+| `npm start` | Run the built entrypoint. |
+| `npm run test:deterministic` | Run Vitest with the canonical locale and timezone. |
+| `npm run test:host -- test/environment` | Check environment behavior under the host's locale and timezone. |
+| `npm run test:classic:pty` | Run the provider-independent POSIX terminal smoke test; requires Python 3. |
+| `npm run test:bun` | Run native OpenTUI smoke and parity checks through Bun. |
+| `npm run embed-prompts:check` | Check that embedded prompts match their source Markdown. |
+| `npm run release:verify` | Validate dependency pins, lockfile, and release metadata. |
+| `npm run compile` | Build native release binaries through Bun. |
+| `npm run doctor` | Inspect available tools and provider configuration. |
 
-```bash
-cp .env.example .env
+To run a focused test:
+
+```sh
+npm run test:deterministic -- test/session-runtime/host.integration.test.ts
 ```
 
-## Project Structure
+For dependency changes, update `package.json` and `package-lock.json` together and run `npm run release:verify`. Preserve the repository's exact dependency pins.
 
-```
-clai/
-├── src/            # TypeScript source code
-│   ├── app/        # renderer-neutral controllers, commands, events, and ports
-│   ├── ui-core/    # renderer-neutral state, actions, layout, rendering, and React hooks
-│   ├── classic/    # React + Ink classic UI and terminal bootstrap
-│   ├── tui-v2/     # OpenTUI full-screen renderer
-│   └── noninteractive/ # stdout/stderr-split one-shot renderer
-├── dist/           # Compiled JavaScript output
-├── bin/            # CLI entry point (clai.mjs)
-├── scripts/        # Build, release, and utility scripts
-├── test/           # Test files (Vitest)
-├── install/        # Platform installation scripts
-├── manifests/      # Distribution manifests
-├── audit/          # Security audit configuration
-└── .github/        # CI workflows and templates
-```
+## Architecture and boundaries
 
-## Making Changes
+| Location | Responsibility |
+| --- | --- |
+| `src/index.ts` | CLI options, subcommands, and startup. |
+| `src/agent/` | Agent turns, plans, compaction, and subagents. |
+| `src/llm/` | Provider protocols, credentials, streaming, routing, and usage. |
+| `src/app/`, `src/ui-core/` | Shared controllers, commands, state, actions, and renderer ports. |
+| `src/classic/` | React and Ink UI and its terminal lifecycle. |
+| `src/tui-v2/` | OpenTUI components and native terminal integration. |
+| `src/noninteractive/` | One-shot output and stdout/stderr policy. |
+| `src/session-runtime/` | Durable agent hosts, shared attachments, discovery, and reattachment. |
+| `src/interactive-session/` | Conversation-owned terminal sessions and transports. |
+| `src/store/` | Configuration, history, prompt journals, plans, and retained subagent state. |
+| `src/tools/`, `src/safety/` | Tool implementation, classification, permissions, and engagement policy. |
+| `src/mcp/`, `src/skills/` | MCP integration and Agent Skills. |
+| `src/prompts/` | Runtime system prompts and their generated embedded representation. |
+| `test/`, `scripts/`, `.github/workflows/` | Regression tests, tooling, and CI/release workflows. |
+| `bin/`, `install/`, `manifests/` | npm launchers, platform installers, and distribution templates. |
 
-1. **Keep changes focused.** One pull request should address one concern — a single bug fix, feature, or refactor.
-2. **Write tests.** If you add or change behavior, add or update the corresponding tests in `test/`.
-3. **Run checks locally** before pushing:
-   ```bash
-   npm run typecheck
-   npm test
-   ```
-4. **Update documentation.** If your change affects user-facing behavior, update `README.md` or other relevant docs.
+Keep `src/app/` and `src/ui-core/` renderer-neutral: do not import Ink, OpenTUI, renderer-specific components, or write directly to the terminal there. Put terminal access in bootstrap or port modules so both interfaces share session, command, transcript, safety, and persistence behavior. Classic source files are subject to a 400-line architecture guard.
 
-### Renderer boundaries
+Use strict TypeScript, explicit `.js` extensions for relative ESM imports, and focused modules that follow the surrounding style. Handle failures explicitly. Changes to persistence, compaction, or attachment behavior must preserve conversation records and avoid starting duplicate agent writers.
 
-- `src/app/` and `src/ui-core/` are renderer-neutral. They may define state, actions,
-  layout models, pure presenters, and explicit ports, but must not import Ink, OpenTUI,
-  renderer-specific components, or write directly to the terminal.
-- `src/classic/` owns the React + Ink surface and POSIX terminal lifecycle. `src/tui-v2/`
-  owns OpenTUI components and native terminal integration. `src/noninteractive/` owns the
-  append-only one-shot stream surface and its stdout/stderr policy.
-- Raw terminal reads/writes belong only in the approved bootstrap or port modules. Keep
-  renderer-neutral behavior behind app ports so both interactive frontends consume the same
-  session, transcript, command, safety, and persistence contracts.
-- Use strict TypeScript, explicit `.js` extensions for relative ESM imports, and small
-  focused modules. Keep classic source files at or below the 400-line architecture guard.
+Distribution manifests under `manifests/` are templates. The release workflow generates published metadata; placeholder hashes in those templates are not installation artifacts.
 
-## Commit Guidelines
+## Validation and pull requests
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+For behavior changes, add or update meaningful regression coverage and run the focused tests first. Run the relevant typecheck, build, deterministic suite, terminal checks, and release validation before submitting. UI changes should cover both renderers; process and privilege changes need the platform coverage defined in CI. Run native performance checks without competing build or full-suite workloads.
 
-```
-<type>(<scope>): <short summary>
-```
+For documentation-only changes, check examples against current CLI help, validate links and formatting, and check any issue-template YAML. A full local application suite is unnecessary unless the change affects code, runtime prompts, or generated artifacts.
 
-### Types
+CI currently covers Node 22 and 24 on Linux, Bun OpenTUI conformance, Classic on macOS, and process/privilege behavior on macOS and Windows. The [workflow](.github/workflows/ci.yml) is the source of truth for required checks. All relevant remote checks must pass.
 
-| Type | Purpose |
-|------|---------|
-| `feat` | A new feature |
-| `fix` | A bug fix |
-| `docs` | Documentation only changes |
-| `style` | Formatting, missing semicolons, etc. (no code change) |
-| `refactor` | Code change that neither fixes a bug nor adds a feature |
-| `perf` | Performance improvement |
-| `test` | Adding or updating tests |
-| `chore` | Build process, tooling, or dependency updates |
-| `ci` | CI/CD configuration changes |
-| `revert` | Reverts a previous commit |
+Open a pull request against `main` with:
 
-### Examples
+- The concrete problem and resulting behavior, including an example when useful.
+- Validation performed and any remaining limitations.
+- Related issues and documentation updates where applicable.
 
-```
-feat(provider): add support for Anthropic provider
-fix(tools): prevent duplicate tool calls on rate-limit retry
-docs(readme): add Windows installation instructions
-test(compaction): add coverage for context compaction edge cases
-```
+Use descriptive commit messages; Conventional Commit prefixes such as `fix:`, `feat:`, and `docs:` are suitable. Keep generated build outputs, credentials, local history, investigation reports, and temporary files out of commits.
 
-## Pull Request Process
+## Reporting bugs and requesting features
 
-1. **Ensure your branch is up to date** with `main`:
-   ```bash
-   git fetch upstream
-   git rebase upstream/main
-   ```
-2. **Push** your branch and open a Pull Request against `pentoshi007/clai:main`.
-3. **Fill out the PR template** — describe what changed and why.
-4. **Link related issues** (e.g., `Closes #42`).
-5. **Ensure all CI checks pass.**
-6. **Respond to review feedback** promptly and push follow-up commits.
-7. A maintainer will merge the PR once it is approved.
+The [bug report form](https://github.com/pentoshi007/clai/issues/new?template=bug_report.yml) asks for the clai version, OS, installation method, UI, and reproduction steps. Include Node or Bun versions when running through those runtimes, plus the provider/model when relevant. For attachment bugs, describe the SSH or terminal setup and which sessions were attached.
 
-## Reporting Bugs
+Provide the smallest reproduction and expected versus actual behavior. Review logs, screenshots, prompts, and configuration before sharing them; remove credentials and private project data.
 
-Use the [Bug Report issue template](https://github.com/pentoshi007/clai/issues/new?template=bug_report.yml) and include:
-
-- **clai version** (`clai --version`)
-- **Node.js version** (`node -v`)
-- **Operating system** and version
-- **Steps to reproduce** the issue
-- **Expected behavior** vs. **actual behavior**
-- **Relevant logs** or error output
-
-## Requesting Features
-
-Use the [Feature Request issue template](https://github.com/pentoshi007/clai/issues/new?template=feature_request.yml) and describe:
-
-- The problem you're trying to solve
-- Your proposed solution
-- Any alternatives you've considered
-
-## Style Guide
-
-- **Language:** TypeScript (strict mode)
-- **Module system:** ESM (`"type": "module"`)
-- **Formatting:** Follow the existing code style in the repository
-- **Naming:**
-  - `camelCase` for variables and functions
-  - `PascalCase` for types, interfaces, and classes
-  - `UPPER_SNAKE_CASE` for constants
-- **Imports:** Use explicit file extensions (`.js`) for relative imports in ESM
-- **Error handling:** Prefer explicit error handling; avoid swallowing errors silently
-
-## Community
-
-- **Issues:** [GitHub Issues](https://github.com/pentoshi007/clai/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/pentoshi007/clai/discussions) *(if enabled)*
-
----
-
-Thank you for helping make clai better! 🚀
+The [feature request form](https://github.com/pentoshi007/clai/issues/new?template=feature_request.yml) asks for the problem, proposed behavior, and alternatives. Explain the workflow the change would improve.

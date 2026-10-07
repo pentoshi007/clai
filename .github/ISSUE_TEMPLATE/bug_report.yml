@@ -1,131 +1,128 @@
-name: 🐛 Bug Report
-description: Report a bug or unexpected behavior in clai
+name: Bug report
+description: Report reproducible incorrect behavior in clai.
 title: "[Bug]: "
 labels: ["bug", "triage"]
-assignees: []
 
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for taking the time to report a bug! Please fill out the sections below so we can reproduce and fix the issue.
+        Include the smallest reproduction you can provide. Remove credentials and private data from logs, screenshots, and configuration. Follow SECURITY.md for vulnerability reports.
 
   - type: input
     id: version
     attributes:
-      label: clai Version
-      description: Run `clai --version` and paste the output here.
-      placeholder: "3.9.7"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: os
-    attributes:
-      label: Operating System
-      options:
-        - macOS
-        - Linux
-        - Windows
-        - WSL
-        - Other
+      label: clai version
+      description: Output of `clai --version`.
     validations:
       required: true
 
   - type: input
-    id: node-version
+    id: os
     attributes:
-      label: Node.js Version
-      description: Run `node -v` and paste the output here.
-      placeholder: "v22.0.0"
+      label: Operating system and architecture
+      description: Include the OS version, x64 or ARM64, and WSL or container details if relevant.
+      placeholder: Ubuntu 24.04, ARM64
     validations:
       required: true
 
   - type: dropdown
     id: install-method
     attributes:
-      label: Installation Method
+      label: Installation method
       options:
+        - Native installer or release binary
         - npm
         - Homebrew
-        - curl install script
-        - Built from source
+        - Source checkout
         - Other
     validations:
       required: true
 
+  - type: input
+    id: runtime
+    attributes:
+      label: Node.js or Bun version
+      description: Include `node --version` or `bun --version` when using npm or a source checkout. Native releases include their runtime.
+
+  - type: dropdown
+    id: ui
+    attributes:
+      label: Interface
+      options:
+        - OpenTUI
+        - Classic
+        - One-shot command or piped input
+        - Startup or configuration command
+        - Unsure
+    validations:
+      required: true
+
+  - type: input
+    id: provider-model
+    attributes:
+      label: Provider and model
+      description: Include the provider and model, if relevant. Do not include API keys or account tokens.
+      placeholder: qoder / auto
+
   - type: textarea
     id: description
     attributes:
-      label: Bug Description
-      description: A clear and concise description of what the bug is.
-      placeholder: Describe what went wrong...
+      label: Problem
+      description: Describe the incorrect behavior and its effect on your workflow.
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to Reproduce
-      description: Provide the minimal steps needed to reproduce the behavior.
+      label: Steps to reproduce
+      description: Include commands, permission mode, and any session switching or attachment steps.
       placeholder: |
-        1. Run `clai ...`
-        2. Select '...'
-        3. See error
+        1. Start clai with ...
+        2. Run ...
+        3. Observe ...
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
-      description: What did you expect to happen?
+      label: Expected behavior
     validations:
       required: true
 
   - type: textarea
     id: actual
     attributes:
-      label: Actual Behavior
-      description: What actually happened? Include error messages or screenshots if applicable.
+      label: Actual behavior
+      description: Include the error message or observed result.
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs / Error Output
-      description: Paste any relevant log output. This will be automatically formatted as code.
-      render: shell
+      label: Relevant output
+      description: Paste redacted output. Do not attach complete history or credential files.
+      render: text
 
-  - type: dropdown
-    id: provider
+  - type: textarea
+    id: terminal-setup
     attributes:
-      label: AI Provider (if applicable)
-      description: Which provider were you using when the bug occurred?
-      options:
-        - NVIDIA NIM
-        - Groq
-        - Google Gemini
-        - OpenRouter
-        - Bynara
-        - Kimchi
-        - Ollama (local)
-        - Other
-        - N/A
+      label: Terminal and session setup
+      description: For UI or persistence issues, include the terminal application, SSH setup, attached windows, and whether history or private mode was enabled.
 
   - type: textarea
     id: additional
     attributes:
-      label: Additional Context
-      description: Add any other context, configuration details, or screenshots about the problem here.
+      label: Additional context
+      description: Include relevant configuration, a source commit if applicable, or a minimal example.
 
   - type: checkboxes
     id: checklist
     attributes:
-      label: Checklist
+      label: Existing reports
       options:
-        - label: I have searched existing issues to ensure this bug has not already been reported.
+        - label: I searched existing issues for this problem.
           required: true
-        - label: I am running the latest version of clai.
-          required: false

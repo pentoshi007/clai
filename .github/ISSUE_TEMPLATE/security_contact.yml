@@ -1,0 +1,27 @@
+name: Security contact request
+description: Request a private channel for a potential vulnerability report.
+title: "[Security]: Private contact request"
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This request is public. Use it only to arrange private contact with the maintainer. Do not include exploit details, reproduction steps, credentials, private project data, or logs. Read SECURITY.md for the reporting process.
+
+  - type: input
+    id: component
+    attributes:
+      label: General component
+      description: Name the broad area involved, without describing the vulnerability.
+      placeholder: Credential storage
+    validations:
+      required: true
+
+  - type: textarea
+    id: request
+    attributes:
+      label: Contact request
+      description: Ask for a private reporting channel. Keep vulnerability details out of this field.
+      value: Please provide a private reporting channel for a potential security issue.
+    validations:
+      required: true

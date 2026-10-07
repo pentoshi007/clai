@@ -1,49 +1,18 @@
-## Description
+## Change
 
-<!-- Provide a clear and concise description of what this PR does. -->
+Describe the problem and the resulting behavior. Include a concrete before/after example when helpful.
 
-## Related Issue
+## Validation
 
-<!-- Link to the related issue(s). Use "Closes #123" to auto-close on merge. -->
+List the checks performed and their results. Include relevant runtime, UI, or platform details for behavior changes. For documentation-only changes, describe example, link, and formatting checks.
 
-Closes #
+## Related issues
 
-## Type of Change
-
-<!-- Check the relevant option(s): -->
-
-- [ ] 🐛 Bug fix (non-breaking change that fixes an issue)
-- [ ] ✨ New feature (non-breaking change that adds functionality)
-- [ ] 💥 Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] 📝 Documentation update
-- [ ] ♻️ Refactor (no functional changes)
-- [ ] ⚡ Performance improvement
-- [ ] 🧪 Test update
-- [ ] 🔧 Chore (build, CI, dependencies, tooling)
-
-## How Has This Been Tested?
-
-<!-- Describe the tests you ran to verify your changes. -->
-
-- [ ] `npm run typecheck` passes
-- [ ] `npm test` passes
-- [ ] Manual testing (describe below)
-
-### Test Details
-
-<!-- Describe your testing environment and steps if applicable. -->
-
-## Screenshots / Recordings
-
-<!-- If applicable, add screenshots or terminal recordings to demonstrate the change. -->
+Link related issues, using `Closes #123` only when this change resolves them. Remove this section if it does not apply.
 
 ## Checklist
 
-- [ ] My code follows the project's code style
-- [ ] I have performed a self-review of my code
-- [ ] I have commented my code in hard-to-understand areas
-- [ ] I have updated the documentation accordingly
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published
+- [ ] The change is focused and follows the existing architecture and style.
+- [ ] Relevant regression coverage and validation are included, or the change is documentation-only.
+- [ ] User-facing documentation is updated where needed.
+- [ ] Credentials, private data, temporary outputs, and investigation reports are excluded.

@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 📖 Documentation
+  - name: Documentation
     url: https://github.com/pentoshi007/clai#readme
-    about: Check the README for usage instructions and configuration details.
-  - name: 💬 Questions & Discussions
+    about: Installation, usage, sessions, and configuration.
+  - name: Questions and discussions
     url: https://github.com/pentoshi007/clai/discussions
-    about: Ask questions and discuss ideas in GitHub Discussions.
+    about: Ask usage questions and discuss ideas.
+  - name: Security reporting
+    url: https://github.com/pentoshi007/clai/blob/main/SECURITY.md
+    about: Read the reporting process before sharing vulnerability details.
