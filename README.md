@@ -10,7 +10,7 @@ Use a hosted API, an account sign-in, or a local Ollama model. Interactive sessi
 - **Tools and integrations:** file editing, shell commands, background jobs, interactive terminals, web search, MCP servers, and Agent Skills.
 - **Long sessions:** saved transcripts, durable subagent findings, context compaction, and pagers for large outputs.
 
-[Installation](#installation) · [Quick start](#quick-start) · [Persistent sessions](#persistent-sessions) · [Provider setup](PROVIDERS.md) · [Commands](#commands) · [Contributing](CONTRIBUTING.md)
+[Installation](#installation) · [Quick start](#quick-start) · [Persistent sessions](#persistent-sessions) · [Providers](#supported-providers) · [Terminals](#terminal-compatibility-and-recommendations) · [Commands](#commands) · [Contributing](CONTRIBUTING.md)
 
 ## Installation
 
@@ -129,6 +129,56 @@ Context compaction reduces what the model receives while retaining recent reques
 
 clai supports API credentials, account sign-ins, and local endpoints. Account integrations include ChatGPT, GitHub Copilot, Cline, Kiro, OmniRush, and Qoder. Freebuff has separate admission requirements described in the [provider guide](PROVIDERS.md#freebuff).
 
+### Supported providers
+
+Account sign-in integrations:
+
+| Provider | Sign-in command | Notes |
+| --- | --- | --- |
+| ChatGPT (Codex) | `clai auth chatgpt` | Stored as `codex`; browser/headless sign-in or existing Codex CLI import. |
+| GitHub Copilot | `clai auth copilot` | Browser/device sign-in or supported credential import. |
+| Cline | `clai auth cline` | Account sign-in or supported credential import. |
+| Kiro | `clai auth kiro` | Social login, AWS Builder ID, or IAM Identity Center. |
+| OmniRush | `clai auth omnirush` | Device-code sign-in or existing OmniRush CLI import. |
+| Qoder | `clai auth qoder` | Browser/headless sign-in, CLI import, or PAT via `--pat`. |
+| Freebuff | `clai auth freebuff` | Sign-in and catalog support; inference requires server admission. |
+
+API, keyless, and local integrations:
+
+| Provider | Provider ID | Credential or endpoint variable |
+| --- | --- | --- |
+| Free | `free` | Keyless models; optional `FREE_API_KEY` for authenticated access. |
+| Ollama | `ollama` | Local endpoint through `OLLAMA_HOST` or `clai set ollama --url <url>`. |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` |
+| GLM / Zhipu | `glm` | `GLM_API_KEY`, `ZHIPU_API_KEY`, or `ZAI_API_KEY` |
+| Kimi / Moonshot | `kimi` | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
+| MiniMax | `minimax` | `MINIMAX_API_KEY` |
+| Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
+| NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| Qwen Cloud / DashScope | `qwen-cloud` | `DASHSCOPE_API_KEY` |
+| AgentRouter | `agentrouter` | `AGENTROUTER_API_KEY` |
+| AWS Mantle | `aws-mantle` | `ANTHROPIC_API_KEY` for the configured Mantle endpoint. |
+| Bynara | `bynara` | `BYNARA_API_KEY` |
+| ExpLabs | `explabs` | `EXPLABS_API_KEY` |
+| Fireworks | `fireworks` | `FIREWORKS_API_KEY` |
+| Hetzner | `hetzner` | `HETZNER_API_KEY` |
+| Lightning AI | `lightning` | `LIGHTNING_API_KEY` |
+| Merge Gateway | `merge-gateway` | `MERGE_GATEWAY_API_KEY` |
+| Meta Model API | `meta` | `MODEL_API_KEY` |
+| Modal | `modal` | Both `MODAL_PROXY_TOKEN_ID` and `MODAL_PROXY_TOKEN_SECRET`; deployed endpoint required. |
+| OrcaRouter | `orcarouter` | `ORCAROUTER_API_KEY` |
+| Token Harbor | `tokenharbor` | `TOKENHARBOR_API_KEY` |
+| TokenRouter | `tokenrouter` | `TOKENROUTER_API_KEY` |
+| Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
+
+Use `clai set <provider>` for a hidden-input credential prompt, or `--from-env <variable>` to import a credential. The [provider guide](PROVIDERS.md) includes account flows, endpoint setup, and provider-specific behavior. `/model` shows model choices; access, limits, and prices depend on the provider and account.
+
+### Models, rotation, and usage
+
 - `/provider` selects a provider; `/model` selects its model; `/models` browses models across providers.
 - `/set` manages up to 10 credentials per provider, including disabled keys and the active key. Applicable authentication, quota, rate-limit, and server failures can trigger rotation.
 - `/fallback on` enables cross-provider fallback; it is off by default. `/freeonly on` filters fallback using clai's provider categories. Check the selected model and account's billing terms when controlling spending.
@@ -172,6 +222,22 @@ clai can assist with reconnaissance, enumeration, scoped testing, and reporting 
 OpenTUI is selected by default on macOS and Linux when the terminal is at least 60 columns by 14 rows and the runtime is available. Windows and smaller terminals use Classic, which runs on React and Ink. `clai --classic` selects Classic explicitly; `clai --tui` requests OpenTUI with a Classic fallback when unavailable.
 
 Both interfaces provide streaming chat, tool output, plans, session history, and provider controls.
+
+### Terminal compatibility and recommendations
+
+Choose a terminal for the OS on your local device. These recommendations link to each terminal's official setup information:
+
+| Local OS | Recommended terminal | Alternatives |
+| --- | --- | --- |
+| Linux | [Kitty](https://sw.kovidgoyal.net/kitty/binary/) | [WezTerm](https://wezterm.org/installation.html) or [Alacritty](https://alacritty.org/). |
+| macOS | [iTerm2](https://iterm2.com/) | [Kitty](https://sw.kovidgoyal.net/kitty/binary/), [WezTerm](https://wezterm.org/installation.html), or [Alacritty](https://alacritty.org/); the built-in Terminal app is also an option. |
+| Windows | [Windows Terminal](https://learn.microsoft.com/en-us/windows/terminal/) | [WezTerm](https://wezterm.org/installation.html) or [Alacritty](https://alacritty.org/). |
+
+clai selects its interface using the OS where it runs. Native Windows uses Classic; WSL and SSH sessions on a Linux host use the Linux interface selection, even when the local window is Windows Terminal or iTerm2. Over SSH, key, mouse, and clipboard capabilities come from your local terminal and any intervening multiplexer.
+
+Standard terminals can handle ordinary text input and output. Modified keys, mouse motion/hover, and clipboard integration vary by terminal and configuration. If `Shift+Enter` is not distinguishable from `Enter`, use `Ctrl+N` or `Alt+Enter` for a newline. Use `clai --classic` if OpenTUI cannot start, and `F5` or `/redraw` to repaint a scrambled screen.
+
+### Keyboard shortcuts
 
 | Action | Shortcut |
 | --- | --- |
