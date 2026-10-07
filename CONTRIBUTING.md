@@ -21,7 +21,7 @@ npm run dev
 
 `npm run dev` prefers Bun when available. Use `npm run dev -- --classic` for Classic, or `npm run dev:node -- --classic` to run it explicitly through Node.
 
-The tests use fixtures and isolated storage; provider credentials are not required for the standard suites. For manual provider testing, configure a test account or export the relevant environment variables as described in [PROVIDERS.md](PROVIDERS.md).
+The tests use fixtures, isolated storage, and a mocked browser launcher; provider credentials are not required and standard suites do not open sign-in tabs. Browser-launcher unit tests use injected process stubs to cover macOS, Linux, and Windows commands. For manual provider testing, configure a test account or export the relevant environment variables as described in [PROVIDERS.md](PROVIDERS.md).
 
 ## Development commands
 

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeCodexKey } from "../src/llm/codex-auth.js";
 import { resetSessionModelCache } from "../src/store/session-model.js";
+import { openSystemBrowser } from "../src/mcp/auth/loopback.js";
 
 const h = vi.hoisted(() => ({
   startCline: vi.fn(),
@@ -136,6 +137,10 @@ async function waitForLiveModel(notices: readonly string[]): Promise<void> {
 let modelDir: string;
 
 beforeEach(() => {
+  expect(vi.isMockFunction(openSystemBrowser)).toBe(true);
+  vi.mocked(openSystemBrowser).mockClear();
+  for (const name of ["CLAI_NO_BROWSER", "BROWSER", "SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT"]) vi.stubEnv(name, "");
+  vi.stubEnv("DISPLAY", ":1");
   modelDir = mkdtempSync(join(tmpdir(), "clai-provider-activate-"));
   process.env.CLAI_SESSION_MODEL_DIR = modelDir;
   resetSessionModelCache();
@@ -161,6 +166,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   resetSessionModelCache();
   delete process.env.CLAI_SESSION_MODEL_DIR;
   await rm(modelDir, { recursive: true, force: true });
@@ -194,6 +200,7 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
       "https://authkit.cline.bot/device?user_code=FFDM-HWPH",
     );
     expect(pagers[0]?.body).toContain("FFDM-HWPH");
+    expect(openSystemBrowser).toHaveBeenCalledWith("https://authkit.cline.bot/device?user_code=FFDM-HWPH");
     expect(h.cliCline).not.toHaveBeenCalled();
     expect(h.appendProviderKey).toHaveBeenCalledWith("cline", "workos:abc", {
       refreshToken: "refresh-abc",
@@ -227,6 +234,7 @@ describe("/provider keyless OAuth shows the sign-in pager", () => {
     expect(pagers).toHaveLength(1);
     expect(pagers[0]?.title).toBe("ChatGPT Subscription sign-in");
     expect(pagers[0]?.body).toContain("auth.openai.com/oauth/authorize");
+    expect(openSystemBrowser).toHaveBeenCalledWith("https://auth.openai.com/oauth/authorize?client_id=app_test&originator=codex_cli_rs");
     expect(h.cliCodex).not.toHaveBeenCalled();
     expect(h.appendProviderKey).toHaveBeenCalledWith(
       "codex",
