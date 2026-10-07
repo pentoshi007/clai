@@ -5,6 +5,8 @@ import {
 } from "../../src/mcp/auth/loopback.js";
 import { McpTransportError } from "../../src/mcp/transport.js";
 
+vi.unmock("../../src/mcp/auth/loopback.js");
+
 function drive(useWrongState: boolean): Promise<{ code: string }> {
   return runLoopbackAuthorization({
     buildAuthorizationUrl: (redirectUri, state) =>
@@ -38,15 +40,19 @@ function fakeSpawn(): ReturnType<typeof vi.fn> {
 }
 
 describe("openSystemBrowser", () => {
-  it("spawns a non-shell opener for https", async () => {
+  it.each([
+    ["darwin", "open", ["https://example.com/auth"]],
+    ["linux", "xdg-open", ["https://example.com/auth"]],
+    ["win32", "rundll32", ["url.dll,FileProtocolHandler", "https://example.com/auth"]],
+  ] as const)("spawns a non-shell opener for https on %s", async (platform, command, args) => {
     const spawnImpl = fakeSpawn();
     await openSystemBrowser("https://example.com/auth", {
-      platform: "darwin",
+      platform,
       spawnImpl: spawnImpl as never,
     });
     expect(spawnImpl).toHaveBeenCalledWith(
-      "open",
-      ["https://example.com/auth"],
+      command,
+      args,
       expect.objectContaining({ shell: false }),
     );
   });

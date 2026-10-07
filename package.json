@@ -1,6 +1,6 @@
 {
   "name": "@pentoshi/clai",
-  "version": "4.12.1",
+  "version": "4.13.0",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",
@@ -30,7 +30,11 @@
   "files": [
     "bin",
     "dist",
-    "README.md"
+    "README.md",
+    "PROVIDERS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md"
   ],
   "scripts": {
     "dev": "node scripts/run-dev.mjs",

@@ -1,7 +1,12 @@
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { vi } from "vitest";
 
+vi.mock("../src/mcp/auth/loopback.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/mcp/auth/loopback.js")>(),
+  openSystemBrowser: vi.fn(async () => undefined),
+}));
 
 const root = mkdtempSync(join(tmpdir(), "clai-test-roots-"));
 
