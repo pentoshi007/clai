@@ -116,9 +116,9 @@ export async function exerciseQoderUi(driver: QoderUiDriver, fixture: ReturnType
   assert.equal((await getProviderKeys("qoder")).keys.length, 1);
   assert.equal((await stat(getFallbackKeysPath())).mode & 0o777, 0o600);
   invoke("set"); await waitOverlay("keys-editor"); await driver.key("reset"); await waitOverlay("none");
+  await Promise.all(commands);
   assert.equal((await getProviderKeys("qoder")).keys.length, 0);
   assert.equal(app.focus.activeContext(), "composer");
   await driver.paste("still responsive");
   await waitText("still responsive");
-  await Promise.all(commands);
 }
