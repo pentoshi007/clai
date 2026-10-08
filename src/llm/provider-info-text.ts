@@ -981,6 +981,13 @@ MODELS
     auto:0.5x gmodel:0.8x smodel:8x   paid tiers (Qoder Credits)
   The ":free" / ":Nx" suffix is display-only and stripped before the request.
 
+AVAILABILITY
+  Code 10605 means the model is queued, even when the gateway reports HTTP 403.
+  clai polls the signed queue status and resumes when capacity is available;
+  this is not an API-key failure. Queue waits are cancellable and bounded to
+  one hour by default, matching qodercli. Set QODER_MODEL_QUEUE_MAX_WAIT_MS to
+  a positive duration in milliseconds to change that limit.
+
 SETUP
   1. Sign in with the Qoder CLI:  qodercli login
   2. Import that sign-in into clai:  clai auth qoder --import

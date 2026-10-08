@@ -189,8 +189,9 @@ export class AggregateProviderError extends ProviderError {
     readonly failures: ReadonlyArray<{ provider: ProviderId; message: string }>,
     status?: number | undefined,
     retryAfterSeconds?: number | undefined,
+    retryable?: boolean | undefined,
   ) {
-    super(message, status, undefined, retryAfterSeconds);
+    super(message, status, undefined, retryAfterSeconds, retryable);
     this.name = "AggregateProviderError";
   }
 }
@@ -226,6 +227,9 @@ export function aggregateProviderError(
     })),
     actionable?.status,
     actionable?.retryAfterSeconds,
+    failures.length > 0 && failures.every(({ error }) => error instanceof ProviderError && error.retryable === false)
+      ? false
+      : undefined,
   );
   markStreamEmittedBytes(aggregate, emittedBytes);
   const serverAttempts = failures.reduce(
