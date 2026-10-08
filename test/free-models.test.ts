@@ -25,7 +25,12 @@ function catalogFetchMock(
     const url = String(input);
     if (url === MODEL_LIMITS_URL) {
       return new Response(JSON.stringify({
-        opencode: { api: "https://opencode.ai/zen/v1", models: {} },
+        opencode: {
+          api: "https://opencode.ai/zen/v1",
+          models: Object.fromEntries(zenIds.map((id) => [id, {
+            id, limit: { context: 200_000, output: 32_000 },
+          }])),
+        },
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.includes("kilo.ai")) {

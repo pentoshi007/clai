@@ -140,6 +140,31 @@ describe("OpenCode Zen serving limits", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("refreshes newly discovered IDs early without repeatedly fetching unpublished limits", async () => {
+    const addedId = `catalog-${randomUUID()}-free`;
+    const fetchMock = vi.fn(async () => jsonResponse(catalog({
+      "existing-free": { limit: { context: 262_144, output: 32_768 } },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+    await supplement(["existing-free"]);
+    vi.mocked(Date.now).mockReturnValue(START + 60_000);
+    fetchMock.mockImplementation(async () => jsonResponse(catalog({
+      "existing-free": { limit: { context: 262_144, output: 32_768 } },
+      [addedId]: { limit: { context: 1_572_864, output: 49_152 } },
+    })));
+    expect(parseCatalogFacts((await supplement([addedId]))[0])).toMatchObject({
+      contextTokens: 1_572_864, maxOutputTokens: 49_152,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await supplement(["unpublished-free"]);
+    vi.mocked(Date.now).mockReturnValue(START + 120_000 - 1);
+    expect(await supplement(["unpublished-free"])).toEqual(["unpublished-free"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.mocked(Date.now).mockReturnValue(START + 120_000);
+    await supplement(["unpublished-free"]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it.each([
     { kilo: { api: KILO_BASE_URL, models: { "exo-free": { limit: { context: 2_000_000 } } } } },
     { opencode: { api: `${ZEN_BASE_URL}/other`, models: { "exo-free": { limit: { context: 2_000_000 } } } } },
