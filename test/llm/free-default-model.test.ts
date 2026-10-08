@@ -78,14 +78,14 @@ describe("dynamic free default model", () => {
     vi.spyOn(Date, "now").mockReturnValue(time);
     const first = await resolveFreeDefaultModel();
     expect(first).toBe("free-2/stepfun/step-3.7-flash:free");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     vi.spyOn(Date, "now").mockReturnValue(time + 10 * 60 * 1000);
     expect(await resolveFreeDefaultModel()).toBe(first);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
     expect(await resolveFreeDefaultModel()).toBe(first);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 });

@@ -14,6 +14,7 @@ import { resetResponsesWireStatesForTesting } from "../src/llm/wire/responses-fi
 
 const ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const KILO_MODELS_URL = "https://api.kilo.ai/api/gateway/models";
+const MODEL_LIMITS_URL = "https://models.dev/api.json";
 let isolatedDataDir: string | undefined;
 
 function catalogFetchMock(
@@ -22,6 +23,11 @@ function catalogFetchMock(
 ) {
   return vi.fn(async (input: unknown) => {
     const url = String(input);
+    if (url === MODEL_LIMITS_URL) {
+      return new Response(JSON.stringify({
+        opencode: { api: "https://opencode.ai/zen/v1", models: {} },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     if (url.includes("kilo.ai")) {
       return new Response(JSON.stringify({ data: kiloEntries }), {
         status: 200,
@@ -131,7 +137,7 @@ describe("free provider (zen + kilo)", () => {
 
     it("shows only free models from each source", async () => {
       const fetchMock = catalogFetchMock(
-        ["claude-opus-4-8", "deepseek-v4-flash-free", "gpt-5", "mimo-v2.5-free"],
+        ["claude-opus-4-8", "deepseek-v4-flash-free", "gpt-5", "mimo-v2.5-free", "jev-1.13-free"],
         [
           { id: "stepfun/step-3.7-flash:free" },
           { id: "anthropic/claude-opus-4.8", isFree: false },
@@ -187,6 +193,10 @@ describe("free provider (zen + kilo)", () => {
       await freeProvider.listModels!({ apiKey: "zen-key-123" });
       for (const call of fetchMock.mock.calls) {
         const options = call[1] as RequestInit;
+        if (String(call[0]) === MODEL_LIMITS_URL) {
+          expect(options.headers).not.toHaveProperty("authorization");
+          continue;
+        }
         expect(options.headers).toMatchObject({
           authorization: "Bearer zen-key-123",
         });
@@ -203,12 +213,12 @@ describe("free provider (zen + kilo)", () => {
       const time = baseTime + 5 * 60 * 60 * 1000;
       vi.spyOn(Date, "now").mockReturnValue(time);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
 
       vi.spyOn(Date, "now").mockReturnValue(time + 10_000);
       const result = await freeProvider.listModels!({});
       expect(result).toEqual(["free-1/hy3-free", "free-2/kilo-auto/free"]);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
     it("refetches once the catalog cache passes 30 minutes", async () => {
@@ -221,15 +231,15 @@ describe("free provider (zen + kilo)", () => {
       const time = baseTime + 6 * 60 * 60 * 1000;
       vi.spyOn(Date, "now").mockReturnValue(time);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
 
       vi.spyOn(Date, "now").mockReturnValue(time + 29 * 60 * 1000);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
 
       vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(fetchMock).toHaveBeenCalledTimes(6);
     });
 
     it("falls back to the curated lists when the catalog fetches fail", async () => {
