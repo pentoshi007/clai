@@ -4,7 +4,7 @@ import { readBodyCapped, readJson } from "./wire/response-errors.js";
 const CATALOG_URL = "https://models.dev/api.json";
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const CACHE_TTL_MS = 30 * 60 * 1000;
-const FAILURE_RETRY_MS = 60 * 1000;
+const REFRESH_COOLDOWN_MS = 60 * 1000;
 const MAX_CATALOG_BYTES = 16 * 1024 * 1024;
 
 interface ModelLimits {
@@ -14,6 +14,7 @@ interface ModelLimits {
 
 let limits: ReadonlyMap<string, ModelLimits> = new Map();
 let nextFetchAt = 0;
+let nextAttemptAt = 0;
 let pending: Promise<ReadonlyMap<string, ModelLimits>> | undefined;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -47,9 +48,12 @@ function zenModelLimits(payload: unknown): ReadonlyMap<string, ModelLimits> {
   return result;
 }
 
-async function loadZenModelLimits(): Promise<ReadonlyMap<string, ModelLimits>> {
+async function loadZenModelLimits(
+  refreshMissing: boolean,
+): Promise<ReadonlyMap<string, ModelLimits>> {
   if (pending) return pending;
-  if (Date.now() < nextFetchAt) return limits;
+  const now = Date.now();
+  if (now < nextAttemptAt || (!refreshMissing && now < nextFetchAt)) return limits;
   const task = (async () => {
     try {
       const signal = AbortSignal.timeout(10_000);
@@ -63,7 +67,8 @@ async function loadZenModelLimits(): Promise<ReadonlyMap<string, ModelLimits>> {
       limits = zenModelLimits(payload);
       nextFetchAt = Date.now() + CACHE_TTL_MS;
     } catch {
-      nextFetchAt = Date.now() + FAILURE_RETRY_MS;
+    } finally {
+      nextAttemptAt = Date.now() + REFRESH_COOLDOWN_MS;
     }
     return limits;
   })();
@@ -79,16 +84,14 @@ export async function supplementZenModelLimits(
   entries: readonly unknown[],
 ): Promise<readonly unknown[]> {
   const facts = entries.map(parseCatalogFacts);
-  if (
-    !facts.some(
-      (entry) =>
-        entry &&
-        (entry.contextTokens === undefined || entry.maxOutputTokens === undefined),
-    )
-  ) {
-    return entries;
-  }
-  const supplemental = await loadZenModelLimits();
+  const incomplete = facts.filter(
+    (entry) =>
+      entry &&
+      (entry.contextTokens === undefined || entry.maxOutputTokens === undefined),
+  );
+  if (incomplete.length === 0) return entries;
+  const refreshMissing = incomplete.some((entry) => entry && !limits.has(entry.id));
+  const supplemental = await loadZenModelLimits(refreshMissing);
   return entries.map((entry, index) => {
     const observed = facts[index];
     if (!observed) return entry;

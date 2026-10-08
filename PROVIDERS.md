@@ -111,7 +111,7 @@ The `free` integration discovers free models from two gateways: `free-1/<model>`
 
 Kilo's model catalog supplies context and output limits directly. Zen's model list currently omits those limits, so clai fills missing values from the exact model entry in the OpenCode provider catalog on [Models.dev](https://github.com/anomalyco/models.dev#api). Discovery follows live model IDs, including newly added models, without a clai update or a hardcoded limit entry. Values reported by the gateway take precedence. The two sources keep separate limits even when model names match; older unprefixed Zen model selections also use the discovered limits.
 
-Discovered limits are cached for 30 minutes and retained locally for later sessions. When discovery is unavailable, clai keeps previously learned limits, then uses its model table or the 200,000-token default if no limit is known. A 200k context can also be an actual gateway limit, rather than a fallback. Use `/context` to inspect the selected session's context budget.
+Discovered limits are cached for 30 minutes and retained locally for later sessions. A newly discovered Zen model ID can trigger an earlier metadata refresh; retries for unpublished limits or failed lookups have a one-minute cooldown. When discovery is unavailable, clai keeps previously learned limits, then uses its model table or the 200,000-token default if no limit is known. A 200k context can also be an actual gateway limit, rather than a fallback. Use `/context` to inspect the selected session's context budget.
 
 ### Mistral
 
