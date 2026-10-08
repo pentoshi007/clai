@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -163,6 +164,46 @@ describe("OpenCode Zen serving limits", () => {
 });
 
 describe("Free model context discovery", () => {
+  it("discovers newly added model limits after refresh without a model table entry", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "clai-free-new-model-"));
+    vi.stubEnv("CLAI_DATA_DIR", dataDir);
+    const addedId = `catalog-${randomUUID()}-free`;
+    let added = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url === CATALOG_URL) return jsonResponse(catalog({
+        "existing-free": { limit: { context: 262_144, output: 32_768 } },
+        ...(added ? { [addedId]: { limit: { context: 1_572_864, output: 49_152 } } } : {}),
+      }));
+      if (url === `${ZEN_BASE_URL}/models`) return jsonResponse({ data: [
+        { id: "existing-free" }, ...(added ? [{ id: addedId }] : []),
+      ] });
+      if (url === `${KILO_BASE_URL}/models`) return jsonResponse({ data: [
+        { id: "existing-free", isFree: true, context_length: 256_000, max_completion_tokens: 32_000 },
+        ...(added ? [{
+          id: addedId, isFree: true,
+          top_provider: { context_length: 300_000, max_completion_tokens: 27_648 },
+        }] : []),
+      ] });
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    const { freeProvider } = await import("../../src/llm/free.js");
+    const { resolveContextWindow, modelMaxOutputTokens, nominalModelContextWindow } = await import("../../src/llm/context-windows.js");
+    expect(nominalModelContextWindow(addedId)).toBe(200_000);
+    await freeProvider.listModels!({});
+    added = true;
+    vi.mocked(Date.now).mockReturnValue(START + 30 * 60_000 - 1);
+    expect(await freeProvider.listModels!({})).not.toContain(`free-1/${addedId}`);
+    vi.mocked(Date.now).mockReturnValue(START + 30 * 60_000);
+    const models = await freeProvider.listModels!({});
+    expect(models).toContain(`free-1/${addedId}`);
+    expect(models).toContain(`free-2/${addedId}`);
+    expect(resolveContextWindow({ provider: "free", model: `free-1/${addedId}` })).toMatchObject({ tokens: 1_572_864, source: "provider" });
+    expect(resolveContextWindow({ provider: "free", model: `free-2/${addedId}` })).toMatchObject({ tokens: 300_000, source: "provider" });
+    expect(modelMaxOutputTokens("free", `free-1/${addedId}`)).toBe(49_152);
+    expect(modelMaxOutputTokens("free", `free-2/${addedId}`)).toBe(27_648);
+  });
+
   it.each(["complete", "stream"] as const)("uses source-specific output limits during %s", async (method) => {
     const bodies: Array<{ model: string; max_tokens: number }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: RequestInit) => {
