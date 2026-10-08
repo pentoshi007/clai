@@ -97,6 +97,34 @@ describe("StreamRenderer", () => {
     expect(out.text()).not.toContain("Remaining:");
   });
 
+  it("prints native streamed reasoning once even without a completed thinking block", () => {
+    const out = fakeStream();
+    const err = fakeStream();
+    const renderer = new StreamRenderer(
+      { out, err, columns: 80, color: false, unicode: false, verbosity: "normal", showThinking: true },
+      fakeClock(),
+    );
+    renderer.handle({ type: "thinking-delta", text: "Check " });
+    renderer.handle({ type: "thinking-delta", text: "the request." });
+    renderer.finish(FIXTURE_OUTCOME);
+    renderer.finish(FIXTURE_OUTCOME);
+    expect(err.text().match(/Check the request\./g)).toHaveLength(1);
+    expect(out.text()).not.toContain("Check the request.");
+  });
+
+  it("avoids printing streamed thinking again after a completed block", () => {
+    const out = fakeStream();
+    const err = fakeStream();
+    const renderer = new StreamRenderer(
+      { out, err, columns: 80, color: false, unicode: false, verbosity: "normal", showThinking: true },
+      fakeClock(),
+    );
+    renderer.handle({ type: "thinking-delta", text: "Check the request." });
+    renderer.handle({ type: "thinking-block", content: "Check the request." });
+    renderer.finish(FIXTURE_OUTCOME);
+    expect(err.text().match(/Check the request\./g)).toHaveLength(1);
+  });
+
   it("omits thinking rows unless showThinking is set", () => {
     const { err } = run({ showThinking: false });
     expect(err.text()).not.toContain("I should search");

@@ -11,6 +11,7 @@ export interface CatalogReasoningFacts {
 
 export interface CatalogFacts {
   readonly id: string;
+  readonly canonicalModel?: string | undefined;
   readonly reasoning?: CatalogReasoningFacts | undefined;
   readonly acceptedParameters?: readonly string[] | undefined;
   readonly contextTokens?: number | undefined;
@@ -19,6 +20,7 @@ export interface CatalogFacts {
   readonly defaultSampling?: Readonly<Record<string, number | null>> | undefined;
   readonly modalities?: readonly string[] | undefined;
   readonly vision?: boolean | undefined;
+  readonly tools?: boolean | undefined;
 }
 
 const REASONING_FEATURE_RE =

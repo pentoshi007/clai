@@ -168,6 +168,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Vercel AI Gateway keys are issued by Vercel (AI_GATEWAY_API_KEY)";
   if (provider === "deepseek")
     return "DeepSeek keys start with sk- (from https://platform.deepseek.com)";
+  if (provider === "mistral")
+    return "Mistral API keys are issued in Mistral Studio (https://console.mistral.ai/api-keys)";
   if (provider === "kimi")
     return "Kimi keys start with sk- (from https://platform.kimi.ai)";
   if (provider === "mimo")

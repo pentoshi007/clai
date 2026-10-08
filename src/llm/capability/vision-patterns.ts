@@ -59,6 +59,12 @@ export const universalVisionPatterns: RegExp[] = [
 ];
 
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
+  mistral: [
+    /^mistral-small-(?:latest|2603)/i,
+    /^mistral-medium-(?:latest|3-5|2604)/i,
+    /^mistral-large-(?:latest|4-0|2610)/i,
+    /^ministral-(?:3b|8b|14b)-(?:2512|latest)/i,
+  ],
   free: [/muse-spark/i, /mimo/i, /step-3/i, /dots-.*note/i],
   freebuff: [
     /gpt-6/i,

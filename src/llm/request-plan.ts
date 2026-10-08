@@ -19,6 +19,7 @@ import {
 import { isRequestContextSystemMessage } from "./system-messages.js";
 import {
   isReasoningUnsupported,
+  modelCatalogFacts,
   modelAcceptsImages,
   modelSupportsThinking,
 } from "./capabilities.js";
@@ -285,8 +286,10 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
   const wire = providerWireApi(input.provider, input.model);
   const target = createReasoningArtifactReplayTarget({
     provider: input.provider,
-    model: input.model,
-    dialect: REPLAY_DIALECT_BY_WIRE[wire],
+    model: input.provider === "mistral"
+      ? modelCatalogFacts("mistral", input.model)?.canonicalModel ?? input.model
+      : input.model,
+    dialect: input.provider === "mistral" ? "mistral-chat" : REPLAY_DIALECT_BY_WIRE[wire],
     ...(input.endpoint ? { endpoint: input.endpoint } : {}),
   });
 
@@ -355,6 +358,10 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     emittedTemperature = input.temperature;
     emittedTopP = undefined;
   }
+  if (input.provider === "mistral") {
+    emittedTemperature = input.temperature ?? profile.sampling.defaults.temperature;
+    emittedTopP = undefined;
+  }
   if (input.temperature !== undefined && emittedTemperature === undefined) {
     warnSamplingFieldNotModifiable(input.provider, input.model, "temperature");
   }
@@ -370,16 +377,20 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
           !modelSupportsThinking(input.provider, input.model)
         ? ("capability-denied" as const)
         : undefined;
+  const acceptedEfforts =
+    input.provider === "mistral" && reasoningEnabled && input.reasoning?.effort !== "none"
+    ? profile.reasoning.acceptedEfforts.filter((effort) => effort !== "none")
+    : profile.reasoning.acceptedEfforts;
   const emittedReasoning =
     !preserveCodexEffort &&
     input.reasoning &&
-    profile.reasoning.acceptedEfforts.length > 0 &&
-    !profile.reasoning.acceptedEfforts.includes(input.reasoning.effort)
+    acceptedEfforts.length > 0 &&
+    !acceptedEfforts.includes(input.reasoning.effort)
       ? {
           ...input.reasoning,
           effort: clampEffortToRoute(
             input.reasoning.effort,
-            profile.reasoning.acceptedEfforts,
+            acceptedEfforts,
           ),
         }
       : input.reasoning;

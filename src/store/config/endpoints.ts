@@ -31,6 +31,7 @@ export interface SubagentModelConfig {
 export const MAX_PROVIDER_ENDPOINTS = 10;
 
 const endpointEnvVars: Partial<Record<ProviderId, string>> = {
+  mistral: "MISTRAL_BASE_URL",
   modal: "MODAL_BASE_URL",
   lightning: "LIGHTNING_BASE_URL",
   tokenrouter: "TOKENROUTER_BASE_URL",

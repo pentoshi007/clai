@@ -126,6 +126,10 @@ export function handleReasoning(services: AppServices, invocation: CommandInvoca
     description: REASONING_DESCRIPTIONS[value] ?? "",
     active: value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
   }));
+  if (options.length === 0) {
+    services.session.notice("info", `${provider}/${model} uses reasoning without adjustable effort controls`);
+    return;
+  }
   services.overlay.openPicker(
     { title: reasoningPickerTitle(provider, model), options },
     (value) => {
@@ -151,8 +155,16 @@ export function reasoningOptionValues(
     return ["off"];
   }
   const accepted = displayReasoningEfforts(provider, model) ?? [];
+  if (
+    provider === "mistral" && accepted.length === 0 &&
+    modelSupportsThinking(provider, model)
+  ) {
+    return [];
+  }
   const efforts =
-    accepted.length > 0 ? scale.filter((value) => accepted.includes(value)) : scale;
+    accepted.length > 0 || provider === "mistral"
+      ? scale.filter((value) => accepted.includes(value))
+      : scale;
   return modelReasoningIsMandatory(model) ||
     routeReasoningIsMandatory(provider, model)
     ? efforts

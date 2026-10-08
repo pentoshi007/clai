@@ -9,6 +9,7 @@ import {
   visionPatterns,
 } from "./vision-patterns.js";
 import type { VisionEvidence, VisionSupport } from "../capabilities.js";
+import { scopedModelCatalogFacts } from "../catalog-context.js";
 import {
   clearPersistedLearnedVision,
   persistLearnedVision,
@@ -120,8 +121,15 @@ export function modelVisionSupport(
 ): VisionSupport {
   warnOnUnknownProviderId("modelVisionSupport", provider);
   loadLearnedCapabilities();
-  const cached = visionCapabilityCache.get(capabilityKey(provider, model));
+  let cached = visionCapabilityCache.get(capabilityKey(provider, model));
   if (cached && cached.source === "user") return cached.vision ? "yes" : "no";
+  const scope = scopedModelCatalogFacts(provider);
+  if (scope) {
+    const vision = scope.get(model.trim().toLowerCase())?.vision;
+    if (vision !== undefined) return vision ? "yes" : "no";
+    cached = undefined;
+  }
+  if (provider === "mistral" && cached) return cached.vision ? "yes" : "no";
   if (cached?.vision) return "yes";
   const configured = configuredVisionModel(provider);
   if (configured?.toLowerCase() === model.trim().toLowerCase()) return "yes";

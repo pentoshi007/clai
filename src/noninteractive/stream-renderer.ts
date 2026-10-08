@@ -31,6 +31,7 @@ import {
   type StreamVerbosity,
 } from "./stream-blocks.js";
 import { StreamSpinner } from "./stream-spinner.js";
+import { liveThinkingTail } from "../ui-core/rendering/thinking-tail.js";
 
 export interface StreamRendererOptions {
   readonly out: NodeJS.WritableStream;
@@ -55,6 +56,7 @@ export class StreamRenderer {
   private readonly startedAt: number;
   private label = "working";
   private lastAnswer = "";
+  private pendingThinking = "";
   private finished = false;
 
   constructor(
@@ -74,6 +76,7 @@ export class StreamRenderer {
   handle(event: AgentEvent): void {
     switch (event.type) {
       case "turn-start":
+        this.pendingThinking = "";
         this.writeErr(buildTurnStartLines(this.ctx, event));
         this.spin("waiting for model");
         return;
@@ -82,12 +85,18 @@ export class StreamRenderer {
         this.spin(event.text.trim() || this.label);
         return;
       case "thinking-delta":
+        if (this.options.showThinking && this.options.verbosity !== "quiet") {
+          const text = this.pendingThinking + event.text;
+          this.pendingThinking = this.options.verbosity === "verbose" ? text : liveThinkingTail(text);
+        }
+        return;
       case "assistant-delta":
       case "compaction-delta":
       case "tool-start":
       case "turn-end":
         return;
       case "thinking-block":
+        this.pendingThinking = "";
         this.writeErr(buildThinkingBlockLines(this.ctx, event));
         return;
       case "assistant-message":
@@ -151,6 +160,10 @@ export class StreamRenderer {
     if (this.finished) return;
     this.finished = true;
     this.spinner.clear();
+    if (this.pendingThinking) {
+      this.writeErr(buildThinkingBlockLines(this.ctx, { type: "thinking-block", content: this.pendingThinking }));
+      this.pendingThinking = "";
+    }
     const lines = renderAnswerLines(this.ctx, renderTurnOutcome(outcome));
     const text = lines.join("\n");
     if (text === "" || text === this.lastAnswer) return;

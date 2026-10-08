@@ -82,6 +82,7 @@ An environment credential is also used directly when no stored credentials take 
 | GLM / Zhipu | `glm` | `GLM_API_KEY`, `ZHIPU_API_KEY`, or `ZAI_API_KEY` |
 | Kimi / Moonshot | `kimi` | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
 | Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
@@ -103,6 +104,29 @@ An environment credential is also used directly when no stored credentials take 
 | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
 
 For model choice, use `/model` or `clai model <name>`. Use the `/provider` picker's custom-provider option to add an OpenAI-compatible endpoint.
+
+### Mistral
+
+Create an API key in [Mistral Studio](https://console.mistral.ai/api-keys), then configure clai:
+
+```sh
+clai set mistral
+clai use mistral
+```
+
+Alternatively, set `MISTRAL_API_KEY` in your environment. The default model is `mistral-small-latest`. `/model` discovers the chat models and aliases available to your account through [`/v1/models`](https://docs.mistral.ai/api/endpoint/models), including compatible fine-tuned models. Context limits, image input, function calling, and model temperature defaults follow the returned metadata. Embedding, OCR, moderation, and dedicated audio models are excluded from the chat picker.
+
+`/effort` shows the model's advertised or documented controls. The current adjustable Mistral models expose `off` and `high`; Mistral-hosted GLM 5.3 exposes `low`, `high`, and `max` and always reasons. Models without documented or advertised effort controls do not offer guessed settings. Native thinking streams into clai's reasoning display separately from the answer. Thinking chunks, signatures, and their order are retained in session history and replayed on compatible turns. Aliases resolving to the same model version share replay compatibility; a model or endpoint change omits incompatible reasoning while retaining the transcript. See [Mistral's reasoning guide](https://docs.mistral.ai/studio/conversations/reasoning).
+
+clai sends a stable, hashed `prompt_cache_key` for each session and preserves the shared conversation prefix. Subagents and auxiliary requests have separate affinity. Cached-input and reasoning-token counts use provider usage fields when available. [Prompt-cache hits depend on Mistral finding a compatible cached prefix](https://docs.mistral.ai/studio/conversations/advanced/prompt-caching); a cache key cannot guarantee a hit.
+
+The default endpoint is `https://api.mistral.ai/v1`. To select [regional inference](https://docs.mistral.ai/inference/regional-inference), set `MISTRAL_BASE_URL` or save an endpoint:
+
+```sh
+clai set mistral --url https://api.eu.mistral.ai/v1
+```
+
+`https://api.us.mistral.ai/v1` selects the US endpoint. Availability is discovered against the selected endpoint, and model catalogs are cached separately by endpoint and credential. Mistral uses clai's existing key rotation, request cancellation, stream validation, local tools, and subagent lifecycle.
 
 ### Local and configurable endpoints
 

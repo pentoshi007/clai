@@ -86,8 +86,20 @@ export function catalogProfileLayer(
   const layer: ProviderProfileLayer = {
     evidence,
     ...(Object.keys(reasoningLayer).length > 0 ? { reasoning: reasoningLayer } : {}),
-    ...(facts.acceptedParameters !== undefined
-      ? { capabilities: { acceptedParameters: facts.acceptedParameters } }
+    ...(facts.acceptedParameters !== undefined || facts.tools !== undefined || facts.vision !== undefined
+      ? {
+          capabilities: {
+            ...(facts.acceptedParameters !== undefined
+              ? { acceptedParameters: facts.acceptedParameters }
+              : {}),
+            ...(facts.tools !== undefined
+              ? { tools: facts.tools ? "supported" as const : "unsupported" as const }
+              : {}),
+            ...(facts.vision !== undefined
+              ? { images: facts.vision ? "supported" as const : "unsupported" as const }
+              : {}),
+          },
+        }
       : {}),
     ...(facts.contextTokens !== undefined || facts.maxOutputTokens !== undefined
       ? {
@@ -122,6 +134,7 @@ export function modelFamilyLayerFor(
   model: string,
   endpointDialect?: ReasoningControlDialect | undefined,
 ): ProviderProfileLayer | undefined {
+  if (provider === "mistral") return undefined;
   const family = modelFamilyFor(model);
   if (!family) return undefined;
   const providerExcluded = family.id === "mimo-v2" && provider !== "mimo";

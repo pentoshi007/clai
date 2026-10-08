@@ -18,6 +18,7 @@ import { currentSessionAffinity } from "../session-affinity.js";
 import {
   isReasoningUnsupported,
   modelSupportsThinking,
+  modelCatalogFacts,
 } from "../capabilities.js";
 import { modelMaxOutputTokens } from "../context-windows.js";
 import {
@@ -29,6 +30,7 @@ import type { RequestPlanV1 } from "../request-plan.js";
 import { resolveSampling } from "../sampling.js";
 import { singleLeadingSystemMessages } from "../system-messages.js";
 import { freebuffMessages } from "../freebuff-wire.js";
+import { toMistralMessages } from "../adapters/mistral-messages.js";
 import { stripImagesFromMessages } from "./capability-errors.js";
 import {
   buildReasoningPayload,
@@ -308,6 +310,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     options.providerId === "merge-gateway" ||
     options.providerId === "tokenrouter" ||
     options.providerId === "openai" ||
+    options.providerId === "mistral" ||
     options.providerId === "explabs" ||
     options.providerId === "cline"
       ? affinitySession
@@ -361,11 +364,18 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       options.ephemeralCacheBreakpoints,
     );
   }
+  const acceptsTools =
+    !(options.providerId === "mistral" && modelCatalogFacts("mistral", options.model)?.tools === false) &&
+    !(options.providerId === "openrouter" &&
+      options.control?.profile.capabilities.acceptedParameters !== undefined &&
+      !options.control.profile.capabilities.acceptedParameters.includes("tools"));
   const body: Record<string, unknown> = {
     ...safeBodyExtras(options.bodyExtras),
     ...options.cacheFields,
     model: options.model,
-    messages: rawMessages,
+    messages: options.providerId === "mistral"
+      ? toMistralMessages(rawMessages)
+      : rawMessages,
     stream: options.stream,
     ...(options.providerId === "cline" && /claude|anthropic|qwen/i.test(options.model)
       ? { cache_control: { type: "ephemeral" } }
@@ -380,6 +390,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       ? { session_id: affinityKey }
       : {}),
     ...((options.providerId === "openai" ||
+      options.providerId === "mistral" ||
       options.providerId === "tokenrouter" ||
       options.providerId === "explabs") &&
     affinityKey
@@ -403,20 +414,20 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
         : { max_tokens: effectiveMaxTokens }),
     ...(emitTemperature ? { temperature: sampling.temperature } : {}),
     ...reasoning,
-    ...(options.providerId === "openrouter" &&
-    options.control?.profile?.capabilities?.acceptedParameters !== undefined &&
-    !options.control.profile.capabilities.acceptedParameters.includes("tools")
-      ? {}
-      : openAiToolBodyFields({
+    ...(acceptsTools ? openAiToolBodyFields({
           tools: options.tools,
           toolChoice: options.toolChoice,
           parallelToolCalls: options.parallelToolCalls,
-        })),
+        }) : {}),
+    ...(options.providerId === "mistral" && acceptsTools &&
+      options.tools?.length && options.parallelToolCalls !== undefined
+      ? { parallel_tool_calls: options.parallelToolCalls }
+      : {}),
   };
   if (emitTemperature && sampling.topP !== undefined) {
     body.top_p = sampling.topP;
   }
-  if (options.stream && options.includeStreamUsage !== false) {
+  if (options.stream && options.includeStreamUsage !== false && options.providerId !== "mistral") {
     body.stream_options = { include_usage: true };
   }
   return JSON.stringify(body);
@@ -459,6 +470,7 @@ function portableToolHistory(
     );
     if (
       isTextOnlyModel(plan.route.provider, plan.route.model) ||
+      (plan.route.provider === "mistral" && modelCatalogFacts("mistral", plan.route.model)?.tools === false) ||
       (foreignArtifact && !hasCompatibleArtifact) ||
       (forceReasoningReplay && !replayableText)
     ) {
@@ -496,9 +508,10 @@ export function chatCompletionsBodyFromPlan(
     Boolean(extras.forceReasoningReplay),
   );
   const allowTools =
-    plan.route.provider !== "openrouter" ||
+    !(plan.route.provider === "mistral" && modelCatalogFacts("mistral", plan.route.model)?.tools === false) &&
+    (plan.route.provider !== "openrouter" ||
     plan.policy.acceptedParameters === undefined ||
-    plan.policy.acceptedParameters.includes("tools");
+    plan.policy.acceptedParameters.includes("tools"));
   return emitChatCompletionsBody({
     model: plan.route.model,
     providerId: plan.route.provider,

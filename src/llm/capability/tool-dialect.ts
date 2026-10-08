@@ -3,6 +3,7 @@ import type { ProviderId } from "../../types.js";
 import { isTextOnlyModel } from "../tool-protocol.js";
 import type { ToolCallingMode, ToolDialect } from "../tool-protocol.js";
 import { catalogFactsByRoute, reasoningKey } from "./state.js";
+import { scopedModelCatalogFacts } from "../catalog-context.js";
 
 const providerToolDialect: Record<ProviderId, ToolDialect> = {
   free: "openai",
@@ -24,6 +25,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   explabs: "openai",
   vercel: "openai",
   anthropic: "anthropic",
+  mistral: "openai",
   "aws-mantle": "openai",
   gemini: "gemini",
   ollama: "ollama",
@@ -89,7 +91,11 @@ export function resolveToolDialect(
   if (mode === "text") return "none";
   if (isTextOnlyModel(provider, model)) return "none";
   if (nativeToolsDenylist.some((re) => re.test(model))) return "none";
-  const facts = catalogFactsByRoute.get(reasoningKey(provider, model));
+  const scope = scopedModelCatalogFacts(provider);
+  const facts = scope
+    ? scope.get(model.trim().toLowerCase())
+    : catalogFactsByRoute.get(reasoningKey(provider, model));
+  if (facts?.tools === false) return "none";
   if (
     provider === "openrouter" &&
     facts?.acceptedParameters !== undefined &&

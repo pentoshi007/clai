@@ -52,6 +52,7 @@ import {
 } from "./reasoning-artifacts.js";
 import { ReasoningStyle } from "./reasoning-payload.js";
 import { readJson } from "./response-errors.js";
+import { MistralContentAccumulator, mistralContentText, mistralReasoningArtifacts } from "./mistral-content.js";
 import { currentRequestPurpose } from "../request-purpose.js";
 import { openAiCompatibleStreamViaResponses } from "./responses-first.js";
 
@@ -274,7 +275,7 @@ export async function openAiCompatibleStream(request: {
         choices?: Array<{
           finish_reason?: string;
           message?: {
-            content?: string | null;
+            content?: string | unknown[] | null;
             reasoning_content?: string;
             reasoning?: string;
             reasoning_details?: unknown;
@@ -284,7 +285,7 @@ export async function openAiCompatibleStream(request: {
             tool_calls?: Array<{
               id?: string;
               type?: string;
-              function?: { name?: string; arguments?: string };
+              function?: { name?: string; arguments?: string | Record<string, unknown> };
             }>;
           };
         }>;
@@ -300,7 +301,8 @@ export async function openAiCompatibleStream(request: {
       const choice = data.choices?.[0];
       const message = choice?.message;
       const toolCalls = parseOpenAiMessageToolCalls(message?.tool_calls);
-      const text = message?.content ?? "";
+      const nativeContent = options.providerId === "mistral" ? mistralContentText(message?.content) : undefined;
+      const text = nativeContent?.text ?? (typeof message?.content === "string" ? message.content : "");
       const jsonUsage =
         options.providerId === "fireworks"
           ? parseFireworksUsage(
@@ -309,11 +311,15 @@ export async function openAiCompatibleStream(request: {
               response.headers,
             )
           : parseOpenAiUsage(data.usage, options.usageAliases);
-      const reasoning = openAiReasoningText(message);
+      const reasoning = nativeContent?.reasoning || openAiReasoningText(message);
       const detailsRaw = artifactRaw(message?.reasoning_details);
       const thoughtSignature =
         message?.extra_content?.google?.thought_signature;
-      const reasoningArtifacts = compatibleReasoningArtifacts({
+      const reasoningArtifacts = (options.providerId === "mistral" ? mistralReasoningArtifacts({
+        content: message?.content,
+        model: options.model,
+        baseUrl: options.baseUrl,
+      }) : undefined) ?? compatibleReasoningArtifacts({
         providerId: options.providerId,
         model: options.model,
         baseUrl: options.baseUrl,
@@ -345,6 +351,7 @@ export async function openAiCompatibleStream(request: {
         (typeof reasoning === "string" && reasoning.trim())
       ) {
         emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
+        if (options.providerId === "mistral" && reasoning) emitStreamReasoningDelta(options.onStreamEvent, reasoning);
         if (text) options.onToken(text);
         return {
           text,
@@ -405,6 +412,7 @@ export async function openAiCompatibleStream(request: {
   let reasoningSeen = "";
   let contentWireSeen = "";
   let reasoningWireSeen = "";
+  const mistralContent = options.providerId === "mistral" ? new MistralContentAccumulator() : undefined;
   let finishReason: string | undefined;
   let terminalSignal: StreamTerminalProof | undefined;
   const terminalPolicy =
@@ -454,6 +462,10 @@ export async function openAiCompatibleStream(request: {
   }> = [];
 
   const finalReasoningArtifacts = (toolCalls: readonly NativeToolCall[]) => {
+    if (mistralContent) {
+      const native = mistralReasoningArtifacts({ content: mistralContent.content, model: options.model, baseUrl: options.baseUrl });
+      if (native) return native;
+    }
     if (pendingThoughtSignatures.length) {
       const toolCallIndex = toolCalls.length ? 0 : undefined;
       for (const capture of pendingThoughtSignatures.splice(0)) {
@@ -614,9 +626,9 @@ export async function openAiCompatibleStream(request: {
       if (idleController.signal.aborted) {
         throw new Error("Stream aborted");
       }
-      if (done) break;
+      if (done && !buffer) break;
       if (value && value.byteLength > 0) noteTransportActivity();
-      buffer += decoder.decode(value, { stream: true });
+      buffer += done ? `${decoder.decode()}\n` : decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) {
@@ -673,12 +685,15 @@ export async function openAiCompatibleStream(request: {
           };
         }
         let parsed: {
+          object?: string;
+          message?: string;
+          type?: string;
           error?: { message?: string; type?: string } | string;
           usage?: unknown;
           choices?: Array<{
             finish_reason?: string;
             delta?: {
-              content?: string;
+              content?: string | unknown[];
               reasoning_content?: string;
               reasoning?: string;
               reasoning_details?: unknown;
@@ -706,14 +721,15 @@ export async function openAiCompatibleStream(request: {
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
           continue;
         }
-        if (parsed.error) {
+        const inBandError = parsed.error ?? (options.providerId === "mistral" && parsed.object === "error" ? parsed : undefined);
+        if (inBandError) {
           const detail =
-            typeof parsed.error === "string"
-              ? parsed.error
-              : (parsed.error.message ?? parsed.error.type ?? "unknown error");
+            typeof inBandError === "string"
+              ? inBandError
+              : (inBandError.message ?? inBandError.type ?? "unknown error");
           throw new ProviderError(
             `${options.provider} stream error: ${detail}`,
-            inBandBadRequestStatus(parsed.error),
+            inBandBadRequestStatus(inBandError),
             payload.slice(0, 500),
           );
         }
@@ -733,8 +749,9 @@ export async function openAiCompatibleStream(request: {
           const finalUsageFrame = isFinalUsageFrame(parsed);
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
-          const reasoningToken = openAiReasoningText(delta);
-          const token = delta?.content;
+          const nativeContent = mistralContent?.append(delta?.content);
+          const reasoningToken = nativeContent?.reasoning || openAiReasoningText(delta);
+          const token = nativeContent?.text ?? (typeof delta?.content === "string" ? delta.content : undefined);
           const detailRaw = artifactRaw(delta?.reasoning_details);
           const thoughtSignature =
             delta?.extra_content?.google?.thought_signature;
@@ -770,7 +787,7 @@ export async function openAiCompatibleStream(request: {
             terminalSignal = "usage-chunk";
           }
           if (reasoningToken) {
-            const normalized = normalizeChannelDelta(
+            const normalized = mistralContent ? { delta: reasoningToken, seen: reasoningWireSeen + reasoningToken } : normalizeChannelDelta(
               reasoningToken,
               reasoningWireSeen,
               options.providerId === "bynara" ? 1 : 64,
@@ -792,9 +809,12 @@ export async function openAiCompatibleStream(request: {
             });
           }
           if (token) {
-            const normalized = normalizeChannelDelta(token, contentWireSeen);
+            const normalized = mistralContent ? { delta: token, seen: contentWireSeen + token } : normalizeChannelDelta(token, contentWireSeen);
             contentWireSeen = normalized.seen;
-            if (normalized.delta) handleContentToken(normalized.delta);
+            if (normalized.delta) {
+              if (mistralContent) emitVisible(normalized.delta);
+              else handleContentToken(normalized.delta);
+            }
           }
           const deltaToolCallIndices: number[] = [];
           if (delta?.tool_calls?.length) {
@@ -849,6 +869,7 @@ export async function openAiCompatibleStream(request: {
           }
         }
       }
+      if (done) break;
     }
     flushEchoBuffer();
     cleanup();

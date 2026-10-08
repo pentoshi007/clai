@@ -43,6 +43,7 @@ import {
   retireRejectedReasoningReplay,
   revertVisionSubstitution,
   runRecordedProviderAttempt,
+  trackReasoningReplay,
   successfulRequestSnapshot,
   withoutImages,
   withoutReasoning,
@@ -81,8 +82,9 @@ export async function tryStreamOnce(
     }
     downstreamEvents?.(event);
   };
+  const replay = trackReasoningReplay(request);
   const activeRequest = {
-    ...requestForRoute(request, providerId, model),
+    ...requestForRoute(replay.request, providerId, model),
     provider: providerId,
     model,
     ...(onToolCallDelta || downstreamEvents
@@ -289,7 +291,10 @@ export async function tryStreamOnce(
           withoutReasoningReplay(activeRequest),
           "adaptation",
         );
-        retireRejectedReasoningReplay(request.messages, providerId, model);
+        retireRejectedReasoningReplay(
+          request.messages, providerId, model,
+          replay.replayedSources.size ? replay.replayedSources : undefined,
+        );
         return result;
       } catch (retryError) {
         throw markStreamEmittedBytes(
