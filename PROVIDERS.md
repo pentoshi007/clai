@@ -46,6 +46,8 @@ clai use qoder
 
 Select reasoning with `/effort`, for example `/effort xhigh`. clai sends Qoder's native thinking controls using the selected effort and renders streamed reasoning when the model provides it. Model capabilities and account limits still determine what is available.
 
+`/models` retrieves Qoder's account-visible catalog, with cached or bundled choices if discovery is unavailable. When Qoder queues a model request, clai displays the queue status and resumes the request when the model becomes available. The default queue wait limit is one hour; `QODER_MODEL_QUEUE_MAX_WAIT_MS` sets a different limit in milliseconds. Cancelling the turn stops the wait and releases the queue lease. Reported input, output, cache, and reasoning usage feeds the session totals.
+
 ### Freebuff
 
 Freebuff sign-in and model discovery are supported. Generation first requests a server session with a zero wallet-spend limit. Admission can be refused because of server compatibility, account restrictions, concurrent-session limits, quota, or model availability; successful sign-in and a visible model catalog do not establish inference access.

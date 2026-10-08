@@ -25,6 +25,7 @@ import {
   RUNTIME_SESSION_ENV,
   RUNTIME_SOCKET_ENV,
   RUNTIME_TOKEN_ENV,
+  RUNTIME_VIEWS_ENV,
   encodeRuntimeHostPayload,
   selfLaunchSpec,
 } from "./launch.js";
@@ -44,7 +45,9 @@ import {
   type RuntimeHostFrame,
   type RuntimeHostPayload,
   type RuntimeMetadata,
+  type RuntimeTerminalOptions,
 } from "./types.js";
+import { runtimeTerminalOptions } from "./terminal-options.js";
 
 const START_TIMEOUT_MS = 10_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
@@ -83,6 +86,7 @@ export interface DurableInteractiveOptions {
   readonly childArgs: readonly string[];
   readonly resume?: ResumeTarget | undefined;
   readonly noHistory?: boolean | undefined;
+  readonly ui?: RuntimeTerminalOptions["ui"] | undefined;
 }
 
 function delay(ms: number): Promise<void> {
@@ -144,6 +148,7 @@ export function runtimeClientAuthFrame(
   role: "client-control" | "client-terminal",
   clientId: string,
   dimensions?: { readonly columns: number; readonly rows: number } | undefined,
+  terminal?: RuntimeTerminalOptions | undefined,
 ): RuntimeAuthFrame {
   return {
     version: RUNTIME_PROTOCOL_VERSION,
@@ -152,6 +157,7 @@ export function runtimeClientAuthFrame(
     token: metadata.token,
     clientId,
     ...(role === "client-terminal" && dimensions ? dimensions : {}),
+    ...(role === "client-terminal" && terminal ? { terminal } : {}),
   };
 }
 
@@ -160,13 +166,14 @@ async function openChannel(
   role: "client-control" | "client-terminal",
   clientId: string,
   dimensions?: { readonly columns: number; readonly rows: number } | undefined,
+  terminal?: RuntimeTerminalOptions | undefined,
 ): Promise<{ socket: Socket; first: Awaited<ReturnType<typeof readFirstFrame>> }> {
   const socket = await connectRuntimeSocket(metadata.socketPath);
   socket.on("error", () => socket.destroy());
   try {
     sendFrame(
       socket,
-      runtimeClientAuthFrame(metadata, role, clientId, dimensions),
+      runtimeClientAuthFrame(metadata, role, clientId, dimensions, terminal),
     );
     const first = await readFirstFrame(socket);
     if (!isAck(first.value)) {
@@ -185,6 +192,7 @@ function childEnvironment(payload: string): NodeJS.ProcessEnv {
   delete env[RUNTIME_SOCKET_ENV];
   delete env[RUNTIME_TOKEN_ENV];
   delete env[RUNTIME_SESSION_ENV];
+  delete env[RUNTIME_VIEWS_ENV];
   env[RUNTIME_HOST_ENV] = payload;
   return env;
 }
@@ -206,7 +214,8 @@ async function startRuntimeHost(
     ...(target.resumeId ? ["--resume", target.resumeId] : []),
     ...(target.resumeLatest ? [target.resumeLatest === "global" ? "--resume" : "--continue"] : []),
   ];
-  const childLaunch = selfLaunchSpec(options.entryPath, childArgs);
+  const runtimeLaunch = brokerLaunch(options.entryPath);
+  const childLaunch = { file: runtimeLaunch.file, args: [...runtimeLaunch.args, ...childArgs] };
   const cwd = target.cwd && (await stat(target.cwd).catch(() => undefined))?.isDirectory()
     ? target.cwd
     : safeCwd();
@@ -218,6 +227,7 @@ async function startRuntimeHost(
     columns: terminalColumns(),
     rows: terminalRows(),
     idleTimeoutMs: idleTimeoutMs(),
+    independentViews: true,
   };
   const hostLaunch = brokerLaunch(options.entryPath);
   const child = spawn(hostLaunch.file, [...hostLaunch.args], {
@@ -395,6 +405,7 @@ async function attachRuntime(
   metadata: RuntimeMetadata,
   altScreen: AltScreenTracker,
   signal: AbortSignal,
+  ui: RuntimeTerminalOptions["ui"] = "auto",
 ): Promise<AttachOutcome> {
   const clientId = `${process.pid}-${randomUUID()}`;
   const dimensions = {
@@ -413,6 +424,7 @@ async function attachRuntime(
       "client-terminal",
       clientId,
       dimensions,
+      metadata.independentViews ? runtimeTerminalOptions(ui) : undefined,
     );
   } catch (error) {
     controlConnection.socket.destroy();
@@ -421,6 +433,7 @@ async function attachRuntime(
   const control = controlConnection.socket;
   const terminal = terminalConnection.socket;
   const sharedInput = (terminalConnection.first.value as RuntimeAckFrame).sharedInput === true;
+  const independentViews = (terminalConnection.first.value as RuntimeAckFrame).independentViews === true;
   let settled = false;
   let exitPending = false;
   let ownsInput = true;
@@ -492,11 +505,16 @@ async function attachRuntime(
   const inputStream = new RuntimeInputStream((bytes, reply) => {
     if (settled || exitPending) return;
     if (reply) {
+      if (independentViews) {
+        if (!channel?.send({ type: "input", data: bytes.toString("base64") })) onTerminalError();
+        if (control.writableNeedDrain) stdin.pause();
+        return;
+      }
       if (ownsInput && !terminal.write(bytes)) stdin.pause();
       return;
     }
     const command = runtimeInputCommand(bytes.toString("latin1"));
-    if (command === "claim-input") {
+    if (!independentViews && command === "claim-input") {
       claimingInput = !ownsInput;
       channel?.send({ type: "claim-input" });
       return;
@@ -635,7 +653,7 @@ async function runRuntimeClient(
       if (interrupted) return interrupted;
       let outcome: AttachOutcome;
       try {
-        outcome = await attachRuntime(metadata, altScreen, controller.signal);
+        outcome = await attachRuntime(metadata, altScreen, controller.signal, options.ui);
       } catch (error) {
         if (await probeRuntime(metadata)) throw new LiveRuntimeAttachError(metadata.sessionId, error);
         throw error;

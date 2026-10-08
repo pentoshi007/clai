@@ -21,6 +21,8 @@ export class TranscriptStore {
   private persistBase: readonly ClassicTranscriptItem[] = [];
   private persistHydratedIds = new Set<string>();
   private pendingEvents: AnyAppEvent[] = [];
+  private contentSource: TranscriptStore | undefined;
+  private contentSnapshot: TranscriptState | undefined;
 
   private static readonly COALESCED_EVENT_TYPES = new Set<string>([
     "assistant-delta",
@@ -41,11 +43,49 @@ export class TranscriptStore {
   }
 
   getState(): TranscriptState {
+    if (this.contentSource) this.syncContent(this.contentSource.getState());
     this.flushPendingEvents();
     return this.state;
   }
 
+  fork(): { readonly transcript: TranscriptStore; dispose(): void } {
+    const transcript = new TranscriptStore(this.maxItems, this.coalesceMs);
+    transcript.contentSource = this;
+    transcript.contentSnapshot = this.getState();
+    transcript.state = { ...transcript.contentSnapshot, itemOverrides: new Map(), fileDiffOverrides: new Map(), focusedThinkingId: undefined };
+    const unsubscribe = this.subscribe(() => {
+      transcript.syncContent(this.getState());
+      transcript.flushNotify();
+    });
+    return {
+      transcript,
+      dispose() {
+        unsubscribe();
+        transcript.clearPendingEvents();
+        transcript.listeners.clear();
+        transcript.contentSource = undefined;
+        transcript.contentSnapshot = undefined;
+      },
+    };
+  }
+
+  private syncContent(shared: TranscriptState): void {
+    if (this.contentSnapshot === shared) return;
+    this.contentSnapshot = shared;
+    const local = this.state;
+    this.applyState(shared === EMPTY_TRANSCRIPT_STATE ? shared : {
+      ...shared,
+      expandThinkingGlobal: local.expandThinkingGlobal,
+      expandOutputGlobal: local.expandOutputGlobal,
+      expandFileDiffsGlobal: local.expandFileDiffsGlobal,
+      itemOverrides: local.itemOverrides,
+      fileDiffOverrides: local.fileDiffOverrides,
+      focusedThinkingId: local.focusedThinkingId && shared.byId.has(local.focusedThinkingId) ? local.focusedThinkingId : undefined,
+    });
+  }
+
   dispatch(event: AnyAppEvent): void {
+    if (this.contentSource) { this.contentSource.dispatch(event); return; }
     if (TranscriptStore.COALESCED_EVENT_TYPES.has(event.type)) {
       const lastQueuedSequence =
         this.pendingEvents.at(-1)?.sequence ?? this.state.lastSequence;
@@ -173,6 +213,7 @@ export class TranscriptStore {
   }
 
   reset(): void {
+    if (this.contentSource) { this.contentSource.reset(); return; }
     this.clearPendingEvents();
     this.persistBase = [];
     this.persistHydratedIds = new Set();
@@ -188,6 +229,7 @@ export class TranscriptStore {
         }
       | undefined,
   ): void {
+    if (this.contentSource) { this.contentSource.hydrate(next, options); return; }
     const current = this.getState();
     if (options && "persistBase" in options) {
       this.persistBase = options.persistBase ?? [];
@@ -213,6 +255,7 @@ export class TranscriptStore {
   mergePersistSnapshot(
     items: ClassicTranscriptItem[],
   ): ClassicTranscriptItem[] {
+    if (this.contentSource) return this.contentSource.mergePersistSnapshot(items);
     if (this.persistBase.length === 0 && this.persistHydratedIds.size === 0) {
       return items;
     }

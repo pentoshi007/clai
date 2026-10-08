@@ -29,7 +29,7 @@ import { ToastController, DEFAULT_TOAST_DURATION_MS } from "../controllers/toast
 import { isProviderFailureStatus } from "../../llm/key-rotation.js";
 import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
-import { McpRuntime } from "../../mcp/runtime.js";
+import { McpRuntime, type McpRuntimeOptions } from "../../mcp/runtime.js";
 import { openSystemBrowser } from "../../mcp/auth/loopback.js";
 import { getSkillIndex } from "../../skills/registry.js";
 import { safeCwd } from "../../os/cwd.js";
@@ -60,6 +60,8 @@ export interface AppPorts {
 }
 
 export interface CompositionOptions {
+  readonly interactiveOverlay?: (() => OverlayController | undefined) | undefined;
+  readonly requestOAuthConsent?: McpRuntimeOptions["requestOAuthConsent"];
   readonly mcp?: McpRuntime | undefined;
   readonly agent?: AgentPort | undefined;
   readonly persistence?: PersistencePort | undefined;
@@ -107,6 +109,7 @@ export interface AppServices {
   readonly requestSessionSwitch: (sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean;
   readonly capabilities: TerminalCapabilityReport;
   readonly recordedEvents: readonly AnyAppEvent[];
+  readonly hasOtherViews?: (() => boolean) | undefined;
   dispose(): void;
 }
 
@@ -115,6 +118,7 @@ export function createCompositionRoot(
 ): AppServices {
   let sessionRef: SessionController | undefined;
   let overlay: OverlayController;
+  const interactiveOverlay = (): OverlayController | undefined => options.interactiveOverlay ? options.interactiveOverlay() : overlay;
   const mcp =
     options.mcp ??
     new McpRuntime({
@@ -131,7 +135,7 @@ export function createCompositionRoot(
           "",
           `The code expires in ${Math.max(1, Math.round(info.expiresInSeconds / 60))} minute(s). Sign-in completes automatically once approved.`,
         ];
-        const shown = overlay?.openPager(
+        const shown = interactiveOverlay()?.openPager(
           `MCP sign-in · ${info.serverUrl}`,
           lines.join("\n"),
           undefined,
@@ -146,7 +150,7 @@ export function createCompositionRoot(
         }
       },
       onAuthorizationUrl: (info) => {
-        const shown = overlay?.openPager(
+        const shown = interactiveOverlay()?.openPager(
           `MCP sign-in · ${info.serverUrl}`,
           [
             `MCP server: ${info.serverUrl}`,
@@ -160,8 +164,8 @@ export function createCompositionRoot(
         );
         if (!shown) sessionRef?.notice("info", `MCP sign-in: ${info.url}`);
       },
-      requestOAuthConsent: (info) =>
-        overlay?.openConfirm({
+      requestOAuthConsent: options.requestOAuthConsent ?? ((info) =>
+        interactiveOverlay()?.openConfirm({
           kind: "mcp-oauth",
           prompt: [
             info.message ?? "Authorize MCP access?",
@@ -171,7 +175,7 @@ export function createCompositionRoot(
           ]
             .filter((line): line is string => typeof line === "string")
             .join("\n"),
-        }) ?? Promise.resolve(false),
+        }) ?? Promise.resolve(false)),
     });
   const recorded: AnyAppEvent[] = [];
   const captureEvents = options.captureEvents === true;

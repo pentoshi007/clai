@@ -15,6 +15,7 @@ import {
   RUNTIME_SESSION_ENV,
   RUNTIME_SOCKET_ENV,
   RUNTIME_TOKEN_ENV,
+  RUNTIME_VIEWS_ENV,
   decodeRuntimeHostPayload,
 } from "./launch.js";
 import { isRuntimeSocketPath, runtimeSocketPath } from "./paths.js";
@@ -26,6 +27,7 @@ import {
 import { TerminalReplayBuffer } from "./replay-buffer.js";
 import { TerminalAttachOutput } from "./attach-output.js";
 import { TerminalModeState } from "./terminal-modes.js";
+import { parseRuntimeTerminalOptions, runtimeTerminalOptions } from "./terminal-options.js";
 import { enforceIdleRuntimeCap } from "./reaper.js";
 import {
   createRuntimeToken,
@@ -43,6 +45,7 @@ import {
   type RuntimeHostFrame,
   type RuntimeHostPayload,
   type RuntimeMetadata,
+  type RuntimeTerminalOptions,
 } from "./types.js";
 
 const CLIENT_BACKPRESSURE_BYTES = 1024 * 1024;
@@ -68,6 +71,7 @@ interface ActiveClient {
   output?: TerminalAttachOutput | undefined;
   dimensions?: TerminalDimensions | undefined;
   inputBytes?: number | undefined;
+  terminalOptions?: RuntimeTerminalOptions | undefined;
 }
 
 function errorText(error: unknown): string {
@@ -88,7 +92,9 @@ function authFrame(value: unknown): RuntimeAuthFrame | undefined {
     (frame.columns !== undefined && typeof frame.columns !== "number") ||
     (frame.rows !== undefined && typeof frame.rows !== "number") ||
     (frame.supportsRepaint !== undefined &&
-      typeof frame.supportsRepaint !== "boolean")
+      typeof frame.supportsRepaint !== "boolean") ||
+    (frame.independentViews !== undefined && typeof frame.independentViews !== "boolean") ||
+    (frame.terminal !== undefined && !parseRuntimeTerminalOptions(frame.terminal))
   ) {
     return undefined;
   }
@@ -162,7 +168,12 @@ function clientFrame(value: unknown): RuntimeClientFrame | undefined {
 function childFrame(value: unknown): RuntimeChildFrame | undefined {
   if (!value || typeof value !== "object") return undefined;
   const frame = value as Partial<RuntimeChildFrame>;
-  if (frame.type === "minimise") return frame as RuntimeChildFrame;
+  if (frame.type === "minimise" || frame.type === "view-closed" || frame.type === "view-output") {
+    if (frame.clientId !== undefined && (typeof frame.clientId !== "string" || !frame.clientId || frame.clientId.length > 128)) return undefined;
+    if (frame.type !== "minimise" && !frame.clientId) return undefined;
+    if (frame.type === "view-output" && (typeof frame.data !== "string" || !frame.data || frame.data.length > 44 * 1024 || frame.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(frame.data))) return undefined;
+    return frame as RuntimeChildFrame;
+  }
   if (
     frame.type === "repaint-result" &&
     typeof frame.requestId === "string" &&
@@ -259,6 +270,9 @@ export class SessionRuntimeHost {
   private childSocket: Socket | undefined;
   private childChannel: JsonFrameChannel | undefined;
   private childSupportsRepaint = false;
+  private childIndependentViews = false;
+  private resolveChildReady: (() => void) | undefined;
+  private readonly childReady = new Promise<void>((resolve) => { this.resolveChildReady = resolve; });
   private readonly repaintRequests = new Map<
     string,
     (accepted: boolean) => void
@@ -342,6 +356,7 @@ export class SessionRuntimeHost {
     env[RUNTIME_SOCKET_ENV] = this.socketPath;
     env[RUNTIME_TOKEN_ENV] = this.token;
     env[RUNTIME_SESSION_ENV] = this.sessionId;
+    if (this.payload.independentViews) env[RUNTIME_VIEWS_ENV] = "1";
     const result = await startPtyProcess({
       file: this.payload.launch.file,
       args: this.payload.launch.args,
@@ -356,6 +371,7 @@ export class SessionRuntimeHost {
     this.transport.onOutput((event) => this.publishOutput(event.bytes));
     this.transport.onExit((outcome) => {
       if (this.exitOutcome) return;
+      this.resolveChildReady?.();
       this.resolveExit?.(outcome);
     });
     this.armChildLiveness();
@@ -436,6 +452,7 @@ export class SessionRuntimeHost {
       type: "ack",
       sessionId: this.sessionId,
       sharedInput: true,
+      ...(this.payload.independentViews ? { independentViews: true } : {}),
     });
   }
 
@@ -481,7 +498,7 @@ export class SessionRuntimeHost {
     }
     const previousDimensions = client.dimensions;
     client.dimensions = dimensions ?? client.dimensions ?? { columns: this.payload.columns, rows: this.payload.rows };
-    if (!(await this.resize(this.sharedDimensions(client)))) {
+    if (!this.payload.independentViews && !(await this.resize(this.sharedDimensions(client)))) {
       client.dimensions = previousDimensions;
       socket.destroy();
       return;
@@ -498,30 +515,35 @@ export class SessionRuntimeHost {
       this.releaseOutputBackpressure(client.terminal);
       client.terminal.destroy();
     }
-    const output = new TerminalAttachOutput(
+    const output = this.payload.independentViews ? undefined : new TerminalAttachOutput(
       this.replay.snapshot(),
       (bytes) => this.writeToTerminal(socket, bytes),
     );
     client.terminal = socket;
     client.output = output;
+    client.terminalOptions = auth.terminal ?? runtimeTerminalOptions("auto", {});
     this.setInputOwner(client);
     this.attached = true;
     this.cancelIdleTimer();
     await this.writeMetadataNow();
-    if (rest.length > 0) this.queueInput(rest);
+    if (rest.length > 0) this.queueInput(rest, this.payload.independentViews ? client : undefined);
     socket.on("data", (bytes: Buffer) => {
-      if (this.client === client && client.terminal === socket) {
-        this.queueInput(bytes);
+      if ((this.payload.independentViews || this.client === client) && client.terminal === socket) {
+        this.queueInput(bytes, this.payload.independentViews ? client : undefined);
       }
     });
     socket.once("close", () => this.clientClosed(client, socket));
     socket.resume();
     this.acknowledge(socket);
+    if (this.payload.independentViews) {
+      this.attachChildView(client);
+      return;
+    }
     this.writeToTerminal(socket, ATTACH_RESET);
     const modes = this.terminalModes.restoreSequence();
     if (modes.length > 0) this.writeToTerminal(socket, Buffer.from(modes, "utf8"));
     const repainted = await this.requestChildRepaint();
-    output.finish(repainted);
+    output?.finish(repainted);
   }
 
   private acceptChild(
@@ -534,6 +556,7 @@ export class SessionRuntimeHost {
     this.childSocket?.destroy();
     this.childSocket = socket;
     this.childSupportsRepaint = auth.supportsRepaint === true;
+    this.childIndependentViews = this.payload.independentViews === true && auth.independentViews === true;
     this.acknowledge(socket);
     this.childChannel = new JsonFrameChannel(
       socket,
@@ -548,8 +571,21 @@ export class SessionRuntimeHost {
       this.childChannel = undefined;
       this.childSocket = undefined;
       this.childSupportsRepaint = false;
+      this.childIndependentViews = false;
     });
-    if (this.attached) void this.requestChildRepaint();
+    if (this.childIndependentViews) {
+      for (const client of this.clients.values()) this.attachChildView(client);
+    } else if (this.attached) void this.requestChildRepaint();
+    this.resolveChildReady?.();
+  }
+
+  private attachChildView(client: ActiveClient): void {
+    if (!this.childIndependentViews || !client.terminal || client.terminal.destroyed || !client.dimensions) return;
+    this.childChannel?.send({
+      type: "view-attach", clientId: client.id,
+      ...client.dimensions,
+      terminal: client.terminalOptions ?? runtimeTerminalOptions("auto", {}),
+    });
   }
 
   private requestChildRepaint(): Promise<boolean> {
@@ -590,6 +626,7 @@ export class SessionRuntimeHost {
       return;
     }
     if (frame.type === "claim-input") {
+      if (this.payload.independentViews) return;
       if (client.terminal && !client.terminal.destroyed) this.setInputOwner(client);
       return;
     }
@@ -604,19 +641,35 @@ export class SessionRuntimeHost {
     const dimensions = dimensionsOf(frame);
     if (dimensions) {
       client.dimensions = dimensions;
-      void this.resize(this.sharedDimensions());
+      if (this.payload.independentViews) {
+        if (this.childIndependentViews) this.childChannel?.send({ type: "view-resize", clientId: client.id, ...dimensions });
+      } else void this.resize(this.sharedDimensions());
     }
   }
 
   private handleChildFrame(value: unknown): void {
     const frame = childFrame(value);
     if (!frame) return;
+    if (frame.type === "view-output") {
+      if (!this.payload.independentViews) return;
+      const client = this.clients.get(frame.clientId);
+      if (!client?.terminal) return;
+      const bytes = Buffer.from(frame.data, "base64");
+      if (bytes.toString("base64") === frame.data) this.writeToTerminal(client.terminal, bytes);
+      return;
+    }
+    if (frame.type === "view-closed") {
+      const client = this.clients.get(frame.clientId);
+      if (this.payload.independentViews && client) this.disconnectClient("connection-lost", client);
+      return;
+    }
     if (frame.type === "repaint-result") {
       this.repaintRequests.get(frame.requestId)?.(frame.accepted);
       return;
     }
     if (frame.type === "minimise") {
-      this.disconnectClient("minimise");
+      const client = frame.clientId ? this.clients.get(frame.clientId) : this.client;
+      if (client) this.disconnectClient("minimise", client);
       return;
     }
     if (frame.type === "exiting") {
@@ -626,12 +679,14 @@ export class SessionRuntimeHost {
     if (frame.type === "switch") {
       const target = frame.sessionId.trim();
       if (!target || target.length > 256) return;
-      this.sendToClient({
+      const client = frame.clientId ? this.clients.get(frame.clientId) : this.client;
+      if (!client) return;
+      client.channel?.send({
         type: "switch",
         sessionId: target,
         ...(frame.fresh ? { fresh: true } : {}),
       });
-      this.closeClientSockets();
+      this.closeClientSockets(client);
       if (frame.closeCurrent) {
         setTimeout(() => {
           if (!this.attached) this.requestGracefulStop();
@@ -687,6 +742,7 @@ export class SessionRuntimeHost {
   }
 
   private publishOutput(bytes: Uint8Array): void {
+    if (this.payload.independentViews) return;
     this.replay.append(bytes);
     this.terminalModes.observe(bytes);
     for (const client of this.clients.values()) client.output?.push(bytes);
@@ -729,6 +785,7 @@ export class SessionRuntimeHost {
   }
 
   private updateOutputBackpressure(): void {
+    if (this.payload.independentViews) return;
     const terminals = [...this.clients.values()].flatMap((client) =>
       client.terminal && !client.terminal.destroyed ? [client.terminal] : []);
     if (terminals.length > 0 && terminals.every((terminal) => this.outputDrains.has(terminal))) {
@@ -799,7 +856,15 @@ export class SessionRuntimeHost {
       if (source.inputBytes >= 64 * 1024) source.control.pause();
     }
     this.inputWrites = this.inputWrites
-      .then(() => this.transport?.write(copy))
+      .then(async () => {
+        if (!this.payload.independentViews) return this.transport?.write(copy);
+        await this.childReady;
+        if (!source || this.clients.get(source.id) !== source || !this.childIndependentViews) return { status: "not-delivered" };
+        for (let offset = 0; offset < copy.length; offset += 32 * 1024) {
+          if (!this.childChannel?.send({ type: "view-input", clientId: source.id, data: copy.subarray(offset, offset + 32 * 1024).toString("base64") })) return { status: "not-delivered" };
+        }
+        return { status: "delivered" };
+      })
       .then((result) => {
         if (source && result?.status !== "delivered" && !this.closing) this.disconnectClient("connection-lost", source);
       })
@@ -842,6 +907,7 @@ export class SessionRuntimeHost {
   private setInputOwner(client: ActiveClient | undefined): void {
     if (this.client === client) return;
     this.client = client;
+    if (this.payload.independentViews) return;
     for (const candidate of this.clients.values()) {
       candidate.channel?.send({ type: "input-owner", active: candidate === client });
     }
@@ -854,7 +920,7 @@ export class SessionRuntimeHost {
       this.setInputOwner(attached.at(-1));
     }
     this.updateOutputBackpressure();
-    if (this.attached) void this.resize(this.sharedDimensions());
+    if (this.attached && !this.payload.independentViews) void this.resize(this.sharedDimensions());
     this.queueMetadata();
     this.scheduleIdleTimer();
   }
@@ -871,6 +937,10 @@ export class SessionRuntimeHost {
       return;
     }
     if (client.terminal === socket) {
+      if (this.payload.independentViews) {
+        this.closeClientSockets(client);
+        return;
+      }
       client.output?.dispose();
       client.output = undefined;
       client.terminal = undefined;
@@ -902,6 +972,7 @@ export class SessionRuntimeHost {
   private closeClientSockets(client = this.client): void {
     if (!client) return;
     this.clients.delete(client.id);
+    if (this.payload.independentViews) this.childChannel?.send({ type: "view-detach", clientId: client.id });
     client.output?.dispose();
     this.releaseOutputBackpressure(client.terminal);
     client.channel?.dispose();
@@ -974,6 +1045,7 @@ export class SessionRuntimeHost {
       busy: this.busy,
       active: this.active,
       attached: this.attached,
+      ...(this.payload.independentViews ? { independentViews: true } : {}),
       ...(this.error ? { error: this.error } : {}),
     };
   }
@@ -1036,6 +1108,7 @@ export class SessionRuntimeHost {
     if (this.cleaning) return;
     this.cleaning = true;
     this.closing = true;
+    this.resolveChildReady?.();
     this.cancelIdleTimer();
     if (this.metadataTimer) clearTimeout(this.metadataTimer);
     this.metadataTimer = undefined;

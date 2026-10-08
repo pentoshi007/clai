@@ -4,7 +4,7 @@ clai is a terminal AI assistant for software development, debugging, shell tasks
 
 Use a hosted API, an account sign-in, or a local Ollama model. Interactive sessions support live reattachment from multiple terminals on the same machine, so you can reconnect over SSH and continue working with the same agent.
 
-- **Persistent sessions:** streaming output and agent work continue after a terminal disconnect or `/minimise`; type from any attached terminal.
+- **Persistent sessions:** streaming output and agent work continue after a terminal disconnect or `/minimise`; each attached terminal keeps its own size, draft, and scrolling.
 - **Three working modes:** ask questions, execute tasks, or review a plan before implementation.
 - **Provider flexibility:** multiple credentials, automatic key rotation, and optional fallback between configured providers.
 - **Tools and integrations:** file editing, shell commands, background jobs, interactive terminals, web search, MCP servers, and Agent Skills.
@@ -107,19 +107,23 @@ Run `/minimise` inside the interactive console to return to your shell while the
 | `clai -c` or `clai --continue` | Prefer the latest session for the current directory, with a saved-session fallback when none matches. |
 | `clai history` or `/history` | Find saved sessions and see whether an agent is running, attached, or detached. |
 
-Reattaching to a live session opens its existing UI. Resuming a saved session restores its conversation and transcript. Bare `--resume` also uses the original working directory if it still exists. Resume flags apply to interactive sessions; prompts supplied on the command line run separately.
+Reattaching to a live session opens a terminal view of the running agent. Resuming a saved session restores its conversation and transcript. Bare `--resume` also uses the original working directory if it still exists. Resume flags apply to interactive sessions; prompts supplied on the command line run separately.
 
 ### SSH and multiple terminals
 
 After an SSH disconnect, reconnect to the same machine as the same OS user and run `clai --resume`. To share a particular live session, run `clai --resume <id>` in another terminal or SSH connection.
 
-Every attachment sees the same live screen and can type immediately, including prompts and shortcuts. Attachments share one composer and one running agent. The screen fits the smallest attached terminal. Closing or minimising one attachment keeps the agent and the other attachments running.
+Every attachment receives the same live conversation and can type immediately, including prompts and shortcuts. Each terminal has its own screen dimensions, draft, scroll position, selection, and panels. Resizing a phone or scrolling on a laptop affects that view alone. Submitted prompts and agent actions belong to one shared session; attaching another terminal does not start another agent or model request.
+
+For example, start clai on a cloud VM, then connect from Termux on a phone over SSH and run `clai --resume`. The phone renders the conversation at its own width while the original terminal keeps its layout. Each attachment can choose `--classic` or `--tui`; narrow terminals use Classic automatically when OpenTUI's minimum size is unavailable. Closing or minimising one attachment keeps the agent and the other attachments running.
+
+Independent views apply to runtimes started with v4.14.0 or later. Agents already running under an older version retain their existing terminal behavior until saved and restarted with the updated executable.
 
 Durable sessions require an interactive terminal, a compatible PTY transport, and history enabled. Private mode and `--no-history` use foreground sessions. Saved history remains available after the live process ends; an active process still depends on its host machine remaining running.
 
 ### History and context
 
-`/new` starts a fresh session and saves the previous one. If work is still running, it remains in its previous session. `/save <name>` names a session, and `/prompts` browses sent prompts with their timestamps and provider, model, and effort metadata.
+`/new` starts a fresh session and saves the previous one. If work is still running or another terminal is attached, that session remains available to its agent and other viewers. `/save <name>` names a session, and `/prompts` browses sent prompts with their timestamps and provider, model, and effort metadata.
 
 Context compaction reduces what the model receives while retaining recent requests, plans, task state, and available research findings. It does not erase the saved chat transcript. Use `/compact` to compact manually, `/context` to inspect context size, and `/output` to read retained tool output.
 

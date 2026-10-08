@@ -6,6 +6,7 @@ export const RUNTIME_SOCKET_ENV = "CLAI_RUNTIME_SOCKET";
 export const RUNTIME_TOKEN_ENV = "CLAI_RUNTIME_TOKEN";
 export const RUNTIME_SESSION_ENV = "CLAI_RUNTIME_SESSION_ID";
 export const RUNTIME_DISABLE_ENV = "CLAI_DISABLE_SESSION_RUNTIME";
+export const RUNTIME_VIEWS_ENV = "CLAI_RUNTIME_INDEPENDENT_VIEWS";
 
 function isBun(): boolean {
   return typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
@@ -59,7 +60,8 @@ export function decodeRuntimeHostPayload(
       !value.launch.args.every((entry) => typeof entry === "string") ||
       !Number.isSafeInteger(value.columns) ||
       !Number.isSafeInteger(value.rows) ||
-      !Number.isSafeInteger(value.idleTimeoutMs)
+      !Number.isSafeInteger(value.idleTimeoutMs) ||
+      (value.independentViews !== undefined && typeof value.independentViews !== "boolean")
     ) {
       return undefined;
     }
