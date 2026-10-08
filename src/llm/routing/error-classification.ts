@@ -245,6 +245,7 @@ function isTransientNetworkError(error: unknown): boolean {
 }
 
 export function isRetriableError(error: unknown): boolean {
+  if (error instanceof ProviderError && error.retryable === false) return false;
   if (streamAlreadyEmitted(error)) return false;
   const message = error instanceof Error ? error.message : String(error);
   if (new RegExp(STREAM_STALL_MARKER, "i").test(message)) {

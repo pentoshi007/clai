@@ -346,7 +346,8 @@ describe("Qoder request cancellation", () => {
       { model: "qfmodel:free", messages: [{ role: "user", content: "test" }], signal: controller.signal },
       { apiKey: value },
       () => {},
-    )).rejects.toMatchObject({ status: 401 });
+    )).rejects.toMatchObject({ name: "AbortError" });
+    expect(controller.signal.aborted).toBe(true);
 
     expect(calls.filter((url) => url.includes("agent_chat_generation"))).toHaveLength(1);
     expect(calls.filter((url) => url.endsWith("/api/v1/deviceToken/refresh"))).toHaveLength(0);

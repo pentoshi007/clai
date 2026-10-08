@@ -78,6 +78,7 @@ export class ProviderError extends Error {
     public readonly status?: number | undefined,
     public readonly body?: string | undefined,
     public readonly retryAfterSeconds?: number | undefined,
+    public readonly retryable?: boolean | undefined,
   ) {
     super(message);
     this.name = "ProviderError";

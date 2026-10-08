@@ -11,6 +11,7 @@ import {
 export type StreamFailureKind =
   | "aborted"
   | "content-policy"
+  | "non-retriable"
   | "empty"
   | "context-overflow"
   | "rate-limit"
@@ -109,6 +110,7 @@ function errorText(error: unknown): string {
 }
 
 export function classifyStreamFailure(error: unknown): StreamFailureKind {
+  if (error instanceof ProviderError && error.retryable === false) return "non-retriable";
   const status = errorStatus(error);
   const msg = errorText(error);
 
@@ -278,7 +280,8 @@ export function planStreamRecovery(input: {
     allowModelFallback: false,
   };
 
-  if (kind === "aborted" || kind === "content-policy") return giveUp;
+  if (kind === "aborted" || kind === "content-policy" || kind === "non-retriable") return giveUp;
+  if (input.error instanceof ProviderError && input.error.retryable === false) return giveUp;
   if (state.total >= limits.maxTotal) return giveUp;
   if (progressed && state.progressed >= limits.maxProgressed) return giveUp;
 

@@ -201,7 +201,7 @@ export function bodyAddsInformation(
   return rest.length > 0;
 }
 
-async function readBodyCapped(
+export async function readBodyCapped(
   response: Response,
   maxBytes: number,
   signal?: AbortSignal,
