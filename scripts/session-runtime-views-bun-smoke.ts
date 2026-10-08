@@ -14,6 +14,7 @@ for (const key of ["CLAI_CONFIG_DIR", "CLAI_DATA_DIR", "CLAI_HISTORY_DIR", "CLAI
 process.env.CLAI_NO_UPDATE_CHECK = "1";
 process.env.CLAI_NO_BROWSER = "1";
 process.env.CLAI_DISABLE_KEYCHAIN = "1";
+process.env.CI = "true";
 globalThis.fetch = async () => { throw new Error("Network is disabled in the native terminal view smoke"); };
 
 const { createCompositionRoot } = await import("../src/ui-core/bootstrap/composition-root.js");
