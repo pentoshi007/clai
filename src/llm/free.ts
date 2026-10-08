@@ -23,6 +23,10 @@ import {
   type ReasoningStyle,
 } from "./http.js";
 import { parseCatalogFacts } from "./catalog-facts.js";
+import { modelCatalogFacts, registerModelCatalogLimits } from "./capabilities.js";
+import { withModelCatalogFacts } from "./catalog-context.js";
+import { supplementZenModelLimits } from "./free-model-limits.js";
+import { rememberedModelLimits } from "./model-limit-store.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import {
   mapResponsesEffort,
@@ -163,7 +167,10 @@ const zenSource: FreeSource = {
   requiredTools: true,
   requestHeaders: zenClientHeaders,
   catalogFreeEntries(payload) {
-    return catalogEntries(payload).filter((entry) => /free/i.test(catalogEntryId(entry)));
+    return catalogEntries(payload).filter((entry) => {
+      const id = catalogEntryId(entry);
+      return /free/i.test(id) && !/^jev(?:[-.]|$)/i.test(id);
+    });
   },
   keylessId(id) {
     return id.endsWith("-free") || CURATED_ZEN_MODELS.includes(id);
@@ -350,15 +357,35 @@ async function listSourceEntries(
     const data = await readJson<unknown>(resp);
     const entries = source
       .catalogFreeEntries(data)
-      .filter((entry) => catalogEntryId(entry).length > 0)
-      .map((entry) => sourceScopedEntry(source, entry));
+      .filter((entry) => catalogEntryId(entry).length > 0);
     if (entries.length > 0) {
       modelCache.set(cacheKey, { entries, fetchedAt: now });
       return entries;
     }
   } catch {
   }
-  return source.fallbackModels().map((id) => sourceScopedEntry(source, id));
+  return source.fallbackModels();
+}
+
+function withFreeModelCatalog<T>(
+  source: FreeSource,
+  model: string,
+  operation: () => T,
+): T {
+  const id = `${source.id}/${model}`;
+  const facts = {
+    ...rememberedModelLimits("free", id),
+    ...modelCatalogFacts("free", id),
+    id,
+  };
+  return withModelCatalogFacts(
+    "free",
+    [
+      { id, facts },
+      { id: model, facts: { ...facts, id: model } },
+    ],
+    operation,
+  );
 }
 
 export const freeProvider: LlmProvider = {
@@ -371,9 +398,24 @@ export const freeProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const key = auth.apiKey ?? "";
     const perSource = await Promise.all(
-      sources.map((source) => listSourceEntries(source, key)),
+      sources.map(async (source) => {
+        const entries = await listSourceEntries(source, key);
+        const enriched =
+          source.id === "free-1"
+            ? await supplementZenModelLimits(entries)
+            : entries;
+        return enriched.map((entry) => sourceScopedEntry(source, entry));
+      }),
     );
-    return ingestModelCatalogEntries("free", perSource.flat());
+    const models = ingestModelCatalogEntries("free", perSource.flat());
+    registerModelCatalogLimits(
+      "free",
+      (perSource[0] ?? []).flatMap((entry) => {
+        const facts = parseCatalogFacts(entry);
+        return facts ? [{ ...facts, id: facts.id.slice("free-1/".length) }] : [];
+      }),
+    );
+    return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {
     const key = auth.apiKey ?? "";
@@ -394,46 +436,66 @@ export const freeProvider: LlmProvider = {
     const requested = request.model ?? defaultModels.free;
     assertModelAllowed(requested, apiKey);
     const { source, model } = resolveFreeSource(requested);
-    if (usesResponsesDialect(source, model)) {
-      const zenRequest = ensureRequiredTools(request, "responses");
-      const result = await responsesStream(
-        ZEN_RESPONSES_CONFIG,
-        zenRequest,
-        auth,
-        () => undefined,
+    return withFreeModelCatalog(source, model, async () => {
+      if (usesResponsesDialect(source, model)) {
+        const zenRequest = ensureRequiredTools(request, "responses");
+        const result = await responsesStream(
+          ZEN_RESPONSES_CONFIG,
+          zenRequest,
+          auth,
+          () => undefined,
+          model,
+        );
+        const suppressTools =
+          !request.tools?.length || request.toolChoice === "none";
+        const toolCalls = suppressTools ? undefined : result.toolCalls;
+        return { ...result, model: requested, toolCalls };
+      }
+      const effective = source.requiredTools
+        ? ensureRequiredTools(request, "chat")
+        : request;
+      const headers = source.requestHeaders(apiKey);
+      const streamOptions = {
+        responsesFirst: source.responsesApi,
+        headers,
+        provider: "Free" as const,
+        providerId: "free" as const,
+        baseUrl: source.baseUrl,
+        apiKey,
         model,
-      );
-      const suppressTools =
-        !request.tools?.length || request.toolChoice === "none";
-      const toolCalls = suppressTools ? undefined : result.toolCalls;
-      return { ...result, model: requested, toolCalls };
-    }
-    const effective = source.requiredTools
-      ? ensureRequiredTools(request, "chat")
-      : request;
-    const headers = source.requestHeaders(apiKey);
-    const streamOptions = {
-      responsesFirst: source.responsesApi,
-      headers,
-      provider: "Free" as const,
-      providerId: "free" as const,
-      baseUrl: source.baseUrl,
-      apiKey,
-      model,
-      messages: effective.messages,
-      maxTokens: effective.maxTokens,
-      temperature: effective.temperature,
-      signal: effective.signal,
-      reasoning: effective.thinking,
-      reasoningStyle: FREE_REASONING_STYLE,
-      tools: effective.tools,
-      toolChoice: effective.toolChoice,
-      parallelToolCalls: effective.parallelToolCalls,
-      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-    };
-    if (source.id !== "free-1") {
-      const payload = await openAiCompatibleComplete(streamOptions);
+        messages: effective.messages,
+        maxTokens: effective.maxTokens,
+        temperature: effective.temperature,
+        signal: effective.signal,
+        reasoning: effective.thinking,
+        reasoningStyle: FREE_REASONING_STYLE,
+        tools: effective.tools,
+        toolChoice: effective.toolChoice,
+        parallelToolCalls: effective.parallelToolCalls,
+        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+      };
+      if (source.id !== "free-1") {
+        const payload = await openAiCompatibleComplete(streamOptions);
+        const result = toCompletionResult("free", requested, payload);
+        if (result.reasoningArtifacts?.length) {
+          result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
+            ...art,
+            provenance: { ...art.provenance, model: requested },
+          }));
+        }
+        return result;
+      }
+      const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
+      const payload = await openAiCompatibleStream({
+        ...streamOptions,
+        onToken: () => undefined,
+        idleTimeoutMs: budgets.idleTimeoutMs,
+        initialIdleTimeoutMs: effective.thinking?.enabled
+          ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
+          : 60_000,
+        outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
+      });
       const result = toCompletionResult("free", requested, payload);
       if (result.reasoningArtifacts?.length) {
         result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
@@ -442,25 +504,7 @@ export const freeProvider: LlmProvider = {
         }));
       }
       return result;
-    }
-    const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
-    const payload = await openAiCompatibleStream({
-      ...streamOptions,
-      onToken: () => undefined,
-      idleTimeoutMs: budgets.idleTimeoutMs,
-      initialIdleTimeoutMs: effective.thinking?.enabled
-        ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
-        : 60_000,
-      outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
     });
-    const result = toCompletionResult("free", requested, payload);
-    if (result.reasoningArtifacts?.length) {
-      result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
-        ...art,
-        provenance: { ...art.provenance, model: requested },
-      }));
-    }
-    return result;
   },
   async stream(
     request: CompletionRequest,
@@ -471,59 +515,61 @@ export const freeProvider: LlmProvider = {
     const requested = request.model ?? defaultModels.free;
     assertModelAllowed(requested, apiKey);
     const { source, model } = resolveFreeSource(requested);
-    if (usesResponsesDialect(source, model)) {
-      const zenRequest = ensureRequiredTools(request, "responses");
-      const result = await responsesStream(
-        ZEN_RESPONSES_CONFIG,
-        zenRequest,
-        auth,
-        onToken,
+    return withFreeModelCatalog(source, model, async () => {
+      if (usesResponsesDialect(source, model)) {
+        const zenRequest = ensureRequiredTools(request, "responses");
+        const result = await responsesStream(
+          ZEN_RESPONSES_CONFIG,
+          zenRequest,
+          auth,
+          onToken,
+          model,
+        );
+        const suppressTools =
+          !request.tools?.length || request.toolChoice === "none";
+        const toolCalls = suppressTools ? undefined : result.toolCalls;
+        return { ...result, model: requested, toolCalls };
+      }
+      const effective = source.requiredTools
+        ? ensureRequiredTools(request, "chat")
+        : request;
+      const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
+      const payload = await openAiCompatibleStream({
+        responsesFirst: source.responsesApi,
+        headers: source.requestHeaders(apiKey),
+        provider: "Free",
+        providerId: "free",
+        baseUrl: source.baseUrl,
+        apiKey,
         model,
-      );
-      const suppressTools =
-        !request.tools?.length || request.toolChoice === "none";
-      const toolCalls = suppressTools ? undefined : result.toolCalls;
-      return { ...result, model: requested, toolCalls };
-    }
-    const effective = source.requiredTools
-      ? ensureRequiredTools(request, "chat")
-      : request;
-    const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
-    const payload = await openAiCompatibleStream({
-      responsesFirst: source.responsesApi,
-      headers: source.requestHeaders(apiKey),
-      provider: "Free",
-      providerId: "free",
-      baseUrl: source.baseUrl,
-      apiKey,
-      model,
-      messages: effective.messages,
-      maxTokens: effective.maxTokens,
-      temperature: effective.temperature,
-      signal: effective.signal,
-      onToken,
-      onToolCallDelta: effective.onToolCallDelta,
-      onStreamEvent: effective.onStreamEvent,
-      reasoning: effective.thinking,
-      reasoningStyle: FREE_REASONING_STYLE,
-      idleTimeoutMs: budgets.idleTimeoutMs,
-      initialIdleTimeoutMs: effective.thinking?.enabled
-        ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
-        : 60_000,
-      outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
-      tools: effective.tools,
-      toolChoice: effective.toolChoice,
-      parallelToolCalls: effective.parallelToolCalls,
-      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+        messages: effective.messages,
+        maxTokens: effective.maxTokens,
+        temperature: effective.temperature,
+        signal: effective.signal,
+        onToken,
+        onToolCallDelta: effective.onToolCallDelta,
+        onStreamEvent: effective.onStreamEvent,
+        reasoning: effective.thinking,
+        reasoningStyle: FREE_REASONING_STYLE,
+        idleTimeoutMs: budgets.idleTimeoutMs,
+        initialIdleTimeoutMs: effective.thinking?.enabled
+          ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
+          : 60_000,
+        outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
+        tools: effective.tools,
+        toolChoice: effective.toolChoice,
+        parallelToolCalls: effective.parallelToolCalls,
+        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+      });
+      const result = toCompletionResult("free", requested, payload);
+      if (result.reasoningArtifacts?.length) {
+        result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
+          ...art,
+          provenance: { ...art.provenance, model: requested },
+        }));
+      }
+      return result;
     });
-    const result = toCompletionResult("free", requested, payload);
-    if (result.reasoningArtifacts?.length) {
-      result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
-        ...art,
-        provenance: { ...art.provenance, model: requested },
-      }));
-    }
-    return result;
   },
 };
