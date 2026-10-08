@@ -187,7 +187,7 @@ export async function handleNew(services: AppServices): Promise<void> {
       notice(services, "warn", `could not save previous session ${previousId}`);
     });
   }
-  if (sessionIsBusy(services) && forkFreshSession(services)) {
+  if ((sessionIsBusy(services) || services.hasOtherViews?.()) && forkFreshSession(services)) {
     return;
   }
   await resetToFreshSession(services);

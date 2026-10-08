@@ -1,6 +1,6 @@
 {
   "name": "@pentoshi/clai",
-  "version": "4.13.1",
+  "version": "4.14.0",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",
@@ -65,7 +65,7 @@
     "test:classic:pty": "python3 scripts/pty-smoke.py",
     "test:bun:v2": "bun run scripts/v2-spikes/ci-smoke.ts",
     "test:bun:parity": "bun x vitest run test/tui-v2 test/god-mode-phase1.test.ts test/mentions.test.ts",
-    "test:bun:session": "bun run scripts/session-runtime-bun-smoke.ts",
+    "test:bun:session": "bun run scripts/session-runtime-bun-smoke.ts && bun run scripts/session-runtime-views-bun-smoke.ts",
     "test:bun": "bun run test:bun:v2 && bun run test:bun:session && bun run test:bun:parity",
     "release:verify": "tsx scripts/validate-release.ts",
     "doctor": "tsx src/index.ts doctor"

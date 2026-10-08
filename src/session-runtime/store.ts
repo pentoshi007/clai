@@ -42,6 +42,7 @@ function isRuntimeMetadata(value: unknown): value is RuntimeMetadata {
     ["starting", "running", "stopping", "failed"].includes(String(record.phase)) &&
     typeof record.busy === "boolean" &&
     (record.active === undefined || typeof record.active === "boolean") &&
+    (record.independentViews === undefined || typeof record.independentViews === "boolean") &&
     typeof record.attached === "boolean"
   );
 }

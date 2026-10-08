@@ -266,6 +266,40 @@ interface CommandRuntime {
   readonly inProcess: boolean;
 }
 
+const INDEPENDENT_CHILD_SCRIPT = String.raw`
+const net = require("node:net");
+const socket = net.connect(process.env.CLAI_RUNTIME_SOCKET, () => {
+  send({version:1,type:"auth",role:"child",token:process.env.CLAI_RUNTIME_TOKEN,independentViews:true});
+});
+const send = frame => socket.write(JSON.stringify(frame) + "\n");
+const output = (clientId, text) => send({type:"view-output",clientId,data:Buffer.from(text).toString("base64")});
+const dimensions = new Map();
+let buffer = "";
+socket.on("data", chunk => {
+  buffer += chunk.toString("utf8");
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) break;
+    const frame = JSON.parse(buffer.slice(0, newline));
+    buffer = buffer.slice(newline + 1);
+    if (frame.type === "ack") {
+      send({type:"status",sessionId:process.env.CLAI_RUNTIME_SESSION_ID,cwd:process.cwd(),busy:true,title:"Command fixture"});
+      process.stdout.write("GLOBAL_OUTPUT_MUST_NOT_APPEAR\r\n");
+    } else if (frame.type === "view-attach" || frame.type === "view-resize") {
+      dimensions.set(frame.clientId, frame.columns + "x" + frame.rows);
+      output(frame.clientId, frame.clientId + ":" + dimensions.get(frame.clientId) + ":backend:" + process.stdout.columns + "x" + process.stdout.rows + "\n");
+    } else if (frame.type === "view-input") {
+      const input = Buffer.from(frame.data, "base64").toString("utf8");
+      if (input === "m") setTimeout(() => send({type:"minimise",clientId:frame.clientId}), 40);
+      else if (input === "q") { send({type:"exiting",exitCode:0}); setTimeout(() => process.exit(0), 10); }
+      else output(frame.clientId, "input:" + input + "\n");
+    } else if (frame.type === "view-detach") {
+      dimensions.delete(frame.clientId);
+    } else if (frame.type === "shutdown") process.exit(0);
+  }
+});
+`;
+
 interface TestClient {
   readonly id: string;
   readonly control: Socket;
@@ -277,6 +311,7 @@ interface TestClient {
 
 async function startCommandRuntime(options: {
   idleTimeoutMs?: number;
+  independentViews?: boolean;
 } = {}): Promise<CommandRuntime | undefined> {
   const capability = await probePtyCapability();
   const bun = findBunExecutable();
@@ -287,7 +322,7 @@ async function startCommandRuntime(options: {
     tmpdir(),
     `clai-runtime-child-${process.pid}-${Math.random().toString(16).slice(2)}.cjs`,
   );
-  await writeFile(fixturePath, COMMAND_CHILD_SCRIPT(rebindId), { mode: 0o600 });
+  await writeFile(fixturePath, options.independentViews ? INDEPENDENT_CHILD_SCRIPT : COMMAND_CHILD_SCRIPT(rebindId), { mode: 0o600 });
   const payload = {
     version: RUNTIME_PROTOCOL_VERSION,
     sessionId,
@@ -299,6 +334,7 @@ async function startCommandRuntime(options: {
     columns: 100,
     rows: 30,
     idleTimeoutMs: options.idleTimeoutMs ?? 60_000,
+    ...(options.independentViews ? { independentViews: true } : {}),
   } as const;
   let running: Promise<void>;
   let inProcess = false;
@@ -414,6 +450,39 @@ async function stopCommandRuntime(runtime: CommandRuntime): Promise<void> {
 }
 
 describe("session runtime host hardening", () => {
+  it("isolates each terminal's dimensions, input, output, and minimise request", async () => {
+    if (process.platform === "win32") return;
+    const runtime = await startCommandRuntime({ independentViews: true });
+    if (!runtime) return;
+    const desktop = await openTestClient(runtime.metadata, "desktop", { columns: 140, rows: 44 });
+    const phone = await openTestClient(runtime.metadata, "phone", { columns: 38, rows: 20 });
+    try {
+      await waitFor(async () => desktop.output().includes("desktop:140x44:backend:100x30") && phone.output().includes("phone:38x20:backend:100x30") ? true : undefined);
+      expect(desktop.output()).not.toContain("phone:");
+      expect(phone.output()).not.toContain("desktop:");
+      expect(desktop.output() + phone.output()).not.toContain("GLOBAL_OUTPUT_MUST_NOT_APPEAR");
+      sendFrame(desktop.control, { type: "input", data: Buffer.from("desktop-private").toString("base64") });
+      sendFrame(phone.control, { type: "input", data: Buffer.from("phone-private").toString("base64") });
+      await waitFor(async () => desktop.output().includes("input:desktop-private") && phone.output().includes("input:phone-private") ? true : undefined);
+      expect(desktop.output()).not.toContain("phone-private");
+      expect(phone.output()).not.toContain("desktop-private");
+      const desktopBefore = desktop.output();
+      sendFrame(phone.control, { type: "resize", columns: 28, rows: 12 });
+      await waitFor(async () => phone.output().includes("phone:28x12:backend:100x30") ? true : undefined);
+      expect(desktop.output()).toBe(desktopBefore);
+      sendFrame(desktop.control, { type: "input", data: Buffer.from("m").toString("base64") });
+      sendFrame(phone.control, { type: "input", data: Buffer.from("phone-still-live").toString("base64") });
+      await waitFor(async () => desktop.frames.some((frame) => frame.type === "detached" && frame.reason === "minimise") ? true : undefined);
+      expect(phone.frames.some((frame) => frame.type === "detached")).toBe(false);
+      await waitFor(async () => phone.output().includes("input:phone-still-live") ? true : undefined);
+      expect(await probeRuntime(runtime.metadata)).toBe(true);
+    } finally {
+      desktop.dispose();
+      phone.dispose();
+      await stopCommandRuntime(runtime);
+    }
+  }, 15_000);
+
   it("applies attach dimensions before acknowledging a replacement terminal", async () => {
     if (process.platform === "win32") return;
     const runtime = await startCommandRuntime();

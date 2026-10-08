@@ -15,7 +15,9 @@ import {
   type RuntimeAckFrame,
   type RuntimeChildFrame,
   type RuntimeHostFrame,
+  type RuntimeViewFrame,
 } from "./types.js";
+import { runtimeViewFrame } from "./terminal-options.js";
 
 function isAck(value: unknown): value is RuntimeAckFrame {
   if (!value || typeof value !== "object") return false;
@@ -28,6 +30,8 @@ function isAck(value: unknown): value is RuntimeAckFrame {
 }
 
 function hostFrame(value: unknown): RuntimeHostFrame | undefined {
+  const view = runtimeViewFrame(value);
+  if (view) return view;
   if (!value || typeof value !== "object") return undefined;
   const frame = value as Partial<RuntimeHostFrame>;
   if (frame.type === "shutdown" || frame.type === "pong") {
@@ -63,11 +67,13 @@ export class RuntimeChildBridge {
   private readonly pendingRepaints = new Set<string>();
   private disposed = false;
   private connecting: Promise<boolean> | undefined;
+  private viewHandler: ((frame: RuntimeViewFrame) => void) | undefined;
 
   constructor(
     private readonly socketPath: string,
     private readonly token: string,
     private readonly supportsRepaint = false,
+    private readonly independentViews = false,
   ) {}
 
   async connect(): Promise<boolean> {
@@ -81,6 +87,21 @@ export class RuntimeChildBridge {
 
   setShutdownHandler(handler: () => void): void {
     this.shutdown = handler;
+  }
+
+  setViewHandler(handler: ((frame: RuntimeViewFrame) => void) | undefined): void {
+    this.viewHandler = handler;
+  }
+
+  writeView(clientId: string, bytes: Uint8Array): boolean {
+    for (let offset = 0; offset < bytes.length; offset += 32 * 1024) {
+      if (!this.send({ type: "view-output", clientId, data: Buffer.from(bytes.subarray(offset, offset + 32 * 1024)).toString("base64") })) return false;
+    }
+    return true;
+  }
+
+  closeView(clientId: string): boolean {
+    return this.send({ type: "view-closed", clientId });
   }
 
   setRepaintHandler(handler: (() => boolean) | undefined): void {
@@ -132,16 +153,17 @@ export class RuntimeChildBridge {
     this.scheduleReconnect();
   }
 
-  minimise(): boolean {
-    return this.send({ type: "minimise" });
+  minimise(clientId?: string): boolean {
+    return this.send({ type: "minimise", ...(clientId ? { clientId } : {}) });
   }
 
-  switchSession(sessionId: string, closeCurrent: boolean, fresh = false): boolean {
+  switchSession(sessionId: string, closeCurrent: boolean, fresh = false, clientId?: string): boolean {
     return this.send({
       type: "switch",
       sessionId,
       closeCurrent,
       ...(fresh ? { fresh: true } : {}),
+      ...(clientId ? { clientId } : {}),
     });
   }
 
@@ -150,6 +172,7 @@ export class RuntimeChildBridge {
     this.send({ type: "exiting", exitCode });
     this.disposed = true;
     this.repaint = undefined;
+    this.viewHandler = undefined;
     this.pendingRepaints.clear();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.channel?.dispose();
@@ -169,6 +192,7 @@ export class RuntimeChildBridge {
         role: "child",
         token: this.token,
         ...(this.supportsRepaint ? { supportsRepaint: true } : {}),
+        ...(this.independentViews ? { independentViews: true } : {}),
       });
       const first = await readFirstFrame(socket);
       if (!isAck(first.value)) throw new Error("runtime host rejected child channel");
@@ -197,6 +221,11 @@ export class RuntimeChildBridge {
 
   private receive(value: unknown): void {
     const frame = hostFrame(value);
+    const view = runtimeViewFrame(frame);
+    if (view && !this.disposed) {
+      this.viewHandler?.(view);
+      return;
+    }
     if (frame?.type === "shutdown") {
       this.shutdown?.();
       return;
@@ -253,10 +282,11 @@ export class RuntimeChildBridge {
 
 export function createRuntimeChildBridge(
   supportsRepaint = false,
+  independentViews = false,
 ): RuntimeChildBridge | undefined {
   if (process.env[RUNTIME_CHILD_ENV] !== "1") return undefined;
   const socketPath = process.env[RUNTIME_SOCKET_ENV]?.trim();
   const token = process.env[RUNTIME_TOKEN_ENV]?.trim();
   if (!socketPath || !token || !/^[a-f0-9]{64}$/i.test(token)) return undefined;
-  return new RuntimeChildBridge(socketPath, token, supportsRepaint);
+  return new RuntimeChildBridge(socketPath, token, supportsRepaint, independentViews);
 }

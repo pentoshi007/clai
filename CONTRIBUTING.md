@@ -37,7 +37,7 @@ The tests use fixtures, isolated storage, and a mocked browser launcher; provide
 | `npm run test:host -- test/environment` | Check environment behavior under the host's locale and timezone. |
 | `npm run test:classic:pty` | Run the provider-independent POSIX terminal smoke test; requires Python 3. |
 | `npm run test:bun` | Run native OpenTUI, buffered PTY input, and parity checks through Bun. |
-| `npm run test:bun:session` | Verify complete UTF-8 input delivery through Bun's real PTY buffer. |
+| `npm run test:bun:session` | Verify complete UTF-8 input delivery through Bun's real PTY buffer and independent native terminal views. |
 | `npm run embed-prompts:check` | Check that embedded prompts match their source Markdown. |
 | `npm run release:verify` | Validate dependency pins, lockfile, and release metadata. |
 | `npm run compile` | Build native release binaries through Bun. |
@@ -62,7 +62,7 @@ For dependency changes, update `package.json` and `package-lock.json` together a
 | `src/classic/` | React and Ink UI and its terminal lifecycle. |
 | `src/tui-v2/` | OpenTUI components and native terminal integration. |
 | `src/noninteractive/` | One-shot output and stdout/stderr policy. |
-| `src/session-runtime/` | Durable agent hosts, shared attachments, discovery, and reattachment. |
+| `src/session-runtime/` | Durable agent hosts, independent terminal views, discovery, and reattachment. |
 | `src/interactive-session/` | Conversation-owned terminal sessions and transports. |
 | `src/store/` | Configuration, history, prompt journals, plans, and retained subagent state. |
 | `src/tools/`, `src/safety/` | Tool implementation, classification, permissions, and engagement policy. |
@@ -71,9 +71,11 @@ For dependency changes, update `package.json` and `package-lock.json` together a
 | `test/`, `scripts/`, `.github/workflows/` | Regression tests, tooling, and CI/release workflows. |
 | `bin/`, `install/`, `manifests/` | npm launchers, platform installers, and distribution templates. |
 
-Keep `src/app/` and `src/ui-core/` renderer-neutral: do not import Ink, OpenTUI, renderer-specific components, or write directly to the terminal there. Put terminal access in bootstrap or port modules so both interfaces share session, command, transcript, safety, and persistence behavior. Classic source files are subject to a 400-line architecture guard.
+Keep `src/app/` and `src/ui-core/` renderer-neutral: do not import Ink, OpenTUI, renderer-specific components, or write directly to the terminal there. Put terminal access in bootstrap or port modules so both interfaces share session, command, transcript, safety, and persistence behavior. Classic source files are subject to a 500-line architecture guard.
 
 Use strict TypeScript, explicit `.js` extensions for relative ESM imports, and focused modules that follow the surrounding style. Handle failures explicitly. Changes to persistence, compaction, or attachment behavior must preserve conversation records and avoid starting duplicate agent writers.
+
+Durable sessions run one agent and one persistence owner. Each attachment renders through private terminal streams with its own size, composer, scrolling, overlays, and input routing. Transcript views share immutable conversation data while retaining local display preferences. Detaching a view disposes only its renderer and UI state; the shared session continues. Runtime capability negotiation preserves attachment to agents launched by older versions.
 
 Distribution manifests under `manifests/` are templates. The release workflow generates published metadata; placeholder hashes in those templates are not installation artifacts.
 

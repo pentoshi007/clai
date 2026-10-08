@@ -1,4 +1,4 @@
-import { installTerminalRescue } from "../../os/terminal-rescue.js";
+import { installTerminalRescue, type RescueProcess } from "../../os/terminal-rescue.js";
 
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
@@ -34,6 +34,7 @@ export interface TerminalSessionOptions {
   readonly stdin?: TerminalInput | undefined;
   readonly mouse?: boolean | undefined;
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  readonly proc?: RescueProcess | undefined;
 }
 
 interface TerminalSessionMode {
@@ -59,6 +60,7 @@ export class TerminalSession {
   private listener: ((chunk: string | Buffer) => void) | undefined;
   private handler: TerminalDataListener | undefined;
   private rescueDisarm: (() => void) | undefined;
+  private readonly rescueProcess: RescueProcess | undefined;
 
   constructor(
     options: TerminalSessionOptions = {},
@@ -68,6 +70,7 @@ export class TerminalSession {
     this.stdin = options.stdin ?? process.stdin;
     this.mouse = mouseRequested(options);
     this.mode = mode;
+    this.rescueProcess = options.proc;
   }
 
   get entered(): boolean {
@@ -100,6 +103,7 @@ export class TerminalSession {
     this.rescueDisarm = installTerminalRescue({
       stdout: this.stdout,
       stdin: this.stdin,
+      proc: this.rescueProcess,
     });
   }
 

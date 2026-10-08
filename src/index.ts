@@ -55,7 +55,7 @@ import { resumeCommand } from "./ui-core/rendering/exit-summary.js";
 import { warnOnce } from "./ui/warn-once.js";
 import { tryRunDurableInteractive } from "./session-runtime/client.js";
 import { runRuntimeHostFromEnvironment } from "./session-runtime/host.js";
-import { runtimeChildSessionId } from "./session-runtime/launch.js";
+import { runtimeChildSessionId, RUNTIME_VIEWS_ENV } from "./session-runtime/launch.js";
 import { listLiveSessionRuntimes } from "./session-runtime/discovery.js";
 
 interface GlobalOptions {
@@ -112,6 +112,7 @@ async function startInteractive(
     entryPath: CLAI_ENTRY,
     childArgs: interactiveChildArgs(options),
     noHistory: resolved.noHistory,
+    ui: options.classic || options.ui === "classic" ? "classic" : options.tui || options.ui === "tui" ? "tui" : "auto",
     ...(resolved.resume ? { resume: resolved.resume } : {}),
   });
   if (durable) return;
@@ -122,6 +123,11 @@ async function startInteractive(
     ...resolved,
     ...(childSessionId ? { sessionId: childSessionId } : {}),
   };
+  if (process.env[RUNTIME_VIEWS_ENV] === "1" && childSessionId) {
+    const { startIndependentRuntime } = await import("./session-runtime/start-runtime.js");
+    await startIndependentRuntime(interactiveOptions);
+    return;
+  }
 
   if (ui === "noninteractive") {
     throw new Error("No prompt supplied; pass a prompt or pipe one on stdin.");
