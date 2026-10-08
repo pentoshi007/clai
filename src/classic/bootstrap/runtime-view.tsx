@@ -21,7 +21,7 @@ export async function mountClassicRuntimeView(
       if (instance) return;
       instance = render(
         <ServicesProvider services={services}><ClassicApp wiring={wiring} /></ServicesProvider>,
-        { ...CLASSIC_INK_OPTIONS, stdin: terminal.stdin as unknown as NodeJS.ReadStream, stdout: terminal.stdout as unknown as NodeJS.WriteStream, stderr: terminal.stdout as unknown as NodeJS.WriteStream },
+        { ...CLASSIC_INK_OPTIONS, interactive: true, stdin: terminal.stdin as unknown as NodeJS.ReadStream, stdout: terminal.stdout as unknown as NodeJS.WriteStream, stderr: terminal.stdout as unknown as NodeJS.WriteStream },
       );
     },
     unmount() {
