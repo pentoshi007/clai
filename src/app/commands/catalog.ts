@@ -200,6 +200,7 @@ export const slashCommands: SlashCommand[] = [
 ];
 
 export const knownModels: Record<string, string[]> = {
+  mistral: ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"],
   gemini: [
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",

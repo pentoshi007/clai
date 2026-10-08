@@ -159,6 +159,7 @@ API, keyless, and local integrations:
 | GLM / Zhipu | `glm` | `GLM_API_KEY`, `ZHIPU_API_KEY`, or `ZAI_API_KEY` |
 | Kimi / Moonshot | `kimi` | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY`; optional `MISTRAL_BASE_URL` for regional endpoints. |
 | Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |

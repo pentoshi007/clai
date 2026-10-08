@@ -5,6 +5,7 @@ import type {
   CompletionResult,
   GenerationAttemptReason,
   ProviderId,
+  ReasoningArtifactProvenance,
   ReasoningEffort,
   SuccessfulRequestSnapshot,
 } from "../../types.js";
@@ -110,10 +111,32 @@ export function withoutReasoningReplay(
   };
 }
 
+function reasoningReplaySourceKey(source: ReasoningArtifactProvenance): string {
+  return JSON.stringify([source.provider, source.model, source.endpointHash, source.dialect, source.legacy]);
+}
+
+export function trackReasoningReplay(request: CompletionRequest): {
+  request: CompletionRequest;
+  replayedSources: ReadonlySet<string>;
+} {
+  const replayedSources = new Set<string>();
+  return {
+    request: {
+      ...request,
+      onReasoningArtifactReplayDecision: (decision) => {
+        if (decision.action === "replayed") replayedSources.add(reasoningReplaySourceKey(decision.source));
+        request.onReasoningArtifactReplayDecision?.(decision);
+      },
+    },
+    replayedSources,
+  };
+}
+
 export function retireRejectedReasoningReplay(
   messages: ChatMessage[],
   provider: ProviderId,
   model: string,
+  replayedSources?: ReadonlySet<string>,
 ): void {
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
@@ -123,7 +146,10 @@ export function retireRejectedReasoningReplay(
     const matchingReplay = replay?.provider === provider && replay.model === model;
     const artifacts = message.reasoningArtifacts;
     const retained = artifacts?.filter((artifact) =>
-      !(artifact.provenance.provider === provider && (!artifact.provenance.model || artifact.provenance.model === model)),
+      !(artifact.provenance.provider === provider &&
+        (replayedSources
+          ? replayedSources.has(reasoningReplaySourceKey(artifact.provenance))
+          : !artifact.provenance.model || artifact.provenance.model === model)),
     );
     const changedArtifacts = retained?.length !== artifacts?.length;
     const legacy = !artifacts?.length && (!replay || matchingReplay);

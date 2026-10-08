@@ -4,6 +4,7 @@ export const providerIds = [
   "openrouter",
   "openai",
   "anthropic",
+  "mistral",
   "nvidia",
   "agentrouter",
   "aws-mantle",
@@ -85,6 +86,7 @@ export type ReasoningArtifactDialect =
   | "gemini-generate-content"
   | "meta-responses"
   | "openai-compatible"
+  | "mistral-chat"
   | "ollama-chat"
   | "kiro-eventstream"
   | "legacy";

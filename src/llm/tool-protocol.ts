@@ -420,14 +420,17 @@ export function parseOpenAiMessageToolCalls(
     | Array<{
         id?: string;
         type?: string;
-        function?: { name?: string; arguments?: string };
+        function?: { name?: string; arguments?: string | Record<string, unknown> };
       }>
     | undefined,
 ): NativeToolCall[] {
   if (!toolCalls?.length) return [];
   return toolCalls.map((tc, i) => {
     const wire = tc.function?.name ?? "";
-    const rawArguments = tc.function?.arguments ?? "";
+    const argumentsValue = tc.function?.arguments;
+    const rawArguments = typeof argumentsValue === "string"
+      ? argumentsValue
+      : argumentsValue ? JSON.stringify(argumentsValue) : "";
     const args = parseToolArguments(rawArguments);
     const replayArguments = replayArgumentsFor(args, rawArguments);
     return {

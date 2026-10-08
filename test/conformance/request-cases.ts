@@ -62,7 +62,24 @@ function replayMessages(route: ConformanceRoute, signed: boolean): ChatMessage[]
   const sourceModel =
     route.provider === "free" ? route.model.replace(/^[^/]+\//, "") : route.model;
   const reasoningArtifacts =
-    signed || route.family !== "chat_completions"
+    route.provider === "mistral"
+    ? [createReasoningArtifact({
+        kind: "structured-details",
+        raw: [{
+          type: "thinking",
+          thinking: [{ type: "text", text: "the file must be inspected first" }],
+          ...(signed ? { signature: "signature_placeholder" } : {}),
+          closed: true,
+        }],
+        provenance: createReasoningArtifactProvenance({
+          provider: route.provider,
+          model: sourceModel,
+          dialect: "mistral-chat",
+        }),
+        replay: { scope: "all-history", persistence: "all-turns" },
+        position: { sequence: 0, placement: "before-tool-call", toolCallIndex: 0 },
+      })]
+    : signed || route.family !== "chat_completions"
     ? undefined
     : [
         createReasoningArtifact({

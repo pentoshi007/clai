@@ -30,6 +30,7 @@ import {
 } from "./reasoning-artifacts.js";
 import { ReasoningStyle } from "./reasoning-payload.js";
 import { readJson } from "./response-errors.js";
+import { mistralContentText, mistralReasoningArtifacts } from "./mistral-content.js";
 import { currentRequestPurpose } from "../request-purpose.js";
 import { openAiCompatibleCompleteViaResponses } from "./responses-first.js";
 
@@ -123,7 +124,7 @@ export async function openAiCompatibleComplete(options: {
     choices?: Array<{
       finish_reason?: string;
       message?: {
-        content?: string | null;
+        content?: string | unknown[] | null;
         reasoning_content?: string;
         reasoning?: string;
         reasoning_details?: unknown;
@@ -133,7 +134,7 @@ export async function openAiCompatibleComplete(options: {
         tool_calls?: Array<{
           id?: string;
           type?: string;
-          function?: { name?: string; arguments?: string };
+          function?: { name?: string; arguments?: string | Record<string, unknown> };
         }>;
       };
     }>;
@@ -166,8 +167,9 @@ export async function openAiCompatibleComplete(options: {
   const choice = data.choices?.[0];
   const message = choice?.message;
   const toolCalls = parseOpenAiMessageToolCalls(message?.tool_calls);
-  const text = message?.content ?? "";
-  if (!text && toolCalls.length === 0) {
+  const nativeContent = options.providerId === "mistral" ? mistralContentText(message?.content) : undefined;
+  const text = nativeContent?.text ?? (typeof message?.content === "string" ? message.content : "");
+  if (!text && toolCalls.length === 0 && !(nativeContent?.reasoning && choice?.finish_reason === "length")) {
     throw new ProviderError(
       `${options.provider} returned no completion text (model=${options.model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
     );
@@ -180,10 +182,14 @@ export async function openAiCompatibleComplete(options: {
           response.headers,
         )
       : parseOpenAiUsage(data.usage, options.usageAliases);
-  const reasoning = openAiReasoningText(message);
+  const reasoning = nativeContent?.reasoning || openAiReasoningText(message);
   const detailsRaw = artifactRaw(message?.reasoning_details);
   const thoughtSignature = message?.extra_content?.google?.thought_signature;
-  const reasoningArtifacts = compatibleReasoningArtifacts({
+  const reasoningArtifacts = (options.providerId === "mistral" ? mistralReasoningArtifacts({
+    content: message?.content,
+    model: options.model,
+    baseUrl: options.baseUrl,
+  }) : undefined) ?? compatibleReasoningArtifacts({
     providerId: options.providerId,
     model: options.model,
     baseUrl: options.baseUrl,

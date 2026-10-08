@@ -46,6 +46,8 @@ import {
 import { registerModelVisionCapability } from "./capability/vision-registry.js";
 import { resolveToolDialect } from "./capability/tool-dialect.js";
 import { currentIsolatedSessionAffinity } from "./session-affinity.js";
+import { documentedMistralReasoning } from "./mistral-models.js";
+import { scopedModelCatalogFacts } from "./catalog-context.js";
 import {
   rememberModelLimits,
   resetRememberedModelLimits,
@@ -181,9 +183,12 @@ export function effectiveThinkingEffort(
   if (!thinking?.enabled) return undefined;
   if (isReasoningUnsupported(provider, model)) return undefined;
   if (!modelSupportsThinking(provider, model)) return undefined;
+  const efforts = displayReasoningEfforts(provider, model);
   return clampEffortToRoute(
     thinking.effort,
-    displayReasoningEfforts(provider, model),
+    provider === "mistral" && thinking.effort !== "none"
+      ? efforts?.filter((effort) => effort !== "none")
+      : efforts,
   );
 }
 
@@ -269,6 +274,10 @@ export function routeReasoningIsMandatory(
   provider: ProviderId,
   model: string,
 ): boolean {
+  if (provider === "mistral") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
+    if (reasoning?.mandatory === true) return true;
+  }
   const scoped = scopedKnowledge(provider, model);
   if (scoped) return scoped.reasoningMandatory === true;
   return mandatoryReasoningRoutes.has(reasoningKey(provider, model));
@@ -346,6 +355,7 @@ export type ReasoningEvidence =
   "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
 function familyForProvider(provider: ProviderId, model: string) {
+  if (provider === "mistral") return undefined;
   const family = modelFamilyFor(model);
   const providerExcluded =
     family?.id === "mimo-v2" && provider !== "mimo";
@@ -379,6 +389,10 @@ export function modelSupportsThinking(
   provider: ProviderId,
   model: string,
 ): boolean {
+  if (
+    provider === "mistral" &&
+    modelCatalogFacts(provider, model)?.reasoning?.supported === false
+  ) return false;
   loadLearnedCapabilities();
   const scoped = scopedKnowledge(provider, model);
   if (scoped?.reasoningUnsupported) return false;
@@ -390,6 +404,10 @@ export function modelSupportsThinking(
 }
 
 function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
+  if (provider === "mistral") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
+    return reasoning?.supported === true;
+  }
   const key = reasoningKey(provider, model);
   const declared = catalogReasoningSupport.get(key);
   if (declared !== undefined) return declared;
@@ -409,6 +427,11 @@ export function displayReasoningEfforts(
 ): readonly string[] | undefined {
   const scoped = scopedKnowledge(provider, model);
   if (scoped) return scoped.acceptedEfforts ?? scoped.displayEfforts;
+  if (provider === "mistral") {
+    return modelCatalogFacts(provider, model)?.reasoning?.supported === false
+      ? []
+      : learnedRouteEfforts(provider, model) ?? modelReasoningEfforts(provider, model);
+  }
   return (
     modelReasoningEfforts(provider, model) ?? endpointAcceptedEfforts(provider)
   );
@@ -451,6 +474,8 @@ export function modelCatalogFacts(
   provider: ProviderId | string,
   model: string,
 ): CatalogFacts | undefined {
+  const scope = scopedModelCatalogFacts(provider);
+  if (scope) return scope.get(model.trim().toLowerCase());
   return catalogFactsByRoute.get(catalogFactsKey(provider, model));
 }
 
@@ -497,6 +522,11 @@ export function catalogAdvertisedEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  if (provider === "mistral") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning;
+    if (reasoning?.supported === false) return [];
+    return catalogEffortList((reasoning ?? documentedMistralReasoning(model))?.supportedEfforts);
+  }
   const key = reasoningKey(provider, model);
   const registered = catalogReasoningEfforts.get(key);
   if (registered?.length) return registered;
@@ -510,6 +540,11 @@ export function modelReasoningEfforts(
   model: string,
 ): readonly string[] | undefined {
   loadLearnedCapabilities();
+  if (provider === "mistral") {
+    const facts = modelCatalogFacts(provider, model)?.reasoning;
+    if (facts?.supported === false) return [];
+    return catalogEffortList((facts ?? documentedMistralReasoning(model))?.supportedEfforts);
+  }
   const advertised = catalogAdvertisedEfforts(provider, model);
   if (advertised !== undefined) return advertised;
   const family = familyForProvider(provider, model);

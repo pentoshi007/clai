@@ -5,6 +5,25 @@ import {
 } from "./provider-identity.js";
 
 export const providerInfo: Record<string, string> = {
+  mistral: `Mistral — native chat, multimodal input, tools, and reasoning
+
+  API          https://api.mistral.ai/v1
+  Credential   MISTRAL_API_KEY or clai set mistral
+  Default      mistral-small-latest
+  Models       Discovered from /models, with aliases and chat-capable fine-tunes
+
+  Context, vision, tools, and temperature defaults use live model metadata.
+  /effort lists advertised or documented settings for the selected model.
+  Native thinking is displayed separately and retained for compatible replay.
+  Session prompt-cache affinity is stable; cached tokens use API usage counters.
+  Local tools, parallel calls, subagents, key rotation, and cancellation work
+  through the same request lifecycle as other clai providers.
+
+  MISTRAL_BASE_URL or clai set mistral --url <url> selects a regional endpoint.
+  EU: https://api.eu.mistral.ai/v1 · US: https://api.us.mistral.ai/v1
+
+Setup: clai set mistral · clai use mistral · /model
+Docs: https://docs.mistral.ai/api/endpoint/chat`,
   free: `Free — keyless OpenAI-compatible models
 
 WHAT IT IS

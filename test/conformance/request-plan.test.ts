@@ -34,6 +34,7 @@ beforeEach(() => {
 const CHAT_STYLE_BY_ROUTE: Record<string, string> = {
   free: "none",
   openai: "openai",
+  mistral: "openai",
   openrouter: "openrouter",
   nvidia: "nvidia",
   agentrouter: "agentrouter",
@@ -433,7 +434,7 @@ describe("chat-completions bodies compile from plans", () => {
             replayTarget: createReasoningArtifactReplayTarget({
               provider: route.provider,
               model,
-              dialect: "openai-compatible",
+              dialect: route.provider === "mistral" ? "mistral-chat" : "openai-compatible",
             }),
             messages: request.messages,
             maxTokens: request.maxTokens,

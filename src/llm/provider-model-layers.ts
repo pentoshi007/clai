@@ -10,6 +10,9 @@ import {
 } from "./provider-profile-layers.js";
 import { MODEL_RULES } from "./model-layers/model-rules.js";
 import { nvidiaModelLayer } from "./model-layers/nvidia-layer.js";
+import { modelCatalogFacts } from "./capabilities.js";
+import { catalogEffortList } from "./catalog-facts.js";
+import { documentedMistralReasoning } from "./mistral-models.js";
 import {
   AWS_MANTLE_ANTHROPIC_MODEL,
   LING_NO_REASONING,
@@ -206,6 +209,27 @@ export function modelLayerFor(
   provider: ProviderId,
   model: string,
 ): ProviderProfileLayer | undefined {
+  if (provider === "mistral") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
+    const efforts = catalogEffortList(reasoning?.supportedEfforts) ?? [];
+    const supported = reasoning?.supported === true;
+    const mandatory = reasoning?.mandatory === true;
+    return {
+      evidence: providerDoc("https://docs.mistral.ai/studio/conversations/reasoning"),
+      reasoning: {
+        generation: mandatory ? "mandatory" : supported ? "optional" : "none",
+        control: {
+          dialect: "openai-effort",
+          status: supported && efforts.length > 0 ? "supported" : "unsupported",
+          evidence: providerDoc("https://docs.mistral.ai/studio/conversations/reasoning"),
+        },
+        acceptedEfforts: efforts,
+        disable: efforts.includes("none") ? "supported" : "unsupported",
+        disableForm: efforts.includes("none") ? "effort-none" : "none-documented",
+        ...(reasoning?.defaultEffort ? { defaultEffort: reasoning.defaultEffort } : {}),
+      },
+    };
+  }
   if (provider === "nvidia") return nvidiaModelLayer(model);
   if (provider === "bynara") return bynaraModelLayer(model);
   if (provider === "agentrouter") return agentrouterModelLayer(model);

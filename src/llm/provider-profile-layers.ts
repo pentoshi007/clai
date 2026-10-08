@@ -25,6 +25,31 @@ export const viaGateway = (detail: string): ProfileEvidence => ({
 });
 
 export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = {
+  mistral: {
+    evidence: providerDoc("https://docs.mistral.ai/api/endpoint/chat"),
+    transport: {
+      authType: "bearer",
+      keyEnv: "MISTRAL_API_KEY",
+      baseUrlEnv: "MISTRAL_BASE_URL",
+      systemPolicy: "single-leading",
+    },
+    capabilities: { streamOptions: "unsupported", structuredOutput: "supported" },
+    reasoning: {
+      replayScope: "all-history",
+      finalTurnPreservation: "required",
+      outputShapes: ["structured-details"],
+    },
+    cache: {
+      kind: "affinity-key",
+      affinityField: "prompt_cache_key",
+      cacheAffectingFields: ["messages", "tools", "reasoning_effort"],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: { proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS, naturalEofAccepted: false },
+  },
   anthropic: {
     evidence: providerDoc("anthropic-messages"),
     transport: { authType: "native", systemPolicy: "provider-system-field" },

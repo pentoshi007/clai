@@ -25,6 +25,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     note: "keyless free-tier gateway",
   },
   {
+    id: "mistral",
+    provider: "mistral",
+    family: "chat_completions",
+    model: "mistral-small-latest",
+    auth: { apiKey: "mistral-conformance-key" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "openai",
     provider: "openai",
     family: "chat_completions",

@@ -37,6 +37,7 @@ import {
   retireRejectedReasoningReplay,
   revertVisionSubstitution,
   runRecordedProviderAttempt,
+  trackReasoningReplay,
   withoutImages,
   withoutReasoning,
   withoutReasoningReplay,
@@ -58,8 +59,9 @@ export async function tryCompleteOnce(
   onStatus: ((message: string) => void) | undefined,
   singleDispatch = false,
 ): Promise<CompletionResult> {
+  const replay = trackReasoningReplay(request);
   const activeRequest = {
-    ...requestForRoute(request, providerId, model),
+    ...requestForRoute(replay.request, providerId, model),
     provider: providerId,
     model,
   };
@@ -147,7 +149,10 @@ export async function tryCompleteOnce(
         withoutReasoningReplay(activeRequest),
         "adaptation",
       );
-      retireRejectedReasoningReplay(request.messages, providerId, model);
+      retireRejectedReasoningReplay(
+        request.messages, providerId, model,
+        replay.replayedSources.size ? replay.replayedSources : undefined,
+      );
       return result;
     }
     if (

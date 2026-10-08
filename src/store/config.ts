@@ -11,6 +11,7 @@ export const endpointProviders: readonly ProviderId[] = [
   "lightning",
   "tokenrouter",
   "tokenharbor",
+  "mistral",
 ];
 
 export function providerUsesEndpoints(provider: ProviderId): boolean {
@@ -26,6 +27,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   ollama: "local",
   openai: "paid-cloud",
   anthropic: "paid-cloud",
+  mistral: "paid-cloud",
   agentrouter: "paid-cloud",
   "aws-mantle": "paid-cloud",
   bynara: "free-cloud",
@@ -148,4 +150,3 @@ export function getActiveSearchProvider(): SearchProviderId {
 export function getExaSearchType(): ExaSearchType {
   return getConfig().exaSearchType ?? DEFAULT_EXA_SEARCH_TYPE;
 }
-
