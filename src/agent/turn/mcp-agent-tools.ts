@@ -11,6 +11,7 @@ export interface McpAgentToolPorts {
     toolEventId: string,
     result: ToolResult,
     contextOutput: string,
+    artifactPath?: string,
   ) => void;
   readonly confirm: (call: ToolCall) => Promise<boolean>;
   readonly recordAttempt: (call: ToolCall, ok: boolean, output: string) => void;
@@ -117,7 +118,7 @@ const execute = async (
   const contextOutput = artifactPath ? formatToolContext(call, framed) : shown;
   ports.recordAttempt(call, result.ok, shown);
   ports.writeOutput(toolEventId, `${shown}\n`);
-  ports.emitResult(toolEventId, framed, contextOutput);
+  ports.emitResult(toolEventId, framed, contextOutput, artifactPath);
   return {
     ok: result.ok,
     call,

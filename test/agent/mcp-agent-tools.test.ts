@@ -104,7 +104,8 @@ describe("mcp agent tool execution", () => {
       required: ["id"],
     })}: Use resolve_record first.\nRead the complete schema before calling.`;
     const stub = { agentTools: async () => ok(output) } as unknown as McpRuntime;
-    const { ports: port } = ports();
+    const emitResult = vi.fn();
+    const { ports: port } = ports({ emitResult });
     const result = await createMcpAgentToolExecutor(port)(
       stub, call("mcp.tools", { server: "docs", query: "lookup" }), "oversized-catalog",
     );
@@ -115,6 +116,7 @@ describe("mcp agent tool execution", () => {
     expect(result.contextOutput).toContain("fs.read");
     expect(result.result.outputPath).toBeDefined();
     const path = result.result.outputPath!;
+    expect(emitResult).toHaveBeenCalledWith("oversized-catalog", result.result, result.contextOutput, path);
     try {
       expect(await readFile(path, "utf8")).toBe(`${output}\n`);
     } finally {
