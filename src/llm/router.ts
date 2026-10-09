@@ -105,7 +105,7 @@ function retryOptionsForProvider(
       : providerId === "free"
         ? { maxRetries: 3 }
         : {}),
-    ...(providerId === "free" || options.retryRateLimits === false
+    ...(options.retryRateLimits === false
       ? { retryRateLimits: false }
       : {}),
   };

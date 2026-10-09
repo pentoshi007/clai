@@ -113,6 +113,10 @@ Kilo's model catalog supplies context and output limits directly. Zen's model li
 
 Discovered limits are cached for 30 minutes and retained locally for later sessions. A newly discovered Zen model ID can trigger an earlier metadata refresh; retries for unpublished limits or failed lookups have a one-minute cooldown. When discovery is unavailable, clai keeps previously learned limits, then uses its model table or the 200,000-token default if no limit is known. A 200k context can also be an actual gateway limit, rather than a fallback. Use `/context` to inspect the selected session's context budget.
 
+Agent turns retry temporary HTTP 429 failures up to four times, with visible waits of 5, 8, 10, and 15 seconds. This includes gateway responses that report an unavailable upstream endpoint. Shorter provider retry hints can shorten a wait. Standalone requests allow three retries by default.
+
+Retries preserve the conversation and tool definitions; cancelling the turn cancels the wait. Explicit billing or insufficient account quota errors require an account or provider change. If the gateway remains unavailable after the retry budget, select another model with `/model` or provider with `/provider`. Cross-provider fallback follows `/fallback` and `/freeonly` settings.
+
 ### Mistral
 
 Create an API key in [Mistral Studio](https://console.mistral.ai/api-keys), then configure clai:

@@ -1,6 +1,7 @@
 
 import { ProviderError, STREAM_STALL_MARKER } from "../llm/http.js";
 import { rateLimitWaitMsFor } from "../llm/key-rotation.js";
+import { isHardQuotaError } from "../llm/quota-signals.js";
 import { isContentPolicyError } from "../llm/reasoning-errors.js";
 import { isEmptyCompletionError } from "../llm/router.js";
 import {
@@ -67,10 +68,9 @@ export const FREE_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   ...DEFAULT_STREAM_RECOVERY_LIMITS,
   maxServer: 0,
   maxServerAttempts: 0,
-  maxRateLimit: 0,
   maxNetwork: 1,
   maxStall: 1,
-  maxTotal: 1,
+  maxTotal: DEFAULT_STREAM_RECOVERY_LIMITS.maxRateLimit + 1,
 };
 
 export interface StreamRecoveryPlan {
@@ -128,6 +128,8 @@ export function classifyStreamFailure(error: unknown): StreamFailureKind {
   ) {
     return "context-overflow";
   }
+
+  if (isHardQuotaError(error)) return "non-retriable";
 
   if (
     status === 429 ||
@@ -316,7 +318,7 @@ export function planStreamRecovery(input: {
         allowModelFallback: true,
         notice:
           n === 0
-            ? `provider rate limited — retrying in ${Math.ceil(delayMs / 1000)}s and trying alternates`
+            ? `provider rate limited — retrying in ${Math.ceil(delayMs / 1000)}s`
             : undefined,
       };
     }
