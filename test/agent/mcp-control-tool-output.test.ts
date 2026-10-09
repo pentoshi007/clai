@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent } from "../../src/agent/events.js";
 import type { ChatMessage } from "../../src/types.js";
+import { runAgent } from "../../src/modes/agent.js";
 import { McpRuntime } from "../../src/mcp/runtime.js";
 import type { ToolResult } from "../../src/types.js";
 
@@ -55,7 +57,6 @@ async function driveMcpTool(
   result: ToolResult,
 ): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  const { runAgent } = await import("../../src/modes/agent.js");
   let round = 0;
   stream.mockImplementation(async (_req: unknown, onToken: (t: string) => void) => {
     round += 1;
@@ -114,6 +115,23 @@ describe("MCP control tools always surface a visible result", () => {
     expect(chunks).toContain("MCP selection: all.");
     expect(chunks).toContain("notion: ready");
     expect(chunks.trim()).not.toBe("ok");
+  });
+
+  it("attaches oversized discovery details to the transcript's tool result", async () => {
+    const output = `MCP tool schema\n${"field details\n".repeat(3_000)}Required: use the returned record id.`;
+    const events = await driveMcpTool("sess-mcp-artifact", "mcp.tools", { ok: true, output });
+    const result = events.find(
+      (event): event is Extract<AgentEvent, { type: "tool-result" }> => event.type === "tool-result",
+    );
+    expect(result?.artifactPath).toBeDefined();
+    expect(result?.summary).toContain("Full artifact:");
+    expect(outputChunks(events, result?.id).join("")).toContain(output);
+    const path = result!.artifactPath!;
+    try {
+      expect(await readFile(path, "utf8")).toBe(`${output}\n`);
+    } finally {
+      await rm(path);
+    }
   });
 
   it("shows the enable confirmation text for mcp.enable", async () => {
