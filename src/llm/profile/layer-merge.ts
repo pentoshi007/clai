@@ -64,10 +64,11 @@ function firstDefined<T extends Pickable>(
 function firstList<T>(
   layers: readonly ProviderProfileLayer[],
   pick: (layer: ProviderProfileLayer) => readonly T[] | undefined,
+  allowEmpty = false,
 ): readonly T[] | undefined {
   for (const layer of layers) {
     const value = pick(layer);
-    if (value !== undefined && value.length > 0) return value;
+    if (value !== undefined && (allowEmpty || value.length > 0)) return value;
   }
   return undefined;
 }
@@ -184,7 +185,7 @@ export function mergeLayers(
         ),
       },
       acceptedEfforts:
-        firstList(layers, (l) => l.reasoning?.acceptedEfforts) ?? [],
+        firstList(layers, (l) => l.reasoning?.acceptedEfforts, route.provider === "cline") ?? [],
       disable,
       ...(disableForm !== undefined
         ? { disableForm }

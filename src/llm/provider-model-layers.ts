@@ -209,6 +209,26 @@ export function modelLayerFor(
   provider: ProviderId,
   model: string,
 ): ProviderProfileLayer | undefined {
+  if (provider === "cline") {
+    const fallback = MODEL_RULES.cline?.find((rule) => rule.pattern.test(model))?.layer;
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning;
+    if (reasoning?.supported === undefined) return fallback;
+    const evidence = { source: "catalog" as const, confidence: "high" as const };
+    return {
+      ...fallback,
+      evidence,
+      reasoning: {
+        ...fallback?.reasoning,
+        generation: reasoning.supported === false ? "none"
+          : reasoning.mandatory === true ? "mandatory"
+          : reasoning.defaultEnabled === true ? "default-on" : "optional",
+        generationEvidence: evidence,
+        ...(reasoning.mandatory === undefined ? {} : {
+          disable: reasoning.mandatory ? "unsupported" : "supported",
+        }),
+      },
+    };
+  }
   if (provider === "mistral") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
     const efforts = catalogEffortList(reasoning?.supportedEfforts) ?? [];
