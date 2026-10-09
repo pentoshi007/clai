@@ -276,6 +276,14 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
           options.providerId,
           control,
         );
+  if (options.providerId === "cline") {
+    const supported = modelCatalogFacts("cline", options.model)?.reasoning;
+    if (supported?.supported !== undefined && !supported.supportedEfforts?.length) {
+      delete reasoning.reasoning_effort;
+      const nested = reasoning.reasoning as Record<string, unknown> | undefined;
+      if (nested) delete nested.effort;
+    }
+  }
   if (options.providerId === "free") {
     if (/mimo/i.test(options.model)) {
       delete reasoning.reasoning_effort;

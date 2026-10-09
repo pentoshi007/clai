@@ -274,6 +274,10 @@ export function routeReasoningIsMandatory(
   provider: ProviderId,
   model: string,
 ): boolean {
+  if (
+    provider === "cline" &&
+    modelCatalogFacts(provider, model)?.reasoning?.mandatory === true
+  ) return true;
   if (provider === "mistral") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
     if (reasoning?.mandatory === true) return true;
@@ -390,7 +394,7 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   if (
-    provider === "mistral" &&
+    (provider === "mistral" || provider === "cline") &&
     modelCatalogFacts(provider, model)?.reasoning?.supported === false
   ) return false;
   loadLearnedCapabilities();
@@ -404,6 +408,10 @@ export function modelSupportsThinking(
 }
 
 function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
+  if (provider === "cline") {
+    const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
+    if (declared !== undefined) return declared;
+  }
   if (provider === "mistral") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
     return reasoning?.supported === true;
@@ -522,6 +530,16 @@ export function catalogAdvertisedEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  if (provider === "cline") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning;
+    if (reasoning?.supported === false) return [];
+    if (reasoning?.supported !== undefined || reasoning?.supportedEfforts !== undefined) {
+      const efforts = catalogEffortList(reasoning.supportedEfforts);
+      return efforts
+        ? wireRejectionEfforts.get(reasoningKey(provider, model)) ?? efforts
+        : [];
+    }
+  }
   if (provider === "mistral") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     if (reasoning?.supported === false) return [];
@@ -571,6 +589,10 @@ export function registerModelCatalog(
   );
   for (const model of models) {
     if (!model.id) continue;
+    if (provider === "cline") {
+      catalogReasoningEfforts.delete(reasoningKey(provider, model.id));
+      catalogReasoningSupport.delete(reasoningKey(provider, model.id));
+    }
     if (model.facts) registerModelCatalogFacts(provider, model.facts);
     if (model.reasoningEfforts?.length) {
       registerModelReasoningEfforts(provider, model.id, model.reasoningEfforts);

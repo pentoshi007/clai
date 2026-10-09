@@ -1,5 +1,5 @@
 import type { CommandInvocation } from "../../../app/commands/command.js";
-import { clearReasoningRejection, displayReasoningEfforts, effectiveThinkingEffort, modelReasoningEvidence, modelReasoningIsMandatory, modelSupportsThinking, routeReasoningIsMandatory } from "../../../llm/capabilities.js";
+import { clearReasoningRejection, displayReasoningEfforts, effectiveThinkingEffort, modelCatalogFacts, modelReasoningEvidence, modelReasoningIsMandatory, modelSupportsThinking, routeReasoningIsMandatory } from "../../../llm/capabilities.js";
 import { getConfig, getExaSearchType, setActiveSearchProvider, setExaSearchType, setThinking } from "../../../store/config.js";
 import { saveSessionModel as saveSessionThinking } from "../../../store/session-model.js";
 import { getSearchProviderKey, setSecret } from "../../../store/keys.js";
@@ -123,8 +123,8 @@ export function handleReasoning(services: AppServices, invocation: CommandInvoca
   const options: PickerOption[] = reasoningOptionValues(provider, model).map((value) => ({
     value,
     label: value,
-    description: REASONING_DESCRIPTIONS[value] ?? "",
-    active: value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
+    description: value === "on" ? "enable reasoning" : REASONING_DESCRIPTIONS[value] ?? "",
+    active: value === "on" ? current.enabled : value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
   }));
   if (options.length === 0) {
     services.session.notice("info", `${provider}/${model} uses reasoning without adjustable effort controls`);
@@ -155,6 +155,10 @@ export function reasoningOptionValues(
     return ["off"];
   }
   const accepted = displayReasoningEfforts(provider, model) ?? [];
+  const published = provider === "cline" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
+  if (published?.supported === true && accepted.length === 0) {
+    return published.mandatory === false ? ["off", "on"] : [];
+  }
   if (
     provider === "mistral" && accepted.length === 0 &&
     modelSupportsThinking(provider, model)
@@ -165,7 +169,7 @@ export function reasoningOptionValues(
     accepted.length > 0 || provider === "mistral"
       ? scale.filter((value) => accepted.includes(value))
       : scale;
-  return modelReasoningIsMandatory(model) ||
+  return (published?.mandatory !== false && modelReasoningIsMandatory(model)) ||
     routeReasoningIsMandatory(provider, model)
     ? efforts
     : ["off", ...efforts];
@@ -173,8 +177,9 @@ export function reasoningOptionValues(
 
 function reasoningPickerTitle(provider: ProviderId, model: string): string {
   const evidence = modelReasoningEvidence(provider, model);
+  const published = provider === "cline" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
   const status =
-    modelReasoningIsMandatory(model) || routeReasoningIsMandatory(provider, model)
+    (published?.mandatory !== false && modelReasoningIsMandatory(model)) || routeReasoningIsMandatory(provider, model)
       ? "always on"
       : evidence === "rejected"
         ? "previously rejected — picking a level retries it"

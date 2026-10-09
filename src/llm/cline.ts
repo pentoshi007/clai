@@ -1,4 +1,5 @@
 import type { CompletionRequest, CompletionResult } from "../types.js";
+import { createHash } from "node:crypto";
 import {
   defaultModels,
   type LlmProvider,
@@ -9,7 +10,6 @@ import {
   openAiCompatibleStream,
   toCompletionResult,
   readJson,
-  ingestModelCatalogEntries,
   ProviderError,
 } from "./http.js";
 import {
@@ -22,13 +22,27 @@ import {
 } from "./cline-auth.js";
 import { getProviderKeys, replaceProviderKey } from "../store/keys.js";
 import { currentSessionAffinity } from "./session-affinity.js";
+import { registerModelCatalog } from "./capabilities.js";
+import { catalogEffortList } from "./catalog-facts.js";
+import { discoverClineModelFacts } from "./cline-model-catalog.js";
+import { readBodyCapped } from "./wire/response-errors.js";
 
 const baseUrl = CLINE_API_BASE_URL;
 const headers = CLINE_REQUEST_HEADERS;
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const REFRESH_COOLDOWN_MS = 60 * 1000;
+const modelCatalogs = new Map<string, { entries: readonly unknown[]; nextFetchAt: number }>();
+const modelFetches = new Map<string, Promise<readonly unknown[]>>();
+
+function modelCatalogKey(auth: ProviderAuth): string {
+  return createHash("sha256").update(auth.apiKey ?? "public").digest("hex");
+}
+
+export function resetClineModelCache(): void {
+  modelCatalogs.clear();
+  modelFetches.clear();
+}
 
 function requireKey(auth: ProviderAuth): string {
   if (!auth.apiKey) {
@@ -181,25 +195,63 @@ async function withClineCredential<T>(
   }
 }
 
-async function fetchClineModels(apiKey?: string): Promise<string[]> {
+async function fetchClineModels(apiKey?: string): Promise<readonly unknown[]> {
   const reqHeaders = {
     ...getClineHeaders(),
     ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
   };
+  const signal = AbortSignal.timeout(15_000);
   const response = await fetch(`${baseUrl}/ai/cline/recommended-models`, {
     headers: reqHeaders,
+    signal,
   });
-  const payload = await readJson<{
+  const payload = (response.ok
+    ? JSON.parse(await readBodyCapped(response, 2 * 1024 * 1024, signal))
+    : await readJson<unknown>(response, signal)) as {
     recommended?: unknown[];
     free?: unknown[];
     clinePass?: unknown[];
-  }>(response);
-  const entries = [
+  };
+  return [
     ...(Array.isArray(payload.recommended) ? payload.recommended : []),
     ...(Array.isArray(payload.free) ? payload.free : []),
     ...(Array.isArray(payload.clinePass) ? payload.clinePass : []),
   ];
-  return ingestModelCatalogEntries("cline", entries);
+}
+
+async function clineCatalogEntries(auth: ProviderAuth): Promise<readonly unknown[]> {
+  const key = modelCatalogKey(auth);
+  const cached = modelCatalogs.get(key);
+  if (cached && Date.now() < cached.nextFetchAt) return cached.entries;
+  const pending = modelFetches.get(key);
+  if (pending) return pending;
+  const task = (async () => {
+    try {
+      const entries = auth.apiKey
+        ? await withClineCredential(auth, fetchClineModels)
+        : await fetchClineModels();
+      const next = { entries, nextFetchAt: Date.now() + CACHE_TTL_MS };
+      modelCatalogs.delete(key);
+      modelCatalogs.set(modelCatalogKey(auth), next);
+      while (modelCatalogs.size > 16) {
+        modelCatalogs.delete(modelCatalogs.keys().next().value!);
+      }
+      return entries;
+    } catch (error) {
+      if (
+        !cached || isClineAuthFailure(error) ||
+        error instanceof ClineAuthError || error instanceof ClineCredentialStoreError
+      ) throw error;
+      cached.nextFetchAt = Date.now() + REFRESH_COOLDOWN_MS;
+      return cached.entries;
+    }
+  })();
+  modelFetches.set(key, task);
+  try {
+    return await task;
+  } finally {
+    modelFetches.delete(key);
+  }
 }
 
 export const clineProvider: LlmProvider = {
@@ -210,16 +262,15 @@ export const clineProvider: LlmProvider = {
   envVar: "CLINE_API_KEY",
   validateKey: (key: string) => key.trim().length >= 20,
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
-    const models = auth.apiKey
-      ? await withClineCredential(auth, fetchClineModels)
-      : await fetchClineModels();
-    if (models.length > 0) {
-      cachedModels = models;
-      lastFetchTime = now;
-    }
-    return models;
+    const facts = await discoverClineModelFacts(await clineCatalogEntries(auth));
+    if (facts.length) registerModelCatalog("cline", facts.map((entry) => ({
+      id: entry.id,
+      facts: entry,
+      vision: entry.vision,
+      reasoning: entry.reasoning?.supported,
+      reasoningEfforts: catalogEffortList(entry.reasoning?.supportedEfforts),
+    })));
+    return facts.map((entry) => entry.id).sort();
   },
   async ping(auth: ProviderAuth): Promise<void> {
     await withClineCredential(auth, async (key) => {

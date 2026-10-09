@@ -188,6 +188,7 @@ Use `clai set <provider>` for a hidden-input credential prompt, or `--from-env <
 - `/set` manages up to 10 credentials per provider, including disabled keys and the active key. Applicable authentication, quota, rate-limit, and server failures can trigger rotation.
 - `/fallback on` enables cross-provider fallback; it is off by default. `/freeonly on` filters fallback using clai's provider categories. Check the selected model and account's billing terms when controlling spending.
 - `/effort` configures reasoning where supported. Qoder uses the selected effort, including `xhigh`, and displays thinking when returned by the model.
+- Cline discovers context and output limits and reasoning controls from live catalogs, including new models. `/context` shows the input budget; `/effort` offers the published levels or an on/off toggle. See [Cline setup and discovery](PROVIDERS.md#cline).
 - `/usage` shows reported token and cache usage across main turns, subagents, and auxiliary requests. Supported account providers also expose quota or subscription information. Token totals are not a billing invoice.
 
 The [provider guide](PROVIDERS.md) covers authentication, environment variables, endpoint configuration, and provider-specific behavior. Model catalogs and account access can change; use `/model` and the provider's own dashboard for availability.

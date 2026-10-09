@@ -8,6 +8,7 @@ import {
   displayReasoningEfforts,
   isReasoningUnsupported,
   learnModelReasoningSupport,
+  modelCatalogFacts,
   modelSupportsThinking,
   registerWireRejectionEfforts,
   scopedRuntimeReasoningEffortsKnown,
@@ -88,6 +89,10 @@ export function needsEffortPreflight(route: EffortPreflightRoute): boolean {
   if (probedKeys.has(key)) return false;
   if (isReasoningUnsupported(route.providerId, route.model)) return false;
   if (!modelSupportsThinking(route.providerId, route.model)) return false;
+  if (
+    route.providerId === "cline" &&
+    modelCatalogFacts("cline", route.model)?.reasoning?.supported !== undefined
+  ) return false;
   return !displayReasoningEfforts(route.providerId, route.model)?.length;
 }
 

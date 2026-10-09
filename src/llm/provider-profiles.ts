@@ -54,7 +54,8 @@ export function catalogProfileLayer(
 ): ProviderProfileLayer | undefined {
   const evidence: ProfileEvidence = { source: "catalog", confidence: "high" };
   const reasoning = facts.reasoning;
-  const acceptedEfforts = catalogEffortList(reasoning?.supportedEfforts);
+  const acceptedEfforts = catalogEffortList(reasoning?.supportedEfforts)
+    ?? (Array.isArray(reasoning?.supportedEfforts) ? [] : undefined);
   const generation: ReasoningGeneration | undefined =
     reasoning?.mandatory === true
       ? "mandatory"
@@ -126,7 +127,15 @@ export function catalogLayerFor(
   model: string,
 ): ProviderProfileLayer | undefined {
   const facts = modelCatalogFacts(provider, model);
-  return facts ? catalogProfileLayer(facts) : undefined;
+  const layer = facts ? catalogProfileLayer(facts) : undefined;
+  if (provider !== "cline" || !layer || facts?.reasoning?.supported !== false) return layer;
+  return {
+    ...layer,
+    reasoning: {
+      ...layer.reasoning,
+      control: { status: "unsupported", evidence: layer.evidence },
+    },
+  };
 }
 
 export function modelFamilyLayerFor(

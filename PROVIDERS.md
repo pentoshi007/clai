@@ -35,6 +35,19 @@ clai use chatgpt
 
 `/model` uses the account-visible catalog where available, including model context limits and supported reasoning levels. `/usage` shows subscription limits, reset times, and credits when the account reports them. These account allowances are separate from session token totals. OpenAI API credentials use the separate `openai` integration.
 
+### Cline
+
+```sh
+clai auth cline
+clai use cline
+```
+
+Cline's catalog supplies its recommended, free, and Cline Pass model IDs. clai uses capabilities reported directly by Cline, then fills missing context limits, output limits, vision, tool support, and reasoning controls from the [Models.dev catalog](https://models.dev). This follows [Cline's catalog integration](https://github.com/cline/cline/tree/main/sdk/packages/llms/src/catalog). Exact Cline Pass entries take precedence over OpenRouter entries; aliases are matched only when the model slug identifies one entry unambiguously. New catalog models can acquire their capabilities without a clai update.
+
+Use `/context` to inspect the selected model's input budget. When a catalog reports both a total context window and a smaller input limit, clai uses the smaller limit for that budget. `/effort` shows published effort levels, **on/off** for models with only a reasoning toggle, or an informational notice when reasoning has no adjustable controls. Models declared not to support reasoning offer only **off**. Streamed reasoning remains available when the model returns it.
+
+Model lists are cached separately for each credential for 30 minutes. Supplemental metadata is cached for 30 minutes, with a one-minute cooldown for missing-model refreshes and failed lookups. Cline credentials are sent only to Cline; the supplemental catalog lookup is public. Cached listings retain their capabilities during temporary outages, and discovered numeric limits are retained locally for later sessions. If neither source publishes a usable limit, clai keeps its existing model-table or 200,000-token fallback; ambiguous aliases do not receive guessed capabilities.
+
 ### Qoder
 
 ```sh
