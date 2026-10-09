@@ -1,10 +1,10 @@
 import {
   resolveRenderLib,
-  TextBuffer,
   type TextareaRenderable,
   type WidthMethod,
 } from "@opentui/core";
-import { countLines, type PasteRegistry } from "../../ui-core/composer/paste-placeholder.js";
+import type { PasteRegistry } from "../../ui-core/composer/paste-placeholder.js";
+import { composerCharacterOffset, setComposerCharacterOffset } from "./composer-cursor.js";
 
 const decoder = new TextDecoder();
 
@@ -34,22 +34,9 @@ export function expandComposerPaste(
 ): boolean {
   const text = editor.plainText;
   if (registry.activeIn(text).length === 0) return false;
-  const offset = editor.cursorOffset;
-  const bytes = offset > 0
-    ? resolveRenderLib().editBufferGetTextRange(editor.editBuffer.ptr, 0, offset, Buffer.byteLength(text))
-    : undefined;
-  if (offset > 0 && !bytes) return false;
-  const next = registry.expandNearest(text, bytes ? decoder.decode(bytes).length : 0, id);
+  const next = registry.expandNearest(text, composerCharacterOffset(editor, text), id);
   if (!next) return false;
-  const prefix = next.text.slice(0, next.cursor);
-  const row = Math.max(0, countLines(prefix) - 1);
-  const measure = TextBuffer.create(widthMethod);
-  try {
-    measure.setText(prefix.slice(prefix.lastIndexOf("\n") + 1));
-    editor.replaceText(next.text);
-    editor.setCursor(row, measure.length);
-  } finally {
-    measure.destroy();
-  }
+  editor.replaceText(next.text);
+  setComposerCharacterOffset(editor, next.text, next.cursor, widthMethod);
   return true;
 }

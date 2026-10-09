@@ -158,6 +158,24 @@ clai set modal --url https://your-deployment.example.com --from-env MODAL_CREDEN
 
 Here, `MODAL_CREDENTIAL` contains `token-id:token-secret`. Alternatively, supply both native Modal environment variables and configure the endpoint URL separately. `MODAL_BASE_URL` is also supported. Lightning, TokenRouter, and Token Harbor support configured endpoints and the corresponding `LIGHTNING_BASE_URL`, `TOKENROUTER_BASE_URL`, and `TOKENHARBOR_BASE_URL` variables.
 
+## Prompt caching
+
+clai keeps leading instructions, tool definitions, and previously submitted conversation content stable as a session grows. MCP discovery, server selection, tool results, and working memory are appended to the conversation. Cache controls do not change the stored transcript or add filler to the prompt. Providers that accept session affinity receive a stable identity; subagents and auxiliary requests use separate identities.
+
+### Cline
+
+Cline requests retain the same task header and hashed `session_id` across tool rounds, subsequent prompts, and a resumed session. Claude and Qwen routes receive a request-level cache hint without moving flags between earlier user messages. Tool results and images remain in their original order, and reasoning replay preserves compatible artifacts. Cache reads and writes reported by the gateway feed `/usage`.
+
+### Token Harbor
+
+Claude requests use explicit content-block cache marks for the system instructions and growing conversation, with at most four marks. Earlier boundaries remain reachable across large parallel tool batches and image turns; empty assistant tails do not prevent marking the preceding content. Other model families use the gateway's caching behavior without Claude-specific fields. See [Token Harbor's prompt-caching guide](https://status.tokenharbor.ai/docs/api/prompt-caching).
+
+clai bypasses Token Harbor's exact-response lookup so agent requests receive fresh generations. This still allows upstream prompt caching, which reuses input processing rather than replaying an old answer. Cache read and creation counts are parsed from both OpenAI-compatible and Anthropic-shaped usage responses.
+
+### Interpreting cache usage
+
+Use `/usage` to inspect reported cached input and cache writes. An initial cacheable request establishes an entry; later requests can reuse the unchanged portion. A model or endpoint change, credential rotation, provider fallback, compaction, an expired cache, or a prompt below the model's minimum cacheable length can require fresh processing. Stable prefixes improve reuse, while cache availability and actual hit rates remain controlled by the upstream provider.
+
 ## Credential management and fallback
 
 - Repeating `clai set <provider>` adds credentials, up to 10 per provider. `--stdin` reads a credential from standard input; `--skip-ping` saves it without provider validation.

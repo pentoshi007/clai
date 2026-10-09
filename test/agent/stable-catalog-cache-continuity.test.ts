@@ -8,6 +8,7 @@ import { successfulRequestSnapshot } from "../../src/llm/routing/attempt-request
 import { buildAnthropicBody } from "../../src/llm/anthropic.js";
 import { geminiBody } from "../../src/llm/gemini.js";
 import { buildChatBody } from "../../src/llm/wire/chat-body.js";
+import { tokenHarborBreakpointMode } from "../../src/llm/tokenharbor-cache.js";
 import { buildResponsesBody } from "../../src/llm/responses-request.js";
 import { withSessionAffinity } from "../../src/llm/session-affinity.js";
 import { META_STREAM_TERMINAL } from "../../src/llm/stream-terminal.js";
@@ -152,6 +153,17 @@ function contentBlocks(messages: Array<{ role: string; content: string | unknown
   );
 }
 
+function chatMessages(messages: Array<Record<string, unknown>>): unknown[] {
+  return messages.map((message) => {
+    const clean = withoutCacheControl(message) as Record<string, unknown>;
+    const content = clean.content;
+    if (Array.isArray(content) && content.length === 1 && content[0]?.type === "text") {
+      clean.content = content[0].text;
+    }
+    return clean;
+  });
+}
+
 function expectWirePrefixes(requests: readonly CapturedRequest[]): void {
   withSessionAffinity("mcp-cache-regression", () => {
     const bodies = requests.map((request) => {
@@ -171,13 +183,24 @@ function expectWirePrefixes(requests: readonly CapturedRequest[]): void {
         bodyExtras: () => ({}),
       }, { ...request, model: "gpt-4o-mini", stream: false }));
       return [
-        ...(["openai", "mistral", "openrouter", "explabs", "fireworks"] as const).map((providerId) => {
+        ...([
+          ["openai", "gpt-4o-mini"],
+          ["mistral", "mistral-large-latest"],
+          ["openrouter", "gpt-4o-mini"],
+          ["explabs", "gpt-4o-mini"],
+          ["fireworks", "gpt-4o-mini"],
+          ["cline", "anthropic/claude-sonnet-4.6"],
+          ["cline", "qwen/qwen3-coder"],
+          ["tokenharbor", "claude-sonnet-5.5"],
+          ["tokenharbor", "kimi-k3"],
+        ] as const).map(([providerId, model]) => {
           const chat = JSON.parse(buildChatBody({
-            ...request, providerId, model: providerId === "mistral" ? "mistral-large-latest" : "gpt-4o-mini", stream: false,
+            ...request, providerId, model, stream: false,
+            ...(providerId === "tokenharbor" ? { ephemeralCacheBreakpoints: tokenHarborBreakpointMode(model) } : {}),
           }));
           return {
             prefix: { tools: chat.tools, key: chat.prompt_cache_key ?? chat.session_id ?? chat.prompt_cache_isolation_key },
-            timeline: withoutCacheControl(chat.messages) as unknown[],
+            timeline: chatMessages(chat.messages),
           };
         }),
         { prefix: { tools: anthropic.tools, system: anthropic.system }, timeline: contentBlocks(anthropic.messages) },

@@ -14,6 +14,7 @@ const OTHER = "\u0000";
 function read(text: string): BurstUnit<string>[] {
   return [...text].map((char) => {
     if (char === "\r" || char === "\n") return { kind: "break", text: char, source: char };
+    if (char === "\t") return { kind: "tab", text: char, source: char };
     if (char === OTHER) return { kind: "other", text: "", source: char };
     return { kind: "content", text: char, source: char };
   });
@@ -45,6 +46,34 @@ function typed(instance: PasteBurstDetector<string>, text: string, startAt: numb
 }
 
 describe("PasteBurstDetector", () => {
+  it("keeps rapid Tab and Enter as shortcuts after typed command text", () => {
+    for (const together of [true, false]) {
+      const instance = detector();
+      instance.process(read("/he"), 0);
+      const outputs = together
+        ? instance.process(read("\t\r"), 1)
+        : [...instance.process(read("\t"), 1), ...instance.process(read("\r"), 2)];
+      expect(show(outputs)).toEqual(['key:"\\t"', 'key:"\\r"']);
+      expect(instance.pendingDeadline).toBeUndefined();
+    }
+  });
+
+  it("retains tabs in a single-line paste and across fragments of a pending multiline paste", () => {
+    const single = detector();
+    single.process(read("key\tvalue"), 0);
+    expect(single.expire(PASTE_BURST_SETTLE_MS)).toEqual([{ type: "paste", text: "key\tvalue" }]);
+    const multiline = detector();
+    multiline.process(read("line one\rline two"), 0);
+    multiline.process(read("\t\r"), 20);
+    multiline.process(read("line three"), 40);
+    expect(multiline.expire(40 + PASTE_BURST_SETTLE_MS)).toEqual([{ type: "paste", text: "line one\nline two\t\nline three" }]);
+    const indented = detector();
+    indented.process(read("first line"), 0);
+    expect(indented.process(read("\r\t"), 20)).toEqual([]);
+    expect(indented.process(read("\r"), 40)).toEqual([]);
+    expect(indented.expire(40 + PASTE_BURST_SETTLE_MS)).toEqual([{ type: "paste", text: "\n\t\n" }]);
+  });
+
   it("passes single keystrokes straight through without scheduling anything", () => {
     const instance = detector();
     expect(show(instance.process(read("a"), 0))).toEqual(['key:"a"']);
@@ -93,7 +122,7 @@ describe("PasteBurstDetector", () => {
   });
 
   it("never lets an Enter escape a line-split paste at any gap inside the window", () => {
-    const body = fc.stringMatching(/^[a-z0-9 ]{0,16}$/);
+    const body = fc.stringMatching(/^[a-z0-9\t ]{0,16}$/);
     const lead = fc.stringMatching(/^[a-z]{3,16}$/);
     const style = fc.constantFrom("after", "before");
     const gap = fc.integer({ min: 0, max: PASTE_BURST_SETTLE_MS - 1 });

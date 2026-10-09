@@ -26,6 +26,7 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "components", "toast", "toast-host.tsx"),
   join(tuiV2Root, "composer", "composer-editor.tsx"),
   join(tuiV2Root, "composer", "expand-paste.ts"),
+  join(tuiV2Root, "composer", "composer-cursor.ts"),
   join(tuiV2Root, "composer", "use-draft-actions.ts"),
   join(tuiV2Root, "composer", "composer-highlight.ts"),
   join(tuiV2Root, "components", "composer", "paste-chip.tsx"),

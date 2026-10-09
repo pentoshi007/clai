@@ -31,6 +31,7 @@ import {
 } from "../../ui-core/composer/paste-placeholder.js";
 import {
   activateSlashCompletion,
+  completionSelection,
   resolveCompletionMenu,
   sameCompletionMenu,
   type CompletionMenu,
@@ -51,6 +52,7 @@ import { ComposerInputBox } from "../components/composer/composer-input-box.js";
 import { PastePreview } from "../components/composer/paste-chip.js";
 import { pasteAtPoint } from "./paste-hit-test.js";
 import { expandComposerPaste, retainComposerText } from "./expand-paste.js";
+import { composerCharacterOffset, setComposerCharacterOffset } from "./composer-cursor.js";
 import { paintDraftMentions } from "./composer-highlight.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
@@ -102,19 +104,14 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   const [completionView, setCompletionView] = useState(
     initialCompletionViewportState,
   );
-  const [acceptedSlash, setAcceptedSlash] = useState<string | undefined>(undefined);
   const [contentRows, setContentRows] = useState(1);
   const [pasteChips, setPasteChips] = useState<PastePlaceholderEntry[]>([]);
   const [hoveredPaste, setHoveredPaste] = useState<PastePlaceholderEntry>();
   const pasteClick = useRef({ id: 0, at: 0 });
   const menuRef = useRef(menu);
   const completionViewRef = useRef(completionView);
-  const acceptedSlashRef = useRef(acceptedSlash);
-  menuRef.current = menu;
-  completionViewRef.current = completionView;
-  acceptedSlashRef.current = acceptedSlash;
+  const acceptedSlashRef = useRef<string | undefined>(undefined);
   const menuKindRef = useRef(menu.kind);
-  menuKindRef.current = menu.kind;
   const selected = completionView.selected;
 
   function applyCompletionViewport(
@@ -262,16 +259,17 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     queueMicrotask(syncContentRows);
   });
 
-  function expandPasteChip(id?: number): void {
+  function expandPasteChip(id?: number): boolean {
     const editor = editorRef.current;
-    if (!editor) return;
-    if (!expandComposerPaste(editor, pasteRegistry.current, renderer.widthMethod, id)) return;
+    if (!editor) return false;
+    if (!expandComposerPaste(editor, pasteRegistry.current, renderer.widthMethod, id)) return false;
     setHoveredPaste(undefined);
     focusComposer();
     queueMicrotask(() => {
       syncContentRows();
       refreshMenu();
     });
+    return true;
   }
 
   function hoverPaste(event: MouseEvent): void {
@@ -338,57 +336,32 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     composerActionPort.setHasDraft(editor.plainText.trim().length > 0);
   }
 
-  function refreshMenu(): void {
+  function refreshMenu(): CompletionMenu {
     const editor = editorRef.current;
-    if (!editor) return;
+    if (!editor) return menuRef.current;
+    const value = editor.plainText;
     const next = resolveCompletionMenu(
       services.commands,
-      editor.plainText,
-      editor.cursorOffset,
+      value,
+      composerCharacterOffset(editor, value),
     );
-    setAcceptedSlash((accepted) => {
-      if (!accepted || next.kind !== "slash") return undefined;
-      const token = editor.plainText.slice(next.start, next.end);
-      const suffix = editor.plainText.slice(next.end);
-      const kept =
-        token === accepted && !/\S/.test(suffix) ? accepted : undefined;
-      acceptedSlashRef.current = kept;
-      return kept;
-    });
-    setMenu((prev) => {
-      if (sameCompletionMenu(prev, next)) {
-        menuRef.current = prev;
-        menuKindRef.current = prev.kind;
-        return prev;
-      }
-      if (prev.kind === next.kind && next.kind !== "none" && prev.kind !== "none") {
-        const sel = completionViewRef.current.selected;
-        const prevName =
-          prev.kind === "slash"
-            ? prev.items[sel]?.name
-            : prev.items[sel]?.value;
-        if (prevName) {
-          const idx =
-            next.kind === "slash"
-              ? next.items.findIndex((i) => i.name === prevName)
-              : next.items.findIndex((i) => i.value === prevName);
-          applyCompletionViewport(
-            { type: "reconcile", selected: idx >= 0 ? idx : 0 },
-            next,
-          );
-        } else {
-          applyCompletionViewport({ type: "reconcile", selected: 0 }, next);
-        }
-      } else {
-        applyCompletionViewport({ type: "reset" }, next);
-        if (next.kind !== "none") {
-          arrowBurst.current = { count: 0, lastAt: 0 };
-        }
-      }
-      menuRef.current = next;
-      menuKindRef.current = next.kind;
-      return next;
-    });
+    if (next.kind !== "slash" || value.slice(next.start, next.end) !== acceptedSlashRef.current) {
+      acceptedSlashRef.current = undefined;
+    }
+    const previous = menuRef.current;
+    if (sameCompletionMenu(previous, next)) return previous;
+    const exact = next.kind === "slash"
+      ? services.commands.resolve(value.slice(next.start, next.end))
+      : undefined;
+    const selected = exact ? 0 : completionSelection(previous, next, completionViewRef.current.selected);
+    applyCompletionViewport({ type: "reconcile", selected }, next);
+    if (previous.kind !== next.kind && next.kind !== "none") {
+      arrowBurst.current = { count: 0, lastAt: 0 };
+    }
+    menuRef.current = next;
+    menuKindRef.current = next.kind;
+    setMenu(next);
+    return next;
   }
 
   function acceptSuggestion(opts?: {
@@ -403,8 +376,8 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       applyCompletionViewport({ type: "select", index: opts.index }, current);
     }
     if (!editor || current.kind === "none") return;
-    const cursor = editor.cursorOffset;
     const value = editor.plainText;
+    const cursor = composerCharacterOffset(editor, value);
     let replacement: string;
     let start: number;
     let replacementEnd: number;
@@ -417,16 +390,11 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       replacementEnd = /^\s*$/.test(value.slice(current.end))
         ? value.length
         : current.end;
-      const accepted = `/${item.name}`;
-      acceptedSlashRef.current = accepted;
-      setAcceptedSlash(accepted);
     } else {
       const item = current.items[sel];
       if (!item) return;
       start = current.start;
       replacementEnd = cursor;
-      acceptedSlashRef.current = undefined;
-      setAcceptedSlash(undefined);
       if (item.isDir) {
         if (item.value === "") {
           replacement = opts?.attachDir ? `@. ` : `@`;
@@ -449,16 +417,9 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       }
     }
     const next = value.slice(0, start) + replacement + value.slice(replacementEnd);
-    editor.setText(next);
-    try {
-      editor.editBuffer.setCursorByOffset?.(start + replacement.length);
-    } catch {
-      try {
-        editor.setCursor(0, start + replacement.length);
-      } catch {
-        editor.gotoBufferEnd();
-      }
-    }
+    editor.replaceText(next);
+    setComposerCharacterOffset(editor, next, start + replacement.length, renderer.widthMethod);
+    acceptedSlashRef.current = current.kind === "slash" ? `/${current.items[sel]!.name}` : undefined;
     applyCompletionViewport({ type: "reset" }, current);
     services.focus.focusRegion("composer");
     editor.focus();
@@ -467,47 +428,38 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       menuKindRef.current = "none";
       setMenu({ kind: "none" });
     }
-    queueMicrotask(() => {
-      refreshMenu();
-      syncContentRows();
-    });
+    refreshMenu();
+    queueMicrotask(syncContentRows);
   }
 
   function runSlashCompletion(index: number): void {
     const editor = editorRef.current;
     if (!editor) return;
+    const previous = menuRef.current;
+    const current = refreshMenu();
     const activated = activateSlashCompletion(
-      menuRef.current,
+      current,
       editor.plainText,
-      index,
+      completionSelection(previous, current, index),
     );
     if (!activated) return;
-    editor.setText(activated.value);
-    try {
-      editor.editBuffer.setCursorByOffset?.(activated.cursorOffset);
-    } catch {
-      try {
-        editor.setCursor(0, activated.cursorOffset);
-      } catch {
-        editor.gotoBufferEnd();
-      }
-    }
+    editor.replaceText(activated.value);
+    setComposerCharacterOffset(editor, activated.value, activated.cursorOffset, renderer.widthMethod);
     menuRef.current = { kind: "none" };
     menuKindRef.current = "none";
     acceptedSlashRef.current = undefined;
     setMenu({ kind: "none" });
-    setAcceptedSlash(undefined);
     applyCompletionViewport({ type: "reset" }, { kind: "none" });
     services.focus.focusRegion("composer");
     editor.focus();
     syncContentRows();
-    void dispatchOrRunTurn(activated.command);
+    void dispatchOrRunTurn(pasteRegistry.current.expand(activated.command));
   }
 
   function submit(): void {
     const editor = editorRef.current;
     if (!editor) return;
-    const current = menuRef.current;
+    const current = refreshMenu();
     if (current.kind === "slash") {
       runSlashCompletion(completionViewRef.current.selected);
       return;
@@ -592,11 +544,12 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     const editor = editorRef.current;
     if (!editor) return;
     const chord = chordFromKeyEvent(key);
-    const current = menuRef.current;
+    const current = chord === "tab" || (menuRef.current.kind !== "none" && chord !== "escape")
+      ? refreshMenu()
+      : menuRef.current;
 
-    if (chord === "alt+e") {
-      key.preventDefault();
-      expandPasteChip();
+    if (chord === "ctrl+e" || chord === "alt+e") {
+      if (expandPasteChip() || chord === "alt+e") key.preventDefault();
       return;
     }
 
@@ -627,7 +580,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
         return;
       }
       if (chord === "enter" && current.kind === "slash") {
-        runSlashCompletion(completionViewRef.current.selected);
+        submit();
         key.preventDefault();
         return;
       }
@@ -772,7 +725,6 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     menuKindRef.current = "none";
     acceptedSlashRef.current = undefined;
     setMenu({ kind: "none" });
-    setAcceptedSlash(undefined);
     applyCompletionViewport({ type: "reset" }, { kind: "none" });
   };
 

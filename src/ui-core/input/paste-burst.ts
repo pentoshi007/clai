@@ -3,7 +3,7 @@ export const PASTE_BURST_SETTLE_MS = 250;
 export const PASTE_BURST_MIN_CHARS = 3;
 export const PASTE_BURST_BULK_CHARS = 32;
 
-export type BurstUnitKind = "content" | "break" | "other";
+export type BurstUnitKind = "content" | "break" | "tab" | "other";
 
 export interface BurstUnit<T> {
   readonly kind: BurstUnitKind;
@@ -103,6 +103,20 @@ export class PasteBurstDetector<T> {
 
   process(chunk: readonly BurstUnit<T>[], now: number): readonly BurstOutput<T>[] {
     if (chunk.length === 0) return [];
+    let pastedTabs = false;
+    const tab = chunk.findIndex((unit) => unit.kind === "tab");
+    if (tab >= 0) {
+      const shape = measure(chunk);
+      pastedTabs =
+        ((this.collected !== undefined || this.held.length > 0) && now - this.touchedAt <= this.settleMs) ||
+        shape.breakBetweenContent ||
+        shape.contentChars >= PASTE_BURST_BULK_CHARS ||
+        chunk.slice(0, tab).some((unit) => unit.kind === "break") ||
+        chunk.slice(tab + 1).some(isContent);
+      chunk = chunk.map((unit) => unit.kind === "tab"
+        ? { ...unit, kind: pastedTabs ? "content" : "other" }
+        : unit);
+    }
     const plain = chunk.every((unit) => unit.kind !== "other");
     const emitted: BurstOutput<T>[] = [];
 
@@ -125,12 +139,13 @@ export class PasteBurstDetector<T> {
 
     if (!plain) {
       this.plainWasBulk = false;
+      this.plainAt = Number.NEGATIVE_INFINITY;
       emitted.push(...passThrough(chunk));
       return emitted;
     }
 
     const shape = measure(chunk);
-    if (shape.contentChars >= PASTE_BURST_BULK_CHARS) {
+    if (pastedTabs || shape.contentChars >= PASTE_BURST_BULK_CHARS) {
       this.begin(textOf(chunk), now);
       return emitted;
     }

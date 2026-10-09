@@ -95,11 +95,11 @@ try {
   await settle();
 
   sent.length = 0;
-  await deliver("m1\rm2\r\rm3");
+  await deliver("m1\r\tm2\r\r\tm3");
   await settlePaste();
   assert.deepEqual(sent, [], "a multi-line read must not submit anything");
   assert.deepEqual(composerLines().slice(0, 3), ["m1", "m2", "m3"]);
-  assert.deepEqual(await submitDraft(), ["m1\nm2\n\nm3"], "a deliberate Enter sends the whole draft");
+  assert.deepEqual(await submitDraft(), ["m1\n\tm2\n\n\tm3"], "a deliberate Enter sends the whole draft including its tabs");
 
   sent.length = 0;
   for (const piece of ["n1\r", "\r", "n2\r", "n3"]) {
@@ -200,8 +200,8 @@ try {
   await settle(() => editor.insertText(after));
   const collapsed = editor.plainText;
   const tokens = collapsed.match(/\[\d+ lines pasted #\d+\]/g)!;
-  await deliver("\u001be");
-  assert.equal(editor.plainText, `${before}${tokens[0]} between ${secondBlock}${after}`, "Alt+E expands only the nearest block");
+  await deliver("\u0005");
+  assert.equal(editor.plainText, `${before}${tokens[0]} between ${secondBlock}${after}`, "Ctrl+E expands only the nearest block");
   await settle(() => editor.insertText("!"));
   assert.ok(editor.plainText.endsWith(`${after}!`), "expansion preserves the cursor after Unicode text");
   await deliver("\u001b[27;5;45~");
@@ -213,6 +213,13 @@ try {
   await settle(() => editor.insertText("start "));
   assert.ok(editor.plainText.startsWith(`start ${before}`), "a cursor before the expanded paste stays in place");
   assert.deepEqual(await submitDraft(), [`start ${before}${firstBlock} between ${secondBlock}${after}`], "keyboard expansion preserves every pasted character on submission");
+
+  await settle(() => editor.insertText("first line\nsecond line"));
+  await settle(() => editor.gotoBufferHome());
+  await deliver("\u0005");
+  await settle(() => editor.insertText("!"));
+  assert.equal(editor.plainText, "first line!\nsecond line", "Ctrl+E moves to the current line end when no paste is folded");
+  assert.deepEqual(await submitDraft(), ["first line!\nsecond line"]);
 
   for (const widthMethod of ["unicode", "wcwidth"] as const) {
     const registry = new PasteRegistry();
@@ -274,7 +281,7 @@ try {
   assert.ok(scrolled[0]?.startsWith(prefix) && scrolled[0]?.endsWith(transcript));
   await settle(() => setup.mockMouse.moveTo(0, 0));
 
-  console.log(`Large paste checks: ${transcript.length} chars in ${Math.round(transcriptMs)} ms; ${singleLine.length} unbracketed chars in ${Math.round(singleMs)} ms; stable hover, Alt+E, expansion, undo, Unicode widths, expanded drafts beyond 1 MB, and fragmented UTF-8 passed`);
+  console.log(`Large paste checks: ${transcript.length} chars in ${Math.round(transcriptMs)} ms; ${singleLine.length} unbracketed chars in ${Math.round(singleMs)} ms; stable hover, Ctrl+E and Alt+E, expansion, undo, Unicode widths, expanded drafts beyond 1 MB, and fragmented UTF-8 passed`);
 
   sent.length = 0;
   await deliver("one");

@@ -15,6 +15,7 @@ import {
 } from "../../ui-core/composer/arrow-intent.js";
 import {
   activateSlashCompletion,
+  completionSelection,
   resolveCompletionMenu,
   sameCompletionMenu,
   type CompletionMenu,
@@ -189,7 +190,7 @@ export class ComposerController {
     this.commit(EMPTY_EDITOR, { menu: NO_MENU, acceptedSlash: undefined });
   }
 
-  handleAction(action: ActionId): boolean {
+  handleAction(action: ActionId, chord?: string): boolean {
     switch (action) {
       case "editor.submit": {
         const { text, cursor } = this.snapshot.state;
@@ -230,6 +231,7 @@ export class ComposerController {
         const { text, cursor } = this.snapshot.state;
         const next = this.pastes.expandNearest(text, cursor);
         if (next) this.commit(next, { resetHistory: true });
+        else if (chord === "ctrl+e") this.handleChord(chord);
         return true;
       }
       case "editor.history-prev":
@@ -294,24 +296,7 @@ export class ComposerController {
 
     const menu = this.snapshot.menu;
     if (chord === "enter" && menu.kind === "slash") {
-      const activated = activateSlashCompletion(
-        menu,
-        this.snapshot.state.text,
-        this.snapshot.active,
-      );
-      if (!activated) return true;
-      this.history.reset();
-      this.publish({
-        state: {
-          text: activated.value,
-          cursor: activated.cursorOffset,
-        },
-        menu: NO_MENU,
-        active: 0,
-        pastes: this.pastes.activeIn(activated.value),
-        acceptedSlash: undefined,
-      });
-      this.deps.onSubmit(activated.command);
+      this.submit();
       return true;
     }
     if (
@@ -347,6 +332,27 @@ export class ComposerController {
       acceptedSlash: accepted.acceptedSlash,
     });
     return true;
+  }
+
+  private runSlashCompletion(menu: CompletionMenu, selected: number): void {
+    const activated = activateSlashCompletion(
+      menu,
+      this.snapshot.state.text,
+      selected,
+    );
+    if (!activated) return;
+    this.history.reset();
+    this.publish({
+      state: {
+        text: activated.value,
+        cursor: activated.cursorOffset,
+      },
+      menu: NO_MENU,
+      active: 0,
+      pastes: this.pastes.activeIn(activated.value),
+      acceptedSlash: undefined,
+    });
+    this.deps.onSubmit(this.pastes.expand(activated.command));
   }
 
   private walkHistory(direction: "up" | "down"): boolean {
@@ -390,7 +396,12 @@ export class ComposerController {
 
   private submit(): void {
     const menu = this.snapshot.menu;
-    if (menu.kind !== "none" && this.snapshot.acceptedSlash === undefined) {
+    const current = this.resolveMenu(this.snapshot.state);
+    if (current.kind === "slash") {
+      this.runSlashCompletion(current, completionSelection(menu, current, this.snapshot.active));
+      return;
+    }
+    if (menu.kind === "mention" && current.kind === "mention") {
       this.handleMenuChord("enter");
       return;
     }
@@ -445,12 +456,11 @@ export class ComposerController {
     if (options.resetHistory === true && this.history.isBrowsing()) this.history.reset();
     const menu = options.menu ?? this.resolveMenu(state);
     const same = sameCompletionMenu(this.snapshot.menu, menu);
-    const acceptedSlash =
-      "acceptedSlash" in options
-        ? options.acceptedSlash
-        : state.text.startsWith(this.snapshot.acceptedSlash ?? "\u0000")
-          ? this.snapshot.acceptedSlash
-          : undefined;
+    const acceptedSlash = "acceptedSlash" in options
+      ? options.acceptedSlash
+      : menu.kind === "slash" && state.text.slice(menu.start, menu.end) === this.snapshot.acceptedSlash
+        ? this.snapshot.acceptedSlash
+        : undefined;
     this.publish({
       state,
       menu,

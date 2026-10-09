@@ -32,6 +32,9 @@ function unitOf(event: DecodedEvent): BurstUnit<DecodedEvent> {
   if (event.type === "text") return { kind: "content", text: event.text, source: event };
   if (event.type === "key") {
     const { key } = event;
+    if (key.name === "tab" && !key.shift && unmodified(key)) {
+      return { kind: "tab", text: "\t", source: event };
+    }
     if (isEnter(key)) return { kind: "break", text: "\r", source: event };
     if (isLineFeed(key)) return { kind: "break", text: "\n", source: event };
     if (unmodified(key) && key.text.length > 0) {

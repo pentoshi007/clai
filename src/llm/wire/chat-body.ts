@@ -127,6 +127,18 @@ function safeBodyExtras(
 
 export type EphemeralCacheBreakpointMode = boolean | "content-block";
 
+function isCacheableContentPart(part: unknown): part is Record<string, unknown> {
+  return part !== null && typeof part === "object" && !Array.isArray(part) &&
+    !("text" in part && typeof part.text === "string" && !part.text.trim());
+}
+
+function hasCacheableContent(message: Record<string, unknown>): boolean {
+  const content = message.content;
+  return typeof content === "string"
+    ? Boolean(content.trim())
+    : Array.isArray(content) && content.some(isCacheableContentPart);
+}
+
 function addEphemeralBreakpoint(
   message: Record<string, unknown>,
   mode: EphemeralCacheBreakpointMode,
@@ -146,9 +158,9 @@ function addEphemeralBreakpoint(
   if (!Array.isArray(content)) return;
   for (let index = content.length - 1; index >= 0; index -= 1) {
     const part = content[index];
-    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    if (!isCacheableContentPart(part)) continue;
     content[index] = {
-      ...(part as Record<string, unknown>),
+      ...part,
       cache_control: { type: "ephemeral" },
     };
     return;
@@ -174,7 +186,10 @@ export function applyOpenAiEphemeralCacheBreakpoints(
     beforeLast("assistant"),
     beforeLast("user"),
     messages.length - 1,
-  ]);
+  ].map((index) => {
+    while (index >= 0 && !hasCacheableContent(messages[index]!)) index -= 1;
+    return index;
+  }));
   for (const index of [...indexes].sort((a, b) => a - b)) {
     if (index >= 0) addEphemeralBreakpoint(messages[index]!, mode);
   }
@@ -346,17 +361,6 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       }),
       ...(options.stream ? { stream: true } : {}),
     });
-  }
-  if (options.providerId === "cline" && /claude|anthropic|qwen/i.test(options.model)) {
-    for (let i = rawMessages.length - 1; i >= 0; i--) {
-      if (rawMessages[i]?.role === "user") {
-        rawMessages[i] = {
-          ...rawMessages[i],
-          cache_control: { type: "ephemeral" },
-        };
-        break;
-      }
-    }
   }
   if (options.ephemeralCacheBreakpoints) {
     applyOpenAiEphemeralCacheBreakpoints(
