@@ -1,6 +1,8 @@
 import { createInterface } from "node:readline";
 
 const rl = createInterface({ input: process.stdin });
+let pendingServerRequests;
+let lastCancelled;
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -18,6 +20,31 @@ rl.on("line", (line) => {
 
   const { id, method, params } = message;
 
+  if (pendingServerRequests && typeof id === "string" && id.startsWith("server-")) {
+    const label = {
+      "server-ping": "ping",
+      "server-roots": "roots",
+      "server-sampling": "unsupported",
+    }[id];
+    if (label) pendingServerRequests.responses[label] = message;
+    if (Object.keys(pendingServerRequests.responses).length === 3) {
+      send({
+        jsonrpc: "2.0",
+        id: pendingServerRequests.id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(pendingServerRequests.responses),
+            },
+          ],
+        },
+      });
+      pendingServerRequests = undefined;
+    }
+    return;
+  }
+
   if (method === "initialize") {
     send({
       jsonrpc: "2.0",
@@ -32,6 +59,10 @@ rl.on("line", (line) => {
   }
 
   if (method === "notifications/initialized") return;
+  if (method === "notifications/cancelled") {
+    lastCancelled = params?.requestId;
+    return;
+  }
 
   if (method === "tools/list") {
     if (!params?.cursor) {
@@ -79,11 +110,34 @@ rl.on("line", (line) => {
   if (method === "tools/call") {
     const name = params?.name;
     const args = params?.arguments ?? {};
+    if (name === "server_requests") {
+      pendingServerRequests = { id, responses: {} };
+      send({ jsonrpc: "2.0", id: "server-ping", method: "ping" });
+      send({ jsonrpc: "2.0", id: "server-roots", method: "roots/list" });
+      send({
+        jsonrpc: "2.0",
+        id: "server-sampling",
+        method: "sampling/createMessage",
+        params: {},
+      });
+      return;
+    }
+    if (name === "slow") return;
+    if (name === "cancelled_request") {
+      send({
+        jsonrpc: "2.0",
+        id,
+        result: { content: [{ type: "text", text: String(lastCancelled) }] },
+      });
+      return;
+    }
     if (name === "echo") {
       send({
         jsonrpc: "2.0",
         id,
-        result: { content: [{ type: "text", text: `echo: ${args.text ?? ""}` }] },
+        result: {
+          content: [{ type: "text", text: `echo: ${args.text ?? ""}` }],
+        },
       });
     } else if (name === "read_token") {
       send({
@@ -97,16 +151,25 @@ rl.on("line", (line) => {
       send({
         jsonrpc: "2.0",
         id,
-        result: { content: [{ type: "image", data: "QUJD", mimeType: "image/png" }] },
+        result: {
+          content: [{ type: "image", data: "QUJD", mimeType: "image/png" }],
+        },
       });
     } else if (name === "boom") {
       send({
         jsonrpc: "2.0",
         id,
-        result: { content: [{ type: "text", text: "tool failed" }], isError: true },
+        result: {
+          content: [{ type: "text", text: "tool failed" }],
+          isError: true,
+        },
       });
     } else {
-      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `unknown tool ${name}` } });
+      send({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `unknown tool ${name}` },
+      });
     }
     return;
   }
@@ -117,6 +180,10 @@ rl.on("line", (line) => {
   }
 
   if (id !== undefined) {
-    send({ jsonrpc: "2.0", id, error: { code: -32601, message: "method not found" } });
+    send({
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: "method not found" },
+    });
   }
 });

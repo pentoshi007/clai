@@ -38,6 +38,7 @@ The tests use fixtures, isolated storage, and a mocked browser launcher; provide
 | `npm run test:classic:pty` | Run the provider-independent POSIX terminal smoke test; requires Python 3. |
 | `npm run test:bun` | Run native OpenTUI, buffered PTY input, and parity checks through Bun. |
 | `npm run test:bun:session` | Verify complete UTF-8 input delivery through Bun's real PTY buffer and independent native terminal views. |
+| `npm run test:deterministic -- test/mcp` | Check MCP transports, tool catalogs, authentication, and concurrent credential/config storage with local fixtures. |
 | `npm run embed-prompts:check` | Check that embedded prompts match their source Markdown. |
 | `npm run release:verify` | Validate dependency pins, lockfile, and release metadata. |
 | `npm run compile` | Build native release binaries through Bun. |
@@ -77,6 +78,8 @@ Use strict TypeScript, explicit `.js` extensions for relative ESM imports, and f
 
 Durable sessions run one agent and one persistence owner. Each attachment renders through private terminal streams with its own size, composer, scrolling, overlays, and input routing. Transcript views share immutable conversation data while retaining local display preferences. Detaching a view disposes only its renderer and UI state; the shared session continues. Runtime capability negotiation preserves attachment to agents launched by older versions.
 
+MCP connections retain a stable catalog for each agent turn. Native requests use fixed MCP control tools; discovery and selected schemas travel in conversation context, with large catalogs deferred to paginated search. Preserve schema constraints, confirmation policy, request deadlines, and complete artifact-backed outputs when changing this path. OAuth connection recovery must remain silent; interactive authentication belongs to an explicit setup or sign-in action. Storage tests include separate processes sharing one config and rotating one OAuth refresh token.
+
 Distribution manifests under `manifests/` are templates. The release workflow generates published metadata; placeholder hashes in those templates are not installation artifacts.
 
 ## Validation and pull requests
@@ -85,7 +88,7 @@ For behavior changes, add or update meaningful regression coverage and run the f
 
 For documentation-only changes, check examples against current CLI help, validate links and formatting, and check any issue-template YAML. A full local application suite is unnecessary unless the change affects code, runtime prompts, or generated artifacts.
 
-CI currently covers Node 22 and 24 on Linux, Bun OpenTUI conformance, Classic on macOS, and process/privilege behavior on macOS and Windows. The [workflow](.github/workflows/ci.yml) is the source of truth for required checks. All relevant remote checks must pass.
+CI currently covers Node 22 and 24 on Linux, Bun OpenTUI conformance, Classic on macOS, and process/privilege and MCP behavior on macOS and Windows. The [workflow](.github/workflows/ci.yml) is the source of truth for required checks. All relevant remote checks must pass.
 
 Open a pull request against `main` with:
 

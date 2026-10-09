@@ -125,6 +125,8 @@ jobs:
       - run: npx vitest run test/privilege-boundary.test.ts --reporter=dot
       - name: Process-tree termination contract
         run: npx vitest run test/process-tree.test.ts --reporter=dot
+      - name: MCP transports, authentication, and storage
+        run: npx vitest run test/mcp --reporter=dot
       - if: runner.os != 'Windows'
         run: npx vitest run test/jobs-durable.test.ts test/jobs-resource-hygiene.test.ts --reporter=dot
       - name: Built entrypoint smoke

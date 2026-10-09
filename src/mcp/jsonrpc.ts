@@ -23,23 +23,14 @@ export class JsonRpcError extends Error {
   }
 }
 
-export function createRequest(
-  id: JsonRpcId,
-  method: string,
-  params?: unknown,
-): JsonRpcRequest {
+export function createRequest(id: JsonRpcId, method: string, params?: unknown): JsonRpcRequest {
   return params === undefined
     ? { jsonrpc: "2.0", id, method }
     : { jsonrpc: "2.0", id, method, params };
 }
 
-export function createNotification(
-  method: string,
-  params?: unknown,
-): JsonRpcNotification {
-  return params === undefined
-    ? { jsonrpc: "2.0", method }
-    : { jsonrpc: "2.0", method, params };
+export function createNotification(method: string, params?: unknown): JsonRpcNotification {
+  return params === undefined ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", method, params };
 }
 
 export function encodeMessage(message: JsonRpcMessage): string {
@@ -54,8 +45,17 @@ export function isJsonRpcResponse(value: unknown): value is JsonRpcResponse {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   if (record.jsonrpc !== "2.0") return false;
-  if (!("id" in record)) return false;
-  return "result" in record || "error" in record;
+  const validId =
+    typeof record.id === "string" || (typeof record.id === "number" && Number.isFinite(record.id));
+  if ("result" in record) return validId && !("error" in record);
+  if (!validId && record.id !== null) return false;
+  if (typeof record.error !== "object" || record.error === null) return false;
+  const error = record.error as Record<string, unknown>;
+  return (
+    typeof error.code === "number" &&
+    Number.isFinite(error.code) &&
+    typeof error.message === "string"
+  );
 }
 
 export function isJsonRpcSuccess(value: JsonRpcResponse): value is JsonRpcSuccess {
@@ -69,17 +69,17 @@ export function isJsonRpcFailure(value: JsonRpcResponse): value is JsonRpcFailur
 export function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  return record.jsonrpc === "2.0" && typeof record.method === "string" && "id" in record;
+  return (
+    record.jsonrpc === "2.0" &&
+    typeof record.method === "string" &&
+    (typeof record.id === "string" || (typeof record.id === "number" && Number.isFinite(record.id)))
+  );
 }
 
 export function isJsonRpcNotification(value: unknown): value is JsonRpcNotification {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  return (
-    record.jsonrpc === "2.0" &&
-    typeof record.method === "string" &&
-    !("id" in record)
-  );
+  return record.jsonrpc === "2.0" && typeof record.method === "string" && !("id" in record);
 }
 
 export function parseMessage(line: string): JsonRpcMessage | undefined {
@@ -91,11 +91,7 @@ export function parseMessage(line: string): JsonRpcMessage | undefined {
   } catch {
     return undefined;
   }
-  if (
-    isJsonRpcResponse(parsed) ||
-    isJsonRpcRequest(parsed) ||
-    isJsonRpcNotification(parsed)
-  ) {
+  if (isJsonRpcResponse(parsed) || isJsonRpcRequest(parsed) || isJsonRpcNotification(parsed)) {
     return parsed;
   }
   return undefined;
@@ -116,17 +112,23 @@ export class LineDecoder {
   }
 
   push(chunk: Uint8Array | string): string[] {
-    this.buffer +=
-      typeof chunk === "string" ? chunk : this.decoder.decode(chunk, { stream: true });
+    this.buffer += typeof chunk === "string" ? chunk : this.decoder.decode(chunk, { stream: true });
     const lines: string[] = [];
     let index = this.buffer.indexOf("\n");
     while (index !== -1) {
       const line = this.buffer.slice(0, index).replace(/\r$/, "");
+      if (Buffer.byteLength(line, "utf8") > this.maxBytes) {
+        this.buffer = "";
+        throw new McpTransportError(
+          "too-large",
+          `MCP message exceeded the ${this.maxBytes}-byte line framing limit.`,
+        );
+      }
       this.buffer = this.buffer.slice(index + 1);
       if (line.length > 0) lines.push(line);
       index = this.buffer.indexOf("\n");
     }
-    if (this.buffer.length > this.maxBytes) {
+    if (Buffer.byteLength(this.buffer, "utf8") > this.maxBytes) {
       this.buffer = "";
       throw new McpTransportError(
         "too-large",
@@ -159,18 +161,24 @@ export class SseDecoder {
   }
 
   push(chunk: Uint8Array | string): SseEvent[] {
-    this.buffer +=
-      typeof chunk === "string" ? chunk : this.decoder.decode(chunk, { stream: true });
+    this.buffer += typeof chunk === "string" ? chunk : this.decoder.decode(chunk, { stream: true });
     const events: SseEvent[] = [];
     let boundary = this.nextBoundary();
     while (boundary) {
       const block = this.buffer.slice(0, boundary.index);
+      if (Buffer.byteLength(block, "utf8") > this.maxBytes) {
+        this.buffer = "";
+        throw new McpTransportError(
+          "too-large",
+          `MCP SSE event exceeded the ${this.maxBytes}-byte framing limit.`,
+        );
+      }
       this.buffer = this.buffer.slice(boundary.index + boundary.length);
       const parsed = this.parseBlock(block);
       if (parsed) events.push(parsed);
       boundary = this.nextBoundary();
     }
-    if (this.buffer.length > this.maxBytes) {
+    if (Buffer.byteLength(this.buffer, "utf8") > this.maxBytes) {
       this.buffer = "";
       throw new McpTransportError(
         "too-large",

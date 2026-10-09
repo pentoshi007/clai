@@ -1,5 +1,5 @@
 import { getConfig } from "../../store/config.js";
-import { createRtkExecutionRecorder } from "../../store/rtk-usage.js";
+import { createRtkExecutionRecorder, rtkSessionEnv } from "../../store/rtk-usage.js";
 export { rtkExecutionCount } from "../../store/rtk-usage.js";
 import { hasStructuredReducer } from "../policies/output-policy.js";
 import { looksInteractiveStdin } from "../shell.js";
@@ -30,8 +30,11 @@ const eligible = (command: string): boolean =>
   !hasStructuredReducer({ toolName: "shell.exec", command }) &&
   !looksInteractiveStdin(command);
 
-const executionEnv = (status: ReadyRtk): Readonly<Record<string, string>> =>
-  status.pathEntry ? { ...RTK_EXEC_ENV, PATH: rtkPathEnv(status.pathEntry) } : RTK_EXEC_ENV;
+const executionEnv = (status: ReadyRtk, sessionId?: string): Readonly<Record<string, string>> => ({
+  ...RTK_EXEC_ENV,
+  ...rtkSessionEnv(sessionId),
+  ...(status.pathEntry ? { PATH: rtkPathEnv(status.pathEntry) } : {}),
+});
 
 export async function prepareRtkExecution(
   command: string,
@@ -43,7 +46,12 @@ export async function prepareRtkExecution(
   if (!rtkEnabled() || rtkMaintenance() || !eligible(trimmed)) return original;
   const status = await detectRtk();
   if (status.state !== "ready" || signal?.aborted) return original;
-  const env = executionEnv(status);
+  let env: Readonly<Record<string, string>>;
+  try {
+    env = executionEnv(status, sessionId);
+  } catch {
+    return original;
+  }
   const unchanged: RtkExecution = RTK_INVOCATION.test(trimmed) ? { command, env } : original;
   const run = await runRtk(status.path, ["rewrite", trimmed], REWRITE_TIMEOUT_MS, signal);
   if (run.missing) {

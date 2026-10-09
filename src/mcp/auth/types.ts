@@ -10,8 +10,17 @@ export interface McpAuthChallenge {
 export interface McpAuthProvider {
   readonly kind: McpAuthConfig["kind"];
   headers(): Promise<Record<string, string>>;
-  onUnauthorized(challenge: McpAuthChallenge | undefined): Promise<boolean>;
+  onUnauthorized(
+    challenge: McpAuthChallenge | undefined,
+    options?: McpAuthRequestOptions,
+  ): Promise<boolean>;
   liveSecrets(): readonly string[];
+}
+
+export interface McpAuthRequestOptions {
+  readonly interactive?: boolean | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly rejectedToken?: string | undefined;
 }
 
 export interface ProtectedResourceMetadata {
@@ -28,9 +37,12 @@ export interface AuthorizationServerMetadata {
   readonly deviceAuthorizationEndpoint?: string | undefined;
   readonly scopesSupported: readonly string[];
   readonly codeChallengeMethodsSupported: readonly string[];
+  readonly tokenEndpointAuthMethodsSupported?: readonly string[] | undefined;
 }
 
 export interface OAuthTokenSet {
+  readonly issuer?: string | undefined;
+  readonly redirectUri?: string | undefined;
   readonly accessToken: string;
   readonly tokenType: string;
   readonly refreshToken?: string | undefined;
@@ -44,7 +56,8 @@ export interface OAuthTokenStore {
   load(key: string): Promise<OAuthTokenSet | undefined>;
   save(key: string, tokens: OAuthTokenSet): Promise<void>;
   remove(key: string): Promise<void>;
-  loadForResource?(resource: string): Promise<OAuthTokenSet | undefined>;
+  loadForResource?(resource: string, clientId?: string): Promise<OAuthTokenSet | undefined>;
+  withRefreshLock?<T>(key: string, operation: () => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
 export interface OAuthClientRegistration {

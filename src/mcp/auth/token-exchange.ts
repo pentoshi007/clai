@@ -1,11 +1,8 @@
 import { McpTransportError } from "../transport.js";
-import { assertSafeDiscoveryUrl } from "./security.js";
+import { fetchOAuthJson, oauthErrorDetail, type OAuthHttpDeps } from "./http.js";
 import type { TokenResponse } from "./types.js";
 
-export interface TokenEndpointDeps {
-  readonly fetchImpl?: typeof fetch | undefined;
-  readonly validateUrl?: ((url: string) => URL) | undefined;
-}
+export interface TokenEndpointDeps extends OAuthHttpDeps {}
 
 export interface ExchangeAuthorizationCodeParams {
   readonly tokenEndpoint: string;
@@ -15,6 +12,7 @@ export interface ExchangeAuthorizationCodeParams {
   readonly clientSecret?: string | undefined;
   readonly codeVerifier: string;
   readonly resource?: string | undefined;
+  readonly authMethod?: "none" | "client_secret_basic" | "client_secret_post" | undefined;
 }
 
 export interface RefreshAccessTokenParams {
@@ -24,16 +22,23 @@ export interface RefreshAccessTokenParams {
   readonly clientSecret?: string | undefined;
   readonly resource?: string | undefined;
   readonly scope?: string | undefined;
+  readonly authMethod?: "none" | "client_secret_basic" | "client_secret_post" | undefined;
 }
 
-function applySecret(
+export function applyClientAuthentication(
   form: URLSearchParams,
   headers: Record<string, string>,
   clientId: string,
   clientSecret: string | undefined,
+  authMethod?: "none" | "client_secret_basic" | "client_secret_post",
 ): void {
-  if (clientSecret === undefined) return;
-  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  if (clientSecret === undefined || authMethod === "none") return;
+  if (authMethod === "client_secret_post") {
+    form.set("client_secret", clientSecret);
+    return;
+  }
+  const encode = (value: string): string => new URLSearchParams([["", value]]).toString().slice(1);
+  const basic = Buffer.from(`${encode(clientId)}:${encode(clientSecret)}`).toString("base64");
   headers.authorization = `Basic ${basic}`;
 }
 
@@ -43,29 +48,26 @@ async function postToken(
   headers: Record<string, string>,
   deps: TokenEndpointDeps,
 ): Promise<TokenResponse> {
-  const validate = deps.validateUrl ?? assertSafeDiscoveryUrl;
-  const target = validate(tokenEndpoint);
-  const impl = deps.fetchImpl ?? fetch;
-  const response = await impl(target.toString(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      accept: "application/json",
-      ...headers,
+  const response = await fetchOAuthJson(
+    tokenEndpoint,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
+        ...headers,
+      },
+      body: form.toString(),
     },
-    body: form.toString(),
-    redirect: "manual",
-  });
+    deps,
+  );
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
     throw new McpTransportError(
       "protocol",
-      `MCP OAuth token request failed with ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}.`,
+      `MCP OAuth token request failed with ${response.status}${oauthErrorDetail(response.record)}.`,
     );
   }
-  const record = (await response.json().catch(() => undefined)) as
-    | Record<string, unknown>
-    | undefined;
+  const record = response.record;
   const accessToken = record?.access_token;
   if (typeof accessToken !== "string" || accessToken.length === 0) {
     throw new McpTransportError("protocol", "MCP OAuth token response had no access_token.");
@@ -91,7 +93,7 @@ export async function exchangeAuthorizationCode(
   form.set("code_verifier", params.codeVerifier);
   if (params.resource) form.set("resource", params.resource);
   const headers: Record<string, string> = {};
-  applySecret(form, headers, params.clientId, params.clientSecret);
+  applyClientAuthentication(form, headers, params.clientId, params.clientSecret, params.authMethod);
   return postToken(params.tokenEndpoint, form, headers, deps);
 }
 
@@ -106,6 +108,6 @@ export async function refreshAccessToken(
   if (params.resource) form.set("resource", params.resource);
   if (params.scope) form.set("scope", params.scope);
   const headers: Record<string, string> = {};
-  applySecret(form, headers, params.clientId, params.clientSecret);
+  applyClientAuthentication(form, headers, params.clientId, params.clientSecret, params.authMethod);
   return postToken(params.tokenEndpoint, form, headers, deps);
 }

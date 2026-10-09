@@ -144,7 +144,7 @@ async function addServer(
       { level: "info", sticky: true },
     );
     try {
-      const state = await services.mcp.refresh({ force: true });
+      const state = await services.mcp.refresh();
       const status = state.snapshot.statuses.find(
         (candidate) => candidate.name === written.serverName,
       );
@@ -182,7 +182,7 @@ async function loginServer(
     );
     return false;
   }
-  services.session.notice("info", `opening OAuth sign-in for MCP server ${status.name}…`);
+  services.session.notice("info", `starting sign-in for MCP server ${status.name}…`);
   const result = await services.mcp.agentLogin(status.name);
   services.session.notice(result.ok ? "info" : "warn", result.output);
   if (!result.ok) return false;
@@ -266,7 +266,7 @@ async function finishKnownServerAdd(
     );
     return;
   }
-  const state = await services.mcp.refresh({ force: true });
+  const state = await services.mcp.refresh();
   const status = state.snapshot.statuses.find(
     (candidate) => candidate.name === written.serverName,
   );

@@ -1,17 +1,19 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import {
-  supportsProcessGroups,
-  terminateProcessTree,
-} from "../os/process-tree.js";
-import { encodeLine, LineDecoder, parseMessage } from "./jsonrpc.js";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { execa } from "execa";
+import { supportsProcessGroups, terminateProcessTree } from "../os/process-tree.js";
+import { createNotification, encodeLine, LineDecoder, parseMessage } from "./jsonrpc.js";
 import {
   isAbortError,
+  awaitMcpOperation,
+  dispatchServerMessage,
   McpTransportError,
   withTimeout,
   type McpTransport,
+  type McpTransportHandlers,
 } from "./transport.js";
 import type {
   JsonRpcNotification,
+  JsonRpcMessage,
   JsonRpcRequest,
   JsonRpcResponse,
   McpRequestOptions,
@@ -48,6 +50,7 @@ export class StdioTransport implements McpTransport {
   private processGroupId: number | undefined;
   private protocolVersion: string | undefined;
   private startPromise: Promise<void> | undefined;
+  private handlers: McpTransportHandlers | undefined;
 
   constructor(
     private readonly config: McpStdioConfig,
@@ -62,7 +65,13 @@ export class StdioTransport implements McpTransport {
     this.protocolVersion = version;
   }
 
+  setHandlers(handlers: McpTransportHandlers): void {
+    this.handlers = handlers;
+  }
+
   start(): Promise<void> {
+    if (this.closed)
+      return Promise.reject(new McpTransportError("closed", "MCP stdio transport closed."));
     if (this.startPromise) return this.startPromise;
     this.startPromise = this.spawnChild();
     return this.startPromise;
@@ -84,14 +93,19 @@ export class StdioTransport implements McpTransport {
     return new Promise<void>((resolve, reject) => {
       let child: ChildProcessWithoutNullStreams;
       try {
-        child = spawn(this.config.command, [...this.config.args], {
+        const subprocess = execa(this.config.command, [...this.config.args], {
           shell: false,
           stdio: ["pipe", "pipe", "pipe"],
+          buffer: false,
+          reject: false,
+          cleanup: false,
           env: this.buildEnv(),
           detached: supportsProcessGroups(),
           windowsHide: true,
           ...(this.config.cwd !== undefined ? { cwd: this.config.cwd } : {}),
         });
+        void subprocess.catch(() => undefined);
+        child = subprocess as unknown as ChildProcessWithoutNullStreams;
       } catch (error) {
         reject(
           new McpTransportError(
@@ -108,7 +122,6 @@ export class StdioTransport implements McpTransport {
       const onSpawn = (): void => {
         if (settled) return;
         settled = true;
-        child.off("error", onError);
         resolve();
       };
       const onError = (error: Error): void => {
@@ -126,13 +139,15 @@ export class StdioTransport implements McpTransport {
         );
       };
       child.once("spawn", onSpawn);
-      child.once("error", onError);
+      child.on("error", onError);
 
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => this.onStdout(chunk));
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk: string) => this.onStderr(chunk));
-      child.stdin.on("error", () => undefined);
+      child.stdin.on("error", (error) =>
+        this.failAll(new McpTransportError("closed", `MCP server input closed: ${error.message}`)),
+      );
       child.on("exit", () => {
         this.exited = true;
         this.failAll(
@@ -155,14 +170,23 @@ export class StdioTransport implements McpTransport {
       const failure =
         error instanceof McpTransportError
           ? error
-          : new McpTransportError("protocol", `MCP stdio framing error: ${(error as Error).message}`);
+          : new McpTransportError(
+              "protocol",
+              `MCP stdio framing error: ${(error as Error).message}`,
+            );
       this.failAll(failure);
       void this.close();
       return;
     }
     for (const line of lines) {
       const message = parseMessage(line);
-      if (!message || !isJsonRpcResponse(message)) continue;
+      if (!message) continue;
+      if (!isJsonRpcResponse(message)) {
+        void dispatchServerMessage(message, this.handlers, (response) =>
+          this.write(response),
+        ).catch(() => undefined);
+        continue;
+      }
       const numericId = typeof message.id === "number" ? message.id : Number(message.id);
       if (!Number.isFinite(numericId)) continue;
       const entry = this.pending.get(numericId);
@@ -185,58 +209,90 @@ export class StdioTransport implements McpTransport {
     this.pending.clear();
   }
 
+  private write(message: JsonRpcMessage): Promise<void> {
+    const child = this.child;
+    if (this.closed || this.exited || !child || child.stdin.destroyed) {
+      return Promise.reject(
+        new McpTransportError("closed", "MCP stdio transport is not connected."),
+      );
+    }
+    return new Promise((resolve, reject) => {
+      child.stdin.write(encodeLine(message), (error) => {
+        if (error)
+          reject(new McpTransportError("closed", `Failed to write MCP message: ${error.message}`));
+        else resolve();
+      });
+    });
+  }
+
   async request(
     message: JsonRpcRequest,
     options: McpRequestOptions = {},
   ): Promise<JsonRpcResponse> {
-    await this.start();
-    if (this.closed || this.exited || !this.child) {
-      throw new McpTransportError("closed", "MCP stdio transport is not connected.");
-    }
-    const id = this.nextId++;
-    const framed: JsonRpcRequest = { ...message, id };
-    const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    if (options.signal?.aborted) throw new McpTransportError("cancelled", "MCP request cancelled.");
+    const timeoutMs =
+      options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     const { signal, dispose } = withTimeout(options.signal, timeoutMs);
-    return await new Promise<JsonRpcResponse>((resolve, reject) => {
-      const onAbort = (): void => {
-        const entry = this.pending.get(id);
-        if (entry) {
-          this.pending.delete(id);
-          entry.dispose();
+    try {
+      await awaitMcpOperation(this.start(), signal);
+      if (this.closed || this.exited || !this.child) {
+        throw new McpTransportError("closed", "MCP stdio transport is not connected.");
+      }
+      const id = this.nextId++;
+      const framed: JsonRpcRequest = { ...message, id };
+      return await new Promise<JsonRpcResponse>((resolve, reject) => {
+        const onAbort = (): void => {
+          const entry = this.pending.get(id);
+          if (entry) {
+            this.pending.delete(id);
+            entry.dispose();
+            if (message.method !== "initialize") {
+              void this.write(
+                createNotification("notifications/cancelled", {
+                  requestId: id,
+                  reason: "Client stopped waiting for this request.",
+                }),
+              ).catch(() => undefined);
+            }
+          }
+          const reason = signal.reason;
+          if (reason instanceof McpTransportError) reject(reason);
+          else reject(new McpTransportError("cancelled", "MCP request cancelled."));
+        };
+        const disposeEntry = (): void => {
+          dispose();
+          signal.removeEventListener("abort", onAbort);
+        };
+        if (signal.aborted) {
+          disposeEntry();
+          onAbort();
+          return;
         }
-        const reason = signal.reason;
-        if (reason instanceof McpTransportError) reject(reason);
-        else reject(new McpTransportError("cancelled", "MCP request cancelled."));
-      };
-      const disposeEntry = (): void => {
-        dispose();
-        signal.removeEventListener("abort", onAbort);
-      };
-      if (signal.aborted) {
-        disposeEntry();
-        onAbort();
-        return;
-      }
-      signal.addEventListener("abort", onAbort, { once: true });
-      this.pending.set(id, { resolve, reject, dispose: disposeEntry });
-      try {
-        this.child!.stdin.write(encodeLine(framed));
-      } catch (error) {
-        this.pending.delete(id);
-        disposeEntry();
-        reject(
-          new McpTransportError("network", `Failed to write MCP request: ${(error as Error).message}`),
-        );
-      }
-    });
+        signal.addEventListener("abort", onAbort, { once: true });
+        this.pending.set(id, { resolve, reject, dispose: disposeEntry });
+        void this.write(framed).catch((error: unknown) => {
+          this.pending.delete(id);
+          disposeEntry();
+          reject(error);
+        });
+      });
+    } finally {
+      dispose();
+    }
   }
 
-  async notify(message: JsonRpcNotification): Promise<void> {
-    await this.start();
-    if (this.closed || this.exited || !this.child) {
-      throw new McpTransportError("closed", "MCP stdio transport is not connected.");
+  async notify(message: JsonRpcNotification, options: McpRequestOptions = {}): Promise<void> {
+    if (options.signal?.aborted)
+      throw new McpTransportError("cancelled", "MCP notification cancelled.");
+    const timeoutMs =
+      options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const { signal, dispose } = withTimeout(options.signal, timeoutMs);
+    try {
+      await awaitMcpOperation(this.start(), signal);
+      await awaitMcpOperation(this.write(message), signal);
+    } finally {
+      dispose();
     }
-    this.child.stdin.write(encodeLine(message));
   }
 
   async close(): Promise<void> {

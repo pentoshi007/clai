@@ -1,12 +1,11 @@
-import {
-  isJsonRpcResponse,
-  parseMessage,
-  SseDecoder,
-} from "./jsonrpc.js";
+import { createNotification, isJsonRpcResponse, parseMessage, SseDecoder } from "./jsonrpc.js";
 import {
   McpTransportError,
+  awaitMcpOperation,
+  dispatchServerMessage,
   withTimeout,
   type McpTransport,
+  type McpTransportHandlers,
 } from "./transport.js";
 import { parseWwwAuthenticate } from "./auth/www-authenticate.js";
 import type { McpAuthChallenge, McpAuthProvider } from "./auth/types.js";
@@ -28,7 +27,11 @@ function mapFetchError(error: unknown, signal?: AbortSignal): McpTransportError 
   if (error instanceof McpTransportError) return error;
   const reason = signal?.reason;
   if (reason instanceof McpTransportError) return reason;
-  const err = error as { name?: string; message?: string; cause?: { message?: string } };
+  const err = error as {
+    name?: string;
+    message?: string;
+    cause?: { message?: string };
+  };
   if (err?.name === "AbortError") {
     return new McpTransportError("cancelled", "MCP HTTP request aborted.");
   }
@@ -57,9 +60,7 @@ async function rejectRedirect(response: Response): Promise<void> {
 function sseStreamError(server: string, status: number): McpTransportError {
   return new McpTransportError(
     "network",
-    status === 401
-      ? unauthorizedHint(server)
-      : `MCP SSE stream returned ${status}.`,
+    status === 401 ? unauthorizedHint(server) : `MCP SSE stream returned ${status}.`,
     status,
   );
 }
@@ -67,17 +68,12 @@ function sseStreamError(server: string, status: number): McpTransportError {
 function ssePostError(server: string, status: number): McpTransportError {
   return new McpTransportError(
     "network",
-    status === 401
-      ? unauthorizedHint(server)
-      : `MCP SSE POST returned ${status}.`,
+    status === 401 ? unauthorizedHint(server) : `MCP SSE POST returned ${status}.`,
     status,
   );
 }
 
-async function readBoundedText(
-  response: Response,
-  maxBytes: number,
-): Promise<string> {
+async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
   const body = response.body;
   if (!body) return await response.text();
   const reader = body.getReader();
@@ -118,34 +114,36 @@ async function collectSseResponse(
   response: Response,
   targetId: JsonRpcRequest["id"],
   maxBytes: number,
+  onMessage: (message: NonNullable<ReturnType<typeof parseMessage>>) => Promise<void>,
+  onEvent: (id: string | undefined) => void,
 ): Promise<JsonRpcResponse> {
   const body = response.body;
   if (!body) {
     throw new McpTransportError("protocol", "MCP SSE response had no body.");
   }
   const reader = body.getReader();
-  const sse = new SseDecoder();
-  let total = 0;
+  const sse = new SseDecoder(maxBytes);
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       if (!value) continue;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        throw new McpTransportError("too-large", "MCP SSE stream exceeded the size limit.");
-      }
       for (const event of sse.push(value)) {
+        onEvent(event.id);
         const message = parseMessage(event.data);
         if (message && isJsonRpcResponse(message) && String(message.id) === String(targetId)) {
           return message;
         }
+        if (message) await onMessage(message);
       }
     }
   } finally {
     await reader.cancel().catch(() => undefined);
   }
-  throw new McpTransportError("protocol", "MCP SSE stream closed before a matching response arrived.");
+  throw new McpTransportError(
+    "closed",
+    "MCP SSE stream closed before a matching response arrived.",
+  );
 }
 
 export interface HttpTransportOptions {
@@ -169,6 +167,10 @@ export class StreamableHttpTransport implements McpTransport {
   private protocolVersion: string = MCP_PROTOCOL_VERSION;
   private nextId = 1;
   private closed = false;
+  private handlers: McpTransportHandlers | undefined;
+  private readonly lifetime = new AbortController();
+  private listening = false;
+  private readonly sentTokens = new WeakMap<Response, string>();
 
   constructor(
     private readonly config: McpHttpConfig,
@@ -191,15 +193,17 @@ export class StreamableHttpTransport implements McpTransport {
     this.protocolVersion = version;
   }
 
+  setHandlers(handlers: McpTransportHandlers): void {
+    this.handlers = handlers;
+  }
+
   start(): Promise<void> {
     return Promise.resolve();
   }
 
   private async resolveHeaders(accept: string): Promise<Record<string, string>> {
     const base = baseHeaders(this.session, this.protocolVersion, accept);
-    const authHeaders = this.options.authProvider
-      ? await this.options.authProvider.headers()
-      : {};
+    const authHeaders = this.options.authProvider ? await this.options.authProvider.headers() : {};
     return {
       ...base,
       ...authHeaders,
@@ -212,16 +216,26 @@ export class StreamableHttpTransport implements McpTransport {
     method: string,
     body: string | undefined,
     signal: AbortSignal,
+    extraHeaders?: Readonly<Record<string, string>>,
   ): Promise<Response> {
-    const headers = await this.resolveHeaders(accept);
-    const init: RequestInit = { method, headers, redirect: "manual", signal };
+    const headers = await awaitMcpOperation(this.resolveHeaders(accept), signal);
+    const init: RequestInit = {
+      method,
+      headers: { ...headers, ...extraHeaders },
+      redirect: "manual",
+      signal,
+    };
     if (body !== undefined) init.body = body;
-    return this.fetchImpl(this.config.url, init);
+    const response = await this.fetchImpl(this.config.url, init);
+    const authorization = new Headers(headers).get("authorization");
+    if (authorization) this.sentTokens.set(response, authorization.replace(/^Bearer\s+/i, ""));
+    return response;
   }
 
   private async retryOnUnauthorized(
     response: Response,
     resend: () => Promise<Response>,
+    signal: AbortSignal,
   ): Promise<Response> {
     const provider = this.options.authProvider;
     if (!provider) return response;
@@ -229,7 +243,11 @@ export class StreamableHttpTransport implements McpTransport {
       response.headers.get("www-authenticate"),
     );
     if (response.body) await response.body.cancel().catch(() => undefined);
-    const refreshed = await provider.onUnauthorized(challenge);
+    const refreshed = await provider.onUnauthorized(challenge, {
+      interactive: false,
+      signal,
+      rejectedToken: this.sentTokens.get(response),
+    });
     if (!refreshed) return response;
     return resend();
   }
@@ -258,60 +276,109 @@ export class StreamableHttpTransport implements McpTransport {
     if (this.closed) throw new McpTransportError("closed", "MCP HTTP transport closed.");
     const id = this.nextId++;
     const framed: JsonRpcRequest = { ...message, id };
-    const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    const { signal, dispose } = withTimeout(options.signal, timeoutMs);
+    const timeoutMs =
+      options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const parent = options.signal
+      ? AbortSignal.any([options.signal, this.lifetime.signal])
+      : this.lifetime.signal;
+    const { signal, dispose } = withTimeout(parent, timeoutMs);
     const accept = "application/json, text/event-stream";
     const body = JSON.stringify(framed);
     const resend = (): Promise<Response> => this.sendOnce(accept, "POST", body, signal);
     try {
       let response = await resend();
-      this.captureSession(response);
-      const redirect = redirectError(response);
-      if (redirect) throw redirect;
+      if (framed.method === "initialize" && response.ok) this.captureSession(response);
+      await rejectRedirect(response);
       if (response.status === 401) {
-        response = await this.retryOnUnauthorized(response, resend);
-        this.captureSession(response);
-        const retryRedirect = redirectError(response);
-        if (retryRedirect) throw retryRedirect;
+        response = await this.retryOnUnauthorized(response, resend, signal);
+        if (framed.method === "initialize" && response.ok) this.captureSession(response);
+        await rejectRedirect(response);
       }
       if (!response.ok) await this.failForStatus(response);
       const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
       if (contentType.includes("text/event-stream")) {
-        return await collectSseResponse(response, framed.id, this.maxBytes);
+        let lastEventId: string | undefined;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await collectSseResponse(
+              response,
+              framed.id,
+              this.maxBytes,
+              (message) =>
+                dispatchServerMessage(message, this.handlers, (reply) =>
+                  this.postResponse(reply, signal),
+                ),
+              (eventId) => {
+                if (eventId !== undefined) lastEventId = eventId;
+              },
+            );
+          } catch (error) {
+            if (
+              signal.aborted ||
+              !lastEventId ||
+              attempt >= 3 ||
+              (error instanceof McpTransportError &&
+                error.kind !== "closed" &&
+                error.kind !== "network")
+            )
+              throw error;
+            response = await this.sendOnce("text/event-stream", "GET", undefined, signal, {
+              "last-event-id": lastEventId,
+            });
+            await rejectRedirect(response);
+            if (!response.ok) await this.failForStatus(response);
+          }
+        }
       }
       const text = await readBoundedText(response, this.maxBytes);
       const parsed = parseMessage(text);
       if (!parsed || !isJsonRpcResponse(parsed)) {
         throw new McpTransportError("protocol", "MCP HTTP response was not a JSON-RPC response.");
       }
+      if (String(parsed.id) !== String(framed.id))
+        throw new McpTransportError("protocol", "MCP HTTP response id did not match the request.");
       return parsed;
     } catch (error) {
-      throw mapFetchError(error);
+      if (signal.aborted && message.method !== "initialize" && !this.closed) {
+        void this.notify(
+          createNotification("notifications/cancelled", {
+            requestId: id,
+            reason: "Client stopped waiting for this request.",
+          }),
+          { timeoutMs: 1_000 },
+        ).catch(() => undefined);
+      }
+      throw mapFetchError(error, signal);
     } finally {
       dispose();
     }
   }
 
-  async notify(
-    message: JsonRpcNotification,
-    options: McpRequestOptions = {},
-  ): Promise<void> {
+  async notify(message: JsonRpcNotification, options: McpRequestOptions = {}): Promise<void> {
     if (this.closed) throw new McpTransportError("closed", "MCP HTTP transport closed.");
-    const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    const { signal, dispose } = withTimeout(options.signal, timeoutMs);
+    const timeoutMs =
+      options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const parent = options.signal
+      ? AbortSignal.any([options.signal, this.lifetime.signal])
+      : this.lifetime.signal;
+    const { signal, dispose } = withTimeout(parent, timeoutMs);
     try {
-      const response = await this.sendOnce(
-        "application/json, text/event-stream",
-        "POST",
-        JSON.stringify(message),
-        signal,
-      );
-      this.captureSession(response);
-      const redirect = redirectError(response);
-      if (redirect) throw redirect;
+      const resend = (): Promise<Response> =>
+        this.sendOnce(
+          "application/json, text/event-stream",
+          "POST",
+          JSON.stringify(message),
+          signal,
+        );
+      let response = await resend();
+      await rejectRedirect(response);
+      if (response.status === 401)
+        response = await this.retryOnUnauthorized(response, resend, signal);
+      await rejectRedirect(response);
+      if (!response.ok) await this.failForStatus(response);
       if (response.body) await response.body.cancel().catch(() => undefined);
     } catch (error) {
-      throw mapFetchError(error);
+      throw mapFetchError(error, signal);
     } finally {
       dispose();
     }
@@ -319,15 +386,80 @@ export class StreamableHttpTransport implements McpTransport {
 
   private captureSession(response: Response): void {
     const id = response.headers.get(SESSION_HEADER);
-    if (id && id.length > 0) this.session = id;
+    if (id && !/^[\x21-\x7e]+$/.test(id))
+      throw new McpTransportError("protocol", "MCP server returned an invalid session id.");
+    if (id) this.session = id;
+  }
+
+  private async postResponse(message: JsonRpcResponse, signal: AbortSignal): Promise<void> {
+    const response = await this.sendOnce(
+      "application/json, text/event-stream",
+      "POST",
+      JSON.stringify(message),
+      signal,
+    );
+    await rejectRedirect(response);
+    if (!response.ok) await this.failForStatus(response);
+    await response.body?.cancel().catch(() => undefined);
+  }
+
+  listen(): void {
+    if (this.listening || this.closed) return;
+    this.listening = true;
+    void this.pumpNotifications().finally(() => {
+      this.listening = false;
+    });
+  }
+
+  private async pumpNotifications(): Promise<void> {
+    let lastEventId: string | undefined;
+    for (let attempt = 0; !this.closed && attempt < 4; attempt++) {
+      try {
+        const response = await this.sendOnce(
+          "text/event-stream",
+          "GET",
+          undefined,
+          this.lifetime.signal,
+          lastEventId ? { "last-event-id": lastEventId } : undefined,
+        );
+        await rejectRedirect(response);
+        if (!response.ok || !response.body) {
+          await response.body?.cancel().catch(() => undefined);
+          return;
+        }
+        const decoder = new SseDecoder(this.maxBytes);
+        const reader = response.body.getReader();
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+            for (const event of decoder.push(value)) {
+              if (event.id !== undefined) lastEventId = event.id;
+              const message = parseMessage(event.data);
+              if (message)
+                await dispatchServerMessage(message, this.handlers, (reply) =>
+                  this.postResponse(reply, this.lifetime.signal),
+                );
+            }
+          }
+        } finally {
+          await reader.cancel().catch(() => undefined);
+        }
+        if (!lastEventId) return;
+      } catch {
+        return;
+      }
+    }
   }
 
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.lifetime.abort(new McpTransportError("closed", "MCP HTTP transport closed."));
     if (!this.session) return;
     try {
-      const { signal, dispose } = withTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
+      const { signal, dispose } = withTimeout(undefined, 2_000);
       try {
         const response = await this.sendOnce("application/json", "DELETE", undefined, signal);
         if (response.body) await response.body.cancel().catch(() => undefined);
@@ -357,6 +489,8 @@ export class LegacySseTransport implements McpTransport {
   private readonly pending = new Map<number, PendingRequest>();
   private readyPromise: Promise<void> | undefined;
   private pumpError: McpTransportError | undefined;
+  private handlers: McpTransportHandlers | undefined;
+  private readonly sentTokens = new WeakMap<Response, string>();
 
   constructor(
     private readonly config: McpHttpConfig,
@@ -379,20 +513,48 @@ export class LegacySseTransport implements McpTransport {
     this.protocolVersion = version;
   }
 
-  start(): Promise<void> {
+  setHandlers(handlers: McpTransportHandlers): void {
+    this.handlers = handlers;
+  }
+
+  start(options: McpRequestOptions = {}): Promise<void> {
+    if (this.closed)
+      return Promise.reject(new McpTransportError("closed", "MCP SSE transport closed."));
     if (this.readyPromise) return this.readyPromise;
     this.readyPromise = new Promise<void>((resolve, reject) => {
+      const { signal, dispose } = withTimeout(
+        options.signal,
+        options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      );
       let settled = false;
       const onReady = (): void => {
         if (settled) return;
         settled = true;
+        dispose();
+        signal.removeEventListener("abort", onAbort);
         resolve();
       };
       const onFail = (error: McpTransportError): void => {
         if (settled) return;
         settled = true;
+        dispose();
+        signal.removeEventListener("abort", onAbort);
         reject(error);
       };
+      const onAbort = (): void => {
+        const error =
+          signal.reason instanceof McpTransportError
+            ? signal.reason
+            : new McpTransportError("cancelled", "MCP SSE connection cancelled.");
+        this.pumpError = error;
+        this.streamController.abort(error);
+        onFail(error);
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
       this.pump(onReady, onFail).catch((error) => onFail(mapFetchError(error)));
     });
     return this.readyPromise;
@@ -401,20 +563,24 @@ export class LegacySseTransport implements McpTransport {
   private async streamHeaders(accept: string): Promise<Record<string, string>> {
     const base: Record<string, string> = { accept };
     if (this.protocolVersion) base[PROTOCOL_HEADER] = this.protocolVersion;
-    const authHeaders = this.options.authProvider
-      ? await this.options.authProvider.headers()
-      : {};
+    const authHeaders = this.options.authProvider ? await this.options.authProvider.headers() : {};
     return { ...base, ...authHeaders, ...this.config.headers };
   }
 
   private async openStream(): Promise<Response> {
-    const headers = await this.streamHeaders("text/event-stream");
-    return this.fetchImpl(this.config.url, {
+    const headers = await awaitMcpOperation(
+      this.streamHeaders("text/event-stream"),
+      this.streamController.signal,
+    );
+    const response = await this.fetchImpl(this.config.url, {
       method: "GET",
       headers,
       redirect: "manual",
       signal: this.streamController.signal,
     });
+    const authorization = new Headers(headers).get("authorization");
+    if (authorization) this.sentTokens.set(response, authorization.replace(/^Bearer\s+/i, ""));
+    return response;
   }
 
   private async openAuthorizedStream(): Promise<Response> {
@@ -422,11 +588,13 @@ export class LegacySseTransport implements McpTransport {
     await rejectRedirect(response);
     const provider = this.options.authProvider;
     if (response.status !== 401 || !provider) return response;
-    const challenge = parseWwwAuthenticate(
-      response.headers.get("www-authenticate"),
-    );
+    const challenge = parseWwwAuthenticate(response.headers.get("www-authenticate"));
     if (response.body) await response.body.cancel().catch(() => undefined);
-    const refreshed = await provider.onUnauthorized(challenge);
+    const refreshed = await provider.onUnauthorized(challenge, {
+      interactive: false,
+      signal: this.streamController.signal,
+      rejectedToken: this.sentTokens.get(response),
+    });
     if (!refreshed) return response;
     response = await this.openStream();
     await rejectRedirect(response);
@@ -449,22 +617,20 @@ export class LegacySseTransport implements McpTransport {
       return;
     }
     const reader = response.body.getReader();
-    const sse = new SseDecoder();
-    let total = 0;
+    const sse = new SseDecoder(this.maxBytes);
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         if (!value) continue;
-        total += value.byteLength;
-        if (total > this.maxBytes) {
-          throw new McpTransportError("too-large", "MCP SSE stream exceeded the size limit.");
-        }
         for (const event of sse.push(value)) {
           this.handleEvent(event.event, event.data, onReady);
         }
       }
-      this.failAll(new McpTransportError("closed", "MCP SSE stream closed."));
+      const closed = new McpTransportError("closed", "MCP SSE stream closed.");
+      this.pumpError = closed;
+      onFail(closed);
+      this.failAll(closed);
     } catch (error) {
       const mapped = mapFetchError(error);
       this.pumpError = mapped;
@@ -478,15 +644,34 @@ export class LegacySseTransport implements McpTransport {
   private handleEvent(event: string, data: string, onReady: () => void): void {
     if (event === "endpoint") {
       try {
-        this.endpointUrl = new URL(data, this.config.url).toString();
+        const endpoint = new URL(data, this.config.url);
+        if (
+          endpoint.origin !== new URL(this.config.url).origin ||
+          endpoint.username ||
+          endpoint.password
+        ) {
+          throw new McpTransportError(
+            "protocol",
+            "MCP SSE announced an endpoint on another origin; credentials cannot be forwarded there.",
+          );
+        }
+        this.endpointUrl = endpoint.toString();
         onReady();
-      } catch {
-        void 0;
+      } catch (error) {
+        throw error instanceof McpTransportError
+          ? error
+          : new McpTransportError("protocol", "MCP SSE announced an invalid endpoint.");
       }
       return;
     }
     const message = parseMessage(data);
-    if (!message || !isJsonRpcResponse(message)) return;
+    if (!message) return;
+    if (!isJsonRpcResponse(message)) {
+      void dispatchServerMessage(message, this.handlers, (reply) =>
+        this.postMessage(JSON.stringify(reply), this.streamController.signal),
+      ).catch(() => undefined);
+      return;
+    }
     const numericId = typeof message.id === "number" ? message.id : Number(message.id);
     if (!Number.isFinite(numericId)) return;
     const entry = this.pending.get(numericId);
@@ -507,38 +692,38 @@ export class LegacySseTransport implements McpTransport {
   private async postHeaders(): Promise<Record<string, string>> {
     const base: Record<string, string> = { "content-type": "application/json" };
     if (this.protocolVersion) base[PROTOCOL_HEADER] = this.protocolVersion;
-    const authHeaders = this.options.authProvider
-      ? await this.options.authProvider.headers()
-      : {};
+    const authHeaders = this.options.authProvider ? await this.options.authProvider.headers() : {};
     return { ...base, ...authHeaders, ...this.config.headers };
   }
 
-  private async sendPost(
-    endpoint: string,
-    body: string,
-    signal: AbortSignal,
-  ): Promise<Response> {
-    const headers = await this.postHeaders();
-    return this.fetchImpl(endpoint, {
+  private async sendPost(endpoint: string, body: string, signal: AbortSignal): Promise<Response> {
+    const headers = await awaitMcpOperation(this.postHeaders(), signal);
+    const response = await this.fetchImpl(endpoint, {
       method: "POST",
       headers,
       body,
       signal,
       redirect: "manual",
     });
+    const authorization = new Headers(headers).get("authorization");
+    if (authorization) this.sentTokens.set(response, authorization.replace(/^Bearer\s+/i, ""));
+    return response;
   }
 
   private async retryPostUnauthorized(
     response: Response,
     resend: () => Promise<Response>,
+    signal: AbortSignal,
   ): Promise<Response> {
     const provider = this.options.authProvider;
     if (response.status !== 401 || !provider) return response;
-    const challenge = parseWwwAuthenticate(
-      response.headers.get("www-authenticate"),
-    );
+    const challenge = parseWwwAuthenticate(response.headers.get("www-authenticate"));
     if (response.body) await response.body.cancel().catch(() => undefined);
-    const refreshed = await provider.onUnauthorized(challenge);
+    const refreshed = await provider.onUnauthorized(challenge, {
+      interactive: false,
+      signal,
+      rejectedToken: this.sentTokens.get(response),
+    });
     if (!refreshed) return response;
     const retried = await resend();
     await rejectRedirect(retried);
@@ -553,7 +738,7 @@ export class LegacySseTransport implements McpTransport {
     const resend = (): Promise<Response> => this.sendPost(endpoint, body, signal);
     let response = await resend();
     await rejectRedirect(response);
-    response = await this.retryPostUnauthorized(response, resend);
+    response = await this.retryPostUnauthorized(response, resend, signal);
     if (response.body) await response.body.cancel().catch(() => undefined);
     if (!response.ok) throw ssePostError(endpoint, response.status);
   }
@@ -563,18 +748,31 @@ export class LegacySseTransport implements McpTransport {
     options: McpRequestOptions = {},
   ): Promise<JsonRpcResponse> {
     if (this.closed) throw new McpTransportError("closed", "MCP SSE transport closed.");
-    await this.start();
+    await this.start(options);
     if (this.pumpError) throw this.pumpError;
     const id = this.nextId++;
     const framed: JsonRpcRequest = { ...message, id };
-    const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    const { signal, dispose } = withTimeout(options.signal, timeoutMs);
+    const timeoutMs =
+      options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const parent = options.signal
+      ? AbortSignal.any([options.signal, this.streamController.signal])
+      : this.streamController.signal;
+    const { signal, dispose } = withTimeout(parent, timeoutMs);
     return await new Promise<JsonRpcResponse>((resolve, reject) => {
       const onAbort = (): void => {
         const entry = this.pending.get(id);
         if (entry) {
           this.pending.delete(id);
           entry.dispose();
+          if (message.method !== "initialize") {
+            void this.notify(
+              createNotification("notifications/cancelled", {
+                requestId: id,
+                reason: "Client stopped waiting for this request.",
+              }),
+              { timeoutMs: 1_000 },
+            ).catch(() => undefined);
+          }
         }
         const reason = signal.reason;
         reject(
@@ -600,19 +798,21 @@ export class LegacySseTransport implements McpTransport {
           this.pending.delete(id);
           entry.dispose();
         }
-        reject(mapFetchError(error));
+        reject(mapFetchError(error, signal));
       });
     });
   }
 
-  async notify(
-    message: JsonRpcNotification,
-    options: McpRequestOptions = {},
-  ): Promise<void> {
+  async notify(message: JsonRpcNotification, options: McpRequestOptions = {}): Promise<void> {
     if (this.closed) throw new McpTransportError("closed", "MCP SSE transport closed.");
-    await this.start();
-    const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    const { signal, dispose } = withTimeout(options.signal, timeoutMs);
+    await this.start(options);
+    if (this.pumpError) throw this.pumpError;
+    const timeoutMs =
+      options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const parent = options.signal
+      ? AbortSignal.any([options.signal, this.streamController.signal])
+      : this.streamController.signal;
+    const { signal, dispose } = withTimeout(parent, timeoutMs);
     try {
       await this.postMessage(JSON.stringify(message), signal);
     } finally {

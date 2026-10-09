@@ -1,5 +1,5 @@
 import { McpTransportError } from "../transport.js";
-import { assertSafeDiscoveryUrl } from "./security.js";
+import { fetchOAuthJson, oauthErrorDetail, type OAuthHttpDeps } from "./http.js";
 import type { OAuthClientRegistration } from "./types.js";
 
 export interface RegistrationParams {
@@ -10,18 +10,12 @@ export interface RegistrationParams {
   readonly deviceFlow?: boolean | undefined;
 }
 
-export interface RegistrationDeps {
-  readonly fetchImpl?: typeof fetch | undefined;
-  readonly validateUrl?: ((url: string) => URL) | undefined;
-}
+export interface RegistrationDeps extends OAuthHttpDeps {}
 
 export async function registerOAuthClient(
   params: RegistrationParams,
   deps: RegistrationDeps = {},
 ): Promise<OAuthClientRegistration> {
-  const validate = deps.validateUrl ?? assertSafeDiscoveryUrl;
-  const target = validate(params.registrationEndpoint);
-  const impl = deps.fetchImpl ?? fetch;
   const body = {
     client_name: params.clientName,
     redirect_uris: [...params.redirectUris],
@@ -32,22 +26,25 @@ export async function registerOAuthClient(
     token_endpoint_auth_method: "none",
     ...(params.scope ? { scope: params.scope } : {}),
   };
-  const response = await impl(target.toString(), {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(body),
-    redirect: "manual",
-  });
+  const response = await fetchOAuthJson(
+    params.registrationEndpoint,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+    deps,
+  );
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
     throw new McpTransportError(
       "protocol",
-      `MCP OAuth dynamic client registration failed with ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}.`,
+      `MCP OAuth dynamic client registration failed with ${response.status}${oauthErrorDetail(response.record)}.`,
     );
   }
-  const record = (await response.json().catch(() => undefined)) as
-    | Record<string, unknown>
-    | undefined;
+  const record = response.record;
   const clientId = record?.client_id;
   if (typeof clientId !== "string" || clientId.length === 0) {
     throw new McpTransportError(
@@ -58,8 +55,6 @@ export async function registerOAuthClient(
   const clientSecret = record?.client_secret;
   return {
     clientId,
-    ...(typeof clientSecret === "string" && clientSecret.length > 0
-      ? { clientSecret }
-      : {}),
+    ...(typeof clientSecret === "string" && clientSecret.length > 0 ? { clientSecret } : {}),
   };
 }

@@ -214,7 +214,7 @@ When an approval prompt appears, `Ctrl+O` opens the complete pending operation, 
 
 The agent can keep development servers and long commands running as background jobs. Use `/jobs` to inspect them and `/output` to browse output. Conversation-owned interactive terminals support REPLs, debuggers, and database consoles across model turns.
 
-`/rtk on` optionally compresses eligible foreground shell output through [rtk](https://github.com/rtk-ai/rtk). It is off by default; `/rtk install`, `/rtk update`, and `/rtk status` manage the integration.
+`/rtk on` optionally compresses eligible foreground shell output through [rtk](https://github.com/rtk-ai/rtk). It is off by default; `/rtk install`, `/rtk update`, and `/rtk status` manage the integration. `/rtk` reports executions and estimated token savings for the current conversation. Each session has its own RTK tracking database, shared by its attachments and retained when resumed; unrelated RTK activity is excluded.
 
 ### Authorized security testing
 
@@ -305,7 +305,9 @@ Useful CLI flags:
 
 Place project notes in `.clai/context.md` in the working directory to supply architecture, conventions, or testing context. Project skills live under `.clai/skills/` as `SKILL.md` playbooks; `/skills list` shows discovered skills and `/skills refresh` rescans them.
 
-MCP servers can expose local or remote tools. Tools are disabled by default; activate a server with an `@mcp:<server>` prompt mention or enable all configured servers with `/mcp all`. `/mcp` also supports configuration, connection status, authentication, and logs.
+MCP servers can expose local or remote tools. Tools are disabled by default; activate a server with an `@mcp:<server>` prompt mention or enable all configured servers with `/mcp all`. `/mcp` also supports configuration, connection status, authentication, and tool discovery.
+
+Use the picker to add a catalog server or paste its JSON configuration. API keys, OAuth browser sign-in, device codes, and pasted callbacks over SSH are supported. Large tool catalogs are searched on demand, keeping schemas out of repeated model requests. See the [MCP guide](MCP.md) for setup, authentication, configuration compatibility, and troubleshooting.
 
 Example `.clai/mcp.json`:
 

@@ -2,17 +2,18 @@ import type { ChatImage, JsonSchemaObject, RiskLevel } from "../types.js";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18" as const;
 
-export const MCP_SUPPORTED_PROTOCOL_VERSIONS = [
-  "2025-06-18",
-  "2025-03-26",
-  "2024-11-05",
-] as const;
+export const MCP_SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
 export const MCP_CLIENT_NAME = "clai" as const;
 
 export type McpTransportKind = "stdio" | "http" | "sse";
 
-export interface McpStdioConfig {
+export interface McpConnectionConfig {
+  readonly timeoutMs?: number | undefined;
+  readonly connectTimeoutMs?: number | undefined;
+}
+
+export interface McpStdioConfig extends McpConnectionConfig {
   readonly transport: "stdio";
   readonly command: string;
   readonly args: readonly string[];
@@ -23,7 +24,10 @@ export interface McpStdioConfig {
 export type McpAuthConfig =
   | { readonly kind: "none" }
   | { readonly kind: "bearer"; readonly token: string }
-  | { readonly kind: "header"; readonly headers: Readonly<Record<string, string>> }
+  | {
+      readonly kind: "header";
+      readonly headers: Readonly<Record<string, string>>;
+    }
   | {
       readonly kind: "oauth";
       readonly scopes?: readonly string[] | undefined;
@@ -31,9 +35,15 @@ export type McpAuthConfig =
       readonly clientSecret?: string | undefined;
       readonly resource?: string | undefined;
       readonly authorizationServer?: string | undefined;
+      readonly callbackPort?: number | undefined;
+      readonly tokenEndpointAuthMethod?:
+        | "none"
+        | "client_secret_basic"
+        | "client_secret_post"
+        | undefined;
     };
 
-export interface McpHttpConfig {
+export interface McpHttpConfig extends McpConnectionConfig {
   readonly transport: "http" | "sse";
   readonly url: string;
   readonly headers: Readonly<Record<string, string>>;

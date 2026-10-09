@@ -10,11 +10,7 @@ import type {
 } from "./types.js";
 
 function coerceSchema(schema: unknown): JsonSchemaObject {
-  if (
-    typeof schema === "object" &&
-    schema !== null &&
-    (schema as Record<string, unknown>).type === "object"
-  ) {
+  if (typeof schema === "object" && schema !== null && !Array.isArray(schema)) {
     const record = schema as Record<string, unknown>;
     const properties =
       typeof record.properties === "object" && record.properties !== null
@@ -23,15 +19,11 @@ function coerceSchema(schema: unknown): JsonSchemaObject {
     const required = Array.isArray(record.required)
       ? record.required.filter((entry): entry is string => typeof entry === "string")
       : undefined;
-    const additionalProperties =
-      typeof record.additionalProperties === "boolean"
-        ? record.additionalProperties
-        : undefined;
     return {
+      ...record,
       type: "object",
       properties,
       ...(required !== undefined ? { required } : {}),
-      ...(additionalProperties !== undefined ? { additionalProperties } : {}),
     };
   }
   return { type: "object", properties: {} };
@@ -87,7 +79,7 @@ export function toToolMetadata(
 ): McpToolMetadata {
   const annotations = descriptor.annotations ?? {};
   const readOnly = annotations.readOnlyHint === true;
-  const destructive = readOnly ? false : annotations.destructiveHint ?? true;
+  const destructive = readOnly ? false : (annotations.destructiveHint ?? true);
   const idempotent = annotations.idempotentHint ?? false;
   const openWorld = annotations.openWorldHint ?? false;
   const title = descriptor.title ?? annotations.title;
@@ -168,14 +160,17 @@ function readContentText(content: readonly unknown[]): string {
     } else if (record.type === "audio") {
       const mime = typeof record.mimeType === "string" ? record.mimeType : "audio";
       parts.push(`[audio ${mime}]`);
+    } else if (record.type === "resource_link" && typeof record.uri === "string") {
+      const name = typeof record.name === "string" ? record.name : "resource";
+      const description = typeof record.description === "string" ? ` ${record.description}` : "";
+      parts.push(`[${name}] ${record.uri}${description}`);
     }
   }
   return parts.join("\n");
 }
 
 export function normalizeToolResult(raw: unknown): McpNormalizedResult {
-  const record =
-    typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
   const isError = record.isError === true;
   const content = Array.isArray(record.content) ? record.content : [];
   const images = readContentImages(content);
@@ -185,8 +180,19 @@ export function normalizeToolResult(raw: unknown): McpNormalizedResult {
     dataBase64: image.dataBase64,
   }));
   let text = readContentText(content);
-  if (text.length === 0 && typeof record.structuredContent === "object" && record.structuredContent !== null) {
-    text = JSON.stringify(record.structuredContent);
+  if (typeof record.structuredContent === "object" && record.structuredContent !== null) {
+    const structured = JSON.stringify(record.structuredContent);
+    const represented = content.some((entry) => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const block = entry as Record<string, unknown>;
+      if (block.type !== "text" || typeof block.text !== "string") return false;
+      try {
+        return JSON.stringify(JSON.parse(block.text)) === structured;
+      } catch {
+        return false;
+      }
+    });
+    if (!represented) text = text ? `${text}\n${structured}` : structured;
   }
   return {
     ok: !isError,

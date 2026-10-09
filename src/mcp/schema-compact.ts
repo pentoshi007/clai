@@ -6,11 +6,7 @@ export const MCP_FIELD_DESCRIPTION_CHARS = 200;
 const MAX_DEPTH = 10;
 
 const DROPPED_KEYWORDS = new Set([
-  "$anchor",
   "$comment",
-  "$dynamicAnchor",
-  "$dynamicRef",
-  "$id",
   "$schema",
   "contentEncoding",
   "contentMediaType",
@@ -22,19 +18,9 @@ const DROPPED_KEYWORDS = new Set([
   "writeOnly",
 ]);
 
-const SCHEMA_MAP_KEYWORDS = new Set([
-  "$defs",
-  "definitions",
-  "patternProperties",
-  "properties",
-]);
+const SCHEMA_MAP_KEYWORDS = new Set(["$defs", "definitions", "patternProperties", "properties"]);
 
-const SCHEMA_LIST_KEYWORDS = new Set([
-  "allOf",
-  "anyOf",
-  "oneOf",
-  "prefixItems",
-]);
+const SCHEMA_LIST_KEYWORDS = new Set(["allOf", "anyOf", "oneOf", "prefixItems"]);
 
 const SCHEMA_NODE_KEYWORDS = new Set([
   "additionalProperties",
@@ -84,9 +70,7 @@ const KEYWORD_ORDER = [
   "definitions",
 ];
 
-const KEYWORD_RANK = new Map(
-  KEYWORD_ORDER.map((keyword, index) => [keyword, index]),
-);
+const KEYWORD_RANK = new Map(KEYWORD_ORDER.map((keyword, index) => [keyword, index]));
 
 function rankOf(keyword: string): number {
   return KEYWORD_RANK.get(keyword) ?? KEYWORD_ORDER.length;
@@ -102,8 +86,7 @@ export function compactDescription(text: string, maxChars: number): string {
   const window = collapsed.slice(0, maxChars);
   const sentence = Math.max(window.lastIndexOf(". "), window.lastIndexOf("; "));
   const word = window.lastIndexOf(" ");
-  const cut =
-    sentence >= Math.floor(maxChars / 2) ? sentence + 1 : word > 0 ? word : maxChars;
+  const cut = sentence >= Math.floor(maxChars / 2) ? sentence + 1 : word > 0 ? word : maxChars;
   return `${collapsed.slice(0, cut).trimEnd()}…`;
 }
 
@@ -155,19 +138,5 @@ function compactSchemaNode(value: unknown, depth: number): unknown {
 }
 
 export function compactToolSchema(schema: JsonSchemaObject): JsonSchemaObject {
-  const properties: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(schema.properties)) {
-    properties[name] = compactSchemaNode(value, 0);
-  }
-  const required = (schema.required ?? []).filter(
-    (name) => name in properties,
-  );
-  return {
-    type: "object",
-    properties,
-    ...(required.length > 0 ? { required } : {}),
-    ...(schema.additionalProperties === false
-      ? { additionalProperties: false }
-      : {}),
-  };
+  return compactSchemaNode(schema, 0) as JsonSchemaObject;
 }

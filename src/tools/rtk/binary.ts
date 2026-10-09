@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { augmentedPathEnv, findExecutable } from "../../os/command.js";
 import { getDataDir } from "../../store/paths.js";
+import { rtkSessionEnv } from "../../store/rtk-usage.js";
 
 export interface RtkPathEntry {
   readonly dir: string;
@@ -71,6 +72,7 @@ export const runRtk = (
   args: readonly string[],
   timeoutMs: number,
   signal?: AbortSignal,
+  env?: Readonly<Record<string, string>>,
 ): Promise<RtkRun> =>
   new Promise((resolve) => {
     execFile(
@@ -82,7 +84,7 @@ export const runRtk = (
         killSignal: "SIGKILL",
         windowsHide: true,
         maxBuffer: MAX_OUTPUT_BYTES,
-        env: rtkEnv(),
+        env: { ...rtkEnv(), ...env },
         ...(signal ? { signal } : {}),
       },
       (error, stdout) => {
@@ -238,8 +240,14 @@ export const forgetRtk = (): void => {
 const finite = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 
-export const readRtkGain = async (path: string): Promise<RtkGain | undefined> => {
-  const run = await runRtk(path, ["gain", "--format", "json"], PROBE_TIMEOUT_MS);
+export const readRtkGain = async (path: string, sessionId?: string): Promise<RtkGain | undefined> => {
+  let env: Readonly<Record<string, string>>;
+  try {
+    env = rtkSessionEnv(sessionId);
+  } catch {
+    return undefined;
+  }
+  const run = await runRtk(path, ["gain", "--format", "json"], PROBE_TIMEOUT_MS, undefined, env);
   if (run.code !== 0) return undefined;
   try {
     const summary = (JSON.parse(run.stdout) as { summary?: Record<string, unknown> }).summary;

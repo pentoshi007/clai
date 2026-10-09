@@ -5,6 +5,7 @@ import { basename, delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateConfig } from "../src/store/config.js";
+import { rtkSessionEnv } from "../src/store/rtk-usage.js";
 import { getDataDir } from "../src/store/paths.js";
 import { toolRegistry } from "../src/tools/registry.js";
 import { jobManager } from "../src/tools/jobs.js";
@@ -13,6 +14,7 @@ import {
   forgetRtk,
   probeRtkPath,
   RTK_EXEC_ENV,
+  readRtkGain,
   rtkPathEnv,
 } from "../src/tools/rtk/binary.js";
 import { runRtkMaintenance, type RtkMaintenanceState } from "../src/tools/rtk/install.js";
@@ -65,7 +67,7 @@ describe.skipIf(process.platform === "win32")("rtk command rewriting", () => {
   it("runs the rewritten command with rtk's hook warning suppressed", async () => {
     const before = rtkExecutionCount();
     const execution = await prepareRtkExecution("git status");
-    expect(execution).toEqual({ command: "rtk git status", env: RTK_EXEC_ENV, onSpawn: expect.any(Function) });
+    expect(execution).toEqual({ command: "rtk git status", env: { ...RTK_EXEC_ENV, ...rtkSessionEnv() }, onSpawn: expect.any(Function) });
     expect(rtkExecutionCount()).toBe(before);
   });
 
@@ -73,6 +75,27 @@ describe.skipIf(process.platform === "win32")("rtk command rewriting", () => {
     const execution = await prepareRtkExecution("  git status \n");
     expect(execution.command).toBe("rtk git status");
     expect((await rewrites(rtk)).at(-1)).toBe("rewrite git status");
+  });
+
+  it("isolates savings from other conversations and inherited RTK database settings", async () => {
+    const prior = process.env.RTK_DB_PATH;
+    process.env.RTK_DB_PATH = join(rtk.dir, "unrelated.db");
+    try {
+      for (const sessionId of ["conversation-a", "conversation-a", "conversation-b"]) {
+        const execution = await prepareRtkExecution("git status", undefined, sessionId);
+        await run("sh", ["-c", execution.command], { env: { ...process.env, ...execution.env } });
+        execution.onSpawn?.();
+      }
+      expect(await readRtkGain(rtk.path, "conversation-a")).toEqual({ commands: 2, savedTokens: 200, savingsPct: 50 });
+      expect(await readRtkGain(rtk.path, "conversation-b")).toEqual({ commands: 1, savedTokens: 100, savingsPct: 50 });
+      expect(await readRtkGain(rtk.path, "conversation-c")).toEqual({ commands: 0, savedTokens: 0, savingsPct: 50 });
+      const resumed = await prepareRtkExecution("rtk git status", undefined, "conversation-a");
+      expect(resumed.env?.RTK_DB_PATH).toBe(rtkSessionEnv("conversation-a").RTK_DB_PATH);
+      expect(resumed.env?.RTK_DB_PATH).not.toBe(prior);
+    } finally {
+      if (prior === undefined) delete process.env.RTK_DB_PATH;
+      else process.env.RTK_DB_PATH = prior;
+    }
   });
 
   it("accepts both explicit-allow (0) and ask (3) rewrites", async () => {
@@ -118,7 +141,7 @@ describe.skipIf(process.platform === "win32")("rtk command rewriting", () => {
     "bash -c 'rtk recall 7f79db136968'",
   ])("gives a follow-up command that invokes rtk itself rtk's environment: %s", async (command) => {
     const before = rtkExecutionCount();
-    expect(await prepareRtkExecution(command)).toEqual({ command, env: RTK_EXEC_ENV });
+    expect(await prepareRtkExecution(command)).toEqual({ command, env: { ...RTK_EXEC_ENV, ...rtkSessionEnv() } });
     expect(rtkExecutionCount()).toBe(before);
   });
 

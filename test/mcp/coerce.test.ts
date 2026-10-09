@@ -33,10 +33,7 @@ describe("coerceArgumentsForSchema", () => {
       type: "object",
       properties: { pipeline: { type: "array" } },
     };
-    const { args, coerced } = coerceArgumentsForSchema(
-      { pipeline: '[{"$match":{}}]' },
-      schema,
-    );
+    const { args, coerced } = coerceArgumentsForSchema({ pipeline: '[{"$match":{}}]' }, schema);
     expect(args.pipeline).toEqual([{ $match: {} }]);
     expect(coerced).toEqual(["pipeline"]);
   });
@@ -88,7 +85,7 @@ describe("coerceArgumentsForSchema", () => {
     expect(coerced).toEqual(["options.limit", "docs[0].count"]);
   });
 
-  it("respects anyOf/oneOf union types", () => {
+  it("preserves strings that are already valid anyOf/oneOf union values", () => {
     const schema = {
       type: "object",
       properties: {
@@ -96,7 +93,7 @@ describe("coerceArgumentsForSchema", () => {
       },
     };
     const { args } = coerceArgumentsForSchema({ query: '{"a":1}' }, schema);
-    expect(args.query).toEqual({ a: 1 });
+    expect(args.query).toBe('{"a":1}');
   });
 
   it("keeps original object when nothing coerced", () => {

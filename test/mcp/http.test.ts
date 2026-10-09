@@ -1,12 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { AddressInfo } from "node:net";
-import {
-  LegacySseTransport,
-  StreamableHttpTransport,
-} from "../../src/mcp/transport-http.js";
+import { LegacySseTransport, StreamableHttpTransport } from "../../src/mcp/transport-http.js";
 import { McpClient } from "../../src/mcp/client.js";
-import { createRequest } from "../../src/mcp/jsonrpc.js";
+import { createNotification, createRequest } from "../../src/mcp/jsonrpc.js";
 import type { McpHttpConfig } from "../../src/mcp/types.js";
 
 const servers: Server[] = [];
@@ -78,7 +75,11 @@ function startStreamableServer(): Promise<string> {
     if (method === "big") {
       res.setHeader("content-type", "application/json");
       res.end(
-        JSON.stringify({ jsonrpc: "2.0", id, result: { blob: "x".repeat(5000) } }),
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          result: { blob: "x".repeat(5000) },
+        }),
       );
       return;
     }
@@ -128,18 +129,152 @@ function startStreamableServer(): Promise<string> {
         JSON.stringify({
           jsonrpc: "2.0",
           id,
-          result: { content: [{ type: "text", text: `pong ${protocol ?? ""}` }] },
+          result: {
+            content: [{ type: "text", text: `pong ${protocol ?? ""}` }],
+          },
         }),
       );
       return;
     }
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: "nope" } }));
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: "nope" },
+      }),
+    );
   });
   return listen(server);
 }
 
 describe("streamable HTTP transport", () => {
+  it("rejects mismatched JSON response ids", async () => {
+    const url = await listen(
+      createServer(async (req, res) => {
+        await readBody(req);
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: 9999, result: {} }));
+      }),
+    );
+    const transport = new StreamableHttpTransport({
+      transport: "http",
+      url,
+      headers: {},
+    });
+    await expect(transport.request(createRequest(0, "ping"))).rejects.toMatchObject({
+      kind: "protocol",
+    });
+    await transport.close();
+  });
+
+  it("reports HTTP notification errors and preserves timeout classification", async () => {
+    const url = await listen(
+      createServer(async (req, res) => {
+        const message = JSON.parse(await readBody(req));
+        if (message.method === "slow") return;
+        res.statusCode = 503;
+        res.end("not ready");
+      }),
+    );
+    const transport = new StreamableHttpTransport({
+      transport: "http",
+      url,
+      headers: {},
+    });
+    await expect(
+      transport.notify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(
+      transport.request(createRequest(0, "slow"), { timeoutMs: 30 }),
+    ).rejects.toMatchObject({ kind: "timeout" });
+    await transport.close();
+  });
+
+  it("resumes an interrupted SSE response by event id without repeating its POST", async () => {
+    let id: unknown;
+    let posts = 0;
+    const resumeIds: unknown[] = [];
+    const url = await listen(
+      createServer(async (req, res) => {
+        res.setHeader("content-type", "text/event-stream");
+        if (req.method === "POST") {
+          const message = JSON.parse(await readBody(req));
+          id = message.id;
+          posts++;
+          res.end("id: checkpoint-1\ndata: \n\n");
+        } else {
+          resumeIds.push(req.headers["last-event-id"]);
+          sseData(res, { jsonrpc: "2.0", id, result: { complete: true } });
+          res.end();
+        }
+      }),
+    );
+    const transport = new StreamableHttpTransport({
+      transport: "http",
+      url,
+      headers: {},
+    });
+    expect(
+      await transport.request(createRequest(0, "tools/call", { name: "write" })),
+    ).toMatchObject({ result: { complete: true } });
+    expect(posts).toBe(1);
+    expect(resumeIds).toEqual(["checkpoint-1"]);
+    await transport.close();
+  });
+
+  it("answers server requests embedded in an SSE tool response", async () => {
+    let stream: ServerResponse | undefined;
+    let requestId: unknown;
+    const url = await listen(
+      createServer(async (req, res) => {
+        const message = JSON.parse(await readBody(req));
+        if (message.method === "initialize") {
+          res.setHeader("content-type", "application/json");
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: {
+                protocolVersion: "2025-06-18",
+                capabilities: { tools: {} },
+              },
+            }),
+          );
+        } else if (message.method === "notifications/initialized") {
+          res.statusCode = 202;
+          res.end();
+        } else if (message.method === "tools/call") {
+          stream = res;
+          requestId = message.id;
+          res.setHeader("content-type", "text/event-stream");
+          sseData(res, { jsonrpc: "2.0", id: "server-ping", method: "ping" });
+        } else {
+          expect(message).toEqual({
+            jsonrpc: "2.0",
+            id: "server-ping",
+            result: {},
+          });
+          res.statusCode = 202;
+          res.end();
+          sseData(stream!, {
+            jsonrpc: "2.0",
+            id: requestId,
+            result: {
+              content: [{ type: "text", text: "completed after ping" }],
+            },
+          });
+          stream!.end();
+        }
+      }),
+    );
+    const client = new McpClient(
+      new StreamableHttpTransport({ transport: "http", url, headers: {} }),
+    );
+    await client.initialize();
+    expect((await client.callTool("lookup", {})).text).toBe("completed after ping");
+    await client.close();
+  });
   it("handshakes over JSON, captures the session id, and reads SSE tool lists", async () => {
     const url = await startStreamableServer();
     const config: McpHttpConfig = { transport: "http", url, headers: {} };
@@ -156,7 +291,9 @@ describe("streamable HTTP transport", () => {
 
   it("propagates session and protocol headers to JSON tool calls", async () => {
     const url = await startStreamableServer();
-    const client = new McpClient(new StreamableHttpTransport({ transport: "http", url, headers: {} }));
+    const client = new McpClient(
+      new StreamableHttpTransport({ transport: "http", url, headers: {} }),
+    );
     await client.initialize();
     const result = await client.callTool("ping-tool", {});
     expect(result.text).toBe("pong 2025-06-18");
@@ -168,14 +305,18 @@ describe("streamable HTTP transport", () => {
       { transport: "http", url, headers: {} },
       { maxResponseBytes: 200 },
     );
-    await expect(
-      transport.request(createRequest(0, "big", {})),
-    ).rejects.toMatchObject({ kind: "too-large" });
+    await expect(transport.request(createRequest(0, "big", {}))).rejects.toMatchObject({
+      kind: "too-large",
+    });
   });
 
   it("aborts an in-flight request", async () => {
     const url = await startStreamableServer();
-    const transport = new StreamableHttpTransport({ transport: "http", url, headers: {} });
+    const transport = new StreamableHttpTransport({
+      transport: "http",
+      url,
+      headers: {},
+    });
     const controller = new AbortController();
     const pending = transport.request(createRequest(0, "slow", {}), {
       signal: controller.signal,
@@ -217,7 +358,13 @@ function startLegacyServer(): Promise<string> {
         jsonrpc: "2.0",
         id,
         result: {
-          tools: [{ name: "leg", description: "legacy tool", inputSchema: { type: "object", properties: {} } }],
+          tools: [
+            {
+              name: "leg",
+              description: "legacy tool",
+              inputSchema: { type: "object", properties: {} },
+            },
+          ],
         },
       });
     } else if (message.method === "tools/call") {
@@ -232,9 +379,101 @@ function startLegacyServer(): Promise<string> {
 }
 
 describe("legacy SSE transport", () => {
+  it("bounds notification time while credentials are unavailable", async () => {
+    const url = await startLegacyServer();
+    let reads = 0;
+    const transport = new LegacySseTransport(
+      { transport: "sse", url, headers: {} },
+      {
+        authProvider: {
+          kind: "oauth",
+          headers: async () => {
+            if (reads++ === 0) return {};
+            return new Promise<Record<string, string>>(() => undefined);
+          },
+          onUnauthorized: async () => false,
+          liveSecrets: () => [],
+        },
+      },
+    );
+    try {
+      await transport.start();
+      await expect(
+        transport.notify(createNotification("notifications/initialized"), { timeoutMs: 30 }),
+      ).rejects.toMatchObject({ kind: "timeout" });
+    } finally {
+      await transport.close();
+    }
+  });
+
+  it("rejects a cross-origin endpoint before forwarding authorization", async () => {
+    let leaked = false;
+    const destination = await listen(
+      createServer((_req, res) => {
+        leaked = true;
+        res.end();
+      }),
+    );
+    const url = await listen(
+      createServer((_req, res) => {
+        res.setHeader("content-type", "text/event-stream");
+        res.end(`event: endpoint\ndata: ${destination}/messages\n\n`);
+      }),
+    );
+    const transport = new LegacySseTransport({
+      transport: "sse",
+      url,
+      headers: { authorization: "Bearer PRIVATE" },
+    });
+    await expect(transport.start({ timeoutMs: 500 })).rejects.toMatchObject({
+      kind: "protocol",
+    });
+    expect(leaked).toBe(false);
+    await transport.close();
+  });
+
+  it("bounds connection time when the server never announces an endpoint", async () => {
+    const url = await listen(
+      createServer((_req, res) => {
+        res.setHeader("content-type", "text/event-stream");
+        res.write(": waiting\n\n");
+      }),
+    );
+    const transport = new LegacySseTransport({
+      transport: "sse",
+      url,
+      headers: {},
+    });
+    await expect(transport.start({ timeoutMs: 30 })).rejects.toMatchObject({
+      kind: "timeout",
+    });
+    await transport.close();
+  });
+
+  it("fails promptly when the legacy stream ends before announcing an endpoint", async () => {
+    const url = await listen(
+      createServer((_req, res) => {
+        res.setHeader("content-type", "text/event-stream");
+        res.end(": done\n\n");
+      }),
+    );
+    const transport = new LegacySseTransport({
+      transport: "sse",
+      url,
+      headers: {},
+    });
+    await expect(transport.start({ timeoutMs: 500 })).rejects.toMatchObject({
+      kind: "closed",
+    });
+    await transport.close();
+  });
   it("discovers the endpoint, handshakes, and routes tool calls over the stream", async () => {
     const url = await startLegacyServer();
-    const transport = new LegacySseTransport({ transport: "sse", url, headers: {} });
+    const transport = new LegacySseTransport({
+      transport: "sse",
+      url,
+      headers: {},
+    });
     const client = new McpClient(transport);
 
     const init = await client.initialize();
