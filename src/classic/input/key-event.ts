@@ -24,6 +24,7 @@ export interface MouseEvent {
 
 export type DecodedEvent =
   | { readonly type: "key"; readonly key: KeyEvent }
+  | { readonly type: "text"; readonly text: string }
   | { readonly type: "paste"; readonly text: string }
   | { readonly type: "mouse"; readonly event: MouseEvent };
 

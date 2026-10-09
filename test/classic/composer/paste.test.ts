@@ -70,6 +70,21 @@ function tempDir(): string {
 }
 
 describe("large paste", () => {
+  it("keeps a path-heavy transcript collapsed and submits all its content", () => {
+    const file = join(tempDir(), "notes.txt");
+    writeFileSync(file, "notes");
+    const transcript = Array.from({ length: 400 }, (_, i) =>
+      `tool ${i}\n${file}\n${"query and returned notes ".repeat(10)}`,
+    ).join("\n").trimEnd();
+    const onSubmit = vi.fn();
+    const { composer } = controller({ onSubmit });
+    composer.paste(transcript);
+    expect(composer.text.length).toBeLessThan(80);
+    expect(composer.getSnapshot().pastes[0]?.text).toBe(transcript);
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith(transcript);
+  });
+
   it("classifies by line and character count", () => {
     expect(isLargePaste("one\ntwo")).toBe(false);
     expect(isLargePaste(BIG)).toBe(true);

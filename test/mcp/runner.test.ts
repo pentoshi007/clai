@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent } from "../../src/agent/events.js";
 import { runAgentTurn } from "../../src/agent/runner.js";
-import type { CompletionRequest, CompletionResult } from "../../src/types.js";
+import type { ChatMessage, CompletionRequest, CompletionResult } from "../../src/types.js";
 import type { ToolCallingMode } from "../../src/llm/tool-protocol.js";
 import { McpManager, type McpTransportFactory } from "../../src/mcp/manager.js";
 import { McpRuntime } from "../../src/mcp/runtime.js";
@@ -36,6 +36,7 @@ vi.mock("../../src/commands/providers.js", async (importActual) => {
 
 const remoteCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 let readOnly = true;
+let remoteToolName = "lookup";
 
 class RunnerTransport implements McpTransport {
   readonly kind = "stdio" as const;
@@ -63,7 +64,7 @@ class RunnerTransport implements McpTransport {
         result: {
           tools: [
             {
-              name: "lookup",
+              name: remoteToolName,
               description: "Look up a documentation record",
               inputSchema: {
                 type: "object",
@@ -121,6 +122,7 @@ beforeEach(async () => {
   streamMock.mockReset();
   remoteCalls.length = 0;
   readOnly = true;
+  remoteToolName = "lookup";
   previousCwd = process.cwd();
   root = mkdtempSync(join(tmpdir(), "clai-mcp-runner-"));
   workspace = join(root, "project");
@@ -175,6 +177,77 @@ describe("agent MCP integration", () => {
     ...reply(""),
     toolCalls: [{ id: `call-${name}`, name, args }],
     finishReason: "tool_calls",
+  });
+
+  it("dispatches consecutive Notion-shaped parallel batches despite empty-draft updates", async () => {
+    remoteToolName = "notion-fetch";
+    writeFileSync(join(workspace, ".clai", "mcp.json"), JSON.stringify({ servers: { notion: { command: "notion-server" } } }));
+    await runtime.refresh({ force: true });
+    runtime.selectOff();
+    const unsubscribe = runtime.subscribe(() => runtime.applyMentionSelection(""));
+    const requests: CompletionRequest[] = [];
+    streamMock.mockImplementation((request: CompletionRequest) => {
+      requests.push({ ...request, messages: structuredClone(request.messages), tools: structuredClone(request.tools) });
+      runtime.applyMentionSelection("");
+      if (requests.length === 1) return toolReply("mcp.enable", { server: "notion" });
+      if (requests.length === 2) return toolReply("mcp.tools", { server: "notion", query: "notion-fetch" });
+      if (requests.length < 5) return {
+        ...reply(""),
+        finishReason: "tool_calls",
+        toolCalls: Array.from({ length: 4 }, (_, i) => ({
+          id: `fetch-${requests.length}-${i}`,
+          name: "mcp.call",
+          args: { name: "mcp.notion.notion-fetch", arguments: { id: `${requests.length}-${i}` } },
+        })),
+      };
+      return reply();
+    });
+    const events: AgentEvent[] = [];
+    try {
+      await runAgentTurn("Read the requested Notion notes", {
+        mcp: runtime, provider: "openai", model: "gpt-4o-mini", toolCalling: "native", maxSteps: 8,
+        onEvent: (event) => events.push(event),
+      });
+      expect(requests).toHaveLength(5);
+      expect(remoteCalls).toHaveLength(8);
+      expect(remoteCalls.every((call) => call.name === "notion-fetch")).toBe(true);
+      expect(events.filter((event) => event.type === "tool-result" && !event.ok)).toEqual([]);
+      for (const request of requests.slice(1)) {
+        expect(request.tools).toEqual(requests[0]?.tools);
+        expect(request.messages[0]).toEqual(requests[0]?.messages[0]);
+      }
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("retains a submitted MCP mention across draft clearing and a continuation", async () => {
+    runtime.selectOff();
+    const requests: CompletionRequest[] = [];
+    streamMock.mockImplementation((request: CompletionRequest) => {
+      requests.push({ ...request, messages: structuredClone(request.messages), tools: structuredClone(request.tools) });
+      runtime.applyMentionSelection("");
+      return requests.length === 2
+        ? toolReply("mcp.call", { name: "mcp.docs.lookup", arguments: { id: "one" } })
+        : reply();
+    });
+    let history: ChatMessage[] = [];
+    await runAgentTurn("@mcp:docs Look up record one", {
+      mcp: runtime, provider: "openai", model: "gpt-4o-mini", toolCalling: "native",
+      onMessages: (messages) => { history = messages; },
+    });
+    await runAgentTurn("continue", {
+      mcp: runtime, provider: "openai", model: "gpt-4o-mini", toolCalling: "native",
+      history,
+    });
+    expect(remoteCalls).toEqual([{ name: "lookup", args: { id: "one" } }]);
+    expect(requests).toHaveLength(3);
+    expect(requests[1]?.messages.some((message) => message.content.includes("Selection: server docs"))).toBe(true);
+    for (const request of requests.slice(1)) {
+      expect(request.tools).toEqual(requests[0]?.tools);
+      expect(request.messages[0]).toEqual(requests[0]?.messages[0]);
+    }
+    expect(requests[1]?.messages.slice(0, requests[0]?.messages.length)).toEqual(requests[0]?.messages);
   });
 
   it("discovers required schemas and calls an MCP tool after enabling it mid-turn", async () => {
@@ -237,6 +310,19 @@ describe("agent MCP integration", () => {
     await run(events, "native");
     expect(remoteCalls).toEqual([]);
     expect(events.some((event) => event.type === "tool-result" && !event.ok)).toBe(true);
+    expect(events.some((event) => event.type === "tool-result" && event.summary.includes('mcp.enable {"server":"docs"}'))).toBe(true);
+  });
+
+  it("distinguishes malformed wrapper arguments from inactive servers", async () => {
+    streamMock.mockResolvedValueOnce(toolReply("mcp.call", {
+      name: "mcp.docs.lookup", arguments: "{}",
+    })).mockResolvedValue(reply());
+    const events: AgentEvent[] = [];
+    await run(events, "native");
+    const error = events.find((event) => event.type === "tool-result" && !event.ok);
+    expect(error?.type === "tool-result" && error.summary).toContain('"arguments" field must be a JSON object');
+    expect(error?.type === "tool-result" && error.summary).not.toContain("mcp.enable");
+    expect(remoteCalls).toEqual([]);
   });
 
   it.each([true, false])("enforces ask-mode read-only targets (readOnly=%s)", async (isReadOnly) => {

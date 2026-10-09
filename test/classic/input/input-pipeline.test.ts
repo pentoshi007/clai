@@ -12,7 +12,7 @@ import {
 function build() {
   const clock = { now: 0 };
   const pipeline = new InputPipeline(
-    new RawDecoder({ now: () => clock.now }),
+    new RawDecoder({ now: () => clock.now, bulkText: true }),
     new PasteBurstAssembler(),
     () => clock.now,
   );
@@ -20,6 +20,29 @@ function build() {
 }
 
 describe("InputPipeline", () => {
+  it("collects large single-line reads without materializing a key event for every grapheme", () => {
+    const { pipeline, clock } = build();
+    const text = `${"漢字 👩🏽‍💻 é JSON ".repeat(8000)}end`;
+    expect(pipeline.push(text.slice(0, 4000))).toEqual([]);
+    clock.now = 80;
+    expect(pipeline.push(text.slice(4000))).toEqual([]);
+    clock.now += PASTE_BURST_SETTLE_MS;
+    expect(pipeline.flush()).toEqual([{ type: "paste", text }]);
+    expect(pipeline.push("\u0003")).toEqual([
+      { type: "key", key: expect.objectContaining({ name: "c", ctrl: true }) },
+    ]);
+  });
+
+  it("retains a fragmented bracketed paste beyond one MiB without releasing its newlines as keys", () => {
+    const { pipeline } = build();
+    const first = "a\n".repeat(550_000);
+    expect(pipeline.push(`${PASTE_START}${first}`)).toEqual([]);
+    expect(pipeline.push(`tail\n${PASTE_END}`)).toEqual([
+      { type: "paste", text: `${first}tail\n` },
+    ]);
+    expect(pipeline.pendingDeadline).toBeUndefined();
+  });
+
   it("delivers a bracketed paste as a single paste event", () => {
     const { pipeline } = build();
     expect(pipeline.push(`${PASTE_START}a\nb${PASTE_END}`)).toEqual([

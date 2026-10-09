@@ -1,4 +1,6 @@
 
+import { countLines } from "../../ui-core/composer/paste-placeholder.js";
+
 export function composerDraftOverflows(
   contentLines: number,
   visibleRows: number,
@@ -64,7 +66,7 @@ export function measureComposerLines(
     0;
   const logical = editor.lineCount ?? 0;
   const hardBreaks = editor.plainText
-    ? Math.max(1, editor.plainText.split("\n").length)
+    ? Math.max(1, countLines(editor.plainText))
     : 1;
   return Math.max(1, contentLinesFallback, fromView, logical, hardBreaks);
 }

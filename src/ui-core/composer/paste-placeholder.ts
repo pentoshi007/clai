@@ -8,21 +8,34 @@ export interface PasteThresholds {
 }
 
 export function countLines(text: string): number {
-  return text.length === 0 ? 0 : text.split("\n").length;
+  if (text.length === 0) return 0;
+  let lines = 1;
+  for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) {
+    lines += 1;
+  }
+  return lines;
 }
 
 export function isLargePaste(text: string, thresholds: PasteThresholds = {}): boolean {
   const lineLimit = thresholds.lines ?? DEFAULT_LINE_THRESHOLD;
   const charLimit = thresholds.chars ?? DEFAULT_CHAR_THRESHOLD;
-  return countLines(text) > lineLimit || text.length > charLimit;
+  return text.length > charLimit || countLines(text) > lineLimit;
 }
 
 export function pastePreviewLines(text: string, maxLines = 2): string[] {
-  const lines = text.split("\n");
-  return lines.slice(0, Math.max(1, maxLines)).map((line) => {
-    const clipped = line.length > 72 ? `${line.slice(0, 71)}…` : line;
-    return clipped.length === 0 ? " " : clipped;
-  });
+  const lines: string[] = [];
+  let start = 0;
+  while (lines.length < Math.max(1, maxLines)) {
+    const newline = text.indexOf("\n", start);
+    const end = newline < 0 ? text.length : newline;
+    const line = end - start > 72
+      ? `${text.slice(start, start + 71)}…`
+      : text.slice(start, end);
+    lines.push(line || " ");
+    if (newline < 0) break;
+    start = newline + 1;
+  }
+  return lines;
 }
 
 export function pasteChipLabel(lines: number, chars: number): string {
@@ -38,6 +51,23 @@ export interface PastePlaceholderEntry {
   readonly lines: number;
   readonly chars: number;
   readonly label: string;
+}
+
+export function pastePlaceholderRanges(
+  text: string,
+  entries: readonly PastePlaceholderEntry[],
+): { readonly start: number; readonly end: number; readonly entry: PastePlaceholderEntry }[] {
+  return entries.flatMap((entry) => {
+    const ranges = [];
+    for (
+      let start = text.indexOf(entry.token);
+      start >= 0;
+      start = text.indexOf(entry.token, start + entry.token.length)
+    ) {
+      ranges.push({ start, end: start + entry.token.length, entry });
+    }
+    return ranges;
+  });
 }
 
 export function samePastePlaceholderEntries(
@@ -84,11 +114,13 @@ export class PasteRegistry {
   }
 
   expand(value: string): string {
-    let result = value;
-    for (const entry of this.entries.values()) {
-      result = result.split(entry.token).join(entry.text);
-    }
-    return result;
+    return value.replace(
+      /\[(?:\d+ (?:lines|chars) pasted|pasted) #(\d+)\]/g,
+      (token, id: string) => {
+        const entry = this.entries.get(Number(id));
+        return entry?.token === token ? entry.text : token;
+      },
+    );
   }
 
   expandOne(value: string, id: number): string {

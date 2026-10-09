@@ -55,7 +55,7 @@ export function composerFrame(input: ComposerFrameInput): ComposerFrame {
   const dirRows = showDirectory ? COMPOSER_GAP_ROWS + COMPOSER_DIR_ROWS : 0;
   const budget = Math.max(1, input.allocatedRows - COMPOSER_BORDER_ROWS - dirRows);
   const textRows = resolveComposerTextRows(
-    countComposerVisualLines(input.text, textWidth),
+    countComposerVisualLines(input.text, textWidth, budget),
     budget,
   );
   const suspended = input.phase === "suspended";

@@ -242,6 +242,8 @@ clai selects its interface using the OS where it runs. Native Windows uses Class
 
 Standard terminals can handle ordinary text input and output. Modified keys, mouse motion/hover, and clipboard integration vary by terminal and configuration. If `Shift+Enter` is not distinguishable from `Enter`, use `Ctrl+N` or `Alt+Enter` for a newline. Use `clai --classic` if OpenTUI cannot start, and `F5` or `/redraw` to repaint a scrambled screen.
 
+Large pastes collapse into a line or character count inside the composer while retaining the full text for submission. In OpenTUI, hover over that inline placeholder to preview it and double-click to expand it for editing. Pasted transcripts remain one draft, including when a terminal sends unbracketed text in bursts over SSH. Press `Enter` after the paste has finished to submit it.
+
 ### Keyboard shortcuts
 
 | Action | Shortcut |
@@ -305,7 +307,7 @@ Useful CLI flags:
 
 Place project notes in `.clai/context.md` in the working directory to supply architecture, conventions, or testing context. Project skills live under `.clai/skills/` as `SKILL.md` playbooks; `/skills list` shows discovered skills and `/skills refresh` rescans them.
 
-MCP servers can expose local or remote tools. Tools are disabled by default; activate a server with an `@mcp:<server>` prompt mention or enable all configured servers with `/mcp all`. `/mcp` also supports configuration, connection status, authentication, and tool discovery.
+MCP servers can expose local or remote tools. Tools are disabled by default; activate a server with an `@mcp:<server>` prompt mention or enable all configured servers with `/mcp all`. Submitted selections remain available for follow-up prompts until changed or disabled with `/mcp off`. `/mcp` also supports configuration, connection status, authentication, and tool discovery.
 
 Use the picker to add a catalog server or paste its JSON configuration. API keys, OAuth browser sign-in, device codes, and pasted callbacks over SSH are supported. Large tool catalogs are searched on demand, keeping schemas out of repeated model requests. See the [MCP guide](MCP.md) for setup, authentication, configuration compatibility, and troubleshooting.
 

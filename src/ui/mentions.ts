@@ -105,6 +105,10 @@ interface ScannedPath {
   resolved: string;
 }
 
+const MAX_PATH_SCAN_CHARS = 16_384;
+const MAX_PATH_CANDIDATE_CHARS = 4_096;
+const MAX_PATH_PROBES = 256;
+
 function wordEndOffsets(rest: string): number[] {
   const ends: number[] = [];
   let i = 0;
@@ -126,15 +130,23 @@ function wordEndOffsets(rest: string): number[] {
 }
 
 function scanExistingPaths(line: string, baseDir: string): ScannedPath[] {
+  if (line.length > MAX_PATH_SCAN_CHARS) return [];
   const results: ScannedPath[] = [];
   const seen = new Set<string>();
+  let probes = 0;
   const startRe = /(?:^|\s|["'])((?:file:\/\/|(?:~|\.{1,2})?[\\/]|[A-Za-z]:[\\/]|\\\\))/gi;
   let m: RegExpExecArray | null;
   while ((m = startRe.exec(line)) !== null) {
     const startIdx = m.index + m[0].length - (m[1]?.length ?? 0);
-    const rest = line.slice(startIdx);
+    const newline = line.indexOf("\n", startIdx);
+    const end = Math.min(
+      newline < 0 ? line.length : newline,
+      startIdx + MAX_PATH_CANDIDATE_CHARS,
+    );
+    const rest = line.slice(startIdx, end);
     const ends = wordEndOffsets(rest);
     for (let k = ends.length; k >= 1; k -= 1) {
+      if (++probes > MAX_PATH_PROBES) return [];
       const rawSpan = rest.slice(0, ends[k - 1]);
       const candidate = normalizeDroppedPath(rawSpan);
       const expanded = expandHome(candidate);
@@ -145,6 +157,7 @@ function scanExistingPaths(line: string, baseDir: string): ScannedPath[] {
           seen.add(resolved);
           results.push({ raw: rawSpan, resolved });
         }
+        startRe.lastIndex = startIdx + rawSpan.length;
         break;
       }
     }

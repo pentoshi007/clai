@@ -316,7 +316,7 @@ export async function runAgentTurn(
     ) {
       await mcpRuntime.ensureReady();
     }
-    if (mcpRuntime && mcpMentioned) mcpRuntime.applyMentionSelection(prompt);
+    if (mcpRuntime && mcpMentioned) mcpRuntime.commitMentionSelection(prompt);
     mcpLease = mcpRuntime?.beginTurn();
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;

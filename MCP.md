@@ -12,7 +12,7 @@ Activate a configured server in a prompt:
 @mcp:docs Find the API documentation for this project.
 ```
 
-Use `/mcp all` to enable all ready servers, or `/mcp off` to hide MCP tools. Read-only tools are available in ask mode. Tools that change external state follow the usual confirmation policy in agent mode.
+Submitting an `@mcp:<server>` mention retains that selection for follow-up prompts, including `continue` after an interruption. Clearing or editing the draft does not disable tools used by the running turn. Selecting another server changes the selection for subsequent prompts; use `/mcp off` to turn it off explicitly or `/mcp all` to enable all ready servers. Read-only tools are available in ask mode. Tools that change external state follow the usual confirmation policy in agent mode.
 
 | Command | Purpose |
 | --- | --- |
@@ -147,13 +147,13 @@ Within the same source category, the nearest project directory wins. Duplicate n
 
 ## Context use and caching
 
-Native provider requests use a fixed MCP control interface. Selecting a server or updating its catalog keeps that interface stable; the current selection and catalog are supplied through conversation context. Each turn retains the catalog it started with, while server notifications update the catalog for subsequent turns.
+Native provider requests use a fixed MCP control interface. Selecting a server or updating its catalog keeps that interface stable; the current selection and catalog are supplied through conversation context. Each turn retains the tool contracts it started with. Enabling a server during a turn also retains its newly discovered tools for that turn, so background draft updates cannot make a valid parallel batch lose its targets. Server notifications update the catalog for subsequent turns; existing retained contracts are preserved.
 
 MCP discovery, selection changes, reconnects, and authentication results are appended after the existing conversation. They do not replace the leading system instructions, native tool definitions, or previously submitted messages. This preserves the reusable request prefix within the same provider, model, and session. Actual cache hits depend on the provider's support and cache lifetime; compaction or a model change can establish a different prefix.
 
 Small catalogs include compact descriptions and schemas. When the catalog exceeds its inline budget, clai defers schemas to `mcp.tools`, which searches names and descriptions and returns bounded pages. Discovery returns the original schemas and full descriptions, including field instructions, examples, and tool prerequisites. Exact tool names are prioritized over incidental description matches. The agent can narrow a query to one server, follow a cursor, and call any selected tool through `mcp.call`. A cursor is invalidated when its catalog or query changes, so paging cannot silently skip tools.
 
-Discovery labels each tool as active, inactive with its exact enable action, or changed during the current turn. In ask mode, mutating tools are marked unavailable; selecting servers and signing in require agent mode or the user's `/mcp` commands. The agent is instructed to inspect full details before using unfamiliar tools, follow documented dependencies, reuse identifiers returned by earlier calls, and send required fields as correctly typed JSON values. A changed schema or safety contract requires a new turn; discovering a tool does not silently select its server.
+Discovery labels each tool as active, inactive with its exact enable action, or changed during the current turn. In ask mode, mutating tools are marked unavailable; selecting servers and signing in require agent mode or the user's `/mcp` commands. The agent is instructed to inspect full details before using unfamiliar tools, reuse unchanged schemas and identifiers returned by earlier calls, follow documented dependencies, and send required fields as correctly typed JSON values. A changed schema or safety contract requires a new turn; discovering a tool does not silently select its server.
 
 Schema constraints, references, alternatives, and definitions are retained. Long descriptions are shortened for model context. Large tool results and oversized catalog pages use output artifacts, allowing the agent to read further detail while keeping the full output available to the transcript and UI. Structured results, images, and resource links are preserved through the MCP result path.
 
@@ -168,6 +168,7 @@ MCP servers must be trusted before their tools are used. Their descriptions and 
 | First connection is slow | Increase `connectTimeoutMs` if package installation or startup needs more than the default 30 seconds. |
 | A tool exceeds its deadline | Increase `timeoutMs` for that server; the default is 60 seconds. Timed-out requests are cancelled, not automatically replayed. |
 | Server returns 401 | Use `/mcp login <server>` for OAuth, or correct its API key/header configuration. |
+| `mcp.call` rejects a target locally | Follow the specific target or argument error. Use the exact name and JSON object from `mcp.tools`; enabling a server again does not repair malformed arguments or an unknown tool name. |
 | OAuth registration is unavailable | Configure the service's registered `clientId`, or use a supported token/key authentication method. |
 | Browser callback cannot reach the SSH host | Paste the complete final callback URL into the sign-in dialog. |
 | Server redirects the MCP endpoint | Set `url` to the final endpoint. Transport redirects are refused to avoid forwarding credentials elsewhere. |

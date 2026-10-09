@@ -94,7 +94,7 @@ export const runSingleTool = async (
   let engagementGraph: EngagementGraph | undefined;
   let engagementRecord: EngagementActionRecord | undefined;
 
-  const invalid = invalidToolCall(call);
+  const invalid = invalidToolCall(call, deps.mcpRuntime);
   if (invalid) {
     deps.loopGuard.recordAttempt(
       deps.step(),

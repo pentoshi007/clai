@@ -29,6 +29,7 @@ function isLineFeed(key: KeyEvent): boolean {
 }
 
 function unitOf(event: DecodedEvent): BurstUnit<DecodedEvent> {
+  if (event.type === "text") return { kind: "content", text: event.text, source: event };
   if (event.type === "key") {
     const { key } = event;
     if (isEnter(key)) return { kind: "break", text: "\r", source: event };

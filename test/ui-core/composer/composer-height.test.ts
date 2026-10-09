@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { wrapPlainString } from "../../../src/ui-core/rendering/text-format.js";
 import {
   countComposerVisualLines,
   maxComposerTextRows,
@@ -15,6 +16,15 @@ import {
 } from "../../../src/tui-v2/composer/composer-wheel.js";
 
 describe("countComposerVisualLines", () => {
+  it("matches existing word wrapping and stops at the visible row budget", () => {
+    for (const text of ["", "a\n", "one two three four", "  a   b\n\nc", "漢字 👩🏽‍💻 é".repeat(10)]) {
+      for (const width of [1, 5, 17, 80]) {
+        const rows = wrapPlainString(text, width).length;
+        expect(countComposerVisualLines(text, width)).toBe(rows);
+        expect(countComposerVisualLines(text, width, 3)).toBe(Math.min(3, rows));
+      }
+    }
+  });
   it("returns 1 for empty input", () => {
     expect(countComposerVisualLines("", 80)).toBe(1);
   });

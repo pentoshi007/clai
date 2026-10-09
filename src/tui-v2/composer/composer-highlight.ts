@@ -2,7 +2,7 @@ import { SyntaxStyle, type TextareaRenderable } from "@opentui/core";
 import { findMcpMentions } from "../../mcp/mentions.js";
 import { findSkillMentions } from "../../skills/mentions.js";
 
-export type MentionKind = "skill" | "mcp";
+export type MentionKind = "skill" | "mcp" | "paste";
 
 export interface MentionPaint {
   readonly kind: MentionKind;
@@ -13,6 +13,7 @@ export interface MentionPaint {
 const STYLE_NAMES: Record<MentionKind, string> = {
   skill: "clai.skill.mention",
   mcp: "clai.mcp.mention",
+  paste: "clai.paste.placeholder",
 };
 
 let style: SyntaxStyle | undefined;
@@ -22,12 +23,13 @@ let unsupported = false;
 
 function ensureStyle(colors: Record<MentionKind, string>): boolean {
   if (unsupported) return false;
-  const signature = `${colors.skill}|${colors.mcp}`;
+  const signature = `${colors.skill}|${colors.mcp}|${colors.paste}`;
   if (style && styleSignature === signature) return true;
   try {
     style = SyntaxStyle.fromStyles({
       [STYLE_NAMES.skill]: { fg: colors.skill, bold: true },
       [STYLE_NAMES.mcp]: { fg: colors.mcp, bold: true },
+      [STYLE_NAMES.paste]: { fg: colors.paste, bold: true },
     });
     const ids: Partial<Record<MentionKind, number>> = {};
     for (const kind of Object.keys(STYLE_NAMES) as MentionKind[]) {
@@ -62,7 +64,7 @@ export function paintComposerMentions(
   if (!editor || unsupported) return;
   const total = paints.reduce((sum, paint) => sum + paint.ranges.length, 0);
   if (total === 0 && !style) return;
-  const colors: Record<MentionKind, string> = { skill: "", mcp: "" };
+  const colors: Record<MentionKind, string> = { skill: "", mcp: "", paste: "" };
   for (const paint of paints) colors[paint.kind] = paint.color;
   if (!ensureStyle(colors)) return;
   try {
@@ -93,6 +95,8 @@ export function paintDraftMentions(input: {
   readonly skillColor: string;
   readonly servers: ReadonlySet<string>;
   readonly serverColor: string;
+  readonly pasteRanges?: readonly { readonly start: number; readonly end: number }[];
+  readonly pasteColor?: string;
 }): void {
   paintComposerMentions(input.editor, [
     {
@@ -104,6 +108,11 @@ export function paintDraftMentions(input: {
       kind: "mcp",
       ranges: findMcpMentions(input.text, input.servers),
       color: input.serverColor,
+    },
+    {
+      kind: "paste",
+      ranges: input.pasteRanges ?? [],
+      color: input.pasteColor ?? input.serverColor,
     },
   ]);
 }
