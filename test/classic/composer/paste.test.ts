@@ -70,6 +70,37 @@ function tempDir(): string {
 }
 
 describe("large paste", () => {
+  it("expands only the block nearest the cursor and submits all the original content", () => {
+    const onSubmit = vi.fn();
+    const { composer } = controller({ onSubmit });
+    const prefix = "漢字 👩🏽‍💻 é ";
+    const second = "second pasted block ".repeat(80).trimEnd();
+    composer.insertText(prefix);
+    composer.paste(BIG);
+    composer.insertText(" between ");
+    composer.paste(second);
+    const firstToken = composer.getSnapshot().pastes[0]!.token;
+    composer.handleAction("editor.expand-paste");
+    expect(composer.text).toBe(`${prefix}${firstToken} between ${second}`);
+    expect(composer.getSnapshot().state.cursor).toBe(composer.text.length);
+    expect(composer.getSnapshot().pastes).toHaveLength(1);
+    composer.handleChord("ctrl+home");
+    composer.handleAction("editor.expand-paste");
+    expect(composer.text).toBe(`${prefix}${BIG} between ${second}`);
+    expect(composer.getSnapshot().state.cursor).toBe(0);
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith(`${prefix}${BIG} between ${second}`);
+  });
+
+  it("leaves an ordinary draft untouched when no shortened paste is present", () => {
+    const { composer } = controller();
+    composer.insertText("ordinary draft");
+    composer.handleChord("left");
+    const before = composer.getSnapshot().state;
+    composer.handleAction("editor.expand-paste");
+    expect(composer.getSnapshot().state).toEqual(before);
+  });
+
   it("keeps a path-heavy transcript collapsed and submits all its content", () => {
     const file = join(tempDir(), "notes.txt");
     writeFileSync(file, "notes");

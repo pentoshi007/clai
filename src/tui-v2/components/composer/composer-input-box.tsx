@@ -3,6 +3,7 @@
 import { type RefObject, type ReactNode } from "react";
 import {
   TextAttributes,
+  type BoxRenderable,
   type KeyEvent,
   type MouseEvent,
   type TextareaRenderable,
@@ -11,6 +12,7 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 
 export function ComposerInputBox(props: {
   readonly theme: Theme;
+  readonly boxRef: RefObject<BoxRenderable | null>;
   readonly editorRef: RefObject<TextareaRenderable | null>;
   readonly focused: boolean;
   readonly running?: boolean | undefined;
@@ -32,6 +34,7 @@ export function ComposerInputBox(props: {
 }): ReactNode {
   const {
     theme,
+    boxRef,
     editorRef,
     focused,
     running,
@@ -54,6 +57,7 @@ export function ComposerInputBox(props: {
 
   return (
     <box
+      ref={boxRef}
       border
       borderStyle="heavy"
       {...(metaShown
@@ -74,7 +78,18 @@ export function ComposerInputBox(props: {
         minWidth: 0,
       }}
       onMouseDown={onMouseDown}
-      {...(onMouseOut ? { onMouseOut } : {})}
+      onMouseOut={(event) => {
+        const box = boxRef.current;
+        if (
+          !box ||
+          event.x < box.x ||
+          event.y < box.y ||
+          event.x >= box.x + box.width ||
+          event.y >= box.y + box.height
+        ) {
+          onMouseOut?.();
+        }
+      }}
       onMouseScroll={onMouseScroll}
     >
       <box style={{ flexDirection: "row", width: "100%", flexGrow: 1, minHeight: 1 }}>

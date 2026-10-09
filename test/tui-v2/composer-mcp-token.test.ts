@@ -17,6 +17,7 @@ const theme = themeFor("dark");
 function render(): ElementNode {
   return ComposerInputBox({
     theme,
+    boxRef: { current: null },
     editorRef: { current: null },
     focused: true,
     running: false,

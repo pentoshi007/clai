@@ -29,6 +29,21 @@ function nothingWasSent(h: Harness): void {
 }
 
 describe("pasting multiple lines", () => {
+  it("expands just the nearest block using an SSH-compatible Alt+E sequence", async () => {
+    const { wiring } = harness!;
+    const first = "first paste ".repeat(100);
+    const second = "second paste ".repeat(100);
+    wiring.handleData(`${PASTE_START}${first}${PASTE_END}`);
+    wiring.composer.insertText(" between ");
+    wiring.handleData(`${PASTE_START}${second}${PASTE_END}`);
+    const firstToken = wiring.composer.getSnapshot().pastes[0]!.token;
+    wiring.handleData("\u001be");
+    await vi.advanceTimersByTimeAsync(PASTE_BURST_SETTLE_MS + 50);
+    expect(wiring.composer.text).toBe(`${firstToken} between ${second}`);
+    expect(wiring.composer.getSnapshot().pastes).toHaveLength(1);
+    nothingWasSent(harness!);
+  });
+
   it("lands in the composer as one draft when the terminal sends no paste markers", async () => {
     const { wiring } = harness!;
     wiring.handleData(PROMPT.join("\r"));

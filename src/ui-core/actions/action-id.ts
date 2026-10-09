@@ -32,6 +32,7 @@ export const ACTION_IDS = [
   "editor.history-next",
   "editor.clear",
   "editor.cut-draft",
+  "editor.expand-paste",
   "transcript.scroll-up",
   "transcript.scroll-down",
   "transcript.page-up",

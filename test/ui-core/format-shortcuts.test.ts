@@ -22,6 +22,8 @@ describe("formatShortcutsReference", () => {
     expect(body).toContain("| Keys | Action |");
     expect(body).toMatch(/Ctrl\+C/);
     expect(body).toMatch(/Ctrl\+X/);
+    expect(body).toContain("Alt/Option+E");
+    expect(body).toContain("Expand the shortened paste nearest the cursor");
     expect(body).toMatch(/Ctrl\+T/);
     expect(body).toMatch(/Ctrl\+O/);
     expect(body).toMatch(/Ctrl\+D/);

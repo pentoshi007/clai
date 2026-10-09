@@ -58,6 +58,7 @@ const ACTION_LABELS: Partial<Record<ActionId, string>> = {
   "editor.history-next": "Next prompt in history",
   "editor.clear": "Clear draft",
   "editor.cut-draft": "Cut draft (copy to clipboard, then clear)",
+  "editor.expand-paste": "Expand the shortened paste nearest the cursor",
   "transcript.scroll-up": "Scroll chat up",
   "transcript.scroll-down": "Scroll chat down",
   "transcript.page-up": "Page chat up",

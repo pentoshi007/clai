@@ -226,6 +226,12 @@ export class ComposerController {
         }
         void this.cut();
         return true;
+      case "editor.expand-paste": {
+        const { text, cursor } = this.snapshot.state;
+        const next = this.pastes.expandNearest(text, cursor);
+        if (next) this.commit(next, { resetHistory: true });
+        return true;
+      }
       case "editor.history-prev":
         return this.walkHistory("up");
       case "editor.history-next":
