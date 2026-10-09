@@ -453,7 +453,7 @@ describe("native clai MCP sources", () => {
     expect(fallback?.source.kind).toBe("clai-project");
     expect(fallback?.source.depth).toBe(1);
     expect((fallback?.config as McpStdioConfig).command).toBe("parent-clai");
-    expect(result.warnings.some((warning) => warning.includes(".clai/mcp.json"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes(join(".clai", "mcp.json")))).toBe(true);
   });
 
   it("reads native clai user files before inherited user compatibility files", () => {
