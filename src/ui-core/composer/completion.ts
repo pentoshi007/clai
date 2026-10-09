@@ -18,7 +18,7 @@ export function detectSlashToken(value: string, cursorOffset: number): SlashToke
   const rest = value.slice(slash, searchEnd);
   const boundary = rest.search(/\s/);
   const tokenEnd = boundary === -1 ? searchEnd : slash + boundary;
-  if (cursorOffset > tokenEnd && /\S/.test(value.slice(tokenEnd, searchEnd))) return undefined;
+  if (cursorOffset > searchEnd || /\S/.test(value.slice(tokenEnd, cursorOffset))) return undefined;
   const token = value.slice(slash, tokenEnd);
   const name = token.slice(1);
   if (name.includes("/") || name.includes("\\")) return undefined;
@@ -32,7 +32,15 @@ export function slashSuggestions(
 ): CommandDefinition[] {
   const token = detectSlashToken(value, cursorOffset);
   if (!token) return [];
-  return registry.suggestions(token.token);
+  return commandSuggestions(registry, token.token);
+}
+
+function commandSuggestions(registry: CommandRegistry, token: string): CommandDefinition[] {
+  const items = registry.suggestions(token);
+  const exact = registry.resolve(token);
+  const index = items.findIndex((item) => item.name === exact);
+  if (index > 0) items.unshift(...items.splice(index, 1));
+  return items;
 }
 
 export interface MentionMatch {
@@ -72,12 +80,35 @@ export function activateSlashCompletion(
   if (menu.kind !== "slash") return undefined;
   const item = menu.items[index];
   if (!item) return undefined;
+  if (!value.slice(0, menu.start).trim()) {
+    return {
+      command: `/${item.name}${value.slice(menu.end)}`.trimEnd(),
+      value: "",
+      cursorOffset: 0,
+    };
+  }
   const suffix = value.slice(menu.end).replace(/^[ \t]+/, "");
   return {
     command: `/${item.name}`,
     value: value.slice(0, menu.start) + suffix,
     cursorOffset: menu.start,
   };
+}
+
+export function completionSelection(
+  previous: CompletionMenu,
+  next: CompletionMenu,
+  selected: number,
+): number {
+  if (previous.kind === "none" || next.kind === "none" || next.kind !== previous.kind) return 0;
+  const name = previous.kind === "slash"
+    ? previous.items[selected]?.name
+    : previous.items[selected]?.value;
+  if (!name) return 0;
+  const index = next.kind === "slash"
+    ? next.items.findIndex((item) => item.name === name)
+    : next.items.findIndex((item) => item.value === name);
+  return Math.max(0, index);
 }
 
 export function sameCompletionMenu(a: CompletionMenu, b: CompletionMenu): boolean {
@@ -108,7 +139,7 @@ export function resolveCompletionMenu(
 ): CompletionMenu {
   const slashToken = detectSlashToken(value, cursorOffset);
   if (slashToken) {
-    const items = registry.suggestions(slashToken.token);
+    const items = commandSuggestions(registry, slashToken.token);
     if (items.length > 0 || slashToken.token === "/") {
       return {
         kind: "slash",

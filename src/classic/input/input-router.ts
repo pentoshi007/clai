@@ -29,6 +29,7 @@ export interface InputRouterDeps {
   readonly onToast: (text: string) => void;
   readonly closeOverlay: () => void;
   readonly dismissBlockingPrompt: () => boolean;
+  readonly dismissCompletion?: (() => boolean) | undefined;
   readonly acceptsPaste: () => boolean;
   readonly acceptsText: () => boolean;
   readonly hasSelection: () => boolean;
@@ -114,6 +115,11 @@ export class InputRouter {
 
     if (chord === "escape" && context === "transcript" && !this.deps.hasSelection()) {
       this.deps.ladder.escape(false);
+      return;
+    }
+
+    if (chord === "escape" && context === "composer" && this.deps.dismissCompletion?.()) {
+      this.deps.ladder.disarmEscape();
       return;
     }
 

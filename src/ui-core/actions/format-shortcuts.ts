@@ -166,8 +166,8 @@ const COMPOSER_TEXTAREA_NOTES: readonly { chord: string; label: string }[] = [
       "Delete the whole line (macOS Cmd+Backspace often arrives as Ctrl+U). Empty draft → jump chat to top",
   },
   {
-    chord: "Ctrl+A / Ctrl+E",
-    label: "Line start / line end (readline)",
+    chord: "Ctrl+A / End",
+    label: "Line start / line end (Ctrl+E also moves to line end when no paste is folded)",
   },
   {
     chord: "Ctrl+K",

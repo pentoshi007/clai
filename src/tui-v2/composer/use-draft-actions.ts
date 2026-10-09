@@ -5,6 +5,7 @@ import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { cutDraft, cutDraftMessage, primeCommandMenu } from "../../ui-core/composer/draft-actions.js";
 import { tokenInsertion } from "../../ui-core/composer/insert-token.js";
+import { composerCharacterOffset } from "./composer-cursor.js";
 
 export interface DraftActionsInput {
   readonly editorRef: RefObject<TextareaRenderable | null>;
@@ -62,8 +63,9 @@ export function useDraftActions(input: DraftActionsInput): DraftActions {
     const editor = input.editorRef.current;
     if (!editor) return;
     input.focusComposer();
+    const value = editor.plainText;
     editor.insertText(
-      tokenInsertion(editor.plainText.slice(0, editor.cursorOffset), text),
+      tokenInsertion(value.slice(0, composerCharacterOffset(editor, value)), text),
     );
     input.refreshMenu();
     input.syncContentRows();

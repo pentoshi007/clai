@@ -191,7 +191,7 @@ describe("Cline parity and prompt caching", () => {
 
     const parsed = JSON.parse(body);
     expect(parsed.cache_control).toEqual({ type: "ephemeral" });
-    expect(parsed.messages[1].cache_control).toEqual({ type: "ephemeral" });
+    expect(parsed.messages[1].cache_control).toBeUndefined();
     expect(parsed.session_id).toBeDefined();
   });
 
@@ -208,7 +208,7 @@ describe("Cline parity and prompt caching", () => {
 
     const parsed = JSON.parse(body);
     expect(parsed.cache_control).toEqual({ type: "ephemeral" });
-    expect(parsed.messages[1].cache_control).toEqual({ type: "ephemeral" });
+    expect(parsed.messages[1].cache_control).toBeUndefined();
     expect(parsed.session_id).toBeDefined();
   });
 

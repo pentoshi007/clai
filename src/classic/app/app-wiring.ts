@@ -228,6 +228,7 @@ export class ClassicAppWiring implements WiringHost {
         this.closePanel();
       },
       dismissBlockingPrompt: () => this.services.overlay.cancelBlockingPrompt(),
+      dismissCompletion: () => this.composer.menuOpen() && this.composer.handleChord("escape"),
       acceptsPaste: () =>
         this.panels.isOpen() ||
         this.services.focus.activeContext() === "composer" ||

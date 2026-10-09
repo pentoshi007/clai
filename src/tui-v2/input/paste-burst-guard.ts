@@ -52,6 +52,9 @@ function isModified(key: GuardedKey): boolean {
 function classify<K extends GuardedKey>(key: K): BurstUnit<K> {
   const other: BurstUnit<K> = { kind: "other", text: "", source: key };
   if (key.eventType === "release" || key.source === "kitty" || isModified(key)) return other;
+  if (key.name === "tab" && key.sequence === "\t" && key.shift !== true) {
+    return { kind: "tab", text: "\t", source: key };
+  }
   if (key.name === "return" && key.sequence === "\r" && key.shift !== true) {
     return { kind: "break", text: "\r", source: key };
   }

@@ -29,7 +29,7 @@ function nothingWasSent(h: Harness): void {
 }
 
 describe("pasting multiple lines", () => {
-  it("expands just the nearest block using an SSH-compatible Alt+E sequence", async () => {
+  it.each(["\u0005", "\u001be"])("expands just the nearest block using terminal sequence %j", async (sequence) => {
     const { wiring } = harness!;
     const first = "first paste ".repeat(100);
     const second = "second paste ".repeat(100);
@@ -37,11 +37,21 @@ describe("pasting multiple lines", () => {
     wiring.composer.insertText(" between ");
     wiring.handleData(`${PASTE_START}${second}${PASTE_END}`);
     const firstToken = wiring.composer.getSnapshot().pastes[0]!.token;
-    wiring.handleData("\u001be");
+    wiring.handleData(sequence);
     await vi.advanceTimersByTimeAsync(PASTE_BURST_SETTLE_MS + 50);
     expect(wiring.composer.text).toBe(`${firstToken} between ${second}`);
     expect(wiring.composer.getSnapshot().pastes).toHaveLength(1);
     nothingWasSent(harness!);
+  });
+
+  it("keeps Ctrl+E line-end navigation when no paste is folded", () => {
+    const { wiring } = harness!;
+    wiring.composer.setText("first line\nsecond line");
+    wiring.composer.handleChord("ctrl+home");
+    wiring.handleData("\u0005");
+    expect(wiring.composer.getSnapshot().state.cursor).toBe("first line".length);
+    wiring.composer.insertText("!");
+    expect(wiring.composer.text).toBe("first line!\nsecond line");
   });
 
   it("lands in the composer as one draft when the terminal sends no paste markers", async () => {

@@ -124,6 +124,22 @@ function harness() {
 }
 
 describe("installPasteBurstGuard", () => {
+  it("passes rapid legacy Tab and Enter through without treating them as pasted text", () => {
+    const { input, read } = harness();
+    read("/he", 0);
+    read("\t\r", 1);
+    expect(input.app).toEqual(['key:"/"', 'key:"h"', 'key:"e"', 'key:"\\t"', 'key:"\\r"']);
+  });
+
+  it("retains an isolated tab fragment in an ongoing multiline paste", () => {
+    const { input, read, advanceTo } = harness();
+    read("one\rtwo", 0);
+    read("\t\r", 100);
+    read("three", 200);
+    advanceTo(1000);
+    expect(input.app).toEqual(['paste:"one\\ntwo\\t\\nthree"']);
+  });
+
   it("delivers typed keystrokes and Enter in order once the read finishes", () => {
     const { input, read } = harness();
     read("a", 0);

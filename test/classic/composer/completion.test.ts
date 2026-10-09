@@ -103,6 +103,46 @@ describe("slash menu", () => {
     expect(composer.text).toBe("draft /help ");
   });
 
+  it("runs a completed inline command on Enter even after Tab closes the menu", () => {
+    const { composer, onSubmit } = composerController();
+    composer.setText("draft /he");
+    composer.handleChord("tab");
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith("/help");
+    expect(composer.text).toBe("draft ");
+  });
+
+  it("preserves command arguments when Enter is pressed with the cursor in its name", () => {
+    const { composer, onSubmit } = composerController();
+    composer.setText("/model custom-model");
+    composer.handleChord("ctrl+home");
+    composer.handleChord("right");
+    composer.handleChord("right");
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith("/model custom-model");
+    expect(composer.text).toBe("");
+  });
+
+  it("runs an exact command instead of a longer prefix match", () => {
+    const { composer, onSubmit } = composerController();
+    for (const character of "/mode") composer.insertText(character);
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith("/mode");
+  });
+
+  it("expands folded paste arguments before dispatching a leading command", () => {
+    const { composer, onSubmit } = composerController();
+    const argument = "pasted model details ".repeat(100).trimEnd();
+    composer.insertText("/model ");
+    composer.paste(argument);
+    composer.handleChord("ctrl+home");
+    composer.handleChord("right");
+    composer.handleChord("right");
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith(`/model ${argument}`);
+    expect(composer.text).toBe("");
+  });
+
   it("submits normally when a slash token has no matches", () => {
     const { composer, onSubmit } = composerController();
     composer.setText("draft /not-a-command");

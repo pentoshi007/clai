@@ -72,7 +72,7 @@ export class ClassicActionHandlers {
       case "editor.clear":
       case "editor.cut-draft":
       case "editor.expand-paste":
-        this.deps.composer.handleAction(action);
+        this.deps.composer.handleAction(action, chord);
         return;
       case "transcript.scroll-up":
       case "transcript.scroll-down":

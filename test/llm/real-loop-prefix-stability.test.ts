@@ -48,6 +48,9 @@ const TURNS: ReadonlyArray<{ readonly prompt: string; readonly steps: readonly S
 
 const ROUTES: ReadonlyArray<readonly [ProviderId, string]> = [
   ["cline", "cline-free/deepseek-v4.1-flash"],
+  ["cline", "anthropic/claude-sonnet-4.6"],
+  ["cline", "qwen/qwen3-coder"],
+  ["tokenharbor", "kimi-k3"],
   ["openrouter", "deepseek/deepseek-chat"],
   ["deepseek", "deepseek-chat"],
   ["openai", "gpt-5.4-mini"],
@@ -149,7 +152,7 @@ async function runSession(provider: ProviderId, model: string, reasoning: boolea
       return reply(step, round, reasoning, body);
     }),
   );
-  const sessionId = `prefix-guard-${provider}`;
+  const sessionId = `prefix-guard-${provider}-${model}`;
   const session = createSessionPolicy(sessionId);
   let history: ChatMessage[] = [];
   for (const [index, { prompt }] of TURNS.entries()) {

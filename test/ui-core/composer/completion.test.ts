@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   activateSlashCompletion,
+  completionSelection,
   detectSlashToken,
   mentionSuggestions,
   resolveCompletionMenu,
   slashSuggestions,
 } from "../../../src/ui-core/composer/completion.js";
-import { buildDefaultCommandRegistry } from "../../../src/app/commands/registry.js";
+import { buildDefaultCommandRegistry, CommandRegistry } from "../../../src/app/commands/registry.js";
 
 describe("detectSlashToken", () => {
   it("detects the command token while the cursor is inside it", () => {
@@ -26,7 +27,13 @@ describe("detectSlashToken", () => {
   });
 
   it("returns undefined once the cursor moves to a later line", () => {
+    expect(detectSlashToken("/model\nextra", 7)).toBeUndefined();
     expect(detectSlashToken("/model\nextra", 8)).toBeUndefined();
+  });
+
+  it("keeps the token active in whitespace before arguments or remaining draft text", () => {
+    expect(detectSlashToken("/model custom-model", 7)).toEqual({ token: "/model", start: 0, end: 6 });
+    expect(detectSlashToken("draft /help remaining text", 12)).toEqual({ token: "/help", start: 6, end: 11 });
   });
 
   it("detects a slash token after whitespace in the middle of a prompt", () => {
@@ -77,6 +84,17 @@ describe("slashSuggestions", () => {
 
 
 describe("activateSlashCompletion", () => {
+  it("keeps arguments attached to a leading command", () => {
+    const registry = buildDefaultCommandRegistry();
+    const value = "  /model custom-model";
+    const menu = resolveCompletionMenu(registry, value, 5);
+    expect(activateSlashCompletion(menu, value, 0)).toEqual({
+      command: "/model custom-model",
+      value: "",
+      cursorOffset: 0,
+    });
+  });
+
   it("returns the selected command and preserves surrounding prompt text", () => {
     const registry = buildDefaultCommandRegistry();
     const value = "build this with /ski please";
@@ -115,6 +133,17 @@ describe("mentionSuggestions", () => {
 });
 
 describe("resolveCompletionMenu", () => {
+  it("puts an exact command or alias before longer prefix matches", () => {
+    const registry = new CommandRegistry();
+    registry.register({ name: "model", description: "switch" });
+    registry.register({ name: "models", description: "list" });
+    registry.register({ name: "mode", description: "mode", aliases: ["m"] });
+    for (const text of ["/mode", "/m", "/MODE"]) {
+      const menu = resolveCompletionMenu(registry, text, text.length);
+      expect(menu.kind === "slash" && menu.items[0]?.name).toBe("mode");
+    }
+  });
+
   it("prefers slash suggestions when both could apply", () => {
     const registry = buildDefaultCommandRegistry();
     const menu = resolveCompletionMenu(registry, "/mod", 4);
@@ -142,6 +171,18 @@ describe("resolveCompletionMenu", () => {
       expect(menu.items.length).toBeGreaterThan(5);
       expect(menu.items.some((c) => c.name === "help")).toBe(true);
     }
+  });
+});
+
+describe("completionSelection", () => {
+  it("preserves the selected command by name as the suggestions change", () => {
+    const registry = buildDefaultCommandRegistry();
+    const previous = resolveCompletionMenu(registry, "/", 1);
+    const next = resolveCompletionMenu(registry, "/mod", 4);
+    if (previous.kind !== "slash" || next.kind !== "slash") throw new Error("Missing slash menus");
+    const index = completionSelection(previous, next, previous.items.findIndex((item) => item.name === "models"));
+    expect(next.items[index]?.name).toBe("models");
+    expect(completionSelection({ kind: "none" }, next, 100)).toBe(0);
   });
 });
 
