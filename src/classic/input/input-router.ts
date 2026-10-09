@@ -4,7 +4,7 @@ import { resolveContextFreeAction } from "../../ui-core/actions/context-free.js"
 import type { FocusController } from "../../ui-core/controllers/focus-controller.js";
 import type { CancelLadder } from "./cancel-ladder.js";
 import { chordFromKey } from "./chord-from-key.js";
-import type { DecodedEvent, KeyEvent, MouseEvent } from "./key-event.js";
+import { keyEvent, type DecodedEvent, type KeyEvent, type MouseEvent } from "./key-event.js";
 
 const BLOCKING_CONTEXTS: ReadonlySet<ActionContext> = new Set(["secret", "modal"]);
 
@@ -42,6 +42,10 @@ export class InputRouter {
   constructor(private readonly deps: InputRouterDeps) {}
 
   handle(event: DecodedEvent): void {
+    if (event.type === "text") {
+      this.routeKey(keyEvent("", {}, event.text));
+      return;
+    }
     if (event.type === "paste") {
       if (this.deps.contextLimitEditing?.() === true) {
         this.deps.onContextLimitPaste?.(event.text);

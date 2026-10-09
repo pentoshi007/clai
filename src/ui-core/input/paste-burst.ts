@@ -1,6 +1,7 @@
 export const PASTE_BURST_GLUE_MS = 30;
 export const PASTE_BURST_SETTLE_MS = 250;
 export const PASTE_BURST_MIN_CHARS = 3;
+export const PASTE_BURST_BULK_CHARS = 32;
 
 export type BurstUnitKind = "content" | "break" | "other";
 
@@ -129,6 +130,10 @@ export class PasteBurstDetector<T> {
     }
 
     const shape = measure(chunk);
+    if (shape.contentChars >= PASTE_BURST_BULK_CHARS) {
+      this.begin(textOf(chunk), now);
+      return emitted;
+    }
     if (shape.breaks > 0) {
       if (this.startsBurst(shape, now)) {
         this.begin(textOf(chunk), now);

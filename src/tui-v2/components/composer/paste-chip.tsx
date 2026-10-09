@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
@@ -10,61 +10,30 @@ import {
 
 const DOUBLE_CLICK_MS = 400;
 
-export function PasteChipRow(props: {
-  readonly entries: readonly PastePlaceholderEntry[];
-  readonly theme: Theme;
-  readonly width: number;
-  readonly onExpand: (id: number) => void;
-}): ReactNode {
-  const { entries, theme, width, onExpand } = props;
-  if (entries.length === 0) return null;
-
-  return (
-    <box
-      style={{
-        flexDirection: "column",
-        width: "100%",
-        flexShrink: 0,
-        marginBottom: 0,
-      }}
-    >
-      {entries.map((entry) => (
-        <PasteChip
-          key={entry.id}
-          entry={entry}
-          theme={theme}
-          width={width}
-          onExpand={onExpand}
-        />
-      ))}
-    </box>
-  );
-}
-
-function PasteChip(props: {
+export function PastePreview(props: {
   readonly entry: PastePlaceholderEntry;
   readonly theme: Theme;
   readonly width: number;
+  readonly maxRows: number;
   readonly onExpand: (id: number) => void;
 }): ReactNode {
-  const { entry, theme, width, onExpand } = props;
-  const [hovered, setHovered] = useState(false);
+  const { entry, theme, width, maxRows, onExpand } = props;
   const lastClickAt = useRef(0);
-
-  const preview = pastePreviewLines(entry.text, 2);
+  const preview = useMemo(() => pastePreviewLines(entry.text, 2), [entry]);
   const more = Math.max(0, entry.lines - preview.length);
-  const popW = Math.max(24, Math.min(width, 72));
+  const rows = [...preview, ...(more > 0 ? [`…${more} more lines`] : [])]
+    .slice(0, Math.max(0, maxRows - 1));
+  rows.push("double-click to expand");
 
   return (
     <box
       style={{
         flexDirection: "column",
         width: "100%",
+        height: rows.length,
         flexShrink: 0,
-        alignItems: "flex-start",
+        backgroundColor: theme.statusBackground,
       }}
-      onMouseOver={() => setHovered(true)}
-      onMouseOut={() => setHovered(false)}
       onMouseDown={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -77,69 +46,18 @@ function PasteChip(props: {
         lastClickAt.current = now;
       }}
     >
-      {hovered ? (
-        <box
-          border
-          borderStyle="rounded"
-          style={{
-            flexDirection: "column",
-            width: popW,
-            borderColor: theme.cyan,
-            backgroundColor: theme.statusBackground,
-            paddingLeft: 1,
-            paddingRight: 1,
-            marginBottom: 0,
-            flexShrink: 0,
-          }}
-        >
-          {preview.map((line, i) => (
-            <text
-              key={i}
-              selectable={false}
-              content={line}
-              style={{
-                fg: theme.foreground,
-                attributes: TextAttributes.NONE,
-              }}
-            />
-          ))}
-          {more > 0 ? (
-            <text
-              selectable={false}
-              content={`…${more} more line${more === 1 ? "" : "s"}`}
-              style={{ fg: theme.muted, attributes: TextAttributes.DIM }}
-            />
-          ) : null}
-          <text
-            selectable={false}
-            content="double-click to expand"
-            style={{
-              fg: theme.cyan,
-              attributes: TextAttributes.DIM,
-            }}
-          />
-        </box>
-      ) : null}
-      <box
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          flexShrink: 0,
-          backgroundColor: hovered ? theme.selection : theme.background,
-          paddingLeft: 1,
-          paddingRight: 1,
-        }}
-      >
+      {rows.map((line, index) => (
         <text
+          key={index}
           selectable={false}
-          content={entry.label}
+          content={line.slice(0, Math.max(1, width))}
           style={{
-            fg: theme.cyan,
-            bg: hovered ? theme.selection : theme.background,
-            attributes: TextAttributes.BOLD,
+            fg: index === rows.length - 1 ? theme.cyan : theme.muted,
+            height: 1,
+            attributes: TextAttributes.DIM,
           }}
         />
-      </box>
+      ))}
     </box>
   );
 }

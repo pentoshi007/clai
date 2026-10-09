@@ -2,6 +2,7 @@ import type { DecodedEvent, KeyEvent, KeyModifiers } from "./key-event.js";
 import { keyEvent } from "./key-event.js";
 import { sanitizePasteText } from "./paste-decoder.js";
 import { parseSgrMouse } from "./sgr-mouse.js";
+import { PASTE_BURST_BULK_CHARS } from "../../ui-core/input/paste-burst.js";
 import {
   BEL,
   CSI_FINAL_KEYS,
@@ -12,7 +13,6 @@ import {
   ESC,
   ESCAPE_TIMEOUT_MS,
   PASTE_END,
-  PASTE_MAX_BYTES,
   PASTE_TIMEOUT_MS,
   SS3_KEYS,
   isCsiFinalByte,
@@ -23,6 +23,7 @@ import {
 export interface RawDecoderOptions {
   readonly now?: (() => number) | undefined;
   readonly mouse?: boolean | undefined;
+  readonly bulkText?: boolean | undefined;
   readonly onWarn?: ((message: string) => void) | undefined;
 }
 
@@ -33,9 +34,12 @@ const graphemeSegmenter =
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : undefined;
 
-function graphemes(text: string): string[] {
-  if (!graphemeSegmenter) return [...text];
-  return [...graphemeSegmenter.segment(text)].map((s) => s.segment);
+function* graphemes(text: string): Iterable<string> {
+  if (!graphemeSegmenter) {
+    yield* text;
+    return;
+  }
+  for (const part of graphemeSegmenter.segment(text)) yield part.segment;
 }
 
 function isControl(char: string): boolean {
@@ -168,6 +172,10 @@ export class RawDecoder {
     }
     const text = this.buffer.slice(0, end);
     this.buffer = this.buffer.slice(end);
+    if (this.options.bulkText && text.length >= PASTE_BURST_BULK_CHARS) {
+      events.push({ type: "text", text });
+      return;
+    }
     for (const grapheme of graphemes(text)) {
       const lower = grapheme.toLowerCase();
       events.push({
@@ -191,15 +199,10 @@ export class RawDecoder {
     this.pasteText += this.buffer.slice(0, this.buffer.length - keep);
     this.buffer = this.buffer.slice(this.buffer.length - keep);
     const now = this.now();
-    const overSize = this.pasteText.length > PASTE_MAX_BYTES;
     const overTime = now - this.pasteTouchedAt > PASTE_TIMEOUT_MS;
-    if (final || overSize || overTime) {
+    if (final || overTime) {
       events.push({ type: "paste", text: sanitizePasteText(this.pasteText + this.buffer) });
-      this.options.onWarn?.(
-        overSize
-          ? "paste truncated · exceeded the 1 MiB bracketed-paste limit"
-          : "paste ended without a terminator",
-      );
+      this.options.onWarn?.("paste ended without a terminator");
       this.pasting = false;
       this.pasteText = "";
       this.buffer = "";

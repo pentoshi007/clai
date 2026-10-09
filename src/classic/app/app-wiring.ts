@@ -192,6 +192,7 @@ export class ClassicAppWiring implements WiringHost {
 
     this.input = new InputPipeline(
       new RawDecoder({
+        bulkText: true,
         now: this.now,
         mouse: options.mouse,
         onWarn: (message) => notify(this.services, message, { level: "warn" }),

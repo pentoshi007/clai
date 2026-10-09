@@ -28,7 +28,7 @@ export type McpRuntimeSelection =
   | { readonly mode: "off" }
   | { readonly mode: "servers"; readonly serverNames: readonly string[] };
 
-export type McpBaseSelection = { readonly mode: "all" } | { readonly mode: "off" };
+export type McpBaseSelection = McpRuntimeSelection;
 
 export interface McpRuntimeState {
   readonly snapshot: McpSnapshot;
@@ -175,7 +175,7 @@ interface McpView {
 }
 
 interface McpLeaseView {
-  readonly snapshot: McpSnapshot;
+  snapshot: McpSnapshot;
   selection: McpRuntimeSelection;
 }
 
@@ -259,6 +259,12 @@ export class McpRuntime {
     error?: string | undefined;
   }): McpRuntimeState {
     const snapshot = input.snapshot ?? this.state.snapshot;
+    if (this.base.mode === "servers") {
+      const names = this.base.serverNames.filter((name) =>
+        snapshot.statuses.some((status) => status.name === name),
+      );
+      this.base = names.length > 0 ? { mode: "servers", serverNames: names } : { mode: "off" };
+    }
     let selection = input.selection ?? this.state.selection;
     if (selection.mode === "servers" && snapshot.statuses.length > 0) {
       const live = selection.serverNames.filter((name) =>
@@ -358,12 +364,15 @@ export class McpRuntime {
     }
   }
 
-  private selectionWithout(serverName: string): McpRuntimeSelection {
-    const selection = this.state.selection;
+  private selectionWithout(
+    serverName: string,
+    selection = this.state.selection,
+    fallback: McpRuntimeSelection = this.base,
+  ): McpRuntimeSelection {
     if (selection.mode !== "servers") return selection;
     const kept = selection.serverNames.filter((name) => name !== serverName);
     if (kept.length === selection.serverNames.length) return selection;
-    return kept.length > 0 ? { mode: "servers", serverNames: kept } : this.base;
+    return kept.length > 0 ? { mode: "servers", serverNames: kept } : fallback;
   }
 
   isStopped(serverName: string): boolean {
@@ -376,6 +385,7 @@ export class McpRuntime {
     const resolved = this.manager.resolveServerName(serverName) ?? serverName;
     try {
       const snapshot = await this.manager.stop(resolved);
+      this.base = this.selectionWithout(resolved, this.base, { mode: "off" });
       return this.publish({
         snapshot,
         refreshing: false,
@@ -386,23 +396,36 @@ export class McpRuntime {
     }
   }
 
-  private adoptSelectionInLeases(): void {
+  private adoptSelectionInLeases(selection: McpRuntimeSelection): void {
     for (const lease of this.leases) {
-      lease.selection = widenSelection(lease.selection, this.state.selection);
+      const additions = activeTools(this.state.snapshot, selection).filter(
+        (tool) => !lease.snapshot.toolsByCanonicalName.has(tool.canonicalName),
+      );
+      if (additions.length > 0) {
+        const tools = Object.freeze([...lease.snapshot.tools, ...additions]);
+        lease.snapshot = Object.freeze({
+          ...lease.snapshot,
+          statuses: this.state.snapshot.statuses,
+          tools,
+          toolsByCanonicalName: new Map(tools.map((tool) => [tool.canonicalName, tool])),
+          toolsByWireName: new Map(tools.map((tool) => [tool.wireName, tool])),
+        });
+      }
+      lease.selection = widenSelection(lease.selection, selection);
     }
   }
 
   selectAll(): McpRuntimeState {
     this.base = { mode: "all" };
+    this.adoptSelectionInLeases(this.base);
     const state = this.publish({ selection: this.base });
-    this.adoptSelectionInLeases();
     return state;
   }
 
   selectOff(): McpRuntimeState {
     this.base = { mode: "off" };
+    this.adoptSelectionInLeases(this.base);
     const state = this.publish({ selection: this.base });
-    this.adoptSelectionInLeases();
     return state;
   }
 
@@ -423,8 +446,9 @@ export class McpRuntime {
     }
     const selection: McpRuntimeSelection =
       unique.length === 0 ? this.base : { mode: "servers", serverNames: unique };
+    this.base = selection;
+    this.adoptSelectionInLeases(selection);
     const state = this.publish({ selection });
-    this.adoptSelectionInLeases();
     return state;
   }
 
@@ -438,6 +462,11 @@ export class McpRuntime {
       names.length > 0 ? { mode: "servers", serverNames: names } : this.base;
     if (sameSelection(this.state.selection, selection)) return this.state;
     return this.publish({ selection });
+  }
+
+  commitMentionSelection(text: string): McpRuntimeState {
+    const names = mcpMentionNames(text, this.serverNames());
+    return names.length > 0 ? this.selectServers(names) : this.state;
   }
 
   beginTurn(): McpTurnLease {
@@ -909,7 +938,7 @@ export class McpRuntime {
       options.nativeTools
         ? "Call a selected MCP tool through mcp.call using its exact dotted name and an arguments object matching the catalog schema below."
         : "Call MCP tools by their exact dotted name as listed below; pass arguments as proper JSON values matching each tool's schema (objects as objects, numbers as numbers — never stringified JSON).",
-      "The inline catalog is a summary. Use mcp.tools with short capability keywords, an exact tool name, or an optional server to read full descriptions, prerequisites, field instructions, and examples. If a query has no matches, broaden it or omit it. Follow documented dependencies and use identifiers returned by earlier tools; do not guess required values. Call only active tools with required fields and correctly typed arguments, and use normal confirmation for mutations.",
+      "The inline catalog is a summary. Use mcp.tools with short capability keywords, an exact tool name, or an optional server to read full descriptions, prerequisites, field instructions, and examples. Reuse an inspected schema while its contract is unchanged; discovery is not required before every call. If a query has no matches, broaden it or omit it. Follow documented dependencies and use identifiers returned by earlier tools; do not guess required values. Call only active tools with required fields and correctly typed arguments, and use normal confirmation for mutations.",
     ];
     if (options.askMode) {
       lines.push("Ask mode permits only active read-only MCP tools. Mutating calls, selection changes, reconnects, setup, and sign-in require agent mode or the user's /mcp commands.");

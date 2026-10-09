@@ -16,7 +16,6 @@ export const PASTE_END = "\x1b[201~";
 
 export const ESCAPE_TIMEOUT_MS = 25;
 export const PASTE_TIMEOUT_MS = 2_000;
-export const PASTE_MAX_BYTES = 1_048_576;
 
 export {
   PASTE_BURST_GLUE_MS,

@@ -4,6 +4,7 @@ import {
   isLargePaste,
   pasteChipLabel,
   pastePreviewLines,
+  countLines,
 } from "../../../src/ui-core/composer/paste-placeholder.js";
 
 describe("isLargePaste", () => {
@@ -27,6 +28,12 @@ describe("isLargePaste", () => {
 });
 
 describe("pasteChipLabel / pastePreviewLines", () => {
+  it("counts and previews large content without splitting every line into an array", () => {
+    const text = `first\n\n${"漢字 👩🏽‍💻\n".repeat(100_000)}`;
+    expect(countLines(text)).toBe(100_003);
+    expect(pastePreviewLines(text)).toEqual(["first", " "]);
+    expect(pastePreviewLines(`${"x".repeat(100_000)}\nlast`)).toEqual([`${"x".repeat(71)}…`, "last"]);
+  });
   it("labels multi-line pastes for the blue chip", () => {
     expect(pasteChipLabel(10, 100)).toBe("10 lines pasted");
     expect(pasteChipLabel(1, 50)).toBe("50 chars pasted");
@@ -39,6 +46,12 @@ describe("pasteChipLabel / pastePreviewLines", () => {
 });
 
 describe("PasteRegistry", () => {
+  it("never recursively expands placeholder-like text inside a pasted transcript", () => {
+    const registry = new PasteRegistry();
+    const a = registry.register("Pasted log mentions [3 chars pasted #2] verbatim");
+    const b = registry.register("BBB");
+    expect(registry.expand(`${a.token} ${b.token}`)).toBe(`${a.text} BBB`);
+  });
   it("registers a placeholder with line/char stats", () => {
     const registry = new PasteRegistry();
     const entry = registry.register("a\nb\nc");

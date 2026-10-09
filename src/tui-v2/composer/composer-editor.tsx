@@ -23,6 +23,7 @@ import {
 } from "../../ui-core/composer/arrow-intent.js";
 import {
   isLargePaste,
+  pastePlaceholderRanges,
   PasteRegistry,
   samePastePlaceholderEntries,
   type PastePlaceholderEntry,
@@ -46,7 +47,8 @@ import { normalizePasteLineBreaks } from "../../ui-core/input/paste-text.js";
 import { notify } from "../../ui-core/notify.js";
 import { CompletionMenuView } from "../components/completion/completion-menu.js";
 import { ComposerInputBox } from "../components/composer/composer-input-box.js";
-import { PasteChipRow } from "../components/composer/paste-chip.js";
+import { PastePreview } from "../components/composer/paste-chip.js";
+import { pasteAtPoint } from "./paste-hit-test.js";
 import { paintDraftMentions } from "./composer-highlight.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
@@ -98,6 +100,8 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   const [acceptedSlash, setAcceptedSlash] = useState<string | undefined>(undefined);
   const [contentRows, setContentRows] = useState(1);
   const [pasteChips, setPasteChips] = useState<PastePlaceholderEntry[]>([]);
+  const [hoveredPaste, setHoveredPaste] = useState<PastePlaceholderEntry>();
+  const pasteClick = useRef({ id: 0, at: 0 });
   const menuRef = useRef(menu);
   const completionViewRef = useRef(completionView);
   const acceptedSlashRef = useRef(acceptedSlash);
@@ -256,12 +260,37 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   function expandPasteChip(id: number): void {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.setText(pasteRegistry.current.expandOne(editor.plainText, id));
+    editor.replaceText(pasteRegistry.current.expandOne(editor.plainText, id));
+    setHoveredPaste(undefined);
+    focusComposer();
     editor.gotoBufferEnd();
     queueMicrotask(() => {
       syncContentRows();
       refreshMenu();
     });
+  }
+
+  function hoverPaste(event: MouseEvent): void {
+    setHoveredPaste(pasteAtPoint(editorRef.current, pasteChips, event.x, event.y));
+  }
+
+  function clickPaste(event: MouseEvent): void {
+    focusComposer();
+    const entry = pasteAtPoint(editorRef.current, pasteChips, event.x, event.y);
+    const now = Date.now();
+    if (
+      entry &&
+      event.button === 0 &&
+      pasteClick.current.id === entry.id &&
+      now - pasteClick.current.at <= 400
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      pasteClick.current = { id: 0, at: 0 };
+      expandPasteChip(entry.id);
+      return;
+    }
+    pasteClick.current = { id: entry?.id ?? 0, at: now };
   }
 
   function syncMentions(): void {
@@ -276,6 +305,8 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       skillColor: theme.activity,
       servers,
       serverColor: theme.aqua,
+      pasteRanges: pastePlaceholderRanges(text, pasteRegistry.current.activeIn(text)),
+      pasteColor: theme.cyan,
     });
     services.mcp.applyMentionSelection(text);
   }
@@ -289,12 +320,15 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     }
     syncMentions();
     const wrapWidth = Math.max(10, props.width - 6);
-    const estimatedRows = countComposerVisualLines(editor.plainText, wrapWidth);
+    const estimatedRows = countComposerVisualLines(editor.plainText, wrapWidth, props.height);
     const nextRows = measureComposerLines(editor, estimatedRows);
     setContentRows((current) => (current === nextRows ? current : nextRows));
     const nextChips = pasteRegistry.current.activeIn(editor.plainText);
     setPasteChips((current) =>
       samePastePlaceholderEntries(current, nextChips) ? current : nextChips,
+    );
+    setHoveredPaste((current) =>
+      current && nextChips.some((entry) => entry.id === current.id) ? current : undefined,
     );
     composerActionPort.setHasDraft(editor.plainText.trim().length > 0);
   }
@@ -709,8 +743,9 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   }, [props.width]);
 
   const inputWidth = Math.max(20, props.width);
-  const textRows = resolveComposerTextRows(contentRows, props.height);
-  const boxHeight = textRows + 2;
+  const previewRows = hoveredPaste ? Math.min(4, hoveredPaste.lines + 1, Math.max(0, props.height - 1)) : 0;
+  const textRows = resolveComposerTextRows(contentRows, props.height - previewRows);
+  const boxHeight = textRows + previewRows + 2;
   const metaShown = clipComposerMeta(metaLabel, inputWidth);
   const chromeFg = shouldOwnKeyboard ? theme.inputBorder : theme.muted;
 
@@ -789,13 +824,6 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
         onActivateIndex={activateCompletion}
         onScrollRows={scrollCompletion}
       />
-      <PasteChipRow
-        entries={pasteChips}
-        theme={theme}
-        width={inputWidth}
-        onExpand={expandPasteChip}
-      />
-
       <ComposerInputBox
         theme={theme}
         editorRef={editorRef}
@@ -807,6 +835,18 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
         chromeFg={chromeFg}
         keyBindings={textareaKeyBindings}
         onMouseDown={focusComposer}
+        onTextareaMouseDown={clickPaste}
+        onTextareaMouseMove={hoverPaste}
+        onMouseOut={() => setHoveredPaste(undefined)}
+        pastePreview={hoveredPaste && previewRows > 0 ? (
+          <PastePreview
+            entry={hoveredPaste}
+            theme={theme}
+            width={inputWidth - 4}
+            maxRows={previewRows}
+            onExpand={expandPasteChip}
+          />
+        ) : null}
         onMouseScroll={onComposerWheel}
         onSubmit={submit}
         onContentChange={() => {

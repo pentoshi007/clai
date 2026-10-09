@@ -55,7 +55,7 @@ class TwoToolTransport implements McpTransport {
 
 const SERVER = "io.github.github/github-mcp-server";
 
-async function readyRuntime(): Promise<McpRuntime> {
+async function readyRuntime(discover = true): Promise<McpRuntime> {
   const root = mkdtempSync(join(tmpdir(), "clai-mcp-turn-"));
   const workspaceFolder = join(root, "proj");
   const homeDir = join(root, "home");
@@ -76,12 +76,43 @@ async function readyRuntime(): Promise<McpRuntime> {
     transportFactory: factory,
   });
   const runtime = new McpRuntime({ manager });
-  await runtime.start();
-  await runtime.refresh();
+  if (discover) await runtime.start();
   return runtime;
 }
 
 describe("enabling an MCP server mid-turn", () => {
+  it("pins tools first discovered after an off-state turn starts", async () => {
+    const runtime = await readyRuntime(false);
+    const lease = runtime.beginTurn();
+    try {
+      await runtime.agentEnable(SERVER);
+      runtime.applyMentionSelection("");
+      expect(runtime.toolDefinitions()).toHaveLength(2);
+      expect(runtime.promptContext({ nativeTools: true })).toContain("Active tools: 2");
+      runtime.selectOff();
+      expect(runtime.getTool(`mcp.${SERVER}.get_me`)).toBeDefined();
+      expect(runtime.toolDefinitions()).toHaveLength(2);
+    } finally {
+      lease.release();
+      await runtime.closeAll();
+    }
+  });
+  it("pins the enabled selection before a subscriber synchronizes an empty draft", async () => {
+    const runtime = await readyRuntime();
+    const lease = runtime.beginTurn();
+    const unsubscribe = runtime.subscribe(() => runtime.applyMentionSelection(""));
+    try {
+      const result = await runtime.agentEnable(SERVER);
+      expect(result.ok).toBe(true);
+      expect(runtime.getTool(`mcp.${SERVER}.get_me`)).toBeDefined();
+      expect(runtime.toolDefinitions()).toHaveLength(2);
+    } finally {
+      unsubscribe();
+      lease.release();
+      await runtime.closeAll();
+    }
+  });
+
   it("advertises the newly enabled tools for the rest of the same turn", async () => {
     const runtime = await readyRuntime();
     runtime.selectOff();

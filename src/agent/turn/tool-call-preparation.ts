@@ -7,6 +7,7 @@ import {
 } from "../../agent/message-slim.js";
 import { resolveFsToolPath } from "../../tools/fs.js";
 import type { SingleToolResult } from "./contracts.js";
+import type { McpRuntime } from "../../mcp/runtime.js";
 
 export interface InvalidToolCall {
   readonly reason: string;
@@ -15,6 +16,7 @@ export interface InvalidToolCall {
 
 export const invalidToolCall = (
   call: ToolCall,
+  mcpRuntime?: McpRuntime,
 ): InvalidToolCall | undefined => {
   if (call.args?.__nativeParseError) {
     const raw = String(call.args._raw ?? "").slice(0, 200);
@@ -25,10 +27,23 @@ export const invalidToolCall = (
     return { reason, result: { ok: false, output: reason, exitCode: 1 } };
   }
   if (call.name === "mcp.call") {
+    const name = call.args.name;
+    const args = call.args.arguments;
+    let detail: string;
+    if (typeof name !== "string" || !name.trim()) {
+      detail = 'The "name" field must be the exact MCP tool name returned by mcp.tools.';
+    } else if (!args || typeof args !== "object" || Array.isArray(args)) {
+      detail = 'The "arguments" field must be a JSON object matching the tool schema.';
+    } else if (mcpRuntime) {
+      const tool = mcpRuntime.getTool(name);
+      detail = tool
+        ? `Use the exact target name ${JSON.stringify(tool.canonicalName)} with the same arguments.`
+        : mcpRuntime.unavailableToolMessage(name);
+    } else {
+      detail = "The MCP runtime is unavailable for this turn.";
+    }
     const reason =
-      "mcp.call requires an active MCP tool's exact dotted or wire name and an arguments object. " +
-      "Built-in tools, MCP controls, and inactive or unknown targets cannot be called through mcp.call. " +
-      "Use mcp.tools to inspect schemas and mcp.enable to select a server.";
+      "mcp.call requires an active MCP tool's exact dotted or wire name and an arguments object. " + detail;
     return { reason, result: { ok: false, output: reason, exitCode: 1 } };
   }
   const elidedStub = findElidedStubArg(call.args);
