@@ -52,6 +52,7 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("down", "editor.history-next", "composer"),
   binding("ctrl+x", "editor.cut-draft", "composer"),
   binding("ctrl+q", "editor.clear", "composer"),
+  binding("alt+e", "editor.expand-paste", "composer"),
 
   binding("up", "transcript.scroll-up", "transcript"),
   binding("down", "transcript.scroll-down", "transcript"),

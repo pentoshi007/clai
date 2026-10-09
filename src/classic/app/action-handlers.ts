@@ -71,6 +71,7 @@ export class ClassicActionHandlers {
       case "editor.history-next":
       case "editor.clear":
       case "editor.cut-draft":
+      case "editor.expand-paste":
         this.deps.composer.handleAction(action);
         return;
       case "transcript.scroll-up":

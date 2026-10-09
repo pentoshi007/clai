@@ -3,11 +3,12 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { countRender } from "../perf/render-counters.js";
 import {
   decodePasteBytes,
+  type BoxRenderable,
   type KeyEvent,
   type MouseEvent,
   type TextareaRenderable,
 } from "@opentui/core";
-import { useKeyboard, usePaste } from "@opentui/react";
+import { useKeyboard, usePaste, useRenderer } from "@opentui/react";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { formatAttachmentReference } from "../../ui/mentions.js";
@@ -49,6 +50,7 @@ import { CompletionMenuView } from "../components/completion/completion-menu.js"
 import { ComposerInputBox } from "../components/composer/composer-input-box.js";
 import { PastePreview } from "../components/composer/paste-chip.js";
 import { pasteAtPoint } from "./paste-hit-test.js";
+import { expandComposerPaste, retainComposerText } from "./expand-paste.js";
 import { paintDraftMentions } from "./composer-highlight.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
@@ -85,7 +87,10 @@ const textareaKeyBindings = buildComposerTextareaOverrides() as never;
 export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditorProps): ReactNode {
   countRender("ComposerEditor");
   const { services, theme } = props;
+  const renderer = useRenderer();
   const editorRef = useRef<TextareaRenderable>(null);
+  const boxRef = useRef<BoxRenderable>(null);
+  useEffect(() => retainComposerText(editorRef.current), []);
   const promptHistory = useRef(new PromptHistory());
   const pasteRegistry = useRef(new PasteRegistry());
   const imagePaste = createComposerImagePaste(services, editorRef, () => {
@@ -257,13 +262,12 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     queueMicrotask(syncContentRows);
   });
 
-  function expandPasteChip(id: number): void {
+  function expandPasteChip(id?: number): void {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.replaceText(pasteRegistry.current.expandOne(editor.plainText, id));
+    if (!expandComposerPaste(editor, pasteRegistry.current, renderer.widthMethod, id)) return;
     setHoveredPaste(undefined);
     focusComposer();
-    editor.gotoBufferEnd();
     queueMicrotask(() => {
       syncContentRows();
       refreshMenu();
@@ -271,7 +275,8 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   }
 
   function hoverPaste(event: MouseEvent): void {
-    setHoveredPaste(pasteAtPoint(editorRef.current, pasteChips, event.x, event.y));
+    const entry = pasteAtPoint(editorRef.current, pasteChips, event.x, event.y);
+    if (entry) setHoveredPaste((current) => current?.id === entry.id ? current : entry);
   }
 
   function clickPaste(event: MouseEvent): void {
@@ -589,6 +594,12 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     const chord = chordFromKeyEvent(key);
     const current = menuRef.current;
 
+    if (chord === "alt+e") {
+      key.preventDefault();
+      expandPasteChip();
+      return;
+    }
+
     if (
       current.kind === "none" &&
       chord === "escape" &&
@@ -826,6 +837,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       />
       <ComposerInputBox
         theme={theme}
+        boxRef={boxRef}
         editorRef={editorRef}
         focused={shouldOwnKeyboard}
         running={props.running}

@@ -91,6 +91,42 @@ describe("PasteRegistry", () => {
     expect(registry.expandOne(buffer, a.id)).toBe(`AAA mid ${b.token}`);
   });
 
+  it("expands only the nearest occurrence, even when a token appears twice", () => {
+    const registry = new PasteRegistry();
+    const entry = registry.register("full pasted text");
+    const buffer = `${entry.token} between ${entry.token} after`;
+    const cursor = buffer.lastIndexOf(entry.token) + 5;
+    expect(registry.expandNearest(buffer, cursor)).toEqual({
+      text: `${entry.token} between full pasted text after`,
+      cursor: entry.token.length + " between full pasted text".length,
+    });
+  });
+
+  it("prefers the preceding block at equal distance, regardless of registration order", () => {
+    const registry = new PasteRegistry();
+    const right = registry.register("right");
+    const left = registry.register("left");
+    const buffer = `${left.token}  ${right.token}`;
+    const cursor = left.token.length + 1;
+    expect(registry.expandNearest(buffer, cursor)).toEqual({
+      text: `left  ${right.token}`,
+      cursor: "left ".length,
+    });
+  });
+
+  it("preserves the cursor and Unicode prose outside the expanded block", () => {
+    const registry = new PasteRegistry();
+    const entry = registry.register("漢字\n👩🏽‍💻 é pasted");
+    const prefix = "before 👩🏽‍💻 ";
+    const buffer = `${prefix}${entry.token} after`;
+    expect(registry.expandNearest(buffer, 0)?.cursor).toBe(0);
+    expect(registry.expandNearest(buffer, buffer.length)).toEqual({
+      text: `${prefix}${entry.text} after`,
+      cursor: prefix.length + entry.text.length + " after".length,
+    });
+    expect(registry.expandNearest("ordinary text", 4)).toBeUndefined();
+  });
+
   it("lists only pastes still present in the buffer", () => {
     const registry = new PasteRegistry();
     const a = registry.register("AAA");

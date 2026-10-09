@@ -58,6 +58,14 @@ describe("validateKeymap", () => {
 });
 
 describe("ActionRouter", () => {
+  it("expands pastes only while the composer owns the keyboard", () => {
+    const router = new ActionRouter();
+    expect(router.resolve("alt+e", "composer")).toBe("editor.expand-paste");
+    for (const context of ["transcript", "picker", "modal", "secret", "pager"] as const) {
+      expect(router.resolve("alt+e", context)).toBeUndefined();
+    }
+  });
+
   it("throws when constructed with a conflicting keymap", () => {
     expect(
       () =>

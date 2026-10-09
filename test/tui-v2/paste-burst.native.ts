@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { act, createElement } from "react";
-import type { KeyEvent } from "@opentui/core";
+import { EditBuffer, TextareaRenderable, type KeyEvent, type Renderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
@@ -10,6 +10,8 @@ import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { App } from "../../src/tui-v2/app/App.js";
 import { installPasteBurstGuard } from "../../src/tui-v2/input/paste-burst-guard.js";
 import { composerActionPort } from "../../src/ui-core/composer/composer-action-port.js";
+import { PasteRegistry } from "../../src/ui-core/composer/paste-placeholder.js";
+import { expandComposerPaste, retainComposerText } from "../../src/tui-v2/composer/expand-paste.js";
 import stringWidth from "string-width";
 
 const sent: string[] = [];
@@ -78,6 +80,16 @@ const composerLines = (): string[] =>
     .filter((line) => line.includes("┃"))
     .map((line) => line.replace(/[┃❯]/g, "").trim())
     .filter((line) => line.length > 0);
+
+function composerEditor(): TextareaRenderable {
+  const pending: Renderable[] = [setup.renderer.root];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (node instanceof TextareaRenderable) return node;
+    pending.push(...node.getChildren());
+  }
+  throw new Error("Composer textarea is missing");
+}
 
 try {
   await settle();
@@ -150,6 +162,18 @@ try {
   const hoverFrame = setup.captureCharFrame().split("\n");
   const hint = hoverFrame.find((line) => line.includes("double-click to expand"));
   assert.ok(hint?.includes("┃"), "the hover preview belongs inside the composer too");
+  const hoverPoint = [pasteFrame[badgeRow]!.indexOf("[") + 2, badgeRow] as const;
+  for (let index = 0; index < 6; index += 1) {
+    await settle(() => setup.mockMouse.moveTo(hoverPoint[0] + index % 2, hoverPoint[1]));
+    await sleep(40);
+    await settle();
+    assert.ok(setup.captureCharFrame().includes("double-click to expand"), "pointer movement and layout rechecks must keep the preview open");
+  }
+  const hintRow = hoverFrame.findIndex((line) => line.includes("double-click to expand"));
+  await settle(() => setup.mockMouse.moveTo(8, hintRow));
+  assert.ok(setup.captureCharFrame().includes("double-click to expand"), "moving into the preview must not dismiss it");
+  await settle(() => setup.mockMouse.moveTo(0, 0));
+  assert.ok(!setup.captureCharFrame().includes("double-click to expand"), "leaving the composer dismisses the preview");
   const badgePoint = (): [number, number] => {
     const lines = setup.captureCharFrame().split("\n");
     const y = lines.findIndex((line) => /\d+ lines pasted/.test(line));
@@ -163,6 +187,68 @@ try {
   assert.ok(setup.captureCharFrame().includes("lines pasted"), "expansion can be undone without losing the paste");
   await settle(() => setup.mockMouse.moveTo(0, 0));
   assert.deepEqual(await submitDraft(), [transcript], "submission must preserve the entire transcript");
+
+  const before = "漢字 👩🏽‍💻 é ";
+  const firstBlock = `first line\n${"first paste ".repeat(100)}`;
+  const secondBlock = `second line\n${"second paste ".repeat(100)}`;
+  const after = " after 👩🏽‍💻 é";
+  const editor = composerEditor();
+  await settle(() => editor.insertText(before));
+  await deliver(`\u001b[200~${firstBlock}\u001b[201~`);
+  await settle(() => editor.insertText(" between "));
+  await deliver(`\u001b[200~${secondBlock}\u001b[201~`);
+  await settle(() => editor.insertText(after));
+  const collapsed = editor.plainText;
+  const tokens = collapsed.match(/\[\d+ lines pasted #\d+\]/g)!;
+  await deliver("\u001be");
+  assert.equal(editor.plainText, `${before}${tokens[0]} between ${secondBlock}${after}`, "Alt+E expands only the nearest block");
+  await settle(() => editor.insertText("!"));
+  assert.ok(editor.plainText.endsWith(`${after}!`), "expansion preserves the cursor after Unicode text");
+  await deliver("\u001b[27;5;45~");
+  await deliver("\u001b[27;5;45~");
+  assert.equal(editor.plainText, collapsed, "undo restores the folded paste and surrounding text");
+  await settle(() => editor.gotoBufferHome());
+  await deliver("\u001be");
+  assert.equal(editor.plainText, `${before}${firstBlock} between ${tokens[1]}${after}`, "moving the cursor changes which paste is expanded");
+  await settle(() => editor.insertText("start "));
+  assert.ok(editor.plainText.startsWith(`start ${before}`), "a cursor before the expanded paste stays in place");
+  assert.deepEqual(await submitDraft(), [`start ${before}${firstBlock} between ${secondBlock}${after}`], "keyboard expansion preserves every pasted character on submission");
+
+  for (const widthMethod of ["unicode", "wcwidth"] as const) {
+    const registry = new PasteRegistry();
+    const left = registry.register("left pasted content");
+    const right = registry.register("right pasted content");
+    const largePrefix = `${left.token} ${`${"a".repeat(1024)}\n`.repeat(1050)} `;
+    const unicodeTail = " after\t漢字 👩🏽‍💻 é";
+    const buffer = EditBuffer.create(widthMethod);
+    try {
+      buffer.setText(`${largePrefix}${right.token}${unicodeTail}`);
+      buffer.setCursor(buffer.getLineCount() - 1, 60_000);
+      const nativeEditor = {
+        editBuffer: buffer,
+        get plainText() { return buffer.getText(); },
+        get cursorOffset() { return buffer.getCursorPosition().offset; },
+        replaceText(text: string) { buffer.replaceText(text); },
+        setCursor(row: number, col: number) { buffer.setCursor(row, col); },
+      } as unknown as TextareaRenderable;
+      const restore = retainComposerText(nativeEditor);
+      assert.ok(expandComposerPaste(nativeEditor, registry, widthMethod));
+      assert.ok(buffer.getText() === `${largePrefix}${right.text}${unicodeTail}`, "nearest-paste selection works beyond the native convenience API's 1 MB range limit");
+      buffer.insertText("!");
+      assert.ok(buffer.getText() === `${largePrefix}${right.text}${unicodeTail}!`, `cursor restoration follows ${widthMethod} emoji and tab widths`);
+      restore();
+    } finally {
+      buffer.destroy();
+    }
+  }
+
+  const expandedTranscript = `${"full pasted text 漢字 ".repeat(80)}\n`.repeat(800).trimEnd();
+  assert.ok(Buffer.byteLength(expandedTranscript) > 1024 * 1024);
+  await deliver(`\u001b[200~${expandedTranscript}\u001b[201~`);
+  await deliver("\u001be");
+  assert.ok(composerEditor().plainText === expandedTranscript, "expanding a paste beyond 1 MB retains the entire editable draft");
+  const expandedSent = await submitDraft();
+  assert.ok(expandedSent.length === 1 && expandedSent[0] === expandedTranscript, "submitting an expanded paste beyond 1 MB retains every character");
 
   const singleLine = `${"長いJSON transcript ".repeat(4000)}end`;
   const singleAt = performance.now();
@@ -188,7 +274,7 @@ try {
   assert.ok(scrolled[0]?.startsWith(prefix) && scrolled[0]?.endsWith(transcript));
   await settle(() => setup.mockMouse.moveTo(0, 0));
 
-  console.log(`Large paste checks: ${transcript.length} chars in ${Math.round(transcriptMs)} ms; ${singleLine.length} unbracketed chars in ${Math.round(singleMs)} ms; inline hover, expansion, undo, and fragmented UTF-8 passed`);
+  console.log(`Large paste checks: ${transcript.length} chars in ${Math.round(transcriptMs)} ms; ${singleLine.length} unbracketed chars in ${Math.round(singleMs)} ms; stable hover, Alt+E, expansion, undo, Unicode widths, expanded drafts beyond 1 MB, and fragmented UTF-8 passed`);
 
   sent.length = 0;
   await deliver("one");

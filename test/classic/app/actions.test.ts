@@ -25,6 +25,7 @@ const COMPOSER_ACTIONS: readonly ActionId[] = [
   "editor.history-next",
   "editor.clear",
   "editor.cut-draft",
+  "editor.expand-paste",
 ];
 
 const PANEL_ACTIONS: readonly ActionId[] = [

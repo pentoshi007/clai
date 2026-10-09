@@ -23,7 +23,7 @@ export function PastePreview(props: {
   const more = Math.max(0, entry.lines - preview.length);
   const rows = [...preview, ...(more > 0 ? [`…${more} more lines`] : [])]
     .slice(0, Math.max(0, maxRows - 1));
-  rows.push("double-click to expand");
+  rows.push("Alt+E: nearest paste · double-click to expand");
 
   return (
     <box

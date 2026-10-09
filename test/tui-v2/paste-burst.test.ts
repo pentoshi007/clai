@@ -15,7 +15,7 @@ it("installs the paste burst guard when the OpenTUI renderer starts", () => {
   expect(source).toMatch(/disposers:\s*\[\s*disposePasteBurstGuard,/);
 });
 
-it.skipIf(!bun)("keeps unbracketed multi-line pastes in the OpenTUI composer instead of submitting each line", () => {
+it.skipIf(!bun)("preserves large pastes with stable previews and cursor-based keyboard expansion in OpenTUI", () => {
   const result = spawnSync(bun!, ["run", fileURLToPath(new URL("./paste-burst.native.ts", import.meta.url))], {
     encoding: "utf8",
     timeout: 60000,

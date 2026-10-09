@@ -53,10 +53,16 @@ export interface PastePlaceholderEntry {
   readonly label: string;
 }
 
+export interface PastePlaceholderRange {
+  readonly start: number;
+  readonly end: number;
+  readonly entry: PastePlaceholderEntry;
+}
+
 export function pastePlaceholderRanges(
   text: string,
   entries: readonly PastePlaceholderEntry[],
-): { readonly start: number; readonly end: number; readonly entry: PastePlaceholderEntry }[] {
+): PastePlaceholderRange[] {
   return entries.flatMap((entry) => {
     const ranges = [];
     for (
@@ -127,5 +133,35 @@ export class PasteRegistry {
     const entry = this.entries.get(id);
     if (!entry) return value;
     return value.split(entry.token).join(entry.text);
+  }
+
+  expandNearest(
+    value: string,
+    cursor: number,
+    id?: number,
+  ): { readonly text: string; readonly cursor: number } | undefined {
+    const position = Math.max(0, Math.min(value.length, cursor));
+    let nearest: PastePlaceholderRange | undefined;
+    let distance = Infinity;
+    for (const range of pastePlaceholderRanges(value, this.activeIn(value))) {
+      if (id !== undefined && range.entry.id !== id) continue;
+      const nextDistance = Math.max(range.start - position, position - range.end, 0);
+      if (
+        !nearest ||
+        nextDistance < distance ||
+        (nextDistance === distance && range.start < nearest.start)
+      ) {
+        nearest = range;
+        distance = nextDistance;
+      }
+    }
+    if (!nearest) return undefined;
+    const { start, end, entry } = nearest;
+    return {
+      text: value.slice(0, start) + entry.text + value.slice(end),
+      cursor: position < start
+        ? position
+        : Math.max(start + entry.text.length, position + entry.text.length - (end - start)),
+    };
   }
 }

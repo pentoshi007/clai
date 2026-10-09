@@ -242,7 +242,7 @@ clai selects its interface using the OS where it runs. Native Windows uses Class
 
 Standard terminals can handle ordinary text input and output. Modified keys, mouse motion/hover, and clipboard integration vary by terminal and configuration. If `Shift+Enter` is not distinguishable from `Enter`, use `Ctrl+N` or `Alt+Enter` for a newline. Use `clai --classic` if OpenTUI cannot start, and `F5` or `/redraw` to repaint a scrambled screen.
 
-Large pastes collapse into a line or character count inside the composer while retaining the full text for submission. In OpenTUI, hover over that inline placeholder to preview it and double-click to expand it for editing. Pasted transcripts remain one draft, including when a terminal sends unbracketed text in bursts over SSH. Press `Enter` after the paste has finished to submit it.
+Large pastes collapse into a line or character count inside the composer while retaining the full text for submission. In both interfaces, place the cursor near a shortened block and press `Alt+E` to expand just that block for editing. In OpenTUI, hovering over an inline placeholder opens a preview that stays visible while the pointer remains inside the composer; double-clicking the placeholder or preview also expands it. If your terminal intercepts `Alt+E`, press `Esc` followed immediately by `e`, or configure Option/Alt to send Meta. Pasted transcripts remain one draft, including when a terminal sends unbracketed text in bursts over SSH. Press `Enter` after the paste has finished to submit it.
 
 ### Keyboard shortcuts
 
@@ -250,6 +250,7 @@ Large pastes collapse into a line or character count inside the composer while r
 | --- | --- |
 | Send prompt | `Enter` |
 | Insert newline | `Shift+Enter`, `Alt+Enter`, or `Ctrl+N` |
+| Expand shortened paste nearest the cursor | `Alt+E` |
 | Cancel current turn | `Esc` |
 | Interrupt; press again to quit | `Ctrl+C` |
 | Cycle mode | `Shift+Tab` |
