@@ -1,17 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuthProvider } from "../../src/mcp/auth/provider.js";
-import {
-  defaultOAuthTokenStore,
-  oauthTokenKey,
-} from "../../src/mcp/auth/token-store.js";
+import { defaultOAuthTokenStore, oauthTokenKey } from "../../src/mcp/auth/token-store.js";
 import { McpTransportError } from "../../src/mcp/transport.js";
-import {
-  findGithubCredential,
-  isGithubHost,
-} from "../../src/mcp/auth/host-credentials.js";
+import { findGithubCredential, isGithubHost } from "../../src/mcp/auth/host-credentials.js";
 import type {
   LoopbackAuthorizationResult,
   OAuthTokenSet,
@@ -60,7 +54,11 @@ function makeRouter(capture: Capture, includePrmResource = false): typeof fetch 
       const body = new URLSearchParams(String(init?.body));
       capture.tokenBodies.push(body);
       if (body.get("grant_type") === "refresh_token") {
-        return jsonResponse({ access_token: "AT-REFRESHED", token_type: "bearer", expires_in: 3600 });
+        return jsonResponse({
+          access_token: "AT-REFRESHED",
+          token_type: "bearer",
+          expires_in: 3600,
+        });
       }
       return jsonResponse({
         access_token: "AT1",
@@ -93,10 +91,119 @@ const loopback = async (
   params: LoopbackAuthorizationParams,
 ): Promise<LoopbackAuthorizationResult> => {
   await params.buildAuthorizationUrl("http://127.0.0.1:1/callback", "STATE");
-  return { code: "CODE", state: "STATE", redirectUri: "http://127.0.0.1:1/callback" };
+  return {
+    code: "CODE",
+    state: "STATE",
+    redirectUri: "http://127.0.0.1:1/callback",
+  };
 };
 
 describe("OAuth provider recovery of persisted tokens", () => {
+  it("requires consent for newly configured scopes instead of refreshing a narrower grant", async () => {
+    const store = memoryStore();
+    store.map.set(oauthTokenKey(SERVER_URL, ISSUER), {
+      accessToken: "read-only",
+      tokenType: "Bearer",
+      refreshToken: "RT",
+      clientId: "client",
+      scope: "read",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    const capture: Capture = { registered: false, tokenBodies: [] };
+    const browser = vi.fn(async () => undefined);
+    const provider = createAuthProvider(
+      { kind: "oauth", scopes: ["write"], authorizationServer: ISSUER },
+      {
+        serverUrl: SERVER_URL,
+        tokenStore: store,
+        fetchImpl: makeRouter(capture),
+        openBrowser: browser,
+        runLoopback: loopback,
+      },
+    );
+    expect(await provider.headers()).toEqual({});
+    expect(await provider.onUnauthorized(undefined, { interactive: false })).toBe(false);
+    expect(capture.tokenBodies).toHaveLength(0);
+    expect(browser).not.toHaveBeenCalled();
+    expect(await provider.onUnauthorized(undefined, { interactive: true })).toBe(true);
+    expect(capture.tokenBodies[0]!.get("grant_type")).toBe("authorization_code");
+    expect(await provider.headers()).toEqual({ authorization: "Bearer AT1" });
+  });
+
+  it("does not start browser or device sign-in while recovering a background connection", async () => {
+    const capture: Capture = { registered: false, tokenBodies: [] };
+    const openBrowser = vi.fn(async () => undefined);
+    const requestConsent = vi.fn(async () => true);
+    const provider = createAuthProvider(
+      { kind: "oauth" },
+      {
+        serverUrl: SERVER_URL,
+        tokenStore: memoryStore(),
+        fetchImpl: makeRouter(capture),
+        openBrowser,
+        requestConsent,
+        interactive: true,
+      },
+    );
+    expect(await provider.onUnauthorized(undefined, { interactive: false })).toBe(false);
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(requestConsent).not.toHaveBeenCalled();
+    expect(capture.registered).toBe(false);
+  });
+
+  it("refreshes a rejected unexpired token instead of retrying it unchanged", async () => {
+    const capture: Capture = { registered: false, tokenBodies: [] };
+    const store = memoryStore();
+    store.map.set(oauthTokenKey(SERVER_URL, ISSUER), {
+      accessToken: "REJECTED",
+      tokenType: "Bearer",
+      refreshToken: "RT",
+      clientId: "client",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    const provider = createAuthProvider(
+      { kind: "oauth" },
+      {
+        serverUrl: SERVER_URL,
+        tokenStore: store,
+        fetchImpl: makeRouter(capture),
+      },
+    );
+    expect(
+      await provider.onUnauthorized(undefined, {
+        interactive: false,
+        rejectedToken: "REJECTED",
+      }),
+    ).toBe(true);
+    expect(capture.tokenBodies).toHaveLength(1);
+    expect(capture.tokenBodies[0]!.get("grant_type")).toBe("refresh_token");
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer AT-REFRESHED",
+    });
+  });
+
+  it("coalesces concurrent warm loads and token rotation", async () => {
+    const capture: Capture = { registered: false, tokenBodies: [] };
+    const store = memoryStore();
+    let now = 1_000_000;
+    const provider = createAuthProvider(
+      { kind: "oauth" },
+      {
+        serverUrl: SERVER_URL,
+        tokenStore: store,
+        fetchImpl: makeRouter(capture),
+        now: () => now,
+        openBrowser: async () => undefined,
+        runLoopback: loopback,
+      },
+    );
+    expect(await provider.onUnauthorized(undefined)).toBe(true);
+    now += 3_600_000;
+    const headers = await Promise.all(Array.from({ length: 8 }, () => provider.headers()));
+    expect(headers.every((header) => header.authorization === "Bearer AT-REFRESHED")).toBe(true);
+    expect(capture.tokenBodies).toHaveLength(2);
+    expect(capture.tokenBodies[1]!.get("refresh_token")).toBe("RT1");
+  });
   it("attaches a stored token on the first request of a cold process", async () => {
     const store = memoryStore();
     store.map.set(oauthTokenKey(SERVER_URL, ISSUER), {
@@ -121,10 +228,14 @@ describe("OAuth provider recovery of persisted tokens", () => {
       { serverUrl: SERVER_URL, tokenStore: warmStore, fetchImpl },
     );
 
-    expect(await provider.headers()).toEqual({ authorization: "Bearer AT-DISK" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer AT-DISK",
+    });
     expect(resourceLookups).toEqual([SERVER_URL]);
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(await provider.headers()).toEqual({ authorization: "Bearer AT-DISK" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer AT-DISK",
+    });
     expect(resourceLookups).toHaveLength(1);
   });
 
@@ -278,7 +389,9 @@ describe("GitHub host credential fallback", () => {
       },
     );
 
-    expect(await provider.headers()).toEqual({ authorization: "Bearer ghp-local" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer ghp-local",
+    });
     expect(provider.liveSecrets()).toContain("ghp-local");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -329,7 +442,9 @@ describe("GitHub host credential fallback", () => {
 
     expect(await provider.onUnauthorized(undefined)).toBe(true);
     expect(browserOpened).toBe(false);
-    expect(await provider.headers()).toEqual({ authorization: "Bearer gh-cli-token" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer gh-cli-token",
+    });
   });
 });
 
@@ -342,7 +457,10 @@ describe("createAuthProvider non-oauth kinds", () => {
   });
 
   it("bearer sends an Authorization header and exposes the token", async () => {
-    const provider = createAuthProvider({ kind: "bearer", token: "T0P" }, { serverUrl: SERVER_URL });
+    const provider = createAuthProvider(
+      { kind: "bearer", token: "T0P" },
+      { serverUrl: SERVER_URL },
+    );
     expect(await provider.headers()).toEqual({ authorization: "Bearer T0P" });
     expect(provider.liveSecrets()).toContain("T0P");
   });
@@ -385,15 +503,16 @@ describe("OAuth provider flow", () => {
     expect(store.map.get(oauthTokenKey(SERVER_URL, ISSUER))?.accessToken).toBe("AT1");
 
     clock = 5_000_000;
-    expect(await provider.headers()).toEqual({ authorization: "Bearer AT-REFRESHED" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer AT-REFRESHED",
+    });
     const refreshBody = capture.tokenBodies.at(-1)!;
     expect(refreshBody.get("grant_type")).toBe("refresh_token");
     expect(refreshBody.get("resource")).toBe(SERVER_URL);
   });
 
   it("uses challenge metadata and its exact resource for authorization and exchange", async () => {
-    const metadataUrl =
-      "https://api.example.com/.well-known/oauth-protected-resource/mcp/";
+    const metadataUrl = "https://api.example.com/.well-known/oauth-protected-resource/mcp/";
     const resource = "https://api.example.com/mcp/";
     const capture: Capture = { registered: false, tokenBodies: [] };
     const store = memoryStore();
@@ -417,7 +536,10 @@ describe("OAuth provider flow", () => {
       if (url === `${ISSUER}/token`) {
         const body = new URLSearchParams(String(init?.body));
         capture.tokenBodies.push(body);
-        return jsonResponse({ access_token: "AT-CHALLENGE", token_type: "bearer" });
+        return jsonResponse({
+          access_token: "AT-CHALLENGE",
+          token_type: "bearer",
+        });
       }
       return jsonResponse({}, 404);
     }) as unknown as typeof fetch;
@@ -444,14 +566,19 @@ describe("OAuth provider flow", () => {
     );
 
     expect(
-      await provider.onUnauthorized({ scheme: "Bearer", resourceMetadataUrl: metadataUrl }),
+      await provider.onUnauthorized({
+        scheme: "Bearer",
+        resourceMetadataUrl: metadataUrl,
+      }),
     ).toBe(true);
     const authorize = new URL(authorizationUrl);
     expect(authorize.searchParams.get("resource")).toBe(resource);
     expect(authorize.searchParams.get("scope")).toBe("default");
     expect(capture.tokenBodies[0]?.get("resource")).toBe(resource);
-    expect(await provider.headers()).toEqual({ authorization: "Bearer AT-CHALLENGE" });
-    expect(store.map.get(oauthTokenKey(resource, ISSUER))?.accessToken).toBe(
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer AT-CHALLENGE",
+    });
+    expect(store.map.get(oauthTokenKey(resource, ISSUER, "configured-client"))?.accessToken).toBe(
       "AT-CHALLENGE",
     );
   });
@@ -478,7 +605,9 @@ describe("OAuth provider flow", () => {
 
     expect(await provider.onUnauthorized(undefined)).toBe(true);
     expect(capture.tokenBodies).toHaveLength(0);
-    expect(await provider.headers()).toEqual({ authorization: "Bearer STORED" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer STORED",
+    });
   });
 
   it("reuses a stored refresh token without a browser", async () => {
@@ -504,7 +633,9 @@ describe("OAuth provider flow", () => {
     );
     expect(await provider.onUnauthorized(undefined)).toBe(true);
     expect(capture.registered).toBe(false);
-    expect(await provider.headers()).toEqual({ authorization: "Bearer AT-REFRESHED" });
+    expect(await provider.headers()).toEqual({
+      authorization: "Bearer AT-REFRESHED",
+    });
   });
 
   it("fails fast with an actionable error when no browser is available", async () => {
@@ -523,6 +654,76 @@ describe("OAuth provider flow", () => {
 });
 
 describe("defaultOAuthTokenStore fallback file", () => {
+  it("isolates configured OAuth clients sharing a resource and issuer", async () => {
+    const first = oauthTokenKey(SERVER_URL, ISSUER, "first-client");
+    const second = oauthTokenKey(SERVER_URL, ISSUER, "second-client");
+    await defaultOAuthTokenStore.save(first, {
+      accessToken: "first-access",
+      tokenType: "Bearer",
+      clientId: "first-client",
+    });
+    await defaultOAuthTokenStore.save(second, {
+      accessToken: "second-access",
+      tokenType: "Bearer",
+      clientId: "second-client",
+    });
+    for (const [clientId, token] of [
+      ["first-client", "first-access"],
+      ["second-client", "second-access"],
+    ]) {
+      const provider = createAuthProvider({ kind: "oauth", clientId }, { serverUrl: SERVER_URL });
+      expect(await provider.headers()).toEqual({ authorization: `Bearer ${token}` });
+    }
+    expect(await defaultOAuthTokenStore.loadForResource?.(SERVER_URL)).toBeUndefined();
+  });
+
+  it("migrates matching legacy clients without resurrecting removed client credentials", async () => {
+    const base = oauthTokenKey(SERVER_URL, ISSUER);
+    const scoped = oauthTokenKey(SERVER_URL, ISSUER, "client");
+    const tokens = { accessToken: "legacy-access", tokenType: "Bearer", clientId: "client" };
+    await defaultOAuthTokenStore.save(base, tokens);
+    expect(
+      await defaultOAuthTokenStore.load(oauthTokenKey(SERVER_URL, ISSUER, "other")),
+    ).toBeUndefined();
+    expect(await defaultOAuthTokenStore.load(scoped)).toEqual(tokens);
+    await defaultOAuthTokenStore.remove(scoped);
+    expect(await defaultOAuthTokenStore.load(scoped)).toBeUndefined();
+    expect(await defaultOAuthTokenStore.loadForResource?.(SERVER_URL, "client")).toBeUndefined();
+  });
+
+  it("retains credentials for every server when saves happen concurrently", async () => {
+    const keys = Array.from({ length: 20 }, (_, index) =>
+      oauthTokenKey(`${SERVER_URL}/${index}`, ISSUER),
+    );
+    await Promise.all(
+      keys.map((key, index) =>
+        defaultOAuthTokenStore.save(key, {
+          accessToken: `token-${index}`,
+          tokenType: "Bearer",
+        }),
+      ),
+    );
+    const tokens = await Promise.all(keys.map((key) => defaultOAuthTokenStore.load(key)));
+    expect(tokens.map((token) => token?.accessToken)).toEqual(
+      keys.map((_, index) => `token-${index}`),
+    );
+  });
+
+  it("migrates legacy credentials and keeps removed entries from returning", async () => {
+    const key = oauthTokenKey(SERVER_URL, ISSUER);
+    const tokens = { accessToken: "legacy", tokenType: "Bearer" };
+    writeFileSync(
+      join(dataDir, "mcp-oauth.json"),
+      JSON.stringify({ [`mcp-oauth:${key}`]: JSON.stringify(tokens) }),
+    );
+    expect(await defaultOAuthTokenStore.load(key)).toEqual(tokens);
+    expect((await defaultOAuthTokenStore.loadForResource?.(SERVER_URL))?.accessToken).toBe(
+      "legacy",
+    );
+    await defaultOAuthTokenStore.remove(key);
+    expect(await defaultOAuthTokenStore.load(key)).toBeUndefined();
+    expect(await defaultOAuthTokenStore.loadForResource?.(SERVER_URL)).toBeUndefined();
+  });
   let dataDir: string;
   const prevDataDir = process.env.CLAI_DATA_DIR;
   const prevDisable = process.env.CLAI_DISABLE_KEYCHAIN;

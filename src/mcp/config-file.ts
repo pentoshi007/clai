@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { safeCwd } from "../os/cwd.js";
 import { parseJsonc } from "./discovery.js";
 import { validateServerEntry } from "./validation.js";
+import { withMcpStorageLock } from "./storage-lock.js";
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
 
@@ -27,7 +28,12 @@ export type McpConfigWriteResult =
       readonly serverName: string;
       readonly replaced: boolean;
     }
-  | { readonly ok: false; readonly error: string; readonly path: string; readonly displayPath: string };
+  | {
+      readonly ok: false;
+      readonly error: string;
+      readonly path: string;
+      readonly displayPath: string;
+    };
 
 function asObject(value: unknown): JsonObject | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -40,6 +46,7 @@ function looksLikeServer(value: unknown): boolean {
   return Boolean(
     entry &&
       (typeof entry.command === "string" ||
+        Array.isArray(entry.command) ||
         typeof entry.url === "string" ||
         typeof entry.type === "string"),
   );
@@ -52,6 +59,7 @@ function candidateEntries(root: JsonObject): Array<readonly [string, unknown]> {
     asObject(root.servers),
     nested ? asObject(nested.servers) : undefined,
     nested ? asObject(nested.mcpServers) : undefined,
+    nested && Object.values(nested).some(looksLikeServer) ? nested : undefined,
   ];
   const entries: Array<readonly [string, unknown]> = [];
   for (const map of maps) {
@@ -94,7 +102,7 @@ export function parseMcpServerSnippet(
         ok: false,
         error:
           candidates.length === 0
-            ? "include one named MCP server, for example {\"name\":\"docs\",\"command\":\"docs-server\"}"
+            ? 'include one named MCP server, for example {"name":"docs","command":"docs-server"}'
             : "add one MCP server at a time",
       };
     }
@@ -103,7 +111,10 @@ export function parseMcpServerSnippet(
   }
 
   if (!name || !entry) {
-    return { ok: false, error: "the MCP server name and definition are required" };
+    return {
+      ok: false,
+      error: "the MCP server name and definition are required",
+    };
   }
   const validation = validateServerEntry(name, entry, {
     workspaceFolder: resolve(options.workspaceFolder ?? safeCwd()),
@@ -124,6 +135,7 @@ function claimServers(root: JsonObject): Map<string, JsonObject> {
     asObject(root.servers),
     nested ? asObject(nested.servers) : undefined,
     nested ? asObject(nested.mcpServers) : undefined,
+    nested && Object.values(nested).some(looksLikeServer) ? nested : undefined,
   ];
   let claimedMap = false;
   for (const map of maps) {
@@ -159,10 +171,11 @@ function canonicalRoot(root: JsonObject, servers: Map<string, JsonObject>): Json
   delete out.mcpServers;
   delete out.servers;
   const nested = asObject(root.mcp);
+  const directNestedServers = Boolean(nested && Object.values(nested).some(looksLikeServer));
   const hasKnownServerMap = Boolean(
     asObject(root.mcpServers) ||
       asObject(root.servers) ||
-      (nested && (asObject(nested.servers) || asObject(nested.mcpServers))),
+      (nested && (asObject(nested.servers) || asObject(nested.mcpServers) || directNestedServers)),
   );
   if (!hasKnownServerMap) {
     for (const [key, value] of Object.entries(root)) {
@@ -173,12 +186,15 @@ function canonicalRoot(root: JsonObject, servers: Map<string, JsonObject>): Json
     const cleanNested: JsonObject = { ...nested };
     delete cleanNested.mcpServers;
     delete cleanNested.servers;
+    if (directNestedServers) {
+      for (const [name, value] of Object.entries(cleanNested)) {
+        if (looksLikeServer(value)) delete cleanNested[name];
+      }
+    }
     if (Object.keys(cleanNested).length > 0) out.mcp = cleanNested;
     else delete out.mcp;
   }
-  out.servers = Object.fromEntries(
-    [...servers.entries()].sort(([a], [b]) => a.localeCompare(b)),
-  );
+  out.servers = Object.fromEntries([...servers.entries()].sort(([a], [b]) => a.localeCompare(b)));
   return canonicalize(out) as JsonObject;
 }
 
@@ -215,11 +231,21 @@ async function writeMcpServerTo(
   try {
     const current = await readFile(path, "utf8");
     if (Buffer.byteLength(current, "utf8") > MAX_CONFIG_BYTES) {
-      return { ok: false, error: "existing MCP config is larger than 1 MiB", path, displayPath };
+      return {
+        ok: false,
+        error: "existing MCP config is larger than 1 MiB",
+        path,
+        displayPath,
+      };
     }
     const existing = asObject(parseJsonc(current));
     if (!existing) {
-      return { ok: false, error: "existing MCP config must contain a JSON object", path, displayPath };
+      return {
+        ok: false,
+        error: "existing MCP config must contain a JSON object",
+        path,
+        displayPath,
+      };
     }
     root = existing;
   } catch (error) {
@@ -238,13 +264,14 @@ async function writeMcpServerTo(
   servers.set(parsed.snippet.name, parsed.snippet.entry);
   const body = `${JSON.stringify(canonicalRoot(root, servers), null, 2)}\n`;
   const directory = dirname(path);
-  const temporary = join(
-    directory,
-    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-  );
+  const temporary = join(directory, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
   try {
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    await writeFile(temporary, body, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    await writeFile(temporary, body, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
     await rename(temporary, path);
     return {
       ok: true,
@@ -264,6 +291,23 @@ async function writeMcpServerTo(
   }
 }
 
+async function withConfigLock(
+  path: string,
+  workspaceFolder: string | undefined,
+  operation: () => Promise<McpConfigWriteResult>,
+): Promise<McpConfigWriteResult> {
+  try {
+    return await withMcpStorageLock(`config:${path}`, operation);
+  } catch (error) {
+    return {
+      ok: false,
+      error: `could not update MCP config: ${error instanceof Error ? error.message : String(error)}`,
+      path,
+      displayPath: displayMcpConfigPath(path, workspaceFolder),
+    };
+  }
+}
+
 export async function writeProjectMcpServer(
   text: string,
   options: {
@@ -272,10 +316,13 @@ export async function writeProjectMcpServer(
   } = {},
 ): Promise<McpConfigWriteResult> {
   const workspaceFolder = resolve(options.workspaceFolder ?? safeCwd());
-  return writeMcpServerTo(projectMcpConfigPath(workspaceFolder), text, {
-    workspaceFolder,
-    ...(options.env ? { env: options.env } : {}),
-  });
+  const path = projectMcpConfigPath(workspaceFolder);
+  return withConfigLock(path, workspaceFolder, () =>
+    writeMcpServerTo(path, text, {
+      workspaceFolder,
+      ...(options.env ? { env: options.env } : {}),
+    }),
+  );
 }
 
 export async function writeUserMcpServer(
@@ -286,8 +333,11 @@ export async function writeUserMcpServer(
     readonly env?: Readonly<Record<string, string | undefined>> | undefined;
   } = {},
 ): Promise<McpConfigWriteResult> {
-  return writeMcpServerTo(userMcpConfigPath(options.homeDir), text, {
-    ...(options.workspaceFolder ? { workspaceFolder: options.workspaceFolder } : {}),
-    ...(options.env ? { env: options.env } : {}),
-  });
+  const path = userMcpConfigPath(options.homeDir);
+  return withConfigLock(path, options.workspaceFolder, () =>
+    writeMcpServerTo(path, text, {
+      ...(options.workspaceFolder ? { workspaceFolder: options.workspaceFolder } : {}),
+      ...(options.env ? { env: options.env } : {}),
+    }),
+  );
 }

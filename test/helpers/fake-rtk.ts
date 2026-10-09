@@ -52,8 +52,18 @@ case "$1" in
     ;;
   git)
     shift
+    if [ -n "$RTK_DB_PATH" ]; then
+      mkdir -p "$(dirname "$RTK_DB_PATH")"
+      printf '100\\n' >> "$RTK_DB_PATH.fake"
+    fi
     echo "${FAKE_RTK_MARKER} git $*"
     echo "hook-warning=$RTK_SUPPRESS_HOOK_WARNING"
+    exit 0
+    ;;
+  gain)
+    count=0
+    if [ -f "$RTK_DB_PATH.fake" ]; then count=$(wc -l < "$RTK_DB_PATH.fake"); fi
+    printf '{"summary":{"total_commands":%s,"total_saved":%s,"avg_savings_pct":50}}\\n' "$count" "$((count * 100))"
     exit 0
     ;;
   grep|diff)

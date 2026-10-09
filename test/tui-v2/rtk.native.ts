@@ -8,10 +8,11 @@ const binary = await import("../../src/tools/rtk/binary.js");
 let gain: RtkGain | undefined = { commands: 800, savedTokens: 1_486_906, savingsPct: 82.54 };
 let response: Promise<RtkGain | undefined> | undefined;
 let gainReads = 0;
+let gainSession: string | undefined;
 mock.module("../../src/tools/rtk/binary.js", () => ({
   ...binary,
   detectRtk: async () => ({ state: "ready", path: "/opt/bin/rtk", version: "0.51.0" }),
-  readRtkGain: async () => { gainReads += 1; return response ?? gain; },
+  readRtkGain: async (_path: string, sessionId?: string) => { gainReads += 1; gainSession = sessionId; return response ?? gain; },
 }));
 
 const { createCompositionRoot } = await import("../../src/ui-core/bootstrap/composition-root.js");
@@ -63,7 +64,8 @@ try {
   await settle(() => setup.mockInput.pressEnter());
   const opened = await waitFor("rtk 0.51.0");
   assert.match(opened, /1 automatic RTK run this session/);
-  assert.match(opened, /1\.5M estimated tokens saved globally \(83%\)/);
+  assert.match(opened, /1\.5M estimated tokens saved this session \(83%\)/);
+  assert.equal(gainSession, services.session.sessionId);
   await settle(() => setup.mockInput.pressArrow("down"));
   await settle(() => setup.mockInput.pressArrow("down"));
   let resolve!: (gain: RtkGain | undefined) => void;
@@ -76,12 +78,12 @@ try {
   response = undefined;
   gain = { commands: 0, savedTokens: 0, savingsPct: 0 };
   await settle(() => setup.mockInput.pressEnter());
-  await waitFor("no global RTK history yet");
+  await waitFor("no RTK savings recorded for this session yet");
   await settle(() => setup.mockInput.pressEscape());
   assert.equal(services.overlay.getState().kind, "none");
   assert.equal(services.focus.activeContext(), "composer");
   assert.match(await settle(() => setup.mockInput.typeText("still usable")), /still usable/);
-  console.log("Native RTK passed: slash entry, estimated/global labels, keyboard refresh, unavailable/empty recovery, and composer focus");
+  console.log("Native RTK passed: slash entry, session statistics, keyboard refresh, unavailable/empty recovery, and composer focus");
 } finally {
   await act(async () => {
     services.dispose();

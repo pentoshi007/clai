@@ -61,8 +61,8 @@ const rtkTitle = ({ enabled, status }: RtkView): string => {
 
 const gainLine = (gain: RtkGain | undefined): string => {
   if (!gain) return "RTK savings unavailable";
-  if (gain.commands === 0) return "no global RTK history yet";
-  return `${formatTokenCount(gain.savedTokens, true)} estimated tokens saved globally (${Math.round(gain.savingsPct)}%)`;
+  if (gain.commands === 0) return "no RTK savings recorded for this session yet";
+  return `${formatTokenCount(gain.savedTokens, true)} estimated tokens saved this session (${Math.round(gain.savingsPct)}%)`;
 };
 
 const executionLine = (sessionId: string): string => {
@@ -170,7 +170,7 @@ const rtkOptions = (view: RtkView): PickerOption[] => [
 const loadView = async (sessionId: string): Promise<RtkView> => {
   const maintenance = rtkMaintenance();
   const status = await detectRtk(true);
-  const gain = status.state === "ready" ? await readRtkGain(status.path) : undefined;
+  const gain = status.state === "ready" ? await readRtkGain(status.path, sessionId) : undefined;
   return { sessionId, enabled: rtkEnabled(), status, gain, ...(maintenance ? { maintenance } : {}) };
 };
 

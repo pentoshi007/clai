@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { withSessionAffinity } from "../../src/llm/session-affinity.js";
-import { createRtkExecutionRecorder, rtkExecutionCount } from "../../src/store/rtk-usage.js";
+import { createRtkExecutionRecorder, rtkExecutionCount, rtkSessionEnv } from "../../src/store/rtk-usage.js";
 
 const originalDataDir = process.env.CLAI_DATA_DIR;
 let root: string;
@@ -21,6 +21,13 @@ afterEach(async () => {
 });
 
 describe("RTK session execution journal", () => {
+  it("keeps resumed database identity stable and captures conversation affinity", () => {
+    const first = withSessionAffinity("session-a", () => rtkSessionEnv());
+    const second = withSessionAffinity("session-b", () => rtkSessionEnv());
+    expect(first).toEqual(rtkSessionEnv("session-a"));
+    expect(first).not.toEqual(second);
+    expect(rtkSessionEnv("../../outside").RTK_DB_PATH).toMatch(/rtk[/\\]sessions[/\\][a-f0-9]{64}[/\\]tracking\.db$/);
+  });
   it("counts launches once, not preparations, and isolates conversations", () => {
     const launched = createRtkExecutionRecorder("session-a");
     expect(rtkExecutionCount("session-a")).toBe(0);

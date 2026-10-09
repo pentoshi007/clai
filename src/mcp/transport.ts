@@ -1,5 +1,6 @@
 import type {
   JsonRpcNotification,
+  JsonRpcMessage,
   JsonRpcRequest,
   JsonRpcResponse,
   McpRequestOptions,
@@ -26,17 +27,44 @@ export class McpTransportError extends Error {
   }
 }
 
+export interface McpTransportHandlers {
+  readonly request: (request: JsonRpcRequest) => Promise<JsonRpcResponse>;
+  readonly notification: (notification: JsonRpcNotification) => void;
+}
+
+export async function dispatchServerMessage(
+  message: JsonRpcMessage,
+  handlers: McpTransportHandlers | undefined,
+  respond: (response: JsonRpcResponse) => Promise<void>,
+): Promise<void> {
+  if (!("method" in message)) return;
+  if (!("id" in message)) {
+    handlers?.notification(message);
+    return;
+  }
+  const response = handlers
+    ? await handlers.request(message)
+    : {
+        jsonrpc: "2.0" as const,
+        id: message.id,
+        error: {
+          code: -32601,
+          message: `Unsupported MCP client method: ${message.method}`,
+        },
+      };
+  await respond(response);
+}
+
 export interface McpTransport {
   readonly kind: "stdio" | "http" | "sse";
   start(options?: McpRequestOptions): Promise<void>;
-  request(
-    message: JsonRpcRequest,
-    options?: McpRequestOptions,
-  ): Promise<JsonRpcResponse>;
+  request(message: JsonRpcRequest, options?: McpRequestOptions): Promise<JsonRpcResponse>;
   notify(message: JsonRpcNotification, options?: McpRequestOptions): Promise<void>;
   close(): Promise<void>;
   sessionId(): string | undefined;
   setProtocolVersion(version: string): void;
+  setHandlers?(handlers: McpTransportHandlers): void;
+  listen?(): void;
 }
 
 export function isAbortError(error: unknown): boolean {
@@ -44,6 +72,25 @@ export function isAbortError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const name = (error as { name?: unknown }).name;
   return name === "AbortError";
+}
+
+export async function awaitMcpOperation<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      onAbort = () =>
+        reject(
+          signal.reason instanceof McpTransportError
+            ? signal.reason
+            : new McpTransportError("cancelled", "MCP operation cancelled."),
+        );
+      operation.then(resolve, reject);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
 }
 
 export function withTimeout(

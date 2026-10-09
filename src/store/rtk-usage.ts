@@ -7,10 +7,18 @@ import { getDataDir } from "./paths.js";
 const unboundSession = randomUUID();
 const pending = new Map<string, number>();
 
-const executionPath = (sessionId = currentSessionAffinity() ?? unboundSession): string => {
-  const key = createHash("sha256").update(sessionId).digest("hex");
-  return join(getDataDir(), "rtk", "usage", `${key}.log`);
+const sessionKey = (sessionId = currentSessionAffinity() ?? unboundSession): string =>
+  createHash("sha256").update(sessionId).digest("hex");
+
+const executionPath = (sessionId?: string): string => {
+  return join(getDataDir(), "rtk", "usage", `${sessionKey(sessionId)}.log`);
 };
+
+export function rtkSessionEnv(sessionId?: string): Readonly<Record<string, string>> {
+  const directory = join(getDataDir(), "rtk", "sessions", sessionKey(sessionId));
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  return { RTK_DB_PATH: join(directory, "tracking.db") };
+}
 
 export function rtkExecutionCount(sessionId?: string): number | undefined {
   const path = executionPath(sessionId);

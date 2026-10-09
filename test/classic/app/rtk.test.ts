@@ -46,7 +46,8 @@ describe("Classic /rtk interaction", () => {
   it.each([120, 80])("opens, refreshes, reports failure, and recovers at %s columns", async (columns) => {
     const h = await mount(columns);
     expect(frame()).toContain("1 automatic RTK run this session");
-    expect(frame()).toContain("1.5M estimated tokens saved globally (83%)");
+    expect(frame()).toContain("1.5M estimated tokens saved this session (83%)");
+    expect(readRtkGain).toHaveBeenCalledWith("/opt/bin/rtk", h.services.session.sessionId);
     let resolve!: (gain: RtkGain | undefined) => void;
     vi.mocked(readRtkGain).mockReturnValueOnce(new Promise((settle) => { resolve = settle; }));
     h.wiring.handleData("\x1b[B");
@@ -59,7 +60,7 @@ describe("Classic /rtk interaction", () => {
     expect(h.services.focus.activeContext()).toBe("picker");
     vi.mocked(readRtkGain).mockResolvedValue({ commands: 0, savedTokens: 0, savingsPct: 0 });
     h.wiring.handleData("\r");
-    await expect.poll(frame).toContain("no global RTK history yet");
+    await expect.poll(frame).toContain("no RTK savings recorded for this session yet");
     h.wiring.handleData("\x1b");
     await expect.poll(() => h.services.overlay.getState().kind).toBe("none");
     expect(h.services.focus.activeContext()).toBe("composer");

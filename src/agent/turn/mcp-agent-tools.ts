@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResult } from "../../types.js";
 import type { McpRuntime } from "../../mcp/runtime.js";
 import type { SingleToolResult } from "./contracts.js";
+import { formatToolContext, saveToolOutput } from "../tool-output-formatting.js";
 
 export interface McpAgentToolPorts {
   readonly askMode: boolean;
@@ -36,6 +37,11 @@ export const runMcpAgentTool = async (
   if (call.name === "mcp.tools") {
     return mcp.agentTools(
       typeof args.server === "string" ? args.server : undefined,
+      {
+        ...(typeof args.query === "string" ? { query: args.query } : {}),
+        ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}),
+        ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
+      },
     );
   }
   if (call.name === "mcp.enable") return mcp.agentEnable(mcpAgentToolTarget(args));
@@ -104,14 +110,17 @@ const execute = async (
   ports.showCall(toolEventId, call);
   const result = await runMcpAgentTool(runtime, call);
   const shown = mcpAgentOutput(call, result);
+  const artifactPath = shown.length > 24_000 ? await saveToolOutput(call, shown) : undefined;
+  const framed = { ...result, output: shown, ...(artifactPath ? { outputPath: artifactPath } : {}) };
+  const contextOutput = artifactPath ? formatToolContext(call, framed) : shown;
   ports.recordAttempt(call, result.ok, shown);
   ports.writeOutput(toolEventId, `${shown}\n`);
-  ports.emitResult(toolEventId, { ...result, output: shown }, shown);
+  ports.emitResult(toolEventId, framed, contextOutput);
   return {
     ok: result.ok,
     call,
-    result: { ...result, output: shown },
-    contextOutput: shown,
+    result: framed,
+    contextOutput,
   };
 };
 

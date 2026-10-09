@@ -5,6 +5,7 @@ import {
   compactToolSchema,
 } from "../../src/mcp/schema-compact.js";
 import type { JsonSchemaObject } from "../../src/types.js";
+import { normalizeToolResult, toToolMetadata } from "../../src/mcp/results.js";
 
 describe("compactDescription", () => {
   it("collapses whitespace and keeps short text verbatim", () => {
@@ -25,6 +26,32 @@ describe("compactDescription", () => {
 });
 
 describe("compactToolSchema", () => {
+  it("preserves root references, alternatives, dependencies, and typed additional properties", () => {
+    const schema = {
+      $ref: "#/$defs/Input",
+      $defs: {
+        Input: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+        },
+      },
+      oneOf: [{ required: ["id"] }, { required: ["name"] }],
+      dependentRequired: { id: ["name"] },
+      additionalProperties: { type: "string" },
+    };
+    const metadata = toToolMetadata(
+      "docs",
+      { name: "lookup", inputSchema: schema },
+      "mcp_docs_lookup",
+    );
+    const compact = compactToolSchema(metadata.inputSchema);
+    expect(compact.$ref).toBe(schema.$ref);
+    expect(compact.$defs).toEqual(schema.$defs);
+    expect(compact.oneOf).toEqual(schema.oneOf);
+    expect(compact.dependentRequired).toEqual(schema.dependentRequired);
+    expect(compact.additionalProperties).toEqual({ type: "string" });
+  });
   it("drops documentation noise, bounds descriptions, and orders keywords", () => {
     const schema = {
       type: "object",
@@ -51,15 +78,11 @@ describe("compactToolSchema", () => {
     const owner = compacted.properties.owner as Record<string, unknown>;
 
     expect(Object.keys(owner)).toEqual(["type", "description"]);
-    expect(String(owner.description)).toHaveLength(
-      MCP_FIELD_DESCRIPTION_CHARS + 1,
-    );
+    expect(String(owner.description)).toHaveLength(MCP_FIELD_DESCRIPTION_CHARS + 1);
     expect(compacted.properties.page).toEqual({ type: "number", default: 1 });
-    expect(compacted.required).toEqual(["owner"]);
+    expect(compacted.required).toEqual(["owner", "ghost"]);
     expect(compacted.additionalProperties).toBe(false);
-    expect(JSON.stringify(compacted).length).toBeLessThan(
-      JSON.stringify(schema).length,
-    );
+    expect(JSON.stringify(compacted).length).toBeLessThan(JSON.stringify(schema).length);
   });
 
   it("recurses into nested schema positions without reordering property maps", () => {
@@ -78,17 +101,16 @@ describe("compactToolSchema", () => {
           },
         },
         mode: {
-          anyOf: [
-            { type: "string", enum: ["fast", "slow"], title: "Mode" },
-            { type: "null" },
-          ],
+          anyOf: [{ type: "string", enum: ["fast", "slow"], title: "Mode" }, { type: "null" }],
         },
       },
     } as unknown as JsonSchemaObject;
 
     const compacted = compactToolSchema(schema);
-    const items = (compacted.properties.filters as Record<string, unknown>)
-      .items as Record<string, unknown>;
+    const items = (compacted.properties.filters as Record<string, unknown>).items as Record<
+      string,
+      unknown
+    >;
     const nested = items.properties as Record<string, unknown>;
     const mode = compacted.properties.mode as Record<string, unknown>;
 
@@ -117,9 +139,7 @@ describe("compactToolSchema", () => {
       required: ["id"],
     } as JsonSchemaObject;
 
-    expect(JSON.stringify(compactToolSchema(left))).toBe(
-      JSON.stringify(compactToolSchema(right)),
-    );
+    expect(JSON.stringify(compactToolSchema(left))).toBe(JSON.stringify(compactToolSchema(right)));
   });
 
   it("keeps an empty schema empty", () => {
@@ -127,5 +147,33 @@ describe("compactToolSchema", () => {
       type: "object",
       properties: {},
     });
+  });
+});
+
+describe("MCP result fidelity", () => {
+  it("keeps structured data alongside a distinct text summary and resource links", () => {
+    const result = normalizeToolResult({
+      content: [
+        { type: "text", text: "Found one issue" },
+        {
+          type: "resource_link",
+          name: "Issue",
+          uri: "https://example.com/issue/1",
+          description: "Full details",
+        },
+      ],
+      structuredContent: { id: 1, status: "open" },
+    });
+    expect(result.text).toContain("Found one issue");
+    expect(result.text).toContain("https://example.com/issue/1 Full details");
+    expect(result.text).toContain('{"id":1,"status":"open"}');
+  });
+
+  it("avoids repeating structured content already represented in a text block", () => {
+    const result = normalizeToolResult({
+      content: [{ type: "text", text: '{ "id": 1 }' }],
+      structuredContent: { id: 1 },
+    });
+    expect(result.text).toBe('{ "id": 1 }');
   });
 });

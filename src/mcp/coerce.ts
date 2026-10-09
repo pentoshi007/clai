@@ -40,21 +40,17 @@ function parseJsonString(value: string): unknown {
   }
 }
 
-function coerceValue(
-  value: unknown,
-  schema: unknown,
-  path: string,
-  coerced: string[],
-): unknown {
+function coerceValue(value: unknown, schema: unknown, path: string, coerced: string[]): unknown {
   if (typeof value === "string") {
     const types = declaredTypes(schema);
+    if (types.has("string")) return value;
     if (types.has("object") || types.has("array")) {
       const parsed = parseJsonString(value);
       if (parsed !== undefined) {
         const isObject = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
         if ((types.has("object") && isObject) || (types.has("array") && Array.isArray(parsed))) {
           coerced.push(path);
-          return parsed;
+          return coerceValue(parsed, schema, path, coerced);
         }
       }
     }
@@ -82,9 +78,7 @@ function coerceValue(
   }
   if (Array.isArray(value)) {
     const itemSchema =
-      typeof schema === "object" && schema !== null
-        ? (schema as SchemaLike).items
-        : undefined;
+      typeof schema === "object" && schema !== null ? (schema as SchemaLike).items : undefined;
     return value.map((entry, index) =>
       coerceValue(entry, itemSchema, `${path}[${index}]`, coerced),
     );

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   openSystemBrowser,
   runLoopbackAuthorization,
+  systemBrowserAvailable,
 } from "../../src/mcp/auth/loopback.js";
 import { McpTransportError } from "../../src/mcp/transport.js";
 
@@ -25,6 +26,86 @@ function drive(useWrongState: boolean): Promise<{ code: string }> {
 }
 
 describe("runLoopbackAuthorization", () => {
+  it("accepts a full callback URL pasted from a browser on another device", async () => {
+    const result = await runLoopbackAuthorization({
+      buildAuthorizationUrl: (redirectUri, state) =>
+        `https://auth.example.com/?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+      readCallbackUrl: async ({ url }) => {
+        const authorization = new URL(url);
+        const callback = new URL(authorization.searchParams.get("redirect_uri")!);
+        callback.searchParams.set("code", "REMOTE-CODE");
+        callback.searchParams.set("state", authorization.searchParams.get("state")!);
+        return callback.href;
+      },
+      timeoutMs: 1_000,
+    });
+    expect(result.code).toBe("REMOTE-CODE");
+  });
+
+  it("validates pasted callback state and destination", async () => {
+    for (const wrong of ["state", "destination"]) {
+      await expect(
+        runLoopbackAuthorization({
+          buildAuthorizationUrl: (redirectUri, state) =>
+            `https://auth.example.com/?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+          readCallbackUrl: async ({ url }) => {
+            const authorization = new URL(url);
+            const callback = new URL(authorization.searchParams.get("redirect_uri")!);
+            callback.searchParams.set("code", "CODE");
+            callback.searchParams.set(
+              "state",
+              wrong === "state" ? "incorrect" : authorization.searchParams.get("state")!,
+            );
+            if (wrong === "destination") callback.hostname = "example.com";
+            return callback.href;
+          },
+          timeoutMs: 1_000,
+        }),
+      ).rejects.toMatchObject({ kind: "protocol" });
+    }
+  });
+
+  it("cancels callback input when the local browser finishes first", async () => {
+    let cancelled = false;
+    const result = await runLoopbackAuthorization({
+      buildAuthorizationUrl: (redirectUri, state) =>
+        `https://auth.example.com/?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+      readCallbackUrl: ({ signal }) =>
+        new Promise((resolve) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              cancelled = true;
+              resolve(undefined);
+            },
+            { once: true },
+          ),
+        ),
+      openBrowser: async (url) => {
+        const authorization = new URL(url);
+        const callback = new URL(authorization.searchParams.get("redirect_uri")!);
+        callback.searchParams.set("code", "LOCAL-CODE");
+        callback.searchParams.set("state", authorization.searchParams.get("state")!);
+        await fetch(callback).catch(() => undefined);
+      },
+      timeoutMs: 1_000,
+    });
+    expect(result.code).toBe("LOCAL-CODE");
+    expect(cancelled).toBe(true);
+  });
+
+  it("aborts while waiting for an OAuth callback", async () => {
+    const controller = new AbortController();
+    const pending = runLoopbackAuthorization({
+      buildAuthorizationUrl: () => "https://auth.example.com",
+      openBrowser: async () => {
+        controller.abort();
+      },
+      signal: controller.signal,
+      timeoutMs: 1_000,
+    });
+    await expect(pending).rejects.toMatchObject({ kind: "cancelled" });
+  });
   it("resolves with the code when the callback state matches", async () => {
     const result = await drive(false);
     expect(result.code).toBe("AUTHCODE");
@@ -40,6 +121,16 @@ function fakeSpawn(): ReturnType<typeof vi.fn> {
 }
 
 describe("openSystemBrowser", () => {
+  it("detects desktop browsers separately from headless and SSH terminals", () => {
+    expect(systemBrowserAvailable({}, "linux")).toBe(false);
+    expect(systemBrowserAvailable({ DISPLAY: ":0" }, "linux")).toBe(true);
+    expect(systemBrowserAvailable({ WAYLAND_DISPLAY: "wayland-0" }, "linux")).toBe(true);
+    expect(systemBrowserAvailable({}, "darwin")).toBe(true);
+    expect(systemBrowserAvailable({}, "win32")).toBe(true);
+    expect(systemBrowserAvailable({ SSH_CONNECTION: "remote", DISPLAY: ":0" }, "linux")).toBe(
+      false,
+    );
+  });
   it.each([
     ["darwin", "open", ["https://example.com/auth"]],
     ["linux", "xdg-open", ["https://example.com/auth"]],
@@ -79,7 +170,10 @@ describe("openSystemBrowser", () => {
       "http://example.com/auth",
     ]) {
       await expect(
-        openSystemBrowser(url, { platform: "linux", spawnImpl: spawnImpl as never }),
+        openSystemBrowser(url, {
+          platform: "linux",
+          spawnImpl: spawnImpl as never,
+        }),
       ).rejects.toBeInstanceOf(McpTransportError);
     }
     expect(spawnImpl).not.toHaveBeenCalled();

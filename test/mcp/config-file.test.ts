@@ -29,24 +29,15 @@ afterEach(() => {
 
 describe("parseMcpServerSnippet", () => {
   it.each([
-    [
-      "named definition",
-      '{"name":"docs","command":"docs-server","args":[]}',
-    ],
-    [
-      "servers wrapper",
-      '{"servers":{"docs":{"command":"docs-server"}}}',
-    ],
-    [
-      "mcpServers wrapper",
-      '{"mcpServers":{"docs":{"command":"docs-server"}}}',
-    ],
-    [
-      "bare server map",
-      '{"docs":{"command":"docs-server"}}',
-    ],
+    ["named definition", '{"name":"docs","command":"docs-server","args":[]}'],
+    ["servers wrapper", '{"servers":{"docs":{"command":"docs-server"}}}'],
+    ["mcpServers wrapper", '{"mcpServers":{"docs":{"command":"docs-server"}}}'],
+    ["bare server map", '{"docs":{"command":"docs-server"}}'],
   ])("accepts one server in the %s form", (_label, text) => {
-    const result = parseMcpServerSnippet(text, { workspaceFolder: workspace, env: {} });
+    const result = parseMcpServerSnippet(text, {
+      workspaceFolder: workspace,
+      env: {},
+    });
     expect(result).toEqual({
       ok: true,
       snippet: {
@@ -68,13 +59,13 @@ describe("parseMcpServerSnippet", () => {
     ["malformed JSON", "{"],
     ["a non-object", "[]"],
     ["an empty object", "{}"],
-    [
-      "multiple servers",
-      '{"servers":{"one":{"command":"one"},"two":{"command":"two"}}}',
-    ],
+    ["multiple servers", '{"servers":{"one":{"command":"one"},"two":{"command":"two"}}}'],
     ["an invalid definition", '{"name":"docs","command":""}'],
   ])("rejects %s", (_label, text) => {
-    const result = parseMcpServerSnippet(text, { workspaceFolder: workspace, env: {} });
+    const result = parseMcpServerSnippet(text, {
+      workspaceFolder: workspace,
+      env: {},
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.length).toBeGreaterThan(0);
   });
@@ -124,7 +115,11 @@ describe("writeProjectMcpServer", () => {
       { workspaceFolder: workspace, env: {} },
     );
 
-    expect(result).toMatchObject({ ok: true, replaced: false, serverName: "alpha" });
+    expect(result).toMatchObject({
+      ok: true,
+      replaced: false,
+      serverName: "alpha",
+    });
     const body = readFileSync(path, "utf8");
     const parsed = JSON.parse(body) as Record<string, unknown>;
     expect(parsed).toEqual({
@@ -161,7 +156,11 @@ describe("writeProjectMcpServer", () => {
       { workspaceFolder: workspace, env: {} },
     );
 
-    expect(result).toMatchObject({ ok: true, replaced: true, serverName: "docs" });
+    expect(result).toMatchObject({
+      ok: true,
+      replaced: true,
+      serverName: "docs",
+    });
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
       mcp: { note: "keep me" },
       servers: {
@@ -175,15 +174,12 @@ describe("writeProjectMcpServer", () => {
   it("canonicalizes a legacy bare server map while retaining scalar metadata", async () => {
     const path = projectMcpConfigPath(workspace);
     mkdirSync(join(workspace, ".clai"), { recursive: true });
-    writeFileSync(
-      path,
-      JSON.stringify({ zeta: { command: "zeta" }, version: 2 }),
-    );
+    writeFileSync(path, JSON.stringify({ zeta: { command: "zeta" }, version: 2 }));
 
-    const result = await writeProjectMcpServer(
-      '{"alpha":{"command":"alpha"}}',
-      { workspaceFolder: workspace, env: {} },
-    );
+    const result = await writeProjectMcpServer('{"alpha":{"command":"alpha"}}', {
+      workspaceFolder: workspace,
+      env: {},
+    });
 
     expect(result.ok).toBe(true);
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
@@ -207,10 +203,10 @@ describe("writeProjectMcpServer", () => {
     expect(badSnippet.ok).toBe(false);
     expect(readFileSync(path, "utf8")).toBe("{ broken");
 
-    const badExisting = await writeProjectMcpServer(
-      '{"name":"docs","command":"docs-server"}',
-      { workspaceFolder: workspace, env: {} },
-    );
+    const badExisting = await writeProjectMcpServer('{"name":"docs","command":"docs-server"}', {
+      workspaceFolder: workspace,
+      env: {},
+    });
     expect(badExisting.ok).toBe(false);
     if (!badExisting.ok) expect(badExisting.error).toContain("could not read existing MCP config");
     expect(readFileSync(path, "utf8")).toBe("{ broken");
@@ -221,26 +217,66 @@ describe("writeProjectMcpServer", () => {
     mkdirSync(join(workspace, ".clai"), { recursive: true });
     writeFileSync(path, `{"padding":"${"x".repeat(1024 * 1024)}"}`);
 
-    const result = await writeProjectMcpServer(
-      '{"name":"docs","command":"docs-server"}',
-      { workspaceFolder: workspace, env: {} },
-    );
+    const result = await writeProjectMcpServer('{"name":"docs","command":"docs-server"}', {
+      workspaceFolder: workspace,
+      env: {},
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("larger than 1 MiB");
   });
 });
 
 describe("MCP config paths", () => {
+  it("preserves concurrently added servers in a shared project config", async () => {
+    const names = Array.from({ length: 12 }, (_, index) => `server-${index}`);
+    const writes = await Promise.all(
+      names.map((name) =>
+        writeProjectMcpServer(JSON.stringify({ name, command: "fixture" }), {
+          workspaceFolder: workspace,
+          env: {},
+        }),
+      ),
+    );
+    expect(writes.every((result) => result.ok)).toBe(true);
+    const config = JSON.parse(readFileSync(projectMcpConfigPath(workspace), "utf8"));
+    expect(Object.keys(config.servers).sort()).toEqual(names.sort());
+  });
+
+  it("accepts local and remote OpenCode-style snippets without losing authentication options", () => {
+    const local = parseMcpServerSnippet(
+      JSON.stringify({
+        mcp: {
+          docs: {
+            type: "local",
+            command: ["npx", "-y", "docs-server"],
+            environment: { API_KEY: "${env:API_KEY}" },
+            enabled: false,
+            timeout: 90_000,
+          },
+        },
+      }),
+      { env: { API_KEY: "secret" } },
+    );
+    expect(local.ok).toBe(true);
+    const remote = parseMcpServerSnippet(
+      JSON.stringify({
+        docs: {
+          type: "remote",
+          url: "https://example.com/mcp",
+          oauth: { clientId: "client", scope: "read", callbackPort: 9876 },
+        },
+      }),
+    );
+    expect(remote.ok).toBe(true);
+  });
   it("uses the project-local .clai/mcp.json path", () => {
     expect(projectMcpConfigPath(workspace)).toBe(join(workspace, ".clai", "mcp.json"));
-    expect(displayMcpConfigPath(projectMcpConfigPath(workspace), workspace)).toBe(
-      ".clai/mcp.json",
-    );
+    expect(displayMcpConfigPath(projectMcpConfigPath(workspace), workspace)).toBe(".clai/mcp.json");
   });
 
   it("normalizes backslashes in displayed project-relative paths", () => {
-    expect(
-      displayMcpConfigPath(join(workspace, ".clai\\mcp.json"), workspace),
-    ).toBe(".clai/mcp.json");
+    expect(displayMcpConfigPath(join(workspace, ".clai\\mcp.json"), workspace)).toBe(
+      ".clai/mcp.json",
+    );
   });
 });

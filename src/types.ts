@@ -224,10 +224,11 @@ export type ToolChoice =
   | { type: "function"; name: string };
 
 export interface JsonSchemaObject {
+  [keyword: string]: unknown;
   type: "object";
   properties: Record<string, unknown>;
   required?: string[] | undefined;
-  additionalProperties?: boolean | undefined;
+  additionalProperties?: boolean | Record<string, unknown> | undefined;
 }
 
 export interface ToolDefinition {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { StdioTransport } from "../../src/mcp/transport-stdio.js";
 import { McpClient } from "../../src/mcp/client.js";
 import { McpTransportError } from "../../src/mcp/transport.js";
-import { createRequest } from "../../src/mcp/jsonrpc.js";
+import { createNotification, createRequest } from "../../src/mcp/jsonrpc.js";
 import type { McpStdioConfig } from "../../src/mcp/types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -20,7 +20,10 @@ function makeTransport(overrides: Partial<McpStdioConfig> = {}, token?: string):
     env: token !== undefined ? { MCP_TEST_TOKEN: token } : {},
     ...overrides,
   };
-  const transport = new StdioTransport(config, { requestTimeoutMs: 5_000, closeGraceMs: 500 });
+  const transport = new StdioTransport(config, {
+    requestTimeoutMs: 5_000,
+    closeGraceMs: 500,
+  });
   active.push(transport);
   return transport;
 }
@@ -66,6 +69,40 @@ describe("stdio transport handshake and tool calls", () => {
     expect(result.chatImages[0]?.mediaType).toBe("image/png");
   });
 
+  it("answers server requests through the live child process", async () => {
+    const client = new McpClient(makeTransport(), {
+      roots: () => [{ uri: "file:///workspace" }],
+    });
+    await client.initialize();
+    const result = await client.callTool("server_requests", {});
+    expect(JSON.parse(result.text)).toEqual({
+      ping: { jsonrpc: "2.0", id: "server-ping", result: {} },
+      roots: {
+        jsonrpc: "2.0",
+        id: "server-roots",
+        result: { roots: [{ uri: "file:///workspace" }] },
+      },
+      unsupported: {
+        jsonrpc: "2.0",
+        id: "server-sampling",
+        error: {
+          code: -32601,
+          message: expect.stringContaining("sampling/createMessage"),
+        },
+      },
+    });
+  });
+
+  it("notifies the server when a timed out tool call is cancelled", async () => {
+    const client = new McpClient(makeTransport());
+    await client.initialize();
+    await expect(client.callTool("slow", {}, { timeoutMs: 50 })).rejects.toMatchObject({
+      kind: "timeout",
+    });
+    const result = await client.callTool("cancelled_request", {});
+    expect(Number(result.text)).toBeGreaterThan(0);
+  });
+
   it("surfaces tool errors via isError", async () => {
     const client = new McpClient(makeTransport());
     await client.initialize();
@@ -84,6 +121,21 @@ describe("stdio transport handshake and tool calls", () => {
 });
 
 describe("stdio transport timeout and cancellation", () => {
+  it("bounds a notification write when the server never reads stdin", async () => {
+    const transport = makeTransport({
+      args: ["-e", "setInterval(() => {}, 1000)"],
+    });
+    await transport.start();
+    await expect(
+      transport.notify(
+        createNotification("notifications/message", {
+          data: "x".repeat(1024 * 1024),
+        }),
+        { timeoutMs: 50 },
+      ),
+    ).rejects.toMatchObject({ kind: "timeout" });
+  });
+
   function silentTransport(): StdioTransport {
     const config: McpStdioConfig = {
       transport: "stdio",
@@ -91,7 +143,10 @@ describe("stdio transport timeout and cancellation", () => {
       args: ["-e", "process.stdin.resume()"],
       env: {},
     };
-    const transport = new StdioTransport(config, { requestTimeoutMs: 200, closeGraceMs: 300 });
+    const transport = new StdioTransport(config, {
+      requestTimeoutMs: 200,
+      closeGraceMs: 300,
+    });
     active.push(transport);
     return transport;
   }

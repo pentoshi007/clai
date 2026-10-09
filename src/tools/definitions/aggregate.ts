@@ -269,7 +269,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "mcp.tools",
-    "List connected MCP tools with their dotted names, argument schemas, and read-only status. Optionally filter to one server. Read-only.",
+    "Search connected MCP tools by query and optional server. Returns dotted names, complete compact argument schemas, and read-only status in bounded pages. Follow the returned cursor with the same query and server. Read-only.",
     {
       type: "object",
       properties: {
@@ -277,6 +277,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           type: "string",
           description: "Optional MCP server name to filter the tool list.",
         },
+        query: { type: "string", description: "Words to match in tool names and descriptions." },
+        cursor: { type: "string", description: "Next cursor from the previous page with the same server and query." },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Maximum tools in this page; default 12." },
       },
       additionalProperties: false,
     },

@@ -30,7 +30,7 @@ import { isProviderFailureStatus } from "../../llm/key-rotation.js";
 import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
 import { McpRuntime, type McpRuntimeOptions } from "../../mcp/runtime.js";
-import { openSystemBrowser } from "../../mcp/auth/loopback.js";
+import { openSystemBrowser, systemBrowserAvailable } from "../../mcp/auth/loopback.js";
 import { getSkillIndex } from "../../skills/registry.js";
 import { safeCwd } from "../../os/cwd.js";
 import { TranscriptStore } from "../state/transcript-store.js";
@@ -122,7 +122,7 @@ export function createCompositionRoot(
   const mcp =
     options.mcp ??
     new McpRuntime({
-      openBrowser: openSystemBrowser,
+      ...(systemBrowserAvailable() ? { openBrowser: openSystemBrowser } : {}),
       oauthInteractive: true,
       onDeviceAuthorization: (info) => {
         const lines = [
@@ -149,20 +149,30 @@ export function createCompositionRoot(
           );
         }
       },
-      onAuthorizationUrl: (info) => {
-        const shown = interactiveOverlay()?.openPager(
-          `MCP sign-in · ${info.serverUrl}`,
-          [
-            `MCP server: ${info.serverUrl}`,
+      readCallbackUrl: async (info) => {
+        const target = interactiveOverlay();
+        if (!target || info.signal.aborted) return undefined;
+        const answer = target.openSecret({
+          title: "MCP sign-in",
+          prompt: [
+            "Open this sign-in URL in a browser on any device:",
+            info.url,
             "",
-            "If the browser did not open, complete sign-in at:",
-            `   ${info.url}`,
+            "Sign-in completes automatically when the browser can reach this machine.",
+            "Over SSH, the final localhost page may fail to load. Copy its complete URL from the browser address bar and paste it here, including code and state. Esc cancels.",
           ].join("\n"),
-          undefined,
-          undefined,
-          "plain",
-        );
-        if (!shown) sessionRef?.notice("info", `MCP sign-in: ${info.url}`);
+          reveal: true,
+        });
+        const owner = target.getState();
+        const onAbort = (): void => {
+          if (target.getState() === owner) target.answerSecret(undefined);
+        };
+        info.signal.addEventListener("abort", onAbort, { once: true });
+        try {
+          return await answer;
+        } finally {
+          info.signal.removeEventListener("abort", onAbort);
+        }
       },
       requestOAuthConsent: options.requestOAuthConsent ?? ((info) =>
         interactiveOverlay()?.openConfirm({

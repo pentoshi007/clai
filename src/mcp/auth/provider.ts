@@ -1,5 +1,5 @@
 import type { McpAuthConfig } from "../types.js";
-import { McpTransportError } from "../transport.js";
+import { McpTransportError, withTimeout } from "../transport.js";
 import {
   buildProtectedResourceMetadataUrl,
   discoverAuthorizationServerMetadata,
@@ -8,14 +8,8 @@ import {
 } from "./metadata.js";
 import { createPkcePair } from "./pkce.js";
 import { registerOAuthClient } from "./registration.js";
-import {
-  runLoopbackAuthorization,
-  type LoopbackAuthorizationParams,
-} from "./loopback.js";
-import {
-  pollDeviceTokens,
-  requestDeviceAuthorization,
-} from "./device.js";
+import { runLoopbackAuthorization, type LoopbackAuthorizationParams } from "./loopback.js";
+import { pollDeviceTokens, requestDeviceAuthorization } from "./device.js";
 import { canonicalResourceUri } from "./security.js";
 import {
   findGithubCredential,
@@ -35,6 +29,7 @@ import type {
   LoopbackAuthorizationResult,
   McpAuthChallenge,
   McpAuthProvider,
+  McpAuthRequestOptions,
   OAuthClientRegistration,
   OAuthTokenSet,
   OAuthTokenStore,
@@ -69,9 +64,8 @@ export interface AuthProviderDeps {
   readonly onDeviceAuthorization?:
     | ((info: DeviceAuthorizationInfo) => void | Promise<void>)
     | undefined;
-  readonly onAuthorizationUrl?:
-    | ((info: { serverUrl: string; url: string }) => void)
-    | undefined;
+  readonly onAuthorizationUrl?: ((info: { serverUrl: string; url: string }) => void) | undefined;
+  readonly readCallbackUrl?: LoopbackAuthorizationParams["readCallbackUrl"];
   readonly env?: Record<string, string | undefined> | undefined;
   readonly readHostToken?: (() => Promise<string | undefined>) | undefined;
 }
@@ -134,6 +128,14 @@ class OAuthProvider implements McpAuthProvider {
   private resource: string;
   private warmed = false;
   private inFlight: Promise<boolean> | undefined;
+  private flightInteractive = false;
+  private warmPromise: Promise<OAuthTokenSet | undefined> | undefined;
+  private refreshPromise: Promise<OAuthTokenSet | undefined> | undefined;
+  private challenge: McpAuthChallenge | undefined;
+  private authSignal: AbortSignal | undefined;
+  private redirectUri: string | undefined;
+  private rejectedAccessToken: string | undefined;
+  private metadataPromise: Promise<AuthorizationServerMetadata> | undefined;
   private readonly store: OAuthTokenStore;
 
   constructor(
@@ -144,6 +146,7 @@ class OAuthProvider implements McpAuthProvider {
     this.store = deps.tokenStore ?? defaultOAuthTokenStore;
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
+    this.scope = config.scopes?.join(" ");
   }
 
   private now(): number {
@@ -154,6 +157,7 @@ class OAuthProvider implements McpAuthProvider {
     return {
       ...(this.deps.fetchImpl ? { fetchImpl: this.deps.fetchImpl } : {}),
       ...(this.deps.validateUrl ? { validateUrl: this.deps.validateUrl } : {}),
+      ...(this.authSignal ? { signal: this.authSignal } : {}),
     };
   }
 
@@ -166,33 +170,84 @@ class OAuthProvider implements McpAuthProvider {
     return tokens.expiresAt - this.now() > REFRESH_SKEW_MS;
   }
 
+  private tokenKey(issuer: string): string {
+    return oauthTokenKey(this.resource, issuer, this.config.clientId);
+  }
+
+  private matchesConfiguration(tokens: OAuthTokenSet): boolean {
+    if (this.config.clientId && tokens.clientId !== this.config.clientId) return false;
+    const granted = new Set(tokens.scope?.split(/\s+/));
+    const required =
+      this.challenge?.scope?.split(/\s+/).filter(Boolean) ?? this.config.scopes ?? [];
+    return required.every((scope) => granted.has(scope));
+  }
+
   async headers(): Promise<Record<string, string>> {
     const tokens = (await this.warmCached()) ?? this.cached;
     if (!tokens) return {};
-    if (this.isValid(tokens)) return bearerHeader(tokens.tokenType, tokens.accessToken);
+    if (!this.matchesConfiguration(tokens)) return {};
+    if (this.isValid(tokens) && tokens.accessToken !== this.rejectedAccessToken)
+      return bearerHeader(tokens.tokenType, tokens.accessToken);
+    const issuer = tokens.issuer ?? this.config.authorizationServer;
+    if (!this.metadata && issuer) {
+      await this.warmMetadata(issuer).catch(() => undefined);
+    }
     if (tokens.refreshToken && this.metadata) {
       const refreshed = await this.tryRefresh(tokens).catch(() => undefined);
-      if (refreshed) return bearerHeader(refreshed.tokenType, refreshed.accessToken);
+      if (refreshed && refreshed.accessToken !== this.rejectedAccessToken)
+        return bearerHeader(refreshed.tokenType, refreshed.accessToken);
     }
     return {};
   }
 
+  private async warmMetadata(issuer: string): Promise<AuthorizationServerMetadata> {
+    if (this.metadata && this.issuer === issuer) return this.metadata;
+    if (this.metadataPromise) return this.metadataPromise;
+    const promise = discoverAuthorizationServerMetadata(issuer, this.metadataDeps()).then(
+      (metadata) => {
+        this.cacheMetadata(issuer, metadata);
+        return metadata;
+      },
+    );
+    this.metadataPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.metadataPromise === promise) this.metadataPromise = undefined;
+    }
+  }
+
   private async warmCached(): Promise<OAuthTokenSet | undefined> {
     if (this.cached) return this.cached;
+    if (this.warmPromise) return this.warmPromise;
     if (this.warmed) return undefined;
-    this.warmed = true;
-    const stored = await this.store
-      .loadForResource?.(this.resource)
-      .catch(() => undefined);
-    if (stored) {
-      this.applyStoredClient(stored);
-      this.cached = stored;
-      return stored;
+    const warm = async (): Promise<OAuthTokenSet | undefined> => {
+      const stored = this.config.authorizationServer
+        ? await this.store
+            .load(this.tokenKey(this.config.authorizationServer))
+            .catch(() => undefined)
+        : await this.store
+            .loadForResource?.(this.resource, this.config.clientId)
+            .catch(() => undefined);
+      if (stored && (!this.config.clientId || stored.clientId === this.config.clientId)) {
+        this.applyStoredClient(stored);
+        this.cached = stored;
+        return stored;
+      }
+      return this.adoptHostCredential();
+    };
+    const promise = warm();
+    this.warmPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      this.warmed = true;
+      this.warmPromise = undefined;
     }
-    return this.adoptHostCredential();
   }
 
   private async adoptHostCredential(): Promise<OAuthTokenSet | undefined> {
+    if (this.config.clientId) return undefined;
     const credential = await findGithubCredential(
       this.deps.serverUrl,
       this.hostCredentialDeps(),
@@ -210,7 +265,10 @@ class OAuthProvider implements McpAuthProvider {
   }
 
   private canInteract(): boolean {
-    return this.deps.interactive !== false && typeof this.deps.openBrowser === "function";
+    return (
+      this.deps.interactive !== false &&
+      (typeof this.deps.openBrowser === "function" || this.deps.readCallbackUrl !== undefined)
+    );
   }
 
   private reauthMessage(): string {
@@ -237,12 +295,35 @@ class OAuthProvider implements McpAuthProvider {
     );
   }
 
-  private async discoverEndpoints(
-    challenge: McpAuthChallenge | undefined,
-  ): Promise<{ issuer: string; metadata: AuthorizationServerMetadata; scopes: readonly string[] }> {
+  private async discoverEndpoints(challenge: McpAuthChallenge | undefined): Promise<{
+    issuer: string;
+    metadata: AuthorizationServerMetadata;
+    scopes: readonly string[];
+  }> {
     const metadataUrl =
       challenge?.resourceMetadataUrl ?? buildProtectedResourceMetadataUrl(this.resource);
-    const prm = await discoverProtectedResourceMetadata(metadataUrl, this.metadataDeps());
+    let prm;
+    try {
+      prm = await discoverProtectedResourceMetadata(metadataUrl, this.metadataDeps());
+    } catch (error) {
+      if (
+        this.authSignal?.aborted ||
+        (error instanceof McpTransportError &&
+          ["too-large", "timeout", "cancelled"].includes(error.kind))
+      )
+        throw error;
+      const rootUrl = new URL(metadataUrl);
+      rootUrl.pathname = "/.well-known/oauth-protected-resource";
+      rootUrl.search = "";
+      prm = await discoverProtectedResourceMetadata(rootUrl.toString(), this.metadataDeps()).catch(
+        () => undefined,
+      );
+      if (!prm) {
+        const issuer = this.config.authorizationServer ?? new URL(this.resource).origin;
+        const metadata = await discoverAuthorizationServerMetadata(issuer, this.metadataDeps());
+        return { issuer, metadata, scopes: [] };
+      }
+    }
     if (prm.resource) this.resource = canonicalResourceUri(prm.resource);
     const issuer = this.config.authorizationServer ?? prm.authorizationServers[0]!;
     const metadata = await discoverAuthorizationServerMetadata(issuer, this.metadataDeps());
@@ -259,18 +340,23 @@ class OAuthProvider implements McpAuthProvider {
     metadata: AuthorizationServerMetadata,
     challenge: McpAuthChallenge | undefined,
   ): string | undefined {
-    if (this.config.scopes && this.config.scopes.length > 0) return this.config.scopes.join(" ");
     if (challenge?.scope) return challenge.scope;
+    if (this.config.scopes && this.config.scopes.length > 0) return this.config.scopes.join(" ");
     if (prmScopes.length > 0) return prmScopes.join(" ");
     if (metadata.scopesSupported.length > 0) return metadata.scopesSupported.join(" ");
     return undefined;
   }
 
-  private async reuseStored(issuer: string): Promise<boolean> {
-    const stored = await this.store.load(oauthTokenKey(this.resource, issuer));
+  private async reuseStored(issuer: string, options: McpAuthRequestOptions): Promise<boolean> {
+    const stored = await this.store.load(this.tokenKey(issuer));
     if (!stored) return false;
+    if (this.config.clientId && stored.clientId !== this.config.clientId) return false;
     this.applyStoredClient(stored);
-    if (this.isValid(stored)) {
+    if (
+      this.isValid(stored) &&
+      stored.accessToken !== (options.rejectedToken ?? this.rejectedAccessToken) &&
+      this.matchesConfiguration(stored)
+    ) {
       this.cached = stored;
       return true;
     }
@@ -282,21 +368,59 @@ class OAuthProvider implements McpAuthProvider {
     if (!this.clientId && stored.clientId) this.clientId = stored.clientId;
     if (!this.clientSecret && stored.clientSecret) this.clientSecret = stored.clientSecret;
     if (!this.scope && stored.scope) this.scope = stored.scope;
+    if (!this.redirectUri && stored.redirectUri) this.redirectUri = stored.redirectUri;
   }
 
-  private async refreshStored(
-    issuer: string,
-    metadata: AuthorizationServerMetadata,
-    scope: string | undefined,
-  ): Promise<boolean> {
+  private tokenAuthMethod(): "none" | "client_secret_basic" | "client_secret_post" {
+    if (this.config.tokenEndpointAuthMethod) return this.config.tokenEndpointAuthMethod;
+    if (!this.clientSecret) return "none";
+    const methods = this.metadata?.tokenEndpointAuthMethodsSupported;
+    return methods?.includes("client_secret_post") && !methods.includes("client_secret_basic")
+      ? "client_secret_post"
+      : "client_secret_basic";
+  }
+
+  private async refreshStored(scope: string | undefined): Promise<boolean> {
     const tokens = this.cached;
     if (!tokens?.refreshToken || !this.clientId) return false;
     this.scope = scope ?? this.scope;
     const refreshed = await this.tryRefresh(tokens).catch(() => undefined);
-    return refreshed !== undefined;
+    return refreshed !== undefined && refreshed.accessToken !== this.rejectedAccessToken;
   }
 
   private async tryRefresh(tokens: OAuthTokenSet): Promise<OAuthTokenSet | undefined> {
+    if (this.refreshPromise) return this.refreshPromise;
+    const issuer = this.issuer;
+    const refresh = async (): Promise<OAuthTokenSet | undefined> => {
+      this.authSignal?.throwIfAborted();
+      if (issuer && this.store.withRefreshLock) {
+        const stored = await this.store.load(this.tokenKey(issuer));
+        if (
+          stored &&
+          stored.accessToken !== tokens.accessToken &&
+          this.isValid(stored) &&
+          this.matchesConfiguration(stored)
+        ) {
+          this.applyStoredClient(stored);
+          this.cached = stored;
+          return stored;
+        }
+      }
+      return this.refreshTokens(tokens);
+    };
+    const promise =
+      issuer && this.store.withRefreshLock
+        ? this.store.withRefreshLock(this.tokenKey(issuer), refresh, this.authSignal)
+        : refresh();
+    this.refreshPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.refreshPromise === promise) this.refreshPromise = undefined;
+    }
+  }
+
+  private async refreshTokens(tokens: OAuthTokenSet): Promise<OAuthTokenSet | undefined> {
     if (!tokens.refreshToken || !this.clientId || !this.metadata || !this.issuer) return undefined;
     const response = await refreshAccessToken(
       {
@@ -306,6 +430,7 @@ class OAuthProvider implements McpAuthProvider {
         ...(this.clientSecret ? { clientSecret: this.clientSecret } : {}),
         resource: this.resource,
         ...(this.scope ? { scope: this.scope } : {}),
+        authMethod: this.tokenAuthMethod(),
       },
       this.tokenDeps(),
     );
@@ -319,6 +444,16 @@ class OAuthProvider implements McpAuthProvider {
     scope: string | undefined,
     redirectUris: readonly string[],
   ): Promise<OAuthClientRegistration> {
+    if (
+      this.clientId &&
+      !this.config.clientId &&
+      metadata.registrationEndpoint &&
+      this.redirectUri &&
+      !redirectUris.includes(this.redirectUri)
+    ) {
+      this.clientId = undefined;
+      this.clientSecret = undefined;
+    }
     if (this.clientId) {
       return {
         clientId: this.clientId,
@@ -381,6 +516,15 @@ class OAuthProvider implements McpAuthProvider {
     scope: string | undefined,
   ): Promise<void> {
     this.scope = scope ?? this.scope;
+    if (
+      metadata.codeChallengeMethodsSupported.length > 0 &&
+      !metadata.codeChallengeMethodsSupported.includes("S256")
+    ) {
+      throw new McpTransportError(
+        "protocol",
+        "MCP OAuth server does not support the required PKCE S256 method.",
+      );
+    }
     const approved = await this.requestLoopbackConsent(metadata);
     if (!approved) {
       if (this.canDeviceFlow(metadata)) {
@@ -399,16 +543,25 @@ class OAuthProvider implements McpAuthProvider {
     const result = await loopback({
       buildAuthorizationUrl: async (redirectUri, state) => {
         registration = await this.ensureClient(metadata, scope, [redirectUri]);
-        return this.authorizationUrlBuilder(metadata, registration.clientId, scope, pkce)(
-          redirectUri,
-          state,
-        );
+        this.redirectUri = redirectUri;
+        return this.authorizationUrlBuilder(
+          metadata,
+          registration.clientId,
+          scope,
+          pkce,
+        )(redirectUri, state);
       },
-      openBrowser: this.deps.openBrowser!,
+      ...(this.deps.openBrowser ? { openBrowser: this.deps.openBrowser } : {}),
+      ...(this.deps.readCallbackUrl ? { readCallbackUrl: this.deps.readCallbackUrl } : {}),
+      ...(this.authSignal ? { signal: this.authSignal } : {}),
+      ...(this.config.callbackPort ? { port: this.config.callbackPort } : {}),
       ...(this.deps.onAuthorizationUrl
         ? {
             onAuthorizationUrl: (url: string) => {
-              this.deps.onAuthorizationUrl?.({ serverUrl: this.deps.serverUrl, url });
+              this.deps.onAuthorizationUrl?.({
+                serverUrl: this.deps.serverUrl,
+                url,
+              });
             },
           }
         : {}),
@@ -422,6 +575,7 @@ class OAuthProvider implements McpAuthProvider {
         ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
         codeVerifier: pkce.verifier,
         resource: this.resource,
+        authMethod: this.tokenAuthMethod(),
       },
       this.tokenDeps(),
     );
@@ -436,16 +590,15 @@ class OAuthProvider implements McpAuthProvider {
     );
   }
 
-  private async requestLoopbackConsent(
-    metadata: AuthorizationServerMetadata,
-  ): Promise<boolean> {
+  private async requestLoopbackConsent(metadata: AuthorizationServerMetadata): Promise<boolean> {
     if (!this.deps.requestConsent) return true;
     return this.deps.requestConsent({
       serverUrl: this.deps.serverUrl,
       issuer: this.issuer,
       authorizationEndpoint: metadata.authorizationEndpoint,
       scope: this.scope,
-      message: "Open the browser to sign in? (a sign-in link will be shown either way)",
+      message:
+        "Sign in to this MCP server? A link will be shown for use on this or another device.",
     });
   }
 
@@ -483,7 +636,10 @@ class OAuthProvider implements McpAuthProvider {
   ): Promise<void> {
     const endpoint = metadata.deviceAuthorizationEndpoint;
     if (!endpoint) {
-      throw new McpTransportError("protocol", "MCP OAuth server has no device authorization endpoint.");
+      throw new McpTransportError(
+        "protocol",
+        "MCP OAuth server has no device authorization endpoint.",
+      );
     }
     await this.requireConsent(metadata, scope);
     const registration = await this.ensureDeviceClient(metadata, scope);
@@ -491,6 +647,9 @@ class OAuthProvider implements McpAuthProvider {
       {
         deviceAuthorizationEndpoint: endpoint,
         clientId: registration.clientId,
+        ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
+        authMethod: this.tokenAuthMethod(),
+        resource: this.resource,
         ...(scope ? { scope } : {}),
       },
       this.metadataDeps(),
@@ -510,11 +669,11 @@ class OAuthProvider implements McpAuthProvider {
         tokenEndpoint: metadata.tokenEndpoint,
         deviceCode: authorization.deviceCode,
         clientId: registration.clientId,
-        ...(registration.clientSecret
-          ? { clientSecret: registration.clientSecret }
-          : {}),
+        ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
         intervalSeconds: authorization.intervalSeconds,
         expiresInSeconds: authorization.expiresInSeconds,
+        authMethod: this.tokenAuthMethod(),
+        resource: this.resource,
       },
       this.tokenDeps(),
     );
@@ -531,39 +690,68 @@ class OAuthProvider implements McpAuthProvider {
       ...(response.expiresIn !== undefined
         ? { expiresAt: this.now() + response.expiresIn * 1000 }
         : {}),
-      ...(response.scope ?? this.scope ? { scope: response.scope ?? this.scope } : {}),
+      ...((response.scope ?? this.scope) ? { scope: response.scope ?? this.scope } : {}),
       ...(this.clientId ? { clientId: this.clientId } : {}),
       ...(this.clientSecret ? { clientSecret: this.clientSecret } : {}),
+      ...(this.redirectUri ? { redirectUri: this.redirectUri } : {}),
     };
   }
 
   private async persist(issuer: string | undefined, tokens: OAuthTokenSet): Promise<void> {
-    this.cached = tokens;
+    this.cached = issuer ? { ...tokens, issuer } : tokens;
     if (!issuer) return;
-    await this.store.save(oauthTokenKey(this.resource, issuer), tokens);
+    await this.store.save(this.tokenKey(issuer), this.cached);
   }
 
-  async onUnauthorized(challenge: McpAuthChallenge | undefined): Promise<boolean> {
-    if (this.inFlight) return this.inFlight;
-    const attempt = this.authorize(challenge);
+  async onUnauthorized(
+    challenge: McpAuthChallenge | undefined,
+    options: McpAuthRequestOptions = {},
+  ): Promise<boolean> {
+    if (options.rejectedToken) this.rejectedAccessToken = options.rejectedToken;
+    if (challenge) this.challenge = challenge;
+    if (this.inFlight) {
+      const interactive = this.flightInteractive;
+      const recovered = await this.inFlight;
+      if (recovered || options.interactive !== true || interactive) return recovered;
+    }
+    const { signal, dispose } = withTimeout(
+      options.signal,
+      options.interactive === false ? 15_000 : 300_000,
+    );
+    this.authSignal = signal;
+    this.flightInteractive = options.interactive !== false;
+    const attempt = this.authorize(this.challenge, options);
     this.inFlight = attempt;
     try {
       return await attempt;
     } finally {
       this.inFlight = undefined;
+      this.authSignal = undefined;
+      dispose();
     }
   }
 
-  private async authorize(challenge: McpAuthChallenge | undefined): Promise<boolean> {
+  private async authorize(
+    challenge: McpAuthChallenge | undefined,
+    options: McpAuthRequestOptions,
+  ): Promise<boolean> {
     const { issuer, metadata, scopes } = await this.discoverEndpoints(challenge);
     this.cacheMetadata(issuer, metadata);
-    if (await this.reuseStored(issuer)) return true;
+    if (await this.reuseStored(issuer, options)) return true;
     const scope = this.resolveScope(scopes, metadata, challenge);
+    const previousScopes = new Set(this.cached?.scope?.split(/\s+/));
+    const requiredScopes =
+      challenge?.scope?.split(/\s+/).filter(Boolean) ?? this.config.scopes ?? [];
+    const expandedScope =
+      challenge?.error === "insufficient_scope" ||
+      requiredScopes.some((scope) => !previousScopes.has(scope));
     this.scope = scope ?? this.scope;
-    if (await this.refreshStored(issuer, metadata, scope)) return true;
+    if (!expandedScope && (await this.refreshStored(scope))) return true;
     if (!this.clientId && !metadata.registrationEndpoint) {
-      if (await this.adoptHostCredential()) return true;
+      const credential = await this.adoptHostCredential();
+      if (credential && credential.accessToken !== this.rejectedAccessToken) return true;
     }
+    if (options.interactive === false) return false;
     if (this.canDeviceFlow(metadata)) {
       await this.runDeviceFlow(metadata, scope);
       return true;
@@ -573,8 +761,7 @@ class OAuthProvider implements McpAuthProvider {
         await this.runFullFlow(metadata, scope);
         return true;
       } catch (error) {
-        const browserUnavailable =
-          error instanceof McpTransportError && error.kind === "browser";
+        const browserUnavailable = error instanceof McpTransportError && error.kind === "browser";
         if (!browserUnavailable || !this.canDeviceFlow(metadata)) throw error;
         await this.runDeviceFlow(metadata, scope);
         return true;

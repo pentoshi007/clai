@@ -1,13 +1,16 @@
 import { discoverMcpServers } from "./discovery.js";
+import { pathToFileURL } from "node:url";
+import { safeCwd } from "../os/cwd.js";
 import { McpClient, type McpClientOptions } from "./client.js";
 import { redactSecrets } from "./format.js";
 import { toToolMetadata } from "./results.js";
+import { allocateWireNames, canonicalToolName, toolIdentity } from "./names.js";
 import {
-  allocateWireNames,
-  canonicalToolName,
-  toolIdentity,
-} from "./names.js";
-import { McpTransportError, type McpTransport } from "./transport.js";
+  awaitMcpOperation,
+  McpTransportError,
+  withTimeout,
+  type McpTransport,
+} from "./transport.js";
 import { StdioTransport } from "./transport-stdio.js";
 import {
   LegacySseTransport,
@@ -34,14 +37,14 @@ import type {
   McpShadowedServer,
   McpSnapshot,
   McpToolMetadata,
+  McpToolDescriptor,
 } from "./types.js";
 
 const DEFAULT_CONNECT_CONCURRENCY = 4;
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
-const STOPPED_DETAIL =
-  "stopped for this session; its tools are removed from model requests";
+const STOPPED_DETAIL = "stopped for this session; its tools are removed from model requests";
 
 export type McpTransportFactory = (definition: McpServerDefinition) => McpTransport;
 
@@ -57,6 +60,7 @@ export interface McpManagerOptions {
   readonly oauthInteractive?: boolean | undefined;
   readonly onDeviceAuthorization?: AuthProviderDeps["onDeviceAuthorization"];
   readonly onAuthorizationUrl?: AuthProviderDeps["onAuthorizationUrl"];
+  readonly readCallbackUrl?: AuthProviderDeps["readCallbackUrl"];
   readonly authProviderFactory?:
     | ((definition: McpServerDefinition) => McpAuthProvider | undefined)
     | undefined;
@@ -94,6 +98,13 @@ export class McpManager {
   private readonly authProviders = new Map<string, McpAuthProvider>();
   private readonly authSignatures = new Map<string, string>();
   private readonly stopped = new Set<string>();
+  private readonly listeners = new Set<(snapshot: McpSnapshot) => void>();
+  private readonly recoveries = new Map<string, Promise<McpSnapshot>>();
+  private readonly catalogRefreshes = new Set<ConnectionState>();
+  private readonly dirtyCatalogs = new Set<ConnectionState>();
+  private operations = Promise.resolve();
+  private readonly lifetime = new AbortController();
+  private closed = false;
   private discovery: McpDiscoveryResult = {
     servers: [],
     shadowed: [],
@@ -103,6 +114,20 @@ export class McpManager {
   };
 
   constructor(private readonly options: McpManagerOptions = {}) {}
+
+  subscribe(listener: (snapshot: McpSnapshot) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operations.then(operation);
+    this.operations = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
 
   private get connectTimeoutMs(): number {
     return this.options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -116,12 +141,14 @@ export class McpManager {
     const config = definition.config;
     if (config.transport === "stdio") {
       if (this.options.transportFactory) return this.options.transportFactory(definition);
-      return new StdioTransport(config, { requestTimeoutMs: this.requestTimeoutMs });
+      return new StdioTransport(config, {
+        requestTimeoutMs: config.timeoutMs ?? this.requestTimeoutMs,
+      });
     }
     const authProvider = this.buildAuthProvider(definition, config);
     if (this.options.transportFactory) return this.options.transportFactory(definition);
     const httpOptions: HttpTransportOptions = {
-      requestTimeoutMs: this.requestTimeoutMs,
+      requestTimeoutMs: config.timeoutMs ?? this.requestTimeoutMs,
       ...(authProvider ? { authProvider } : {}),
     };
     if (config.transport === "sse") return new LegacySseTransport(config, httpOptions);
@@ -158,16 +185,14 @@ export class McpManager {
       ...(this.options.onAuthorizationUrl
         ? { onAuthorizationUrl: this.options.onAuthorizationUrl }
         : {}),
+      ...(this.options.readCallbackUrl ? { readCallbackUrl: this.options.readCallbackUrl } : {}),
     };
     const provider = createAuthProvider(config.auth ?? { kind: "oauth" }, deps);
     this.rememberAuthProvider(definition, provider);
     return provider;
   }
 
-  private rememberAuthProvider(
-    definition: McpServerDefinition,
-    provider: McpAuthProvider,
-  ): void {
+  private rememberAuthProvider(definition: McpServerDefinition, provider: McpAuthProvider): void {
     this.authProviders.set(definition.name, provider);
     this.authSignatures.set(definition.name, definition.signature);
   }
@@ -212,6 +237,11 @@ export class McpManager {
   }
 
   async refresh(options: { force?: boolean } = {}): Promise<McpSnapshot> {
+    return this.enqueue(() => this.refreshConnections(options));
+  }
+
+  private async refreshConnections(options: { force?: boolean }): Promise<McpSnapshot> {
+    if (this.closed) return this.snapshot();
     this.discovery = discoverMcpServers(this.options.discovery ?? {});
     const next = new Map<string, McpServerDefinition>();
     for (const definition of this.discovery.servers) next.set(definition.name, definition);
@@ -281,8 +311,7 @@ export class McpManager {
       client: undefined,
       status,
       tools: [],
-      detail:
-        status === "disabled" ? "disabled by configuration" : STOPPED_DETAIL,
+      detail: status === "disabled" ? "disabled by configuration" : STOPPED_DETAIL,
       serverInfo: undefined,
       protocolVersion: undefined,
     });
@@ -293,6 +322,10 @@ export class McpManager {
   }
 
   async stop(serverName: string): Promise<McpSnapshot> {
+    return this.enqueue(() => this.stopConnection(serverName));
+  }
+
+  private async stopConnection(serverName: string): Promise<McpSnapshot> {
     const definition = this.findDefinition(serverName);
     if (!definition) return this.snapshot();
     const existing = this.connections.get(definition.name);
@@ -303,6 +336,11 @@ export class McpManager {
   }
 
   async reconnect(name: string): Promise<McpSnapshot> {
+    return this.enqueue(() => this.reconnectConnection(name));
+  }
+
+  private async reconnectConnection(name: string): Promise<McpSnapshot> {
+    if (this.closed) return this.snapshot();
     const definition = this.findDefinition(name);
     if (!definition) return this.snapshot();
     const resolved = definition.name;
@@ -363,7 +401,7 @@ export class McpManager {
     };
     const authProvider = this.buildAuthProvider(definition, config);
     const httpOptions: HttpTransportOptions = {
-      requestTimeoutMs: this.requestTimeoutMs,
+      requestTimeoutMs: config.timeoutMs ?? this.requestTimeoutMs,
       ...(authProvider ? { authProvider } : {}),
     };
     return alternate.transport === "sse"
@@ -377,38 +415,34 @@ export class McpManager {
     transport: McpTransport,
   ): Promise<unknown> {
     let client: McpClient | undefined;
+    const timeoutMs = definition.config.connectTimeoutMs ?? this.connectTimeoutMs;
+    const { signal, dispose } = withTimeout(this.lifetime.signal, timeoutMs);
     try {
-      client = new McpClient(transport, this.options.clientOptions ?? {});
-      const init = await client.initialize({ timeoutMs: this.connectTimeoutMs });
+      client = new McpClient(transport, {
+        roots: () => [
+          {
+            uri: pathToFileURL(this.options.discovery?.workspaceFolder ?? safeCwd()).href,
+          },
+        ],
+        ...this.options.clientOptions,
+      });
+      client.onToolsChanged(() => this.scheduleCatalogRefresh(state));
+      const init = await awaitMcpOperation(
+        client.initialize({
+          timeoutMs,
+          signal,
+        }),
+        signal,
+      );
       state.client = client;
       state.serverInfo = init.serverInfo;
       state.protocolVersion = init.protocolVersion;
       try {
-        const descriptors = await client.listTools({ timeoutMs: this.connectTimeoutMs });
-        const selected = descriptors
-          .filter(
-            (descriptor) =>
-              definition.toolSelection === "all" ||
-              definition.toolSelection.includes(descriptor.name),
-          )
-          .filter(
-            (descriptor, index, list) =>
-              list.findIndex((candidate) => candidate.name === descriptor.name) === index,
-          )
-          .sort((a, b) => a.name.localeCompare(b.name));
-        const allocated = allocateWireNames(
-          selected.map((descriptor) => ({
-            serverName: definition.name,
-            toolName: descriptor.name,
-          })),
-        );
-        state.tools = selected.map((descriptor) =>
-          toToolMetadata(
-            definition.name,
-            descriptor,
-            allocated.get(toolIdentity(definition.name, descriptor.name))!,
-          ),
-        );
+        const descriptors = await client.listTools({
+          timeoutMs,
+          signal,
+        });
+        state.tools = this.catalogTools(definition, descriptors);
         state.status = "ready";
         state.detail = undefined;
       } catch (error) {
@@ -423,8 +457,38 @@ export class McpManager {
       if (client) await client.close().catch(() => undefined);
       state.client = undefined;
       return error;
+    } finally {
+      dispose();
     }
     return undefined;
+  }
+
+  private catalogTools(
+    definition: McpServerDefinition,
+    descriptors: readonly McpToolDescriptor[],
+  ): McpToolMetadata[] {
+    const unique = new Map<string, McpToolDescriptor>();
+    for (const tool of descriptors) {
+      if (definition.toolSelection !== "all" && !definition.toolSelection.includes(tool.name))
+        continue;
+      if (!unique.has(tool.name)) unique.set(tool.name, tool);
+    }
+    const selected = [...unique.values()].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
+    const allocated = allocateWireNames(
+      selected.map((tool) => ({
+        serverName: definition.name,
+        toolName: tool.name,
+      })),
+    );
+    return selected.map((tool) =>
+      toToolMetadata(
+        definition.name,
+        tool,
+        allocated.get(toolIdentity(definition.name, tool.name))!,
+      ),
+    );
   }
 
   private reconcileToolNames(): void {
@@ -438,14 +502,52 @@ export class McpManager {
     );
     const allocated = allocateWireNames(all);
     for (const state of this.connections.values()) {
-      state.tools = state.tools.map((tool) => ({
-        ...tool,
-        canonicalName: canonicalToolName(tool.serverName, tool.toolName),
-        wireName:
-          allocated.get(toolIdentity(tool.serverName, tool.toolName)) ??
-          tool.wireName,
-      }));
+      state.tools = state.tools.map((tool) => {
+        const canonicalName = canonicalToolName(tool.serverName, tool.toolName);
+        const wireName =
+          allocated.get(toolIdentity(tool.serverName, tool.toolName)) ?? tool.wireName;
+        return canonicalName === tool.canonicalName && wireName === tool.wireName
+          ? tool
+          : { ...tool, canonicalName, wireName };
+      });
     }
+  }
+
+  private scheduleCatalogRefresh(state: ConnectionState): void {
+    if (this.closed) return;
+    if (this.catalogRefreshes.has(state)) {
+      this.dirtyCatalogs.add(state);
+      return;
+    }
+    this.catalogRefreshes.add(state);
+    void this.enqueue(async () => {
+      if (this.closed || this.connections.get(state.definition.name) !== state || !state.client)
+        return;
+      this.dirtyCatalogs.delete(state);
+      try {
+        const descriptors = await state.client.listTools({
+          timeoutMs: state.definition.config.connectTimeoutMs ?? this.connectTimeoutMs,
+          signal: this.lifetime.signal,
+        });
+        state.tools = this.catalogTools(state.definition, descriptors);
+        state.status = "ready";
+        state.detail = undefined;
+      } catch (error) {
+        state.detail = `Tool catalog refresh failed: ${describeError(error, this.mergedSecrets(state.definition))}`;
+      }
+      const snapshot = this.snapshot();
+      for (const listener of this.listeners) listener(snapshot);
+    })
+      .catch(() => undefined)
+      .finally(() => {
+        this.catalogRefreshes.delete(state);
+        if (
+          this.dirtyCatalogs.delete(state) &&
+          !this.closed &&
+          this.connections.get(state.definition.name) === state
+        )
+          this.scheduleCatalogRefresh(state);
+      });
   }
 
   private async disposeConnection(state: ConnectionState): Promise<void> {
@@ -455,6 +557,13 @@ export class McpManager {
   }
 
   async closeAll(): Promise<void> {
+    this.closed = true;
+    this.lifetime.abort(new McpTransportError("closed", "MCP manager closed."));
+    await this.enqueue(() => this.disposeAll());
+    this.listeners.clear();
+  }
+
+  private async disposeAll(): Promise<void> {
     const states = [...this.connections.values()];
     this.connections.clear();
     this.stopped.clear();
@@ -526,6 +635,24 @@ export class McpManager {
     return this.snapshot().tools.slice();
   }
 
+  private recoverConnection(serverName: string, client: McpClient): Promise<McpSnapshot> {
+    const pending = this.recoveries.get(serverName);
+    if (pending) return pending;
+    if (this.connections.get(serverName)?.client !== client)
+      return Promise.resolve(this.snapshot());
+    const recovery = this.reconnect(serverName).then((snapshot) => {
+      for (const listener of this.listeners) listener(snapshot);
+      return snapshot;
+    });
+    this.recoveries.set(serverName, recovery);
+    void recovery
+      .finally(() => {
+        if (this.recoveries.get(serverName) === recovery) this.recoveries.delete(serverName);
+      })
+      .catch(() => undefined);
+    return recovery;
+  }
+
   async callTool(
     name: string,
     args: Record<string, unknown>,
@@ -539,10 +666,63 @@ export class McpManager {
     if (!state || !state.client || state.status !== "ready") {
       throw new McpTransportError("closed", `MCP server "${tool.serverName}" is not ready.`);
     }
-    return await state.client.callTool(tool.toolName, args, {
-      timeoutMs: this.requestTimeoutMs,
+    const requestOptions = {
       ...options,
-    });
+      timeoutMs: options.timeoutMs ?? state.definition.config.timeoutMs ?? this.requestTimeoutMs,
+      signal: options.signal
+        ? AbortSignal.any([options.signal, this.lifetime.signal])
+        : this.lifetime.signal,
+    };
+    const deadline = Date.now() + requestOptions.timeoutMs;
+    const client = state.client;
+    try {
+      return await client.callTool(tool.toolName, args, requestOptions);
+    } catch (error) {
+      if (
+        this.closed ||
+        this.stopped.has(tool.serverName) ||
+        options.signal?.aborted ||
+        !(error instanceof McpTransportError)
+      )
+        throw error;
+      const expiredSession = error.status === 404 && client.getSessionId() !== undefined;
+      const transient =
+        ["closed", "network"].includes(error.kind) &&
+        (error.status === undefined || error.status >= 500);
+      if (!expiredSession && !transient) throw error;
+      const remainingMs = deadline - Date.now();
+      const recovery = this.recoverConnection(tool.serverName, client);
+      if (remainingMs <= 0) throw error;
+      const { signal, dispose } = withTimeout(requestOptions.signal, remainingMs);
+      try {
+        await awaitMcpOperation(recovery, signal);
+      } finally {
+        dispose();
+      }
+      if (!expiredSession && !tool.readOnly && !tool.idempotent) throw error;
+      const current = this.connections.get(tool.serverName);
+      const replacement = this.getTool(tool.canonicalName);
+      if (
+        !current?.client ||
+        current.status !== "ready" ||
+        !replacement ||
+        replacement.readOnly !== tool.readOnly ||
+        replacement.idempotent !== tool.idempotent ||
+        replacement.destructive !== tool.destructive ||
+        replacement.openWorld !== tool.openWorld ||
+        JSON.stringify(replacement.inputSchema) !== JSON.stringify(tool.inputSchema)
+      )
+        throw error;
+      if (options.signal?.aborted)
+        throw new McpTransportError("cancelled", "MCP tool call cancelled during reconnect.");
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        throw new McpTransportError("timeout", "MCP tool deadline expired during reconnect.");
+      return current.client.callTool(tool.toolName, args, {
+        ...requestOptions,
+        timeoutMs: remaining,
+      });
+    }
   }
 
   async login(serverName: string): Promise<{ ok: boolean; detail: string }> {
@@ -558,10 +738,12 @@ export class McpManager {
         detail: `MCP server "${resolved}" is stdio and uses environment credentials, not OAuth login.`,
       };
     }
-    const provider =
-      this.authProviders.get(resolved) ?? this.buildAuthProvider(definition, config);
+    const provider = this.authProviders.get(resolved) ?? this.buildAuthProvider(definition, config);
     try {
-      const ok = await provider.onUnauthorized(undefined);
+      const ok = await provider.onUnauthorized(undefined, {
+        interactive: true,
+        signal: this.lifetime.signal,
+      });
       return ok
         ? { ok: true, detail: `Authenticated MCP server ${resolved}.` }
         : {
@@ -569,7 +751,10 @@ export class McpManager {
             detail: `MCP server "${resolved}" does not use OAuth (or authorization was declined).`,
           };
     } catch (error) {
-      return { ok: false, detail: describeError(error, this.mergedSecrets(definition)) };
+      return {
+        ok: false,
+        detail: describeError(error, this.mergedSecrets(definition)),
+      };
     }
   }
 }

@@ -54,14 +54,16 @@ afterEach(() => {
 });
 
 describe("/rtk statistics", () => {
-  it.each(["picker", "status"])("identifies estimated global savings in %s", async (surface) => {
+  it.each(["picker", "status"])("identifies estimated session savings in %s", async (surface) => {
     const notice = vi.spyOn(services.session, "notice");
     createRtkExecutionRecorder(services.session.sessionId)();
     if (surface === "picker") await open();
     else await invoke("status");
     const text = surface === "picker" ? description() : notice.mock.calls[0]![1];
     expect(text).toContain("1 automatic RTK run this session");
-    expect(text).toContain("1.5M estimated tokens saved globally (83%)");
+    expect(readRtkGain).toHaveBeenCalledWith(ready.path, services.session.sessionId);
+    expect(text).not.toContain("globally");
+    expect(text).toContain("1.5M estimated tokens saved this session (83%)");
     expect(text).not.toContain("command compressed");
     if (surface === "picker") expect(text).toContain("select to refresh");
   });
@@ -82,13 +84,13 @@ describe("/rtk statistics", () => {
     }
   });
 
-  it.each(["picker", "status"])("distinguishes a valid empty global history in %s", async (surface) => {
+  it.each(["picker", "status"])("distinguishes a valid empty session history in %s", async (surface) => {
     vi.mocked(readRtkGain).mockResolvedValue({ commands: 0, savedTokens: 0, savingsPct: 0 });
     const notice = vi.spyOn(services.session, "notice");
     if (surface === "picker") await open();
     else await invoke("status");
     const text = surface === "picker" ? description() : notice.mock.calls[0]![1];
-    expect(text).toContain("no global RTK history yet");
+    expect(text).toContain("no RTK savings recorded for this session yet");
     expect(text).not.toContain("unavailable");
   });
 
@@ -97,7 +99,7 @@ describe("/rtk statistics", () => {
     createRtkExecutionRecorder(services.session.sessionId)();
     await open();
     expect(description()).toContain("1 automatic RTK run this session");
-    expect(description()).toContain("0 estimated tokens saved globally (0%)");
+    expect(description()).toContain("0 estimated tokens saved this session (0%)");
   });
 
   it("shows the current conversation's count after minting a new session", async () => {
@@ -131,10 +133,10 @@ describe("/rtk refresh ownership", () => {
     expect(picker().request.options.find((option) => option.value === "refresh")?.label).toBe("Detecting rtk…");
     latest.resolve({ commands: 2, savedTokens: 200, savingsPct: 50 });
     await settle();
-    expect(description()).toContain("200 estimated tokens saved globally");
+    expect(description()).toContain("200 estimated tokens saved this session");
     old.resolve({ commands: 1, savedTokens: 100, savingsPct: 25 });
     await settle();
-    expect(description()).toContain("200 estimated tokens saved globally");
+    expect(description()).toContain("200 estimated tokens saved this session");
     expect(picker().onSelect).toBe(selection);
     expect(services.focus.activeContext()).toBe("picker");
   });
@@ -151,7 +153,7 @@ describe("/rtk refresh ownership", () => {
     expect(picker().request.options.find((option) => option.value === "refresh")?.label).toBe("Detecting rtk…");
     latest.resolve(gain);
     await settle();
-    expect(description()).toContain("1.5M estimated tokens saved globally");
+    expect(description()).toContain("1.5M estimated tokens saved this session");
   });
 
   it("does not reopen a closed picker", async () => {
@@ -185,7 +187,7 @@ describe("/rtk refresh ownership", () => {
     await open();
     old.resolve({ commands: 1, savedTokens: 100, savingsPct: 25 });
     await settle();
-    expect(description()).toContain("1.5M estimated tokens saved globally");
+    expect(description()).toContain("1.5M estimated tokens saved this session");
   });
 
   it("ignores refresh results after the owning conversation changes", async () => {

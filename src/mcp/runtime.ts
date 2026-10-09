@@ -1,16 +1,17 @@
 import { createHash } from "node:crypto";
-import { fromWireName, registerWireName, registeredCanonicalForWire } from "../llm/tool-protocol.js";
+import {
+  fromWireName,
+  registerWireName,
+  registeredCanonicalForWire,
+} from "../llm/tool-protocol.js";
 import type { RiskDecision } from "../safety/classifier.js";
 import type { ToolDefinition, ToolResult } from "../types.js";
 import { redactSecrets } from "./format.js";
 import { coerceArgumentsForSchema } from "./coerce.js";
 import { writeProjectMcpServer } from "./config-file.js";
-import {
-  KNOWN_MCP_SERVERS,
-  knownMcpServer,
-  planKnownMcpInstall,
-} from "./known-servers.js";
+import { KNOWN_MCP_SERVERS, knownMcpServer, planKnownMcpInstall } from "./known-servers.js";
 import { McpManager, type McpManagerOptions } from "./manager.js";
+import { MCP_CONTEXT_CATALOG_CHARS, toolCatalogPage, type McpToolQuery } from "./catalog.js";
 import { mcpMentionNames } from "./mentions.js";
 import {
   MCP_TOOL_DESCRIPTION_CHARS,
@@ -20,11 +21,7 @@ import {
 import { registerExternalToolDispatcher } from "../tools/external-tools.js";
 import { McpTransportError } from "./transport.js";
 import type { OAuthConsentInfo } from "./auth/provider.js";
-import type {
-  McpNormalizedResult,
-  McpSnapshot,
-  McpToolMetadata,
-} from "./types.js";
+import type { McpNormalizedResult, McpSnapshot, McpToolMetadata } from "./types.js";
 
 export type McpRuntimeSelection =
   | { readonly mode: "all" }
@@ -50,26 +47,22 @@ export interface McpRuntimeOptions {
   readonly oauthInteractive?: boolean | undefined;
   readonly onDeviceAuthorization?: McpManagerOptions["onDeviceAuthorization"];
   readonly onAuthorizationUrl?: McpManagerOptions["onAuthorizationUrl"];
+  readonly readCallbackUrl?: McpManagerOptions["readCallbackUrl"];
 }
 
-function resolveManagerOptions(
-  options: McpRuntimeOptions,
-): McpManagerOptions | undefined {
+function resolveManagerOptions(options: McpRuntimeOptions): McpManagerOptions | undefined {
   const base = options.managerOptions;
   const extra: McpManagerOptions = {
     ...(options.openBrowser ? { openBrowser: options.openBrowser } : {}),
-    ...(options.requestOAuthConsent
-      ? { requestOAuthConsent: options.requestOAuthConsent }
-      : {}),
+    ...(options.requestOAuthConsent ? { requestOAuthConsent: options.requestOAuthConsent } : {}),
     ...(options.oauthInteractive !== undefined
       ? { oauthInteractive: options.oauthInteractive }
       : {}),
     ...(options.onDeviceAuthorization
       ? { onDeviceAuthorization: options.onDeviceAuthorization }
       : {}),
-    ...(options.onAuthorizationUrl
-      ? { onAuthorizationUrl: options.onAuthorizationUrl }
-      : {}),
+    ...(options.onAuthorizationUrl ? { onAuthorizationUrl: options.onAuthorizationUrl } : {}),
+    ...(options.readCallbackUrl ? { readCallbackUrl: options.readCallbackUrl } : {}),
   };
   if (Object.keys(extra).length === 0) return base;
   return { ...(base ?? {}), ...extra };
@@ -92,31 +85,25 @@ function safetyTag(tool: McpToolMetadata): string {
   return tool.destructive ? "confirm · destructive" : "confirm";
 }
 
-function activeTools(
-  snapshot: McpSnapshot,
-  selection: McpRuntimeSelection,
-): McpToolMetadata[] {
+function activeTools(snapshot: McpSnapshot, selection: McpRuntimeSelection): McpToolMetadata[] {
   if (selection.mode === "off") return [];
   return snapshot.tools
-    .filter(
-      (tool) =>
-        selection.mode === "all" ||
-        selection.serverNames.includes(tool.serverName),
-    )
-    .filter(
-      (tool) =>
-        registeredCanonicalForWire(tool.wireName) === tool.canonicalName,
-    )
+    .filter((tool) => selection.mode === "all" || selection.serverNames.includes(tool.serverName))
+    .filter((tool) => registeredCanonicalForWire(tool.wireName) === tool.canonicalName)
     .slice()
     .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName));
 }
 
+const definitions = new WeakMap<McpToolMetadata, ToolDefinition>();
+
 function definitionFor(tool: McpToolMetadata): ToolDefinition {
+  const cached = definitions.get(tool);
+  if (cached) return cached;
   const summary = compactDescription(
     tool.description.trim() || tool.title?.trim() || `MCP tool ${tool.toolName}`,
     MCP_TOOL_DESCRIPTION_CHARS,
   );
-  return {
+  const definition: ToolDefinition = {
     name: tool.canonicalName,
     wireName: tool.wireName,
     description: `MCP ${tool.serverName} [${safetyTag(tool)}]: ${summary}`,
@@ -125,12 +112,11 @@ function definitionFor(tool: McpToolMetadata): ToolDefinition {
     mutates: !tool.readOnly,
     askMode: tool.readOnly,
   };
+  definitions.set(tool, definition);
+  return definition;
 }
 
-function signatureFor(
-  snapshot: McpSnapshot,
-  selection: McpRuntimeSelection,
-): string {
+function signatureFor(snapshot: McpSnapshot, selection: McpRuntimeSelection): string {
   const definitions = activeTools(snapshot, selection).map(definitionFor);
   return createHash("sha256")
     .update(
@@ -156,10 +142,7 @@ function errorText(error: unknown): string {
   return String(error);
 }
 
-function sameSelection(
-  left: McpRuntimeSelection,
-  right: McpRuntimeSelection,
-): boolean {
+function sameSelection(left: McpRuntimeSelection, right: McpRuntimeSelection): boolean {
   if (left.mode !== right.mode) return false;
   if (left.mode !== "servers" || right.mode !== "servers") return true;
   return (
@@ -219,6 +202,7 @@ export class McpRuntime {
   private base: McpBaseSelection = { mode: "off" };
   private readonly leases: McpLeaseView[] = [];
   private readonly unregisterDispatcher: () => void;
+  private readonly unsubscribeManager: () => void;
 
   constructor(options: McpRuntimeOptions = {}) {
     this.manager = options.manager ?? new McpManager(resolveManagerOptions(options));
@@ -231,11 +215,15 @@ export class McpRuntime {
       activeToolCount: 0,
       catalogSignature: signatureFor(snapshot, selection),
     });
+    this.unsubscribeManager = this.manager.subscribe((snapshot) => {
+      if (this.closed) return;
+      const collision = this.registerSnapshotTools(snapshot);
+      this.publish({ snapshot, ...(collision ? { error: collision } : {}) });
+    });
     this.unregisterDispatcher = registerExternalToolDispatcher({
       toolNames: () => this.toolNames(),
       hasTool: (name) => this.getTool(name) !== undefined,
-      callTool: (name, args, callOptions) =>
-        this.callTool(name, args, callOptions ?? {}),
+      callTool: (name, args, callOptions) => this.callTool(name, args, callOptions ?? {}),
       canonicalizeToolName: (name) => this.canonicalizeToolName(name),
       classify: (name) => this.classify(name),
       isParallelSafe: (name) => this.isParallelSafe(name),
@@ -267,8 +255,7 @@ export class McpRuntime {
         snapshot.statuses.some((status) => status.name === name),
       );
       if (live.length !== selection.serverNames.length) {
-        selection =
-          live.length > 0 ? { mode: "servers", serverNames: live } : this.base;
+        selection = live.length > 0 ? { mode: "servers", serverNames: live } : this.base;
       }
     }
     const tools = activeTools(snapshot, selection);
@@ -320,9 +307,7 @@ export class McpRuntime {
     this.started = true;
     let operation: Promise<McpSnapshot>;
     try {
-      operation = options.force
-        ? this.manager.forceRefresh()
-        : this.manager.refresh();
+      operation = options.force ? this.manager.forceRefresh() : this.manager.refresh();
     } catch (error) {
       return this.publish({ refreshing: false, error: errorText(error) });
     }
@@ -336,9 +321,7 @@ export class McpRuntime {
           ...(collision ? { error: collision } : {}),
         });
       })
-      .catch((error) =>
-        this.publish({ refreshing: false, error: errorText(error) }),
-      );
+      .catch((error) => this.publish({ refreshing: false, error: errorText(error) }));
     this.refreshPromise = promise;
     try {
       return await promise;
@@ -370,9 +353,7 @@ export class McpRuntime {
     if (selection.mode !== "servers") return selection;
     const kept = selection.serverNames.filter((name) => name !== serverName);
     if (kept.length === selection.serverNames.length) return selection;
-    return kept.length > 0
-      ? { mode: "servers", serverNames: kept }
-      : this.base;
+    return kept.length > 0 ? { mode: "servers", serverNames: kept } : this.base;
   }
 
   isStopped(serverName: string): boolean {
@@ -500,9 +481,7 @@ export class McpRuntime {
       view.snapshot.toolsByWireName.get(name) ??
       view.snapshot.toolsByWireName.get(mapped);
     if (direct) return direct;
-    const folded = [foldToolName(name), foldToolName(mapped)].filter(
-      (value) => value.length > 0,
-    );
+    const folded = [foldToolName(name), foldToolName(mapped)].filter((value) => value.length > 0);
     if (folded.length === 0) return undefined;
     const exact = view.snapshot.tools.filter(
       (tool) =>
@@ -517,7 +496,10 @@ export class McpRuntime {
     return suffix.length === 1 ? suffix[0] : undefined;
   }
 
-  getTool(name: string, options: { includeUnselected?: boolean } = {}): McpToolMetadata | undefined {
+  getTool(
+    name: string,
+    options: { includeUnselected?: boolean } = {},
+  ): McpToolMetadata | undefined {
     const mapped = fromWireName(name) ?? name;
     for (const view of this.views()) {
       const tool = this.resolveMetadata(view, name, mapped);
@@ -579,16 +561,12 @@ export class McpRuntime {
 
   private secretsFor(serverName: string): readonly string[] {
     const configured =
-      this.manager
-        .getDiscovery()
-        .servers.find((server) => server.name === serverName)?.secretValues ?? [];
+      this.manager.getDiscovery().servers.find((server) => server.name === serverName)
+        ?.secretValues ?? [];
     return [...configured, ...this.manager.liveSecrets(serverName)];
   }
 
-  private normalizeResult(
-    tool: McpToolMetadata,
-    result: McpNormalizedResult,
-  ): ToolResult {
+  private normalizeResult(tool: McpToolMetadata, result: McpNormalizedResult): ToolResult {
     const secrets = this.secretsFor(tool.serverName);
     const text = redactSecrets(result.text.trim(), secrets);
     return {
@@ -606,7 +584,10 @@ export class McpRuntime {
   async callTool(
     name: string,
     args: Record<string, unknown>,
-    options: { signal?: AbortSignal | undefined; timeoutMs?: number | undefined } = {},
+    options: {
+      signal?: AbortSignal | undefined;
+      timeoutMs?: number | undefined;
+    } = {},
   ): Promise<ToolResult> {
     const tool = this.getTool(name);
     if (!tool) {
@@ -616,16 +597,24 @@ export class McpRuntime {
         output: this.unavailableToolMessage(name),
       };
     }
+    const live = this.state.snapshot.toolsByCanonicalName.get(tool.canonicalName);
+    if (
+      live &&
+      (live.readOnly !== tool.readOnly ||
+        live.idempotent !== tool.idempotent ||
+        live.destructive !== tool.destructive ||
+        live.openWorld !== tool.openWorld ||
+        JSON.stringify(live.inputSchema) !== JSON.stringify(tool.inputSchema))
+    ) {
+      return {
+        ok: false,
+        exitCode: 1,
+        output: `MCP tool ${tool.canonicalName} changed during this turn. Inspect its current schema with mcp.tools and call it again in a new turn.`,
+      };
+    }
     try {
-      const { args: coercedArgs, coerced } = coerceArgumentsForSchema(
-        args,
-        tool.inputSchema,
-      );
-      const result = await this.manager.callTool(
-        tool.canonicalName,
-        coercedArgs,
-        options,
-      );
+      const { args: coercedArgs, coerced } = coerceArgumentsForSchema(args, tool.inputSchema);
+      const result = await this.manager.callTool(tool.canonicalName, coercedArgs, options);
       const normalized = this.normalizeResult(tool, result);
       if (coerced.length > 0 && !normalized.ok) {
         normalized.output = `${normalized.output}\n(note: clai coerced string argument(s) ${coerced.join(", ")} to the schema-declared type; the server still rejected the call — check the tool schema with mcp.tools.)`;
@@ -667,10 +656,7 @@ export class McpRuntime {
           .join(", ")}`,
       );
     }
-    if (
-      state.selection.mode === "off" &&
-      statuses.some((status) => status.status === "ready")
-    ) {
+    if (state.selection.mode === "off" && statuses.some((status) => status.status === "ready")) {
       lines.push(
         'MCP tools are not active yet — call mcp.enable with a server name or "all", then call the tools listed by mcp.tools.',
       );
@@ -678,11 +664,9 @@ export class McpRuntime {
     return { ok: true, output: lines.join("\n"), exitCode: 0 };
   }
 
-  async agentTools(server?: string): Promise<ToolResult> {
+  async agentTools(server?: string, options: McpToolQuery = {}): Promise<ToolResult> {
     await this.ensureReady();
-    const tools = this.state.snapshot.tools.filter(
-      (tool) => !server || tool.serverName === server,
-    );
+    const tools = this.state.snapshot.tools.filter((tool) => !server || tool.serverName === server);
     if (tools.length === 0) {
       return {
         ok: true,
@@ -692,14 +676,10 @@ export class McpRuntime {
         exitCode: 0,
       };
     }
-    const lines = tools.map((tool) => {
+    return toolCatalogPage(tools, options, (tool) => {
       const definition = definitionFor(tool);
       return `- ${tool.canonicalName} [${tool.readOnly ? "read-only" : "mutating"}] args=${JSON.stringify(definition.parameters)}: ${definition.description}`;
     });
-    lines.push(
-      "Call through mcp.call with the exact dotted name and an arguments object matching its schema. If a server is not active yet, run mcp.enable with its name first.",
-    );
-    return { ok: true, output: lines.join("\n"), exitCode: 0 };
   }
 
   private enabledSummary(prefix: string, state: McpRuntimeState): string {
@@ -713,7 +693,11 @@ export class McpRuntime {
   async agentEnable(target?: string | readonly string[]): Promise<ToolResult> {
     await this.ensureReady();
     try {
-      if (target === undefined || target === "all" || (typeof target === "string" && target.trim().length === 0)) {
+      if (
+        target === undefined ||
+        target === "all" ||
+        (typeof target === "string" && target.trim().length === 0)
+      ) {
         const state = this.selectAll();
         return {
           ok: true,
@@ -723,7 +707,11 @@ export class McpRuntime {
       }
       if (target === "off") {
         this.selectOff();
-        return { ok: true, output: "MCP tools disabled for this session.", exitCode: 0 };
+        return {
+          ok: true,
+          output: "MCP tools disabled for this session.",
+          exitCode: 0,
+        };
       }
       const names = typeof target === "string" ? [target] : [...target];
       const state = this.selectServers(names);
@@ -739,13 +727,21 @@ export class McpRuntime {
 
   async agentConnect(serverName: string): Promise<ToolResult> {
     if (!serverName || serverName.trim().length === 0) {
-      return { ok: false, output: "mcp.connect requires a server name.", exitCode: 1 };
+      return {
+        ok: false,
+        output: "mcp.connect requires a server name.",
+        exitCode: 1,
+      };
     }
     const state = await this.reconnect(serverName);
     const resolved = this.manager.resolveServerName(serverName) ?? serverName;
     const status = state.snapshot.statuses.find((entry) => entry.name === resolved);
     if (!status) {
-      return { ok: false, output: `Unknown MCP server "${serverName}".`, exitCode: 1 };
+      return {
+        ok: false,
+        output: `Unknown MCP server "${serverName}".`,
+        exitCode: 1,
+      };
     }
     const ok = status.status === "ready";
     return {
@@ -778,9 +774,7 @@ export class McpRuntime {
           exitCode: 1,
         };
       }
-      const existing = this.state.snapshot.statuses.find(
-        (status) => status.name === known.id,
-      );
+      const existing = this.state.snapshot.statuses.find((status) => status.name === known.id);
       if (existing) {
         return {
           ok: true,
@@ -813,7 +807,7 @@ export class McpRuntime {
         exitCode: 1,
       };
     }
-    const state = await this.refresh({ force: true });
+    const state = await this.refresh();
     const status = state.snapshot.statuses.find(
       (candidate) => candidate.name === written.serverName,
     );
@@ -841,11 +835,19 @@ export class McpRuntime {
 
   async agentLogin(serverName: string): Promise<ToolResult> {
     if (!serverName || serverName.trim().length === 0) {
-      return { ok: false, output: "mcp.login requires a server name.", exitCode: 1 };
+      return {
+        ok: false,
+        output: "mcp.login requires a server name.",
+        exitCode: 1,
+      };
     }
     const result = await this.manager.login(serverName);
     if (result.ok) await this.reconnect(serverName);
-    return { ok: result.ok, output: result.detail, exitCode: result.ok ? 0 : 1 };
+    return {
+      ok: result.ok,
+      output: result.detail,
+      exitCode: result.ok ? 0 : 1,
+    };
   }
 
   canLogin(serverName: string): boolean {
@@ -874,24 +876,40 @@ export class McpRuntime {
         ? "Call a selected MCP tool through mcp.call using its exact dotted name and an arguments object matching the catalog schema below."
         : "Call MCP tools by their exact dotted name as listed below; pass arguments as proper JSON values matching each tool's schema (objects as objects, numbers as numbers — never stringified JSON).",
     ];
+    let statusChars = 0;
     for (const status of view.snapshot.statuses) {
-      lines.push(
-        `Server ${status.name}: ${status.status}; transport=${status.transport}; source=${status.source.kind}; tools=${status.toolCount}${status.detail ? `; detail=${status.detail}` : ""}`,
-      );
+      const line = `Server ${status.name}: ${status.status}; tools=${status.toolCount}${status.detail ? `; detail=${compactDescription(status.detail, 240)}` : ""}`;
+      if (statusChars + line.length > 2_000) {
+        lines.push("Additional servers are listed by mcp.list.");
+        break;
+      }
+      lines.push(line);
+      statusChars += line.length + 1;
     }
+    const catalog: string[] = [];
+    let catalogChars = 0;
     for (const definition of definitions) {
-      lines.push(
-        `- ${definition.name} args=${JSON.stringify(definition.parameters)}: ${definition.description}`,
-      );
+      const line = `- ${definition.name} args=${JSON.stringify(definition.parameters)}: ${definition.description}`;
+      catalogChars += line.length + 1;
+      if (catalogChars > MCP_CONTEXT_CATALOG_CHARS) break;
+      catalog.push(line);
     }
+    if (catalogChars <= MCP_CONTEXT_CATALOG_CHARS) lines.push(...catalog);
+    else
+      lines.push(
+        "Tool schemas are deferred for this large catalog. Search with mcp.tools using query and optional server; follow its cursor for additional pages. Read a tool's schema before calling it through mcp.call. All selected tools remain callable.",
+      );
     if (view.snapshot.invalid.length > 0) {
       lines.push(
-        `Invalid configured servers: ${view.snapshot.invalid
-          .map((entry) => `${entry.name} (${entry.errors.join("; ")})`)
-          .join(", ")}`,
+        compactDescription(
+          `Invalid configured servers: ${view.snapshot.invalid
+            .map((entry) => `${entry.name} (${entry.errors.join("; ")})`)
+            .join(", ")}`,
+          500,
+        ),
       );
     }
-    if (state.error) lines.push(`Runtime warning: ${state.error}`);
+    if (state.error) lines.push(`Runtime warning: ${compactDescription(state.error, 500)}`);
     return lines.join("\n");
   }
 
@@ -912,8 +930,9 @@ export class McpRuntime {
     this.closed = true;
     this.leases.length = 0;
     this.unregisterDispatcher();
-    if (this.refreshPromise) await this.refreshPromise.catch(() => undefined);
-    await this.manager.closeAll();
+    this.unsubscribeManager();
+    const closing = this.manager.closeAll();
+    await Promise.all([closing, this.refreshPromise?.catch(() => undefined)]);
     const snapshot = emptySnapshot();
     this.publish({ snapshot, refreshing: false });
     this.listeners.clear();

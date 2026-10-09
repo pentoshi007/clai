@@ -140,10 +140,7 @@ function logicalRemotePath(pathname: string): string {
   return `mcp-service:${parent.length > 0 ? parent : "/"}`;
 }
 
-function logicalServerIdentity(
-  config: McpServerConfig,
-  toolSelection: McpToolSelection,
-): string {
+function logicalServerIdentity(config: McpServerConfig, toolSelection: McpToolSelection): string {
   let identity: unknown = config;
   if (config.transport !== "stdio") {
     const url = new URL(config.url);
@@ -161,8 +158,7 @@ function logicalServerIdentity(
       auth: config.auth ?? { kind: "oauth" },
     };
   }
-  const tools =
-    toolSelection === "all" ? "all" : [...toolSelection].sort();
+  const tools = toolSelection === "all" ? "all" : [...toolSelection].sort();
   return createHash("sha256")
     .update(JSON.stringify(canonicalize({ identity, tools })))
     .digest("hex");
@@ -340,6 +336,7 @@ function looksLikeServer(value: unknown): boolean {
   if (!record) return false;
   return (
     typeof record.command === "string" ||
+    Array.isArray(record.command) ||
     typeof record.url === "string" ||
     typeof record.type === "string"
   );
@@ -416,6 +413,7 @@ function extractBlocks(
   if (nested) {
     claim(asObject(nested.servers));
     claim(asObject(nested.mcpServers));
+    claim(Object.fromEntries(Object.entries(nested).filter(([, entry]) => looksLikeServer(entry))));
   }
 
   if (Object.keys(servers).length === 0 && supportsBareMap(kind)) {
@@ -428,9 +426,7 @@ function extractBlocks(
   return { servers, inputs };
 }
 
-export function discoverMcpServers(
-  options: McpDiscoveryOptions = {},
-): McpDiscoveryResult {
+export function discoverMcpServers(options: McpDiscoveryOptions = {}): McpDiscoveryResult {
   const workspaceFolder = resolve(options.workspaceFolder ?? safeCwd());
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? env.CLAI_MCP_HOME ?? homedir();

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAuthProvider } from "../../src/mcp/auth/provider.js";
 import { McpTransportError } from "../../src/mcp/transport.js";
+import { pollDeviceTokens, requestDeviceAuthorization } from "../../src/mcp/auth/device.js";
 import type {
   DeviceAuthorizationInfo,
   OAuthTokenSet,
@@ -54,9 +55,7 @@ function deviceRouter(capture: {
       });
     }
     if (url === `${ISSUER}/register`) {
-      capture.registrationBodies.push(
-        JSON.parse(String(init?.body)) as Record<string, unknown>,
-      );
+      capture.registrationBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return jsonResponse({ client_id: "device-client" });
     }
     if (url === `${ISSUER}/device`) {
@@ -84,8 +83,80 @@ function deviceRouter(capture: {
 }
 
 describe("OAuth device flow", () => {
+  it("authenticates a confidential device client and retains its resource audience", async () => {
+    const calls: RequestInit[] = [];
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init!);
+      return calls.length === 1
+        ? jsonResponse({
+            device_code: "code",
+            user_code: "USER",
+            verification_uri: `${ISSUER}/activate`,
+            interval: 180,
+            expires_in: 600,
+          })
+        : jsonResponse({ access_token: "access", token_type: "Bearer" });
+    }) as unknown as typeof fetch;
+    const authorization = await requestDeviceAuthorization(
+      {
+        deviceAuthorizationEndpoint: `${ISSUER}/device`,
+        clientId: "client",
+        clientSecret: "secret",
+        authMethod: "client_secret_basic",
+        resource: SERVER_URL,
+      },
+      { fetchImpl },
+    );
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    await pollDeviceTokens(
+      {
+        tokenEndpoint: `${ISSUER}/token`,
+        deviceCode: authorization.deviceCode,
+        clientId: "client",
+        clientSecret: "secret",
+        authMethod: "client_secret_basic",
+        resource: SERVER_URL,
+        intervalSeconds: authorization.intervalSeconds,
+        expiresInSeconds: authorization.expiresInSeconds,
+      },
+      { fetchImpl, sleep },
+    );
+    expect(sleep).toHaveBeenCalledWith(180_000);
+    for (const call of calls) {
+      expect(new Headers(call.headers).get("authorization")).toBe(
+        `Basic ${Buffer.from("client:secret").toString("base64")}`,
+      );
+      expect(new URLSearchParams(String(call.body)).get("resource")).toBe(SERVER_URL);
+      expect(new URLSearchParams(String(call.body)).has("client_secret")).toBe(false);
+    }
+  });
+
+  it("slows polling after server and network failures without exceeding the requested rate", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("network unavailable"))
+      .mockResolvedValueOnce(jsonResponse({ error: "slow_down" }, 400))
+      .mockResolvedValueOnce(jsonResponse({ access_token: "access", token_type: "Bearer" }));
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const result = await pollDeviceTokens(
+      {
+        tokenEndpoint: `${ISSUER}/token`,
+        deviceCode: "code",
+        clientId: "client",
+        intervalSeconds: 70,
+        expiresInSeconds: 600,
+      },
+      { fetchImpl, sleep },
+    );
+    expect(result.accessToken).toBe("access");
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([70_000, 140_000, 145_000]);
+  });
+
   it("uses the device flow when non-interactive and the server advertises it", async () => {
-    const capture = { registrationBodies: [] as Array<Record<string, unknown>>, devicePolls: 0 };
+    const capture = {
+      registrationBodies: [] as Array<Record<string, unknown>>,
+      devicePolls: 0,
+    };
     const shown: DeviceAuthorizationInfo[] = [];
     const provider = createAuthProvider(
       { kind: "oauth" },
@@ -112,7 +183,11 @@ describe("OAuth device flow", () => {
   });
 
   it("prefers the device flow even when a browser is available", async () => {
-    const capture = { registrationBodies: [] as Array<Record<string, unknown>>, devicePolls: 0, pendingPolls: 0 };
+    const capture = {
+      registrationBodies: [] as Array<Record<string, unknown>>,
+      devicePolls: 0,
+      pendingPolls: 0,
+    };
     const shown: DeviceAuthorizationInfo[] = [];
     const browser = vi.fn(async () => {});
     const provider = createAuthProvider(
@@ -160,8 +235,6 @@ describe("OAuth device flow", () => {
         fetchImpl: router as unknown as typeof fetch,
       },
     );
-    await expect(provider.onUnauthorized(undefined)).rejects.toThrow(
-      /no browser is available/,
-    );
+    await expect(provider.onUnauthorized(undefined)).rejects.toThrow(/no browser is available/);
   });
 });

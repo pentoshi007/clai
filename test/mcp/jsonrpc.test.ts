@@ -18,7 +18,11 @@ import type { JsonRpcResponse } from "../../src/mcp/types.js";
 
 describe("json-rpc framing", () => {
   it("creates requests and omits params when absent", () => {
-    expect(createRequest(1, "ping")).toEqual({ jsonrpc: "2.0", id: 1, method: "ping" });
+    expect(createRequest(1, "ping")).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "ping",
+    });
     expect(createRequest(2, "tools/call", { name: "x" })).toEqual({
       jsonrpc: "2.0",
       id: 2,
@@ -29,7 +33,10 @@ describe("json-rpc framing", () => {
 
   it("creates notifications without an id", () => {
     const note = createNotification("notifications/initialized");
-    expect(note).toEqual({ jsonrpc: "2.0", method: "notifications/initialized" });
+    expect(note).toEqual({
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    });
     expect(isJsonRpcNotification(note)).toBe(true);
     expect(isJsonRpcRequest(note)).toBe(false);
   });
@@ -51,7 +58,11 @@ describe("json-rpc framing", () => {
   });
 
   it("throws JsonRpcError from a failure response", () => {
-    const failure = { jsonrpc: "2.0", id: 1, error: { code: -32000, message: "boom" } } as JsonRpcResponse;
+    const failure = {
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32000, message: "boom" },
+    } as JsonRpcResponse;
     expect(() => resultOrThrow(failure)).toThrowError(JsonRpcError);
     try {
       resultOrThrow(failure);
@@ -68,6 +79,10 @@ describe("json-rpc framing", () => {
 });
 
 describe("LineDecoder", () => {
+  it("enforces byte limits on complete Unicode frames in a single chunk", () => {
+    const decoder = new LineDecoder(10);
+    expect(() => decoder.push("😀😀😀\n")).toThrow(/framing limit/);
+  });
   it("splits ndjson across chunk boundaries and drops blank lines", () => {
     const decoder = new LineDecoder();
     expect(decoder.push('{"a":1}\n{"b":2')).toEqual(['{"a":1}']);
@@ -88,6 +103,11 @@ describe("LineDecoder", () => {
 });
 
 describe("SseDecoder", () => {
+  it("enforces per-event byte limits rather than a lifetime stream limit", () => {
+    const decoder = new SseDecoder(20);
+    for (let index = 0; index < 100; index++) expect(decoder.push("data: ok\n\n")).toHaveLength(1);
+    expect(() => decoder.push("data: 😀😀😀😀\n\n")).toThrow(/framing limit/);
+  });
   it("parses event and multi-line data blocks", () => {
     const decoder = new SseDecoder();
     const events = decoder.push("event: message\ndata: line1\ndata: line2\n\n");

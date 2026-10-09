@@ -1,16 +1,9 @@
 import { McpTransportError } from "../transport.js";
 import { assertSafeDiscoveryUrl } from "./security.js";
-import type {
-  AuthorizationServerMetadata,
-  ProtectedResourceMetadata,
-} from "./types.js";
+import { fetchOAuthJson, type OAuthHttpDeps } from "./http.js";
+import type { AuthorizationServerMetadata, ProtectedResourceMetadata } from "./types.js";
 
-export interface MetadataFetchDeps {
-  readonly fetchImpl?: typeof fetch | undefined;
-  readonly validateUrl?: ((url: string) => URL) | undefined;
-}
-
-const MAX_METADATA_BYTES = 256 * 1024;
+export interface MetadataFetchDeps extends OAuthHttpDeps {}
 
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -21,30 +14,16 @@ async function fetchJson(
   url: string,
   deps: MetadataFetchDeps,
 ): Promise<Record<string, unknown> | undefined> {
-  const validate = deps.validateUrl ?? assertSafeDiscoveryUrl;
-  const target = validate(url);
-  const impl = deps.fetchImpl ?? fetch;
-  const response = await impl(target.toString(), {
-    method: "GET",
-    headers: { accept: "application/json" },
-    redirect: "manual",
-  });
-  if (response.status >= 300 && response.status < 400) {
-    throw new McpTransportError("protocol", `MCP OAuth discovery refused a redirect from ${url}.`);
-  }
+  const response = await fetchOAuthJson(
+    url,
+    {
+      method: "GET",
+      headers: { accept: "application/json" },
+    },
+    deps,
+  );
   if (!response.ok) return undefined;
-  const text = await response.text();
-  if (text.length > MAX_METADATA_BYTES) {
-    throw new McpTransportError("too-large", "MCP OAuth metadata document exceeded the size limit.");
-  }
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return response.record;
 }
 
 export function buildProtectedResourceMetadataUrl(resource: string): string {
@@ -116,6 +95,7 @@ function parseAuthorizationServerMetadata(
       : {}),
     scopesSupported: stringArray(record.scopes_supported),
     codeChallengeMethodsSupported: stringArray(record.code_challenge_methods_supported),
+    tokenEndpointAuthMethodsSupported: stringArray(record.token_endpoint_auth_methods_supported),
   };
 }
 
@@ -124,10 +104,32 @@ export async function discoverAuthorizationServerMetadata(
   deps: MetadataFetchDeps = {},
 ): Promise<AuthorizationServerMetadata> {
   for (const candidate of authorizationServerMetadataCandidates(issuer)) {
-    const record = await fetchJson(candidate, deps).catch(() => undefined);
+    deps.signal?.throwIfAborted();
+    const record = await fetchJson(candidate, deps).catch((error: unknown) => {
+      if (
+        deps.signal?.aborted ||
+        (error instanceof McpTransportError &&
+          ["too-large", "timeout", "cancelled"].includes(error.kind))
+      )
+        throw error;
+      return undefined;
+    });
     if (!record) continue;
     const parsed = parseAuthorizationServerMetadata(record);
-    if (parsed) return parsed;
+    if (parsed) {
+      if (parsed.issuer && parsed.issuer.replace(/\/+$/, "") !== issuer.replace(/\/+$/, "")) {
+        throw new McpTransportError(
+          "protocol",
+          "MCP authorization-server metadata issuer did not match the requested issuer.",
+        );
+      }
+      const validate = deps.validateUrl ?? assertSafeDiscoveryUrl;
+      validate(parsed.authorizationEndpoint);
+      validate(parsed.tokenEndpoint);
+      if (parsed.registrationEndpoint) validate(parsed.registrationEndpoint);
+      if (parsed.deviceAuthorizationEndpoint) validate(parsed.deviceAuthorizationEndpoint);
+      return parsed;
+    }
   }
   throw new McpTransportError(
     "protocol",

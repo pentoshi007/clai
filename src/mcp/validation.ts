@@ -20,6 +20,7 @@ export type ServerValidation =
 const KNOWN_TYPES: Readonly<Record<string, McpTransportKind>> = {
   stdio: "stdio",
   local: "stdio",
+  remote: "http",
   http: "http",
   "streamable-http": "http",
   "http-stream": "http",
@@ -117,11 +118,7 @@ function validateStringMap(
   return map;
 }
 
-function validateArgs(
-  raw: unknown,
-  substitutor: Substitutor,
-  errors: string[],
-): string[] {
+function validateArgs(raw: unknown, substitutor: Substitutor, errors: string[]): string[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) {
     errors.push("args must be an array of strings");
@@ -143,7 +140,7 @@ function resolveTransport(
   entry: Record<string, unknown>,
   errors: string[],
 ): McpTransportKind | undefined {
-  const rawType = entry.type;
+  const rawType = entry.type ?? entry.transport;
   if (typeof rawType === "string") {
     const mapped = KNOWN_TYPES[rawType.toLowerCase()];
     if (!mapped) {
@@ -152,7 +149,7 @@ function resolveTransport(
     }
     return mapped;
   }
-  const hasCommand = typeof entry.command === "string";
+  const hasCommand = typeof entry.command === "string" || Array.isArray(entry.command);
   const hasUrl = typeof entry.url === "string";
   if (hasCommand && hasUrl) {
     errors.push("server defines both command and url");
@@ -163,7 +160,6 @@ function resolveTransport(
   errors.push("server has neither command nor url");
   return undefined;
 }
-
 
 function httpConfig(
   transport: "http" | "sse",
@@ -184,23 +180,46 @@ export function validateServerEntry(
     return { ok: false, errors: ["server definition must be an object"] };
   }
   const entry = rawEntry as Record<string, unknown>;
-  const disabled = entry.disabled === true;
+  const disabled = entry.disabled === true || entry.enabled === false;
   const toolSelection = parseToolSelection(entry.tools, errors);
   const substitutor = new Substitutor(context);
   const transport = resolveTransport(entry, errors);
+  const timeoutMs = entry.timeoutMs ?? entry.timeout;
+  const connectTimeoutMs = entry.connectTimeoutMs;
+  for (const [name, value] of [
+    ["timeoutMs", timeoutMs],
+    ["connectTimeoutMs", connectTimeoutMs],
+  ]) {
+    if (
+      value !== undefined &&
+      (typeof value !== "number" ||
+        !Number.isSafeInteger(value) ||
+        value <= 0 ||
+        value > 2_147_483_647)
+    )
+      errors.push(`${name} must be an integer between 1 and 2147483647 milliseconds`);
+  }
 
   let config: McpServerConfig | undefined;
   if (transport === "stdio") {
-    const rawCommand = entry.command;
+    const commandArray = Array.isArray(entry.command) ? entry.command : undefined;
+    const rawCommand = commandArray ? commandArray[0] : entry.command;
     if (typeof rawCommand !== "string" || rawCommand.trim().length === 0) {
       errors.push("stdio server requires a non-empty command");
     }
     if (typeof entry.url === "string") errors.push("stdio server must not define url");
     const command = typeof rawCommand === "string" ? substitutor.apply(rawCommand) : "";
-    const args = validateArgs(entry.args, substitutor, errors);
-    const env = validateStringMap(entry.env, "env", substitutor, errors, true);
-    const cwd =
-      typeof entry.cwd === "string" ? substitutor.apply(entry.cwd) : undefined;
+    if (commandArray && entry.args !== undefined && !Array.isArray(entry.args))
+      errors.push("args must be an array of strings");
+    const args = validateArgs(
+      commandArray
+        ? [...commandArray.slice(1), ...(Array.isArray(entry.args) ? entry.args : [])]
+        : entry.args,
+      substitutor,
+      errors,
+    );
+    const env = validateStringMap(entry.env ?? entry.environment, "env", substitutor, errors, true);
+    const cwd = typeof entry.cwd === "string" ? substitutor.apply(entry.cwd) : undefined;
     if (command.trim().length === 0) errors.push("stdio command resolved to empty");
     if (errors.length === 0) {
       config = {
@@ -216,7 +235,7 @@ export function validateServerEntry(
     if (typeof rawUrl !== "string" || rawUrl.trim().length === 0) {
       errors.push(`${transport} server requires a url`);
     }
-    if (typeof entry.command === "string") {
+    if (typeof entry.command === "string" || Array.isArray(entry.command)) {
       errors.push(`${transport} server must not define command`);
     }
     const url = typeof rawUrl === "string" ? substitutor.apply(rawUrl) : "";
@@ -224,7 +243,8 @@ export function validateServerEntry(
       errors.push(`url must be an http(s) URL, got "${url}"`);
     }
     const headers = validateStringMap(entry.headers, "headers", substitutor, errors, true);
-    const auth = parseAuthBlock(entry.auth, substitutor, errors);
+    const authEntry = entry.auth ?? compatibleOauth(entry.oauth);
+    const auth = parseAuthBlock(authEntry, substitutor, errors);
     if (errors.length === 0) {
       config = httpConfig(transport, url, headers, auth);
     }
@@ -240,8 +260,16 @@ export function validateServerEntry(
   }
 
   if (errors.length > 0 || !config) {
-    return { ok: false, errors: errors.length > 0 ? errors : ["invalid server definition"] };
+    return {
+      ok: false,
+      errors: errors.length > 0 ? errors : ["invalid server definition"],
+    };
   }
+  config = {
+    ...config,
+    ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+    ...(typeof connectTimeoutMs === "number" ? { connectTimeoutMs } : {}),
+  };
   return {
     ok: true,
     server: {
@@ -250,6 +278,17 @@ export function validateServerEntry(
       toolSelection,
       secretValues: [...substitutor.secretValues],
     },
+  };
+}
+
+function compatibleOauth(value: unknown): unknown {
+  if (value === false) return { kind: "none" };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const { scope, ...entry } = value as Record<string, unknown>;
+  return {
+    ...entry,
+    kind: "oauth",
+    ...(entry.scopes !== undefined || scope !== undefined ? { scopes: entry.scopes ?? scope } : {}),
   };
 }
 
@@ -268,7 +307,15 @@ const AUTH_ALLOWED_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
   none: new Set<string>(),
   bearer: new Set(["token"]),
   header: new Set(["headers"]),
-  oauth: new Set(["scopes", "clientId", "clientSecret", "resource", "authorizationServer"]),
+  oauth: new Set([
+    "scopes",
+    "clientId",
+    "clientSecret",
+    "resource",
+    "authorizationServer",
+    "callbackPort",
+    "tokenEndpointAuthMethod",
+  ]),
 };
 
 function markedString(
@@ -334,15 +381,36 @@ function buildOauthAuth(
   substitutor: Substitutor,
   errors: string[],
 ): McpAuthConfig {
+  const callbackPort = entry.callbackPort;
+  if (
+    callbackPort !== undefined &&
+    (typeof callbackPort !== "number" ||
+      !Number.isInteger(callbackPort) ||
+      callbackPort < 1 ||
+      callbackPort > 65535)
+  )
+    errors.push("auth.callbackPort must be an integer between 1 and 65535");
+  const authMethod = entry.tokenEndpointAuthMethod;
+  if (
+    authMethod !== undefined &&
+    !["none", "client_secret_basic", "client_secret_post"].includes(String(authMethod))
+  )
+    errors.push(
+      "auth.tokenEndpointAuthMethod must be none, client_secret_basic, or client_secret_post",
+    );
   const scopes = parseScopes(entry.scopes, substitutor, errors);
   const clientId =
-    entry.clientId !== undefined ? markedString(entry.clientId, "auth.clientId", substitutor, errors) : undefined;
+    entry.clientId !== undefined
+      ? markedString(entry.clientId, "auth.clientId", substitutor, errors)
+      : undefined;
   const clientSecret =
     entry.clientSecret !== undefined
       ? markedString(entry.clientSecret, "auth.clientSecret", substitutor, errors)
       : undefined;
   const resource =
-    entry.resource !== undefined ? markedString(entry.resource, "auth.resource", substitutor, errors) : undefined;
+    entry.resource !== undefined
+      ? markedString(entry.resource, "auth.resource", substitutor, errors)
+      : undefined;
   const authorizationServer =
     entry.authorizationServer !== undefined
       ? markedString(entry.authorizationServer, "auth.authorizationServer", substitutor, errors)
@@ -354,6 +422,15 @@ function buildOauthAuth(
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     ...(resource !== undefined ? { resource } : {}),
     ...(authorizationServer !== undefined ? { authorizationServer } : {}),
+    ...(typeof callbackPort === "number" ? { callbackPort } : {}),
+    ...(typeof authMethod === "string"
+      ? {
+          tokenEndpointAuthMethod: authMethod as
+            | "none"
+            | "client_secret_basic"
+            | "client_secret_post",
+        }
+      : {}),
   };
 }
 
