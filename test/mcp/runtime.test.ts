@@ -157,6 +157,22 @@ afterEach(() => {
 });
 
 describe("McpRuntime catalog", () => {
+  it("explains ask-mode selection and labels mutating tools as unavailable", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    const off = runtime.promptContext({ nativeTools: true, askMode: true });
+    expect(off).toContain("user can select a server with /mcp");
+    expect(off).not.toContain("mcp.enable");
+    runtime.selectAll();
+    const context = runtime.promptContext({ nativeTools: true, askMode: true });
+    expect(context).toContain("only active read-only MCP tools");
+    expect(context).not.toContain("mcp.beta.change args=");
+    const page = await runtime.agentTools(undefined, { askMode: true });
+    expect(page.output).toMatch(/mcp\.alpha\.lookup \[read-only; active\]/);
+    expect(page.output).toMatch(/mcp\.beta\.change \[.*unavailable in ask mode\]/);
+    await runtime.closeAll();
+  });
+
   it("builds deterministic definitions after the unchanged core prefix", async () => {
     const runtime = makeRuntime();
     await runtime.refresh();

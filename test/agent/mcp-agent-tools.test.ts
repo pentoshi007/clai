@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFile, rm } from "node:fs/promises";
 import type { ToolCall, ToolResult } from "../../src/types.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import {
@@ -96,6 +97,31 @@ describe("mcp agent tool helpers", () => {
 });
 
 describe("mcp agent tool execution", () => {
+  it("keeps oversized discovery details in an artifact with bounded model context", async () => {
+    const output = `MCP tools 1–1 of 1.\n- mcp.docs.lookup args=${JSON.stringify({
+      type: "object",
+      properties: { id: { type: "string", description: "Field instructions. ".repeat(2_000) } },
+      required: ["id"],
+    })}: Use resolve_record first.\nRead the complete schema before calling.`;
+    const stub = { agentTools: async () => ok(output) } as unknown as McpRuntime;
+    const { ports: port } = ports();
+    const result = await createMcpAgentToolExecutor(port)(
+      stub, call("mcp.tools", { server: "docs", query: "lookup" }), "oversized-catalog",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.result.output).toBe(output);
+    expect(result.contextOutput.length).toBeLessThan(13_000);
+    expect(result.contextOutput).toContain("Full artifact:");
+    expect(result.contextOutput).toContain("fs.read");
+    expect(result.result.outputPath).toBeDefined();
+    const path = result.result.outputPath!;
+    try {
+      expect(await readFile(path, "utf8")).toBe(`${output}\n`);
+    } finally {
+      await rm(path);
+    }
+  });
+
   it("blocks mutating tools in ask mode without confirming or dispatching", async () => {
     const confirm = vi.fn(async () => true);
     const { ports: port, events } = ports({ askMode: true, confirm });
@@ -133,6 +159,16 @@ describe("mcp agent tool execution", () => {
     expect(result.contextOutput).toBe("list output");
     expect(confirm).not.toHaveBeenCalled();
     expect(calls).toEqual(["list"]);
+  });
+
+  it("passes ask mode to discovery without granting mutating tool access", async () => {
+    const agentTools = vi.fn(async () => ok("catalog"));
+    const stub = { agentTools } as unknown as McpRuntime;
+    const { ports: port } = ports({ askMode: true });
+    await createMcpAgentToolExecutor(port)(
+      stub, call("mcp.tools", { server: "docs", query: "lookup", limit: 1 }), "ask-catalog",
+    );
+    expect(agentTools).toHaveBeenCalledWith("docs", { query: "lookup", limit: 1, askMode: true });
   });
 
   it("marks a declined confirmation as a cancelled block", async () => {

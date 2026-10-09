@@ -31,6 +31,7 @@ export const mcpAgentToolTarget = (
 export const runMcpAgentTool = async (
   mcp: McpRuntime,
   call: ToolCall,
+  options: { readonly askMode?: boolean } = {},
 ): Promise<ToolResult> => {
   const args = call.args ?? {};
   if (call.name === "mcp.list") return mcp.agentList();
@@ -41,6 +42,7 @@ export const runMcpAgentTool = async (
         ...(typeof args.query === "string" ? { query: args.query } : {}),
         ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}),
         ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
+        ...(options.askMode !== undefined ? { askMode: options.askMode } : {}),
       },
     );
   }
@@ -108,7 +110,7 @@ const execute = async (
     return failCall(ports, toolEventId, call, "Cancelled.", true);
   }
   ports.showCall(toolEventId, call);
-  const result = await runMcpAgentTool(runtime, call);
+  const result = await runMcpAgentTool(runtime, call, { askMode: ports.askMode });
   const shown = mcpAgentOutput(call, result);
   const artifactPath = shown.length > 24_000 ? await saveToolOutput(call, shown) : undefined;
   const framed = { ...result, output: shown, ...(artifactPath ? { outputPath: artifactPath } : {}) };
