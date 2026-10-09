@@ -5,6 +5,13 @@ import { join } from "node:path";
 import { runAgentTurn } from "../../src/agent/runner.js";
 import { createSessionPolicy } from "../../src/agent/session-policy.js";
 import { successfulRequestSnapshot } from "../../src/llm/routing/attempt-request.js";
+import { buildAnthropicBody } from "../../src/llm/anthropic.js";
+import { geminiBody } from "../../src/llm/gemini.js";
+import { buildChatBody } from "../../src/llm/wire/chat-body.js";
+import { buildResponsesBody } from "../../src/llm/responses-request.js";
+import { withSessionAffinity } from "../../src/llm/session-affinity.js";
+import { META_STREAM_TERMINAL } from "../../src/llm/stream-terminal.js";
+import type { ToolCallingMode } from "../../src/llm/tool-protocol.js";
 import { McpManager, type McpTransportFactory } from "../../src/mcp/manager.js";
 import { McpRuntime } from "../../src/mcp/runtime.js";
 import type { McpTransport } from "../../src/mcp/transport.js";
@@ -12,12 +19,15 @@ import type {
   JsonRpcNotification,
   JsonRpcRequest,
   JsonRpcResponse,
+  McpToolDescriptor,
 } from "../../src/mcp/types.js";
 import type { SkillMeta } from "../../src/skills/types.js";
 import type { CompletionRequest, CompletionResult } from "../../src/types.js";
 
 const streamMock = vi.hoisted(() => vi.fn());
 const skillState = vi.hoisted(() => ({ skills: [] as SkillMeta[] }));
+const extraTools = new Map<string, McpToolDescriptor[]>();
+const remoteCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
 vi.mock("../../src/llm/router.js", async (importActual) => ({
   ...await importActual<typeof import("../../src/llm/router.js")>(),
@@ -90,7 +100,16 @@ class CatalogTransport implements McpTransport {
       return Promise.resolve({
         jsonrpc: "2.0",
         id: message.id,
-        result: { tools: [tool] },
+        result: { tools: [tool, ...(extraTools.get(this.serverName) ?? [])] },
+      });
+    }
+    if (message.method === "tools/call") {
+      const params = message.params as { name: string; arguments: Record<string, unknown> };
+      remoteCalls.push({ name: params.name, args: params.arguments });
+      return Promise.resolve({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { content: [{ type: "text", text: `record:${String(params.arguments.id)}` }] },
       });
     }
     return Promise.resolve({ jsonrpc: "2.0", id: message.id, result: {} });
@@ -114,6 +133,76 @@ class CatalogTransport implements McpTransport {
 const transportFactory: McpTransportFactory = (definition) =>
   new CatalogTransport(definition.name);
 
+type CapturedRequest = Pick<CompletionRequest, "messages" | "tools">;
+
+function withoutCacheControl(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutCacheControl);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "cache_control")
+      .map(([key, entry]) => [key, withoutCacheControl(entry)]),
+  );
+}
+
+function contentBlocks(messages: Array<{ role: string; content: string | unknown[] }>): unknown[] {
+  return messages.flatMap(({ role, content }) =>
+    (typeof content === "string" ? [{ type: "text", text: content }] : content)
+      .map((block) => ({ role, block: withoutCacheControl(block) })),
+  );
+}
+
+function expectWirePrefixes(requests: readonly CapturedRequest[]): void {
+  withSessionAffinity("mcp-cache-regression", () => {
+    const bodies = requests.map((request) => {
+      const anthropic = JSON.parse(buildAnthropicBody({
+        ...request, provider: "anthropic", model: "claude-sonnet-4-5",
+      }, false));
+      const gemini = JSON.parse(geminiBody({ ...request, provider: "gemini", model: "gemini-2.5-pro" }));
+      const responses = JSON.parse(buildResponsesBody({
+        baseUrl: "https://api.openai.com/v1",
+        providerId: "openai",
+        displayName: "OpenAI",
+        artifactDialect: "openai-compatible",
+        terminalPolicy: META_STREAM_TERMINAL,
+        instructionsField: "leading-instructions",
+        buildHeaders: () => ({}),
+        reasoningPayload: () => undefined,
+        bodyExtras: () => ({}),
+      }, { ...request, model: "gpt-4o-mini", stream: false }));
+      return [
+        ...(["openai", "mistral", "openrouter", "explabs", "fireworks"] as const).map((providerId) => {
+          const chat = JSON.parse(buildChatBody({
+            ...request, providerId, model: providerId === "mistral" ? "mistral-large-latest" : "gpt-4o-mini", stream: false,
+          }));
+          return {
+            prefix: { tools: chat.tools, key: chat.prompt_cache_key ?? chat.session_id ?? chat.prompt_cache_isolation_key },
+            timeline: withoutCacheControl(chat.messages) as unknown[],
+          };
+        }),
+        { prefix: { tools: anthropic.tools, system: anthropic.system }, timeline: contentBlocks(anthropic.messages) },
+        {
+          prefix: { tools: gemini.tools, system: gemini.systemInstruction },
+          timeline: gemini.contents.flatMap(({ role, parts }: { role: string; parts: unknown[] }) =>
+            parts.map((part) => ({ role, part })),
+          ) as unknown[],
+        },
+        { prefix: { tools: responses.tools, instructions: responses.instructions }, timeline: responses.input as unknown[] },
+      ];
+    });
+    for (let index = 1; index < bodies.length; index++) {
+      for (let dialect = 0; dialect < bodies[index]!.length; dialect++) {
+        const previous = bodies[index - 1]![dialect]!;
+        const current = bodies[index]![dialect]!;
+        expect(JSON.stringify(current.prefix)).toBe(JSON.stringify(previous.prefix));
+        expect(JSON.stringify(current.timeline.slice(0, previous.timeline.length))).toBe(
+          JSON.stringify(previous.timeline),
+        );
+      }
+    }
+  });
+}
+
 let root: string;
 let workspace: string;
 let previousCwd: string;
@@ -122,6 +211,8 @@ let runtime: McpRuntime;
 beforeEach(async () => {
   streamMock.mockReset();
   skillState.skills = [];
+  extraTools.clear();
+  remoteCalls.length = 0;
   previousCwd = process.cwd();
   root = mkdtempSync(join(tmpdir(), "clai-stable-catalog-cache-"));
   workspace = join(root, "workspace");
@@ -158,8 +249,8 @@ afterEach(async () => {
 });
 
 describe("stable skill and MCP catalogs preserve agent request cache prefixes", () => {
-  it("keeps stable tools, the leading system prompt, and every prior request message across catalog transitions", async () => {
-    const requests: Array<Pick<CompletionRequest, "messages" | "tools">> = [];
+  it.each(["native", "text"] satisfies ToolCallingMode[])("keeps stable tools, the system prompt, and prior wire content across %s catalog transitions", async (toolCalling) => {
+    const requests: CapturedRequest[] = [];
     streamMock.mockImplementation(
       async (
         request: CompletionRequest,
@@ -207,7 +298,7 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
         history,
         session,
         maxSteps: 1,
-        toolCalling: "native",
+        toolCalling,
         onMessages: (messages) => {
           history = messages;
         },
@@ -230,8 +321,10 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
     expect(requests).toHaveLength(6);
     const stableTools = requests[0]!.tools;
     const stableSystem = requests[0]!.messages[0];
-    expect(stableTools?.some((tool) => tool.name === "mcp.call")).toBe(true);
-    expect(stableTools?.some((tool) => tool.name === "skill.load")).toBe(true);
+    if (toolCalling === "native") {
+      expect(stableTools?.some((tool) => tool.name === "mcp.call")).toBe(true);
+      expect(stableTools?.some((tool) => tool.name === "skill.load")).toBe(true);
+    } else expect(stableTools).toBeUndefined();
     expect(stableSystem?.role).toBe("system");
 
     for (let index = 1; index < requests.length; index += 1) {
@@ -254,5 +347,69 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
     expect(latestMcpContext(3)).toContain("Selection: off");
     expect(latestMcpContext(4)).toContain("mcp.docs.lookup");
     expect(latestMcpContext(5)).toContain("Selection: off");
+    expectWirePrefixes(requests);
+  });
+
+  it("preserves prefixes across discovery, paging, calls, reconnects, sign-in results, and catalog refresh", async () => {
+    extraTools.set("docs", Array.from({ length: 20 }, (_, index) => ({
+      name: `record_${String(index).padStart(2, "0")}`,
+      description: "Retrieve a documentation record",
+      inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    })));
+    await runtime.refresh({ force: true });
+    const requests: CapturedRequest[] = [];
+    const controls: Array<{ name: string; args: Record<string, unknown> }> = [
+      { name: "mcp.list", args: {} },
+      { name: "mcp.enable", args: { server: "docs" } },
+      { name: "mcp.tools", args: { server: "docs", query: "record", limit: 1 } },
+      { name: "mcp.tools", args: { server: "docs", query: "record", limit: 1 } },
+      { name: "mcp.tools", args: { server: "docs", query: "lookup" } },
+      { name: "mcp.call", args: { name: "mcp.docs.lookup", arguments: { id: "one" } } },
+      { name: "mcp.connect", args: { server: "docs" } },
+      { name: "mcp.login", args: { server: "docs" } },
+    ];
+    vi.spyOn(runtime, "agentLogin").mockResolvedValue({ ok: true, output: "Signed in; server docs is ready." });
+    streamMock.mockImplementation(async (
+      request: CompletionRequest,
+      onToken: (token: string) => void,
+      options: { onSuccessfulRequest?: (snapshot: ReturnType<typeof successfulRequestSnapshot>) => void },
+    ): Promise<CompletionResult> => {
+      requests.push({
+        messages: structuredClone(request.messages),
+        ...(request.tools ? { tools: structuredClone(request.tools) } : {}),
+      });
+      options.onSuccessfulRequest?.(successfulRequestSnapshot("openai", "gpt-4o-mini", request));
+      const control = controls[requests.length - 1];
+      if (control) {
+        if (requests.length === 4) {
+          const cursor = /Next cursor: ([a-f0-9]+:\d+)/.exec(request.messages.at(-1)!.content)![1]!;
+          control.args = { ...control.args, cursor };
+        }
+        return {
+          text: "", provider: "openai", model: "gpt-4o-mini", finishReason: "tool_calls",
+          toolCalls: [{ id: `control-${requests.length}`, name: control.name, args: control.args }],
+        };
+      }
+      onToken("Verified record one.");
+      return { text: "Verified record one.", provider: "openai", model: "gpt-4o-mini", finishReason: "stop" };
+    });
+    let history: CompletionRequest["messages"] = [];
+    const session = createSessionPolicy("mcp-lifecycle-cache");
+    const run = () => runAgentTurn("Continue inspecting the documentation records.", {
+      mcp: runtime, provider: "openai", model: "gpt-4o-mini", session, history,
+      maxSteps: 12, toolCalling: "native", autoConfirm: true,
+      onMessages: (messages) => { history = messages; },
+    });
+    await run();
+    expect(requests).toHaveLength(9);
+    expect(remoteCalls).toEqual([{ name: "lookup", args: { id: "one" } }]);
+    const retained = structuredClone(history);
+    extraTools.get("docs")!.push({ name: "new_record", description: "Newly published record lookup", inputSchema: { type: "object" } });
+    await runtime.refresh({ force: true });
+    await run();
+    expect(requests).toHaveLength(10);
+    expect(requests[9]!.messages.slice(1, retained.length + 1)).toEqual(retained);
+    expect(requests[9]!.messages.some((message) => message.content.includes("new_record"))).toBe(true);
+    expectWirePrefixes(requests);
   });
 });

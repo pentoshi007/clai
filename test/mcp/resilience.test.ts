@@ -232,6 +232,7 @@ describe("MCP tool change notifications", () => {
     runtime.selectAll();
     const lease = runtime.beginTurn();
     const before = runtime.toolDefinitions();
+    const context = runtime.promptContext({ nativeTools: true });
     setup.transports[0]!.tools.push("new_tool");
     for (let index = 0; index < 10; index++)
       setup.transports[0]!.handlers!.notification({
@@ -242,7 +243,9 @@ describe("MCP tool change notifications", () => {
     expect(setup.transports).toHaveLength(1);
     expect(setup.transports[0]!.lists).toBe(2);
     expect(runtime.toolDefinitions()).toEqual(before);
+    expect(runtime.promptContext({ nativeTools: true })).toBe(context);
     lease.release();
+    expect(runtime.promptContext({ nativeTools: true })).not.toBe(context);
     expect(runtime.toolDefinitions().map((tool) => tool.name)).toEqual([
       "mcp.docs.lookup",
       "mcp.docs.new_tool",
@@ -262,6 +265,9 @@ describe("MCP tool change notifications", () => {
       method: "notifications/tools/list_changed",
     });
     await vi.waitFor(() => expect(runtime.getState().snapshot.tools[0]!.readOnly).toBe(false));
+    expect((await runtime.agentTools("docs", { query: "lookup" })).output).toContain(
+      "changed during this turn; use this schema in a new turn",
+    );
     expect(await runtime.callTool("mcp.docs.lookup", {})).toMatchObject({
       ok: false,
       output: expect.stringContaining("changed during this turn"),
@@ -269,6 +275,9 @@ describe("MCP tool change notifications", () => {
     expect(setup.transports[0]!.calls).toBe(0);
     lease.release();
     expect(runtime.classify("mcp.docs.lookup")?.level).toBe("confirm");
+    expect((await runtime.agentTools("docs", { query: "lookup" })).output).toContain(
+      "[confirm · destructive; active]",
+    );
   });
 
   it("rejects repeated pagination cursors instead of returning a partial catalog", async () => {
