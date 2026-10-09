@@ -8,6 +8,7 @@ import {
 } from "../http.js";
 import { markStreamEmittedBytes } from "../stream-progress.js";
 import {
+  isHardQuotaError,
   mentionsQuotaExhaustion,
   mentionsRateLimit,
 } from "../quota-signals.js";
@@ -42,7 +43,9 @@ export function formatProviderFailureForUser(error: unknown): string {
     if (status === 429) {
       return withFullBody(
         withExactError(
-          "Model is rate limited (429). Try another provider/model or switch to a paid plan.",
+          isHardQuotaError(error)
+            ? "Provider quota/credits are exhausted (429). Add another API key, top up the account, or switch provider."
+            : "Model is rate limited (429). Try another provider/model or switch to a paid plan.",
         ),
       );
     }
@@ -231,6 +234,7 @@ export function aggregateProviderError(
       ? false
       : undefined,
   );
+  if (actionable) aggregate.cause = actionable;
   markStreamEmittedBytes(aggregate, emittedBytes);
   const serverAttempts = failures.reduce(
     (total, failure) => Math.max(total, serverErrorAttemptsFor(failure.error)),

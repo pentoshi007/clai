@@ -6,6 +6,7 @@ import {
   isQuotaKeyError,
 } from "../src/llm/key-rotation.js";
 import {
+  isHardQuotaError,
   mentionsQuotaExhaustion,
   mentionsRateLimit,
   providerErrorText,
@@ -30,6 +31,26 @@ describe("providerErrorText", () => {
     expect(providerErrorText(new Error("plain"))).toBe("plain");
     expect(providerErrorText("str")).toBe("str");
     expect(providerErrorText(undefined)).toBe("");
+  });
+});
+
+describe("isHardQuotaError", () => {
+  it.each([
+    new ProviderError("payment required", 402),
+    new ProviderError("too many requests", 429, '{"error":{"type":"insufficient_quota"}}'),
+    new Error("You exceeded your current quota, please check your plan and billing details"),
+    new Error("credit balance is too low to run this request"),
+  ])("identifies account limits without waiting for a rate reset: %s", (error) => {
+    expect(isHardQuotaError(error)).toBe(true);
+  });
+
+  it.each([
+    new ProviderError("Upstream request failed: Endpoint is unavailable.", 429),
+    new Error("Requests per minute quota exceeded"),
+    new Error("Resource has been exhausted, retry after 10s"),
+    new Error("Too many requests"),
+  ])("keeps transient capacity and request quotas separate: %s", (error) => {
+    expect(isHardQuotaError(error)).toBe(false);
   });
 });
 
@@ -107,5 +128,16 @@ describe("formatProviderFailureForUser", () => {
   it("keeps the classic 429 guidance", () => {
     const text = formatProviderFailureForUser(new ProviderError("boom", 429));
     expect(text).toMatch(/rate limited \(429\)/i);
+  });
+
+  it("reports insufficient account quota even when the status is 429", () => {
+    const text = formatProviderFailureForUser(new ProviderError(
+      "insufficient_quota",
+      429,
+      '{"error":{"code":"insufficient_quota"}}',
+    ));
+    expect(text).toContain("quota/credits are exhausted (429)");
+    expect(text).toContain("Exact provider error: insufficient_quota");
+    expect(text).toContain('"code":"insufficient_quota"');
   });
 });

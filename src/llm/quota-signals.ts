@@ -12,11 +12,25 @@ export function providerErrorText(error: unknown): string {
 const QUOTA_EXHAUSTION_RE =
   /quota(?:\s+has been)?\s+exhausted|exceeded your current quota|insufficient[_ ]quota|insufficient (?:credits|balance|funds)|out of credits|no credits(?: remaining)?|credit balance(?: is)? too low|payment required|balance is 0|top up to continue|quota exceeded|usage limit(?: has been)?(?: reached| exceeded)|billing(?:\s+hard)?\s+limit|free(?: tier)? quota|plan(?: and|\/| )billing|resource[_ ]has been exhausted|resource[_ ]exhausted/i;
 
+const HARD_QUOTA_RE =
+  /exceeded your current quota|insufficient[_ ]quota|insufficient (?:credits|balance|funds)|out of credits|no credits(?: remaining)?|credit balance(?: is)? too low|payment required|balance is 0|top up to continue|billing(?:\s+hard)?\s+limit/i;
+
 const RATE_LIMIT_SIGNAL_RE =
   /rate.?limit(?:ed|ing)?(?:\s+(?:exceeded|reached|hit))?|too many requests|throttl(?:ed|ing|e)|requests? per (?:second|minute|hour|day)|tokens? per (?:minute|day)|\b429\b/i;
 
 export function mentionsQuotaExhaustion(error: unknown): boolean {
   return QUOTA_EXHAUSTION_RE.test(providerErrorText(error));
+}
+
+export function isHardQuotaError(error: unknown): boolean {
+  const source =
+    error instanceof ProviderError && error.cause instanceof ProviderError
+      ? error.cause
+      : error;
+  return (
+    (source instanceof ProviderError && source.status === 402) ||
+    HARD_QUOTA_RE.test(providerErrorText(source))
+  );
 }
 
 export function mentionsRateLimit(error: unknown): boolean {

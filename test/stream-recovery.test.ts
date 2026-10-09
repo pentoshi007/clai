@@ -13,6 +13,7 @@ import {
   type StreamFailureKind,
 } from "../src/agent/stream-recovery.js";
 import { markServerErrorAttempts } from "../src/llm/routing/error-classification.js";
+import { aggregateProviderError } from "../src/llm/routing/failure-report.js";
 
 describe("classifyStreamFailure", () => {
   it("classifies empty admissions (raw and router-wrapped)", () => {
@@ -37,6 +38,37 @@ describe("classifyStreamFailure", () => {
     expect(
       classifyStreamFailure(new Error("nvidia: Model is rate limited (429)")),
     ).toBe("rate-limit");
+  });
+
+  it.each([
+    new ProviderError("rate limited", 429, '{"error":{"code":"insufficient_quota"}}'),
+    new ProviderError("payment required", 402),
+    new Error("No provider could stream the request. — free: You exceeded your current quota, please check your plan and billing details. (429)"),
+  ])("does not recover exhausted account quota: %s", (error) => {
+    expect(classifyStreamFailure(error)).toBe("non-retriable");
+    expect(planStreamRecovery({
+      error,
+      state: createStreamRecoveryState(),
+    }).action).toBe("give-up");
+  });
+
+  it("keeps temporary request quota exhaustion retryable", () => {
+    expect(classifyStreamFailure(new ProviderError(
+      "Resource has been exhausted. Requests per minute quota exceeded, retry after 5s.",
+      429,
+    ))).toBe("rate-limit");
+  });
+
+  it.each([
+    [new ProviderError("slow down", 429), "rate-limit"],
+    [new ProviderError("too big", 413), "context-overflow"],
+  ] as const)("preserves the actionable class when another provider has exhausted credits: %s", (error, kind) => {
+    const aggregate = aggregateProviderError("insufficient credits; another provider failed", [
+      { provider: "openai", message: "insufficient credits", error: new ProviderError("insufficient credits", 402) },
+      { provider: "free", message: error.message, error },
+    ]);
+    expect(aggregate.cause).toBe(error);
+    expect(classifyStreamFailure(aggregate)).toBe(kind);
   });
 
   it("classifies context overflow by status and message", () => {
@@ -345,7 +377,7 @@ describe("server error attempt budget", () => {
     expect(planStreamRecovery({ kind: "server", state }).action).toBe("retry");
   });
 
-  it("gives up immediately on Free server and rate-limit failures", () => {
+  it("does not add another Free server retry after router recovery", () => {
     const serverState = createStreamRecoveryState();
     recordServerErrorAttempts(serverState, 1);
     expect(
@@ -355,14 +387,34 @@ describe("server error attempt budget", () => {
         limits: FREE_STREAM_RECOVERY_LIMITS,
       }).action,
     ).toBe("give-up");
+  });
 
-    const rateState = createStreamRecoveryState();
-    expect(
-      planStreamRecovery({
-        kind: "rate-limit",
-        state: rateState,
+  it("allows four Free rate-limit retries even after a network recovery", () => {
+    const state = createStreamRecoveryState();
+    recordRecoveryAttempt(state, "network");
+    const error = new ProviderError(
+      "Free (model=step-5-preview-free): Provider request failed with HTTP 429 — Upstream request failed: Endpoint is unavailable.",
+      429,
+      '{"error":{"type":"server_error","message":"Upstream request failed: Endpoint is unavailable."}}',
+    );
+    for (const delayMs of [5_000, 8_000, 10_000, 15_000]) {
+      expect(planStreamRecovery({
+        error,
+        state,
         limits: FREE_STREAM_RECOVERY_LIMITS,
-      }).action,
-    ).toBe("give-up");
+      })).toMatchObject({
+        action: "retry",
+        kind: "rate-limit",
+        delayMs,
+        forceCompact: false,
+        allowModelFallback: true,
+      });
+      recordRecoveryAttempt(state, "rate-limit");
+    }
+    expect(planStreamRecovery({
+      error,
+      state,
+      limits: FREE_STREAM_RECOVERY_LIMITS,
+    }).action).toBe("give-up");
   });
 });
