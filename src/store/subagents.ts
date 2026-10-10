@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, opendirSync, readSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { escapeSubagentActivityText, formatSubagentActivityHeader } from "../agent/subagents/activity-framing.js";
 import type { SubagentEvent, SubagentRun, SubagentStore } from "../agent/subagents/types.js";
 import { redactSecrets } from "../llm/provider.js";
 import { sanitizeDisplayText } from "../ui-core/rendering/sanitize-display.js";
@@ -273,8 +274,8 @@ export class FileSubagentStore implements SubagentStore {
       const header = info.size === 0
         ? `# ${run.title}\nAgent: ${run.id}\nWorkspace: ${run.cwd}\n\n## Assignment\n${run.prompt}\n${run.context ? `\n## Context\n${run.context}\n` : ""}\n## Activity\n`
         : "";
-      const body = events.map((event) => `\n### Attempt ${run.attempt} · ${event.sequence} · ${event.kind}\n${event.text}\n`).join("");
-      writeFileSync(fd, sanitizeSubagentText(header + body), "utf8");
+      const body = events.map((event) => `\n${formatSubagentActivityHeader(run.attempt, event)}\n${escapeSubagentActivityText(sanitizeSubagentText(event.text))}\n`).join("");
+      writeFileSync(fd, escapeSubagentActivityText(sanitizeSubagentText(header)) + body, "utf8");
     } finally {
       closeSync(fd);
     }

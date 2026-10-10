@@ -1,4 +1,7 @@
 import type { Theme } from "./theme.js";
+import { isCodeFenceClose, matchCodeFenceOpen } from "./code-block.js";
+import { wrapPagerLine } from "./pager-chrome.js";
+import { renderMarkdownLines, type RenderMarkdownLinesOptions } from "./render-markdown-lines.js";
 
 export interface SubagentSpan {
   readonly text: string;
@@ -79,6 +82,56 @@ export function subagentBodySpans(
 }
 
 export type SubagentSpanPaint = (span: SubagentSpan) => string;
+
+export function renderSubagentMarkdownLines(
+  body: string,
+  options: RenderMarkdownLinesOptions,
+  paint: SubagentSpanPaint,
+): string[] {
+  const lines = body.replace(/\r\n?/g, "\n").split("\n");
+  const spans = subagentBodySpans(lines);
+  const rendered: string[] = [];
+  const prose: string[] = [];
+  let fence: string | undefined;
+  const flushProse = (): void => {
+    if (prose.length === 0) return;
+    const rows = renderMarkdownLines(prose.join("\n"), options);
+    rendered.push(...(rows.length > 0 ? rows : prose.map((line) => line || " ")));
+    prose.length = 0;
+  };
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const semantic = fence ? undefined : spans[index];
+    if (!semantic) {
+      prose.push(line);
+      if (fence) {
+        if (isCodeFenceClose(line, fence)) fence = undefined;
+      } else {
+        fence = matchCodeFenceOpen(line)?.marker;
+      }
+      continue;
+    }
+    flushProse();
+    let offset = 0;
+    for (const chunk of wrapPagerLine(line, options.width, { preserveWhitespace: true })) {
+      const end = offset + chunk.length;
+      let spanOffset = 0;
+      let row = "";
+      for (const span of semantic) {
+        const next = spanOffset + span.text.length;
+        if (next > offset && spanOffset < end) {
+          row += paint({ ...span, text: span.text.slice(Math.max(0, offset - spanOffset), Math.min(span.text.length, end - spanOffset)) });
+        }
+        spanOffset = next;
+        if (spanOffset >= end) break;
+      }
+      rendered.push(row || " ");
+      offset = end;
+    }
+  }
+  flushProse();
+  return rendered;
+}
 
 export function styleSubagentBody(body: string, paint: SubagentSpanPaint): string {
   const lines = body.split("\n");

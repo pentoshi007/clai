@@ -17,6 +17,7 @@ export interface PagerRow {
   readonly index: number;
   readonly line: string;
   readonly kind: PagerRowKind;
+  readonly textOffset?: number | undefined;
   readonly spans?: readonly SyntaxSpan[] | undefined;
 }
 
@@ -34,6 +35,7 @@ export function buildPagerRows(input: {
   readonly useDiffGutters: boolean;
   readonly isSubagent: boolean;
   readonly highlightPath: string;
+  readonly wrapRows?: boolean | undefined;
 }): PagerRow[] {
   const { display, lines, contentCols, useDiffGutters, isSubagent, highlightPath } = input;
   const rows: PagerRow[] = [];
@@ -41,7 +43,12 @@ export function buildPagerRows(input: {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
     if (display.mode === "markdown") {
-      rows.push({ key: `md-${index}-0`, index, line, kind: "markdown" });
+      let textOffset = 0;
+      const chunks = input.wrapRows ? wrapPagerLine(line, contentCols, { preserveWhitespace: true }) : [line];
+      chunks.forEach((chunk, part) => {
+        rows.push({ key: `md-${index}-${part}`, index, line: chunk, kind: "markdown", textOffset });
+        textOffset += chunk.length;
+      });
       continue;
     }
     const parsed = useDiffGutters ? parseDiffLine(line) : null;
@@ -68,7 +75,12 @@ export function buildPagerRows(input: {
       continue;
     }
     if (isSubagent && !useDiffGutters) {
-      rows.push({ key: `${index}-0`, index, line, kind: "subagent" });
+      let textOffset = 0;
+      const chunks = input.wrapRows ? wrapPagerLine(line, contentCols, { preserveWhitespace: true }) : [line];
+      chunks.forEach((chunk, part) => {
+        rows.push({ key: `${index}-${part}`, index, line: chunk, kind: "subagent", textOffset });
+        textOffset += chunk.length;
+      });
       continue;
     }
     wrapPagerLine(line, contentCols, { preserveWhitespace: true }).forEach((chunk, part) => {
@@ -76,6 +88,49 @@ export function buildPagerRows(input: {
     });
   }
   return rows;
+}
+
+export function slicePagerSpans<T extends { readonly text: string }>(
+  spans: readonly T[],
+  start: number,
+  length: number,
+): T[] {
+  const result: T[] = [];
+  let offset = 0;
+  const end = start + length;
+  for (const span of spans) {
+    const next = offset + span.text.length;
+    if (next > start && offset < end) {
+      result.push({
+        ...span,
+        text: span.text.slice(Math.max(0, start - offset), Math.min(span.text.length, end - offset)),
+      });
+    }
+    offset = next;
+    if (offset >= end) break;
+  }
+  return result;
+}
+
+export function pagerRowWindow(count: number, top: number, height: number): { start: number; end: number } {
+  const viewport = Math.max(1, Math.floor(height));
+  const overscan = Math.max(16, viewport);
+  const first = Math.max(0, Math.min(Math.floor(top), Math.max(0, count - viewport)));
+  return { start: Math.max(0, first - overscan), end: Math.min(count, first + viewport + overscan) };
+}
+
+export function pagerRowSearch(search: LineSearch | undefined, offset: number, length: number): LineSearch {
+  if (!search) return { matches: NO_MATCHES, active: -1 };
+  const visible = search.matches.filter((match) => match.column < offset + length && match.column + match.length > offset);
+  const active = search.matches[search.active];
+  return {
+    matches: visible.map((match) => {
+      const column = Math.max(0, match.column - offset);
+      const end = Math.min(length, match.column + match.length - offset);
+      return { ...match, column, length: end - column };
+    }),
+    active: active ? visible.indexOf(active) : -1,
+  };
 }
 
 export function groupPagerMatches(

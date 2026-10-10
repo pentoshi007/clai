@@ -5,6 +5,7 @@ import { jobsKey, JOBS_INITIAL_STATE } from "./jobs-panel.js";
 import { keysInitialState, keysKey } from "./keys-panel.js";
 import {
   pagerDiffOptions,
+  pagerSubagentPaint,
   pagerKey,
   pagerViewModel,
   PAGER_INITIAL_STATE,
@@ -392,7 +393,8 @@ export class PanelController {
   private pagerView(body: string, overlay: OverlayState): PagerViewModel {
     const format = this.snapshot.pager.format;
     const diff = pagerDiffOptions(overlay);
-    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, false, undefined, diff);
+    const subagentPaint = pagerSubagentPaint(overlay);
+    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, Boolean(subagentPaint), undefined, diff, subagentPaint);
   }
 
   private apply(effects: readonly PanelEffect[]): void {

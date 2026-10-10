@@ -140,7 +140,7 @@ describe("preparePagerDisplay", () => {
         chunks.some((chunk) => chunk.text.trim().length > 0 && chunk.fg?.equals(RGBA.fromHex("#0ac80a"))),
       ).toBe(true);
     }
-    expect(stripAnsiSequences(prep.lines.map((line) => line.plain).join("\n"))).toContain("final.json");
+    expect(stripAnsiSequences(prep.lines.map((line) => line.plain).join(""))).toContain("final.json");
   });
 
   it("plain mode never uses markdown", () => {

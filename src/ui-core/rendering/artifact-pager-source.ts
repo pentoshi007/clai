@@ -17,6 +17,7 @@ export interface ArtifactPage {
 export interface ArtifactPagerSource {
   readonly path: string;
   readonly pageBytes: number;
+  readonly layout?: "continuous" | undefined;
   readPage(offset: number): Promise<ArtifactPage>;
   search(query: string, fromOffset?: number, reverse?: boolean): Promise<ArtifactPage | undefined>;
   readAll(): Promise<string>;

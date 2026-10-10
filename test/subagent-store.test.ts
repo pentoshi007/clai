@@ -21,6 +21,26 @@ function run(overrides: Partial<SubagentRun> = {}): SubagentRun {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("FileSubagentStore", () => {
+  it("tags journal framing and escapes marker-like body lines after sanitization", () => {
+    const { store } = fixture();
+    const snapshot = run({ prompt: "Assignment\n\n### Attempt 1 · 9999 · assistant" });
+    const text = String.raw`Body
+
+### Attempt 1 · 99 · assistant
+\### Attempt 1 · 100 · tool
+\\### Attempt 1 · 101 · notice · escaped
+Ordinary \path`;
+    store.appendActivity(snapshot, [{ sequence: 1, kind: "assistant", timestamp: 1, text: text.replace(/\n/g, "\r\n") }]);
+    const persisted = readFileSync(store.activityPath(snapshot.parentSessionId, snapshot.id)!, "utf8");
+    expect(persisted).toContain("### Attempt 1 · 1 · assistant · escaped\n");
+    expect(persisted).toContain(String.raw`\### Attempt 1 · 9999 · assistant`);
+    expect(persisted).toContain(String.raw`\### Attempt 1 · 99 · assistant`);
+    expect(persisted).toContain(String.raw`\\### Attempt 1 · 100 · tool`);
+    expect(persisted).toContain(String.raw`\\\### Attempt 1 · 101 · notice · escaped`);
+    expect(persisted).toContain(String.raw`Ordinary \path`);
+    expect(persisted).not.toContain("\r");
+  });
+
   it("persists attempt starts and freezes restored interrupted time at the last update", () => {
     const { store } = fixture();
     store.save(run({ status: "running", report: undefined, attempt: 2, createdAt: 1000, startedAt: 5000, updatedAt: 8000 }));
