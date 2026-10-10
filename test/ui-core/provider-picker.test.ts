@@ -22,7 +22,7 @@ import type { PickerOption } from "../../src/ui-core/state/types.js";
 import { getProvider } from "../../src/llm/router.js";
 import { getConfig } from "../../src/store/config.js";
 import type { ProviderId } from "../../src/types.js";
-import { resetSessionModelCache } from "../../src/store/session-model.js";
+import { releaseSessionModel, resetSessionModelCache } from "../../src/store/session-model.js";
 
 vi.mock("../../src/store/keys.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/store/keys.js")>();
@@ -39,6 +39,7 @@ vi.mock("../../src/store/keys.js", async (importOriginal) => {
 
 let modelDir: string;
 let previousModelDir: string | undefined;
+const activeServices = new Set<AppServices>();
 
 beforeEach(() => {
   modelDir = mkdtempSync(join(tmpdir(), "clai-provider-picker-"));
@@ -48,6 +49,11 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  for (const services of activeServices) {
+    services.dispose();
+    await releaseSessionModel(services.session.sessionId);
+  }
+  activeServices.clear();
   resetSessionModelCache();
   if (previousModelDir === undefined) delete process.env.CLAI_SESSION_MODEL_DIR;
   else process.env.CLAI_SESSION_MODEL_DIR = previousModelDir;
@@ -78,7 +84,7 @@ const persistence: PersistencePort = {
 };
 
 function makeServices(): AppServices {
-  return createCompositionRoot({
+  const services = createCompositionRoot({
     agent: new SilentAgent(),
     persistence,
     capabilities: detectCapabilities({
@@ -89,6 +95,8 @@ function makeServices(): AppServices {
       rows: 40,
     }),
   });
+  activeServices.add(services);
+  return services;
 }
 
 async function openProviderPicker(services: AppServices): Promise<{
@@ -119,7 +127,10 @@ describe("/provider search is scoped to provider names", () => {
   it("selects Qoder through the shared picker callback without changing the global provider", async () => {
     const services = makeServices();
     const defaultProvider = getConfig().defaultProvider;
-    const listModels = vi.spyOn(getProvider("qoder"), "listModels").mockResolvedValue(["qfmodel:free"]);
+    const listModels = vi.spyOn(getProvider("qoder"), "listModels").mockImplementation(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      return ["qfmodel:free"];
+    });
     try {
       handleProvider(services, { name: "provider", args: "" });
       await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
@@ -127,7 +138,7 @@ describe("/provider search is scoped to provider names", () => {
       await vi.waitFor(() => expect(services.session.getState().provider).toBe("qoder"));
       await vi.waitFor(() => expect(listModels).toHaveBeenCalled());
       expect(getConfig().defaultProvider).toBe(defaultProvider);
-      expect(services.session.getState().model).toBe("qfmodel:free");
+      await vi.waitFor(() => expect(services.session.getState().model).toBe("qfmodel:free"));
     } finally {
       listModels.mockRestore();
       services.dispose();
