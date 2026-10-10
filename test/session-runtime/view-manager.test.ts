@@ -76,6 +76,13 @@ describe("independent attachment views", () => {
     const dispose = vi.spyOn(f.shared, "dispose");
     await f.manager.detach("desktop");
     expect(desktop!.dispose).toHaveBeenCalledTimes(1);
+    const detachedOutput = Buffer.concat(f.bridge.writeView.mock.calls
+      .filter(([id]) => id === "desktop")
+      .map(([, bytes]) => Buffer.from(bytes as Uint8Array))
+    ).toString();
+    expect(detachedOutput).toContain("Worked");
+    expect(detachedOutput).toContain("Resume");
+    expect(detachedOutput).toContain("cannot be resumed");
     expect(phone!.dispose).not.toHaveBeenCalled();
     expect(dispose).not.toHaveBeenCalled();
     await phone!.services.session.submit("continue from phone");
