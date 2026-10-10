@@ -1,12 +1,12 @@
 {
   "_comment": "Template only; replace the placeholder hash before installing with Scoop. Official Windows releases are installed with install.ps1, which verifies the published SHA256 sidecar.",
-  "version": "4.14.2",
+  "version": "4.14.3",
   "description": "Cross-platform terminal AI assistant with ask and agent modes",
   "homepage": "https://github.com/pentoshi007/clai",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://downloads.clai.aniketpandey.website/v4.14.2/clai-bun-windows-x64.exe#/clai.exe",
+      "url": "https://downloads.clai.aniketpandey.website/v4.14.3/clai-bun-windows-x64.exe#/clai.exe",
       "hash": "sha256:TO_BE_FILLED_BY_RELEASE_WORKFLOW"
     }
   },

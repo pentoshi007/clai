@@ -310,7 +310,7 @@ export function Pager(props: PagerProps): ReactNode {
         refreshScrollHint();
       });
     };
-    sb.verticalScrollBar.on("change", onResize);
+    sb.verticalScrollBar.on("change", refreshScrollHint);
     for (const event of PAGER_RESIZE_EVENTS) {
       sb.content.on(event, onResize);
       sb.viewport.on(event, onResize);
@@ -318,7 +318,7 @@ export function Pager(props: PagerProps): ReactNode {
     onResize();
     return () => {
       active = false;
-      sb.verticalScrollBar.off("change", onResize);
+      sb.verticalScrollBar.off("change", refreshScrollHint);
       for (const event of PAGER_RESIZE_EVENTS) {
         sb.content.off(event, onResize);
         sb.viewport.off(event, onResize);
