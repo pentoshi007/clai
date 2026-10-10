@@ -8,6 +8,9 @@ import type { RuntimeChildBridge } from "./child-bridge.js";
 import type { RuntimeTerminalOptions, RuntimeViewFrame } from "./types.js";
 import { RuntimeViewTerminal } from "./view-terminal.js";
 import { createRuntimeViewServices } from "./view-services.js";
+import { createExitEpilogue } from "../ui-core/bootstrap/exit-epilogue.js";
+import { EXIT_SUMMARY_RESET } from "../os/screen-sequences.js";
+import { writeTerminalAndWait } from "../os/terminal-write.js";
 
 export interface RuntimeViewRenderer {
   repaint(): boolean;
@@ -20,6 +23,7 @@ interface ManagedView {
   readonly id: string;
   readonly terminal: RuntimeViewTerminal;
   readonly services: AppServices;
+  readonly epilogue: ReturnType<typeof createExitEpilogue>;
   ready: Promise<RuntimeViewRenderer>;
   renderer?: RuntimeViewRenderer | undefined;
   closed: boolean;
@@ -124,7 +128,13 @@ export class RuntimeViewManager {
       repaint: () => view?.renderer?.repaint() ?? false,
       hasOtherViews: () => this.views.size > 1,
     });
-    view = { id: frame.clientId, services, terminal, closed: false, ready: Promise.resolve().then(() => this.mount(services, terminal, frame.terminal)) };
+    const epilogue = createExitEpilogue({
+      services,
+      startedAt: Date.now(),
+      columns: () => terminal.stdout.columns,
+      write: (text) => writeTerminalAndWait(`${EXIT_SUMMARY_RESET}${text}`, terminal.stdout),
+    });
+    view = { id: frame.clientId, services, terminal, epilogue, closed: false, ready: Promise.resolve().then(() => this.mount(services, terminal, frame.terminal)) };
     this.views.set(view.id, view);
     this.currentId = view.id;
     terminal.stdout.on("error", () => { if (!view.closed) { this.bridge.closeView(view.id); void this.detach(view.id); } });
@@ -150,9 +160,12 @@ export class RuntimeViewManager {
     if (!view) return Promise.resolve();
     this.views.delete(id);
     view.closed = true;
+    view.epilogue.capture();
     view.services.overlay.cancelBlockingPrompt();
     const teardown = (async () => {
       try { const renderer = await view.ready; await renderer.dispose(); }
+      catch {}
+      try { await view.epilogue.run(); }
       catch {}
       finally { view.services.dispose(); view.terminal.dispose(); }
     })();
