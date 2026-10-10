@@ -89,7 +89,7 @@ export class PagerSourceController {
   ): void {
     const query = next.query;
     const source = state.source;
-    if (!source || !query) return;
+    if (!source || source.layout === "continuous" || !query) return;
     const matches = findPagerMatches(searchLines, query);
     const nextPageSearch = chord === "n" && previous.matchIndex >= matches.length - 1;
     const previousPageSearch = chord === "shift+n" && previous.matchIndex <= 0;

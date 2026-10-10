@@ -2,7 +2,7 @@ import type { BackgroundJob } from "../../app/ports/jobs-port.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import { jobsKey } from "./jobs-panel.js";
 import { keysKey } from "./keys-panel.js";
-import { pagerDiffOptions, pagerKey, pagerViewModel } from "./pager-panel.js";
+import { pagerDiffOptions, pagerKey, pagerSubagentPaint, pagerViewModel } from "./pager-panel.js";
 import type { PanelEffect } from "./panel-effect.js";
 import type { PanelSnapshot } from "./panel-controller.js";
 import { pickerKey } from "./picker-panel.js";
@@ -48,14 +48,16 @@ export function panelWheelMove(
 
   switch (snapshot.overlay.kind) {
     case "pager": {
+      const subagentPaint = pagerSubagentPaint(snapshot.overlay);
       const view = pagerViewModel(
         snapshot.pagerBody,
         deps.columns,
         rows,
         snapshot.pager.format,
-        false,
+        Boolean(subagentPaint),
         undefined,
         pagerDiffOptions(snapshot.overlay),
+        subagentPaint,
       );
       const moved = run(snapshot.pager, (state) =>
         pagerKey({

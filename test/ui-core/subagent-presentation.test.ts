@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { subagentLineSpans, styleSubagentBody } from "../../src/ui-core/rendering/subagent-presentation.js";
+import { renderSubagentMarkdownLines, subagentLineSpans, styleSubagentBody } from "../../src/ui-core/rendering/subagent-presentation.js";
+import { stripAnsiSequences } from "../../src/ui-core/rendering/sanitize-display.js";
 
 describe("subagent semantic colors", () => {
   it.each([
@@ -66,5 +67,35 @@ describe("styleSubagentBody", () => {
   it("preserves the copy text of every line", () => {
     const body = ["## Activity", "✓ fs.read src/index.ts", "running · attempt 1 · openai/test", "Status: complete"].join("\n");
     expect(styleSubagentBody(body, paint).replace(/\x1b\[\d+m|\x1b\[0m/g, "")).toBe(body);
+  });
+});
+
+describe("formatted subagent inputs", () => {
+  it("preserves literal tool arguments and their color through wrapping", () => {
+    const argumentsText = "printf '**literal** `argument` <br> # heading | column' " + "docs/path_with_underscores/".repeat(5);
+    const continuation = "  # fs.read file=1/2\n  12 │ **second** `input`\n  ```tool\n  </p><p>unchanged\n  ```";
+    const body = `## Activity\n\n→ shell.exec ${argumentsText}\n${continuation}\n  In progress\n\nA **verified** finding.`;
+    const painted: Array<{ text: string; fg: string }> = [];
+    const rows = renderSubagentMarkdownLines(body, { width: 38, stripOuterIndent: true, colorMode: "truecolor" }, (span) => {
+      painted.push(span);
+      return `\x1b[${span.fg === "muted" ? 37 : 31}m${span.text}\x1b[0m`;
+    });
+    const plain = rows.map(stripAnsiSequences);
+    expect(plain.join("")).toContain(`→ shell.exec ${argumentsText}${continuation.replace(/\n/g, "")}`);
+    expect(plain.join("\n")).toContain("A verified finding.");
+    expect(plain.filter((row) => !row.trim())).toHaveLength(2);
+    expect(painted.filter((span) => span.fg === "muted").map((span) => span.text).join("")).toBe(` ${argumentsText}${continuation.replace(/\n/g, "")}`);
+    expect(painted.find((span) => span.text === "shell.exec")).toMatchObject({ fg: "cyan", bold: true });
+    expect(plain.some((row) => /╭|╰/.test(row))).toBe(false);
+  });
+
+  it("keeps report code fences intact around lines resembling tool calls", () => {
+    const body = "## Report\n```text\n✓ shell.exec **example**\n```\nA **verified** result.";
+    const rows = renderSubagentMarkdownLines(body, { width: 60, stripOuterIndent: true, colorMode: "truecolor" }, (span) => span.text);
+    const plain = rows.map(stripAnsiSequences).join("\n");
+    expect(plain).toContain("✓ shell.exec **example**");
+    expect(plain).toContain("A verified result.");
+    expect(plain).toMatch(/╭|┌/);
+    expect(plain).toMatch(/╰|└/);
   });
 });

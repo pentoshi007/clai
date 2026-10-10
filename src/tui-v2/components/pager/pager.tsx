@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { LayoutEvents, StyledText, TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
@@ -35,7 +35,14 @@ import {
   bodyOnlyForCopy,
   parseDiffLine,
 } from "./pager-line.js";
-import { buildPagerRows, groupPagerMatches, NO_MATCHES } from "./pager-rows.js";
+import {
+  buildPagerRows,
+  groupPagerMatches,
+  NO_MATCHES,
+  pagerRowSearch,
+  pagerRowWindow,
+  slicePagerSpans,
+} from "./pager-rows.js";
 
 export interface PagerProps {
   readonly services: AppServices;
@@ -53,9 +60,10 @@ const HIDDEN_SCROLLBARS = {
   visible: false,
   showArrows: false,
 } as const;
+const PAGER_RESIZE_EVENTS = ["resize", LayoutEvents.RESIZED] as const;
 
 const PAGER_HELP_FULL =
-  "↑↓:scroll  ·  pg↑↓:page  ·  ^r:search  ·  q/esc:close";
+  "↑↓:scroll  ·  pg↑↓:scroll  ·  home/end  ·  ^r:search  ·  q/esc:close";
 const PAGER_HELP_MED =
   "↑↓:scroll  ·  ^r:search  ·  q/esc:close";
 const PAGER_HELP_SHORT =
@@ -79,6 +87,7 @@ export function Pager(props: PagerProps): ReactNode {
     markdown = "auto",
   } = props;
   const colorMode = services.capabilities.colorMode;
+  const continuous = source?.layout === "continuous";
   const isSubagent = source?.path.startsWith("memory://subagent/") ?? false;
   const subagentPaint = useMemo(
     () => (isSubagent ? subagentAnsiPaint(theme, colorMode) : undefined),
@@ -100,12 +109,15 @@ export function Pager(props: PagerProps): ReactNode {
   const chromeCols = contentCols;
 
   const display = useMemo(() => {
+    const pagerBody = continuous ? displayBody.replace(/\t/g, "    ") : displayBody;
     if (viewMode === "formatted") {
-      const stripped = stripPagerLineGutters(displayBody);
-      const clean =
-        /^\d+:\s?/m.test(displayBody) || /^#\s*fs\.read\b/m.test(displayBody)
-          ? extractFsReadFileBody(displayBody) || stripped
+      let clean = pagerBody;
+      if (!isSubagent) {
+        const stripped = stripPagerLineGutters(pagerBody);
+        clean = /^\d+:\s?/m.test(pagerBody) || /^#\s*fs\.read\b/m.test(pagerBody)
+          ? extractFsReadFileBody(pagerBody) || stripped
           : stripped;
+      }
       return preparePagerDisplay({
         body: clean,
         width: contentCols,
@@ -117,22 +129,22 @@ export function Pager(props: PagerProps): ReactNode {
       });
     }
     return preparePagerDisplay({
-      body: displayBody,
+      body: pagerBody,
       width: contentCols,
       mode: "plain",
       defaultFg: theme.foreground,
       theme,
       colorMode,
     });
-  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint]);
+  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint, continuous]);
 
   const lines = useMemo(
     () => display.lines.map((l) => l.plain),
     [display.lines],
   );
   const subagentSpans = useMemo(
-    () => (isSubagent ? subagentBodySpans(lines) : undefined),
-    [isSubagent, lines],
+    () => (isSubagent && display.mode === "plain" ? subagentBodySpans(lines) : undefined),
+    [isSubagent, display.mode, lines],
   );
   const pathForHighlight =
     viewMode === "raw" && highlightPath ? highlightPath : title;
@@ -158,7 +170,21 @@ export function Pager(props: PagerProps): ReactNode {
   );
   const [pagerError, setPagerError] = useState<string | undefined>(undefined);
   const [statusFlash, setStatusFlash] = useState<string | undefined>(undefined);
+  const [viewport, setViewport] = useState({
+    top: 0,
+    height: Math.max(1, innerH - Number(innerH >= 3) - Number(innerH >= 2)),
+  });
   const hasQuery = query.trim().length > 0;
+  const rowModels = useMemo(
+    () => buildPagerRows({
+      display, lines, contentCols, useDiffGutters, isSubagent,
+      highlightPath: pathForHighlight, wrapRows: continuous,
+    }),
+    [display, lines, contentCols, useDiffGutters, isSubagent, pathForHighlight, continuous],
+  );
+  const rowWindow = continuous
+    ? pagerRowWindow(rowModels.length, viewport.top, viewport.height)
+    : { start: 0, end: rowModels.length };
 
   useEffect(() => {
     setFollowing(startFollowing);
@@ -269,23 +295,36 @@ export function Pager(props: PagerProps): ReactNode {
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
+    let active = true;
+    let scheduled = false;
     sb.verticalScrollBar.visible = false;
     sb.horizontalScrollBar.visible = false;
     const onResize = (): void => {
-      applyPendingPageScroll();
-      pendingPageScroll.current = undefined;
-      refreshScrollHint();
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        if (!active) return;
+        applyPendingPageScroll();
+        pendingPageScroll.current = undefined;
+        refreshScrollHint();
+      });
     };
-    sb.verticalScrollBar.on("change", refreshScrollHint);
-    sb.content.on("resize", onResize);
-    sb.viewport.on("resize", onResize);
-    refreshScrollHint();
+    sb.verticalScrollBar.on("change", onResize);
+    for (const event of PAGER_RESIZE_EVENTS) {
+      sb.content.on(event, onResize);
+      sb.viewport.on(event, onResize);
+    }
+    onResize();
     return () => {
-      sb.verticalScrollBar.off("change", refreshScrollHint);
-      sb.content.off("resize", onResize);
-      sb.viewport.off("resize", onResize);
+      active = false;
+      sb.verticalScrollBar.off("change", onResize);
+      for (const event of PAGER_RESIZE_EVENTS) {
+        sb.content.off(event, onResize);
+        sb.viewport.off(event, onResize);
+      }
     };
-  }, []);
+  }, [continuous]);
 
   useEffect(() => {
     if (!hasQuery || matches.length === 0) {
@@ -298,6 +337,11 @@ export function Pager(props: PagerProps): ReactNode {
   function refreshScrollHint(): void {
     const sb = scrollRef.current;
     if (!sb) return;
+    if (continuous) {
+      const top = Math.max(0, sb.scrollTop);
+      const height = Math.max(1, sb.viewport.height);
+      setViewport((current) => current.top === top && current.height === height ? current : { top, height });
+    }
     const max = Math.max(0, sb.scrollHeight - sb.viewport.height);
     if (max <= 0) {
       setScrollHint("all");
@@ -327,15 +371,23 @@ export function Pager(props: PagerProps): ReactNode {
     setMatchIndex(index);
     const match = matchList[index];
     if (match) {
+      setFollowing(false);
       queueMicrotask(() => {
-        scrollRef.current?.scrollChildIntoView(`pager-line-${match.line}`);
+        if (continuous) {
+          const row = rowModels.findIndex((entry) =>
+            entry.index === match.line && (entry.textOffset ?? 0) + entry.line.length > match.column,
+          );
+          scrollRef.current?.scrollTo(Math.max(0, row));
+        } else {
+          scrollRef.current?.scrollChildIntoView(`pager-line-${match.line}`);
+        }
         refreshScrollHint();
       });
     }
   }
 
   async function submitSearch(): Promise<void> {
-    if (source && query.trim()) {
+    if (source && !continuous && query.trim()) {
       setFollowing(false);
       setPageBusy(true);
       try {
@@ -354,7 +406,7 @@ export function Pager(props: PagerProps): ReactNode {
       }
       return;
     }
-    const found = findPagerMatches(lines, query);
+    const found = findPagerMatches(searchLines, query);
     if (found.length === 0) return;
     const next = nextPagerMatch(found, matchIndex);
     jumpToMatch(next, found);
@@ -465,11 +517,11 @@ export function Pager(props: PagerProps): ReactNode {
         setSearchOpen(true);
         break;
       case "pager.next-match":
-        if (source && hasQuery) void moveArtifactSearch(false);
+        if (source && !continuous && hasQuery) void moveArtifactSearch(false);
         else if (matches.length > 0) jumpToMatch(nextPagerMatch(matches, matchIndex));
         break;
       case "pager.prev-match":
-        if (source && hasQuery) void moveArtifactSearch(true);
+        if (source && !continuous && hasQuery) void moveArtifactSearch(true);
         else if (matches.length > 0) jumpToMatch(prevPagerMatch(matches, matchIndex));
         break;
       case "pager.copy":
@@ -540,7 +592,7 @@ export function Pager(props: PagerProps): ReactNode {
         ? "no matches"
         : "";
 
-  const lineCountRight = artifactPage
+  const lineCountRight = artifactPage && !continuous
     ? `${lines.length} lines · page ${artifactPage.pageNumber}/${artifactPage.pageCount}${pageBusy ? " · loading" : ""}`
     : `${lines.length} lines · ${scrollLabel}`;
 
@@ -610,17 +662,18 @@ export function Pager(props: PagerProps): ReactNode {
     Math.max(8, Math.floor(chromeCols * 0.4)),
   );
 
-  const rowModels = useMemo(
-    () => buildPagerRows({ display, lines, contentCols, useDiffGutters, isSubagent, highlightPath: pathForHighlight }),
-    [display, lines, contentCols, useDiffGutters, isSubagent, pathForHighlight],
-  );
   const lineSearch = useMemo(() => groupPagerMatches(matches, matchIndex), [matches, matchIndex]);
 
   const bodyRows = useMemo(
     () =>
-      rowModels.map((row) => {
-        const search = lineSearch.get(row.index);
-        return (
+      rowModels.slice(rowWindow.start, rowWindow.end).map((row) => {
+        const offset = row.textOffset ?? 0;
+        const search = continuous
+          ? pagerRowSearch(lineSearch.get(row.index), offset, row.line.length)
+          : lineSearch.get(row.index);
+        const styled = row.kind === "markdown" ? display.lines[row.index]?.styled : undefined;
+        const spans = row.kind === "markdown" || row.kind === "subagent" ? subagentSpans?.[row.index] : undefined;
+        const line = (
           <PagerLine
             key={row.key}
             line={row.line}
@@ -631,15 +684,16 @@ export function Pager(props: PagerProps): ReactNode {
             hasQuery={hasQuery}
             highlightPath={row.kind === "markdown" ? "" : pathForHighlight}
             spans={row.spans}
-            styled={row.kind === "markdown" ? display.lines[row.index]?.styled : undefined}
+            styled={continuous && styled ? new StyledText(slicePagerSpans(styled.chunks, offset, row.line.length)) : styled}
             markdownMode={row.kind === "markdown" ? true : undefined}
             diffGutters={row.kind === "plain" || row.kind === "subagent" ? false : undefined}
             subagent={row.kind === "diff" ? undefined : row.kind === "subagent" || isSubagent}
-            subagentSpans={row.kind === "markdown" || row.kind === "subagent" ? subagentSpans?.[row.index] : undefined}
+            subagentSpans={continuous && spans ? slicePagerSpans(spans, offset, row.line.length) : spans}
           />
         );
+        return continuous ? <box key={row.key} style={{ height: 1, flexShrink: 0, width: "100%" }}>{line}</box> : line;
       }),
-    [rowModels, lineSearch, theme, hasQuery, pathForHighlight, display.lines, isSubagent, subagentSpans],
+    [rowModels, rowWindow.start, rowWindow.end, lineSearch, theme, hasQuery, pathForHighlight, display.lines, isSubagent, subagentSpans, continuous],
   );
 
   const borderTitle = ` ${fitOneLine([sanitizeDisplayText(title)], Math.max(1, size.width - 4))} `;
@@ -750,7 +804,9 @@ export function Pager(props: PagerProps): ReactNode {
           refreshScrollHint();
         }}
       >
+        {continuous ? <box key="before" style={{ height: rowWindow.start, flexShrink: 0 }} /> : null}
         {bodyRows}
+        {continuous ? <box key="after" style={{ height: rowModels.length - rowWindow.end, flexShrink: 0 }} /> : null}
       </scrollbox>
 
       {innerH >= 2 ? <box

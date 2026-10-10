@@ -1,9 +1,9 @@
 import type { ColorMode } from "../../app/ports/terminal-port.js";
-import { renderStyledMarkdownLines } from "./styled-markdown.js";
+import { renderStyledMarkdownLines, styleAnsiLines } from "./styled-markdown.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { looksLikeMarkdown } from "../../ui-core/rendering/pager-source.js";
 import {
-  styleSubagentBody,
+  renderSubagentMarkdownLines,
   type SubagentSpanPaint,
 } from "../../ui-core/rendering/subagent-presentation.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
@@ -51,17 +51,17 @@ export function preparePagerDisplay(
     return { mode: "plain", lines: plainLines(sanitized) };
   }
 
-  const body = options.subagentPaint
-    ? styleSubagentBody(sanitized, options.subagentPaint)
-    : sanitized;
   try {
-    const styled = renderStyledMarkdownLines(body, {
+    const appearance = {
       width,
       defaultFg: options.defaultFg,
       stripOuterIndent: true,
       theme: options.theme,
       colorMode: options.colorMode,
-    });
+    };
+    const styled = options.subagentPaint
+      ? styleAnsiLines(renderSubagentMarkdownLines(sanitized, appearance, options.subagentPaint), options.defaultFg)
+      : renderStyledMarkdownLines(sanitized, appearance);
     if (styled.length === 0) {
       return { mode: "plain", lines: plainLines(sanitized) };
     }

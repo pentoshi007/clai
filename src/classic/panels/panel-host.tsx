@@ -1,12 +1,11 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import type { BackgroundJob } from "../../app/ports/jobs-port.js";
 import type { InkTheme } from "../render/ink-theme.js";
-import { styleSubagentBody } from "../../ui-core/rendering/subagent-presentation.js";
 import { ConfirmPanel } from "./ConfirmPanel.js";
 import { JobsPanel } from "./JobsPanel.js";
 import { KeysPanel } from "./KeysPanel.js";
 import { PagerPanel } from "./PagerPanel.js";
-import { pagerDiffOptions, pagerViewModel } from "./pager-panel.js";
+import { pagerDiffOptions, pagerSubagentPaint, pagerViewModel } from "./pager-panel.js";
 import type { PanelController, PanelSnapshot } from "./panel-controller.js";
 import { PickerPanel } from "./PickerPanel.js";
 import { PromptActionsPanel } from "./PromptActionsPanel.js";
@@ -33,6 +32,7 @@ export function usePanelSnapshot(controller: PanelController): PanelSnapshot {
 export function PanelHost(props: PanelHostProps): ReactNode {
   const snapshot = usePanelSnapshot(props.controller);
   const shared = { ink: props.ink, columns: props.columns, rows: props.rows };
+  const subagent = snapshot.overlay.kind === "pager" && (snapshot.overlay.source?.path.startsWith("memory://subagent/") ?? false);
   if (props.rows <= 0) return null;
   const overlay = snapshot.overlay;
 
@@ -40,21 +40,15 @@ export function PanelHost(props: PanelHostProps): ReactNode {
     case "picker":
       return <PickerPanel {...shared} request={overlay.request} state={snapshot.picker} />;
     case "pager": {
-      const subagent =
-        overlay.source?.path.startsWith("memory://subagent/") ?? false;
-      const body = subagent
-        ? styleSubagentBody(snapshot.pagerBody, (span) =>
-            props.ink.style(span.text, span),
-          )
-        : snapshot.pagerBody;
       const view = pagerViewModel(
-        body,
+        snapshot.pagerBody,
         props.columns,
         props.rows,
         snapshot.pager.format,
         subagent,
         props.ink,
         subagent ? undefined : pagerDiffOptions(overlay, props.ink),
+        pagerSubagentPaint(overlay, props.ink),
       );
       return (
         <PagerPanel

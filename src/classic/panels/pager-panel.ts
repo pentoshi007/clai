@@ -3,7 +3,13 @@ import { renderMarkdownLines } from "../../ui-core/rendering/render-markdown-lin
 import { defaultPagerMarkdownMode } from "../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "../../ui-core/rendering/pager-source.js";
 import { wrapPagerLine } from "../../ui-core/rendering/pager-chrome.js";
-import { subagentBodySpans } from "../../ui-core/rendering/subagent-presentation.js";
+import {
+  renderSubagentMarkdownLines,
+  styleSubagentBody,
+  subagentBodySpans,
+  type SubagentSpan,
+  type SubagentSpanPaint,
+} from "../../ui-core/rendering/subagent-presentation.js";
 import {
   findPagerMatches,
   nextPagerMatch,
@@ -66,17 +72,21 @@ function logicalPagerLines(
   width: number,
   format: PagerFormat,
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
+  subagentPaint?: SubagentSpanPaint,
 ): readonly string[] {
   if (format === "formatted") {
-    const rendered = renderMarkdownLines(formattedPagerBody(body), {
+    const options = {
       width: Math.max(20, width),
       stripOuterIndent: true,
       theme: appearance?.theme,
       colorMode: appearance?.colorMode,
-    });
+    };
+    const rendered = subagentPaint
+      ? renderSubagentMarkdownLines(body, options, subagentPaint)
+      : renderMarkdownLines(formattedPagerBody(body), options);
     if (rendered.length > 0) return rendered;
   }
-  return body.replace(/\r\n?/g, "\n").split("\n");
+  return (subagentPaint ? styleSubagentBody(body, subagentPaint) : body).replace(/\r\n?/g, "\n").split("\n");
 }
 
 export function pagerLines(
@@ -87,10 +97,11 @@ export function pagerLines(
   ansiBody = false,
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
   diff?: PagerDiffOptions,
+  subagentPaint?: SubagentSpanPaint,
 ): readonly string[] {
   const width = panelBodyWidth(columns);
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
-  const logical = logicalPagerLines(body, textWidth, format, appearance).map((line) => expandTabs(line));
+  const logical = logicalPagerLines(body, textWidth, format, appearance, subagentPaint).map((line) => expandTabs(line));
   if (diff && format === "raw" && !ansiBody) {
     const painted = diffPagerLines(logical, textWidth, diff);
     if (painted) return painted.length === 0 ? [" "] : painted;
@@ -120,6 +131,20 @@ export function pagerDiffOptions(
   return ink ? { path: overlay.highlightPath, ink } : { path: overlay.highlightPath };
 }
 
+const unpaintSubagentSpan: SubagentSpanPaint = (span) => span.text;
+const subagentPaintCache = new WeakMap<InkTheme, SubagentSpanPaint>();
+
+export function pagerSubagentPaint(overlay: OverlayState, ink?: InkTheme): SubagentSpanPaint | undefined {
+  if (overlay.kind !== "pager" || !overlay.source?.path.startsWith("memory://subagent/")) return undefined;
+  if (!ink) return unpaintSubagentSpan;
+  let paint = subagentPaintCache.get(ink);
+  if (!paint) {
+    paint = (span) => ink.style(span.text, span);
+    subagentPaintCache.set(ink, paint);
+  }
+  return paint;
+}
+
 interface PagerCacheEntry {
   readonly body: string;
   readonly columns: number;
@@ -129,11 +154,22 @@ interface PagerCacheEntry {
   readonly appearance: Pick<InkTheme, "theme" | "colorMode"> | undefined;
   readonly diffPath: string | undefined;
   readonly diffInk: InkTheme | undefined;
+  readonly subagentPaint: SubagentSpanPaint | undefined;
   readonly view: PagerViewModel;
 }
 
 const PAGER_CACHE_SIZE = 4;
 const pagerCache: PagerCacheEntry[] = [];
+const subagentSpansCache = new WeakMap<readonly string[], readonly (readonly SubagentSpan[] | undefined)[]>();
+
+function pagerSubagentSpans(lines: readonly string[]): readonly (readonly SubagentSpan[] | undefined)[] {
+  let spans = subagentSpansCache.get(lines);
+  if (!spans) {
+    spans = subagentBodySpans(lines);
+    subagentSpansCache.set(lines, spans);
+  }
+  return spans;
+}
 
 export function pagerViewModel(
   body: string,
@@ -143,6 +179,7 @@ export function pagerViewModel(
   ansiBody = false,
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
   diff?: PagerDiffOptions,
+  subagentPaint?: SubagentSpanPaint,
 ): PagerViewModel {
   const diffPath = diff?.path;
   const diffInk = diff?.ink;
@@ -155,7 +192,8 @@ export function pagerViewModel(
       entry.ansiBody === ansiBody &&
       entry.appearance === appearance &&
       entry.diffPath === diffPath &&
-      entry.diffInk === diffInk,
+      entry.diffInk === diffInk &&
+      entry.subagentPaint === subagentPaint,
   );
   if (index >= 0) {
     const hit = pagerCache[index]!;
@@ -165,9 +203,9 @@ export function pagerViewModel(
     }
     return hit.view;
   }
-  const lines = pagerLines(body, columns, rows, format, ansiBody, appearance, diff);
+  const lines = pagerLines(body, columns, rows, format, ansiBody, appearance, diff, subagentPaint);
   const view: PagerViewModel = { lines, searchLines: pagerSearchLines(lines) };
-  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, view });
+  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, subagentPaint, view });
   if (pagerCache.length > PAGER_CACHE_SIZE) pagerCache.length = PAGER_CACHE_SIZE;
   return view;
 }
@@ -299,14 +337,14 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
   const searchLines = input.searchLines ?? pagerSearchLines(input.lines);
   const matches = state.query === "" ? [] : findPagerMatches(searchLines, state.query);
   const top = clampTop(state.caret, state.top, Math.max(1, height), count);
-  const subagentSpans = input.subagent ? subagentBodySpans(searchLines) : undefined;
+  const subagentSpans = input.subagent ? pagerSubagentSpans(searchLines) : undefined;
   const body: string[] = [];
   for (let offset = 0; offset < height; offset += 1) {
     const index = top + offset;
     if (index >= count) break;
     const raw = input.lines[index] ?? "";
     const plain = searchLines[index] ?? "";
-    const spans = subagentSpans?.[index];
+    const spans = raw.includes("\x1b[") ? undefined : subagentSpans?.[index];
     const styled = spans ? spans.map((span) => ink.style(span.text, span)).join("") : raw;
     const painted =
       state.query === ""
