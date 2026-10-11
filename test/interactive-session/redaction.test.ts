@@ -43,6 +43,17 @@ describe("Property 15: sensitive data never reaches a persistence or presentatio
     );
   });
 
+  it.each(["aaaa", "abcabc", "試験試験", "abab"])("redacts self-overlapping exact secret %s across every split", (secret) => {
+    const source = Buffer.from(`value=${secret}`);
+    for (let chunkSize = 1; chunkSize <= source.length; chunkSize += 1) {
+      const redactor = new StreamingSecretRedactor(4_096);
+      redactor.registerExactSecret(secret);
+      const text = Buffer.from(feed(redactor, source, chunkSize)).toString("utf8");
+      expect(text).not.toContain(secret);
+      expect(text).toContain(REDACTION_MARKER);
+    }
+  });
+
   it("redacts a secret adjacent to invalid UTF-8 bytes", () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 10 }), (chunkSize) => {

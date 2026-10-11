@@ -171,7 +171,7 @@ export class StreamingSecretRedactor {
 
   push(raw: Uint8Array): Uint8Array {
     if (this.closed) throw new Error("Cannot push into a closed redactor");
-    this.pending = concat(this.pending, raw);
+    this.pending = this.applyByteLane(concat(this.pending, raw));
     const keepIncomplete = trailingIncompleteUtf8Bytes(this.pending);
     const keepSecret = this.viablePrefixTail(this.pending);
     const keepPattern = this.viablePatternTail(this.pending);

@@ -29,7 +29,7 @@ export interface PtyProcessLike {
   onExit(listener: (event: { exitCode: number; signal?: number | undefined }) => void): {
     dispose(): void;
   };
-  write(data: string): void;
+  write(data: string | Buffer): void;
   resize(columns: number, rows: number): void;
   pause(): void;
   resume(): void;
@@ -46,6 +46,7 @@ export interface NodePtyModuleLike {
       cols: number;
       rows: number;
       name?: string;
+      encoding?: string | null;
       useConpty?: boolean;
     },
   ): PtyProcessLike;
@@ -58,8 +59,16 @@ interface BunTerminalLike {
   close(): void;
 }
 
+interface BunTerminalOptions {
+  cols: number;
+  rows: number;
+  data: (terminal: BunTerminalLike, data: Uint8Array) => void;
+  exit?: (terminal: BunTerminalLike, exitCode: number, signalCode: number | null) => void;
+}
+
 interface BunSubprocessLike {
   readonly pid: number;
+  readonly terminal?: BunTerminalLike | undefined;
   readonly exited: Promise<number>;
   kill(signal?: number | string): void;
   unref?(): void;
@@ -67,18 +76,13 @@ interface BunSubprocessLike {
 
 interface BunRuntimeLike {
   readonly version?: string;
-  readonly Terminal: new (options: {
-    cols: number;
-    rows: number;
-    data: (terminal: BunTerminalLike, data: Uint8Array) => void;
-    exit?: (terminal: BunTerminalLike, exitCode: number, signalCode: number | null) => void;
-  }) => BunTerminalLike;
+  readonly Terminal: new (options: BunTerminalOptions) => BunTerminalLike;
   spawn(
     command: string[],
     options: {
       cwd: string;
       env: Record<string, string>;
-      terminal: BunTerminalLike;
+      terminal: BunTerminalOptions;
       detached: true;
     },
   ): BunSubprocessLike;
@@ -285,11 +289,11 @@ class NodePtyTransport extends BasePtyTransport {
   }
 
   async write(bytes: Uint8Array): Promise<DeliveryResult> {
-    if (this.inputClosed || this.outcome) {
+    if (this.inputClosed || this.outcome || this.disposed) {
       return { status: "not-delivered", deliveredBytes: 0 };
     }
     try {
-      this.pty.write(Buffer.from(bytes).toString("binary"));
+      this.pty.write(Buffer.from(bytes));
       return { status: "delivered", deliveredBytes: bytes.length };
     } catch (cause) {
       return { status: "unknown", deliveredBytes: 0, cause };
@@ -470,7 +474,7 @@ async function startNodePtyProcess(
         cols: request.dimensions.columns,
         rows: request.dimensions.rows,
         name: "xterm-256color",
-        ...(process.platform === "win32" ? { useConpty: true } : {}),
+        ...(process.platform === "win32" ? { useConpty: true } : { encoding: null }),
       },
     );
     if (!pty.pid) throw new Error("node-pty returned no pid");
@@ -509,28 +513,31 @@ async function startBunPtyProcess(
   let terminal: BunTerminalLike | undefined;
   let subprocess: BunSubprocessLike | undefined;
   try {
-    terminal = new runtime.Terminal({
-      cols: request.dimensions.columns,
-      rows: request.dimensions.rows,
-      data: (_terminal, data) => {
-        if (transport) transport.receive(data);
-        else pendingData.push(new Uint8Array(data));
-      },
-      exit: (_terminal, exitCode, signalCode) => {
-        if (transport) transport.exited(exitCode, signalCode);
-        else pendingExit = { exitCode, signalCode };
-      },
-    });
     subprocess = runtime.spawn(
       [request.file, ...request.args],
       {
         cwd: request.cwd,
         env: stringEnv({ ...(request.env ?? process.env), TERM: "xterm-256color" }),
-        terminal,
+        terminal: {
+          cols: request.dimensions.columns,
+          rows: request.dimensions.rows,
+          data: (created, data) => {
+            terminal = created;
+            if (transport) transport.receive(data);
+            else pendingData.push(new Uint8Array(data));
+          },
+          exit: (created, exitCode, signalCode) => {
+            terminal = created;
+            if (transport) transport.exited(exitCode, signalCode);
+            else pendingExit = { exitCode, signalCode };
+          },
+        },
         detached: true,
       },
     );
     if (!subprocess.pid) throw new Error("Bun.spawn returned no pid");
+    terminal = subprocess.terminal ?? terminal;
+    if (!terminal) throw new Error("Bun.spawn returned no terminal");
     transport = new BunPtyTransport(terminal, subprocess);
     request.onLaunchIdentity?.({
       pid: transport.pid,

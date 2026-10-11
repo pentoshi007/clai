@@ -49,7 +49,7 @@ describe("Bun PTY resize", () => {
       configurable: true,
       value: {
         Terminal: FakeTerminal,
-        spawn: vi.fn(() => subprocess),
+        spawn: vi.fn(() => ({ ...subprocess, terminal: new FakeTerminal() })),
       },
     });
 

@@ -162,3 +162,44 @@ describe("interactiveStdinKind", () => {
     ).toBeUndefined();
   });
 });
+
+describe("SSH inspection and authentication routing", () => {
+  it.each([
+    "which ssh sshpass expect 2>&1; ssh -V 2>&1 | head -1",
+    "command -v ssh sshpass expect",
+    "env command -pv ssh",
+    "command -V ssh",
+    "ssh -V",
+    "ssh -vvV",
+    "ssh -G analyst@host",
+    "ssh -Q cipher",
+    "ssh -oBatchMode=yes analyst@host uptime",
+    "ssh -o 'BatchMode = YES' analyst@host uptime",
+    "ssh -o BatchMode=yes -o BatchMode=no analyst@host uptime",
+    "ssh -o ProxyCommand='printf BatchMode=no' -oBatchMode=yes analyst@host",
+    "scp -B file host:/tmp/",
+    "scp -oBatchMode=yes file host:/tmp/",
+    "rsync --version",
+    "rsync --help",
+  ])("keeps non-prompting inspection/batch command on shell.exec: %s", (command) => {
+    expect(interactiveStdinKind(command)).toBeUndefined();
+  });
+
+  it.each([
+    "ssh -v analyst@host",
+    "ssh analyst@host -V",
+    "ssh analyst@host echo BatchMode=yes",
+    "ssh -oBatchMode=no -oBatchMode=yes analyst@host",
+    "ssh -o ProxyCommand='printf BatchMode=yes' analyst@host",
+    "command ssh -v analyst@host",
+    "scp file host:/tmp/",
+    "ssh -V; ssh analyst@host",
+    "command -v ssh; ssh analyst@host",
+  ])("still routes prompt-capable SSH to a terminal: %s", (command) => {
+    expect(interactiveStdinKind(command)).toBe("tty");
+  });
+
+  it("does not hide an elevated segment behind an SSH version probe", () => {
+    expect(interactiveStdinKind("ssh -V && sudo whoami")).toBe("elevate");
+  });
+});

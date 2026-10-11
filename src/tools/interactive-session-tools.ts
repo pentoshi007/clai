@@ -11,6 +11,7 @@ import {
 } from "../interactive-session/config.js";
 import {
   asStableError,
+  throwSessionError,
   type ControlInput,
   type InteractiveSessionToolResult,
   type OutputPage,
@@ -42,12 +43,16 @@ function requireString(args: Record<string, unknown>, key: string): string {
 
 function optionalString(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
-  return typeof value === "string" ? value : undefined;
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${key} must be a string`);
+  return value;
 }
 
 function optionalNumber(args: Record<string, unknown>, key: string): number | undefined {
   const value = args[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error(`${key} must be a finite integer`);
+  return value;
 }
 
 function optionalView(args: Record<string, unknown>): OutputView | undefined {
@@ -83,12 +88,17 @@ async function parseInput(
       throw new Error("submit must be enter or none");
     }
     const secretPrompt = optionalString(args, "secretPrompt") ?? "Enter secret";
-    const value = await options?.requestSecret?.({
+    if (!options?.requestSecret) {
+      throwSessionError({ code: "UNSUPPORTED_OPERATION", operation: "send", message: "Local secret input is unavailable in this UI; no input was sent." });
+    }
+    const value = await options.requestSecret({
       title: "Terminal secret input",
       prompt: secretPrompt,
       operation: { name: "terminal.send", args },
     });
-    if (value === undefined) throw new Error("Secret input was cancelled");
+    if (value === undefined) {
+      throwSessionError({ code: "CANCELLED", operation: "send", message: "Secret input was cancelled; no input was sent." });
+    }
     return { kind: "secret", value, submit };
   }
   if (kind === "control") {
@@ -128,15 +138,14 @@ function confirmPort(options: ToolRunOptions | undefined): ConfirmPreview {
 
 function summarizePage(page: OutputPage | undefined): string[] {
   if (!page) return [];
-  const lines: string[] = [];
-  const body = page.events.map((event) => event.content).join("");
-  if (body.length > 0) lines.push(body.replace(/\s+$/, ""));
-  lines.push(
-    `[cursor ${page.requestedCursor}→${page.nextCursor}${page.hasMore ? " more" : ""}${
+  const body = page.events.map((event) => event.content).join(page.view === "encoded" ? "\n" : "");
+  return [
+    `[terminal.output cursor=${page.requestedCursor} nextCursor=${page.nextCursor} earliestAvailableCursor=${page.earliestAvailableCursor} latestCursor=${page.latestCursor} hasMore=${page.hasMore} view=${page.view}${
       page.decodingLoss ? " lossy" : ""
     }${page.omittedBytes ? ` omitted=${page.omittedBytes}B` : ""}]`,
-  );
-  return lines;
+    ...(body.length > 0 ? [body.replace(/\n$/, "")] : []),
+    "[/terminal.output]",
+  ];
 }
 
 function describeError(error: StableError): string {
@@ -154,6 +163,7 @@ function project(result: InteractiveSessionToolResult): ToolResult {
             ? ` ${result.dimensions.columns}x${result.dimensions.rows}`
             : "") +
           (result.degradedReason ? ` degraded=${result.degradedReason}` : ""),
+        ...summarizePage(result.page),
         `artifact=${result.artifact.path}`,
       );
       break;
@@ -212,6 +222,10 @@ function project(result: InteractiveSessionToolResult): ToolResult {
       }
       break;
   }
+  lines[0] = `[terminal.${result.operation}] ${lines[0] ?? ""}`;
+  const outcome = "processOutcome" in result ? result.processOutcome : undefined;
+  if (outcome?.exitCode !== undefined) lines[0] += ` processExit=${outcome.exitCode}`;
+  if (outcome?.signal) lines[0] += ` signal=${outcome.signal}`;
   return { ok, output: lines.filter((line) => line.length > 0).join("\n"), interactiveSession: result };
 }
 
@@ -251,7 +265,7 @@ export function createInteractiveSessionHandlers(
       guarded("start", async () => {
         const ownerId = requireOwner(options, "start");
         const mode = optionalString(args, "terminalMode");
-        return await manager.start({
+        const started = await manager.start({
           ownerId,
           command: requireString(args, "command"),
           cwd: optionalString(args, "cwd"),
@@ -265,19 +279,30 @@ export function createInteractiveSessionHandlers(
           confirm: confirmPort(options),
           scope: await activeScope(options),
         });
+        const initial = await manager.read({
+          ownerId, id: started.sessionId, cursor: 0, waitMs: 1_000, signal: options?.signal,
+        });
+        return {
+          ...started, state: initial.state, page: initial.page,
+          cursor: initial.page?.nextCursor ?? started.cursor,
+          ...(initial.processOutcome ? { processOutcome: initial.processOutcome } : {}),
+        };
       }),
     "terminal.send": async (args, options) =>
       guarded("send", async () => {
-        const ownerId = requireOwner(options, "send");
-        return await manager.send({
-          ownerId,
+        const request = {
+          ownerId: requireOwner(options, "send"),
           id: requireString(args, "id"),
-          input: await parseInput(args, options),
           cursor: optionalNumber(args, "cursor"),
           quietMs: optionalNumber(args, "quietMs"),
           deadlineMs: optionalNumber(args, "deadlineMs"),
           view: optionalView(args),
           signal: options?.signal,
+        };
+        manager.validateSend(request);
+        return await manager.send({
+          ...request,
+          input: await parseInput(args, options),
           confirm: confirmPort(options),
           scope: await activeScope(options),
         });

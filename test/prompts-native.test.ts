@@ -69,7 +69,9 @@ describe("native prompts", () => {
     );
     expect(p).toContain("Finite chatty work → shell.exec");
     expect(p).toContain("persistent work → background shell.exec");
-    expect(p).toMatch(/ssh\/gpg\/passwd need a real TTY: use terminal\.start/i);
+    expect(p).toMatch(/ssh\/gpg\/passwd login needs a real TTY: terminal\.start\/read/i);
+    expect(p).toContain('observe prompt → terminal.send kind:"secret"');
+    expect(p).toContain("SSH -V/-G/-Q probes use shell.exec");
   });
 
   it("agent prompt requires leave server running + report URL for coding plans", () => {

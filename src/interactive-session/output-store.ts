@@ -281,9 +281,11 @@ export class OutputStore {
     };
   }
 
-  dispose(): void {
+  dispose(retainOutput = false): void {
     this.finish();
     this.notifier.clear();
+    this.redactors.clear();
+    if (retainOutput) return;
     this.events.length = 0;
     this.retainedBytes = 0;
   }

@@ -181,7 +181,7 @@ export class CleanupCoordinator {
     runtime.timers.clearAll();
     runtime.releaseListeners();
     await runtime.transport.dispose();
-    runtime.output.dispose();
+    runtime.output.dispose(true);
     runtime.disposed = true;
     if (cleanupVerified) this.deps.journal.remove(record.id);
 

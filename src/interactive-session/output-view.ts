@@ -136,7 +136,27 @@ export function presentEvents(
   events: readonly OutputEvent[],
   view: OutputView,
 ): { events: PresentedOutputEvent[]; decodingLoss: boolean } {
-  const presented = events.map((event) => presentEvent(event, view));
+  const presented: PresentedOutputEvent[] = [];
+  let group: OutputEvent[] = [];
+  const flush = (): void => {
+    const first = group[0];
+    if (!first) return;
+    presented.push(presentEvent({
+      ...first,
+      endCursor: group.at(-1)!.endCursor,
+      bytes: Buffer.concat(group.map(event => Buffer.from(event.bytes))),
+    }, view));
+    group = [];
+  };
+  for (const event of events) {
+    if (view === "encoded") {
+      presented.push(presentEvent(event, view));
+      continue;
+    }
+    if (group[0] && group[0].stream !== event.stream) flush();
+    group.push(event);
+  }
+  flush();
   return {
     events: presented,
     decodingLoss: presented.some((event) => event.decodingLoss === true),

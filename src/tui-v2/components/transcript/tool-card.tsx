@@ -313,7 +313,7 @@ export function ToolCard(props: {
   const { lines, hiddenAboveCount, truncatedNotice } = useMemo(
     () =>
       presentsRawOutput
-        ? presentOutput(tail, spool.state(item.toolCallId), expanded)
+        ? presentOutput(tail, spool.state(item.toolCallId), expanded, item.name)
         : EMPTY_OUTPUT,
     [presentsRawOutput, tail, spool, item.toolCallId, item.outputBytes, expanded, item.name],
   );
@@ -610,11 +610,10 @@ export function ToolCard(props: {
             flexShrink: 0,
           }}
         >
-          <text selectable style={{ fg: theme.muted }}>
+          <text selectable style={{ fg: theme.muted, width: argsLabel.length + 2, flexShrink: 0 }}>
             {argsLabel}:{" "}
           </text>
-          {}
-          <text selectable style={{ fg: theme.inputBorder }}>
+          <text selectable style={{ fg: theme.inputBorder, flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
             {argsDisplay}
           </text>
         </box>

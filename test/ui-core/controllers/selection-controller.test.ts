@@ -146,6 +146,20 @@ describe("SelectionController (V2-060..064)", () => {
     expect(afterResize).toEqual(before);
   });
 
+  it("redacts known secrets and removes terminal control sequences on copy", async () => {
+    const { clipboard, selection } = configured();
+    selection.setDocument("transcript", {
+      blocks: [{ id: "secret-output", text: "\u001b[31mgsk_fixtureToken\u001b[0m\u0000\nsk-fixtureToken\n  retained indentation" }],
+    });
+    selection.selectAll("transcript");
+    const result = await selection.copy();
+    expect(result.status).toBe("copied");
+    expect(clipboard.text).toContain("gsk_••••••");
+    expect(clipboard.text).toContain("sk-••••••");
+    expect(clipboard.text).toContain("  retained indentation");
+    expect(clipboard.text).not.toMatch(/fixtureToken|\u001b|\u0000/);
+  });
+
   it("contains clipboard failures instead of throwing from an input action", async () => {
     const selection = new SelectionController({
       async writeText() {
