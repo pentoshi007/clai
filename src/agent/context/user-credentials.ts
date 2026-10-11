@@ -12,10 +12,13 @@ const REDACTION_MARKERS: readonly string[] = ["••••", "[redacted]"];
 const SECRET_QUALIFIERS =
   "api|access|secret|private|auth|license|signing|encryption|client|app|test|live|publishable|webhook|bearer|session|refresh";
 
+const PASSWORD_PATTERN = /\b(?:password|passwd|passphrase|passcode|pwd|pin)["']?[ \t]*(?::|=|\bis\b)[ \t]*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|\x60([^\x60\r\n]+)\x60|([^\s"'\x60]+))/gi;
+
 const SPOKEN_SECRET = String.raw`\b(?:${SECRET_QUALIFIERS})[\s_-]?(?:key|secret|token)s?\b[\s"'\x60]{0,4}(?:is|are|=|:)[\s"'\x60]{0,4}(?=[^\s"'\x60]*\d)[^\s"'\x60]{8,}`;
 
 const CREDENTIAL_PATTERN = new RegExp(
   [
+    PASSWORD_PATTERN.source,
     String.raw`\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,}`,
     String.raw`\bsk-[A-Za-z0-9._-]{16,}`,
     String.raw`\b(?:gsk|hf|r8|glpat|npm|tvly|pplx|xai|nvapi|fw|thk)[_-][A-Za-z0-9_-]{16,}`,
@@ -29,7 +32,6 @@ const CREDENTIAL_PATTERN = new RegExp(
     String.raw`\bBearer\s+[A-Za-z0-9._~+/=-]{16,}`,
     String.raw`\b[a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]{1,256}:[^\s@/]{1,256}@\S+`,
     String.raw`\b[\w.-]{0,40}(?:api[_-]?key|apikey|secret|token|passw(?:or)?d|passphrase|pwd|credentials?|access[_-]?key|private[_-]?key)[\w.-]{0,40}["']?\s{0,8}[:=]\s{0,8}["'\x60]?[^\s"'\x60]{4,}`,
-    String.raw`\b(?:password|passphrase|passcode|pin)\s+is\s+\S{4,}`,
     SPOKEN_SECRET,
   ].join("|"),
   "gi",
@@ -127,4 +129,40 @@ export function renderUserCredentials(credentials: readonly string[]): string[] 
   return credentials.length > 0
     ? [USER_CREDENTIALS_HEADING, ...credentials.map((line) => `- ${line}`)]
     : [];
+}
+
+export type UserPasswordResolution =
+  | { readonly status: "available"; readonly value: string }
+  | { readonly status: "missing" | "ambiguous" };
+
+export function extractUserPasswords(content: string): string[] {
+  return [...content.matchAll(PASSWORD_PATTERN)].flatMap((match) => {
+    const value = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (!value || /[\x00-\x1f\x7f]/u.test(value)) return [];
+    if (REDACTION_MARKERS.some((marker) => value.includes(marker)) || /^\[redacted\b|^<[^>]+>$|^[•*]{3,}$/iu.test(value)) return [];
+    if ([match[1], match[2], match[3]].some((quoted) => quoted?.endsWith("\\"))) return [];
+    return [value];
+  });
+}
+
+export function resolveUserPassword(input: {
+  readonly userPrompt?: string | undefined;
+  readonly userMessages?: readonly ChatMessage[] | undefined;
+}): UserPasswordResolution {
+  const prompt = input.userPrompt ?? "";
+  const messages = input.userMessages;
+  const promptIsUser = messages
+    ? messages.some((message) => message.role === "user" && !isInternalChatMessage(message) && message.content === prompt)
+    : !isInternalChatMessage({ role: "user", content: prompt });
+  const current = promptIsUser ? extractUserPasswords(prompt) : [];
+  const previous = current.length ? [] : (messages ?? []).flatMap((message) => {
+    if (message.role === "user" && !isInternalChatMessage(message)) return extractUserPasswords(message.content);
+    if (message.role === "system" && message.content.startsWith("DURABLE WORK ENVELOPE")) {
+      return carriedCredentials(message.content).flatMap(extractUserPasswords);
+    }
+    return [];
+  });
+  const values = [...new Set([...current, ...previous])];
+  if (values.length === 1) return { status: "available", value: values[0]! };
+  return { status: values.length ? "ambiguous" : "missing" };
 }

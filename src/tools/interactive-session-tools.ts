@@ -1,5 +1,6 @@
 
 import { loadScopeForSession, type EngagementScope } from "../store/scope.js";
+import { resolveUserPassword } from "../agent/context/user-credentials.js";
 import {
   InteractiveSessionManager,
   interactiveSessionManager,
@@ -64,11 +65,47 @@ function optionalView(args: Record<string, unknown>): OutputView | undefined {
   return value;
 }
 
+async function secretValue(args: Record<string, unknown>, options: ToolRunOptions | undefined): Promise<string> {
+  const source = optionalString(args, "secretSource") ?? "auto";
+  if (source !== "auto" && source !== "user" && source !== "prompt") {
+    throw new Error("secretSource must be auto, user, or prompt");
+  }
+  const prompt = optionalString(args, "secretPrompt") ?? "Enter secret";
+  options?.signal?.throwIfAborted();
+  if (source !== "prompt") {
+    const supplied = resolveUserPassword(options ?? {});
+    if (supplied.status === "available") return supplied.value;
+    if (source === "user") {
+      throwSessionError({ code: "INVALID_REQUEST", operation: "send", message: `User-provided password is ${supplied.status}; use secretSource=prompt for masked input. No input was sent.` });
+    }
+  }
+  if (!options?.requestSecret) {
+    throwSessionError({ code: "UNSUPPORTED_OPERATION", operation: "send", message: "Local secret input is unavailable in this UI; no input was sent." });
+  }
+  const value = await options.requestSecret({ title: "Terminal secret input", prompt, operation: { name: "terminal.send", args } });
+  if (value === undefined) {
+    throwSessionError({ code: "CANCELLED", operation: "send", message: "Secret input was cancelled; no input was sent." });
+  }
+  return value;
+}
+
+async function parseSecretInput(args: Record<string, unknown>, options: ToolRunOptions | undefined): Promise<SessionInput> {
+  if (args.text !== undefined || args.control !== undefined) {
+    throw new Error("text and control are not allowed when kind is secret");
+  }
+  const submit = optionalString(args, "submit") ?? "enter";
+  if (submit !== "enter" && submit !== "none") throw new Error("submit must be enter or none");
+  return { kind: "secret", value: await secretValue(args, options), submit };
+}
+
 async function parseInput(
   args: Record<string, unknown>,
   options: ToolRunOptions | undefined,
 ): Promise<SessionInput> {
   const kind = requireString(args, "kind");
+  if (kind !== "secret" && (args.secretSource !== undefined || args.secretPrompt !== undefined)) {
+    throw new Error("secretSource and secretPrompt are only allowed when kind is secret");
+  }
   if (kind === "text") {
     const text = args.text;
     if (typeof text !== "string") throw new Error("text is required when kind is text");
@@ -79,28 +116,7 @@ async function parseInput(
     }
     return { kind: "text", text, submit };
   }
-  if (kind === "secret") {
-    if (args.text !== undefined || args.control !== undefined) {
-      throw new Error("text and control are not allowed when kind is secret");
-    }
-    const submit = optionalString(args, "submit") ?? "enter";
-    if (submit !== "enter" && submit !== "none") {
-      throw new Error("submit must be enter or none");
-    }
-    const secretPrompt = optionalString(args, "secretPrompt") ?? "Enter secret";
-    if (!options?.requestSecret) {
-      throwSessionError({ code: "UNSUPPORTED_OPERATION", operation: "send", message: "Local secret input is unavailable in this UI; no input was sent." });
-    }
-    const value = await options.requestSecret({
-      title: "Terminal secret input",
-      prompt: secretPrompt,
-      operation: { name: "terminal.send", args },
-    });
-    if (value === undefined) {
-      throwSessionError({ code: "CANCELLED", operation: "send", message: "Secret input was cancelled; no input was sent." });
-    }
-    return { kind: "secret", value, submit };
-  }
+  if (kind === "secret") return parseSecretInput(args, options);
   if (kind === "control") {
     const control = requireString(args, "control");
     if (args.text !== undefined) throw new Error("text is not allowed when kind is control");

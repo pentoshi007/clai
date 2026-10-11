@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../src/types.js";
 import { compactionSourcePrefixEnd } from "../../src/agent/context/compaction-source-prefix.js";
+import { buildDirectCompactionPrompt } from "../../src/agent/compaction-summary.js";
 import { compactMessagesWithSummary } from "../../src/agent/context-manager.js";
 import { estimateMessagesTokens } from "../../src/agent/request-accounting.js";
 
@@ -45,6 +46,10 @@ describe("cacheable compaction source prefix", () => {
       );
     }
     const original = structuredClone(history);
+    const inputBudget = estimateMessagesTokens([
+      ...history.slice(0, 5),
+      { role: "user", content: buildDirectCompactionPrompt({ messages: history }) },
+    ]);
     let sent: readonly ChatMessage[] | undefined;
     let calls = 0;
     const result = await compactMessagesWithSummary(history, async (prompt, stage) => {
@@ -52,9 +57,9 @@ describe("cacheable compaction source prefix", () => {
       sent = stage?.sourceMessages;
       expect(sent).toBeDefined();
       expect(sent).toEqual(history.slice(0, sent!.length));
-      expect(estimateMessagesTokens([...sent!, { role: "user", content: prompt }])).toBeLessThanOrEqual(2500);
+      expect(estimateMessagesTokens([...sent!, { role: "user", content: prompt }])).toBeLessThanOrEqual(inputBudget);
       return "## Work\nEarlier requests were completed.\n## Remaining\nContinue the retained turns.";
-    }, { budgetTokens: 0, keepRecent: 2, singleAdmission: true, singlePassInputBudgetTokens: 2500 });
+    }, { budgetTokens: 0, keepRecent: 2, singleAdmission: true, singlePassInputBudgetTokens: inputBudget });
     expect(calls).toBe(1);
     expect(result.strategy).toBe("emergency_prefix_slice");
     expect(sent!.length).toBeGreaterThan(1);
