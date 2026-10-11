@@ -17,13 +17,13 @@ const outputView = {
 };
 const outputCursor = {
   type: "integer", minimum: 0,
-  description: "Redacted byte cursor: nextCursor resumes, 0 replays; ≤latestCursor.",
+  description: "Redacted byte cursor: nextCursor resumes; ≤latestCursor.",
 };
 
 export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
   def(
     "terminal.start",
-    "Start an owned SSH/Python/msfconsole REPL. Read until prompt before input. Returns id + output (≤1000ms wait). Finite work: shell.exec; unattended services: shell.exec background:\"always\".",
+    "Owned SSH/Python/msfconsole REPL. Read until prompt before input. Output after ≤1000ms. Finite work: shell.exec; unattended services: shell.exec background:\"always\".",
     {
       type: "object",
       properties: {
@@ -31,7 +31,7 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
         cwd: { type: "string" },
         terminalMode: {
           type: "string", enum: ["required", "preferred", "pipe"],
-          description: "required: PTY or fail (SSH/readline); preferred: PTY or pipes; pipe: stdin only.",
+          description: "required: PTY or fail (SSH/readline); preferred: PTY/pipes; pipe: stdin only.",
         },
         columns: { type: "integer", minimum: 2, maximum: 1000, default: 80 },
         rows: { type: "integer", minimum: 2, maximum: 1000, default: 24 },
@@ -46,14 +46,15 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
   ),
   def(
     "terminal.send",
-    "Send once; returns delivery/output. Never resend delivered/unknown input after timeout; read from nextCursor. Secrets are local, never in args.",
+    "Send once; never resend delivered/unknown input. Read nextCursor. Secrets never in args.",
     {
       type: "object",
       properties: {
         id: { type: "string" },
         kind: { type: "string", enum: ["text", "secret", "control", "eof"] },
         text: { type: "string", description: "text only; never passwords." },
-        secretPrompt: { type: "string", description: "secret only: safe modal label, after child's password prompt." },
+        secretPrompt: { type: "string", description: "secret only: nonsecret masked-input label." },
+        secretSource: { type: "string", enum: ["auto", "user", "prompt"], default: "auto", description: "auto: one user password or masked input; user requires it; prompt: masked input only." },
         submit: { type: "string", enum: ["enter", "none"], default: "enter", description: "text/secret: enter adds Enter (omit trailing newline); none types only." },
         control: {
           type: "string",
@@ -71,7 +72,7 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
   ),
   def(
     "terminal.read",
-    "Read after exit/close too. Drain hasMore with nextCursor. OUTPUT_GAP: earliestAvailableCursor or artifact. Exit before secret delivery ≠ bad credentials.",
+    "Read after exit/close; drain hasMore via nextCursor. OUTPUT_GAP: earliestAvailableCursor/artifact. Pre-secret exit ≠ bad credentials.",
     {
       type: "object",
       properties: {
@@ -87,7 +88,7 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
   ),
   def(
     "terminal.status",
-    "Get state, byte-cursor range, transport and process outcome.",
+    "State, byte-cursors, transport and process outcome.",
     {
       type: "object",
       properties: { id: { type: "string" } },
@@ -104,7 +105,7 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
   ),
   def(
     "terminal.close",
-    "Terminate the owned process tree and verify cleanup. Idempotent; check cleanupVerified.",
+    "Terminate owned process tree; idempotent. Verify cleanupVerified.",
     {
       type: "object",
       properties: {

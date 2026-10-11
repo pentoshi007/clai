@@ -77,7 +77,7 @@ export class SubagentInbox {
         findings: evidence(run).split(/^## /m).find((section) => /^findings\b/i.test(section))?.replace(/^findings[^\n]*\n?/i, "").trim().slice(0, 600) ?? evidence(run).slice(0, 600),
       } : {}),
     }));
-    const content = `${INVENTORY_PREFIX}\nReuse delegated findings and avoid repeating their assignments. Pending pages arrive automatically at model boundaries. Use subagent.read with id, attempt, view=report for retained evidence, including older attempts.\n${JSON.stringify(entries)}`;
+    const content = `${INVENTORY_PREFIX}\nReuse subagent findings and avoid repeating their assignments. Pending pages arrive automatically at model boundaries. Use subagent.read with id, attempt, view=report for retained evidence, including older attempts.\n${JSON.stringify(entries)}`;
     const previous = [...this.messages].reverse().find((message) => message.internal && message.content.startsWith(INVENTORY_PREFIX));
     if (previous?.content === content) return;
     this.messages.push({ role: "user", internal: true, content });
@@ -159,7 +159,7 @@ export class SubagentInbox {
       this.messages.push({
         role: "user",
         internal: true,
-        content: "Parallel delegation checkpoint: one context gatherer is active. Before waiting for it or finalizing, launch every other independent context assignment now with one subagent.start call per assignment in the same response. If no sibling assignment exists, continue; the next final boundary will wait for this child.",
+        content: "Parallel subagent checkpoint: one subagent is active. Before waiting for it or finalizing, launch every other independent subagent assignment now with one subagent.start call per assignment in the same response. If no sibling assignment exists, continue; the next final boundary will wait for this subagent.",
       });
       return true;
     }

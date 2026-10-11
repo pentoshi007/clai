@@ -71,6 +71,8 @@ describe("native prompts", () => {
     expect(p).toContain("persistent work → background shell.exec");
     expect(p).toMatch(/ssh\/gpg\/passwd login needs a real TTY: terminal\.start\/read/i);
     expect(p).toContain('observe prompt → terminal.send kind:"secret"');
+    expect(p).toContain("auto reuses one labeled user password");
+    expect(p).toContain('secretSource:"prompt" forces masked entry');
     expect(p).toContain("SSH -V/-G/-Q probes use shell.exec");
   });
 

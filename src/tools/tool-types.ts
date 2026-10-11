@@ -1,4 +1,4 @@
-import type { ProviderId, ToolResult } from "../types.js";
+import type { ChatMessage, ProviderId, ToolResult } from "../types.js";
 import type { SecretPort } from "../app/ports/secret-port.js";
 import type { JobMonitorMetadata } from "./jobs.js";
 
@@ -10,6 +10,7 @@ export interface ToolRunOptions {
   requestSecret?: SecretPort["request"] | undefined;
   confirmed?: boolean | undefined;
   userPrompt?: string | undefined;
+  userMessages?: readonly ChatMessage[] | undefined;
   sessionId?: string | undefined;
   taskId?: string | undefined;
   parentTaskId?: string | undefined;

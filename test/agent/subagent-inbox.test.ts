@@ -138,6 +138,8 @@ describe("SubagentInbox", () => {
     resumed.prepareInventory();
     expect(messages.slice(0, prefix.length)).toEqual(prefix);
     expect(messages.at(-1)?.content).toContain("src/main.ts:42");
+    expect(messages.at(-1)?.content).toContain("Reuse subagent findings");
+    expect(messages.at(-1)?.content).toContain("subagent.read with id, attempt");
     resumed.prepareInventory();
     expect(messages).toHaveLength(prefix.length + 1);
   });
@@ -199,7 +201,8 @@ describe("SubagentInbox", () => {
     const onWaiting = vi.fn();
     expect(await inbox.beforeFinal(undefined, onWaiting)).toBe(true);
     expect(onWaiting).not.toHaveBeenCalled();
-    expect(messages.at(-1)?.content).toContain("launch every other independent context assignment");
+    expect(messages.at(-1)?.content).toContain("one subagent is active");
+    expect(messages.at(-1)?.content).toContain("launch every other independent subagent assignment");
 
     let finished = false;
     const waiting = inbox.beforeFinal(undefined, onWaiting).then((result) => { finished = true; return result; });

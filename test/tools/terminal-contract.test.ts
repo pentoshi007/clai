@@ -31,12 +31,17 @@ describe("terminal model contract", () => {
     expect(property("terminal.read", "waitMs").maximum).toBe(30_000);
     expect(property("terminal.start", "columns").minimum).toBe(2);
     expect(property("terminal.send", "submit").default).toBe("enter");
+    expect(property("terminal.send", "secretSource").enum).toEqual(["auto", "user", "prompt"]);
+    expect(property("terminal.send", "secretSource").default).toBe("auto");
+    expect(property("terminal.send", "secretSource").description).toContain("user requires it");
     expect(property("terminal.send", "view").description).toMatch(/each event as base64/i);
   });
 
   it("keeps prompt guidance synchronized with the secret flow and timeout recovery", () => {
     const prompt = readFileSync(new URL("../../src/prompts/system.agent.md", import.meta.url), "utf8");
     expect(prompt).toContain("<text|secret|control|eof>");
+    expect(prompt).toContain('"secretSource":"<auto|user|prompt>"');
+    expect(prompt).toContain("earlier user messages or carried credentials");
     expect(prompt).toContain("NOT session lifetime");
     expect(prompt).toContain("earliestAvailableCursor");
     expect(prompt).toContain("ssh -v is verbose login, not a version probe");

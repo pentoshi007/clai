@@ -526,6 +526,7 @@ export const runSingleTool = async (
       },
       confirmed: true,
       userPrompt: deps.prompt,
+      ...(call.name === "terminal.send" ? { userMessages: deps.messages } : {}),
       llmProvider: deps.provider(),
       llmModel: deps.model(),
       sessionId: deps.session.sessionId,

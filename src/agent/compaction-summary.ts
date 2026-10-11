@@ -4,6 +4,8 @@ import { requestTokenCalibration } from "../llm/token-estimate-calibration.js";
 import type { ChatMessage, ProviderId } from "../types.js";
 import { compactionRecencyAnchors } from "./context/compaction-recent-history.js";
 
+const SUBAGENT_MEMORY_GUIDANCE = 'Subagents: explicitly name delegated workers "subagents", not merely independent research or investigations. When present, use a ## Subagents section with each observed id, attempt, title, status, result state (read/unread/pending delivery), and conclusions of results already read. Keep background jobs and Responder tasks separately identified. Recover retained evidence with subagent.read (view="summary" or view="report", id, attempt, offset/nextOffset) and inspect status with subagent.list; do not repeat completed subagent assignments or claim pending results were read.';
+
 export const COMPACTION_SYSTEM_PROMPT = `You are a session-memory compressor for an autonomous coding and security agent.
 
 Write a dense, accurate CONTINUATION MEMORY for another assistant that will resume this work with no other history.
@@ -12,6 +14,7 @@ You are SUMMARIZING a past session, NOT continuing it. Do not answer the user, d
 
 Rules:
 - Fidelity over style. Never invent tool results, file contents, findings, URLs, ports, or completions.
+- ${SUBAGENT_MEMORY_GUIDANCE}
 - CURRENT TOPIC: Lead with the latest user topic and the latest answer or unfinished request. Earlier compacted memories and completed plans are background, not evidence that their old objective is still active. Preserve the recent research findings and answers even when no code changed.
 - Prefer concrete artifacts: absolute paths, commands (short form), exit outcomes, HTTP status, plan task ids/states, job ids, open ports, confirmed vs unconfirmed findings.
 - LENGTH: aim for ~1800–3600 tokens of dense structured bullets — preserve every consequential fact, but finish every section and bullet within budget rather than cutting mid-sentence. Prefer one precise mention over repeated coverage.
@@ -79,7 +82,7 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
       "- Artifacts & paths: include only reusable artifacts the implementer may need (reports, downloads, extracted specs, scan outputs). Omit routine local inspection receipt paths and transient temp logs whose result is already summarized.",
       "- Durable engagement rules ONLY if they still bind implement (remote target/scope, authorized testing, non-destructive default, do not treat clai workspace as the target, no local dev server for remote assessments).",
       "- Plan-mode-only notes: gather-only / await-accept / no-exploit-yet gates that applied BEFORE accept — label historical; implementer is past that phase.",
-      "- Delegated work: keep every subagent, background job, and Responder task id with its title; fold the conclusions of results already read into Research evidence or Confirmed findings. Results not yet read are re-delivered after resume — list them as pending, never as read.",
+      `- ${SUBAGENT_MEMORY_GUIDANCE}`,
       "- Commands/tools: only non-obvious or reusable commands and their outcomes. Do not repeat routine list/read/tool-version facts already captured above.",
       "- Current state: describe the last tool-observed state at compaction time. Do not claim plan acceptance/approval unless DURABLE STATE confirms it; distinguish transition assumptions from evidence.",
       "- Remaining work: ACTIVE PLAN is injected separately, so do not restate every task. Record only the next task, dependency/order caveats, blockers, or plan details not present in durable state.",
@@ -113,7 +116,8 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
       "- Facts/completed work: mechanism-level specificity — API/data shapes, parser/gate behavior, environment/stack/package manager, file paths and line anchors, before→after behavior, and verification commands/results (or 'not yet verified'). Keep reusable artifacts and user-supplied nonsecret values.",
       "- In flight/remaining: confirmed unfinished commitments, blockers, next concrete action and verification. Distinguish unverified edits from unapplied designs and historical failures. Do not infer new implementation from research questions.",
       "- Commands/risks: informative failures, causes, failed approaches and outcomes. Current state: dirty worktree, running servers/jobs, ids/PIDs/ports, and last observed results.",
-      "- Delegated work: preserve subagent/job/Responder ids, titles, task/parent ids, statuses, and conclusions of results already read. RESPONDER RESULT LEDGER consumed/analyzed state is authoritative; never describe consumed=true entries as unread or needing another artifact read. Unread results remain pending.",
+      `- ${SUBAGENT_MEMORY_GUIDANCE}`,
+      "- Background jobs/Responder tasks: preserve ids, titles, task/parent ids, statuses and read conclusions. RESPONDER RESULT LEDGER consumed/analyzed state is authoritative; never describe consumed=true entries as unread or needing another artifact read. Unread results remain pending.",
       "- DEDUPLICATE: each fact once. Compress older completed work to reusable state and evidence. Fresh ACTIVE PLAN, SESSION STATE and ENGAGEMENT SCOPE are re-injected; do not repeat their full plan/tasks or routine inspection receipts.",
       "- Do NOT reproduce long user prompts verbatim; capture goals and hard constraints concisely.",
       "- Do not write a Last 3 user prompts section; the application appends it from the actual user messages after generating the memory.",
@@ -234,11 +238,12 @@ export function buildCompactionChunkPrompt(input: {
   const focus =
     input.purpose === "plan-implement"
       ? "Preserve targets, stack, confirmed findings, negative results, untested classes, artifact paths, commands and remaining work."
-      : "Preserve goals, decisions, file paths with line anchors, before→after behavior of each change, verification evidence, environment quirks, commands and their results, task states, failures (with causes), subagent/job/Responder ids with titles and the conclusions of results already read, running jobs and remaining work.";
+      : "Preserve goals, decisions, file paths with line anchors, before→after behavior of each change, verification evidence, environment quirks, commands and their results, task states, failures (with causes), running jobs and remaining work.";
   return [
     `Summarize region ${input.index + 1} of ${input.total} of one continuous session.`,
     "This is a partial region: do not write an orientation line, do not speculate about regions you cannot see, and do not answer the user.",
     focus,
+    SUBAGENT_MEMORY_GUIDANCE,
     "Dense fact bullets only, at mechanism level. Transform the material into findings; never copy transcript lines, headings, tool-call JSON, file-write receipts, or long output verbatim. Preserve completed work, negative results, decisions, paths, commands, blockers, and remaining work so they are not repeated after resume.",
     "",
     "SESSION MATERIAL (REGION):",
