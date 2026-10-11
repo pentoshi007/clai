@@ -8,6 +8,8 @@ import {
 } from "../../tools/file-diff.js";
 import { sanitizeDisplayText } from "./sanitize-display.js";
 import { MAX_FS_READ_FILES } from "../../tools/fs/read-input.js";
+import { restoredTerminalArgs } from "../../agent/parser/terminal-args.js";
+import { terminalOutputView } from "./terminal-output.js";
 
 const STATUS_GLYPH: Record<ToolStatus, string> = {
   queued: "○",
@@ -122,11 +124,12 @@ export function presentTool(item: ToolItem): ToolPresentation {
 
   let name = item.name;
   let argsLabel: string | undefined = item.argsDisplay
-    ? item.name === "shell.exec"
+    ? item.name === "shell.exec" || item.name === "terminal.start"
       ? "command"
       : "input"
     : undefined;
-  let argsDisplay = clampArgsDisplay(item.argsDisplay || undefined);
+  if (item.name === "terminal.send" && item.argsDisplay) argsLabel = "action";
+  let argsDisplay = clampArgsDisplay(restoredTerminalArgs(item.name, item.argsDisplay ?? "") || undefined);
   let pathLine: string | undefined;
 
   if (fileDiff) {
@@ -156,7 +159,11 @@ export function presentTool(item: ToolItem): ToolPresentation {
   if (item.status === "blocked") {
     detail = item.reason;
   } else if (item.status === "failed" && item.summary) {
-    const short = item.summary.split("\n")[0]?.trim();
+    const summaryLines = item.summary.split("\n");
+    const terminalError = item.name.startsWith("terminal.")
+      ? summaryLines.find(line => /^\[[A-Z_]+\]/.test(line))
+      : undefined;
+    const short = (terminalError ?? summaryLines[0])?.trim();
     if (short && !/^Full output saved/i.test(short)) {
       detail =
         short.length <= FAILURE_DETAIL_CHARS
@@ -295,11 +302,22 @@ export function presentOutput(
   tail: string,
   state: BoundedTextState | undefined,
   expanded: boolean,
+  toolName = "",
 ): OutputPresentation {
   const totalLines = roughLineCount(tail);
   const truncatedNotice = state?.truncated
     ? `output truncated in memory (${formatBytes(state.droppedBytes)} dropped; full output saved to disk)`
     : undefined;
+
+  const terminal = terminalOutputView(tail, toolName);
+  if (terminal) {
+    const limit = expanded ? EXPANDED_SAFE_LINES : 8;
+    const hiddenAboveCount = Math.max(0, terminal.body.length - limit);
+    const body = hiddenAboveCount > 0
+      ? [...terminal.body.slice(0, limit - 2), toolOutputGapLabel(hiddenAboveCount), ...terminal.body.slice(-2)]
+      : terminal.body;
+    return { lines: [...body, ...terminal.metadata], hiddenAboveCount, truncatedNotice };
+  }
 
   if (expanded) {
     const source =

@@ -1,5 +1,6 @@
 
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
+import { redactSecrets } from "../../llm/provider.js";
 import { sanitizeDisplayText } from "../rendering/sanitize-display.js";
 import type { ActionId } from "../actions/action-id.js";
 import {
@@ -203,7 +204,7 @@ export class SelectionController {
     if (!range) return "";
     const document = this.documents.get(range.pane);
     if (!document || compareSemanticAnchors(document, range.anchor, range.focus) === 0) return "";
-    return sanitizeDisplayText(semanticRangeText(document, range));
+    return sanitizeDisplayText(redactSecrets(semanticRangeText(document, range)));
   }
 
   hasSelection(): boolean {

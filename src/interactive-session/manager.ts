@@ -107,6 +107,7 @@ interface PendingStart {
 export class InteractiveSessionManager {
   private readonly registry = new SessionRegistry();
   private readonly runtimes = new Map<string, SessionRuntime>();
+  private readonly completedOutput = new Map<string, OutputStore>();
   private readonly approvals = new ApprovalTokenVault();
   private readonly telemetry: SessionTelemetry;
   private readonly journal: RecoveryJournal;
@@ -132,6 +133,13 @@ export class InteractiveSessionManager {
       journal: this.journal,
       onFinalized: (runtime) => {
         this.runtimes.delete(runtime.record.id);
+        this.completedOutput.set(runtime.record.id, runtime.output);
+        for (const [id, output] of this.completedOutput) {
+          if (this.registry.getUnscoped(id)) continue;
+          output.dispose();
+          this.completedOutput.delete(id);
+        }
+        runtime.exitSignal.bump();
       },
     });
   }
@@ -587,7 +595,38 @@ export class InteractiveSessionManager {
   }
 
 
+  validateSend(request: Omit<SendRequest, "input">): void {
+    const runtime = this.requireRuntime(request.ownerId, request.id, "send");
+    const record = runtime.record;
+    if (record.state !== "running") {
+      throwSessionError({
+        code: record.state === "closing" ? "SESSION_CLOSING" : "SESSION_NOT_RUNNING",
+        operation: "send",
+        sessionId: request.id,
+        state: record.state,
+        message: "The session is no longer accepting input; read its output and status before retrying.",
+      });
+    }
+    if (record.inputClosed) {
+      throwSessionError({
+        code: "INPUT_CLOSED", operation: "send", sessionId: request.id, state: record.state,
+        message: "Session input was closed by a prior EOF; no further input is accepted.",
+      });
+    }
+    resolveQuietInterval(request.quietMs, runtime.config, "send");
+    resolveDeadline("sendDeadlineMs", request.deadlineMs, runtime.config, "send");
+    if (request.cursor !== undefined && (!Number.isInteger(request.cursor) || request.cursor < 0 || request.cursor > runtime.output.latestCursor)) {
+      throwSessionError({
+        code: "INVALID_REQUEST", operation: "send", sessionId: request.id,
+        message: "cursor must be a non-negative integer within the observed output range; no input was sent.",
+        details: { field: "cursor", latestCursor: runtime.output.latestCursor },
+      });
+    }
+    this.throwIfCancelled(request.signal, "send", request.id);
+  }
+
   async send(request: SendRequest & ManagerRequestExtras): Promise<SendResult> {
+    this.validateSend(request);
     const startedAt = this.clock.now();
     const runtime = this.requireRuntime(request.ownerId, request.id, "send");
     const config = runtime.config;
@@ -849,54 +888,45 @@ export class InteractiveSessionManager {
 
   async read(request: ReadRequest): Promise<ReadResult> {
     const startedAt = Date.now();
-    const runtime = this.requireRuntime(request.ownerId, request.id, "read");
+    this.assertOwner(request.ownerId, "read");
+    const record = this.registry.get(request.ownerId, request.id);
+    if (!record) this.notFound(request.id, "read");
+    const runtime = this.runtimes.get(request.id);
+    const output = runtime?.output ?? this.completedOutput.get(request.id);
+    if (!output) {
+      throwSessionError({
+        code: "SESSION_NOT_RUNNING", operation: "read", sessionId: request.id,
+        state: record.state, message: "No retained output is available; inspect the session artifact.",
+        details: { artifactPath: record.artifact.path },
+      });
+    }
     const view: OutputView = request.view ?? "plain";
     if (!Number.isInteger(request.cursor) || request.cursor < 0) {
       throwSessionError({
-        code: "INVALID_REQUEST",
-        operation: "read",
-        sessionId: request.id,
-        message: "read requires a non-negative integer cursor.",
-        details: { field: "cursor" },
+        code: "INVALID_REQUEST", operation: "read", sessionId: request.id,
+        message: "read requires a non-negative integer cursor.", details: { field: "cursor" },
       });
     }
     const waitMs = clampReadWait(request.waitMs);
     let stop: GatherStop = "quiet";
-    if (waitMs > 0 && request.cursor >= runtime.output.latestCursor) {
+    if (runtime && record.state === "running" && waitMs > 0 && request.cursor === output.latestCursor) {
       stop = await this.waitForOutput(runtime, request.cursor, waitMs, request.signal);
     }
-    const pageOutcome = runtime.output.page({
-      cursor: request.cursor,
-      view,
-      operation: "read",
-      sessionId: runtime.record.id,
-    });
-    const error =
-      stop === "cancelled"
-        ? sessionError({
-            code: "CANCELLED",
-            operation: "read",
-            sessionId: runtime.record.id,
-            state: runtime.record.state,
-            message: "The blocking read was cancelled; the session is still available.",
-          })
-        : pageOutcome.ok
-          ? undefined
-          : pageOutcome.error;
+    const pageOutcome = output.page({ cursor: request.cursor, view, operation: "read", sessionId: record.id });
+    const error = stop === "cancelled"
+      ? sessionError({
+          code: "CANCELLED", operation: "read", sessionId: record.id, state: record.state,
+          message: "The blocking read was cancelled; the session is still available.",
+        })
+      : pageOutcome.ok ? undefined : pageOutcome.error;
     this.telemetry.record({
-      operation: "read",
-      sessionId: runtime.record.id,
-      durationMs: Date.now() - startedAt,
-      result: error?.code ?? "ok",
-      state: runtime.record.state,
-      transport: runtime.record.transport,
+      operation: "read", sessionId: record.id, durationMs: Date.now() - startedAt,
+      result: error?.code ?? "ok", state: record.state, transport: record.transport,
       outputBytes: pageOutcome.page.nextCursor - pageOutcome.page.requestedCursor,
     });
     return {
-      operation: "read",
-      sessionId: runtime.record.id,
-      state: runtime.record.state,
-      page: pageOutcome.page,
+      operation: "read", sessionId: record.id, state: record.state, page: pageOutcome.page,
+      ...(record.processOutcome ? { processOutcome: record.processOutcome } : {}),
       ...(error ? { error } : {}),
     };
   }

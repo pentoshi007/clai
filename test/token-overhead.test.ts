@@ -16,7 +16,7 @@ const sha256 = (value: string): string => createHash("sha256").update(value).dig
 describe("token overhead contracts", () => {
   it("locks the retained tool catalog, arguments, flags and validation constraints", () => {
     expect(sha256(JSON.stringify(getToolDefinitions())))
-      .toBe("712c69f7f3898f9d2d10c3e2505f2fa5ffb9b2fb03510b197a3793929a20f0ef");
+      .toBe("256823b1c3c510b86440f69b4e421d2ceb01e1dc851bcf700ae2b087c435ef3d");
   });
 
   it("keeps the complete catalog when compact mode is requested", () => {

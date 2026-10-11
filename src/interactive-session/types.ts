@@ -225,6 +225,8 @@ export interface StartResult {
   readonly dimensions?: TerminalDimensions | undefined;
   readonly degradedReason?: "PTY_UNAVAILABLE" | undefined;
   readonly cursor: number;
+  readonly page?: OutputPage | undefined;
+  readonly processOutcome?: ProcessOutcome | undefined;
   readonly artifact: ArtifactReference;
   readonly retriedLaunch?: boolean | undefined;
 }
@@ -247,6 +249,7 @@ export interface ReadResult {
   readonly sessionId: string;
   readonly state: SessionState;
   readonly page?: OutputPage | undefined;
+  readonly processOutcome?: ProcessOutcome | undefined;
   readonly error?: StableError | undefined;
 }
 

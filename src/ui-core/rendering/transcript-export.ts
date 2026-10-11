@@ -8,10 +8,11 @@
 import { redactSecrets } from "../../llm/provider.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
-import { renderTranscriptSemanticText } from "./transcript-semantic.js";
+import { renderTranscriptSemanticText, type TranscriptSemanticOptions } from "./transcript-semantic.js";
 
 export interface TranscriptExportOptions {
   readonly includeThinking?: boolean;
+  readonly toolOutput?: TranscriptSemanticOptions["toolOutput"];
 }
 
 export function renderTranscriptPlainText(
@@ -20,6 +21,7 @@ export function renderTranscriptPlainText(
 ): string {
   const raw = renderTranscriptSemanticText(state, {
     thinking: options.includeThinking ? "all" : "none",
+    ...(options.toolOutput ? { toolOutput: options.toolOutput } : {}),
   })
     .replace(/\n{3,}/g, "\n\n")
     .trim();

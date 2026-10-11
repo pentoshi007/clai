@@ -16,6 +16,12 @@ const credential = JSON.stringify({
   uid: "fixture", accessToken: "fixture", expireTime: 4_000_000_000, encryptUserInfo: "fixture",
   key: "fixture", machineId: "fixture", machineToken: "fixture",
 });
+vi.mock("../../src/store/keys.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../src/store/keys.js")>(),
+  getProviderKeys: async () => ({ keys: [{ id: "fixture", value: credential, createdAt: 0 }], activeIndex: 0, source: "env" as const }),
+  getProviderSecret: async () => ({ value: credential, source: "env" as const }),
+  markProviderKeySuccess: async () => {},
+}));
 let services: AppServices | undefined;
 
 function frame(body: object | string): string {
@@ -56,7 +62,7 @@ function start(): AppServices {
 describe("Qoder usage through the production session", () => {
   it("updates /usage and the context chip from a trailing provider usage frame", async () => {
     const app = start();
-    expect((await app.session.submit("Reply with exactly QODER_USAGE_OK. Do not call tools.")).status).toBe("completed");
+    expect(await app.session.submit("Reply with exactly QODER_USAGE_OK. Do not call tools.")).toMatchObject({ status: "completed" });
     expect(app.session.usageReport().totals).toMatchObject({
       requests: 1, promptTokens: 81, completionTokens: 192, totalTokens: 273,
       cachedPromptTokens: 20, reasoningTokens: 182,
@@ -77,8 +83,8 @@ describe("Qoder usage through the production session", () => {
 
   it("counts each response once across follow-up turns", async () => {
     const app = start();
-    await app.session.submit("Reply with exactly QODER_USAGE_OK. Do not call tools.");
-    await app.session.submit("Reply with exactly QODER_USAGE_OK again. Do not call tools.");
+    expect(await app.session.submit("Reply with exactly QODER_USAGE_OK. Do not call tools.")).toMatchObject({ status: "completed" });
+    expect(await app.session.submit("Reply with exactly QODER_USAGE_OK again. Do not call tools.")).toMatchObject({ status: "completed" });
     expect(app.session.usageReport().totals).toMatchObject({ requests: 2, promptTokens: 162, completionTokens: 384, totalTokens: 546 });
     expect(app.session.getState().contextUsage).toMatchObject({ contextTokens: 81, lastCompletionTokens: 192, exact: true });
   }, 30_000);

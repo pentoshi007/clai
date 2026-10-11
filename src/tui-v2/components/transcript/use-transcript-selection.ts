@@ -55,6 +55,7 @@ export function useTranscriptSelection(
 
   const stateRef = useRef(state);
   const builtForRef = useRef<TranscriptState | undefined>(undefined);
+  const fullOutputRef = useRef(false);
   const documentSession = useRef(sessionId);
   stateRef.current = state;
 
@@ -63,18 +64,22 @@ export function useTranscriptSelection(
     documentSession.current = sessionId;
     documentRef.current = { blocks: [] };
     builtForRef.current = undefined;
+    fullOutputRef.current = false;
     pointerRef.current = undefined;
     clickRef.current = undefined;
     services.selection.setDocument("transcript", documentRef.current);
   }, [sessionId, services.selection]);
 
-  function ensureDocument(): SemanticDocument {
+  function ensureDocument(fullOutput = fullOutputRef.current): SemanticDocument {
     const current = stateRef.current;
-    if (builtForRef.current === current) return documentRef.current;
+    if (builtForRef.current === current && fullOutputRef.current === fullOutput) return documentRef.current;
     const document = extractTranscriptSemanticDocument(current, {
-      toolOutput: (item) => visibleToolOutput(current, spool, item.id, item.toolCallId),
+      toolOutput: (item) => fullOutput
+        ? spool.tail(item.toolCallId)
+        : visibleToolOutput(current, spool, item.id, item.toolCallId),
     });
     builtForRef.current = current;
+    fullOutputRef.current = fullOutput;
     documentRef.current = document;
     services.selection.setDocument("transcript", document);
     return document;
@@ -99,7 +104,7 @@ export function useTranscriptSelection(
     if (event.button !== 0) return;
     services.focus.focusRegion("transcript");
     if (event.defaultPrevented) return;
-    const anchor = anchorAtPointer(ensureDocument(), scrollRef.current, event.x, event.y);
+    const anchor = anchorAtPointer(ensureDocument(false), scrollRef.current, event.x, event.y);
     if (!anchor) return;
     const clicks = nextClickCount(clickRef.current, anchor);
     clickRef.current = { at: Date.now(), anchor, count: clicks };
@@ -145,7 +150,7 @@ export function useTranscriptSelection(
     if (action === "selection.clear" && !services.selection.hasSelection()) {
       return false;
     }
-    ensureDocument();
+    ensureDocument(action === "selection.select-all" || fullOutputRef.current);
     if (action === "selection.copy") {
       key.preventDefault();
       void services.selection.copy().then((result) => {
@@ -196,7 +201,7 @@ function visibleToolOutput(
   itemId: string,
   toolCallId: Parameters<OutputSpool["tail"]>[0],
 ): string | undefined {
-  const tail = spool.peekTail(toolCallId);
+  const tail = spool.tail(toolCallId);
   if (!tail) return undefined;
   const item = state.byId.get(itemId);
   if (item?.kind === "tool" && isItemExpanded(state, item)) return tail;

@@ -8,6 +8,7 @@ import {
 import type { SemanticBlock, SemanticDocument } from "../state/semantic-document.js";
 import { SEMANTIC_BLOCK_SEPARATOR } from "../state/semantic-document.js";
 import { presentTool } from "./tool-presenter.js";
+import { terminalOutputLines } from "./terminal-output.js";
 
 export type ThinkingInclusion = "none" | "visible" | "all";
 
@@ -84,6 +85,14 @@ function semanticTextForItem(
     case "tool": {
       const { statusLabel, name, argsDisplay, detail } = presentTool(item);
       const headline = argsDisplay ? `${name} ${argsDisplay}` : name;
+      if (item.name.startsWith("terminal.")) {
+        const source = toolOutput?.(item) || item.summary || item.reason || "";
+        return [
+          `Tool: ${headline} — ${statusLabel}`,
+          ...(terminalOutputLines(source, item.name) ?? []),
+          ...(item.artifactPath ? [`  artifact: ${item.artifactPath}`] : []),
+        ].join("\n");
+      }
       return [
         `Tool: ${headline} — ${statusLabel}`,
         item.status === "blocked" ? detail : item.summary,

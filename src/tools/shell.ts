@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolResult } from "../types.js";
 import { OutputDecoder, RingBuffer } from "./shell/capture.js";
+import { sshNeedsTerminal } from "./shell/interactive-probes.js";
 import {
   ShellExecAttemptResult,
   shellExecAttempt,
@@ -251,6 +252,13 @@ function commandHeadIndex(tokens: readonly string[]): number {
     if (candidate === undefined) break;
     const wrapper = candidate.replace(/^.*[\\\/]/, "").toLowerCase();
     if (!COMMAND_WRAPPERS.has(wrapper)) break;
+    if (wrapper === "command") {
+      for (let flagIndex = index + 1; flagIndex < tokens.length; flagIndex += 1) {
+        const flag = tokens[flagIndex]!;
+        if (!flag.startsWith("-") || flag === "--") break;
+        if (/^-[pvV]*[vV][pvV]*$/.test(flag)) return index;
+      }
+    }
     index = skipWrapperOptions(tokens, index + 1, wrapper);
   }
   return index;
@@ -378,7 +386,6 @@ export function interactiveStdinKind(
     if (!head) continue;
     const base = head.replace(/^.*[\\\/]/, "").toLowerCase();
     const rest = tokens.slice(i + 1);
-    const restJoined = rest.join(" ");
 
     if (base === "sudo" || base === "doas" || base === "su") {
       const flags = elevationInputFlags(base, rest);
@@ -392,7 +399,7 @@ export function interactiveStdinKind(
     }
 
     if (base === "ssh" || base === "scp" || base === "rsync") {
-      if (/-o\s+batchmode=yes/i.test(restJoined)) continue;
+      if (!sshNeedsTerminal(base, rest)) continue;
       tty = true;
       continue;
     }

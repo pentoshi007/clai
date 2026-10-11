@@ -1,5 +1,6 @@
 import type { ToolCall } from "../../types.js";
 import { FS_READ_OPTION_KEYS } from "../../tools/fs/read-input.js";
+import { formatTerminalArgs } from "./terminal-args.js";
 
 export function formatFsReadLineRange(
   args: Record<string, unknown> | undefined,
@@ -93,9 +94,8 @@ function formatSubagentArgs(call: ToolCall): string | undefined {
 export function formatToolArgs(call: ToolCall): string {
   const subagentArgs = formatSubagentArgs(call);
   if (subagentArgs !== undefined) return subagentArgs;
-  if (call.name === "terminal.send") {
-    return `id=${String(call.args.id ?? "")} kind=${String(call.args.kind ?? "")}`;
-  }
+  const terminalArgs = formatTerminalArgs(call);
+  if (terminalArgs !== undefined) return terminalArgs;
   if (call.name === "shell.exec") return String(call.args.command ?? "");
   if (call.name === "fs.read") return formatFsReadArgs(call.args);
   if (

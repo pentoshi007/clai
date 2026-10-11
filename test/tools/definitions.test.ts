@@ -116,9 +116,10 @@ describe("tool definitions", () => {
 
     expect(exec.description).toMatch(/persistent servers, watchers, and listeners: background:"always" with a name/i);
     expect(exec.description).toMatch(/readiness probe/i);
-    expect(terminal.description).toMatch(/interactive process or REPL/i);
-    expect(terminal.description).toMatch(/need later input/i);
-    expect(terminal.description).toMatch(/shell\.exec background:"always" for unattended services/i);
+    expect(terminal.description).toMatch(/owned.*REPL/i);
+    expect(terminal.description).toMatch(/Read until prompt before input/i);
+    expect(terminal.description).toMatch(/Finite work: shell\.exec/i);
+    expect(terminal.description).toMatch(/unattended services: shell\.exec background:"always"/i);
     expect(send.description).toMatch(/never resend/i);
   });
 

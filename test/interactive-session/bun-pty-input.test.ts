@@ -30,7 +30,12 @@ async function fixture(reportedBytes: number, error?: Error) {
     configurable: true,
     value: {
       Terminal: FakeTerminal,
-      spawn: vi.fn(() => ({ pid: 2_147_000_002, exited: new Promise<number>(() => {}), unref() {} })),
+      spawn: vi.fn((_command: string[], options: { terminal: typeof callbacks }) => ({
+        pid: 2_147_000_002,
+        terminal: new FakeTerminal(options.terminal),
+        exited: new Promise<number>(() => {}),
+        unref() {},
+      })),
     },
   });
   const { transport } = await startPtyProcess({ file: "/bin/sh", args: [], cwd: process.cwd(), dimensions: { columns: 80, rows: 24 } });
