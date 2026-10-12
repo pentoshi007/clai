@@ -324,13 +324,20 @@ describe("command handlers (V2-072..075)", () => {
   });
 
   it("activates a provider that already has a stored key without prompting for a secret", async () => {
-    const services = buildServices();
-    await services.commands.dispatch({ name: "provider", args: "ollama" });
-    expect(services.session.getState().provider).toBe("ollama");
-    await waitUntil(() => services.overlay.getState().kind === "picker");
-    const state = services.overlay.getState();
-    expect(state.kind).toBe("picker");
-    if (state.kind === "picker") expect(state.request.title).toMatch(/Models.*ollama/i);
+    const { getProvider } = await import("../../../src/llm/router.js");
+    const listModels = vi.spyOn(getProvider("ollama"), "listModels").mockResolvedValue([]);
+    try {
+      const services = buildServices();
+      await services.commands.dispatch({ name: "provider", args: "ollama" });
+      expect(services.session.getState().provider).toBe("ollama");
+      await waitUntil(() => services.overlay.getState().kind === "picker");
+      const state = services.overlay.getState();
+      expect(state.kind).toBe("picker");
+      if (state.kind === "picker") expect(state.request.title).toMatch(/Models.*ollama/i);
+      expect(listModels).toHaveBeenCalled();
+    } finally {
+      listModels.mockRestore();
+    }
   });
 
   it("prompts for a secret when a provider has no key, and applies it once entered", async () => {

@@ -379,14 +379,24 @@ describe("durable job safety edges", () => {
     expect(manager.getRecentJobs()).toHaveLength(0);
   });
 
-  it("reports a public shell string that exits 127 immediately as failed", async () => {
+  it("records a public shell string's exit 127 regardless of launch timing", async () => {
     const { manager } = await fixture();
     const result = await manager.startJob("definitely-missing-clai-command");
-
-    expect(result).toMatchObject({ ok: false, exitCode: 127 });
-    expect(result.output).toContain("failed immediately");
-    expect(result.output).toContain("do not retry unchanged");
-    expect(result.backgroundJob).toMatchObject({ status: "failed", exitCode: 127 });
+    const id = result.backgroundJob?.id;
+    expect(id).toBeTruthy();
+    if (!result.ok) {
+      expect(result).toMatchObject({ ok: false, exitCode: 127 });
+      expect(result.output).toContain("failed immediately");
+      expect(result.output).toContain("do not retry unchanged");
+      expect(result.backgroundJob).toMatchObject({ status: "failed", exitCode: 127 });
+    } else {
+      expect(result.output).toContain("OS process launch confirmed");
+    }
+    await waitForStatus(manager, id!, ["failed"]);
+    expect(manager.getJob(id!)).toMatchObject({ status: "failed", exitCode: 127 });
+    const tail = await manager.tailJob(id!, { stream: "stderr" });
+    expect(tail.backgroundJob).toMatchObject({ status: "failed", exitCode: 127 });
+    expect(tail.output).toContain("definitely-missing-clai-command");
   });
 
   it("never claims a launched process did not start when final persistence fails", async () => {

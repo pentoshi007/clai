@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdir, rm } from "node:fs/promises";
 import { act, createElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import { spyOn } from "bun:test";
+import { getProvider } from "../../src/llm/router.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
@@ -9,8 +11,15 @@ import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { App } from "../../src/tui-v2/app/App.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 
+for (const provider of ["free", "openai"] as const) {
+  spyOn(getProvider(provider), "listModels").mockResolvedValue([]);
+}
+const requests = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Native prompt fixture must not access the network"));
+
 for (const width of [120, 80]) {
   const services = createCompositionRoot({
+    provider: "free", model: "test-model",
+    updates: { async check() { return { state: "current", currentVersion: "0.0.0", updateAvailable: false }; } },
     agent: {
       async runTurn(request, handlers) {
         handlers.onMessages?.([
@@ -44,7 +53,7 @@ for (const width of [120, 80]) {
     for (let attempt = 0; attempt < 60; attempt++) {
       const frame = await settle();
       if (frame.includes(text)) return frame;
-      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+      await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 5)); });
     }
     throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
   }
@@ -70,12 +79,19 @@ for (const width of [120, 80]) {
     assert.equal(services.focus.activeContext(), "composer");
     assert.match(await settle(() => setup.mockInput.typeText("still responsive")), /still responsive/);
     await settle(() => setup.mockInput.pressKey("q", { ctrl: true }));
-    services.session.reset({ mintNewId: true });
-    services.session.setProvider("openai");
-    services.session.setModel("test-model");
+    await settle(() => {
+      services.session.reset({ mintNewId: true });
+      services.session.setProvider("openai");
+      services.session.setModel("test-model");
+    });
     const recovered = services.session.promptHistory;
     await mkdir(recovered.path, { recursive: true });
-    assert.equal((await services.session.submit("Recovered real submitted request")).status, "completed");
+    await settle(async () => {
+      assert.equal((await services.session.submit("Recovered real submitted request")).status, "completed");
+      await assert.rejects(recovered.flush(), { code: "EISDIR" });
+      await services.session.persistNow("Native prompt recovery fixture");
+    });
+    assert.equal(services.session.getState().title, "Native prompt recovery fixture");
     await rm(recovered.path, { recursive: true });
     assert.equal(await recovered.count(), 0);
     await settle(() => setup.mockInput.typeText("/prompts"));
@@ -93,4 +109,5 @@ for (const width of [120, 80]) {
     await setup.renderer.idle();
   }
 }
+assert.equal(requests.mock.calls.length, 0, "Native prompt browsing must be provider-independent");
 console.log("Native prompts passed: sections, timestamps, submitted routes, disk paging/search, and composer focus at 120/80 columns");

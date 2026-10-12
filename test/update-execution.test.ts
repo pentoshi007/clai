@@ -155,6 +155,10 @@ describe("update guards", () => {
     expect(script).toContain("[IO.File]::Replace");
     expect(script).toContain("if ($verified -and $backup)");
     expect(script).toContain("Save-Status 'failed'");
-    expect(script).toContain("Get-FileHash");
+    expect(script).toContain("[Security.Cryptography.SHA256]::Create()");
+    expect(script).toContain("Get-ExecutableDigest $task.source");
+    expect(script).toContain("Get-ExecutableDigest $task.destination");
+    expect(script).toContain("$stream.Dispose()");
+    expect(script).not.toContain("Get-FileHash");
   });
 });
