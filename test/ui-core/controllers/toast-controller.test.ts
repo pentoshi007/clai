@@ -55,6 +55,25 @@ describe("ToastController", () => {
     toast.dispose();
   });
 
+  it.each([false, true])("promotes a refreshed notice without changing its id (previously sticky: %s)", async (sticky) => {
+    vi.useFakeTimers();
+    const toast = new ToastController();
+    const id = toast.warn("could not save session prompts", { key: "notice", sticky, durationMs: 2000 });
+    toast.info("older workspace notice", { durationMs: 10_000 });
+    await vi.advanceTimersByTimeAsync(1000);
+    const refreshed = toast.warn("could not load session prompts", { key: "notice", durationMs: 5000 });
+    expect(refreshed).toBe(id);
+    expect(toast.getToasts().map((item) => item.message)).toEqual([
+      "older workspace notice", "could not load session prompts",
+    ]);
+    expect(toast.getToasts().at(-1)?.createdAt).toBe(Date.now());
+    await vi.advanceTimersByTimeAsync(toastTotalLifetimeMs(2000));
+    expect(toast.getToasts().some((item) => item.id === id)).toBe(true);
+    await vi.advanceTimersByTimeAsync(toastTotalLifetimeMs(5000));
+    expect(toast.getToasts().map((item) => item.message)).toEqual(["older workspace notice"]);
+    toast.dispose();
+  });
+
   it("supports convenience level helpers", () => {
     const toast = new ToastController();
     toast.success("ok");

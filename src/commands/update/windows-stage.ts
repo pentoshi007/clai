@@ -34,6 +34,7 @@ function Invoke-CommandSpec($spec) {
   $parameters = @{ FilePath=$spec.file; ArgumentList=$arguments; RedirectStandardOutput=$outFile; RedirectStandardError=$errFile; PassThru=$true; NoNewWindow=$true }
   if ($spec.cwd) { $parameters.WorkingDirectory = $spec.cwd }
   $child = Start-Process @parameters
+  $null = $child.Handle
   $limit = 600000
   if ($spec.args -contains '--version') { $limit = 15000 }
   if (-not $child.WaitForExit($limit)) {
@@ -41,7 +42,9 @@ function Invoke-CommandSpec($spec) {
     throw "Update command timed out: $($spec.file)"
   }
   $output = (Get-Content -LiteralPath $outFile -Tail 64) -join [Environment]::NewLine
-  if ($child.ExitCode -ne 0) { throw "Update command failed: $($spec.file) $((Get-Content -LiteralPath $errFile -Tail 4) -join ' ') $output" }
+  $exitCode = $child.ExitCode
+  if ($null -eq $exitCode) { throw "Cannot read update command exit status: $($spec.file)" }
+  if ($exitCode -ne 0) { throw "Update command exited with status $($exitCode): $($spec.file) $((Get-Content -LiteralPath $errFile -Tail 4) -join ' ') $output" }
   return $output.Trim()
 }
 function Compare-Version($left, $right) {
