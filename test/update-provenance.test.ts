@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,7 @@ describe("update installation provenance", () => {
     const alias = join(root, "clai");
     symlinkSync(join(packageRoot, "bin", "clai.mjs"), alias);
     const method = detectInstallMethod({ ...env, platform: process.platform, execPath: process.execPath, argv1: alias, npmRoot: join(root, "lib", "node_modules") });
-    expect(method).toMatchObject({ type: "npm", scope: "global", prefix: root, packageRoot });
+    expect(method).toMatchObject({ type: "npm", scope: "global", prefix: realpathSync(root), packageRoot: realpathSync(packageRoot) });
   });
 
   it("keeps the original Node interpreter when the UI runs under Bun", () => {

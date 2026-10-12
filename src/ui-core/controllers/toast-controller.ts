@@ -75,20 +75,19 @@ export class ToastController {
       const index = this.items.findIndex((existing) => existing.key === key);
       if (index >= 0) {
         const previous = this.items[index] as ToastItem;
+        const isStickyRefresh = previous.sticky === true && sticky;
         const item: ToastItem = {
           id: previous.id,
           message: body,
           level,
-          createdAt:
-            previous.sticky === true && sticky
-              ? previous.createdAt
-              : Date.now(),
+          createdAt: isStickyRefresh ? previous.createdAt : Date.now(),
           durationMs,
           key,
           ...(sticky ? { sticky: true } : {}),
         };
         const next = [...this.items];
-        next[index] = item;
+        next.splice(index, 1);
+        next.splice(isStickyRefresh ? index : next.length, 0, item);
         this.items = next;
         this.resetTimer(item);
         this.emit();

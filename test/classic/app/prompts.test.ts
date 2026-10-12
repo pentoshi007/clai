@@ -108,11 +108,19 @@ describe("Classic /prompts", () => {
   });
 
   it("reports unavailable prompt storage without rejecting the slash command", async () => {
-    const h = await mount(80);
+    const h = await mount(80, {
+      async runTurn() {
+        return createTurnOutcome({ status: "succeeded", answer: "ok", steps: 1, remainingCriteria: [] });
+      },
+    });
     vi.spyOn(h.services.session.promptHistory, "append").mockRejectedValue(new Error("storage unavailable"));
-    await h.services.session.submit("Request whose journal storage remains unavailable");
+    expect((await h.services.session.submit("Request whose journal storage remains unavailable")).status).toBe("completed");
+    await expect.poll(h.toastTexts).toContain("could not save session prompts: storage unavailable");
+    h.services.session.notice("info", "An older workspace notice ".repeat(12));
+    await expect.poll(frame).toContain("An older workspace notice");
     h.wiring.composer.setText("/prompts");
     h.wiring.handleData("\r");
+    await expect.poll(h.toastTexts).toContain("could not load session prompts: storage unavailable");
     await expect.poll(frame).toContain("could not load session prompts: storage unavailable");
     expect(h.services.overlay.getState().kind).toBe("none");
     expect(h.services.focus.activeContext()).toBe("composer");

@@ -33,18 +33,24 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 describe.skipIf(!powershell)("actual PowerShell worker execution on the host", () => {
   it("promotes an actual executable, verifies it and cleans staging", async () => {
     const value = fixture();
-    expect(await apply(value)).toMatchObject({ state: "applied" });
+    const receipt = await apply(value);
+    expect(receipt, receipt.message).toMatchObject({ state: "applied" });
     expect(existsSync(value.stage)).toBe(false);
     expect(await runUpdateCommand({ file: value.task.destination, args: ["--version"] })).toBe(`v${version}`);
   }, 30_000);
-  it.each(["checksum", "version", "changed-destination"] as const)("keeps the previous executable after %s rejection", async (failure) => {
+  it.each([
+    ["checksum", "checksum mismatch"],
+    ["version", "version mismatch"],
+    ["changed-destination", "Installation changed"],
+  ] as const)("keeps the previous executable after %s rejection", async (failure, message) => {
     const value = fixture();
     let task = value.task;
     if (failure === "checksum") task = { ...task, digest: "0".repeat(64) };
     if (failure === "version") task = { ...task, version: "0.0.0" };
     if (failure === "changed-destination") writeFileSync(task.destination, "changed by another updater");
     const previous = readFileSync(task.destination);
-    expect(await apply(value, task)).toMatchObject({ state: "failed" });
+    const receipt = await apply(value, task);
+    expect(receipt, receipt.message).toMatchObject({ state: "failed", message: expect.stringContaining(message) });
     expect(readFileSync(task.destination).equals(previous)).toBe(true);
   }, 30_000);
   it.each([
@@ -55,7 +61,21 @@ describe.skipIf(!powershell)("actual PowerShell worker execution on the host", (
   ])("compares managed version %s with required %s", async (actual, required, state) => {
     const value = fixture();
     const task: WindowsUpdateTask = { kind: "commands", commands: [], verification: { file: process.execPath, args: ["-e", `console.log('${actual}')`] }, version: required!, allowNewer: true };
-    expect(await apply(value, task)).toMatchObject({ state });
+    const receipt = await apply(value, task);
+    expect(receipt, receipt.message).toMatchObject({ state });
+    if (state === "failed") expect(receipt.message).toContain("Installer did not reach version");
+  }, 30_000);
+  it.each(["installer", "verifier"] as const)("preserves a nonzero %s exit despite valid version output", async (failure) => {
+    const value = fixture();
+    const successful = { file: process.execPath, args: ["--version"] };
+    const failing = { file: process.execPath, args: ["-e", `console.log('${version}'); process.exit(7)`] };
+    const task: WindowsUpdateTask = {
+      kind: "commands", commands: failure === "installer" ? [failing] : [],
+      verification: failure === "verifier" ? failing : successful, version, allowNewer: false,
+    };
+    const receipt = await apply(value, task);
+    expect(receipt, receipt.message).toMatchObject({ state: "failed", message: expect.stringContaining("exited with status 7") });
+    expect(existsSync(value.stage)).toBe(false);
   }, 30_000);
   it.each(["cancel", "failure", "success"] as const)("runs stage cleanup after %s", async (outcome) => {
     const value = fixture();
@@ -66,7 +86,10 @@ describe.skipIf(!powershell)("actual PowerShell worker execution on the host", (
       verification: { file: process.execPath, args: ["--version"] }, version, allowNewer: false,
       cleanup: { file: process.execPath, args: ["-e", `require('fs').rmSync(${JSON.stringify(marker)})`] },
     };
-    expect(await apply(value, task)).toMatchObject({ state: outcome === "success" ? "applied" : "failed" });
+    const receipt = await apply(value, task);
+    expect(receipt, receipt.message).toMatchObject({ state: outcome === "success" ? "applied" : "failed" });
+    if (outcome === "cancel") expect(receipt.message).toContain("cancelled");
+    if (outcome === "failure") expect(receipt.message).toContain("exited with status 1");
     expect(existsSync(marker)).toBe(false);
   }, 30_000);
   it("does not take or delete another attempt's lock", async () => {
