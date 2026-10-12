@@ -26,6 +26,14 @@ function Quote-Argument($value) {
   $escaped = [regex]::Replace($value, '(\\*)"', '$1$1\"')
   return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
 }
+function Get-ExecutableDigest($path) {
+  $hash = [Security.Cryptography.SHA256]::Create()
+  try {
+    $stream = [IO.File]::OpenRead($path)
+    try { return [BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $stream.Dispose() }
+  } finally { $hash.Dispose() }
+}
 function Invoke-CommandSpec($spec) {
   if ($spec.env) { foreach ($property in $spec.env.PSObject.Properties) { [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process') } }
   $arguments = (@($spec.args | ForEach-Object { Quote-Argument ([string]$_) }) -join ' ')
@@ -100,12 +108,12 @@ try {
   }
   Save-Status 'installing' 'Applying staged update.'
   if ($task.kind -eq 'binary') {
-    if ((Get-FileHash -LiteralPath $task.source -Algorithm SHA256).Hash.ToLower() -ne $task.digest) { throw 'Staged binary checksum mismatch.' }
+    if ((Get-ExecutableDigest $task.source) -ne $task.digest) { throw 'Staged binary checksum mismatch.' }
     Verify-Version @{ file=$task.source; args=@('--version') } $false
     $pending = "$($task.destination).update-$([Guid]::NewGuid().ToString('N'))"
     $backup = "$($task.destination).rollback-$([Guid]::NewGuid().ToString('N'))"
     Copy-Item -LiteralPath $task.source -Destination $pending
-    if ((Get-FileHash -LiteralPath $task.destination -Algorithm SHA256).Hash.ToLower() -ne $task.previousDigest) { throw 'Installation changed while the update was staged; existing executable was kept.' }
+    if ((Get-ExecutableDigest $task.destination) -ne $task.previousDigest) { throw 'Installation changed while the update was staged; existing executable was kept.' }
     [IO.File]::Replace($pending, $task.destination, $backup, $true)
     try { Verify-Version @{ file=$task.destination; args=@('--version') } $false }
     catch { [IO.File]::Replace($backup, $task.destination, $null, $true); throw }
