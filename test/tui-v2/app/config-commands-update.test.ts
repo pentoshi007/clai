@@ -189,3 +189,38 @@ describe("/update in the running TUI", () => {
     expect(requestExit).not.toHaveBeenCalled();
   });
 });
+
+describe("/update result fidelity", () => {
+  const status: UpdateStatus = { state: "update-available", currentVersion: "3.13.2", latestVersion: "3.14.0", updateAvailable: true };
+
+  it("reports staging without claiming it was already installed", async () => {
+    const before = getConfig().lastUpdateCheck;
+    vi.mocked(installUpdate).mockResolvedValue({ ok: true, outcome: "staged", method: "binary", message: "Result: fixture-status.json", needsRestart: true });
+    const requestExit = vi.fn();
+    const services = buildServices({ status, requestExit });
+    await services.commands.dispatch({ name: "update", args: "" });
+    expect(lastNotice(services)).toContain("update staged");
+    expect(lastNotice(services)).toContain("fixture-status.json");
+    expect(lastNotice(services)).not.toContain("updated to");
+    expect(getConfig().lastUpdateCheck).toBe(before);
+    vi.runAllTimers();
+    expect(requestExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not exit when the updater says no restart is needed", async () => {
+    vi.mocked(installUpdate).mockResolvedValue({ ok: true, outcome: "applied", method: "npm", message: "verified", needsRestart: false });
+    const requestExit = vi.fn();
+    const services = buildServices({ status, requestExit });
+    await services.commands.dispatch({ name: "update", args: "" });
+    expect(lastNotice(services)).toBe("updated to v3.14.0");
+    vi.runAllTimers();
+    expect(requestExit).not.toHaveBeenCalled();
+  });
+
+  it("reports the actual newer managed version instead of the requested minimum", async () => {
+    vi.mocked(installUpdate).mockResolvedValue({ ok: true, outcome: "applied", installedVersion: "3.15.0", method: "brew", message: "verified", needsRestart: false });
+    const services = buildServices({ status });
+    await services.commands.dispatch({ name: "update", args: "" });
+    expect(lastNotice(services)).toBe("updated to v3.15.0");
+  });
+});

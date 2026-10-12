@@ -10,6 +10,7 @@ import {
   type ResponsesDialectConfig,
 } from "./responses-config.js";
 import { buildResponsesBody } from "./responses-request.js";
+import { assertResponsesSuccess } from "./responses-error.js";
 
 export function readWithAbort(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -97,7 +98,9 @@ export async function readResponsesJson(
   error?: unknown;
 }> {
   try {
-    return await readJson(response, signal);
+    const data = await readJson<{ output?: unknown; usage?: unknown; id?: string; error?: unknown }>(response, signal);
+    assertResponsesSuccess(config.displayName, data);
+    return data;
   } catch (error) {
     if (error instanceof ProviderError) {
       throw new ProviderError(
@@ -105,6 +108,7 @@ export async function readResponsesJson(
         error.status,
         error.body,
         error.retryAfterSeconds,
+        error.retryable,
       );
     }
     throw error;

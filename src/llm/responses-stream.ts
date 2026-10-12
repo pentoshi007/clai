@@ -28,6 +28,7 @@ import {
 } from "./responses-parse.js";
 import { buildResponsesRequestBody, readResponsesJson, readWithAbort } from "./responses-http.js";
 import { assertResponsesShapedData } from "./responses-shape.js";
+import { assertResponsesSuccess } from "./responses-error.js";
 import { createStreamIdleWatchdog } from "./responses-stream-watchdog.js";
 import type { StreamIdleWatchdog } from "./responses-stream-watchdog.js";
 import { newStreamAccumulator } from "./responses-stream-accumulator.js";
@@ -207,6 +208,7 @@ async function handleJsonStreamResponse(
       id?: string;
       requestId?: string;
     }>(response, watchdog.controller.signal);
+    assertResponsesSuccess(ctx.config.displayName, data);
     assertResponsesShapedData(data);
     if (response.status === 202) {
       const requestId =

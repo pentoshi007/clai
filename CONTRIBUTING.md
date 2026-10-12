@@ -50,6 +50,10 @@ To run a focused test:
 npm run test:deterministic -- test/session-runtime/host.integration.test.ts
 ```
 
+Updater regressions run with `npm run test:deterministic -- test/update`. The real POSIX manager fixtures use an isolated local registry and temporary prefixes; npm is required, while Bun, pnpm 11+ and Yarn Classic cases explicitly skip when those tools are unavailable. Linux semantic CI installs the required managers so those cases run. Source-update fixtures execute real git/npm/build/rollback operations against a local upstream; only its official-remote identity lookup is substituted.
+
+`test/update-windows-worker.test.ts` executes the generated worker with native `powershell.exe` on Windows. On other hosts, set `CLAI_TEST_POWERSHELL` to a PowerShell executable to exercise its promotion, verification and failure logic. PowerShell 7 on Linux is not proof of Windows file locking, UAC or PowerShell 5.1 behavior. Readiness, cancellation and elevation-launch regressions also cover those contracts with controlled process fixtures. The macOS/Windows process CI matrix includes updater provenance/execution and the Windows native worker; unavailable native OS checks must be disclosed in local validation.
+
 For dependency changes, update `package.json` and `package-lock.json` together and run `npm run release:verify`. Preserve the repository's exact dependency pins.
 
 ## Architecture and boundaries

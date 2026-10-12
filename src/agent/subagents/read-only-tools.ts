@@ -2,7 +2,7 @@ import { isAbsolute, resolve } from "node:path";
 import { TOOL_DEFINITIONS } from "../../tools/definitions.js";
 import type { ToolRunOptions } from "../../tools/tool-types.js";
 import type { ToolCall, ToolDefinition, ToolResult } from "../../types.js";
-import { FS_READ_OPTION_KEYS } from "../../tools/fs/read-input.js";
+import { FS_READ_OPTION_KEYS, MAX_FS_READ_FILES } from "../../tools/fs/read-input.js";
 import { boundFsReadOutput, isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 
 export const TOOL_OUTPUT_LIMIT = 12_000;
@@ -21,7 +21,7 @@ const fields: Record<string, readonly string[]> = {
 };
 
 const descriptions: Record<string, string> = {
-  "fs.read": 'Read one text file/directory: {"path":"src/app.ts","offset":1,"limit":80}. Optional 1–6 necessary known files: {"files":[{"path":"src/app.ts","limit":80},{"path":"src/config.ts","pattern":"export","context":2}]}. Use exactly one of path or files; filters belong directly inside each file entry in files mode. Lines are 1-indexed; pattern is a non-empty JS regex. Follow each file’s status and hasMore/clipping; retry only needed failed/unfinished reads. Use a single path when sufficient.',
+  "fs.read": `Read one text file/directory: {"path":"src/app.ts","offset":1,"limit":80}. Optional 1–${MAX_FS_READ_FILES} necessary known files: {"files":[{"path":"src/app.ts","limit":80},{"path":"src/config.ts","pattern":"export","context":2}]}. Use exactly one of path or files; filters belong directly inside each file entry in files mode. Lines are 1-indexed; pattern is a non-empty JS regex. Follow each file’s status and hasMore/clipping; retry only needed failed/unfinished reads. Use a single path when sufficient.`,
   "web.search": "Search the web for current information.",
   "web.fetch": "Fetch a public URL as readable text.",
   "http.fetch": "GET-only HTTP evidence for public targets.",

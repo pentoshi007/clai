@@ -4,6 +4,7 @@ import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs
 import { delimiter, join } from "node:path";
 
 import { homedir } from "node:os";
+import { updateOriginEnvironment } from "./update-origin.js";
 
 export function isBunRuntime(): boolean {
   return typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
@@ -179,7 +180,7 @@ export function reexecWithBunIfNeeded(entryPath: string): boolean {
   const result = spawnSync(bun, [entryPath, ...userArgs], {
     stdio: "inherit",
     env: {
-      ...process.env,
+      ...updateOriginEnvironment(),
       CLAI_NO_BUN_REEXEC: "1",
       CLAI_BUN_REEXEC: "1",
     },

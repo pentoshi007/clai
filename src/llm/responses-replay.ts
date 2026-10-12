@@ -1,5 +1,40 @@
 import type { ChatMessage, ResponsesReplay } from "../types.js";
 import { fromWireName } from "./tool-protocol.js";
+import { reasoningArtifactItems, reasoningArtifactsForMessage } from "./reasoning-artifacts.js";
+
+const REDACTED_CONTENT = /••••|\[REDACTED\]/i;
+
+export function restoreResponsesReplay(message: ChatMessage): ChatMessage {
+  const replay = message.responsesReplay;
+  if (replay?.provider !== "codex" || !Array.isArray(replay.items)) return message;
+  const damaged = replay.items.some((item) => item.type === "reasoning"
+    && typeof item.encrypted_content === "string" && REDACTED_CONTENT.test(item.encrypted_content));
+  if (!damaged) return message;
+  const originals = reasoningArtifactsForMessage(message)
+    .filter((artifact) => artifact.kind === "encrypted" && artifact.provenance.provider === replay.provider
+      && (!artifact.provenance.model || artifact.provenance.model === replay.model))
+    .flatMap(reasoningArtifactItems);
+  const items = replay.items.flatMap((item) => {
+    if (item.type !== "reasoning" || typeof item.encrypted_content !== "string"
+      || !REDACTED_CONTENT.test(item.encrypted_content)) return [item];
+    const original = typeof item.id === "string" ? originals.find((candidate) => candidate.id === item.id
+      && typeof candidate.encrypted_content === "string" && !REDACTED_CONTENT.test(candidate.encrypted_content)) : undefined;
+    return original ? [{ ...item, encrypted_content: original.encrypted_content }] : [];
+  });
+  return { ...message, responsesReplay: { ...replay, items } };
+}
+
+export function redactResponsesReplay(replay: ResponsesReplay, redact: (text: string) => string): ResponsesReplay {
+  return {
+    ...replay,
+    items: replay.items.map((item) => {
+      if (item.type !== "reasoning") return JSON.parse(redact(JSON.stringify(item))) as Record<string, unknown>;
+      const { encrypted_content, ...visible } = item;
+      const redacted = JSON.parse(redact(JSON.stringify(visible))) as Record<string, unknown>;
+      return encrypted_content === undefined ? redacted : { ...redacted, encrypted_content };
+    }),
+  };
+}
 
 export function captureResponsesReplay(provider: string, model: string, output: unknown): ResponsesReplay | undefined {
   if (provider !== "codex" || !Array.isArray(output) || output.length === 0) return undefined;
@@ -19,7 +54,7 @@ function canonicalJson(value: unknown): string {
 }
 
 export function responsesReplayItems(message: ChatMessage, provider: string, model: string): readonly Record<string, unknown>[] | undefined {
-  const replay = message.responsesReplay;
+  const replay = restoreResponsesReplay(message).responsesReplay;
   if (provider !== "codex" || replay?.provider !== provider || replay.model !== model || !Array.isArray(replay.items)) return undefined;
   let text = "";
   const calls: Array<{ id: unknown; name: string; args: unknown }> = [];

@@ -6,6 +6,10 @@ import type {
   TaskState,
 } from "../../store/plan.js";
 import { foregroundActiveTask, planProgress } from "../../store/plan.js";
+import stringWidth from "string-width";
+import { sanitizeDisplayText } from "./sanitize-display.js";
+
+const planGraphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export interface PlanProgressView {
   readonly done: number;
@@ -201,19 +205,29 @@ export function taskOwnerChip(task: PlanTask): string | undefined {
 }
 
 export function wrapPlanText(text: string, width: number): string[] {
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = sanitizeDisplayText(text).replace(/\s+/g, " ").trim();
   if (!clean) return [""];
-  const max = Math.max(8, width);
-  if (clean.length <= max) return [clean];
+  const max = Number.isFinite(width) ? Math.max(1, Math.floor(width)) : 1;
+  if (stringWidth(clean) <= max) return [clean];
   const lines: string[] = [];
-  let rest = clean;
-  while (rest.length > max) {
-    let breakAt = rest.lastIndexOf(" ", max);
-    if (breakAt < Math.floor(max * 0.35)) breakAt = max;
-    lines.push(rest.slice(0, breakAt).trimEnd());
-    rest = rest.slice(breakAt).trimStart();
+  let line = "";
+  let columns = 0;
+  for (const { segment } of planGraphemes.segment(clean)) {
+    const piece = stringWidth(segment) > max ? "…" : segment;
+    const size = stringWidth(piece);
+    while (line && columns + size > max) {
+      const space = line.lastIndexOf(" ");
+      const split = piece === " " || space <= 0 ? line.length : space;
+      lines.push(line.slice(0, split).trimEnd());
+      line = line.slice(split).trimStart();
+      columns = stringWidth(line);
+    }
+    if (line || piece !== " ") {
+      line += piece;
+      columns += size;
+    }
   }
-  if (rest) lines.push(rest);
+  if (line) lines.push(line.trimEnd());
   return lines;
 }
 

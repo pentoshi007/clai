@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdir, rm } from "node:fs/promises";
 import { act, createElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
@@ -6,9 +7,19 @@ import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js"
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
 import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { App } from "../../src/tui-v2/app/App.js";
+import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 
 for (const width of [120, 80]) {
   const services = createCompositionRoot({
+    agent: {
+      async runTurn(request, handlers) {
+        handlers.onMessages?.([
+          { role: "user", content: request.prompt },
+          { role: "assistant", content: "Assistant-only implementation details" },
+        ]);
+        return createTurnOutcome({ status: "succeeded", answer: "ok", steps: 1, remainingCriteria: [] });
+      },
+    },
     persistence: {
       async saveSession() {}, async loadPlan() { return undefined; },
       async savePlan() {}, async deletePlan() {},
@@ -58,6 +69,25 @@ for (const width of [120, 80]) {
     assert.equal(services.overlay.getState().kind, "none");
     assert.equal(services.focus.activeContext(), "composer");
     assert.match(await settle(() => setup.mockInput.typeText("still responsive")), /still responsive/);
+    await settle(() => setup.mockInput.pressKey("q", { ctrl: true }));
+    services.session.reset({ mintNewId: true });
+    services.session.setProvider("openai");
+    services.session.setModel("test-model");
+    const recovered = services.session.promptHistory;
+    await mkdir(recovered.path, { recursive: true });
+    assert.equal((await services.session.submit("Recovered real submitted request")).status, "completed");
+    await rm(recovered.path, { recursive: true });
+    assert.equal(await recovered.count(), 0);
+    await settle(() => setup.mockInput.typeText("/prompts"));
+    await settle(() => setup.mockInput.pressEnter());
+    const repaired = await waitFor("Recovered real submitted request");
+    assert.doesNotMatch(repaired, /No user prompts have been sent|Assistant-only implementation details/);
+    assert.equal(await recovered.count(), 1);
+    await settle(() => setup.mockInput.typeText("q"));
+    await settle(() => setup.mockInput.typeText("/prompts"));
+    await settle(() => setup.mockInput.pressEnter());
+    await waitFor("Recovered real submitted request");
+    assert.equal(await recovered.count(), 1, "Repeated /prompts must not duplicate recovered prompts");
   } finally {
     await act(async () => { services.dispose(); setup.renderer.destroy(); });
     await setup.renderer.idle();

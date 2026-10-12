@@ -112,6 +112,62 @@ async function saveThenReload(messages: ChatMessage[]): Promise<ChatMessage[]> {
 }
 
 describe("artifact persistence and resume", () => {
+  it("preserves opaque ChatGPT reasoning while redacting visible replay content", async () => {
+    const { createReasoningArtifact, createReasoningArtifactProvenance } = await import("../../src/llm/reasoning-artifacts.js");
+    const model = "gpt-6.1-sol";
+    const encrypted = "gAAAA_fixture-gsk_random_ciphertext-sk-random_ciphertext-AIzaRandomCiphertext";
+    const reasoning = { type: "reasoning", id: "rs_codex", summary: [], encrypted_content: encrypted };
+    const message: ChatMessage = {
+      role: "assistant",
+      content: "Credential sk-visible-secret",
+      reasoningArtifacts: [createReasoningArtifact({
+        kind: "encrypted", raw: reasoning,
+        provenance: createReasoningArtifactProvenance({ provider: "codex", model, dialect: "openai-compatible" }),
+        replay: { scope: "all-history", persistence: "all-turns" },
+      })],
+      responsesReplay: { provider: "codex", model, items: [reasoning, {
+        type: "message", id: "msg_codex", role: "assistant", phase: "final_answer",
+        content: [{ type: "output_text", text: "Credential sk-visible-secret" }],
+      }] },
+    };
+    const [restored] = await saveThenReload([message]);
+    expect(restored!.responsesReplay!.items[0]).toEqual(reasoning);
+    expect(restored!.content).toBe("Credential sk-••••••");
+    expect(JSON.stringify(restored!.responsesReplay!.items[1])).not.toContain("sk-visible-secret");
+    const { responsesReplayItems } = await import("../../src/llm/responses-replay.js");
+    expect(responsesReplayItems(restored!, "codex", model)?.[0]).toEqual(reasoning);
+    expect(message.responsesReplay!.items[1]).toMatchObject({ content: [{ text: "Credential sk-visible-secret" }] });
+  });
+
+  it("repairs previously redacted ChatGPT replay from intact persisted artifacts on reload", async () => {
+    const { createReasoningArtifact, createReasoningArtifactProvenance } = await import("../../src/llm/reasoning-artifacts.js");
+    const model = "gpt-6.1-sol";
+    const reasoning = { type: "reasoning", id: "rs_legacy", summary: [], encrypted_content: "gAAAA_gsk_ciphertext" };
+    const messages: ChatMessage[] = [{
+      role: "assistant", content: "Verified",
+      reasoningArtifacts: [createReasoningArtifact({
+        kind: "encrypted", raw: reasoning,
+        provenance: createReasoningArtifactProvenance({ provider: "codex", model, dialect: "openai-compatible" }),
+        replay: { scope: "all-history", persistence: "all-turns" },
+      })],
+      responsesReplay: { provider: "codex", model, items: [
+        { ...reasoning, encrypted_content: "gAAAA_gsk_••••••" },
+        { type: "message", id: "msg_legacy", role: "assistant", phase: "final_answer", content: [{ type: "output_text", text: "Verified" }] },
+      ] },
+    }];
+    const { hydrateHistoryRecord } = await import("../../src/store/history/recovery.js");
+    const record = hydrateHistoryRecord({ id: "legacy-codex", createdAt: "2026-10-01", updatedAt: "2026-10-01", cwd: "/fixture", messages });
+    expect(record.messages[0]!.responsesReplay!.items[0]).toEqual(reasoning);
+    const [restored] = await saveThenReload(record.messages);
+    const { codexConfigFor } = await import("../../src/llm/codex-config.js");
+    const { buildResponsesRequestBody } = await import("../../src/llm/responses-http.js");
+    const body = JSON.parse(buildResponsesRequestBody(codexConfigFor({ accessToken: "fixture", accountId: "fixture" }), { messages: [restored!, { role: "user", content: "Continue" }], thinking: { enabled: true, effort: "max" } }, model, true));
+    expect(body.input[0]).toEqual(reasoning);
+    expect(body.input[1]).toMatchObject({ id: "msg_legacy", phase: "final_answer" });
+    expect(body.reasoning.effort).toBe("max");
+    expect(messages[0]!.responsesReplay!.items[0]!.encrypted_content).toBe("gAAAA_gsk_••••••");
+  });
+
   it("keeps signed, encrypted, and signature replay fields byte-identical", async () => {
     const reloaded = await saveThenReload(artifactMessages());
 

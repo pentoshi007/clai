@@ -26,7 +26,7 @@ function stubFetch(payload: Buffer, checksum: string): void {
 
 describe("installDirectBinary", () => {
   it("downloads, verifies checksum, and replaces the executable", async () => {
-    const payload = Buffer.from("MOCK-CLAI-BINARY");
+    const payload = Buffer.from("#!/bin/sh\nprintf '9.9.9\\n'\n");
     const checksum = createHash("sha256").update(payload).digest("hex");
     stubFetch(payload, checksum);
 
@@ -50,11 +50,13 @@ describe("installDirectBinary", () => {
     expect(result.ok).toBe(true);
     expect(result.method).toBe("binary");
     expect(result.needsRestart).toBe(true);
-    expect(readFileSync(target, "utf8")).toBe("MOCK-CLAI-BINARY");
+    expect(readFileSync(target).equals(payload)).toBe(true);
+    expect(result.outcome).toBe("applied");
+    expect(result.installedVersion).toBe("9.9.9");
   });
 
   it("throws on checksum mismatch without replacing the executable", async () => {
-    const payload = Buffer.from("MOCK-CLAI-BINARY");
+    const payload = Buffer.from("#!/bin/sh\nprintf '9.9.9\\n'\n");
     stubFetch(payload, "0".repeat(64));
 
     const dir = mkdtempSync(join(tmpdir(), "clai-install-test-"));

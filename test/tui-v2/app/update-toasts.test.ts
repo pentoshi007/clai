@@ -138,9 +138,9 @@ describe("/update toasts", () => {
     expect(seen.some((m) => /downloading .*100% · 1000 B\/1000 B/.test(m))).toBe(
       true,
     );
-    expect(seen.some((m) => m.includes("verifying checksum"))).toBe(true);
+    expect(seen.some((m) => m.includes("verifying update"))).toBe(true);
     expect(seen.some((m) => m.includes("installing"))).toBe(true);
-    expect(messages(services)).toContain("updated to v3.16.0 · restarting…");
+    expect(messages(services)).toContain("updated to v3.16.0 · reopen clai to use it");
   });
 
   it("keeps the update toast sticky for the whole download", async () => {

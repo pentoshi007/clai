@@ -56,6 +56,13 @@ export async function runViewportCullingSpike(): Promise<SpikeResult> {
       firstCells > 0 && firstCells < fullContentCells / 10,
       `cellsUpdated=${firstCells} vs fullContent=${fullContentCells}`);
 
+    const settleStart = performance.now();
+    await setup.flush();
+    const initialSettleMs = performance.now() - settleStart;
+    const scheduler = setup.renderer.getSchedulerState();
+    check(result, "initial layout settled before scroll sampling",
+      !scheduler.isRendering && !scheduler.hasScheduledRender);
+
     // Steady-state scroll: measure frame time after the one-time first layout.
     const scrollFrameMs: number[] = [];
 
@@ -91,6 +98,7 @@ export async function runViewportCullingSpike(): Promise<SpikeResult> {
     measure(result, "buildMs", Number(buildMs.toFixed(1)));
     measure(result, "firstRenderMs", Number(firstRenderMs.toFixed(2)));
     measure(result, "firstRenderCellsUpdated", firstCells);
+    measure(result, "initialSettleMs", Number(initialSettleMs.toFixed(3)));
     measure(result, "avgScrollFrameMs", Number(avgScroll.toFixed(3)));
     measure(result, "maxScrollFrameMs", Number(maxScroll.toFixed(3)));
     measure(result, "heapUsedMB", Number((mem.heapUsed / 1024 / 1024).toFixed(1)));

@@ -3,7 +3,8 @@ import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClassicApp } from "../../../src/classic/app/ClassicApp.js";
 import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
-import { createHarness, type Harness } from "./harness.js";
+import { createHarness, type Harness, type HarnessOptions } from "./harness.js";
+import { createTurnOutcome } from "../../../src/agent/turn-outcome.js";
 
 let harness: Harness | undefined;
 let view: ReturnType<typeof render> | undefined;
@@ -16,8 +17,8 @@ afterEach(() => {
   view = undefined;
 });
 
-async function mount(columns: number): Promise<Harness> {
-  harness = createHarness({ columns, rows: 35, commands: true });
+async function mount(columns: number, agent?: HarnessOptions["agent"]): Promise<Harness> {
+  harness = createHarness({ columns, rows: 35, commands: true, agent });
   view = render(createElement(ServicesProvider, {
     services: harness.services,
     children: createElement(ClassicApp, { wiring: harness.wiring }),
@@ -83,6 +84,40 @@ describe("Classic /prompts", () => {
     expect(copied).toContain("First request");
     expect(copied).toContain("MIDDLE_NEEDLE");
     expect(copied).toContain("Newest request");
+  });
+
+  it("recovers sent user prompts when their journal append failed", async () => {
+    const h = await mount(80, {
+      async runTurn(request, handlers) {
+        handlers.onMessages?.([
+          { role: "user", content: request.prompt },
+          { role: "assistant", content: "Assistant-only response" },
+        ]);
+        return createTurnOutcome({ status: "succeeded", answer: "ok", steps: 1, remainingCriteria: [] });
+      },
+    });
+    const journal = h.services.session.promptHistory;
+    vi.spyOn(journal, "append").mockRejectedValueOnce(new Error("timed out waiting for history write lock"));
+    expect((await h.services.session.submit("Restore this real submitted prompt")).status).toBe("completed");
+    expect(await journal.count()).toBe(0);
+    await open(h);
+    await expect.poll(frame).toContain("Restore this real submitted prompt");
+    expect(frame()).not.toContain("Assistant-only response");
+    expect(frame()).not.toContain("No user prompts have been sent");
+    expect(await journal.count()).toBe(1);
+  });
+
+  it("reports unavailable prompt storage without rejecting the slash command", async () => {
+    const h = await mount(80);
+    vi.spyOn(h.services.session.promptHistory, "append").mockRejectedValue(new Error("storage unavailable"));
+    await h.services.session.submit("Request whose journal storage remains unavailable");
+    h.wiring.composer.setText("/prompts");
+    h.wiring.handleData("\r");
+    await expect.poll(frame).toContain("could not load session prompts: storage unavailable");
+    expect(h.services.overlay.getState().kind).toBe("none");
+    expect(h.services.focus.activeContext()).toBe("composer");
+    h.wiring.composer.setText("still responsive");
+    await expect.poll(frame).toContain("still responsive");
   });
 
   it("opens an informative empty pager", async () => {

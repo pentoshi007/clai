@@ -11,7 +11,7 @@ import {
   mirrorBaseUrl,
 } from "../src/commands/update-install.js";
 
-const PAYLOAD = Buffer.from("clai-binary-bytes");
+const PAYLOAD = Buffer.from("#!/bin/sh\nprintf '4.6.1\\n'\n");
 const DIGEST = createHash("sha256").update(PAYLOAD).digest("hex");
 
 let root = "";

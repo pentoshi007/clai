@@ -9,6 +9,7 @@ import type { TranscriptItem } from "../app/ports/transcript-item.js";
 import type { PreviousTurnSignal } from "../agent/continue-orient.js";
 import { redactSecrets } from "../llm/provider.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../llm/reasoning-artifacts.js";
+import { redactResponsesReplay, restoreResponsesReplay } from "../llm/responses-replay.js";
 import { redactSecretsCached } from "./redaction-cache.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
@@ -91,7 +92,8 @@ function newId(): string {
 }
 
 function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => {
+  return messages.map((source) => {
+    const message = restoreResponsesReplay(source);
     const { images, ...rest } = message;
     const persistedImages = images?.flatMap((image): ChatImage[] =>
       image.path
@@ -102,7 +104,7 @@ function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
       ...rest,
       content: redactSecretsCached(message.content),
       ...(message.responsesReplay ? {
-        responsesReplay: JSON.parse(redactSecretsCached(JSON.stringify(message.responsesReplay))),
+        responsesReplay: redactResponsesReplay(message.responsesReplay, redactSecretsCached),
       } : {}),
       ...(persistedImages?.length ? { images: persistedImages } : {}),
     });

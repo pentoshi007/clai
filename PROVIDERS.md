@@ -35,6 +35,8 @@ clai use chatgpt
 
 `/model` uses the account-visible catalog where available, including model context limits and supported reasoning levels. `/usage` shows subscription limits, reset times, and credits when the account reports them. These account allowances are separate from session token totals. OpenAI API credentials use the separate `openai` integration.
 
+Session history preserves ChatGPT's encrypted reasoning bytes for subsequent turns and resumed sessions while continuing to redact visible content. Replay damaged by older history redaction is repaired from matching intact artifacts when available; unrecoverable damaged items are omitted while preserving messages and tool results. Transient server errors received inside a stream use the same bounded retries as HTTP server failures, with up to three retries before model output starts. Retries preserve the requested model, reasoning effort, and session identity.
+
 ### Cline
 
 ```sh

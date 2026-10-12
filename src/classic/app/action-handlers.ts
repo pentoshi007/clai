@@ -144,6 +144,13 @@ export class ClassicActionHandlers {
         this.deps.panels.handleKey(chord, key.text);
         return;
       case "transcript.copy-thinking":
+      case "plan.toggle-task":
+      case "plan.expand-task":
+      case "plan.collapse-task":
+      case "plan.expand-all":
+      case "plan.collapse-all":
+      case "plan.page-up":
+      case "plan.page-down":
         return;
       default: {
         const exhaustive: never = action;
