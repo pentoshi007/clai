@@ -32,7 +32,7 @@ export const FS_READ_PARAMETERS: ToolDefinition["parameters"] = {
       type: "array",
       minItems: 1,
       maxItems: MAX_FS_READ_FILES,
-      description: "Optional alternative to path: 1–6 relevant file objects, each with its own path and filters. Omit top-level path and filters when using files.",
+      description: `Optional alternative to path: 1–${MAX_FS_READ_FILES} relevant file objects, each with its own path and filters. Omit top-level path and filters when using files.`,
       items: {
         type: "object",
         properties: FILE_PROPERTIES,

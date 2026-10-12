@@ -315,7 +315,7 @@ export async function handleUpdate(services: AppServices): Promise<void> {
   const controller = services.interruptible.begin();
   sticky("checking for updates…");
   try {
-    const status = await services.ports.updates.check();
+    const status = await services.ports.updates.check(controller.signal);
     if (controller.signal.aborted) {
       settle("warn", "update cancelled");
       return;
@@ -337,7 +337,7 @@ export async function handleUpdate(services: AppServices): Promise<void> {
     services.toast.success(`new version available · v${target}`, {
       key: "update-found",
     });
-    sticky(`${route} · downloading…`);
+    sticky(`${route} · preparing update…`);
 
     let lastPaint = 0;
     let downloadAnnounced = false;
@@ -354,7 +354,7 @@ export async function handleUpdate(services: AppServices): Promise<void> {
       "pipe",
       (progress) => {
         if (progress.phase === "verifying") {
-          sticky(`${route} · verifying checksum…`);
+          sticky(`${route} · verifying update…`);
           return;
         }
         if (progress.phase === "installing") {
@@ -393,9 +393,13 @@ export async function handleUpdate(services: AppServices): Promise<void> {
       settle("warn", `update not applied · ${result.message}`);
       return;
     }
-    updateConfig({ lastUpdateCheck: Date.now() });
-    settle("success", `updated to v${target} · restarting…`);
-    setTimeout(() => services.requestExit(), 1200);
+    if (result.outcome === "staged") {
+      settle("warn", `update staged · closing clai to apply it; reopen afterwards. ${result.message}`);
+    } else {
+      updateConfig({ lastUpdateCheck: Date.now() });
+      settle("success", `updated to v${result.installedVersion ?? target}${result.needsRestart ? " · reopen clai to use it" : ""}`);
+    }
+    if (result.needsRestart) setTimeout(() => services.requestExit(), 1200);
   } catch (error) {
     if (controller.signal.aborted) {
       settle("warn", "update cancelled");

@@ -3,6 +3,7 @@ import { ProviderError } from "./http.js";
 import { ChatShapedResponsesPayload } from "./responses-shape.js";
 import { fromWireName } from "./tool-protocol.js";
 import { captureResponsesReplay } from "./responses-replay.js";
+import { responsesError } from "./responses-error.js";
 import { emitStreamReasoningDelta } from "./stream-events.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
 import {
@@ -185,47 +186,6 @@ function handleResponseIncomplete(
   ctx.state.sawTerminalProof = "response-incomplete";
 }
 
-function throwStreamPayloadError(
-  config: ResponsesDialectConfig,
-  errorLike: unknown,
-  payload: string,
-): never {
-  const rawDetail =
-    typeof errorLike === "string"
-      ? errorLike
-      : (((errorLike as Record<string, unknown>).message as
-          string | undefined) ??
-        ((errorLike as Record<string, unknown>).type as string | undefined) ??
-        "unknown error");
-  const detail =
-    rawDetail.trim().length <= 2
-      ? `${rawDetail} — ${payload.slice(0, 300)}`
-      : rawDetail;
-  throw new ProviderError(
-    `${config.displayName} stream error: ${detail}`,
-    undefined,
-    payload.slice(0, 1000),
-  );
-}
-
-function throwFailedResponseError(
-  config: ResponsesDialectConfig,
-  resp: Record<string, unknown>,
-  type: string,
-  payload: string,
-): never {
-  const err = resp.error as Record<string, unknown> | undefined;
-  const rawDetail = err?.message ?? err?.code ?? type;
-  const rawStr = String(rawDetail);
-  const detail =
-    rawStr.trim().length <= 2 ? `${rawStr} — ${payload.slice(0, 300)}` : rawStr;
-  throw new ProviderError(
-    `${config.displayName} stream error: ${detail}`,
-    undefined,
-    payload.slice(0, 1000),
-  );
-}
-
 function dispatchLifecycleEvent(
   ctx: StreamEventContext,
   type: string | undefined,
@@ -309,7 +269,7 @@ function dispatchTerminalEvent(
       return true;
     }
     const resp = (parsed.response ?? parsed) as Record<string, unknown>;
-    throwFailedResponseError(ctx.config, resp, type, payload);
+    throw responsesError(ctx.config.displayName, resp.error ?? { message: type }, payload);
   }
   return false;
 }
@@ -320,7 +280,7 @@ export function dispatchStreamEvent(
   payload: string,
 ): void {
   if (parsed.error) {
-    throwStreamPayloadError(ctx.config, parsed.error, payload);
+    throw responsesError(ctx.config.displayName, parsed.error, payload);
   }
   const type = parsed.type as string | undefined;
   if (dispatchLifecycleEvent(ctx, type, parsed)) return;

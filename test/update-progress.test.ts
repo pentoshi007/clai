@@ -30,6 +30,8 @@ function streamingResponse(body: Buffer, withLength: boolean): Response {
       getReader() {
         let index = 0;
         return {
+          releaseLock() {},
+          async cancel() {},
           async read() {
             if (index >= chunks.length) return { done: true, value: undefined };
             const value = Uint8Array.from(chunks[index]!);
@@ -89,7 +91,7 @@ describe("downloadBinary progress", () => {
 
 describe("installDirectBinary progress phases", () => {
   it("emits downloading, verifying and installing in order", async () => {
-    const payload = Buffer.from("MOCK-CLAI-BINARY");
+    const payload = Buffer.from("#!/bin/sh\nprintf '9.9.9\\n'\n");
     const checksum = createHash("sha256").update(payload).digest("hex");
     globalThis.fetch = (async (url: string) => {
       if (url.endsWith(".sha256")) {

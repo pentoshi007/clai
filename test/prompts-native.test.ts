@@ -7,6 +7,17 @@ import {
 } from "../src/prompts/index.js";
 
 describe("native prompts", () => {
+  it("keeps ten-file guidance consistent in text and full native prompts", () => {
+    const prompts = [
+      renderAskSystemPrompt(), renderAskSystemPrompt({ nativeTools: true }),
+      renderAgentSystemPrompt("fs.read"), renderAgentSystemPrompt("fs.read", { nativeTools: true, slimNative: false }),
+    ];
+    for (const prompt of prompts) {
+      expect(prompt).toMatch(/1–10|max 10/);
+      expect(prompt).not.toMatch(/1–6|max 6/);
+    }
+  });
+
   it("native agent prompt has no fence protocol (P2-8 dedicated template)", () => {
     const p = renderAgentSystemPrompt("fs.write", { nativeTools: true });
     expect(p).not.toContain("```tool");

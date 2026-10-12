@@ -94,6 +94,7 @@ describe("session prompt capture and naming", () => {
     await session.submit("automatic responder", { displayPrompt: null });
     await session.submit("automatic recovery", { displayPrompt: "Recovery", internal: true });
     await session.submit("Plan approved. Execute the plan");
+    await session.ensurePromptHistory();
     expect(await session.promptHistory.count()).toBe(0);
     expect(namingCalls).toHaveLength(0);
     await session.submit("Plan revision request from the user: improve it", { displayPrompt: "Please improve the plan" });
@@ -104,6 +105,7 @@ describe("session prompt capture and naming", () => {
     updateConfig({ privateMode: mode === "private" });
     const { session, namingCalls } = makeSession({ noHistory: mode === "noHistory" });
     expect((await session.submit("Private user prompt")).status).toBe("completed");
+    await session.ensurePromptHistory();
     expect(await session.promptHistory.count()).toBe(0);
     await expect(stat(session.promptHistory.path)).rejects.toMatchObject({ code: "ENOENT" });
     expect(namingCalls).toHaveLength(0);
@@ -183,6 +185,83 @@ describe("session prompt capture and naming", () => {
     expect(await session.promptHistory.count()).toBe(0);
     expect(await oldStore.count()).toBe(1);
     expect(session.promptHistory.path).not.toBe(oldStore.path);
+  });
+
+  it("does not restore another session's prompts while a prior journal is flushing", async () => {
+    const { session } = makeSession();
+    const oldStore = session.promptHistory;
+    vi.spyOn(oldStore, "append").mockRejectedValueOnce(new Error("temporary write failure"));
+    await session.submit("Old session user request");
+    let release!: () => void;
+    vi.spyOn(oldStore, "flush").mockReturnValue(new Promise<void>((resolve) => { release = resolve; }));
+    const pending = session.ensurePromptHistory();
+    session.reset({ mintNewId: true });
+    session.restoreMessages([{ role: "user", content: "New session private request" }]);
+    release();
+    await pending;
+    expect(await oldStore.count()).toBe(0);
+    expect(await session.promptHistory.count()).toBe(0);
+  });
+
+  it("recovers only captured display text and metadata even when later writes succeed", async () => {
+    updateConfig({ privateMode: false, thinking: { enabled: true, effort: "xhigh" } });
+    const { session } = makeSession();
+    vi.spyOn(session.promptHistory, "append").mockRejectedValueOnce(new Error("temporary write failure"));
+    await session.submit("Expanded agent request with hidden instructions", { displayPrompt: "Original user request" });
+    await session.submit("automatic responder", { displayPrompt: null });
+    await session.submit("automatic recovery", { displayPrompt: "Recovery", internal: true });
+    session.setProvider("openai");
+    session.setModel("later-model");
+    updateConfig({ thinking: { enabled: false, effort: "high" } });
+    await session.submit("Later user request");
+    await session.ensurePromptHistory();
+    const body = await readFile(session.promptHistory.path, "utf8");
+    expect(await session.promptHistory.count()).toBe(2);
+    for (const text of ["Original user request", "Later user request", "codex", "test-codex-model", "xhigh", "later-model", "off"]) {
+      expect(body).toContain(text);
+    }
+    for (const text of ["Expanded agent request", "automatic responder", "automatic recovery", "imported from saved history"]) {
+      expect(body).not.toContain(text);
+    }
+    await session.ensurePromptHistory();
+    expect(await session.promptHistory.count()).toBe(2);
+  });
+
+  it("does not duplicate failed captures during concurrent recovery or merge repeated user requests", async () => {
+    const { session } = makeSession();
+    vi.spyOn(session.promptHistory, "append")
+      .mockRejectedValueOnce(new Error("first write failure"))
+      .mockRejectedValueOnce(new Error("second write failure"));
+    await session.submit("Repeated real request");
+    await session.submit("Repeated real request");
+    await Promise.all([session.ensurePromptHistory(), session.ensurePromptHistory()]);
+    expect(await session.promptHistory.count()).toBe(2);
+    await session.ensurePromptHistory();
+    expect(await session.promptHistory.count()).toBe(2);
+  });
+
+  it("retries a failed legacy import without importing subsequent automatic turns", async () => {
+    const { SessionPromptStore } = await import("../../src/store/session-prompts.js");
+    const { session } = makeSession();
+    vi.spyOn(SessionPromptStore.prototype, "seed").mockRejectedValueOnce(new Error("legacy write failure"));
+    session.loadHistory([{ role: "user", content: "Saved legacy request" }]);
+    await session.submit("automatic responder", { displayPrompt: null });
+    await session.ensurePromptHistory();
+    expect((await session.promptHistory.namingWindow()).prompts).toEqual([{ number: 1, preview: "Saved legacy request" }]);
+  });
+
+  it("does not recover failed captures when private mode is enabled during a flush", async () => {
+    updateConfig({ privateMode: false });
+    const { session } = makeSession();
+    vi.spyOn(session.promptHistory, "append").mockRejectedValueOnce(new Error("temporary write failure"));
+    await session.submit("Previously public request");
+    let release!: () => void;
+    vi.spyOn(session.promptHistory, "flush").mockReturnValue(new Promise<void>((resolve) => { release = resolve; }));
+    const recovery = session.ensurePromptHistory();
+    updateConfig({ privateMode: true });
+    release();
+    await recovery;
+    expect(await session.promptHistory.count()).toBe(0);
   });
 
   it("keeps main turns working after a prompt journal write fails", async () => {

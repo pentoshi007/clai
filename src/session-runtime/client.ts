@@ -7,6 +7,7 @@ import { resolveResumeTarget } from "../ui-core/bootstrap/session-resume.js";
 import { mintSessionId } from "../app/controllers/session-persistence.js";
 import { probePtyCapability } from "../interactive-session/transport-node-pty.js";
 import { safeCwd } from "../os/cwd.js";
+import { updateOriginEnvironment } from "../os/update-origin.js";
 import { findBunExecutable, isBunRuntime } from "../os/bun-runtime.js";
 import { getConfig } from "../store/config.js";
 import { listSessionSummaries } from "../store/history.js";
@@ -187,7 +188,7 @@ async function openChannel(
 }
 
 function childEnvironment(payload: string): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env = updateOriginEnvironment();
   delete env[RUNTIME_CHILD_ENV];
   delete env[RUNTIME_SOCKET_ENV];
   delete env[RUNTIME_TOKEN_ENV];

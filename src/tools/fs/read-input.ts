@@ -1,6 +1,6 @@
 import type { FsReadOptions } from "../fs.js";
 
-export const MAX_FS_READ_FILES = 6;
+export const MAX_FS_READ_FILES = 10;
 
 export const FS_READ_OPTION_KEYS = [
   "offset", "limit", "startLine", "endLine", "pattern", "context",
@@ -15,7 +15,7 @@ type ReadInputResult =
   | { ok: true; files: FsReadFileInput[]; multiple: boolean }
   | { ok: false; error: string };
 
-const USAGE = 'Use {"path":"src/app.ts","offset":1,"limit":80} for one file, or {"files":[{"path":"src/app.ts","limit":80},{"path":"src/config.ts","pattern":"export","context":2}]} for 1–6 relevant files. Put each file’s options inside its entry; use exactly one of path or files.';
+const USAGE = `Use {"path":"src/app.ts","offset":1,"limit":80} for one file, or {"files":[{"path":"src/app.ts","limit":80},{"path":"src/config.ts","pattern":"export","context":2}]} for 1–${MAX_FS_READ_FILES} relevant files. Put each file’s options inside its entry; use exactly one of path or files.`;
 
 function readFileInput(raw: unknown, label: string): FsReadFileInput {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

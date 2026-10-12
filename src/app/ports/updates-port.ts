@@ -9,5 +9,5 @@ export interface UpdateStatus {
 }
 
 export interface UpdatesPort {
-  check(): Promise<UpdateStatus>;
+  check(signal?: AbortSignal): Promise<UpdateStatus>;
 }

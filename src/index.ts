@@ -607,7 +607,7 @@ async function main(): Promise<void> {
 
   program
     .command("update")
-    .description("check for updates and show upgrade instructions")
+    .description("update the active installation and verify the result")
     .action(async () => {
       await runUpdate();
     });

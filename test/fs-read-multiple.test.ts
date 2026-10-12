@@ -40,8 +40,8 @@ describe("fs.read single and multiple inputs", () => {
     expect(window.output).not.toContain("1: first");
   });
 
-  it("reads six files in order with independent full, range, pattern, byte and directory filters", async () => {
-    const paths = ["small.txt", "range.txt", "aliases.txt", "pattern.txt", 'spaced "λ".txt', "nested"].map((name) => join(root, name));
+  it("reads ten files in order with independent full, range, pattern, byte and directory filters", async () => {
+    const paths = ["small.txt", "range.txt", "aliases.txt", "pattern.txt", 'spaced "λ".txt', "nested", "tail.txt", "matches.txt", "empty.txt", "unicode.txt"].map((name) => join(root, name));
     await Promise.all([
       writeFile(paths[0]!, "whole small file"),
       writeFile(paths[1]!, "a\nb\nc\nd\n"),
@@ -49,6 +49,10 @@ describe("fs.read single and multiple inputs", () => {
       writeFile(paths[3]!, "before\nEXPORT function match() {}\nafter\nexport second\n"),
       writeFile(paths[4]!, "abcdefghijk"),
       mkdir(paths[5]!),
+      writeFile(paths[6]!, "line one\nline two\nline three\n"),
+      writeFile(paths[7]!, "head\nexport const seventh = 7;\nnoise\nEXPORT const eighth = 8;\n"),
+      writeFile(paths[8]!, ""),
+      writeFile(paths[9]!, "λ😀END\n"),
     ]);
     await writeFile(join(paths[5]!, "inside.txt"), "inside");
     const result = await read({ files: [
@@ -58,11 +62,15 @@ describe("fs.read single and multiple inputs", () => {
       { path: paths[3], pattern: "export", caseInsensitive: true, context: 1, maxMatches: 1 },
       { path: paths[4], maxBytes: 5 },
       { path: paths[5], limit: 1 },
+      { path: paths[6], offset: 3, limit: 1 },
+      { path: paths[7], pattern: "/export/i", context: 0, maxMatches: 2 },
+      { path: paths[8] },
+      { path: paths[9], pattern: "λ😀", context: 0 },
     ] });
     expect(result.ok).toBe(true);
     const sections = parseFsReadSections(result.output);
     expect(sections.map((section) => section.path)).toEqual(paths);
-    expect(sections.every((section, index) => section.ok && section.index === index + 1 && section.total === 6)).toBe(true);
+    expect(sections.every((section, index) => section.ok && section.index === index + 1 && section.total === 10)).toBe(true);
     expect(sections[0]!.body).toBe("whole small file");
     expect(sections[1]!.body).toContain("2: b");
     expect(sections[1]!.body).not.toContain("3: c");
@@ -72,11 +80,18 @@ describe("fs.read single and multiple inputs", () => {
     expect(sections[4]!.body).toContain("abcde");
     expect(sections[4]!.body).not.toContain("abcdef");
     expect(sections[5]!.body).toContain("inside.txt");
+    expect(sections[6]!.body).toContain("3: line three");
+    expect(sections[6]!.body).not.toContain("2: line two");
+    expect(sections[7]!.body).toContain("2: export const seventh = 7;");
+    expect(sections[7]!.body).toContain("4: EXPORT const eighth = 8;");
+    expect(sections[7]!.body).not.toMatch(/head|noise/);
+    expect(sections[8]!.body).toBe("(empty file)");
+    expect(sections[9]!.body).toContain("1: λ😀END");
     expect(result.truncated).toBe(true);
   });
 
   it.each([
-    {}, { files: [] }, { files: Array.from({ length: 7 }, () => ({ path: "unused" })) },
+    {}, { files: [] }, { files: Array.from({ length: 11 }, () => ({ path: "unused" })) },
     { files: ["unused"] }, { files: [{}] }, { path: "unused", files: [{ path: "other" }] },
     { files: [{ path: "unused" }], limit: 10 },
     { files: [{ path: "unused", options: { limit: 10 } }] },
@@ -86,39 +101,44 @@ describe("fs.read single and multiple inputs", () => {
     const result = await read(args);
     expect(result.ok).toBe(false);
     expect(result.output).toContain('Use {"path"');
-    expect(result.output).toContain("1–6 relevant files");
+    expect(result.output).toContain("1–10 relevant files");
     expect(result.output).not.toContain("ENOENT");
   });
 
-  it("preserves successes alongside missing, binary, regex and sandbox failures", async () => {
+  it("preserves ten ordered results alongside missing, binary, regex and sandbox failures", async () => {
     updateConfig({ sandboxReads: true });
-    const good = join(root, "good.txt");
+    const paths = Array.from({ length: 6 }, (_, index) => join(root, `good-${index}.txt`));
+    const good = paths[0]!;
     const binary = join(root, "binary.bin");
-    await Promise.all([writeFile(good, "useful evidence"), writeFile(binary, Buffer.from([0, 1, 2]))]);
-    const result = await read({ files: [
+    await Promise.all([...paths.map((path, index) => writeFile(path, `useful evidence ${index}`)), writeFile(binary, Buffer.from([0, 1, 2]))]);
+    const files = [
       { path: good }, { path: join(root, "missing.txt") }, { path: binary },
       { path: good, pattern: "(unclosed" }, { path: "/var/clai-multi-read-outside.txt" },
-    ] });
+      ...paths.slice(1).map((path) => ({ path })),
+    ];
+    const result = await read({ files });
     expect(result.ok).toBe(false);
     expect(result.exitCode).toBe(1);
     const sections = parseFsReadSections(result.output);
-    expect(sections.map((section) => section.ok)).toEqual([true, false, false, false, false]);
-    expect(sections[0]!.body).toBe("useful evidence");
+    expect(sections.map((section) => section.path)).toEqual(files.map((file) => file.path));
+    expect(sections.map((section) => section.ok)).toEqual([true, false, false, false, false, true, true, true, true, true]);
+    expect(sections[0]!.body).toBe("useful evidence 0");
     expect(sections[1]!.body).toContain("ENOENT");
     expect(sections[2]!.body).toContain("Binary");
     expect(sections[3]!.body).toContain("Invalid regex");
     expect(sections[4]!.body).toContain("Read blocked");
+    expect(sections.slice(5).map((section) => section.body)).toEqual(paths.slice(1).map((_, index) => `useful evidence ${index + 1}`));
   });
 
-  it("bounds giant lines across all six files and marks partial lines with a usable continuation", async () => {
-    const paths = Array.from({ length: 6 }, (_, index) => join(root, `${index}.txt`));
+  it("bounds giant lines across all ten files and marks partial lines with a usable continuation", async () => {
+    const paths = Array.from({ length: 10 }, (_, index) => join(root, `${index}.txt`));
     await Promise.all(paths.map((path) => writeFile(path, "λ".repeat(300_000))));
     const result = await read({ files: paths.map((path) => ({ path })) });
     expect(result.ok).toBe(true);
     expect(result.truncated).toBe(true);
     expect(Buffer.byteLength(result.output)).toBeLessThan(280_000);
     const sections = parseFsReadSections(result.output);
-    expect(sections).toHaveLength(6);
+    expect(sections).toHaveLength(10);
     for (const section of sections) {
       expect(section.body).toContain("line 1 is incomplete");
       expect(section.body).toContain('next={"offset":1');
@@ -157,26 +177,26 @@ describe("fs.read single and multiple inputs", () => {
 });
 
 describe("multi-file evidence through context limits and child agents", () => {
-  it("keeps all six statuses and excerpts when model context is capped", () => {
-    const output = Array.from({ length: 6 }, (_, index) => formatFsReadSection({
-      index: index + 1, total: 6, path: `src/file${index}.ts`, ok: index !== 2,
+  it("keeps all ten statuses and excerpts when model context is capped", () => {
+    const output = Array.from({ length: 10 }, (_, index) => formatFsReadSection({
+      index: index + 1, total: 10, path: `src/file${index}.ts`, ok: index !== 2,
       body: `evidence ${index}\n${"detail\n".repeat(20_000)}\n# hasMore=true next={"offset":81,"limit":80}`,
     })).join("\n\n");
     const formatted = formatToolContext({ name: "fs.read", args: { files: [] } }, { ok: false, output, outputPath: "/tmp/artifact.txt" });
-    expect(parseFsReadSections(formatted).map((section) => section.ok)).toEqual([true, true, false, true, true, true]);
-    for (let index = 0; index < 6; index += 1) expect(formatted).toContain(`evidence ${index}`);
+    expect(parseFsReadSections(formatted).map((section) => section.ok)).toEqual(Array.from({ length: 10 }, (_, index) => index !== 2));
+    for (let index = 0; index < 10; index += 1) expect(formatted).toContain(`evidence ${index}`);
     expect(formatted).toContain("Coverage is incomplete");
     expect(formatted).toContain("Full multi-file output: /tmp/artifact.txt");
     const child = boundedOutput(`Error:\n${output}`);
     expect(child.length).toBeLessThanOrEqual(12_000);
     expect(child).toMatch(/^Error:\n/);
-    expect(parseFsReadSections(child)).toHaveLength(6);
+    expect(parseFsReadSections(child)).toHaveLength(10);
     expect(boundFsReadOutput(output, 256).length).toBeLessThanOrEqual(256);
-    expect(boundFsReadOutput(output, 256)).toContain("6/6 ok");
+    expect(boundFsReadOutput(output, 256)).toContain("10/10 ok");
   });
 
   it("resolves each child path and clamps its independent filters without changing parent state", async () => {
-    const paths = ["a.txt", "b.txt", "c.txt"];
+    const paths = Array.from({ length: 10 }, (_, index) => `child-${index}.txt`);
     await Promise.all(paths.map((path) => writeFile(join(root, path), `child ${path}\n${"line\n".repeat(3000)}`)));
     const cwd = process.cwd();
     const call = { name: "fs.read", args: { files: paths.map((path) => ({ path, offset: 1, limit: 9999, maxBytes: 1_000_000 })) } };
@@ -194,12 +214,20 @@ describe("multi-file evidence through context limits and child agents", () => {
     const child = READ_ONLY_TOOLS.find((entry) => entry.name === "fs.read")!;
     expect(child.parameters.required).toEqual(tool.parameters.required);
     expect(Object.keys(child.parameters.properties)).toEqual(Object.keys(tool.parameters.properties));
-    expect(child.parameters.properties.files).toMatchObject({ minItems: 1, maxItems: 6, items: { required: ["path"], additionalProperties: false } });
+    expect(child.parameters.properties.files).toMatchObject({ minItems: 1, maxItems: 10, items: { required: ["path"], additionalProperties: false } });
     const declarations = toGeminiFunctionDeclarations([tool]);
     const files = declarations[0]!.parameters.properties as Record<string, { minItems: number; maxItems: number; items: { required: string[] } }>;
-    expect(files.files).toMatchObject({ minItems: 1, maxItems: 6, items: { required: ["path"] } });
+    expect(files.files).toMatchObject({ minItems: 1, maxItems: 10, items: { required: ["path"] } });
     expect(tool.parameters.required).not.toContain("path");
     expect(tool.description).toContain("Do not add irrelevant files");
+    expect(tool.description).toContain("1–10 entries");
+    expect(tool.parameters.properties.files).toMatchObject({ description: expect.stringContaining("1–10 relevant file objects") });
+    expect(child.description).toContain("1–10 necessary known files");
+  });
+
+  it("recognizes all ten bare read entries", () => {
+    const args = { files: Array.from({ length: 10 }, (_, index) => ({ path: `file-${index}.ts`, offset: index + 1, limit: 1 })) };
+    expect(recognizeBareToolJson(JSON.stringify(args))?.call).toEqual({ name: "fs.read", args });
   });
 
   it("recognizes bare multi-read args without confusing them with writes and normalizes per-file aliases", () => {

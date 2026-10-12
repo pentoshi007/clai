@@ -20,30 +20,32 @@ interface SpawnCall {
 const calls: SpawnCall[] = [];
 let exitStatus = 0;
 let stdinText = "";
+let replaced = false;
 
 vi.mock("node:child_process", () => ({
-  spawn: (
-    cmd: string,
-    args: readonly string[],
-    options: { stdio?: unknown },
-  ) => {
+  spawn: (cmd: string, args: readonly string[], options: { stdio?: unknown }) => {
     calls.push({ cmd, args, stdio: options?.stdio });
-    const child = new EventEmitter() as EventEmitter & {
-      kill: () => void;
-      stdout: null;
-      stderr: EventEmitter;
-      stdin: { write: (data: unknown) => void; end: () => void };
-    };
-    child.kill = () => {};
-    child.stdout = null;
-    child.stderr = new EventEmitter();
-    child.stdin = {
-      write: (data: unknown) => {
-        stdinText += String(data);
-      },
-      end: () => {},
-    };
-    setTimeout(() => child.emit("close", exitStatus), 0);
+    const child = Object.assign(new EventEmitter(), {
+      kill: () => {},
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      stdin: Object.assign(new EventEmitter(), {
+        write: (data: string) => { stdinText += data; },
+        end: (data?: string) => { stdinText += data ?? ""; },
+      }),
+    });
+    setTimeout(() => {
+      if (cmd === "sudo") {
+        if (exitStatus === 0) {
+          writeFileSync(args.at(-1)!, readFileSync(args.at(-2)!));
+          replaced = true;
+        }
+        child.emit("close", exitStatus);
+        return;
+      }
+      child.stdout.emit("data", Buffer.from("4.6.1\n"));
+      child.emit("close", 0);
+    }, 0);
     return child;
   },
 }));
@@ -105,6 +107,7 @@ beforeEach(async () => {
   calls.length = 0;
   exitStatus = 0;
   stdinText = "";
+  replaced = false;
   (await obtainMock()).mockReset();
   if (process.getuid) vi.spyOn(process, "getuid").mockReturnValue(1000);
   (await accessMock()).mockImplementation(() => {
@@ -141,7 +144,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  expect(readFileSync(execPath, "utf8")).toBe("old");
+  expect(readFileSync(execPath, "utf8")).toBe(replaced ? PAYLOAD.toString() : "old");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   rmSync(root, { recursive: true, force: true });
@@ -157,7 +160,7 @@ describe("privilege escalation during an in-app update", () => {
     const sudo = calls.find((call) => call.cmd === "sudo");
     expect(sudo).toBeDefined();
     expect(sudo?.args[0]).toBe("-n");
-    expect(sudo?.stdio).toEqual(["ignore", "ignore", "pipe"]);
+    expect(sudo?.stdio).toEqual(["ignore", "pipe", "pipe"]);
   });
 
   it("tells the user how to finish instead of failing silently", async () => {
@@ -165,15 +168,15 @@ describe("privilege escalation during an in-app update", () => {
     await expect(runInstall("pipe")).rejects.toThrow(/sudo clai update/);
   });
 
-  it("still prompts interactively for the plain CLI", async () => {
+  it("never leaves the plain CLI hanging at an unowned password prompt", async () => {
     exitStatus = 1;
     await expect(runInstall("inherit")).rejects.toThrow(
       /elevated permission to replace/,
     );
 
     const sudo = calls.find((call) => call.cmd === "sudo");
-    expect(sudo?.args[0]).toBe("mv");
-    expect(sudo?.stdio).toBe("inherit");
+    expect(sudo?.args[0]).toBe("-n");
+    expect(sudo?.stdio).toEqual(["ignore", "pipe", "pipe"]);
   });
 
   it("completes the install when a cached sudo timestamp lets the move succeed", async () => {
@@ -213,7 +216,9 @@ describe("secret-modal password elevation", () => {
     });
     const sudo = calls.find((call) => call.cmd === "sudo");
     expect(sudo).toBeDefined();
-    expect(sudo?.args.slice(0, 6)).toEqual(["-S", "-p", "", "--", "mv", "-f"]);
+    expect(sudo?.args.slice(0, 6)).toEqual(["-S", "-p", "", "--", "sh", "-c"]);
+    expect(sudo?.args[6]).toContain("mktemp");
+    expect(sudo?.args[6]).toContain("install -m 755");
     expect(sudo?.args[sudo.args.length - 1]).toBe(execPath);
     expect(sudo?.args.some((arg) => arg.includes("hunter2"))).toBe(false);
     expect(stdinText).toBe("hunter2\n");
@@ -258,7 +263,9 @@ describe("secret-modal password elevation", () => {
       runInstall("pipe", { requestSecret: async () => "hunter2" }),
     ).rejects.toThrow(/elevated permission to replace/);
     const sudo = calls.find((call) => call.cmd === "sudo");
-    expect(sudo?.args.slice(0, 6)).toEqual(["-S", "-p", "", "--", "mv", "-f"]);
+    expect(sudo?.args.slice(0, 6)).toEqual(["-S", "-p", "", "--", "sh", "-c"]);
+    expect(sudo?.args[6]).toContain("mktemp");
+    expect(sudo?.args[6]).toContain("install -m 755");
   });
 
   it("passes a pre-supplied cancelled auth outcome through the replace stage", async () => {

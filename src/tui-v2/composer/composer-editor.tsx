@@ -17,6 +17,7 @@ import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
+import { resolvePlanInteraction } from "../components/plan/plan-interaction.js";
 import { PromptHistory } from "../../ui-core/composer/prompt-history.js";
 import {
   ARROW_BURST_WINDOW_MS,
@@ -198,6 +199,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     if (imagePaste.handleChord(chord, overlay.kind, key)) return;
 
     if (overlay.kind !== "none") return;
+    if (services.focus.activeContext() === "plan" && resolvePlanInteraction(chord)) return;
 
     if (menuKindRef.current !== "none" && !shouldOwnKeyboard) {
       if (

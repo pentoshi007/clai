@@ -16,6 +16,8 @@ function jsonlLockReaperPath(): string {
 
 const JSONL_LOCK_STALE_MS = 60_000;
 
+const JSONL_LOCK_INITIALIZE_MS = 5_000;
+
 const JSONL_LOCK_RETRIES = 400;
 
 const JSONL_LOCK_TIMEOUT_MS = 20_000;
@@ -29,9 +31,13 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-function lockHolderIsGone(token: string | undefined): boolean {
+function lockIsAbandoned(token: string | undefined, modifiedAt: number): boolean {
+  const age = Date.now() - modifiedAt;
+  if (age > JSONL_LOCK_STALE_MS) return true;
   const pid = Number(token?.split("-")[0]);
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    return token !== undefined && age > JSONL_LOCK_INITIALIZE_MS;
+  }
   return !isPidAlive(pid);
 }
 
@@ -53,10 +59,7 @@ async function reapStaleJsonlLock(): Promise<void> {
       () => undefined,
     );
     const reaperStat = await stat(jsonlLockReaperPath()).catch(() => undefined);
-    if (
-      !reaperStat ||
-      Date.now() - reaperStat.mtimeMs <= JSONL_LOCK_STALE_MS
-    ) {
+    if (!reaperStat || !lockIsAbandoned(existingToken, reaperStat.mtimeMs)) {
       return;
     }
     const confirmed = await readFile(jsonlLockReaperPath(), "utf8").catch(
@@ -72,9 +75,7 @@ async function reapStaleJsonlLock(): Promise<void> {
       () => undefined,
     );
     const lockStat = await stat(jsonlLockFilePath()).catch(() => undefined);
-    const staleByAge =
-      lockStat && Date.now() - lockStat.mtimeMs > JSONL_LOCK_STALE_MS;
-    if (!lockStat || (!staleByAge && !lockHolderIsGone(token))) {
+    if (!lockStat || !lockIsAbandoned(token, lockStat.mtimeMs)) {
       return;
     }
     const confirmed = await readFile(jsonlLockFilePath(), "utf8").catch(

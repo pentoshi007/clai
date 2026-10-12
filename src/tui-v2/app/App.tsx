@@ -15,6 +15,8 @@ import { maxComposerTextRows } from "../../ui-core/composer/composer-height.js";
 import { TranscriptView } from "../components/transcript/transcript-view.js";
 import { TranscriptScrollbar } from "../components/transcript/transcript-scrollbar.js";
 import { PlanView } from "../components/plan/plan-view.js";
+import { handlePlanInteraction, OPEN_TUI_KEYMAP, resolvePlanInteraction, type PlanInteractionPort } from "../components/plan/plan-interaction.js";
+import { useTaskDisclosureBinding } from "../components/plan/use-task-disclosure.js";
 import { OverlayHost } from "../components/overlay/overlay-host.js";
 import { QueuePanel } from "../components/queue/queue-panel.js";
 import { ResponderPanel } from "../components/jobs/jobs-panel.js";
@@ -75,6 +77,8 @@ export function App(): ReactNode {
   const [planVisible, setPlanVisible] = useState(false);
   const planVisibilityRef = useRef<"visible" | "hidden" | "auto">("auto");
   const plan = usePlan(services.plan);
+  const planDisclosure = useTaskDisclosureBinding(plan);
+  const planInteractionRef = useRef<PlanInteractionPort>(null);
   const overlay = useOverlayState(services.overlay);
   const runningStatus = useTranscriptField(
     services.transcript,
@@ -283,8 +287,12 @@ export function App(): ReactNode {
     }
 
     if (focusContext === "composer" && chord === "tab") return;
-    const action = services.router.resolve(chord, focusContext);
+    const action = (focusContext === "plan" ? resolvePlanInteraction(chord) : undefined) ?? services.router.resolve(chord, focusContext);
     if (!action) return;
+    if (focusContext === "plan" && handlePlanInteraction(action, planInteractionRef.current)) {
+      key.preventDefault();
+      return;
+    }
     switch (action) {
       case "app.cancel":
         key.preventDefault();
@@ -443,6 +451,9 @@ export function App(): ReactNode {
         plan={plan}
         services={services}
         width={planPaneWidth}
+        focused={focusContext === "plan"}
+        interactionRef={planInteractionRef}
+        disclosureBinding={planDisclosure}
       />
     ) : null;
 
@@ -617,7 +628,7 @@ export function App(): ReactNode {
   function openShortcutsPager(): void {
     services.overlay.openPager(
       "Keyboard shortcuts",
-      formatShortcutsReference(),
+      formatShortcutsReference(OPEN_TUI_KEYMAP),
       undefined,
       undefined,
       "force",
@@ -732,7 +743,6 @@ export function App(): ReactNode {
                 borderColor: theme.inputBorder,
                 backgroundColor: theme.statusBackground,
               }}
-              onMouseDown={() => services.focus.focusRegion("plan")}
               onMouseScroll={onPlanWheel}
             >
               {planPanel}
@@ -845,7 +855,6 @@ export function App(): ReactNode {
             backgroundColor: theme.statusBackground,
             zIndex: 50,
           }}
-          onMouseDown={() => services.focus.focusRegion("plan")}
           onMouseScroll={onPlanWheel}
         >
           {planPanel}

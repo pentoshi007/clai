@@ -100,7 +100,7 @@ import {
   type SessionUsageReport,
 } from "./session-usage-ledger.js";
 import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
-import { SessionPromptStore } from "../../store/session-prompts.js";
+import { SessionPromptStore, type SessionPromptInput } from "../../store/session-prompts.js";
 import { legacySessionPrompts } from "./session-prompt-history.js";
 import { isInternalChatMessage } from "../../types.js";
 
@@ -185,6 +185,8 @@ export class SessionController implements Disposable {
   private readonly namer: SessionNamer;
   private promptHistoryValue: SessionPromptStore;
   private promptHistoryErrorReported = false;
+  private pendingPromptWrites = new Map<SessionPromptInput, Promise<void> | undefined>();
+  private legacyPromptSource: (() => Iterable<SessionPromptInput>) | undefined;
   private lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
@@ -313,9 +315,25 @@ export class SessionController implements Disposable {
     return !this.deps.noHistory && !getConfig().privateMode;
   }
 
+  async ensurePromptHistory(): Promise<void> {
+    if (!this.isPromptHistoryEnabled()) return;
+    const store = this.promptHistoryValue;
+    const generation = this.lifecycleGeneration;
+    await store.flush().catch((error) => this.reportPromptHistoryError(error, generation));
+    if (generation !== this.lifecycleGeneration || store !== this.promptHistoryValue || !this.isPromptHistoryEnabled()) return;
+    await this.seedPromptHistory();
+    for (const input of this.pendingPromptWrites.keys()) {
+      if (generation !== this.lifecycleGeneration || store !== this.promptHistoryValue || !this.isPromptHistoryEnabled()) return;
+      await this.appendCapturedPrompt(input);
+    }
+    await store.flush();
+  }
+
   resetPromptHistory(): void {
     this.promptHistoryValue = new SessionPromptStore(this.sessionIdValue);
     this.promptHistoryErrorReported = false;
+    this.pendingPromptWrites = new Map();
+    this.legacyPromptSource = undefined;
     this.namer.restore(this.sessionTitle);
   }
 
@@ -585,8 +603,8 @@ export class SessionController implements Disposable {
     this.resetPromptHistory();
     if (this.isPromptHistoryEnabled()) {
       const generation = this.lifecycleGeneration;
-      void this.promptHistoryValue.seed(legacySessionPrompts(messages, options.transcript))
-        .catch((error) => this.reportPromptHistoryError(error, generation));
+      this.legacyPromptSource = () => legacySessionPrompts(messages, options.transcript);
+      void this.seedPromptHistory().catch((error) => this.reportPromptHistoryError(error, generation));
     }
     this.replaceSubagents();
     beginSessionWorkspace({
@@ -1032,15 +1050,13 @@ export class SessionController implements Disposable {
     const userPrompt = opts?.displayPrompt ?? prompt;
     if (this.isPromptHistoryEnabled() && opts?.displayPrompt !== null && !opts?.internal &&
         userPrompt.trim() && !isInternalChatMessage({ role: "user", content: userPrompt })) {
-      void this.promptHistoryValue.append({
+      void this.appendCapturedPrompt({
         content: userPrompt,
         timestamp: this.contextTimestamp(),
         provider: request.provider ?? provider,
         model: request.model ?? model,
         effort: config.thinking.enabled ? config.thinking.effort : "off",
-      }).then(() => {
-        if (turnGeneration === this.lifecycleGeneration) this.namer.noteUserPrompt(true);
-      }).catch((error) => this.reportPromptHistoryError(error, turnGeneration));
+      }).catch(() => undefined);
     }
     this.activeTurnGeneration = turnGeneration;
     this.unsettledTurns += 1;
@@ -1105,6 +1121,36 @@ export class SessionController implements Disposable {
       .finally(() => {
         this.autosaveInFlight = false;
       });
+  }
+
+  private async seedPromptHistory(): Promise<void> {
+    const source = this.legacyPromptSource;
+    if (!source) return;
+    const store = this.promptHistoryValue;
+    await store.seed(source());
+    if (store === this.promptHistoryValue && source === this.legacyPromptSource) {
+      this.legacyPromptSource = undefined;
+    }
+  }
+
+  private appendCapturedPrompt(input: SessionPromptInput): Promise<void> {
+    const pending = this.pendingPromptWrites;
+    const active = pending.get(input);
+    if (active) return active;
+    const generation = this.lifecycleGeneration;
+    const store = this.promptHistoryValue;
+    const write = store.append(input).then(() => {
+      pending.delete(input);
+      if (generation === this.lifecycleGeneration && store === this.promptHistoryValue) {
+        this.namer.noteUserPrompt(true);
+      }
+    }).catch((error) => {
+      pending.set(input, undefined);
+      this.reportPromptHistoryError(error, generation);
+      throw error;
+    });
+    pending.set(input, write);
+    return write;
   }
 
   private reportPromptHistoryError(error: unknown, generation: number): void {
