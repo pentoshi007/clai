@@ -10,6 +10,11 @@ import {
   recentUserPrompts,
   renderRecentUserPrompts,
 } from "./compaction-recent-history.js";
+import {
+  compactionInstructionAnchors,
+  reconcileCompactionUserInstructions,
+} from "./compaction-user-instructions.js";
+import { redactUserCredentialsFromMemory } from "./user-credentials.js";
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import {
@@ -133,6 +138,7 @@ export async function compactMessagesWithSummary(
     hasCompletedConversationTurn(messages);
   const recentPrompts = recentUserPrompts(messages);
   const recencyAnchors = compactionRecencyAnchors(messages);
+  const instructionAnchors = compactionInstructionAnchors(messages);
   const firstMessage = messages[0];
   const preserveSystemHead =
     firstMessage?.role === "system" &&
@@ -272,6 +278,7 @@ export async function compactMessagesWithSummary(
   const serializedPrompt = buildCompactionUserPrompt({
     messageTranscript: "",
     recencyAnchors,
+    instructionAnchors,
     ...(durableState ? { durableState } : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
@@ -379,6 +386,7 @@ export async function compactMessagesWithSummary(
         durableState: durableState || undefined,
         purpose: options.purpose,
         recencyAnchors,
+        instructionAnchors,
       }),
       { phase: "single" },
     );
@@ -450,6 +458,7 @@ export async function compactMessagesWithSummary(
         durableState: durableState || undefined,
         purpose: options.purpose,
         recencyAnchors,
+        instructionAnchors,
       }),
       { phase: "single" },
     );
@@ -481,15 +490,18 @@ export async function compactMessagesWithSummary(
         ...(durableState ? { durableState } : {}),
         ...(options.purpose ? { purpose: options.purpose } : {}),
         recencyAnchors,
+        instructionAnchors,
       }),
       { phase: "reduce", total: chunks.length },
     );
   }
 
-  const rawSummary = redactSecrets(modelSummary.trim());
-  const summary = normalizeCompactionSummary(
+  const rawSummary = redactSecrets(redactUserCredentialsFromMemory(modelSummary.trim()));
+  const normalizedSummary = normalizeCompactionSummary(
     stripThinking(rawSummary).visible,
   );
+  const instructionMemory = reconcileCompactionUserInstructions(normalizedSummary, messages, options.durableEnvelope);
+  const summary = instructionMemory.summary;
   if (!summary) {
     throw new Error("compaction failed: model returned an empty summary");
   }
@@ -538,6 +550,7 @@ export async function compactMessagesWithSummary(
       recentUserPrompts: recentPrompts
         .filter((prompt) => !prompt.message || !rawTail.includes(prompt.message))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
+      userInstructions: instructionMemory.instructions,
     },
   };
   const envelopeMsg: ChatMessage | undefined = options.durableEnvelope?.trim()

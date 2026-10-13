@@ -178,6 +178,26 @@ describe("looksLikeTranscriptReplay", () => {
     expect(normalized.match(/Run tests\./g)).toHaveLength(1);
   });
 
+  it("retains matching facts under different section and parent scopes", () => {
+    const source = [
+      "## Parser review", "- Tests not run.",
+      "## Transfer review", "- Tests not run.",
+      "- Source A", "  - Verification pending.",
+      "- Source B", "  - Verification pending.",
+    ].join("\n");
+    expect(normalizeCompactionSummary(source)).toBe(source);
+  });
+
+  it("preserves case-sensitive paths", () => {
+    const source = "## Relevant files\n- /project/src/Foo.ts\n- /project/src/foo.ts";
+    expect(normalizeCompactionSummary(source)).toBe(source);
+  });
+
+  it("preserves distinct literal whitespace within bullets", () => {
+    const source = "## Key facts\n- Required output: `a  b`\n- Required output: `a b`";
+    expect(normalizeCompactionSummary(source)).toBe(source);
+  });
+
   it("does not flag a faithful structured summary", () => {
     const good = [
       "## User goals",

@@ -144,7 +144,9 @@ describe("recent conversation memory", () => {
     const result = await compactMessagesWithSummary(history, async () => SUMMARY);
     const memory = result.messages.find(isCompactionMemoryMessage)!;
 
-    expect(memory.content.match(/> Explain caching/g)).toHaveLength(2);
+    expect(memory.content.match(/> Explain caching/g)).toHaveLength(1);
+    expect(memory.content).toContain("See the retained live user message below.");
+    expect(recentUserPrompts(result.messages).map(({ content }) => content)).toEqual(["Explain caching", "Explain caching"]);
     expect(memory.content).not.toContain("> You wrote a message");
     expect(result.messages.some((message) => message === history[2])).toBe(true);
   });
