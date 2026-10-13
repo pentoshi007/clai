@@ -576,13 +576,13 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     });
     if (completed?.type === "compaction-completed") {
-      expect(completed.payload.afterTokens).toBe(115_114);
+      expect(completed.payload.afterTokens).toBe(115_109);
     }
     expect(session.getState().contextSnapshot).toMatchObject({
-      contextTokens: 115_114,
+      contextTokens: 115_109,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe("ctx ~115,114/200k 58%");
+    expect(session.getState().contextChip).toBe("ctx ~115,109/200k 58%");
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );

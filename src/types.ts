@@ -198,7 +198,14 @@ export interface ChatMessage {
   subagentReceipt?: SubagentResultReceipt | undefined;
   compaction?: {
     readonly recentUserPrompts: readonly CompactedUserPrompt[];
+    readonly userInstructions?: readonly CompactedUserInstruction[] | undefined;
   } | undefined;
+}
+
+export interface CompactedUserInstruction {
+  readonly id: string;
+  readonly scope: "session" | "task" | "turn";
+  readonly text: string;
 }
 
 export interface CompactedUserPrompt {

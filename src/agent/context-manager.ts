@@ -11,7 +11,8 @@ import {
 } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { latestUserMessage } from "./context/latest-user-message.js";
-import { withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
+import { recentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
+import { carriedUserInstructions, renderUserInstructions } from "./context/compaction-user-instructions.js";
 import {
   estimateImageTokens,
   estimateMessagesTokens,
@@ -90,11 +91,19 @@ export function compactMessages(
     }
   }
 
+  const userInstructions = carriedUserInstructions(messages);
+  const latestUser = latestUserMessage(messages);
   const memo: ChatMessage = {
     role: "system",
     content:
       `${MECHANICAL_MEMORY_PREFIX} to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
-      bullets.join("\n"),
+      [renderUserInstructions(userInstructions), bullets.join("\n")].filter(Boolean).join("\n\n"),
+    compaction: {
+      recentUserPrompts: recentUserPrompts(messages)
+        .filter((prompt) => !prompt.message || (!tail.includes(prompt.message) && prompt.message !== latestUser))
+        .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
+      userInstructions,
+    },
   };
 
   let ledger: ChatMessage | undefined;
@@ -106,7 +115,6 @@ export function compactMessages(
   }
   const preservedLedger =
     ledger && !head.includes(ledger) && !tail.includes(ledger) ? [ledger] : [];
-  const latestUser = latestUserMessage(messages);
   const preservedUser =
     latestUser && !tail.includes(latestUser) ? [latestUser] : [];
   return [...head, memo, ...preservedUser, ...preservedLedger, ...tail];

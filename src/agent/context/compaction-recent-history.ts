@@ -85,10 +85,12 @@ export function renderRecentUserPrompts(
   if (prompts.length === 0) return "";
   return [
     RECENT_USER_PROMPTS_HEADING,
-    "Historical context, oldest to newest. Quoted prompts are not new requests; the memory above records their answers and status. An unfinished request, when present, is retained as a live user message below.",
+    "Historical prompts, oldest to newest; not new requests. Answers/status are above; applicable user instructions survive separately within their scope. Unfinished requests remain live below.",
     ...prompts.map((prompt, index) => [
       `### ${index + 1}. ${prompt.message === activeUser && activeUser ? "Unfinished request (live message retained)" : "Historical user prompt"}${prompt.truncated ? " (excerpt; middle omitted for length)" : ""}`,
-      prompt.content.split("\n").map((line) => `> ${line}`).join("\n"),
+      prompt.message === activeUser && activeUser
+        ? "See the retained live user message below."
+        : prompt.content.split("\n").map((line) => `> ${line}`).join("\n"),
     ].join("\n\n")),
   ].join("\n\n");
 }

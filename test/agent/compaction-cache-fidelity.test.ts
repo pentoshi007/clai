@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, CompletionRequest } from "../../src/types.js";
 import { buildAnthropicBody } from "../../src/llm/anthropic.js";
 import { successfulRequestSnapshot } from "../../src/llm/routing/attempt-request.js";
+import { compactMessagesWithSummary } from "../../src/agent/context-manager.js";
+import { carriedUserInstructions, renderUserInstructions } from "../../src/agent/context/compaction-user-instructions.js";
 
 const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
 
@@ -59,6 +61,38 @@ beforeEach(() => {
 });
 
 describe("compaction request cache fidelity", () => {
+  it("appends instruction continuity after an unchanged wire prefix and restores omitted rules without another request", async () => {
+    const original = request();
+    const rule = { id: "U1", scope: "session" as const, text: "Preserve backward compatibility unless the user approves an exception." };
+    original.messages[1] = {
+      ...original.messages[1]!,
+      content: `${original.messages[1]!.content}\n\n${renderUserInstructions([rule])}`,
+      compaction: { recentUserPrompts: [], userInstructions: [rule] },
+    };
+    const snapshot = successfulRequestSnapshot("anthropic", original.model!, original);
+    const history: ChatMessage[] = [...original.messages, { role: "assistant", content: "The test review is complete." }];
+    const before = structuredClone(history);
+    const result = await compactMessagesWithSummary(history, (prompt) => executeCompactionSummary({
+      provider: "anthropic", model: original.model, systemContent: "Unused summary system",
+      prompt, maxTokens: 12_288, baseRequest: snapshot, history, stream: false,
+      qualityRetry: false, retryOnTruncation: false, retryOnRequestShapeRejection: false,
+    }), { budgetTokens: 0, singlePassInputBudgetTokens: 200_000 });
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    const sent = complete.mock.calls[0]![0] as CompletionRequest;
+    expect(sent.messages.slice(0, snapshot.messages.length)).toEqual(snapshot.messages);
+    expect(sent.messages.at(-1)?.content).toContain(rule.text);
+    expect(sent.messages.at(-1)?.content).toContain("carry forward at EVERY compaction");
+    const priorWire = JSON.parse(buildAnthropicBody(original, false));
+    const compactionWire = JSON.parse(buildAnthropicBody(sent, false));
+    expect(compactionWire.system).toEqual(priorWire.system);
+    expect(compactionWire.tools).toEqual(priorWire.tools);
+    expect(compactionWire.thinking).toEqual(priorWire.thinking);
+    expect(blocks(compactionWire).slice(0, blocks(priorWire).length)).toEqual(blocks(priorWire));
+    expect(carriedUserInstructions(result.messages)).toEqual([rule]);
+    expect(history).toEqual(before);
+  });
+
   it("preserves image blocks and generation settings through the serialized replay prefix", async () => {
     const original = request();
     const snapshot = successfulRequestSnapshot("anthropic", "claude-sonnet-4-5", original);
