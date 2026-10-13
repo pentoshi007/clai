@@ -113,7 +113,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     });
   });
 
-  it("sends the Authorization header when a key is configured", async () => {
+  it("ignores a configured key for a keyless Zen model", async () => {
     const fetchMock = jsonResponsesMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -127,8 +127,9 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
 
     const request = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(request.headers).toMatchObject({
-      authorization: "Bearer zen-key-123",
+      authorization: "Bearer public",
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("streams a muse-spark zen model over /responses SSE", async () => {

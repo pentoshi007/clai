@@ -16,6 +16,8 @@ import {
 import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdown, renderTableBlock } from "./markdown/tables.js";
 
 import { renderColumns } from "./text-width.js";
+import { wrapPagerLine } from "./pager-chrome.js";
+import { paintLineChangeCounts } from "./line-change-labels.js";
 export { renderInlineMarkdown };
 
 export const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
@@ -25,7 +27,11 @@ export const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
   truecolor: 3,
 };
 
-export type MarkdownAppearance = CodeBlockAppearance;
+export type MarkdownAppearance = CodeBlockAppearance & {
+  readonly quotePrefix?: string | undefined;
+  readonly literalQuotes?: boolean | undefined;
+  readonly lineChangeColors?: boolean | undefined;
+};
 
 interface RenderContext {
   readonly appearance: MarkdownAppearance | undefined;
@@ -40,6 +46,15 @@ function renderContext(appearance?: MarkdownAppearance): RenderContext {
         ? chalk
         : new Chalk({ level: CHALK_LEVEL[appearance.colorMode] }),
   };
+}
+
+function paintChangeCounts(text: string, context: RenderContext): string {
+  if (!context.appearance?.lineChangeColors) return text;
+  const { theme } = context.appearance;
+  return paintLineChangeCounts(text,
+    (value) => theme ? context.paint.hex(theme.success)(value) : context.paint.green(value),
+    (value) => theme ? context.paint.hex(theme.diffDel)(value) : context.paint.red(value),
+  );
 }
 
 function repeat(char: string, count: number): string {
@@ -215,9 +230,16 @@ function wrapMarkdownLine(
 
   if (line.startsWith("> ")) {
     const content = line.slice(2);
-    const prefix = paint.dim("│ ");
+    const prefix = paint.dim(context.appearance?.quotePrefix ?? "│ ");
+    if (context.appearance?.literalQuotes) {
+      const width = Math.max(1, wrapWidth - renderColumns(prefix));
+      const rows = context.appearance.lineChangeColors
+        ? wrapAnsiLine(paintChangeCounts(content, context), width)
+        : wrapPagerLine(content, width, { preserveWhitespace: true });
+      return rows.map((row) => prefix + paint.dim(row));
+    }
     const renderedContent = renderInlineMarkdown(content, paint);
-    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - 2));
+    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - renderColumns(prefix)));
     return wrapped.map((wl) => prefix + paint.dim.italic(wl));
   }
 
@@ -278,7 +300,7 @@ function wrapMarkdownLine(
     });
   }
 
-  const rendered = renderBlockLine(line, state, context);
+  const rendered = paintChangeCounts(renderBlockLine(line, state, context), context);
   return wrapAnsiLine(rendered, wrapWidth);
 }
 
@@ -346,7 +368,7 @@ export function renderMarkdown(
     }
 
     const pieces =
-      !state.inFence && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
+      !state.inFence && !(appearance?.literalQuotes && line.startsWith("> ")) && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
     for (const piece of pieces) {
       for (const wl of wrapMarkdownLine(piece, wrapWidth, state, context)) {
         resultLines.push(`${OUTPUT_INDENT}${wl}`);
@@ -385,7 +407,7 @@ export function createMarkdownStreamWriter(
 
   const emitLine = (line: string, withNewline: boolean): void => {
     const pieces =
-      !state.inFence && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
+      !state.inFence && !(appearance?.literalQuotes && line.startsWith("> ")) && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
     for (let p = 0; p < pieces.length; p++) {
       const piece = pieces[p]!;
       const lastPiece = p === pieces.length - 1;

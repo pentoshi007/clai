@@ -551,6 +551,18 @@ describe("classic command parity (W12)", () => {
     }
   });
 
+  spec(["changes"], "/changes opens the session file-change pager", async () => {
+    const { services } = open();
+    await run(services, "changes");
+    const overlay = services.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind === "pager") {
+      expect(overlay.title).toBe("Session changes");
+      expect(overlay.body).toContain("No line changes recorded in this session.");
+      expect(overlay.source?.path).toBe(`memory://session-changes/${services.session.sessionId}`);
+    }
+  });
+
   spec(["usage"], "/usage opens the formatted pager with the session token ledger", async () => {
     const { services } = open();
     await run(services, "usage");

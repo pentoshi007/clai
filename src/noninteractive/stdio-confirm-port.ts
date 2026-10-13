@@ -1,6 +1,6 @@
 
 import { formatOperationReview } from "../app/operation-review.js";
-import type { ConfirmationPort } from "../app/ports/confirm-port.js";
+import type { ConfirmationPort, ToolConfirmationContext } from "../app/ports/confirm-port.js";
 import type { SecretPort } from "../app/ports/secret-port.js";
 import {
   PENTEST_PROMPT_TEXT,
@@ -44,13 +44,14 @@ export function createStdioConfirmPort(
   io?: StdioConfirmOptions,
 ): ConfirmationPort {
   return {
-    async confirmTool(call: ToolCall): Promise<boolean> {
+    async confirmTool(call: ToolCall, context?: ToolConfirmationContext): Promise<boolean> {
       const path =
         typeof call.args.path === "string" ? call.args.path.trim() : "";
+      const reason = context?.reason ? `Reason: ${context.reason}\n\n` : "";
       if (call.name === "fs.delete" && path) {
-        return confirm(deletePromptText(path), false, io, call);
+        return confirm(`${reason}${deletePromptText(path)}`, false, io, call);
       }
-      return confirm(toolPromptText(call), true, io, call);
+      return confirm(`${reason}${toolPromptText(call)}`, true, io, call);
     },
     async confirmPentest(call?: ToolCall): Promise<boolean> {
       return confirm(PENTEST_PROMPT_TEXT, false, io, call);

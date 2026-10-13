@@ -93,6 +93,7 @@ export const slashCommands: SlashCommand[] = [
   },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/prompts", description: "browse this session's user prompts with timestamps, models, providers, and effort" },
+  { command: "/changes", description: "show this session's total line additions and removals, grouped by file" },
   { command: "/reset", description: "clear all saved history" },
   { command: "/cwd", usage: "<path>", description: "change working directory" },
   {

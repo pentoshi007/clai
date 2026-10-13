@@ -7,11 +7,15 @@ import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import type { ConfirmRequest } from "../../../ui-core/controllers/overlay-controller.js";
+import { confirmationPreview } from "../../../ui-core/rendering/confirmation-preview.js";
+import { fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
 
 export interface ConfirmModalProps {
   readonly services: AppServices;
   readonly theme: Theme;
   readonly request: ConfirmRequest;
+  readonly width: number;
+  readonly height: number;
   readonly onViewPlan?: (() => void) | undefined;
   readonly onViewFile?: (() => void) | undefined;
   readonly docked?: boolean | undefined;
@@ -86,15 +90,29 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
             ? `y approve  ·  n deny  ·  v view file${reviewHint}  ·  esc cancel`
             : `y approve  ·  n deny${reviewHint}  ·  esc cancel`;
 
-  const promptLines = wrapPrompt(request.prompt, docked ? 88 : 72);
+  const modalWidth = docked ? props.width : Math.floor(props.width * 0.7);
+  const contentWidth = Math.max(1, modalWidth - 4);
+  const preview = confirmationPreview(request, contentWidth, props.height - 4);
+  const compactHint = request.kind === "reset"
+    ? "r confirm · esc cancel"
+    : request.kind === "plan"
+      ? "i/d/s/p · esc dismiss"
+      : `y/n${request.viewPath ? " · v file" : ""}${request.review ? " · ^O full" : ""} · esc deny`;
+  const keys = request.kind === "reset" ? "r" : request.kind === "plan" ? "i/d/s/p"
+    : `y/n${request.viewPath ? "/v" : ""}${request.review ? "/^O" : ""}`;
+  const actionHint = fitOneLine([hint, compactHint, `${keys} · esc`], Math.max(1, contentWidth - 2));
 
   return (
     <box
+      id="confirm-modal"
       border
       borderStyle="rounded"
       style={{
         flexDirection: "column",
-        width: docked ? "100%" : "70%",
+        width: modalWidth,
+        maxHeight: props.height,
+        flexShrink: 0,
+        overflow: "hidden",
         borderColor: accent,
         backgroundColor: theme.statusBackground,
         paddingLeft: 1,
@@ -103,52 +121,33 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
         paddingBottom: 0,
       }}
     >
-      <box style={{ flexDirection: "row", width: "100%" }}>
+      <box style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, overflow: "hidden" }}>
         <text
+          wrapMode="none"
           style={{
             fg: theme.background,
             bg: accent,
             attributes: TextAttributes.BOLD,
+            height: 1,
           }}
         >
           {` ${TITLES[request.kind]} `}
         </text>
       </box>
-      {promptLines.map((line, i) => (
-        <text key={i} style={{ fg: theme.foreground }}>
-          {line}
-        </text>
-      ))}
-      <box style={{ flexDirection: "row", width: "100%", marginTop: 0 }}>
-        <text style={{ fg: theme.cyan, attributes: TextAttributes.BOLD }}>› </text>
-        <text style={{ fg: theme.cyan }}>{hint}</text>
+      <box id="confirm-reason" style={{ flexDirection: "column", width: "100%", height: preview.reasonLines.length, flexShrink: 0 }}>
+        {preview.reasonLines.map((line, i) => (
+          <text key={i} content={line} wrapMode="none" style={{ fg: theme.activity, height: 1, flexShrink: 0 }} />
+        ))}
+      </box>
+      <box id="confirm-preview" style={{ flexDirection: "column", width: "100%", height: preview.promptLines.length, flexShrink: 0 }}>
+        {preview.promptLines.map((line, i) => (
+          <text key={i} content={line} wrapMode="none" style={{ fg: theme.foreground, height: 1, flexShrink: 0 }} />
+        ))}
+      </box>
+      <box id="confirm-actions" style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, marginTop: 0 }}>
+        <text content="› " wrapMode="none" style={{ fg: theme.cyan, height: 1, flexShrink: 0, attributes: TextAttributes.BOLD }} />
+        <text content={actionHint} wrapMode="none" style={{ fg: theme.cyan, height: 1 }} />
       </box>
     </box>
   );
-}
-
-function wrapPrompt(text: string, width: number): string[] {
-  const raw = text.replace(/\r/g, "").trim();
-  if (!raw) return [""];
-  const out: string[] = [];
-  for (const paragraph of raw.split("\n")) {
-    if (!paragraph.trim()) {
-      out.push("");
-      continue;
-    }
-    let line = "";
-    for (const word of paragraph.split(/\s+/)) {
-      if (!word) continue;
-      if (!line) {
-        line = word;
-      } else if (line.length + 1 + word.length <= width) {
-        line += ` ${word}`;
-      } else {
-        out.push(line);
-        line = word;
-      }
-    }
-    if (line) out.push(line);
-  }
-  return out.length > 0 ? out : [raw];
 }

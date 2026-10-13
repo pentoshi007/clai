@@ -49,6 +49,7 @@ export interface HistoryRecord {
   cwd: string;
   messages: ChatMessage[];
   transcript?: TranscriptItem[] | undefined;
+  changes?: readonly import("../../app/controllers/session-changes.js").FileLineChanges[] | undefined;
   contextUsage?: PersistedContextUsage | undefined;
   previousTurn?: PreviousTurnSignal | undefined;
   workspaceFolder?: string | undefined;

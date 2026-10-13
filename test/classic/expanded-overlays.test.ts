@@ -9,12 +9,49 @@ import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
 import { overlaySize } from "../../src/ui-core/layout/overlay-size.js";
 import { renderColumns } from "../../src/ui-core/rendering/text-width.js";
+import { createOverlayConfirmPort } from "../../src/ui-core/bootstrap/overlay-ports.js";
 
 vi.setConfig({ testTimeout: 30_000 });
 
 const PAINT_WAIT = { timeout: 10_000, interval: 25 } as const;
 
 describe("Classic expanded overlays", () => {
+  it.each([[120, 40], [80, 16], [40, 12], [24, 10]])("keeps a long command confirmation and composer visible at %i by %i", async (columns, rows) => {
+    const services = createCompositionRoot({
+      noHistory: true,
+      capabilities: detectCapabilities({ env: {}, stdoutIsTTY: true, stdinIsTTY: true, columns, rows }),
+      persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    });
+    const wiring = createClassicAppWiring({ services, mouse: false, resizeSource: { columns, rows, on() {}, off() {} } });
+    const command = `node <<'NODE'\n${"  console.log('test');\n".repeat(400)}LAST_COMMAND_LINE\nNODE`;
+    const answer = createOverlayConfirmPort(services.overlay).confirmTool(
+      { name: "shell.exec", args: { command } },
+      { reason: "Auto-allow cannot verify the deletion target." },
+    );
+    const ui = render(createElement(ServicesProvider, { services, children: createElement(ClassicApp, { wiring }) }));
+    try {
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain("Reason:"), PAINT_WAIT);
+      const frame = ui.lastFrame()!;
+      expect(frame.split("\n").length).toBeLessThanOrEqual(rows);
+      for (const line of frame.split("\n")) expect(renderColumns(line)).toBeLessThanOrEqual(columns);
+      expect(frame).toContain("ctrl+o");
+      expect(frame).toMatch(/y approve|y\/n/);
+      expect(frame).toMatch(/n deny|y\/n/);
+      expect(frame).toContain("❯");
+      wiring.panels.handleKey("ctrl+o");
+      const review = services.overlay.getState();
+      if (review.kind !== "pager") throw new Error("expected operation review");
+      expect(review.body).toContain(command);
+      services.overlay.close();
+      wiring.panels.handleKey("n");
+      await expect(answer).resolves.toBe(false);
+    } finally {
+      ui.unmount();
+      wiring.dispose();
+      services.dispose();
+    }
+  });
+
   it.each([[120, 40], [40, 20], [24, 10], [8, 4]])("fills %i by %i without changing the slash completion panel", async (columns, rows) => {
     const services = createCompositionRoot({
       noHistory: true,

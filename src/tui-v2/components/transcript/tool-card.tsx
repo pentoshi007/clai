@@ -20,6 +20,7 @@ import {
   collapseOutputLines,
   presentOutput,
   presentTool,
+  toolStatusText,
   toolOutputGapLabel,
 } from "../../../ui-core/rendering/tool-presenter.js";
 import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
@@ -120,6 +121,8 @@ function BatchSubCard(props: {
 }): ReactNode {
   const { section, theme, expanded, parentExpanded, onOpen, contentWidth } = props;
   const presented = presentBatchSection(section, expanded, contentWidth);
+  const statusText = toolStatusText(presented.statusLabel);
+  const hasBody = section.body.trim().length > 0;
   const status = section.status ?? (section.ok ? "ok" : "fail");
   const borderFg =
     status === "running"
@@ -170,17 +173,21 @@ function BatchSubCard(props: {
         <text selectable style={{ fg: statusFg, attributes: TextAttributes.BOLD }}>
           {presented.glyph} {presented.name}
         </text>
-        <text content=" " selectable />
-        <text selectable style={{ fg: statusFg, bg: theme.chip, attributes: TextAttributes.BOLD }}>
-          {` ${presented.statusLabel} `}
-        </text>
+        {statusText ? (
+          <>
+            <text content=" " selectable />
+            <text selectable style={{ fg: statusFg, bg: theme.chip, attributes: TextAttributes.BOLD }}>
+              {` ${statusText} `}
+            </text>
+          </>
+        ) : null}
         <text content=" " selectable />
         <text selectable style={{ fg: theme.muted, attributes: TextAttributes.DIM }}>
           #{section.index}
         </text>
       </box>
 
-      {presented.lines.length > 0 ? (
+      {hasBody && presented.lines.length > 0 ? (
         <box
           style={{
             flexDirection: "column",
@@ -235,6 +242,7 @@ export function ToolCard(props: {
   } = props;
   const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
     presentTool(item);
+  const statusText = toolStatusText(statusLabel);
   const isFsRead = item.name === "fs.read";
   const fsReadArgs = useMemo(() => isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined, [isFsRead, item.argsDisplay]);
   const [now, setNow] = useState(() => Date.now());
@@ -261,6 +269,8 @@ export function ToolCard(props: {
   const batchExpanded = expanded;
 
   const { width: termWidth } = useTerminalDimensionsContext();
+  // The supplied pane width includes both borders and the card's horizontal padding.
+  const cardInnerWidth = Math.max(0, (contentWidth ?? termWidth - 6) - 4);
   const diffPaneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
@@ -417,7 +427,7 @@ export function ToolCard(props: {
     footerHint = "click for full · Ctrl+O to expand";
   }
 
-  const summary = isBatch ? batchSummaryLine(batchSections) : undefined;
+  const summary = isBatch ? batchSummaryLine(batchSections, "glyph") : undefined;
   const summaryFg =
     isBatch &&
     batchSections.some((s) => s.status === "fail" || s.status === "cancelled")
@@ -513,17 +523,21 @@ export function ToolCard(props: {
             />
           </box>
         ) : null}
-        <text content=" " selectable={false} style={{ flexShrink: 0 }} />
-        <text
-          selectable={false}
-          content={` ${statusLabel} `}
-          style={{
-            fg: theme.white,
-            bg: statusBadgeBg,
-            attributes: TextAttributes.BOLD,
-            flexShrink: 0,
-          }}
-        />
+        {statusText ? (
+          <>
+            <text content=" " selectable={false} style={{ flexShrink: 0 }} />
+            <text
+              selectable={false}
+              content={` ${statusText} `}
+              style={{
+                fg: theme.white,
+                bg: statusBadgeBg,
+                attributes: TextAttributes.BOLD,
+                flexShrink: 0,
+              }}
+            />
+          </>
+        ) : null}
         {isFileDiff ? (
           <>
             <DiffActionButton
@@ -574,9 +588,9 @@ export function ToolCard(props: {
             const section = fsReadSections.find((entry) => entry.index === index + 1);
             const glyph = section ? `${section.ok ? "✓" : "✗"} ` : "";
             const label = fsReadArgs?.files ? `file ${index + 1}/${files.length}` : "file";
-            const pathBudget = Math.max(8, (contentWidth ?? termWidth - 6) - renderColumns(`${label}: ${glyph}`));
+            const pathBudget = Math.max(0, cardInnerWidth - renderColumns(`${label}: ${glyph}`));
             const path = middleClipText(file.path, pathBudget);
-            const options = file.options ? middleClipText(file.options, Math.max(8, (contentWidth ?? termWidth - 6) - 9) * 2) : undefined;
+            const options = file.options ? middleClipText(file.options, Math.max(1, cardInnerWidth - 9) * 2) : undefined;
             return (
               <box key={index} style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
                 {options ? (
@@ -586,13 +600,15 @@ export function ToolCard(props: {
                   </box>
                 ) : null}
                 {file.path ? (
-                  <box style={{ flexDirection: "row", width: "100%" }}>
+                  <box style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, overflow: "hidden" }}>
                     <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>{`${label}: ${glyph}`}</text>
-                    {path === file.path ? (
-                      <LinkableText text={path} theme={theme} fg={section?.ok === false ? theme.diffDel : theme.inputBorder} selectable />
-                    ) : (
-                      <text selectable style={{ fg: section?.ok === false ? theme.diffDel : theme.inputBorder, height: 1 }}>{path}</text>
-                    )}
+                    <box style={{ width: pathBudget, height: 1, flexShrink: 1, minWidth: 0, overflow: "hidden" }}>
+                      {path === file.path ? (
+                        <LinkableText text={path} theme={theme} fg={section?.ok === false ? theme.diffDel : theme.inputBorder} selectable wrapMode="none" />
+                      ) : (
+                        <text selectable wrapMode="none" style={{ fg: section?.ok === false ? theme.diffDel : theme.inputBorder, height: 1 }}>{path}</text>
+                      )}
+                    </box>
                   </box>
                 ) : null}
               </box>
@@ -639,7 +655,7 @@ export function ToolCard(props: {
               expanded={batchExpanded}
               parentExpanded={batchExpanded}
               onOpen={openSection}
-              contentWidth={Math.max(8, diffPaneWidth - 6)}
+              contentWidth={Math.max(0, cardInnerWidth - 6)}
             />
           ))
         : null}

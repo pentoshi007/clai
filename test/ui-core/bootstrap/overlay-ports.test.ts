@@ -46,6 +46,26 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     expect(await switchPromise).toBe(true);
   });
 
+  it("keeps the complete command and permission reason available in operation review", async () => {
+    const overlay = new OverlayController(new FocusController());
+    const port = createOverlayConfirmPort(overlay);
+    const command = `node <<'NODE'\n${"  console.log('test');\n".repeat(300)}LAST_COMMAND_LINE\nNODE`;
+    const reason = "Auto-allow cannot verify the deletion target.";
+    const answer = port.confirmTool({ name: "shell.exec", args: { command } }, { reason });
+    const state = overlay.getState();
+    if (state.kind !== "confirm") throw new Error("expected confirmation");
+    expect(state.request.reason).toBe(reason);
+    overlay.openOperationReview();
+    const pager = overlay.getState();
+    if (pager.kind !== "pager") throw new Error("expected operation review");
+    expect(pager.body).toContain(`Reason: ${reason}`);
+    expect(pager.body).toContain(command);
+    overlay.close();
+    expect(overlay.getState()).toBe(state);
+    overlay.answerConfirm(false);
+    await expect(answer).resolves.toBe(false);
+  });
+
   it("secret port resolves the entered value and undefined on cancel", async () => {
     const overlay = new OverlayController(new FocusController());
     const request = createOverlaySecretPort(overlay);

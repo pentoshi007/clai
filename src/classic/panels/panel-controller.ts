@@ -394,7 +394,10 @@ export class PanelController {
     const format = this.snapshot.pager.format;
     const diff = pagerDiffOptions(overlay);
     const subagentPaint = pagerSubagentPaint(overlay);
-    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, Boolean(subagentPaint), undefined, diff, subagentPaint);
+    const quotePrefix = overlay.kind === "pager" ? overlay.source?.quotePrefix : undefined;
+    const literalQuotes = overlay.kind === "pager" ? overlay.source?.literalQuotes : undefined;
+    const lineChangeColors = overlay.kind === "pager" ? overlay.source?.lineChangeColors : undefined;
+    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, Boolean(subagentPaint), undefined, diff, subagentPaint, quotePrefix, literalQuotes, lineChangeColors);
   }
 
   private apply(effects: readonly PanelEffect[]): void {

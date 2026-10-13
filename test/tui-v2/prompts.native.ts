@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, rm } from "node:fs/promises";
 import { act, createElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import { TextareaRenderable, type Renderable } from "@opentui/core";
 import { spyOn } from "bun:test";
 import { getProvider } from "../../src/llm/router.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
@@ -10,11 +11,51 @@ import { attachCommandHandlers } from "../../src/ui-core/commands/command-handle
 import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { App } from "../../src/tui-v2/app/App.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
+import { SessionPromptStore } from "../../src/store/session-prompts.js";
 
 for (const provider of ["free", "openai"] as const) {
   spyOn(getProvider(provider), "listModels").mockResolvedValue([]);
 }
 const requests = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Native prompt fixture must not access the network"));
+
+const closed = new SessionPromptStore("closed-native-session");
+await closed.append({ content: "Earlier request\n    Keep indentation" });
+await closed.append({ content: "Newest saved request" });
+await new SessionPromptStore("unrelated-native-session").append({ content: "Unrelated newer session prompt" });
+for (const width of [120, 80]) {
+  const services = createCompositionRoot({
+    sessionId: closed.sessionId,
+    provider: "free", model: "test-model",
+    updates: { async check() { return { state: "current", currentVersion: "0.0.0", updateAvailable: false }; } },
+    persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: width, rows: 35 }),
+  });
+  const setup = await testRender(createElement(ServicesProvider, { services, children: createElement(App) }), { width, height: 35, kittyKeyboard: true, useThread: false });
+  const descendants = (node: Renderable): Renderable[] => [node, ...node.getChildren().flatMap(descendants)];
+  const editor = descendants(setup.renderer.root).find((node): node is TextareaRenderable => node instanceof TextareaRenderable);
+  assert.ok(editor);
+  const settle = async (action: () => unknown = () => undefined): Promise<void> => {
+    await act(async () => { action(); await new Promise((resolve) => setTimeout(resolve, 110)); });
+    await act(async () => { await setup.flush(); });
+  };
+  try {
+    assert.equal(services.session.sessionId, closed.sessionId);
+    await settle(() => setup.mockInput.typeText("Unsent draft"));
+    await settle(() => setup.mockInput.pressArrow("up"));
+    assert.equal(editor.plainText, "Newest saved request");
+    await settle(() => setup.mockInput.pressArrow("up"));
+    assert.equal(editor.plainText, "Earlier request\n    Keep indentation");
+    await settle(() => setup.mockInput.pressArrow("up"));
+    assert.equal(editor.plainText, "Earlier request\n    Keep indentation");
+    await settle(() => setup.mockInput.pressArrow("down"));
+    assert.equal(editor.plainText, "Newest saved request");
+    await settle(() => setup.mockInput.pressArrow("down"));
+    assert.equal(editor.plainText, "Unsent draft");
+  } finally {
+    await act(async () => { services.dispose(); setup.renderer.destroy(); });
+    await setup.renderer.idle();
+  }
+}
 
 for (const width of [120, 80]) {
   const services = createCompositionRoot({
@@ -37,7 +78,8 @@ for (const width of [120, 80]) {
   });
   attachCommandHandlers(services);
   const journal = services.session.promptHistory;
-  await journal.append({ content: "First research request", timestamp: 1791110400000, provider: "codex", model: "model-a", effort: "xhigh" });
+  const literalLines = ["clai set <provider> <key>, then clai use <provider>", "**literal** _text_ `command` [label](target)", "<p> <path> <br> <hr> a < b > c"];
+  await journal.append({ content: ["First research request", ...literalLines].join("\n"), timestamp: 1791110400000, provider: "codex", model: "model-a", effort: "xhigh" });
   await journal.append({ content: `${"filler line\n".repeat(2200)}MIDDLE_NEEDLE\n${"more filler\n".repeat(2200)}` });
   await journal.append({ content: "Newest research request", timestamp: 1791110460000, provider: "openai", model: "model-b", effort: "low" });
   const setup = await testRender(
@@ -62,7 +104,10 @@ for (const width of [120, 80]) {
     await settle(() => setup.mockInput.typeText("/prompts"));
     await settle(() => setup.mockInput.pressEnter());
     const opened = await waitFor("First research request");
+    const promptRow = setup.captureCharFrame().split("\n").find((line) => line.includes("First research request"))!;
+    assert.equal((promptRow.match(/│/g) ?? []).length, 2, promptRow);
     for (const detail of ["Session prompts", "Prompt 001", "2026", "codex", "model-a", "xhigh"]) assert.ok(opened.includes(detail), opened);
+    for (const line of literalLines) assert.ok(opened.includes(line), opened);
     assert.equal(services.focus.activeContext(), "pager");
     await settle(() => setup.mockInput.pressKey("\x1b[F"));
     const end = await waitFor("Newest research request");

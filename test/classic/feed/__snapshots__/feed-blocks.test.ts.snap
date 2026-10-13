@@ -40,8 +40,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec
-  failed · 127 · not found - 0.8s
+x shell.exec - 127 · not found - 0.8s
   (npm run build)
   \\ sh: tsc: command not found
     Ctrl+O to expand
@@ -67,12 +66,11 @@ v Edited users.ts
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
   * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running
-  · 3 total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 →
   ~9,100 tokens
@@ -122,8 +120,7 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec
-  failed · 127 · not found · 0.8s
+✗ shell.exec · 127 · not found · 0.8s
   (npm run build)
   └ sh: tsc: command not found
     Ctrl+O to expand
@@ -149,12 +146,11 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
   ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running
-  · 3 total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 →
   ~9,100 tokens
@@ -204,8 +200,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m
-  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
   [38;2;148;163;184m(npm run build)[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
@@ -231,12 +226,11 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
   [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running[39m
-  [38;2;110;124;145m· 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 →[39m
   [38;2;103;232;249m~9,100 tokens[39m
@@ -286,8 +280,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m
-  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
   [38;2;148;163;184m(npm run build)[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
@@ -313,12 +306,11 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
   [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running[39m
-  [38;2;110;124;145m· 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 →[39m
   [38;2;103;232;249m~9,100 tokens[39m
@@ -365,7 +357,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec - failed · 127 · not found - 0.8s
+x shell.exec - 127 · not found - 0.8s
   (npm run build)
   \\ sh: tsc: command not found
     Ctrl+O to expand
@@ -388,12 +380,11 @@ v Edited users.ts                          +3 -2
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
-  * shell.exec                           running
+  * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running · 3
-  total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 → ~9,100
   tokens
@@ -440,7 +431,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec · failed · 127 · not found · 0.8s
+✗ shell.exec · 127 · not found · 0.8s
   (npm run build)
   └ sh: tsc: command not found
     Ctrl+O to expand
@@ -463,12 +454,11 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
-  ● shell.exec                           running
+  ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running · 3
-  total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 → ~9,100
   tokens
@@ -515,7 +505,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m[38;2;110;124;145m - [39m[38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
   [38;2;148;163;184m(npm run build)[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
@@ -538,12 +528,11 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m                           [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running · 3[39m
-  [38;2;110;124;145mtotal[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100[39m
   [38;2;103;232;249mtokens[39m
@@ -590,7 +579,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m[38;2;110;124;145m · [39m[38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
   [38;2;148;163;184m(npm run build)[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
@@ -613,12 +602,11 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m                           [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running · 3[39m
-  [38;2;110;124;145mtotal[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100[39m
   [38;2;103;232;249mtokens[39m
@@ -664,7 +652,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec (npm run build) - failed · 127 · not found - 0.8s
+x shell.exec (npm run build) - 127 · not found - 0.8s
   \\ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -682,11 +670,11 @@ v Edited users.ts                                              +3 -2
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
-  * shell.exec                                               running
+  * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running · 3 total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -730,7 +718,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec (npm run build) · failed · 127 · not found · 0.8s
+✗ shell.exec (npm run build) · 127 · not found · 0.8s
   └ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -748,11 +736,11 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
-  ● shell.exec                                               running
+  ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running · 3 total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -796,7 +784,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -814,11 +802,11 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m                                               [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  \\ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m
@@ -862,7 +850,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -880,11 +868,11 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m                                               [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  └ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m
@@ -928,7 +916,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec (npm run build) - failed · 127 · not found - 0.8s
+x shell.exec (npm run build) - 127 · not found - 0.8s
   \\ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -946,11 +934,11 @@ v Edited users.ts                                                          +3 -2
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
-  * shell.exec                                                           running
+  * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running · 3 total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -994,7 +982,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec (npm run build) · failed · 127 · not found · 0.8s
+✗ shell.exec (npm run build) · 127 · not found · 0.8s
   └ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1012,11 +1000,11 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
-  ● shell.exec                                                           running
+  ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running · 3 total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -1060,7 +1048,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1078,11 +1066,11 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m                                                           [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  \\ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m
@@ -1126,7 +1114,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1144,11 +1132,11 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m                                                           [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  └ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m
@@ -1191,7 +1179,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec (npm run build) - failed · 127 · not found - 0.8s
+x shell.exec (npm run build) - 127 · not found - 0.8s
   \\ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1209,11 +1197,11 @@ v Edited users.ts                                                               
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
-  * shell.exec                                                                           running
+  * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running · 3 total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests
@@ -1256,7 +1244,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec (npm run build) · failed · 127 · not found · 0.8s
+✗ shell.exec (npm run build) · 127 · not found · 0.8s
   └ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1274,11 +1262,11 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
-  ● shell.exec                                                                           running
+  ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running · 3 total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests
@@ -1321,7 +1309,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1339,11 +1327,11 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m                                                                           [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  \\ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests[39m
@@ -1386,7 +1374,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1404,11 +1392,11 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m                                                                           [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  └ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests[39m
@@ -1451,7 +1439,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec (npm run build) - failed · 127 · not found - 0.8s
+x shell.exec (npm run build) - 127 · not found - 0.8s
   \\ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1469,11 +1457,11 @@ v Edited users.ts                                                               
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
-  * shell.exec                                                                                                   running
+  * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running · 3 total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
@@ -1515,7 +1503,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec (npm run build) · failed · 127 · not found · 0.8s
+✗ shell.exec (npm run build) · 127 · not found · 0.8s
   └ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1533,11 +1521,11 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
-  ● shell.exec                                                                                                   running
+  ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running · 3 total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
@@ -1579,7 +1567,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1597,11 +1585,11 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m                                                                                                   [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  \\ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m
@@ -1643,7 +1631,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1661,11 +1649,11 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m                                                                                                   [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  └ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m
@@ -1707,7 +1695,7 @@ v shell.exec (npm test -- --run) - 1.2s
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-x shell.exec (npm run build) - failed · 127 · not found - 0.8s
+x shell.exec (npm run build) - 127 · not found - 0.8s
   \\ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1725,11 +1713,11 @@ v Edited users.ts                                                               
   5 |   }
   Ctrl+O to expand
 ── batch open
-* tool.batch (3 tools) - running - 53s
+* tool.batch (3 tools) - 53s
   v fs.read
-  * shell.exec                                                                                                                                                                                   running
+  * shell.exec
   v fs.read
-  Ctrl+O to expand - 2 done · 1 running · 3 total
+  Ctrl+O to expand - 2 v · 1 * · 3 total
 ── compacted closed
 * Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
@@ -1771,7 +1759,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
     Tests: 42 passed, 42 total
     Ctrl+O to expand
 ── tool closed
-✗ shell.exec (npm run build) · failed · 127 · not found · 0.8s
+✗ shell.exec (npm run build) · 127 · not found · 0.8s
   └ sh: tsc: command not found
     Ctrl+O to expand
 ── tool closed
@@ -1789,11 +1777,11 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
   5 │   }
   Ctrl+O to expand
 ── batch open
-● tool.batch (3 tools) · running · 53s
+● tool.batch (3 tools) · 53s
   ✓ fs.read
-  ● shell.exec                                                                                                                                                                                   running
+  ● shell.exec
   ✓ fs.read
-  Ctrl+O to expand · 2 done · 1 running · 3 total
+  Ctrl+O to expand · 2 ✓ · 1 ● · 3 total
 ── compacted closed
 ✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
@@ -1835,7 +1823,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113mfailed · 127 · not found - 0.8s[39m
+[38;2;248;113;113mx[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found - 0.8s[39m
 [38;2;110;124;145m  \\ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1853,11 +1841,11 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
   [38;2;100;116;139m5 [39m[38;2;100;116;139m| [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21mrunning - 53s[39m
+[38;2;250;204;21m*[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m - [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m                                                                                                                                                                                   [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m*[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128mv[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand - 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand - 2 v · 1 * · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m*[39m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  \\ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m
@@ -1899,7 +1887,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
     [38;2;180;190;203mTests: 42 passed, 42 total[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
-[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113mfailed · 127 · not found · 0.8s[39m
+[38;2;248;113;113m✗[39m [38;2;103;232;249m[1mshell.exec[22m[39m [38;2;148;163;184m(npm run build)[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found · 0.8s[39m
 [38;2;110;124;145m  └ [39m[38;2;180;190;203msh: tsc: command not found[39m
     [38;2;110;124;145mCtrl+O to expand[39m
 ── tool closed
@@ -1917,11 +1905,11 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
   [38;2;100;116;139m5 [39m[38;2;100;116;139m│ [39m  [38;2;148;163;184m}[39m
   [38;2;110;124;145mCtrl+O to expand[39m
 ── batch open
-[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21mrunning · 53s[39m
+[38;2;250;204;21m●[39m [38;2;103;232;249m[1mtool.batch[22m[39m [38;2;148;163;184m(3 tools)[39m[38;2;110;124;145m · [39m[38;2;250;204;21m53s[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m                                                                                                                                                                                   [38;2;250;204;21mrunning[39m
+  [38;2;250;204;21m●[39m [38;2;103;232;249mshell.exec[39m
   [38;2;74;222;128m✓[39m [38;2;103;232;249mfs.read[39m
-  [38;2;110;124;145mCtrl+O to expand · 2 done · 1 running · 3 total[39m
+  [38;2;110;124;145mCtrl+O to expand · 2 ✓ · 1 ● · 3 total[39m
 ── compacted closed
 [38;2;103;232;249m✦[39m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m
 [38;2;110;124;145m  └ [39m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m

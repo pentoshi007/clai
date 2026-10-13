@@ -1,6 +1,7 @@
 import type { ResponderRuntimeState } from "../../app/controllers/session-responder.js";
 import type { Mode } from "../../types.js";
 import type { StatusDensity } from "./context-limit.js";
+import { isProviderFailureStatus, providerWaitLabel } from "../../llm/key-rotation.js";
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
@@ -98,8 +99,14 @@ export function cwdViewportWidth(
 }
 
 export function formatActivity(activity: string | undefined, maxLen: number): string {
-  let base = (activity ?? "working").replace(/\s+/g, " ").trim() || "working";
-  base = base.replace(/^[⏳·•\s]+/, "").replace(/\n/g, " ").trim();
+  let base = (activity ?? "working").replace(/\s+/g, " ").trim();
+  base = base.replace(/^[⏳·•\s]+/, "").trim();
+  const waiting = providerWaitLabel(base);
+  if (waiting) {
+    const label = waiting.length > maxLen ? waiting.replace("retrying in", "retry") : waiting;
+    return clipSegment(label, maxLen);
+  }
+  if (base.startsWith("ℹ") || isProviderFailureStatus(base)) return "working";
   if (/\/output\b|open full output|Ctrl\+O or|full output saved|\.clai\/outputs/i.test(base)) {
     base = "tool finished";
   }
@@ -108,9 +115,6 @@ export function formatActivity(activity: string | undefined, maxLen: number): st
     base = toolish ? toolish[0]! : `${base.slice(0, Math.max(0, maxLen - 1))}…`;
   }
   if (base.length <= 1) base = "working";
-  if (/rate limited|retrying in/i.test(base) && !base.startsWith("⏳")) {
-    base = `⏳ ${base}`;
-  }
   return base;
 }
 

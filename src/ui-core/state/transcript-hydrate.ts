@@ -170,6 +170,7 @@ function serializeTranscriptItem(
         durationMs: item.durationMs,
         status: item.status,
         timestamp: item.timestamp,
+        ...(item.changes ? { changes: item.changes } : {}),
         done: true,
       };
     case "compacted":

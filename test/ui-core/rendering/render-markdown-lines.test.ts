@@ -18,6 +18,13 @@ describe("preprocessAssistantMarkdown", () => {
 });
 
 describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
+  it("omits the quote bar only when the pager source requests it", () => {
+    const quoted = "> Saved prompt text";
+    expect(plain(renderMarkdownLines(quoted, { width: 80, stripOuterIndent: true }))).toContain("│ Saved prompt text");
+    const prompt = plain(renderMarkdownLines(quoted, { width: 80, stripOuterIndent: true, quotePrefix: "" }));
+    expect(prompt).toContain("Saved prompt text");
+    expect(prompt).not.toContain("│");
+  });
   it("expands <br> into separate lines (no literal br tag)", () => {
     const lines = renderMarkdownLines("alpha<br>beta", {
       width: 80,

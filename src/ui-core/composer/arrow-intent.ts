@@ -25,6 +25,8 @@ export function resolveArrowIntent(input: ArrowIntentInput): ArrowIntent {
 
   if (bare && input.burstCount >= ARROW_BURST_THRESHOLD) return "scroll-chat";
 
+  if (bare && input.isBrowsingHistory) return "history";
+
   if (bare) {
     if (input.chord === "up" && input.line > 0) return "ignore";
     if (input.chord === "down" && input.line < input.lineCount - 1) return "ignore";

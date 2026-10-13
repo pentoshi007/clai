@@ -143,7 +143,9 @@ Durable sessions require an interactive terminal, a compatible PTY transport, an
 
 ### History and context
 
-`/new` starts a fresh session and saves the previous one. If work is still running or another terminal is attached, that session remains available to its agent and other viewers. `/save <name>` names a session, and `/prompts` browses sent prompts with their timestamps and provider, model, and effort metadata.
+`/new` starts a fresh session and saves the previous one. If work is still running or another terminal is attached, that session remains available to its agent and other viewers. `/save <name>` names a session, and `/prompts` browses sent prompts with their timestamps and provider, model, and effort metadata. Up/Down recalls the active session's sent prompts after reopening it. Prompt text is displayed literally, including placeholders such as `<provider>`.
+
+Each run's “Worked for” summary includes its recorded line additions and removals when available. `/changes` shows the combined counts and per-file counts for the current session; these counts are saved with the session and restored on resume.
 
 Context compaction reduces what the model receives while retaining recent requests, plans, task state, and available research findings. It does not erase the saved chat transcript. Use `/compact` to compact manually, `/context` to inspect context size, and `/output` to read retained tool output.
 
@@ -225,7 +227,7 @@ The [provider guide](PROVIDERS.md) covers authentication, environment variables,
 
 Switch modes with `/ask`, `/agent`, `/plan`, or `Shift+Tab`. `clai mode <mode>` sets the default for new sessions.
 
-Fresh configurations use **auto-allow** permissions. `/permissions default` enables the more conservative confirmation policy; `/permissions auto-allow` allows eligible actions automatically while retaining confirmation for out-of-folder or unresolved deletions. `/permissions full-access` further relaxes confirmations. Ask/plan restrictions, OS permissions, engagement scope, and hard safety blocks still apply.
+Fresh configurations use **full-access** permissions. `/permissions default` enables the more conservative confirmation policy; `/permissions auto-allow` allows eligible actions automatically while retaining confirmation for out-of-folder or unresolved deletions. Explicitly saved permission choices are preserved. Ask/plan restrictions, OS permissions, engagement scope, and hard safety blocks still apply.
 
 When an approval prompt appears, `Ctrl+O` opens the complete pending operation, including its arguments and working directory. Reading the operation does not approve it. These policies govern clai's tool execution; they are not an OS sandbox.
 
@@ -311,7 +313,7 @@ Run `clai --help` for CLI flags and `clai <command> --help` for a subcommand. In
 | `/scope [show\|new\|add\|clear]` | Configure this session's engagement scope. |
 | `/jobs`, `/output [last\|id\|list]` | Inspect jobs and tool output. |
 | `/compact`, `/context`, `/usage` | Manage context and inspect usage. |
-| `/history`, `/save <name>`, `/new`, `/prompts` | Browse, name, create, and inspect sessions. |
+| `/history`, `/save <name>`, `/new`, `/prompts`, `/changes` | Browse, name, create, and inspect sessions and file-change totals. |
 | `/clear`, `/reset` | Delete the current session or all saved history. |
 | `/allow <tool>`, `/disallow <tool>`, `/permissions` | Configure tool permissions. |
 | `/cwd <path>` | Change the working directory. |

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { kiloClientHeaders, zenClientHeaders } from "./free-client.js";
 
 import type {
   CompletionRequest,
@@ -34,7 +34,6 @@ import {
   responsesStream,
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
-import { currentSessionAffinity } from "./session-affinity.js";
 
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const KILO_BASE_URL = "https://api.kilo.ai/api/gateway";
@@ -80,75 +79,11 @@ function catalogEntryId(entry: unknown): string {
 
 let kiloDynamicFreeIds = new Set<string>();
 
-const OPENCODE_USER_AGENT = "opencode/2.0.8";
-
-const ID_CHARS =
-  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-let idLastTimestamp = 0;
-let idCounter = 0;
-
-function createSessionId(descending = true, timestamp = Date.now()): string {
-  if (timestamp !== idLastTimestamp) {
-    idLastTimestamp = timestamp;
-    idCounter = 0;
-  }
-  idCounter++;
-  const current = BigInt(timestamp) * 0x1000n + BigInt(idCounter);
-  const value = descending ? ~current : current;
-  const time = Array.from({ length: 6 }, (_, index) =>
-    Number((value >> BigInt(40 - 8 * index)) & 0xffn)
-      .toString(16)
-      .padStart(2, "0"),
-  ).join("");
-  const bytes = crypto.getRandomValues(new Uint8Array(14));
-  return "ses_" + time + Array.from(bytes, (byte) => ID_CHARS[byte % 62]).join("");
-}
-
-const gatewayIdentity = {
-  session: createSessionId(),
-};
-
-function createRequestId(): string {
-  return `msg_${randomUUID().replaceAll("-", "")}`;
-}
-
-const zenSessionMap = new Map<string, string>();
-
-function resolveZenSession(): string {
-  const affinity = currentSessionAffinity();
-  if (!affinity) return gatewayIdentity.session;
-  if (affinity.startsWith("ses_")) return affinity;
-  let session = zenSessionMap.get(affinity);
-  if (!session) {
-    session = createSessionId();
-    zenSessionMap.set(affinity, session);
-  }
-  return session;
-}
-
-function zenClientHeaders(apiKey = ""): Record<string, string> {
-  const session = resolveZenSession();
-  return {
-    "user-agent": OPENCODE_USER_AGENT,
-    "x-opencode-session": session,
-    "x-opencode-request": createRequestId(),
-    "x-opencode-client": "cli",
-    authorization: `Bearer ${apiKey || "public"}`,
-  };
-}
-
-function kiloClientHeaders(apiKey = ""): Record<string, string> {
-  const headers: Record<string, string> = {
-    "user-agent": "opencode-kilo-provider",
-    "x-kilocode-editorname": "Kilo CLI",
-  };
-  return apiKey ? { ...headers, authorization: `Bearer ${apiKey}` } : headers;
-}
-
 interface FreeSource {
   id: "free-1" | "free-2";
   name: string;
   baseUrl: string;
+  keylessApiKey: string;
   curated: readonly string[];
   responsesApi: boolean;
   requiredTools?: boolean;
@@ -162,6 +97,7 @@ const zenSource: FreeSource = {
   id: "free-1",
   name: "opencode zen",
   baseUrl: ZEN_BASE_URL,
+  keylessApiKey: "public",
   curated: CURATED_ZEN_MODELS,
   responsesApi: false,
   requiredTools: true,
@@ -184,6 +120,7 @@ const kiloSource: FreeSource = {
   id: "free-2",
   name: "kilo gateway",
   baseUrl: KILO_BASE_URL,
+  keylessApiKey: "",
   curated: CURATED_KILO_MODELS,
   responsesApi: true,
   requestHeaders: kiloClientHeaders,
@@ -388,6 +325,99 @@ function withFreeModelCatalog<T>(
   );
 }
 
+async function zenResponsesCompletion(
+  request: CompletionRequest,
+  auth: ProviderAuth,
+  model: string,
+  onToken: (token: string) => void,
+): Promise<CompletionResult> {
+  const result = await responsesStream(
+    ZEN_RESPONSES_CONFIG, ensureRequiredTools(request, "responses"), auth, onToken, model,
+  );
+  const suppressTools = !request.tools?.length || request.toolChoice === "none";
+  return { ...result, toolCalls: suppressTools ? undefined : result.toolCalls };
+}
+
+function freeChatOptions(
+  source: FreeSource,
+  model: string,
+  request: CompletionRequest,
+  apiKey: string,
+) {
+  return {
+    responsesFirst: source.responsesApi,
+    headers: source.requestHeaders(apiKey),
+    provider: "Free" as const,
+    providerId: "free" as const,
+    baseUrl: source.baseUrl,
+    apiKey,
+    model,
+    messages: request.messages,
+    maxTokens: request.maxTokens,
+    temperature: request.temperature,
+    signal: request.signal,
+    reasoning: request.thinking,
+    reasoningStyle: FREE_REASONING_STYLE,
+    tools: request.tools,
+    toolChoice: request.toolChoice,
+    parallelToolCalls: request.parallelToolCalls,
+    reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+    ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+  };
+}
+
+async function requestFreeCompletion(
+  request: CompletionRequest,
+  auth: ProviderAuth,
+  stream: boolean,
+  onToken: (token: string) => void,
+): Promise<CompletionResult> {
+  request.signal?.throwIfAborted();
+  const apiKey = auth.apiKey ?? "";
+  const requested = request.model ?? defaultModels.free;
+  assertModelAllowed(requested, apiKey);
+  const { source, model } = resolveFreeSource(requested);
+  return withFreeModelCatalog(source, model, async () => {
+    if (usesResponsesDialect(source, model)) {
+      const result = await zenResponsesCompletion(request, auth, model, onToken);
+      return { ...result, model: requested };
+    }
+    const effective = source.requiredTools ? ensureRequiredTools(request, "chat") : request;
+    const options = freeChatOptions(source, model, effective, apiKey);
+    const callbacks = stream
+      ? { onToolCallDelta: effective.onToolCallDelta, onStreamEvent: effective.onStreamEvent }
+      : {};
+    const thinkingEnabled = Boolean(effective.thinking?.enabled);
+    const budgets = streamIdleBudgets(thinkingEnabled);
+    const payload = stream || source.id === "free-1"
+      ? await openAiCompatibleStream({
+          ...options,
+          ...callbacks,
+          onToken,
+          idleTimeoutMs: budgets.idleTimeoutMs,
+          initialIdleTimeoutMs: thinkingEnabled
+            ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS : 60_000,
+          outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
+        })
+      : await openAiCompatibleComplete(options);
+    const result = toCompletionResult("free", requested, payload);
+    if (result.reasoningArtifacts?.length) {
+      result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
+        ...art,
+        provenance: { ...art.provenance, model: requested },
+      }));
+    }
+    return result;
+  });
+}
+
+function freeRequestAuth(request: CompletionRequest, auth: ProviderAuth): ProviderAuth {
+  const requested = request.model ?? defaultModels.free;
+  const { source, model } = resolveFreeSource(requested);
+  const keyless = source.keylessId(model.trim().toLowerCase());
+  return keyless ? { ...auth, apiKey: source.keylessApiKey } : auth;
+}
+
 export const freeProvider: LlmProvider = {
   id: "free",
   reasoningStyle: "openai",
@@ -432,144 +462,13 @@ export const freeProvider: LlmProvider = {
     request: CompletionRequest,
     auth: ProviderAuth,
   ): Promise<CompletionResult> {
-    const apiKey = auth.apiKey ?? "";
-    const requested = request.model ?? defaultModels.free;
-    assertModelAllowed(requested, apiKey);
-    const { source, model } = resolveFreeSource(requested);
-    return withFreeModelCatalog(source, model, async () => {
-      if (usesResponsesDialect(source, model)) {
-        const zenRequest = ensureRequiredTools(request, "responses");
-        const result = await responsesStream(
-          ZEN_RESPONSES_CONFIG,
-          zenRequest,
-          auth,
-          () => undefined,
-          model,
-        );
-        const suppressTools =
-          !request.tools?.length || request.toolChoice === "none";
-        const toolCalls = suppressTools ? undefined : result.toolCalls;
-        return { ...result, model: requested, toolCalls };
-      }
-      const effective = source.requiredTools
-        ? ensureRequiredTools(request, "chat")
-        : request;
-      const headers = source.requestHeaders(apiKey);
-      const streamOptions = {
-        responsesFirst: source.responsesApi,
-        headers,
-        provider: "Free" as const,
-        providerId: "free" as const,
-        baseUrl: source.baseUrl,
-        apiKey,
-        model,
-        messages: effective.messages,
-        maxTokens: effective.maxTokens,
-        temperature: effective.temperature,
-        signal: effective.signal,
-        reasoning: effective.thinking,
-        reasoningStyle: FREE_REASONING_STYLE,
-        tools: effective.tools,
-        toolChoice: effective.toolChoice,
-        parallelToolCalls: effective.parallelToolCalls,
-        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-      };
-      if (source.id !== "free-1") {
-        const payload = await openAiCompatibleComplete(streamOptions);
-        const result = toCompletionResult("free", requested, payload);
-        if (result.reasoningArtifacts?.length) {
-          result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
-            ...art,
-            provenance: { ...art.provenance, model: requested },
-          }));
-        }
-        return result;
-      }
-      const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
-      const payload = await openAiCompatibleStream({
-        ...streamOptions,
-        onToken: () => undefined,
-        idleTimeoutMs: budgets.idleTimeoutMs,
-        initialIdleTimeoutMs: effective.thinking?.enabled
-          ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
-          : 60_000,
-        outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
-      });
-      const result = toCompletionResult("free", requested, payload);
-      if (result.reasoningArtifacts?.length) {
-        result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
-          ...art,
-          provenance: { ...art.provenance, model: requested },
-        }));
-      }
-      return result;
-    });
+    return requestFreeCompletion(request, freeRequestAuth(request, auth), false, () => undefined);
   },
   async stream(
     request: CompletionRequest,
     auth: ProviderAuth,
     onToken: (token: string) => void,
   ): Promise<CompletionResult> {
-    const apiKey = auth.apiKey ?? "";
-    const requested = request.model ?? defaultModels.free;
-    assertModelAllowed(requested, apiKey);
-    const { source, model } = resolveFreeSource(requested);
-    return withFreeModelCatalog(source, model, async () => {
-      if (usesResponsesDialect(source, model)) {
-        const zenRequest = ensureRequiredTools(request, "responses");
-        const result = await responsesStream(
-          ZEN_RESPONSES_CONFIG,
-          zenRequest,
-          auth,
-          onToken,
-          model,
-        );
-        const suppressTools =
-          !request.tools?.length || request.toolChoice === "none";
-        const toolCalls = suppressTools ? undefined : result.toolCalls;
-        return { ...result, model: requested, toolCalls };
-      }
-      const effective = source.requiredTools
-        ? ensureRequiredTools(request, "chat")
-        : request;
-      const budgets = streamIdleBudgets(Boolean(effective.thinking?.enabled));
-      const payload = await openAiCompatibleStream({
-        responsesFirst: source.responsesApi,
-        headers: source.requestHeaders(apiKey),
-        provider: "Free",
-        providerId: "free",
-        baseUrl: source.baseUrl,
-        apiKey,
-        model,
-        messages: effective.messages,
-        maxTokens: effective.maxTokens,
-        temperature: effective.temperature,
-        signal: effective.signal,
-        onToken,
-        onToolCallDelta: effective.onToolCallDelta,
-        onStreamEvent: effective.onStreamEvent,
-        reasoning: effective.thinking,
-        reasoningStyle: FREE_REASONING_STYLE,
-        idleTimeoutMs: budgets.idleTimeoutMs,
-        initialIdleTimeoutMs: effective.thinking?.enabled
-          ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
-          : 60_000,
-        outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
-        tools: effective.tools,
-        toolChoice: effective.toolChoice,
-        parallelToolCalls: effective.parallelToolCalls,
-        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-      });
-      const result = toCompletionResult("free", requested, payload);
-      if (result.reasoningArtifacts?.length) {
-        result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
-          ...art,
-          provenance: { ...art.provenance, model: requested },
-        }));
-      }
-      return result;
-    });
+    return requestFreeCompletion(request, freeRequestAuth(request, auth), true, onToken);
   },
 };

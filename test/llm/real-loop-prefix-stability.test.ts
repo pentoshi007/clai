@@ -47,6 +47,9 @@ const TURNS: ReadonlyArray<{ readonly prompt: string; readonly steps: readonly S
 ];
 
 const ROUTES: ReadonlyArray<readonly [ProviderId, string]> = [
+  ["free", "cat-jam-free"],
+  ["free", "free-1/unlisted-next-generation-free"],
+  ["tokenrouter", "unlisted-next-generation"],
   ["cline", "cline-free/deepseek-v4.1-flash"],
   ["cline", "anthropic/claude-sonnet-4.6"],
   ["cline", "qwen/qwen3-coder"],
@@ -199,7 +202,7 @@ afterEach(() => {
 });
 
 describe.each(ROUTES)("%s keeps its wire prefix across rounds and turns", (provider, model) => {
-  it.each(provider === "cline" ? [false, true] : [false])(
+  it.each([false, true])(
     "extends the previous request byte for byte (reasoning replay %s)",
     async (reasoning) => {
       const { requests } = await runSession(provider, model, reasoning);

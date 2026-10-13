@@ -1,6 +1,6 @@
 export type PermissionMode = "default" | "allow-all" | "full-access";
 
-export const DEFAULT_PERMISSION_MODE: PermissionMode = "allow-all";
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "full-access";
 
 export function parsePermissionMode(value: string): PermissionMode | undefined {
   const normalized = value.trim().toLowerCase();

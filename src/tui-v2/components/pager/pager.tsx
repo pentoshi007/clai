@@ -125,6 +125,9 @@ export function Pager(props: PagerProps): ReactNode {
         defaultFg: theme.foreground,
         theme,
         colorMode,
+        quotePrefix: source?.quotePrefix,
+        literalQuotes: source?.literalQuotes,
+        lineChangeColors: source?.lineChangeColors,
         subagentPaint: isSubagent ? subagentPaint : undefined,
       });
     }
@@ -136,7 +139,7 @@ export function Pager(props: PagerProps): ReactNode {
       theme,
       colorMode,
     });
-  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint, continuous]);
+  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint, continuous, source?.quotePrefix, source?.literalQuotes, source?.lineChangeColors]);
 
   const lines = useMemo(
     () => display.lines.map((l) => l.plain),

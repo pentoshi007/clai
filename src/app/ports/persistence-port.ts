@@ -3,6 +3,7 @@ import type { SessionPlan } from "../../store/plan.js";
 import type { HistorySessionLocation, PersistedContextUsage } from "../../store/history.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import type { TranscriptItem } from "./transcript-item.js";
+import type { FileLineChanges } from "../controllers/session-changes.js";
 
 export interface SaveSessionOptions {
   readonly sessionId?: string | undefined;
@@ -10,6 +11,7 @@ export interface SaveSessionOptions {
   readonly revision?: number | undefined;
   readonly name?: string | undefined;
   readonly transcript?: readonly TranscriptItem[] | undefined;
+  readonly changes?: readonly FileLineChanges[] | undefined;
   readonly contextUsage?: PersistedContextUsage | undefined;
   readonly previousTurn?: PreviousTurnSignal | null | undefined;
   readonly provider?: ProviderId | undefined;

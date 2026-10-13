@@ -48,7 +48,9 @@ describe("confirm-port", () => {
 
     const ok = await confirmToolExecution(call, false, session, mockConfirmPort);
     expect(ok).toBe(true);
-    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call, {
+      reason: expect.stringContaining("write outside the active folder"),
+    });
   });
 
   it("bypasses confirmation under allow-all permissions", async () => {
@@ -88,7 +90,9 @@ describe("confirm-port", () => {
 
     const ok = await confirmToolExecution(call, true, session, mockConfirmPort);
     expect(ok).toBe(true);
-    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call, {
+      reason: expect.stringContaining("Auto-allow requires approval"),
+    });
   });
 
   it("prompts for fs.delete under default permissions", async () => {
@@ -108,7 +112,9 @@ describe("confirm-port", () => {
 
     const ok = await confirmToolExecution(call, false, session, mockConfirmPort);
     expect(ok).toBe(false);
-    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call, {
+      reason: "Default permissions require approval before deleting files.",
+    });
   });
 
   it("prompts for forced-confirm out-of-cwd writes under default permissions", async () => {
@@ -130,7 +136,9 @@ describe("confirm-port", () => {
       forceConfirm: true,
     });
     expect(ok).toBe(true);
-    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call, {
+      reason: expect.stringContaining("write outside the active folder"),
+    });
   });
 
   it("auto-approves forced-confirm out-of-cwd writes under allow-all", async () => {
@@ -153,5 +161,29 @@ describe("confirm-port", () => {
     });
     expect(ok).toBe(true);
     expect(mockConfirmPort.confirmTool).not.toHaveBeenCalled();
+  });
+
+  it("explains why uncertain shell deletions still need approval in auto-allow", async () => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions: "allow-all" });
+    const { confirmToolExecution } = await loadConfirmPort();
+    const { createSessionPolicy } = await loadSessionPolicy();
+    const call: ToolCall = { name: "shell.exec", args: { command: "sh cleanup.sh" } };
+    const port: ConfirmPort = { confirmTool: vi.fn().mockResolvedValue(false), confirmPentest: vi.fn() };
+    expect(await confirmToolExecution(call, true, createSessionPolicy(), port)).toBe(false);
+    expect(port.confirmTool).toHaveBeenCalledWith(call, {
+      reason: "Auto-allow requires approval when possible deletions cannot be verified to stay inside the active folder.",
+    });
+  });
+
+  it("forwards the classifier reason for ordinary default-mode confirmations", async () => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions: "default" });
+    const { confirmToolExecution } = await loadConfirmPort();
+    const { createSessionPolicy } = await loadSessionPolicy();
+    const call: ToolCall = { name: "shell.exec", args: { command: "npm test" } };
+    const port: ConfirmPort = { confirmTool: vi.fn().mockResolvedValue(true), confirmPentest: vi.fn() };
+    await confirmToolExecution(call, false, createSessionPolicy(), port, { reason: "This command runs a project script." });
+    expect(port.confirmTool).toHaveBeenCalledWith(call, { reason: "This command runs a project script." });
   });
 });

@@ -18,6 +18,7 @@ import { ToolCard } from "./tool-card.js";
 import { NoticeRow } from "./notice-row.js";
 import { CompactedRow } from "./compacted-row.js";
 import { turnSummaryLabel } from "../../../ui-core/rendering/duration.js";
+import { lineChangeLabels } from "../../../ui-core/rendering/line-change-labels.js";
 
 export function TranscriptRowImpl(props: {
   item: TranscriptItem;
@@ -124,13 +125,23 @@ export function TranscriptRowImpl(props: {
     case "notice":
       body = <NoticeRow item={item} theme={theme} contentWidth={contentWidth} />;
       break;
-    case "turn-summary":
+    case "turn-summary": {
+      const changes = lineChangeLabels(item.changes);
       body = (
         <text selectable style={{ fg: theme.muted }}>
           {`✻ ${turnSummaryLabel(item.durationMs, item.status)}`}
+          {changes ? (
+            <>
+              {" · "}
+              <span style={{ fg: theme.success }}>{changes.added}</span>
+              {" "}
+              <span style={{ fg: theme.diffDel }}>{changes.removed}</span>
+            </>
+          ) : null}
         </text>
       );
       break;
+    }
     case "compacted":
       body = (
         <CompactedRow

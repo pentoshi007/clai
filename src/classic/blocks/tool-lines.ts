@@ -7,6 +7,7 @@ import {
   presentFsReadArgs,
   presentOutput,
   presentTool,
+  toolStatusText,
   TOOL_PREVIEW_HEAD_LINES,
   TOOL_PREVIEW_TAIL_LINES,
 } from "../../ui-core/rendering/tool-presenter.js";
@@ -86,7 +87,7 @@ export function toolSuffix(
   item: ToolItem,
   statusLabel: string,
 ): string {
-  const label = item.status === "ok" ? undefined : statusLabel;
+  const label = item.status === "ok" ? undefined : toolStatusText(statusLabel);
   const body = joinMeta(ctx, [label, toolElapsed(ctx, item)]);
   return body === "" ? "" : ctx.ink.fg(META_TOKEN[item.status], body);
 }

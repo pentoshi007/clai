@@ -174,6 +174,7 @@ describe("presentBatchSection / summary", () => {
     expect(batchSummaryLine(withCancel)).toBe(
       "1 failed, 1 cancelled / 3 sub-tool(s)",
     );
+    expect(batchSummaryLine(withCancel, "glyph")).toBe("1 ✗, 1 cancelled / 3 sub-tool(s)");
   });
 });
 

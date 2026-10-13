@@ -60,6 +60,26 @@ describe("confirm rows", () => {
     expect(short).toBe(5);
     expect(long).toBeGreaterThan(short);
   });
+
+  it("keeps the reason, truncated command, full-view shortcut, and actions visible", () => {
+    const request: ConfirmRequest = {
+      kind: "tool",
+      prompt: `Run shell.exec node <<'NODE'\n${"  console.log('test');\n".repeat(300)}NODE?`,
+      reason: "Auto-allow cannot verify the deletion target.",
+      review: { title: "Review operation", body: "full command" },
+    };
+    for (const [columns, height] of [[120, 10], [80, 8], [40, 6], [24, 5]]) {
+      const rendered = render(request, height, columns);
+      expect(rendered.rows).toHaveLength(height);
+      const text = rendered.rows.join("\n");
+      expect(text).toContain("Reason:");
+      expect(text).toContain("ctrl+o");
+      expect(text).toMatch(/y approve|y\/n/);
+      expect(text).toMatch(/n deny|esc deny|y\/n/);
+      expect(confirmRowsWanted(request, columns)).toBeLessThanOrEqual(13);
+    }
+    expect(render(request, 10, 120).rows.join("\n")).toContain("more lines");
+  });
 });
 
 describe("confirm keys", () => {

@@ -222,6 +222,7 @@ export async function saveSession(
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
   location?: HistorySessionLocation | undefined,
+  changes?: readonly import("../app/controllers/session-changes.js").FileLineChanges[] | undefined,
 ): Promise<HistoryRecord> {
   if (!name) name = fallbackSessionName(messages);
 
@@ -240,6 +241,7 @@ export async function saveSession(
     cwd: location?.cwd ?? safeCwd(),
     messages: scrubMessages(messages),
     transcript: scrubTranscript(transcript),
+    ...(changes ? { changes } : {}),
     ...(contextUsage ? { contextUsage } : {}),
     ...(previousTurn ? { previousTurn } : {}),
     ...sessionModelFields(sessionModel),
@@ -301,6 +303,7 @@ export async function upsertSession(
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
   location?: HistorySessionLocation | undefined,
+  changes?: readonly import("../app/controllers/session-changes.js").FileLineChanges[] | undefined,
 ): Promise<HistoryRecord> {
   const existing = await existingSessionHeader(id);
   const requestedRevision =
@@ -326,6 +329,7 @@ export async function upsertSession(
     cwd: location?.cwd ?? safeCwd(),
     messages: scrubMessages(messages),
     transcript: scrubTranscript(transcript),
+    ...(changes ? { changes } : existing?.changes ? { changes: existing.changes } : {}),
     ...(contextUsage
       ? { contextUsage }
       : existing?.contextUsage

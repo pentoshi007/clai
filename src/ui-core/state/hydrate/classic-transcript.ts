@@ -3,6 +3,7 @@ import { asToolCallId } from "../../../app/events/app-event.js";
 import type { ToolCallId } from "../../../app/events/app-event.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../../../app/ports/transcript-item.js";
 import { EMPTY_TRANSCRIPT_STATE } from "../transcript-types.js";
+import { validLineChangeTotals } from "../../../app/controllers/session-changes.js";
 import type { AssistantItem, CompactedItem, ThinkingItem, ToolItem, ToolStatus, TranscriptItem, TranscriptState, TurnSummaryItem, UserItem } from "../transcript-types.js";
 
 export interface HydrateResult {
@@ -158,6 +159,7 @@ export function hydrateFromClassicTranscript(
             ? { timestamp: rawStamp }
             : {}),
           kind: "turn-summary",
+          ...(validLineChangeTotals(raw.changes) ? { changes: { added: raw.changes.added, removed: raw.changes.removed } } : {}),
           durationMs:
             typeof rawDur === "number" && Number.isFinite(rawDur) ? rawDur : 0,
           status:

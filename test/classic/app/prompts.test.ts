@@ -5,6 +5,7 @@ import { ClassicApp } from "../../../src/classic/app/ClassicApp.js";
 import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.js";
 import { createTurnOutcome } from "../../../src/agent/turn-outcome.js";
+import { SessionPromptStore } from "../../../src/store/session-prompts.js";
 
 let harness: Harness | undefined;
 let view: ReturnType<typeof render> | undefined;
@@ -35,6 +36,43 @@ async function open(h: Harness): Promise<void> {
 }
 
 describe("Classic /prompts", () => {
+  it.each([120, 80])("recalls only the resumed session's prompts in a fresh composer at %s columns", async (columns) => {
+    const old = new SessionPromptStore(`closed-${columns}-${Math.random()}`);
+    await old.append({ content: "Earlier request\n    Keep indentation" });
+    await old.append({ content: "Newest saved request" });
+    const h = await mount(columns);
+    expect(h.services.session.sessionId).not.toBe(old.sessionId);
+    await new SessionPromptStore(`other-${columns}-${Math.random()}`).append({ content: "Unrelated newer session prompt" });
+    h.services.session.loadHistory([], { sessionId: old.sessionId });
+    h.wiring.composer.setText("Unsent draft");
+    h.wiring.handleData("\x1b[A");
+    await expect.poll(() => h.wiring.composer.text).toBe("Newest saved request");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    h.wiring.handleData("\x1b[A");
+    await expect.poll(() => h.wiring.composer.text).toBe("Earlier request\n    Keep indentation");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    h.wiring.handleData("\x1b[A");
+    await expect.poll(() => h.wiring.composer.text).toBe("Earlier request\n    Keep indentation");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    h.wiring.handleData("\x1b[B");
+    expect(h.wiring.composer.text).toBe("Newest saved request");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    h.wiring.handleData("\x1b[B");
+    expect(h.wiring.composer.text).toBe("Unsent draft");
+  });
+
+  it.each([120, 80])("preserves literal placeholders and markdown inside prompts at %s columns", async (columns) => {
+    const h = await mount(columns);
+    const lines = [
+      "clai set <provider> <key>, then clai use <provider>",
+      "**literal** _text_ `command` [label](target)",
+      "<p> <path> <br> <hr> a < b > c",
+    ];
+    await h.services.session.promptHistory.append({ content: lines.join("\n") });
+    await open(h);
+    for (const line of lines) await expect.poll(frame).toContain(line);
+  });
+
   it.each([120, 80])("renders prompt sections and route metadata at %s columns and returns focus on close", async (columns) => {
     const h = await mount(columns);
     await h.services.session.promptHistory.append({
@@ -47,6 +85,8 @@ describe("Classic /prompts", () => {
     });
     await open(h);
     await expect.poll(frame).toContain("Research compaction cache behavior");
+    const promptRow = view!.lastFrame()!.split("\n").find((line) => line.includes("Research compaction cache behavior"))!;
+    expect(promptRow.match(/│/g)).toHaveLength(2);
     for (const text of ["Prompt 001", "2026", "Provider", "codex", "model-a", "xhigh"]) expect(frame()).toContain(text);
     h.wiring.handleData("\x1b[F");
     await expect.poll(frame).toContain("Explain bounded history");

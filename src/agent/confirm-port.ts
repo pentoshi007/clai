@@ -1,7 +1,8 @@
 import { getConfig } from "../store/config.js";
 import { isPentestToolCall } from "../safety/classifier.js";
-import { filesystemPermission } from "../safety/filesystem-permissions.js";
+import { filesystemPermissionDecision } from "../safety/filesystem-permissions.js";
 import { DEFAULT_PERMISSION_MODE } from "../safety/permission-mode.js";
+import type { ConfirmationPort } from "../app/ports/confirm-port.js";
 import {
   createStdioConfirmPort,
   createStdioSecretPort,
@@ -12,14 +13,7 @@ import type { SessionPolicy } from "./session-policy.js";
 
 export { restoreInteractiveStdin };
 
-export interface ConfirmPort {
-  confirmTool(call: ToolCall): Promise<boolean>;
-  confirmPentest(call?: ToolCall): Promise<boolean>;
-  confirmAgentSwitch?(info: {
-    reason: string;
-    tools: string[];
-  }): Promise<boolean>;
-}
+export type ConfirmPort = ConfirmationPort;
 
 export const stdioConfirmPort: ConfirmPort = createStdioConfirmPort();
 
@@ -58,18 +52,21 @@ export async function confirmToolExecution(
   autoConfirm: boolean,
   session: SessionPolicy,
   confirmPort: ConfirmPort,
-  options?: { forceConfirm?: boolean | undefined },
+  options?: { forceConfirm?: boolean | undefined; reason?: string | undefined },
 ): Promise<boolean> {
   const config = getConfig();
   const mode = config.permissions ?? DEFAULT_PERMISSION_MODE;
   if (mode === "full-access") return true;
-  const filesystem = filesystemPermission(call, mode);
-  if (filesystem === "confirm") return confirmPort.confirmTool(call);
-  if (filesystem === "allow" || mode === "allow-all") return true;
-  if (options?.forceConfirm) return confirmPort.confirmTool(call);
+  const filesystem = filesystemPermissionDecision(call, mode);
+  if (filesystem.permission === "confirm") {
+    return confirmPort.confirmTool(call, { reason: filesystem.reason });
+  }
+  if (filesystem.permission === "allow" || mode === "allow-all") return true;
+  const context = { reason: options?.reason || "Default permissions require approval for this tool." };
+  if (options?.forceConfirm) return confirmPort.confirmTool(call, context);
   if (autoConfirm) return true;
   if (session.allow.has(call.name)) return true;
   if (config.allowAlwaysTools.includes(call.name)) return true;
 
-  return confirmPort.confirmTool(call);
+  return confirmPort.confirmTool(call, context);
 }

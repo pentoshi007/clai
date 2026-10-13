@@ -118,9 +118,9 @@ describe('config store', () => {
     expect(c.freeTierContextGuard).toBe(false);
   });
 
-  it('supports permissions property and defaults to allow-all', async () => {
+  it('supports permissions property and defaults to full-access', async () => {
     const { getConfig, updateConfig } = await loadConfigStore();
-    expect(getConfig().permissions).toBe('allow-all');
+    expect(getConfig().permissions).toBe('full-access');
 
     updateConfig({ permissions: 'default' });
     expect(getConfig().permissions).toBe('default');

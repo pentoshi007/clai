@@ -1,0 +1,83 @@
+import assert from "node:assert/strict";
+import { act, createElement } from "react";
+import { testRender } from "@opentui/react/test-utils";
+import { spyOn } from "bun:test";
+import { RGBA } from "@opentui/core";
+import { App } from "../../src/tui-v2/app/App.js";
+import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
+import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
+import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
+import { ServicesProvider } from "../../src/ui-core/react/providers.js";
+import { hydrateFromClassicTranscript } from "../../src/ui-core/state/transcript-hydrate.js";
+import { getProvider } from "../../src/llm/router.js";
+import { savedChanges, savedChangeTranscript } from "../fixtures/session-changes.js";
+import { themeFor } from "../../src/ui-core/rendering/theme.js";
+
+spyOn(getProvider("free"), "listModels").mockResolvedValue([]);
+const requests = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Native changes fixture must not access the network"));
+for (const width of [120, 80, 40]) {
+  const services = createCompositionRoot({
+    noHistory: true, provider: "free", model: "fixture-model",
+    updates: { async check() { return { state: "current", currentVersion: "0.0.0", updateAvailable: false }; } },
+    persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: width, rows: 35 }),
+  });
+  services.session.loadHistory([], { sessionId: `saved-change-${width}`, changes: savedChanges });
+  services.transcript.hydrate(hydrateFromClassicTranscript(savedChangeTranscript).state);
+  attachCommandHandlers(services);
+  const setup = await testRender(createElement(ServicesProvider, { services, children: createElement(App) }), { width, height: 35, kittyKeyboard: true, useThread: false });
+  async function settle(action: () => unknown = () => undefined): Promise<string> {
+    await act(async () => { await action(); });
+    await act(async () => { await setup.flush(); });
+    return setup.captureCharFrame().replace(/[│║]/g, "").replace(/\s+/g, " ");
+  }
+  async function waitFor(text: string): Promise<string> {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const frame = await settle();
+      if (frame.includes(text)) return frame;
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    }
+    throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
+  }
+  const theme = themeFor(services.capabilities.themeHint);
+  function assertColor(text: string, color: string): void {
+    const span = setup.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(text));
+    assert.ok(span, `Missing colored text: ${text}`);
+    assert.deepEqual(span.fg.toInts(), RGBA.fromHex(color).toInts(), `Incorrect color for ${text}`);
+  }
+  try {
+    const frame = await waitFor("Worked for 1m16s · +213 -435");
+    assert.ok(frame.includes("Worked for 5.0s · aborted · +5 -1"), frame);
+    assert.ok(frame.includes("Worked for 2.0s"), frame);
+    assert.ok(!frame.includes("Worked for 2.0s · +"), frame);
+    assertColor("Worked for 1m16s", theme.muted);
+    assertColor("+213", theme.success);
+    assertColor("-435", theme.diffDel);
+    await settle(() => setup.mockInput.typeText("/changes"));
+    await settle(() => setup.mockInput.pressEnter());
+    await waitFor("+218 -436");
+    await waitFor("+200 -400");
+    assertColor("+218", theme.success);
+    assertColor("-436", theme.diffDel);
+    assertColor("+200", theme.success);
+    assertColor("-400", theme.diffDel);
+    const pager = services.overlay.getState();
+    assert.equal(pager.kind, "pager");
+    if (pager.kind === "pager") assert.ok((await pager.source!.readAll()).includes(savedChanges[0]!.path));
+    await settle(() => setup.mockInput.pressKey("\x1b[F"));
+    await waitFor("+18 -36 src/old.ts");
+    assertColor("+18", theme.success);
+    assertColor("-36", theme.diffDel);
+    await settle(() => setup.mockInput.typeText("q"));
+    await settle(() => { services.session.reset({ mintNewId: true }); services.transcript.reset(); });
+    await settle(() => setup.mockInput.typeText("/changes"));
+    await settle(() => setup.mockInput.pressEnter());
+    const empty = await waitFor("No line changes recorded in this session.");
+    assert.ok(!empty.includes("+218 -436"), empty);
+  } finally {
+    await act(async () => { services.dispose(); setup.renderer.destroy(); });
+    await setup.renderer.idle();
+  }
+}
+assert.equal(requests.mock.calls.length, 0);
+console.log("Native changes passed: persistent per-run summaries, session totals, per-file lists, long filenames and empty sessions at 120/80/40 columns");

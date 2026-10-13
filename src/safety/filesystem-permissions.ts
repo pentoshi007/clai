@@ -9,6 +9,9 @@ import { shellFilesystemEffects, type FilesystemTarget } from "./shell-filesyste
 
 const writeTools = new Set(["fs.write", "fs.writeMany", "fs.edit", "fs.append", "fs.replaceLines"]);
 export type FilesystemPermission = "allow" | "confirm" | undefined;
+export type FilesystemPermissionDecision =
+  | { readonly permission: "confirm"; readonly reason: string }
+  | { readonly permission: "allow" | undefined; readonly reason?: undefined };
 
 function pathsForCall(call: ToolCall): string[] {
   if (call.name !== "fs.writeMany") return typeof call.args.path === "string" ? [call.args.path] : [];
@@ -65,27 +68,54 @@ function shellWorkingDirectory(call: ToolCall): string | undefined {
   catch { return undefined; }
 }
 
+export function filesystemPermissionDecision(
+  call: ToolCall, mode: PermissionMode = DEFAULT_PERMISSION_MODE,
+): FilesystemPermissionDecision {
+  if (writeTools.has(call.name) || call.name === "fs.delete") {
+    if (mode === "full-access") return { permission: "allow" };
+    if (call.name === "fs.delete" && mode === "default") {
+      return { permission: "confirm", reason: "Default permissions require approval before deleting files." };
+    }
+    if (writeTools.has(call.name) && mode === "allow-all") return { permission: "allow" };
+    const paths = pathsForCall(call);
+    if (paths.length === 0 || paths.some(outsideToolPath)) {
+      return {
+        permission: "confirm",
+        reason: call.name === "fs.delete"
+          ? "Auto-allow requires approval when a deletion target cannot be verified to stay inside the active folder."
+          : "This operation may write outside the active folder, or its target could not be verified.",
+      };
+    }
+    return { permission: "allow" };
+  }
+  if (call.name !== "shell.exec" && call.name !== "terminal.start") return { permission: undefined };
+  if (mode === "full-access") return { permission: "allow" };
+  if (typeof call.args.command !== "string") return { permission: undefined };
+  const cwd = shellWorkingDirectory(call);
+  if (cwd === undefined) {
+    return { permission: "confirm", reason: "The command's working directory could not be verified." };
+  }
+  const effects = shellFilesystemEffects(call.args.command, cwd);
+  const deleting = effects.uncertainDelete || effects.deletes.length > 0;
+  if (deleting && (mode === "default" || effects.uncertainDelete || effects.deletes.some(outsideShellTarget))) {
+    return {
+      permission: "confirm",
+      reason: mode === "default"
+        ? "Default permissions require approval for commands that may delete files."
+        : "Auto-allow requires approval when possible deletions cannot be verified to stay inside the active folder.",
+    };
+  }
+  if (mode === "allow-all") return { permission: deleting ? "allow" : undefined };
+  const writing = effects.uncertainWrite || effects.writes.length > 0;
+  if (writing && (effects.uncertainWrite || effects.writes.some(outsideShellTarget))) {
+    return { permission: "confirm", reason: "The command may write outside the active folder, or its write targets could not be verified." };
+  }
+  if ((writing || deleting) && effects.filesystemOnly) return { permission: "allow" };
+  return { permission: undefined };
+}
+
 export function filesystemPermission(
   call: ToolCall, mode: PermissionMode = DEFAULT_PERMISSION_MODE,
 ): FilesystemPermission {
-  if (writeTools.has(call.name) || call.name === "fs.delete") {
-    if (mode === "full-access") return "allow";
-    if (call.name === "fs.delete" && mode === "default") return "confirm";
-    if (writeTools.has(call.name) && mode === "allow-all") return "allow";
-    const paths = pathsForCall(call);
-    return paths.length === 0 || paths.some(outsideToolPath) ? "confirm" : "allow";
-  }
-  if (call.name !== "shell.exec" && call.name !== "terminal.start") return undefined;
-  if (mode === "full-access") return "allow";
-  if (typeof call.args.command !== "string") return undefined;
-  const cwd = shellWorkingDirectory(call);
-  if (cwd === undefined) return "confirm";
-  const effects = shellFilesystemEffects(call.args.command, cwd);
-  const deleting = effects.uncertainDelete || effects.deletes.length > 0;
-  if (deleting && (mode === "default" || effects.uncertainDelete || effects.deletes.some(outsideShellTarget))) return "confirm";
-  if (mode === "allow-all") return deleting ? "allow" : undefined;
-  const writing = effects.uncertainWrite || effects.writes.length > 0;
-  if (writing && (effects.uncertainWrite || effects.writes.some(outsideShellTarget))) return "confirm";
-  if ((writing || deleting) && effects.filesystemOnly) return "allow";
-  return undefined;
+  return filesystemPermissionDecision(call, mode).permission;
 }
