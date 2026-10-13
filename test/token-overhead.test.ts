@@ -67,16 +67,16 @@ describe("token overhead contracts", () => {
 
   it("preserves full plan-mode and compaction requirements with current inspection guidance", () => {
     expect(sha256(planModeDirective())).toBe("f04a12a631b001920c96899cae3b013a7ac8ef9a60ee72c937b5782ba7371d5e");
-    expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("7957784945e61c979a188133f8c0ef24d221328a770f51cf5de8614314af4488");
+    expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("9a98959f04cf53b8b5477181fa4358ccd865342fef19aa5c54e2813157027f23");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "User asked to fix retry count. Read /project/state.mjs: retryLimit=2. fs.edit changed retryLimit to 3. node check.mjs exited 0.",
       durableState: "ACTIVE PLAN: t1 done; t2 pending: set backoffMs=100 without changing CRLF.",
-    }))).toBe("00d8b076d04c3fd67f80576cc0128895ba7a7254322888d6bd6aea90c9433c25");
+    }))).toBe("5262869ada4b99f7864830405a450220b995da99159e0dee7c8d61a86e3e5620");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "Read /project/package.json: Vite installed. Existing source has a mock payment form. Verified webhook route requires signature validation.",
       durableState: "ACTIVE PLAN: Implement signature validation; verify invalid signatures and replay protection.",
       purpose: "plan-implement",
-    }))).toBe("d2874d0ba478325e2464ba2826ab7f47e80570451a156b6875fcf26fd7324b08");
+    }))).toBe("ef79ad410daf96771311dda5ab0aed0c29eb220b89ec27e78916fa6c59f71c9e");
   });
 
   it("injects full plan detail and acceptance criteria even with a small request-context budget", () => {
