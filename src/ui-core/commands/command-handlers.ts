@@ -34,6 +34,7 @@ import { handleMcp } from "./mcp-commands.js";
 import { handleSkills } from "./skill-commands.js";
 import { handleRtk } from "./rtk-commands.js";
 import { handlePrompts } from "./prompt-commands.js";
+import { handleChanges } from "./change-commands.js";
 import { handleSubagents, handleOrchestration } from "./subagent-commands.js";
 import {
   handleHistory,
@@ -110,6 +111,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("context", () => handleContext(services));
   c.setHandler("usage", () => handleUsage(services));
   c.setHandler("prompts", () => handlePrompts(services));
+  c.setHandler("changes", () => handleChanges(services));
   c.setHandler("compact", () => void handleCompact(services));
   c.setHandler("skills", (i) => void handleSkills(services, i));
   c.setHandler("mcp", (i) => handleMcp(services, i));

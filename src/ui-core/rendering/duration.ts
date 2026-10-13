@@ -4,6 +4,7 @@ import type {
   ToolItem,
 } from "../state/transcript-types.js";
 import type { SubagentRun } from "../../agent/subagents/types.js";
+import { sumLineChanges, type LineChangeTotals } from "../../app/controllers/session-changes.js";
 
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -84,9 +85,9 @@ export function toolElapsedLabel(
 export function turnSummaryLabel(
   durationMs: number,
   status: "completed" | "aborted" | "error",
+  changes?: LineChangeTotals,
 ): string {
   const base = `Worked for ${formatDurationMs(durationMs)}`;
-  if (status === "aborted") return `${base} · aborted`;
-  if (status === "error") return `${base} · error`;
-  return base;
+  const label = status === "completed" ? base : `${base} · ${status}`;
+  return changes && sumLineChanges([changes]) ? `${label} · +${changes.added} -${changes.removed}` : label;
 }

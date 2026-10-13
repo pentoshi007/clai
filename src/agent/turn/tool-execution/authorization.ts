@@ -109,7 +109,7 @@ const runPrompts = async (
     forceConfirm ? false : ports.autoConfirm,
     ports.session,
     ports.confirmPort,
-    forceConfirm ? { forceConfirm: true } : undefined,
+    { forceConfirm, reason: input.reason },
   );
   restoreInteractiveStdin();
   if (!confirmed) return refused(input, ports, "Cancelled.");

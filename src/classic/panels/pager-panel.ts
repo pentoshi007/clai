@@ -71,7 +71,7 @@ function logicalPagerLines(
   body: string,
   width: number,
   format: PagerFormat,
-  appearance?: Pick<InkTheme, "theme" | "colorMode">,
+  appearance?: Partial<Pick<InkTheme, "theme" | "colorMode">> & { readonly quotePrefix?: string | undefined; readonly literalQuotes?: boolean | undefined; readonly lineChangeColors?: boolean | undefined },
   subagentPaint?: SubagentSpanPaint,
 ): readonly string[] {
   if (format === "formatted") {
@@ -80,6 +80,9 @@ function logicalPagerLines(
       stripOuterIndent: true,
       theme: appearance?.theme,
       colorMode: appearance?.colorMode,
+      quotePrefix: appearance?.quotePrefix,
+      literalQuotes: appearance?.literalQuotes,
+      lineChangeColors: appearance?.lineChangeColors,
     };
     const rendered = subagentPaint
       ? renderSubagentMarkdownLines(body, options, subagentPaint)
@@ -95,7 +98,7 @@ export function pagerLines(
   rows = Number.MAX_SAFE_INTEGER,
   format: PagerFormat = "formatted",
   ansiBody = false,
-  appearance?: Pick<InkTheme, "theme" | "colorMode">,
+  appearance?: Partial<Pick<InkTheme, "theme" | "colorMode">> & { readonly quotePrefix?: string | undefined; readonly literalQuotes?: boolean | undefined; readonly lineChangeColors?: boolean | undefined },
   diff?: PagerDiffOptions,
   subagentPaint?: SubagentSpanPaint,
 ): readonly string[] {
@@ -155,6 +158,9 @@ interface PagerCacheEntry {
   readonly diffPath: string | undefined;
   readonly diffInk: InkTheme | undefined;
   readonly subagentPaint: SubagentSpanPaint | undefined;
+  readonly quotePrefix: string | undefined;
+  readonly literalQuotes: boolean | undefined;
+  readonly lineChangeColors: boolean | undefined;
   readonly view: PagerViewModel;
 }
 
@@ -180,6 +186,9 @@ export function pagerViewModel(
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
   diff?: PagerDiffOptions,
   subagentPaint?: SubagentSpanPaint,
+  quotePrefix?: string,
+  literalQuotes?: boolean,
+  lineChangeColors?: boolean,
 ): PagerViewModel {
   const diffPath = diff?.path;
   const diffInk = diff?.ink;
@@ -193,7 +202,10 @@ export function pagerViewModel(
       entry.appearance === appearance &&
       entry.diffPath === diffPath &&
       entry.diffInk === diffInk &&
-      entry.subagentPaint === subagentPaint,
+      entry.subagentPaint === subagentPaint &&
+      entry.quotePrefix === quotePrefix &&
+      entry.literalQuotes === literalQuotes &&
+      entry.lineChangeColors === lineChangeColors,
   );
   if (index >= 0) {
     const hit = pagerCache[index]!;
@@ -203,9 +215,10 @@ export function pagerViewModel(
     }
     return hit.view;
   }
-  const lines = pagerLines(body, columns, rows, format, ansiBody, appearance, diff, subagentPaint);
+  const markdownAppearance = { ...appearance, quotePrefix, literalQuotes, lineChangeColors };
+  const lines = pagerLines(body, columns, rows, format, ansiBody, markdownAppearance, diff, subagentPaint);
   const view: PagerViewModel = { lines, searchLines: pagerSearchLines(lines) };
-  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, subagentPaint, view });
+  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, subagentPaint, quotePrefix, literalQuotes, lineChangeColors, view });
   if (pagerCache.length > PAGER_CACHE_SIZE) pagerCache.length = PAGER_CACHE_SIZE;
   return view;
 }

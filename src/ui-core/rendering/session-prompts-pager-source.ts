@@ -24,6 +24,8 @@ export function createSessionPromptsPagerSource(
   };
   return {
     path: file.path,
+    quotePrefix: "",
+    literalQuotes: true,
     pageBytes: file.pageBytes,
     readPage: async (offset) => (await active()).readPage(offset),
     readTail: async () => (await active()).readTail!(),

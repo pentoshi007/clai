@@ -1,4 +1,5 @@
 import type { AnyAppEvent } from "../../../app/events/app-event.js";
+import { fileLineChanges, sumLineChanges } from "../../../app/controllers/session-changes.js";
 import { isProviderFailureStatus } from "../../../llm/key-rotation.js";
 import { isToolFenceOnlyText, stripToolCallSurfaces } from "../../rendering/strip-tool-surfaces.js";
 import { appendItem, removeItem, updateItem } from "../transcript-struct.js";
@@ -63,7 +64,8 @@ function appendTurnSummary(
   status: TurnSummaryItem["status"],
 ): TranscriptState {
   const startedAt = state.activeTurnStartedAt;
-  const cleared: TranscriptState = { ...state, activeTurnStartedAt: undefined };
+  const changes = sumLineChanges(state.activeTurnChanges?.values() ?? []);
+  const cleared: TranscriptState = { ...state, activeTurnStartedAt: undefined, activeTurnId: undefined, activeTurnChanges: undefined };
   if (startedAt === undefined) return cleared;
   return appendItem(cleared, {
     id: `turn-summary-${event.id}`,
@@ -73,6 +75,7 @@ function appendTurnSummary(
     kind: "turn-summary",
     durationMs: Math.max(0, event.timestamp - startedAt),
     status,
+    ...(changes ? { changes } : {}),
   });
 }
 
@@ -148,14 +151,15 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
   const withSeq = withSequence(state, event.sequence);
   switch (event.type) {
     case "turn-started": {
+      const started = { ...withSeq, activeTurnStartedAt: event.timestamp, activeTurnId: event.turnId, activeTurnChanges: new Map() };
       const display =
         event.payload.displayPrompt !== undefined
           ? event.payload.displayPrompt
           : event.payload.prompt;
       if (display === null || display === "") {
-        return { ...withSeq, activeTurnStartedAt: event.timestamp };
+        return started;
       }
-      return appendItem({ ...withSeq, activeTurnStartedAt: event.timestamp }, {
+      return appendItem(started, {
         id: `user-${event.id}`,
         sequence: event.sequence,
         turnId: event.turnId,
@@ -314,8 +318,8 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         outputBytes: event.payload.ref.totalBytes,
       }));
 
-    case "tool-result":
-      return updateToolItem(withSeq, event.payload.toolCallId, (item) => ({
+    case "tool-result": {
+      const updated = updateToolItem(withSeq, event.payload.toolCallId, (item) => ({
         ...item,
         status:
           event.payload.ok || event.payload.runFailure === false
@@ -327,6 +331,12 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         fileChanges: event.payload.fileChanges ?? item.fileChanges,
         endedAt: event.timestamp,
       }));
+      const changes = sumLineChanges(fileLineChanges(event.payload.fileChanges));
+      if (!changes || !withSeq.activeTurnChanges || event.turnId !== withSeq.activeTurnId) return updated;
+      const activeTurnChanges = new Map(withSeq.activeTurnChanges);
+      activeTurnChanges.set(event.payload.toolCallId, changes);
+      return { ...updated, activeTurnChanges };
+    }
 
     case "tool-blocked":
       return updateToolItem(withSeq, event.payload.toolCallId, (item) => ({

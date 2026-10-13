@@ -9,15 +9,30 @@ import { blockContextFor } from "../../../src/classic/feed/feed-blocks.js";
 import { buildUserLines } from "../../../src/classic/blocks/user-lines.js";
 import { buildThinkingLines } from "../../../src/classic/blocks/thinking-lines.js";
 import { buildNoticeLines } from "../../../src/classic/blocks/notice-lines.js";
-import { buildToolLines, toolElapsed } from "../../../src/classic/blocks/tool-lines.js";
+import { buildToolLines, toolElapsed, toolHeaderLines } from "../../../src/classic/blocks/tool-lines.js";
 import { buildBatchLines } from "../../../src/classic/blocks/batch-lines.js";
 import { buildCompactedLines } from "../../../src/classic/blocks/compacted-lines.js";
+import { buildTurnSummaryLines } from "../../../src/classic/blocks/turn-summary-lines.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
 import type { ToolItem, AssistantItem, UserItem } from "../../../src/ui-core/state/transcript-types.js";
 import { transcriptItems } from "../../../src/ui-core/state/transcript-types.js";
 import { feedView, GOLDEN_COLOR_MODES, GOLDEN_WIDTHS, scriptedTurn } from "./fixture.js";
 
 const turn = scriptedTurn();
+
+describe("classic turn-summary colors", () => {
+  it.each(["truecolor", "256", "none"] as const)("keeps the timing and colors the counts in %s", (colorMode) => {
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80, colorMode }));
+    const row = buildTurnSummaryLines(ctx, {
+      id: "summary", sequence: 0, turnId: undefined, timestamp: 0, kind: "turn-summary",
+      durationMs: 76_000, status: "completed", changes: { added: 213, removed: 435 },
+    })[0]!;
+    expect(stripAnsi(row)).toContain("Worked for 1m16s · +213 -435");
+    expect(row).toContain(ctx.ink.fg("success", "+213"));
+    expect(row).toContain(ctx.ink.fg("diffDel", "-435"));
+    if (colorMode === "none") expect(row).not.toContain("\x1b[");
+  });
+});
 
 function kindsAt(columns: number): BlockKind[] {
   return buildFeedBlocks(turn.state, feedView(turn, { columns })).map((b) => b.kind);
@@ -72,6 +87,21 @@ describe("buildFeedBlocks", () => {
     expect(toolElapsed(ctx, { ...item!, name: "fs.write" })).toBeUndefined();
     expect(toolElapsed(ctx, { ...item!, name: "shell.exec" })).toBeDefined();
     expect(toolElapsed(ctx, item!)).toBeDefined();
+  });
+
+  it("hides the requested header status words while preserving glyphs, timing and exit details", () => {
+    const source = transcriptItems(turn.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    )!;
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns: 120 }));
+    for (const status of ["running", "ok", "failed"] as const) {
+      const item = { ...source, status, exitCode: status === "failed" ? 127 : 0 };
+      const header = toolHeaderLines(ctx, item).map(stripAnsi).join("\n");
+      expect(header).not.toMatch(/\b(running|failed|done)\b/);
+      expect(header).toContain(status === "running" ? "●" : status === "ok" ? "✓" : "✗");
+      expect(header).toContain(toolElapsed(ctx, item)!);
+      if (status === "failed") expect(header).toContain("127 · not found");
+    }
   });
 
   it("keeps fs.read cards compact while showing options and the file", () => {

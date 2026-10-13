@@ -4,10 +4,10 @@ import { formatComposerMeta } from "../src/ui-core/composer/composer-meta.js";
 import { renderIntroHeaderLines } from "../src/ui-core/rendering/intro-header.js";
 
 describe("permission mode presentation", () => {
-  it("uses auto-allow when no mode has been stored", () => {
-    expect(DEFAULT_PERMISSION_MODE).toBe("allow-all");
-    expect(permissionModeLabel(undefined)).toBe("auto-allow");
-    expect(formatComposerMeta("codex", "gpt-6.1-sol", undefined)).toBe("codex · gpt-6.1-sol · auto-allow");
+  it("uses full-access when no mode has been stored", () => {
+    expect(DEFAULT_PERMISSION_MODE).toBe("full-access");
+    expect(permissionModeLabel(undefined)).toBe("full-access");
+    expect(formatComposerMeta("codex", "gpt-6.1-sol", undefined)).toBe("codex · gpt-6.1-sol · full-access");
   });
 
   it.each([
@@ -26,7 +26,7 @@ describe("permission mode presentation", () => {
 
   it("normalizes stored aliases and missing values", () => {
     expect(configuredPermissionMode("auto-allow")).toBe("allow-all");
-    expect(configuredPermissionMode(undefined)).toBe("allow-all");
+    expect(configuredPermissionMode(undefined)).toBe("full-access");
     expect(configuredPermissionMode("full-access")).toBe("full-access");
   });
 

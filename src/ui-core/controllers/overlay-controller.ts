@@ -11,6 +11,7 @@ export type PlanConfirmResult = "implement" | "discard" | "suggest" | "dismiss";
 export interface ConfirmRequest {
   readonly kind: ConfirmKind;
   readonly prompt: string;
+  readonly reason?: string | undefined;
   readonly review?: OperationReview | undefined;
   readonly viewPath?: string | undefined;
 }

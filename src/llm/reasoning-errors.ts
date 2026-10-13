@@ -1,5 +1,5 @@
 const MISSING_REASONING_CONTENT_RE =
-  /reasoning[_ ]?(?:content|text).*(?:must be )?(?:passed|sent|included|provided)\s*back|missing\s+reasoning[_ ]?(?:content|text)|reasoning[_ ]?(?:content|text)\s+is\s+required/i;
+  /reasoning[_ ]?(?:content|text).*(?:must be )?(?:passed|sent|included|provided)\s*back|missing\s+(?:(?:required\s+)?(?:parameter|field)\s*:\s*["'`]?(?:[\w-]+(?:\[\d+\])?\.)*)?reasoning[_ ]?(?:content|text)|reasoning[_ ]?(?:content|text)\s+is\s+required/i;
 
 const INVALID_REASONING_CONTENT_RE =
   /(?:reasoning[_ ]?(?:content|text)|thinking\s+(?:block|signature)s?|thought[_ ]?signature|signature).{0,120}(?:invalid|expired|mismatch|does not match|verification failed|failed verification|cannot be verified|not authentic|authentic continuation)|(?:invalid|expired|mismatch|does not match|verification failed|failed verification|cannot be verified|not authentic).{0,120}(?:reasoning[_ ]?(?:content|text)|thinking\s+(?:block|signature)s?|thought[_ ]?signature|signature)/i;

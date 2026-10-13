@@ -120,6 +120,21 @@ describe("independent attachment views", () => {
     await expect(answer).resolves.toBe(true);
   });
 
+  it("preserves the permission reason when routing a tool confirmation to an attachment", async () => {
+    const f = fixture();
+    f.attach("desktop");
+    await vi.waitFor(() => expect(f.mounted).toHaveLength(1));
+    const reason = "Auto-allow cannot verify the deletion target.";
+    const answer = f.manager.confirm.confirmTool({ name: "shell.exec", args: { command: "sh cleanup.sh" } }, { reason });
+    const view = f.mounted[0]!.services;
+    await vi.waitFor(() => expect(view.overlay.getState().kind).toBe("confirm"));
+    const state = view.overlay.getState();
+    if (state.kind !== "confirm") throw new Error("expected confirmation");
+    expect(state.request.reason).toBe(reason);
+    view.overlay.answerConfirm(false);
+    await expect(answer).resolves.toBe(false);
+  });
+
   it("keeps asynchronous agent confirmations on the terminal that submitted the turn", async () => {
     const agent: AgentPort = { async runTurn(_request, handlers) {
       await new Promise((resolve) => setTimeout(resolve, 20));

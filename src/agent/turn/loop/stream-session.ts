@@ -4,7 +4,7 @@ import { createThinkingStreamParser } from "../../../ui/thinking.js";
 import { parseAllToolCalls } from "../../tool-call-parser.js";
 import { canonicalizeTurnCall, type ToolNameCanonicalizer } from "./canonicalize-turn-call.js";
 import { fromWireName } from "../../../llm/tool-protocol.js";
-import { isProviderFailureStatus } from "../../../llm/key-rotation.js";
+import { isProviderFailureStatus, providerWaitLabel } from "../../../llm/key-rotation.js";
 
 const HEARTBEAT_MS = 10_000;
 const LARGE_ARGS_BYTES = 4096;
@@ -50,6 +50,7 @@ export interface StreamSession {
 }
 
 interface StreamState {
+  waitingForProvider: boolean;
   sawReasoning: boolean;
   inThinking: boolean;
   emittedThinkingStatus: boolean;
@@ -119,6 +120,7 @@ const applyReasoningDelta = (
   state: StreamState,
   text: string,
 ): void => {
+  state.waitingForProvider = false;
   state.streamedReasoningText += text;
   state.typedReasoningOpen = true;
   state.sawReasoning = true;
@@ -139,10 +141,42 @@ const toolCallDeltaStatus = (
     ? `${name} (${Math.round(argumentsBytes / 1024)}KB args)`
     : name;
 
+const routeProviderStatus = (
+  ports: StreamSessionPorts,
+  state: StreamState,
+  status: string,
+): void => {
+  const full = status.replace(/\s+/g, " ").trim();
+  if (!full) return;
+  const waiting = providerWaitLabel(full);
+  if (waiting) {
+    state.waitingForProvider = true;
+    state.emittedThinkingStatus = false;
+    ports.writeStatus(waiting);
+    return;
+  }
+  const warning = !full.startsWith("ℹ") &&
+    (isProviderFailureStatus(full) || /\b(?:error|failed|exception)\b/i.test(full));
+  ports.notify(warning ? "warn" : "info", full);
+};
+
+const createSessionDeltaParser = (ports: StreamSessionPorts, state: StreamState) =>
+  createThinkingStreamParser(
+    ports.emitAssistantDelta,
+    (text) => {
+      if (!state.emittedThinkingStatus) {
+        state.emittedThinkingStatus = true;
+        ports.emitStatus("thinking");
+      }
+      ports.emitThinkingDelta(text);
+    },
+  );
+
 export const createStreamSession = (
   ports: StreamSessionPorts,
 ): StreamSession => {
   const state: StreamState = {
+    waitingForProvider: false,
     sawReasoning: false,
     inThinking: false,
     emittedThinkingStatus: false,
@@ -156,19 +190,9 @@ export const createStreamSession = (
   const streamedNativeCallNames = new Map<number, string>();
   const callIds: string[] = [];
 
-  const deltaParser = createThinkingStreamParser(
-    (text) => ports.emitAssistantDelta(text),
-    (text) => {
-      if (!state.emittedThinkingStatus) {
-        state.emittedThinkingStatus = true;
-        ports.emitStatus("thinking");
-      }
-      ports.emitThinkingDelta(text);
-    },
-  );
-
+  const deltaParser = createSessionDeltaParser(ports, state);
   const heartbeat = setInterval(() => {
-    ports.emitStatus(streamPhase(state));
+    if (!state.waitingForProvider) ports.emitStatus(streamPhase(state));
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
 
@@ -180,6 +204,8 @@ export const createStreamSession = (
     streamedNativeCallNames,
     callIds,
     onToken: (token) => {
+      if (!token) return;
+      state.waitingForProvider = false;
       deltaParser.push(token);
       state.generatedTokens += 1;
       state.accumulatedText += token;
@@ -188,29 +214,14 @@ export const createStreamSession = (
       }
       applyThinkingTransitions(ports, state, token);
     },
-    onStatus: (status) => {
-      const full = status.replace(/\s+/g, " ").trim();
-      if (!full) return;
-      if (full.startsWith("ℹ")) {
-        ports.notify("info", full);
-        return;
-      }
-      if (isProviderFailureStatus(full)) {
-        ports.notify("warn", full);
-        return;
-      }
-      if (full.length > 80 && /error|failed|exception/i.test(full)) {
-        ports.notify("warn", full);
-        return;
-      }
-      ports.writeStatus(status);
-    },
+    onStatus: (status) => routeProviderStatus(ports, state, status),
     onStreamEvent: (event) => {
       if (event.type !== "reasoning_delta") return;
       applyReasoningDelta(ports, state, event.text);
     },
     onToolCallDelta: (delta) => {
       if (!delta.name) return;
+      state.waitingForProvider = false;
       const name = fromWireName(delta.name) ?? delta.name;
       streamedNativeCallNames.set(delta.index, name);
       ports.emitStatus(toolCallDeltaStatus(name, delta.argumentsBytes));

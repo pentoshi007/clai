@@ -9,6 +9,9 @@ export interface RenderMarkdownLinesOptions {
   readonly stripOuterIndent?: boolean | undefined;
   readonly theme?: Theme | undefined;
   readonly colorMode?: ColorMode | undefined;
+  readonly quotePrefix?: string | undefined;
+  readonly literalQuotes?: boolean | undefined;
+  readonly lineChangeColors?: boolean | undefined;
 }
 
 export function preprocessAssistantMarkdown(text: string): string {
@@ -25,11 +28,16 @@ export function renderMarkdownLines(
   options: RenderMarkdownLinesOptions,
 ): AnsiLine[] {
   if (!text) return [];
-  const prepared = preprocessAssistantMarkdown(text);
+  const prepared = options.literalQuotes
+    ? text.split("\n").map((line) => line.startsWith("> ") ? line : preprocessAssistantMarkdown(line)).join("\n")
+    : preprocessAssistantMarkdown(text);
   const width = Math.max(20, options.width);
   const rendered = renderMarkdown(prepared, width, {
     theme: options.theme,
     colorMode: options.colorMode,
+    quotePrefix: options.quotePrefix,
+    literalQuotes: options.literalQuotes,
+    lineChangeColors: options.lineChangeColors,
   }).replace(/\n+$/, "");
   if (!rendered) return [];
 

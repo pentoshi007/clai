@@ -1,6 +1,7 @@
 import type { ConfirmRequest } from "../../ui-core/controllers/overlay-controller.js";
 import type { InkTheme } from "../render/ink-theme.js";
-import { wrapWithPrefixes } from "../render/wrap.js";
+import { confirmationPreview, wrapConfirmationText } from "../../ui-core/rendering/confirmation-preview.js";
+import { fitOneLine } from "../../ui-core/rendering/pager-chrome.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, type PanelEffect, type PanelKeyResult } from "./panel-effect.js";
 
@@ -107,28 +108,34 @@ export function confirmPromptLines(
   prompt: string,
   columns: number,
 ): readonly string[] {
-  return wrapWithPrefixes(prompt.replace(/\r/g, "").trim(), {
-    width: panelBodyWidth(columns),
-  });
+  return wrapConfirmationText(prompt, panelBodyWidth(columns));
 }
 
 export function confirmRowsWanted(
   request: ConfirmRequest,
   columns: number,
 ): number {
-  return confirmPromptLines(request.prompt, columns).length + 4;
+  const preview = confirmationPreview(request, panelBodyWidth(columns));
+  return preview.reasonLines.length + preview.promptLines.length + 4;
 }
 
 function confirmBody(input: ConfirmViewInput): readonly string[] {
   const { ink, request } = input;
-  const prompt = confirmPromptLines(request.prompt, input.columns);
+  const width = panelBodyWidth(input.columns);
+  const height = panelBodyHeight(input.rows);
+  const spacer = height >= 5 ? [""] : [];
+  const preview = confirmationPreview(request, width, height - spacer.length - 1);
   const actions = confirmActions(request)
     .map((action) => `${ink.fg("inputBorder", action.chord)} ${action.label}`)
     .join("   ");
   return [
-    ...prompt,
-    "",
-    `${ink.fg("inputBorder", ink.glyphs.promptMark)} ${actions}`,
+    ...preview.reasonLines.map((line) => ink.fg("activity", line)),
+    ...preview.promptLines,
+    ...spacer,
+    fitOneLine([
+      `${ink.fg("inputBorder", ink.glyphs.promptMark)} ${actions}`,
+      `${ink.glyphs.promptMark} ${confirmHints(request).join(" · ")}`,
+    ], width),
   ];
 }
 
@@ -136,7 +143,7 @@ export function confirmView(input: ConfirmViewInput): PanelFrameInput {
   const { ink, request } = input;
   const body = confirmBody(input);
   const height = panelBodyHeight(input.rows);
-  const visible = body.length <= height ? body : [...body.slice(0, Math.max(0, height - 2)), "", body[body.length - 1] ?? ""];
+  const visible = height === 0 ? [] : body.slice(-height);
   return {
     ink,
     columns: input.columns,

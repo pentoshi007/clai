@@ -23,6 +23,7 @@ import {
 import { normalizeSemanticDocument } from "../../../src/ui-core/state/semantic-document.js";
 import { extractTranscriptSemanticDocument } from "../../../src/ui-core/rendering/transcript-semantic.js";
 import { turnSummaryLabel } from "../../../src/ui-core/rendering/duration.js";
+import { buildFileChange } from "../../../src/tools/file-diff.js";
 
 function fold(events: readonly AnyAppEvent[]): TranscriptState {
   return events.reduce(applyAppEvent, EMPTY_TRANSCRIPT_STATE);
@@ -1097,6 +1098,43 @@ describe("transcript reducer (V2-050)", () => {
 });
 
 describe("turn summary rows", () => {
+  it("freezes only each run's additions and removals and omits counts for runs without data", () => {
+    const seq = buildSequencer();
+    const first = asTurnId("first");
+    const next = asTurnId("next");
+    const last = asTurnId("last");
+    const fileChanges = [buildFileChange({ path: "app.ts", before: "old\n", after: "new\nextra\n", kind: "edit" })];
+    const result = { toolCallId: asToolCallId("edit"), ok: true, summary: "applied", fileChanges };
+    const state = fold([
+      seq.build("turn-started", { prompt: "first" }, first),
+      seq.build("tool-result", result, first),
+      seq.build("tool-result", result, first),
+      seq.build("turn-ended", { finalAnswer: "ok", steps: 1 }, first),
+      seq.build("turn-started", { prompt: "next" }, next),
+      seq.build("tool-result", { ...result, ok: false }, next),
+      seq.build("turn-aborted", {}, next),
+      seq.build("turn-started", { prompt: "last" }, last),
+      seq.build("tool-result", result, first),
+      seq.build("turn-error", { message: "no changes" }, last),
+    ]);
+    expect(transcriptItems(state).filter((item) => item.kind === "turn-summary").map((item) => item.changes))
+      .toEqual([{ added: 2, removed: 1 }, { added: 2, removed: 1 }, undefined]);
+    expect(state.activeTurnChanges).toBeUndefined();
+  });
+
+  it("retains current-run counts when the transcript compacts before the run ends", () => {
+    const seq = buildSequencer();
+    const turn = asTurnId("compact-turn");
+    const fileChanges = [buildFileChange({ path: "old.ts", before: "one\ntwo\n", after: "", kind: "delete" })];
+    const state = fold([
+      seq.build("turn-started", { prompt: "edit then compact" }, turn),
+      seq.build("tool-result", { toolCallId: asToolCallId("delete"), ok: true, summary: "deleted", fileChanges }, turn),
+      seq.build("compaction-started", { compactionId: "compact", beforeTokens: 1000 }, turn),
+      seq.build("compaction-completed", { compactionId: "compact", summary: "Saved work", beforeTokens: 1000, afterTokens: 100, contextScope: "message-history" }, turn),
+      seq.build("turn-ended", { finalAnswer: "ok", steps: 1 }, turn),
+    ]);
+    expect(transcriptItems(state).find((item) => item.kind === "turn-summary")?.changes).toEqual({ added: 0, removed: 2 });
+  });
   function timedSequencer(start: number) {
     let now = start;
     const seq = new EventSequencer(

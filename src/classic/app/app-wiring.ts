@@ -4,6 +4,8 @@ import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import { maybeShowUpdateToast } from "../../ui-core/commands/startup-update.js";
 import { notify } from "../../ui-core/notify.js";
 import { ComposerController } from "../chrome/composer-controller.js";
+import { PromptHistory } from "../../ui-core/composer/prompt-history.js";
+import { bindSavedPromptHistory } from "../../ui-core/composer/saved-prompt-history.js";
 import { readTerminalSize } from "../chrome/use-terminal-size.js";
 import { gutterShellWidth } from "../render/shell-width.js";
 import type { FeedSnapshot } from "./use-feed.js";
@@ -113,6 +115,8 @@ export class ClassicAppWiring implements WiringHost {
     this.rows = size.rows;
     this.feedNowValue = this.now();
     this.previousSessionId = this.services.session.sessionId;
+    const promptHistory = new PromptHistory();
+    this.disposers.push(bindSavedPromptHistory(promptHistory, this.services.session));
 
     this.composer = new ComposerController({
       commands: this.services.commands,
@@ -124,6 +128,7 @@ export class ClassicAppWiring implements WiringHost {
       onScrollChat: (delta) => this.scrollFeed(-delta),
       onJumpTop: () => this.showTranscriptTopHint(),
       now: this.now,
+      promptHistory,
     });
 
     this.panels = new PanelController({

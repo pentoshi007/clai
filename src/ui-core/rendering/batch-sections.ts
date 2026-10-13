@@ -150,7 +150,7 @@ export function presentBatchSection(
   };
 }
 
-export function batchSummaryLine(sections: readonly BatchSection[]): string {
+export function batchSummaryLine(sections: readonly BatchSection[], statusLabels: "text" | "glyph" = "text"): string {
   if (sections.length === 0) return "";
   const running = sections.filter((s) => s.status === "running").length;
   const failed = sections.filter(
@@ -163,13 +163,13 @@ export function batchSummaryLine(sections: readonly BatchSection[]): string {
     (s) => (s.status ?? (s.ok ? "ok" : "fail")) === "ok",
   ).length;
   if (running > 0) {
-    return `${ok} done · ${running} running · ${sections.length} total`;
+    return `${ok} ${statusLabels === "glyph" ? "✓" : "done"} · ${running} ${statusLabels === "glyph" ? "●" : "running"} · ${sections.length} total`;
   }
   if (failed === 0 && cancelled === 0) {
     return `${sections.length} sub-tool(s) — all ok`;
   }
   const parts: string[] = [];
-  if (failed > 0) parts.push(`${failed} failed`);
+  if (failed > 0) parts.push(`${failed} ${statusLabels === "glyph" ? "✗" : "failed"}`);
   if (cancelled > 0) parts.push(`${cancelled} cancelled`);
   return `${parts.join(", ")} / ${sections.length} sub-tool(s)`;
 }

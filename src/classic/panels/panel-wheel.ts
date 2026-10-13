@@ -58,6 +58,9 @@ export function panelWheelMove(
         undefined,
         pagerDiffOptions(snapshot.overlay),
         subagentPaint,
+        snapshot.overlay.source?.quotePrefix,
+        snapshot.overlay.source?.literalQuotes,
+        snapshot.overlay.source?.lineChangeColors,
       );
       const moved = run(snapshot.pager, (state) =>
         pagerKey({

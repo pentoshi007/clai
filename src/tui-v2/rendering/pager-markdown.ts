@@ -24,6 +24,9 @@ export interface PreparePagerDisplayOptions {
   readonly defaultFg?: string | undefined;
   readonly theme?: Theme | undefined;
   readonly colorMode?: ColorMode | undefined;
+  readonly quotePrefix?: string | undefined;
+  readonly literalQuotes?: boolean | undefined;
+  readonly lineChangeColors?: boolean | undefined;
   readonly subagentPaint?: SubagentSpanPaint | undefined;
 }
 
@@ -58,6 +61,9 @@ export function preparePagerDisplay(
       stripOuterIndent: true,
       theme: options.theme,
       colorMode: options.colorMode,
+      quotePrefix: options.quotePrefix,
+      literalQuotes: options.literalQuotes,
+      lineChangeColors: options.lineChangeColors,
     };
     const styled = options.subagentPaint
       ? styleAnsiLines(renderSubagentMarkdownLines(sanitized, appearance, options.subagentPaint), options.defaultFg)

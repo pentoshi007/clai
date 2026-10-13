@@ -18,6 +18,9 @@ export interface ArtifactPagerSource {
   readonly path: string;
   readonly pageBytes: number;
   readonly layout?: "continuous" | undefined;
+  readonly quotePrefix?: string | undefined;
+  readonly literalQuotes?: boolean | undefined;
+  readonly lineChangeColors?: boolean | undefined;
   readPage(offset: number): Promise<ArtifactPage>;
   search(query: string, fromOffset?: number, reverse?: boolean): Promise<ArtifactPage | undefined>;
   readAll(): Promise<string>;

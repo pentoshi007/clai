@@ -169,6 +169,7 @@ export async function applySessionResume(
     provider,
     model,
     transcript: record.transcript,
+    ...(record.changes ? { changes: record.changes } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.workspaceFolder

@@ -313,3 +313,17 @@ describe("responder strip", () => {
     }
   });
 });
+
+it("keeps retry delays visible and provider notices out of classic activity", () => {
+  for (const columns of [48, 68, 96, 120]) {
+    const retry = statusRows(base(columns, { running: true, activity: "retrying in 8s (server-error)" }))[0]!;
+    expect(plainText(retry)).toContain("8s");
+    expect(displayWidth(retry)).toBeLessThanOrEqual(columns);
+    const notice = plainText(statusRows(base(columns, {
+      running: true,
+      activity: "Free: configured credential was rejected; retrying this free model with keyless access.",
+    }))[0]!);
+    expect(notice).toContain("working");
+    expect(notice).not.toContain("Free");
+  }
+});

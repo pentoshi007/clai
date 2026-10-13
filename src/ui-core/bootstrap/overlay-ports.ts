@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { formatOperationReview, reviewDisplayText } from "../../app/operation-review.js";
 import { resolveFsToolPath } from "../../tools/fs.js";
 import type { ToolCall } from "../../types.js";
-import type { ConfirmationPort } from "../../app/ports/confirm-port.js";
+import type { ConfirmationPort, ToolConfirmationContext } from "../../app/ports/confirm-port.js";
 import type { SecretPort } from "../../app/ports/secret-port.js";
 import type { OverlayController } from "../controllers/overlay-controller.js";
 import {
@@ -59,14 +59,18 @@ export async function loadDeletePreview(path: string): Promise<string> {
 
 export function createOverlayConfirmPort(overlay: OverlayController): ConfirmationPort {
   return {
-    async confirmTool(call: ToolCall): Promise<boolean> {
-      const review = formatOperationReview(call);
+    async confirmTool(call: ToolCall, context?: ToolConfirmationContext): Promise<boolean> {
+      const reason = context?.reason || "This tool requires approval under the current permission policy.";
+      const operation = formatOperationReview(call);
+      const review = reason
+        ? { ...operation, body: `Reason: ${reviewDisplayText(reason)}\n\n${operation.body}` }
+        : operation;
       const isDelete = call.name === "fs.delete";
       const path =
         typeof call.args.path === "string" ? call.args.path.trim() : "";
       if (isDelete && path) {
         const prompt = deletePromptText(path, { viewHint: true });
-        const request = { kind: "tool" as const, prompt, viewPath: path, review };
+        const request = { kind: "tool" as const, prompt, reason, viewPath: path, review };
         return overlay.openConfirm(
           request,
           undefined,
@@ -83,6 +87,7 @@ export function createOverlayConfirmPort(overlay: OverlayController): Confirmati
       return overlay.openConfirm({
         kind: "tool",
         prompt: toolPromptText(call),
+        reason,
         review,
       });
     },

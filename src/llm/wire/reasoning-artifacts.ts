@@ -35,7 +35,7 @@ const PRESERVED_FINAL_TURN_ARTIFACT_POLICY: CompatibleReasoningArtifactPolicy =
 export function compatibleArtifactPolicyFor(
   preservation: FinalTurnPreservation,
 ): CompatibleReasoningArtifactPolicy {
-  return preservation === "required"
+  return preservation === "required" || preservation === "unknown"
     ? PRESERVED_FINAL_TURN_ARTIFACT_POLICY
     : DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY;
 }

@@ -54,6 +54,13 @@ describe("resolveArrowIntent", () => {
     ).toBe("ignore");
   });
 
+  it("continues browsing recalled multiline prompts with either arrow", () => {
+    for (const chord of ["up", "down"]) {
+      expect(resolveArrowIntent({ ...base, chord, plainText: "a\nb\nc", line: 1, lineCount: 3,
+        isBrowsingHistory: true })).toBe("history");
+    }
+  });
+
   it("ignores arrows while the completion menu is open", () => {
     expect(resolveArrowIntent({ ...base, chord: "up", menuOpen: true })).toBe("ignore");
   });

@@ -6,6 +6,7 @@ import {
   presentFsReadArgs,
   presentOutput,
   presentTool,
+  toolStatusText,
 } from "../../../src/ui-core/rendering/tool-presenter.js";
 
 function toolItem(overrides: Partial<ToolItem> = {}): ToolItem {
@@ -30,6 +31,14 @@ function toolItem(overrides: Partial<ToolItem> = {}): ToolItem {
 }
 
 describe("presentTool (CHAT-004)", () => {
+  it("hides only the requested UI status words and preserves exit details and other labels", () => {
+    for (const label of ["running", "failed", "done"]) expect(toolStatusText(label)).toBe("");
+    expect(toolStatusText("failed · 127 · not found")).toBe("127 · not found");
+    expect(toolStatusText("done (exit 0)")).toBe("(exit 0)");
+    for (const label of ["queued", "blocked", "cancelled (exit 130)", "command failed"]) {
+      expect(toolStatusText(label)).toBe(label);
+    }
+  });
   it("shows a running glyph/label with command args", () => {
     const p = presentTool(toolItem());
     expect(p.glyph).toBe("●");

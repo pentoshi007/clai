@@ -27,6 +27,11 @@ const STATUS_LABEL: Record<ToolStatus, string> = {
   blocked: "blocked",
 };
 
+// Hide only these UI status words; retain exit details and other labels.
+export function toolStatusText(label: string): string {
+  return label.replace(/^(?:running|failed|done)\b(?:\s*·\s*|\s+)?/, "");
+}
+
 export interface ToolPresentation {
   readonly glyph: string;
   readonly statusLabel: string;

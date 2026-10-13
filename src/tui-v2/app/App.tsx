@@ -174,10 +174,13 @@ export function App(): ReactNode {
     splitEnabled: layoutSupportsSplit(terminalWidth),
   });
 
+  const queuedCount = useSessionField(services.session, (state) => state.queued.length);
+  const queueRows = queuedCount > 0 ? 3 + Math.min(4, queuedCount) + (queuedCount > 4 ? 1 : 0) : 0;
+  const confirmHeight = Math.max(4, Math.min(13, Math.floor(height * 0.6), height - queueRows - 5));
   const composerMaxTextRows = maxComposerTextRows({
     terminalRows: height,
     statusHeight: layout.status.height,
-    minChatRows: MIN_CHAT_ROWS,
+    minChatRows: overlay.kind === "confirm" ? confirmHeight + queueRows + 1 : MIN_CHAT_ROWS,
     maxCap: COMPOSER_MAX_HEIGHT,
   });
 
@@ -763,7 +766,7 @@ export function App(): ReactNode {
           services={services}
           theme={theme}
           width={contentInnerWidth}
-          height={height}
+          height={overlay.kind === "confirm" ? confirmHeight : height}
           docked
         />
 
@@ -874,7 +877,7 @@ export function App(): ReactNode {
         theme={theme}
         termWidth={terminalWidth}
         termHeight={height}
-        compact={overlay.kind === "picker" || overlay.kind === "pager"}
+        compact={overlay.kind === "picker" || overlay.kind === "pager" || overlay.kind === "confirm"}
       />
     </box>
     </TerminalDimensionsContext.Provider>

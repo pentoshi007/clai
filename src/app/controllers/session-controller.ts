@@ -102,6 +102,7 @@ import {
 import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
 import { SessionPromptStore, type SessionPromptInput } from "../../store/session-prompts.js";
 import { legacySessionPrompts } from "./session-prompt-history.js";
+import { SessionChanges, type FileLineChanges, type SessionChangesReport } from "./session-changes.js";
 import { isInternalChatMessage } from "../../types.js";
 
 export interface SubagentsRuntimeState {
@@ -195,6 +196,7 @@ export class SessionController implements Disposable {
   private contextSnapshot: ContextSnapshotV1 | undefined;
   private lastContextCompactionId: string | undefined;
   private readonly usageLedger = new SessionUsageLedger();
+  private readonly changeLedger = new SessionChanges();
   private lifecycleGeneration = 0;
   private lastTurnResult: TurnResult | undefined;
   private restoredPreviousTurn: PreviousTurnSignal | undefined;
@@ -309,6 +311,10 @@ export class SessionController implements Disposable {
 
   get promptHistory(): SessionPromptStore {
     return this.promptHistoryValue;
+  }
+
+  changesReport(): SessionChangesReport {
+    return this.changeLedger.snapshot();
   }
 
   isPromptHistoryEnabled(): boolean {
@@ -564,6 +570,7 @@ export class SessionController implements Disposable {
       provider?: ProviderId | undefined;
       model?: string | undefined;
       transcript?: readonly ClassicTranscriptItem[] | undefined;
+      changes?: readonly FileLineChanges[] | undefined;
     } = {},
   ): void {
     this.beginLifecycleGeneration();
@@ -601,6 +608,7 @@ export class SessionController implements Disposable {
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     }
     this.resetPromptHistory();
+    this.changeLedger.restore(options.changes, options.transcript);
     if (this.isPromptHistoryEnabled()) {
       const generation = this.lifecycleGeneration;
       this.legacyPromptSource = () => legacySessionPrompts(messages, options.transcript);
@@ -703,6 +711,7 @@ export class SessionController implements Disposable {
       publishRouteReasoningVocabulary(this.provider, this.model);
     }
     this.resetPromptHistory();
+    this.changeLedger.restore();
     this.policy = createSessionPolicy(this.sessionIdValue);
     this.replaceSubagents();
     this.notifyState();
@@ -890,10 +899,12 @@ export class SessionController implements Disposable {
     );
     const persistedHistory = projectToolHistory(this.history).messages;
     const workspace = getActiveSessionWorkspace();
+    const changes = this.changeLedger.snapshot().files;
     const saved = this.persistence.save(persistedHistory, {
       sessionId: this.sessionIdValue,
       name: name ?? this.sessionTitle,
       transcript: this.deps.getTranscriptSnapshot?.(),
+      ...(changes.length > 0 ? { changes } : {}),
       previousTurn: this.continuationCheckpoint() ?? null,
       ...(this.provider ? { provider: this.provider } : {}),
       ...(this.model ? { model: this.model } : {}),
@@ -1190,6 +1201,10 @@ export class SessionController implements Disposable {
   }
 
   private observeEmit(event: AnyAppEvent): void {
+    if (event.type === "tool-result" && event.sessionId === this.sessionIdValue &&
+        this.activeTurnGeneration === this.lifecycleGeneration) {
+      this.changeLedger.record(`${event.turnId}:${event.payload.toolCallId}`, event.payload.fileChanges);
+    }
     if (event.type === "compaction-started") {
       this.activeCompactions.add(event.payload.compactionId);
       this.notifyState();

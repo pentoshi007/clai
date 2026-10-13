@@ -28,7 +28,7 @@ import {
   PasteRegistry,
   type PastePlaceholderEntry,
 } from "../../ui-core/composer/paste-placeholder.js";
-import { PromptHistory } from "../../ui-core/composer/prompt-history.js";
+import { PromptHistory, recallPromptHistory } from "../../ui-core/composer/prompt-history.js";
 import {
   acceptCompletion,
   completeCommonPrefix,
@@ -69,6 +69,7 @@ export interface ComposerControllerDeps {
   readonly onJumpTop: () => void;
   readonly captureClipboardImage?: (() => ClipboardImageCapture) | undefined;
   readonly now?: (() => number) | undefined;
+  readonly promptHistory?: PromptHistory | undefined;
 }
 
 export class ComposerController {
@@ -82,12 +83,14 @@ export class ComposerController {
   };
 
   private readonly listeners = new Set<() => void>();
-  private readonly history = new PromptHistory();
+  private readonly history: PromptHistory;
   private readonly pastes = new PasteRegistry();
   private arrowBurst = { count: 0, lastAt: 0 };
   private textWidth = 80;
 
-  constructor(private readonly deps: ComposerControllerDeps) {}
+  constructor(private readonly deps: ComposerControllerDeps) {
+    this.history = deps.promptHistory ?? new PromptHistory();
+  }
 
   getSnapshot = (): ComposerSnapshot => this.snapshot;
 
@@ -384,13 +387,11 @@ export class ComposerController {
       return true;
     }
 
-    const recalled =
-      direction === "up" ? this.history.prev(state.text) : this.history.next();
-    if (recalled === undefined) {
-      this.deps.onScrollChat(direction === "up" ? -1 : 1);
-      return true;
-    }
-    this.commit({ text: recalled, cursor: recalled.length }, { resetHistory: false });
+    recallPromptHistory(this.history, direction, state.text,
+      (text) => this.commit({ text, cursor: text.length }, { resetHistory: false }),
+      () => this.deps.onToast("could not load saved prompts"),
+      () => this.deps.onScrollChat(direction === "up" ? -1 : 1),
+    );
     return true;
   }
 

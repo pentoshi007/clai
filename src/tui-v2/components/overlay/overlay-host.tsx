@@ -65,6 +65,8 @@ function OverlayHostImpl(props: OverlayHostProps): ReactNode {
             services={services}
             theme={theme}
             request={state.request}
+            width={width}
+            height={height}
             onViewPlan={state.onViewPlan}
             onViewFile={state.onViewFile}
             docked

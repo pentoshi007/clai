@@ -160,12 +160,23 @@ export function formatKeyEventStatus(event: ProviderKeyEvent): string {
   }
 }
 
+export function providerWaitLabel(text: string): string | undefined {
+  const line = text.replace(/\s+/g, " ").trim();
+  if (/^(?:switching\b|all\s+\S+\s+API keys failed\b)/i.test(line)) return undefined;
+  const retry = line.match(/\bretrying(?:\s+(?:request|model|connection))?\s+in\s+(\d+(?:\.\d+)?)\s*(ms|s|m|seconds?|minutes?)\b/i);
+  if (retry) {
+    const unit = retry[2]!.toLowerCase().replace(/^seconds?$/, "s").replace(/^minutes?$/, "m");
+    return `retrying in ${retry[1]}${unit}`;
+  }
+  return /\brate[- ]limit(?:ed|ing)?\b/i.test(line) ? "rate limited" : undefined;
+}
+
 const PROVIDER_FAILURE_SHAPE = /^(?:switching\b|⏳|all\s+\S+\s+API keys failed\b)/i;
 const PROVIDER_FAILURE_REASON =
-  /\b(?:rate limited|insufficient credits|auth failed|server error|connection glitch|quota|overloaded|unavailable|timed out|timeout)\b/i;
+  /\b(?:insufficient credits|auth failed|invalid credential|credential(?: was)? rejected|server error|connection glitch|quota|overloaded|unavailable|timed out|timeout)\b/i;
 
 export function isProviderFailureStatus(text: string): boolean {
   const line = text.replace(/\s+/g, " ").trim();
-  if (!line) return false;
+  if (!line || providerWaitLabel(line)) return false;
   return PROVIDER_FAILURE_SHAPE.test(line) || PROVIDER_FAILURE_REASON.test(line);
 }

@@ -131,7 +131,7 @@ describe("tool authorization", () => {
     );
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm.mock.calls[0]![1]).toBe(false);
-    expect(confirm.mock.calls[0]![4]).toEqual({ forceConfirm: true });
+    expect(confirm.mock.calls[0]![4]).toEqual({ forceConfirm: true, reason: "destructive pattern" });
   });
 
   it("forces confirmation for writes outside the working directory", () => {

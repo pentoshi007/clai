@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, rm, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getHistoryDir } from "./paths.js";
 import { acquireJsonlWriteLock } from "./history/jsonl-lock.js";
 import { redactSecrets } from "../llm/provider.js";
@@ -115,6 +115,12 @@ export class SessionPromptStore {
 
   flush(): Promise<void> {
     return this.pending;
+  }
+
+  captureCount(): Promise<number> {
+    let count = 0;
+    // Keep the snapshot behind pending imports and ahead of future submissions.
+    return this.enqueue(async () => { count = await this.count(); }).then(() => count);
   }
 
   subscribe(listener: () => void): () => void {
@@ -232,4 +238,51 @@ export async function removeSessionPrompts(sessionId: string): Promise<boolean> 
     await rm(root, { recursive: true, force: true });
     return exists;
   } finally { await release(); }
+}
+
+async function readPrompt(root: string, number: number): Promise<string> {
+  const index = await open(join(root, "offsets.bin"), "r");
+  try {
+    const metadata = await open(join(root, "metadata.jsonl"), "r");
+    try {
+      const { entry } = await readEntry(index, metadata, number);
+      const body = await open(join(root, "prompts.md"), "r");
+      try {
+        const length = entry.nextOffset - entry.sectionOffset;
+        if (!Number.isSafeInteger(entry.sectionOffset) || entry.sectionOffset < 0 ||
+            length < 1 || entry.nextOffset > (await body.stat()).size) throw new Error("invalid session prompt body range");
+        const buffer = Buffer.alloc(length);
+        const read = await body.read(buffer, 0, length, entry.sectionOffset);
+        if (read.bytesRead !== length) throw new Error("incomplete session prompt body");
+        // The journal quotes each prompt line, including blank lines. Remove
+        // only that outer marker so multiline text and user quotes survive.
+        return buffer.toString("utf8").split("\n")
+          .filter((line) => line.startsWith("> "))
+          .map((line) => line.slice(2)).join("\n");
+      } finally { await body.close(); }
+    } finally { await metadata.close(); }
+  } finally { await index.close(); }
+}
+
+export interface SavedPromptReader {
+  readOlder(): Promise<string | undefined>;
+}
+
+export function createSavedPromptReader(current: SessionPromptStore): SavedPromptReader {
+  const currentRoot = dirname(current.path);
+  const snapshot = current.captureCount();
+  void snapshot.catch(() => undefined);
+  let remaining: number | undefined;
+  return {
+    async readOlder() {
+      remaining ??= await snapshot;
+      while (remaining > 0) {
+        try {
+          const text = await readPrompt(currentRoot, remaining--);
+          if (text.trim()) return text;
+        } catch {}
+      }
+      return undefined;
+    },
+  };
 }

@@ -18,7 +18,8 @@ import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
 import { resolvePlanInteraction } from "../components/plan/plan-interaction.js";
-import { PromptHistory } from "../../ui-core/composer/prompt-history.js";
+import { PromptHistory, recallPromptHistory } from "../../ui-core/composer/prompt-history.js";
+import { bindSavedPromptHistory } from "../../ui-core/composer/saved-prompt-history.js";
 import {
   ARROW_BURST_WINDOW_MS,
   resolveArrowIntent,
@@ -95,6 +96,8 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   const boxRef = useRef<BoxRenderable>(null);
   useEffect(() => retainComposerText(editorRef.current), []);
   const promptHistory = useRef(new PromptHistory());
+  const recalledText = useRef<string | undefined>(undefined);
+  useEffect(() => bindSavedPromptHistory(promptHistory.current, services.session), [services.session]);
   const pasteRegistry = useRef(new PasteRegistry());
   const imagePaste = createComposerImagePaste(services, editorRef, () => {
     syncContentRows();
@@ -680,17 +683,17 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
       }
 
       if (intent === "history") {
-        const recalled =
-          chord === "up"
-            ? promptHistory.current.prev(editor.plainText)
-            : promptHistory.current.next();
-        if (recalled !== undefined) {
-          key.preventDefault();
-          editor.setText(recalled);
-          editor.gotoBufferEnd();
-          refreshMenu();
-          syncContentRows();
-        }
+        const handled = recallPromptHistory(promptHistory.current, chord, editor.plainText,
+          (text) => {
+            recalledText.current = text;
+            editor.setText(text);
+            editor.gotoBufferEnd();
+            refreshMenu();
+            syncContentRows();
+          },
+          () => notify(services, "could not load saved prompts", { level: "warn" }),
+        );
+        if (handled) key.preventDefault();
       }
     }
   }
@@ -816,6 +819,10 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
         onMouseScroll={onComposerWheel}
         onSubmit={submit}
         onContentChange={() => {
+          if (editorRef.current?.plainText !== recalledText.current) {
+            recalledText.current = undefined;
+            promptHistory.current.reset();
+          }
           refreshMenu();
           queueMicrotask(syncContentRows);
         }}

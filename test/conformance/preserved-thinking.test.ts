@@ -80,7 +80,7 @@ describe("the replay opt-in is selected by route class", () => {
   });
 });
 
-describe("final-turn reasoning survives only where the route requires it", () => {
+describe("final-turn reasoning follows the route preservation contract", () => {
   it("retains the closing turn on a route with required preservation", () => {
     expect(
       resolveBuiltInProfile({ provider: "bynara", model: "kimi-k3" }).reasoning
@@ -96,13 +96,22 @@ describe("final-turn reasoning survives only where the route requires it", () =>
     );
   });
 
-  it("still drops it on a route that cannot use it", () => {
+  it("still drops it on a route with explicitly unsupported preservation", () => {
     expect(compatibleArtifactPolicyFor("unsupported").persistence).toBe("tool-turn");
-    expect(finalTurnArtifacts("bynara", "kimi-k2.5")).toBeUndefined();
+    expect(
+      resolveBuiltInProfile({ provider: "openrouter", model: "kimi-k2.5" }).reasoning
+        .finalTurnPreservation,
+    ).toBe("unsupported");
+    expect(finalTurnArtifacts("openrouter", "kimi-k2.5")).toBeUndefined();
   });
 
-  it("leaves unknown-preservation routes on their existing byte layout", () => {
-    expect(compatibleArtifactPolicyFor("unknown").persistence).toBe("tool-turn");
+  it("retains unknown contracts without changing optional-preservation routes", () => {
+    expect(compatibleArtifactPolicyFor("unknown").persistence).toBe("all-turns");
+    expect(
+      resolveBuiltInProfile({ provider: "bynara", model: "kimi-k2.5" }).reasoning
+        .finalTurnPreservation,
+    ).toBe("unknown");
+    expect(finalTurnArtifacts("bynara", "kimi-k2.5")).toHaveLength(1);
     expect(compatibleArtifactPolicyFor("supported").persistence).toBe("tool-turn");
   });
 });

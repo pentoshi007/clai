@@ -58,7 +58,7 @@ export class RuntimeViewManager {
   private shared: AppServices | undefined;
 
   readonly confirm: ConfirmationPort = {
-    confirmTool: (call) => this.ask((view) => view.ports.confirm!.confirmTool(call), false),
+    confirmTool: (call, context) => this.ask((view) => view.ports.confirm!.confirmTool(call, context), false),
     confirmPentest: (call) => this.ask((view) => view.ports.confirm!.confirmPentest(call), false),
     confirmAgentSwitch: (info) => this.ask((view) => view.ports.confirm!.confirmAgentSwitch!(info), false),
   };

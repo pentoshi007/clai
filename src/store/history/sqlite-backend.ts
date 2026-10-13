@@ -149,6 +149,7 @@ function serializeSessionPayload(record: HistoryRecord): string {
   return JSON.stringify({
     messages: record.messages,
     transcript: record.transcript,
+    ...(record.changes ? { changes: record.changes } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...sessionModelFields(record),
@@ -235,6 +236,7 @@ export function rowToSession(row: unknown): HistoryRecord {
     | {
         messages?: ChatMessage[];
         transcript?: TranscriptItem[];
+        changes?: HistoryRecord["changes"];
         contextUsage?: PersistedContextUsage;
         previousTurn?: PreviousTurnSignal;
         provider?: ProviderId;
@@ -265,6 +267,7 @@ export function rowToSession(row: unknown): HistoryRecord {
     cwd: data.cwd,
     messages,
     transcript: payload.transcript,
+    changes: payload.changes,
     contextUsage: payload.contextUsage,
     previousTurn: payload.previousTurn,
     provider: payload.provider,

@@ -2,6 +2,7 @@
 import type { ToolCallId, TurnId } from "../../app/events/app-event.js";
 import type { TranscriptItem as PersistedTranscriptItem } from "../../app/ports/transcript-item.js";
 import type { FileChange } from "../../tools/file-diff.js";
+import type { LineChangeTotals } from "../../app/controllers/session-changes.js";
 import type { StripStream } from "../rendering/incremental-strip.js";
 
 interface ItemBase {
@@ -112,6 +113,7 @@ export interface TurnSummaryItem extends ItemBase {
   readonly kind: "turn-summary";
   readonly durationMs: number;
   readonly status: "completed" | "aborted" | "error";
+  readonly changes?: LineChangeTotals | undefined;
 }
 
 export type TranscriptItem =
@@ -131,6 +133,8 @@ export interface TranscriptState {
   readonly lastSequence: number;
   readonly runningStatus: string | undefined;
   readonly activeTurnStartedAt?: number | undefined;
+  readonly activeTurnId?: TurnId | undefined;
+  readonly activeTurnChanges?: ReadonlyMap<ToolCallId, LineChangeTotals> | undefined;
   readonly expandThinkingGlobal: boolean;
   readonly expandOutputGlobal: boolean;
   readonly expandFileDiffsGlobal: boolean;

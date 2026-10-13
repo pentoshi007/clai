@@ -17,6 +17,7 @@ import {
   type BlockContext,
 } from "./block-context.js";
 import { hintRows, outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
+import { toolStatusText } from "../../ui-core/rendering/tool-presenter.js";
 import { isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
 
 export const BATCH_COLLAPSED_ROWS = 8;
@@ -67,12 +68,12 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     const name = ctx.ink.fg("cyan", section.name);
     const suffix =
       ctx.width + 2 >= SUFFIX_MIN_COLUMNS && status === "running"
-        ? ctx.ink.fg(token, presented.statusLabel)
+        ? ctx.ink.fg(token, toolStatusText(presented.statusLabel))
         : "";
     lines.push(
       alignEnds(`${subIndent}${glyph} ${name}`, suffix, ctx.width, ctx.glyphs.ellipsis),
     );
-    if ((!expanded && !multiRead) || !presented.hasBody) continue;
+    if ((!expanded && !multiRead) || !section.body.trim()) continue;
     const budget = Math.max(1, ctx.width - SUB_BODY_INDENT);
     const rows = multiRead ? presented.lines : presented.lines.filter((line) => line.trim().length > 0).slice(0, 1);
     for (const row of rows) {
@@ -84,7 +85,10 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   }
 
   const hidden = sections.length - shown.length;
-  const summary = batchSummaryLine(sections);
+  const summary = batchSummaryLine(sections, "glyph")
+    .replaceAll("✓", ctx.glyphs.toolOk)
+    .replaceAll("●", ctx.glyphs.toolRunning)
+    .replaceAll("✗", ctx.glyphs.toolFailed);
   const footer = joinMeta(ctx, [
     outputToggleLabel(expanded),
     summary === "" ? undefined : summary,

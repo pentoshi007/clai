@@ -42,7 +42,6 @@ describe("provider failure status classification", () => {
       "switching tokenrouter key [2/3] …ab12 (server error (502))",
       "switching tokenrouter key [2/3] …ab12 (server error (503))",
       "⏳ tokenrouter [1/2] …ab12 server error (502) in 8s…",
-      "⏳ tokenrouter rate limited; staying on selected provider.",
       "switching to nvidia/openai/gpt-oss-20b after 3 failed",
       "all tokenrouter API keys failed",
       "switching gemini key [2/4] …cd34 (auth failed (401))",
@@ -52,20 +51,22 @@ describe("provider failure status classification", () => {
     }
   });
 
-  it("flags every rotation event the key emitter forwards", () => {
+  it("distinguishes key switching from a retry countdown", () => {
     const base = { provider: "tokenrouter" as const, maskedTail: "…ab12" };
     for (const event of [
       { ...base, type: "switch" as const, reason: "server error (502)" },
       { ...base, type: "retry" as const, reason: "server error (503)", waitMs: 8_000 },
       { ...base, type: "exhausted" as const },
     ]) {
-      expect(isProviderFailureStatus(formatKeyEventStatus(event)), event.type).toBe(true);
+      expect(isProviderFailureStatus(formatKeyEventStatus(event)), event.type).toBe(event.type !== "retry");
     }
   });
 
   it("ignores sticky-key and self-healing adaptation lines", () => {
     for (const status of [
       "using tokenrouter [1/2] …ab12",
+      "⏳ tokenrouter rate limited; staying on selected provider.",
+      "retrying in 8s (server-error)",
       "ℹ tokenrouter/kimi-k3 rejected reasoning options — retrying without them",
       "ℹ free/deepseek does not support native tools — falling back to text protocol",
       "ℹ openai/gpt-5 needs its reasoning replayed — retrying with it attached",

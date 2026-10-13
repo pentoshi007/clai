@@ -105,6 +105,11 @@ describe("toolElapsedLabel", () => {
 });
 
 describe("turnSummaryLabel", () => {
+  it("appends that run's line changes only when counts are available", () => {
+    expect(turnSummaryLabel(76_000, "completed", { added: 213, removed: 435 })).toBe("Worked for 1m16s · +213 -435");
+    expect(turnSummaryLabel(5_000, "aborted", { added: 0, removed: 2 })).toBe("Worked for 5.0s · aborted · +0 -2");
+    expect(turnSummaryLabel(76_000, "completed", { added: 0, removed: 0 })).toBe("Worked for 1m16s");
+  });
   it("formats completed/aborted/error summaries", () => {
     expect(turnSummaryLabel(76_000, "completed")).toBe("Worked for 1m16s");
     expect(turnSummaryLabel(5_000, "aborted")).toBe("Worked for 5.0s · aborted");
