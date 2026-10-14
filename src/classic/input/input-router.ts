@@ -37,6 +37,7 @@ export interface InputRouterDeps {
   readonly onContextLimitStart?: (() => void) | undefined;
   readonly onContextLimitKey?: ((key: KeyEvent, chord: string) => void) | undefined;
   readonly onContextLimitPaste?: ((text: string) => void) | undefined;
+  readonly onQueueToggle?: (() => void) | undefined;
 }
 
 export class InputRouter {
@@ -110,6 +111,11 @@ export class InputRouter {
 
     if (chord === "ctrl+l") {
       this.deps.onContextLimitStart?.();
+      return;
+    }
+
+    if (chord === "alt+q" && this.deps.onQueueToggle) {
+      this.deps.onQueueToggle();
       return;
     }
 

@@ -6,6 +6,7 @@ import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { resolveOpenTuiCapabilities } from "../../ui-core/bootstrap/capabilities.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
+import { OPEN_TUI_FRAME_PACING } from "./frame-pacing.js";
 import { repaintAttachedScreen } from "./resize-repaint.js";
 import { installShrinkResizeGuard } from "./shrink-resize-guard.js";
 import { installPasteBurstGuard } from "../input/paste-burst-guard.js";
@@ -22,6 +23,7 @@ export async function mountOpenTuiRuntimeView(
   let finalized = (): void => {};
   const destroyed = new Promise<void>((resolve) => { finalized = resolve; });
   const renderer = await createCliRenderer({
+    ...OPEN_TUI_FRAME_PACING,
     stdin: terminal.stdin as unknown as NodeJS.ReadStream,
     stdout: terminal.stdout as unknown as NodeJS.WriteStream,
     screenMode: "alternate-screen", exitOnCtrlC: false, exitSignals: [], consoleMode: "disabled",

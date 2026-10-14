@@ -50,6 +50,7 @@ export interface ClassicAppSnapshot {
   readonly feedGeneration: number;
   readonly liveOffset: number;
   readonly planVisible: boolean;
+  readonly queueVisible: boolean;
   readonly queueSelected: number;
   readonly cancelArmed: boolean;
   readonly turnStartedAt: number | undefined;
@@ -77,6 +78,7 @@ export interface WiringHost {
   rows: number;
   planVisibleValue: boolean;
   planKnown: boolean;
+  queueVisibleValue: boolean;
   queueSelectedValue: number;
   feedGenerationValue: number;
   feedNowValue: number;
@@ -103,6 +105,7 @@ export interface WiringHost {
   lastPaintAt: number;
   paintPacing: PaintPacing;
   paintTimer: ReturnType<typeof setTimeout> | undefined;
+  paintDeadline: number | undefined;
   resizeTimer: ReturnType<typeof setTimeout> | undefined;
   decoderTimer: ReturnType<typeof setTimeout> | undefined;
   escapeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -121,7 +124,7 @@ export interface WiringHost {
   selectionDocumentBlocks: readonly FeedBlock[] | undefined;
   scrollToastShown: boolean;
   disposed: boolean;
-  schedulePaint(): void;
+  schedulePaint(interactive?: boolean): void;
   scheduleEscapeExpiry(): void;
   syncSearchFocus(): void;
   closePanel(): boolean;

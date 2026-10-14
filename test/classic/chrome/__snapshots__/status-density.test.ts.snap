@@ -80,7 +80,7 @@ exports[`status rows > width=68 · idle fits and matches its golden 1`] = `
 
 exports[`status rows > width=68 · queued fits and matches its golden 1`] = `
 [
-  "  AGENT  · ^X cut · ^Q clear · ^N newline · ⇧⇥ mode  ctx 24.1k/128k ",
+  "  AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued ctx 24.1k/128k ",
 ]
 `;
 
@@ -110,7 +110,7 @@ exports[`status rows > width=96 · idle fits and matches its golden 1`] = `
 
 exports[`status rows > width=96 · queued fits and matches its golden 1`] = `
 [
-  "  AGENT  · ^X cut · ^Q clear · ^N newline · ⇧⇥ mode · ^L ctx · 2 queued          ctx 24.1k/128k ",
+  "  AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued · ⇧⇥ mode · ^L ctx          ctx 24.1k/128k ",
 ]
 `;
 
@@ -140,7 +140,7 @@ exports[`status rows > width=120 · idle fits and matches its golden 1`] = `
 
 exports[`status rows > width=120 · queued fits and matches its golden 1`] = `
 [
-  "  AGENT  · ^X cut · ^Q clear · ^N newline · ⇧⇥ mode · ^L ctx · 2 queued                                  ctx 24.1k/128k ",
+  "  AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued · ⇧⇥ mode · ^L ctx                                  ctx 24.1k/128k ",
 ]
 `;
 

@@ -2,12 +2,12 @@ import type { FileChange } from "../../tools/file-diff.js";
 import {
   collapsedFileChangeLabel,
   gutterWidth,
-  presentFileChangePreview,
   relativeDisplayPath,
   syntaxColor,
   type PresentedDiffRow,
 } from "../../ui-core/rendering/file-diff-view.js";
 import { presentTool } from "../../ui-core/rendering/tool-presenter.js";
+import { presentToolDiffPreviews } from "../../ui-core/rendering/tool-diff-preview.js";
 import {
   isFileDiffExpanded,
   isItemExpanded,
@@ -16,7 +16,7 @@ import {
 import { alignEnds, clipToWidth, sealStyle, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { clipRow, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
-import { hintRows, outputToggleLabel, toolGlyph } from "./tool-lines.js";
+import { hintRows, outputToggleLabel, toolGlyph, TOOL_STATUS_TOKEN } from "./tool-lines.js";
 
 export const SINGLE_FILE_PREVIEW_ROWS = 40;
 export const WRITE_MANY_PREVIEW_ROWS = 8;
@@ -25,14 +25,6 @@ export const DIFF_INDENT = 2;
 export const DIFF_TAB_WIDTH = 4;
 const GUTTER_RULE_WIDTH = 3;
 const CLICK_HINT = " · click for full";
-
-const STATUS_TOKEN: Record<ToolItem["status"], ThemeToken> = {
-  queued: "muted",
-  running: "activity",
-  ok: "success",
-  failed: "diffDel",
-  blocked: "activity",
-};
 
 type ChangeKind = FileChange["kind"];
 
@@ -129,8 +121,9 @@ export function diffTitleLine(
   change: FileChange | undefined,
 ): string {
   const presented = presentTool(item);
-  const glyph = ctx.ink.fg(STATUS_TOKEN[item.status], toolGlyph(ctx, item.status));
-  const title = ctx.ink.style(presented.name, { fg: "cyan", bold: true });
+  const token = TOOL_STATUS_TOKEN[item.status];
+  const glyph = ctx.ink.fg(token, toolGlyph(ctx, item.status));
+  const title = ctx.ink.style(presented.name, { fg: token, bold: true });
   const suffix = change && ctx.width + 2 >= SUFFIX_MIN_COLUMNS ? diffStatsSuffix(ctx, change) : "";
   return alignEnds(`${glyph} ${title}`, suffix, ctx.width, ctx.glyphs.ellipsis);
 }
@@ -181,17 +174,20 @@ export function buildDiffLines(ctx: BlockContext, item: ToolItem): string[] {
     return lines;
   }
 
-  const maxRows = multi ? WRITE_MANY_PREVIEW_ROWS : SINGLE_FILE_PREVIEW_ROWS;
-  for (const change of listed) {
+  const preview = presentToolDiffPreviews(changes, {
+    expanded: outputExpanded,
+    showPaths: multi,
+    headerRows: 0,
+    maxFiles: WRITE_MANY_LISTED_FILES,
+    maxRowsPerFile: multi ? WRITE_MANY_PREVIEW_ROWS : SINGLE_FILE_PREVIEW_ROWS,
+    maxLineChars: (change) => codeBudget(ctx, change),
+    tabWidth: DIFF_TAB_WIDTH,
+  });
+  for (const { change, rows } of preview.files) {
     if (multi) lines.push(fileRow(ctx, change));
-    const rows = presentFileChangePreview(change, {
-      maxLineChars: codeBudget(ctx, change),
-      maxRows,
-      tabWidth: DIFF_TAB_WIDTH,
-    });
     for (const row of rows) lines.push(diffRowLine(ctx, row));
   }
-  if (hiddenFiles > 0) lines.push(moreFilesRow(ctx, hiddenFiles));
+  if (preview.hiddenFiles > 0) lines.push(moreFilesRow(ctx, preview.hiddenFiles));
 
   lines.push(...hintRows(ctx, "  ", outputToggleLabel(outputExpanded)));
   return lines;

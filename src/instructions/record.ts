@@ -15,9 +15,9 @@ const MAX_ENTRY_CHARS = 300;
 export const RECORDED_INSTRUCTIONS_TEMPLATE = `# INSTRUCTIONS.md
 
 <!--
-Maintained by clai. Standing instructions clai captured from you during sessions
-in this project, kept here so they survive context compaction. Edit or delete any
-line freely; write your own long-lived rules in CLAI.md instead.
+Maintained by clai. Reusable project-wide coding, style, workflow, security, and
+architectural principles captured from you, not one-off fixes or temporary task
+requirements. Edit or delete any line freely; CLAI.md also holds project rules.
 -->
 
 ${ACTIVE_HEADING}

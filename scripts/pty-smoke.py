@@ -272,7 +272,10 @@ def run(timeout: float) -> int:
         config_dir = Path(sandbox) / "config"
         data_dir.mkdir()
         config_dir.mkdir()
-        env = {k: v for k, v in os.environ.items() if k not in ("CI", "GITHUB_ACTIONS")}
+        env = {
+            k: v for k, v in os.environ.items()
+            if k not in ("CI", "GITHUB_ACTIONS", "CLAI_UI") and not k.startswith("CLAI_RUNTIME_")
+        }
         env.update(
             {
                 "TERM": "xterm-256color",
@@ -281,6 +284,7 @@ def run(timeout: float) -> int:
                 "CLAI_DATA_DIR": str(data_dir),
                 "CLAI_HISTORY_DIR": str(data_dir / "history"),
                 "CLAI_DISABLE_KEYCHAIN": "1",
+                "CLAI_DISABLE_SESSION_RUNTIME": "1",
                 "CLAI_NO_UPDATE_CHECK": "1",
                 "CLAI_OFFLINE": "1",
                 "CLAI_CLASSIC_MOUSE": "0",
@@ -315,6 +319,19 @@ def run(timeout: float) -> int:
                 lambda data: b"Ask anything" in data,
                 timeout,
                 "classic composer",
+            )
+            send(master, b"\x1bq")
+            wait_for(
+                process, master, output, probe,
+                lambda data: "Queue hidden . Alt+Q to show" in "\n".join(probe.nonempty_rows()),
+                timeout, "hidden queue indicator",
+            )
+            shown_at = len(output)
+            send(master, b"\x1bq")
+            wait_for(
+                process, master, output, probe,
+                lambda data: len(data) > shown_at and "Queue hidden" not in "\n".join(probe.nonempty_rows()),
+                timeout, "restored queue visibility",
             )
             send(master, b"/help")
             drain(master, output, probe, 0.2)
@@ -399,7 +416,7 @@ def run(timeout: float) -> int:
 
     print(
         "PTY smoke passed: "
-        f"exit={return_code}, bytes={len(output)}, "
+        f"exit={return_code}, queue_toggle=passed, bytes={len(output)}, "
         f"max_visible_row={probe.max_visible_row_width()}, "
         f"echo={'on' if final_termios[3] & termios.ECHO else 'off'}, "
         f"initial_echo={'on' if initial_termios[3] & termios.ECHO else 'off'}"

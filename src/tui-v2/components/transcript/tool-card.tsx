@@ -24,7 +24,6 @@ import {
   toolOutputGapLabel,
 } from "../../../ui-core/rendering/tool-presenter.js";
 import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
-import { clipDiffCardText } from "../../../ui-core/rendering/file-diff-view.js";
 import {
   openToolOutputPager,
   pathFromArgsDisplay,
@@ -671,23 +670,14 @@ export function ToolCard(props: {
           }}
         >
           <FileDiffBody
-            changes={isWriteMany ? fileChanges.slice(0, 12) : fileChanges}
+            changes={fileChanges}
             theme={theme}
             diffExpanded={fileDiffExpanded}
+            outputExpanded={expanded}
             multiFilePreview={isWriteMany}
             onOpen={openFileChange}
             contentWidth={diffPaneWidth}
           />
-          {isWriteMany && fileChanges.length > 12 ? (
-            <text
-              selectable
-              content={clipDiffCardText(
-                ` ··· +${fileChanges.length - 12} more files · click for full ···`,
-                diffPaneWidth - 4,
-              )}
-              style={{ fg: theme.muted, height: 1 }}
-            />
-          ) : null}
         </box>
       ) : null}
 

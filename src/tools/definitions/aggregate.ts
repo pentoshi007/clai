@@ -48,15 +48,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "instructions.record",
-    'Persist a standing instruction to .clai/INSTRUCTIONS.md so it survives context compaction. Call this as soon as the user states a rule you must keep honoring for the rest of the work — a required style, a forbidden action, a workflow you must repeat (for example "never add comments", "do not push to GitHub", "commit after each change"). One short imperative sentence per entry. Never record task steps, findings, plan items, or anything already in an instruction file. Use remove when the user retracts a rule.',
+    "Persist reusable project-wide rules in .clai/INSTRUCTIONS.md, never one-off requirements; skip when none qualify. Follow PERSISTENT PROJECT INSTRUCTIONS.",
     {
       type: "object",
       properties: {
+        scope: {
+          type: "string",
+          enum: ["project"],
+          description:
+            "Required for reusable project-wide additions; omit for removals.",
+        },
         add: {
           type: "array",
           items: { type: "string" },
           description:
-            "Standing rules to persist, one imperative sentence each (max 12 per call)",
+            "One short imperative sentence per reusable rule (max 12 per call)",
         },
         remove: {
           type: "array",

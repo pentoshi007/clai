@@ -31,6 +31,7 @@ import { installTerminalRescue } from "../../os/terminal-rescue.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
+import { OPEN_TUI_FRAME_PACING } from "./frame-pacing.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
@@ -81,6 +82,7 @@ export async function startTuiV2(
     markRendererFinalized = resolve;
   });
   const renderer = await createCliRenderer({
+    ...OPEN_TUI_FRAME_PACING,
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
     ...terminalEnvOptions,

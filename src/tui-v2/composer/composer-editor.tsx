@@ -828,7 +828,6 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
         }}
         onCursorChange={() => {
           refreshMenu();
-          syncContentRows();
         }}
         onKeyDown={onKeyDown}
       />

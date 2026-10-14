@@ -48,6 +48,7 @@ export interface StatusViewInput {
   readonly tick: number;
   readonly hasDraft: boolean;
   readonly queued: number;
+  readonly queueVisible?: boolean | undefined;
   readonly planVisible: boolean;
   readonly hasActivePlan: boolean;
   readonly thinkingExpanded?: boolean | undefined;
@@ -158,14 +159,15 @@ function idleSegments(input: StatusViewInput, density: StatusDensity): string[] 
     const token: ThemeToken = input.planVisible ? "inputBorder" : "muted";
     hints.push({ label: hLabel, token });
   }
+  const queued =
+    input.queued > 0 ? (density === "sm" ? `${input.queued}q` : `${input.queued} queued`) : "";
+  const hidden = queued !== "" && input.queueVisible === false ? " (hidden)" : "";
+  hints.push({ label: `${queued}${hidden}`, token: "mode" });
   hints.push({ label: `${ink.unicode ? "⇧⇥" : "S-tab"} mode`, token: "muted" });
   if (density !== "xs" && density !== "sm") {
     hints.push({ label: "^L ctx", token: "muted" });
   }
-  const queued =
-    input.queued > 0 ? (density === "sm" ? `${input.queued}q` : `${input.queued} queued`) : "";
-  const queuedSeg = ink.fg("mode", queued);
-  return [...hints.map((h) => ink.fg(h.token, h.label)), queuedSeg];
+  return hints.map((h) => ink.fg(h.token, h.label));
 }
 
 function busySegments(input: StatusViewInput, density: StatusDensity, leftBudget: number): string[] {
@@ -177,7 +179,7 @@ function busySegments(input: StatusViewInput, density: StatusDensity, leftBudget
   return [
     `${ink.fg("spinner", spinnerFrame(input.tick, ink.unicode))} ${ink.fg("activity", label)}`,
     ink.fg(input.cancelArmed ? "activity" : "muted", cancel),
-    input.queued > 0 ? ink.fg("mode", `${input.queued}q`) : "",
+    input.queued > 0 ? ink.fg("mode", `${input.queued}q${input.queueVisible === false ? " hidden" : ""}`) : "",
   ];
 }
 

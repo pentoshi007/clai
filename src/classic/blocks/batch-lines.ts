@@ -28,7 +28,7 @@ const SECTION_TOKEN: Record<string, ThemeToken> = {
   running: "activity",
   ok: "success",
   fail: "diffDel",
-  cancelled: "activity",
+  cancelled: "muted",
 };
 
 function sectionGlyph(ctx: BlockContext, status: string): string {
@@ -65,7 +65,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     const multiRead = section.name === "fs.read" && isFsReadMultiOutput(section.body);
     const presented = presentBatchSection(section, multiRead ? false : expanded, ctx.width - SUB_BODY_INDENT);
     const glyph = ctx.ink.fg(token, sectionGlyph(ctx, status));
-    const name = ctx.ink.fg("cyan", section.name);
+    const name = ctx.ink.fg(token, section.name);
     const suffix =
       ctx.width + 2 >= SUFFIX_MIN_COLUMNS && status === "running"
         ? ctx.ink.fg(token, toolStatusText(presented.statusLabel))
@@ -79,7 +79,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     for (const row of rows) {
       const text = adaptPresenterGlyphs(row, ctx.ink.unicode);
       for (const chunk of wrapBoundedRows(ctx, text, budget, EXPANDED_LINE_ROWS)) {
-        lines.push(trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolText", chunk)}`));
+        lines.push(trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolOutput", chunk)}`));
       }
     }
   }

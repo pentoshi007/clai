@@ -24,6 +24,7 @@ import { getLogsDirRoot } from "../../store/paths.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { ClassicApp } from "../app/ClassicApp.js";
 import { createClassicAppWiring, type ClassicAppWiring } from "../app/app-wiring.js";
+import { CLASSIC_MAX_FPS } from "../app/paint-pacing.js";
 import { createOsc52Renderer } from "./osc52-renderer.js";
 import { createClassicRenderer } from "./renderer-handle.js";
 import { createTerminalSession } from "./terminal-session.js";
@@ -38,6 +39,7 @@ export const CLASSIC_INK_OPTIONS: RenderOptions = {
   alternateScreen: false,
   concurrent: false,
   incrementalRendering: true,
+  maxFps: CLASSIC_MAX_FPS * 2,
 };
 
 export interface StartClassicOptions {

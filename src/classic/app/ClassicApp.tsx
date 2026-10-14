@@ -6,10 +6,9 @@ import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import { formatComposerMeta } from "../../ui-core/composer/composer-meta.js";
 import { useServices } from "../../ui-core/react/providers.js";
 import { clipSegment, modeIndicatorPresentation } from "../../ui-core/rendering/status-segments.js";
-import { layoutWidth } from "../render/measure.js";
 import { Chrome } from "../chrome/Chrome.js";
 import { Composer } from "../chrome/Composer.js";
-import { directoryRow } from "../chrome/directory-row.js";
+import { composerDirectoryRow } from "../chrome/directory-row.js";
 import { QueuePanel } from "../chrome/QueuePanel.js";
 import { ResponderStrip } from "../chrome/ResponderStrip.js";
 import { SubagentsStrip } from "../chrome/SubagentsStrip.js";
@@ -78,7 +77,7 @@ export function ClassicApp(
     composerTextRows: composerTextRowsWanted({ columns: shellWidth, text: composer.state.text }),
     statusRowsWanted: statusRowsWanted(),
     toastCount: toastRowsWanted(snapshot.toasts, shellWidth),
-    queueCount: session.queued.length,
+    queueCount: snapshot.queueVisible ? session.queued.length : 0,
     responderVisible: responderVisible(session.responder),
     subagentsVisible: subagentsVisible(session.subagents),
     planVisible: snapshot.planVisible && plan !== undefined,
@@ -148,6 +147,7 @@ export function ClassicApp(
     tick: snapshot.tick + snapshot.animationTick,
     hasDraft: composer.state.text.length > 0,
     queued: session.queued.length,
+    queueVisible: snapshot.queueVisible,
     planVisible: snapshot.planVisible,
     hasActivePlan: plan !== undefined,
     thinkingExpanded: snapshot.transcript.expandThinkingGlobal,
@@ -185,10 +185,10 @@ export function ClassicApp(
   return <Box flexDirection="row" width={columns}>
     <Box width={columns - SCROLLBAR_GUTTER_COLS} paddingLeft={shellPadding} paddingRight={Math.max(0, shellPadding - SCROLLBAR_GUTTER_COLS)} flexDirection="column">
       {standaloneLabel === undefined ? null : <Text wrap="truncate">{standaloneLabel}</Text>}
-      <Chrome layout={layout} columns={shellWidth} liveTail={<LiveTail window={feed.window} rows={layout.liveTail} document={selectionDocument} selection={selection} />} slots={{
+      <Chrome layout={layout} columns={shellWidth} liveTail={<LiveTail window={feed.window} rows={layout.liveTail} columns={shellWidth} document={selectionDocument} selection={selection} />} slots={{
       plan: plan && snapshot.planVisible ? <PlanPanel ink={feed.ink} columns={shellWidth} rows={layout.plan} plan={plan} state={panel.plan} focused={services.focus.activeContext() === "plan"} /> : undefined,
       overlay: panelSlot,
-      queue: <QueuePanel ink={feed.ink} columns={shellWidth} allocatedRows={layout.queue} queued={session.queued} selected={snapshot.queueSelected} />,
+      queue: snapshot.queueVisible ? <QueuePanel ink={feed.ink} columns={shellWidth} allocatedRows={layout.queue} queued={session.queued} selected={snapshot.queueSelected} /> : undefined,
       responder: <ResponderStrip ink={feed.ink} columns={shellWidth} state={session.responder} />,
       subagents: <SubagentsStrip ink={feed.ink} columns={shellWidth} state={session.subagents} />,
       toast: <ToastRow ink={feed.ink} columns={shellWidth} allocatedRows={layout.toast} toasts={snapshot.toasts} />,
@@ -196,20 +196,16 @@ export function ClassicApp(
         {frame.showDirectory ? <Text wrap="truncate"> </Text> : null}
         {frame.showDirectory ? (
           <Text wrap="truncate">
-            {(() => {
-              const dir = directoryRow({ ink: feed.ink, columns: shellWidth, cwd: snapshot.cwd, branch: snapshot.branch });
-              const hasActivePlan = plan !== undefined;
-              const isExpanded = snapshot.planVisible;
-              if (!hasActivePlan || isExpanded) return dir;
-              const hint = feed.ink.fg("inputBorder", "Tasks active . cntrl+H to expand");
-              const width = Math.max(1, shellWidth - 2);
-              const left = dir.trim();
-              const gap = "   ";
-              if (layoutWidth(left) + layoutWidth(gap) + layoutWidth(hint) <= width) {
-                return ` ${left}${gap}${hint} `;
-              }
-              return ` ${clipSegment(hint, width)} `;
-            })()}
+            {composerDirectoryRow({
+              ink: feed.ink,
+              columns: shellWidth,
+              cwd: snapshot.cwd,
+              branch: snapshot.branch,
+              hasActivePlan: plan !== undefined,
+              planVisible: snapshot.planVisible,
+              queued: session.queued.length,
+              queueVisible: snapshot.queueVisible,
+            })}
           </Text>
         ) : null}
         <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} accentSpans={composer.mentionSpans} />

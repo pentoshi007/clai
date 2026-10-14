@@ -1,10 +1,10 @@
 import { Box, Text } from "ink";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import type { InkTheme } from "../render/ink-theme.js";
 import { scrollbarCell, scrollbarGeometry } from "./scrollbar-rows.js";
 import type { TranscriptWindow } from "./transcript-window.js";
 
-export function ScrollbarGutter(props: {
+export const ScrollbarGutter = memo(function ScrollbarGutter(props: {
   readonly ink: InkTheme;
   readonly window: TranscriptWindow;
   readonly rows: number;
@@ -40,26 +40,15 @@ export function ScrollbarGutter(props: {
   }, []);
 
   const shouldShow = scrollable && isScrolling && geometry.length > 0;
-  if (!shouldShow) {
-    return (
-      <Box flexDirection="column" width={1} flexShrink={0}>
-        {Array.from({ length: Math.max(0, Math.floor(props.offsetTop)) }, (_, index) => (
-          <Text key={`gutter-pad-${index}`}> </Text>
-        ))}
-      </Box>
-    );
+  const lines = Array.from({ length: Math.max(0, Math.floor(props.offsetTop)) }, () => " ");
+  if (shouldShow) {
+    const thumb = props.ink.fg("muted", scrollbarCell(true));
+    const track = props.ink.fg("border", scrollbarCell(false));
+    for (const cell of geometry) lines.push(cell ? thumb : track);
   }
-
   return (
     <Box flexDirection="column" width={1} flexShrink={0}>
-      {Array.from({ length: Math.max(0, Math.floor(props.offsetTop)) }, (_, index) => (
-        <Text key={`gutter-pad-${index}`}> </Text>
-      ))}
-      {geometry.map((thumb, index) => (
-        <Text key={`gutter-cell-${index}`} wrap="truncate">
-          {thumb ? props.ink.fg("muted", scrollbarCell(true)) : props.ink.fg("border", scrollbarCell(false))}
-        </Text>
-      ))}
+      {lines.length > 0 ? <Text wrap="truncate">{lines.join("\n")}</Text> : null}
     </Box>
   );
-}
+});
