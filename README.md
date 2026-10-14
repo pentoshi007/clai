@@ -149,6 +149,8 @@ Each run's “Worked for” summary includes its recorded line additions and rem
 
 Context compaction reduces what the model receives while retaining recent requests, plans, task state, and available research findings. It does not erase the saved chat transcript. Use `/compact` to compact manually, `/context` to inspect context size, and `/output` to read retained tool output.
 
+Standing user instructions are carried forward in a dedicated memory section across repeated compactions and saved sessions. If the summary rewords an inherited rule or proposes an unverified change, clai keeps the canonical rule and completes compaction; verified user changes and completed task constraints are reconciled locally. Project instruction files are re-injected separately. When the captured request fits, compaction appends its prompt to that request while preserving its cached prefix, tools, and settings, with no extra request for instruction reconciliation.
+
 `/clear` deletes the current session and starts fresh. `/reset` clears all saved history. These are deletion commands; use `/new` when you want to keep the previous conversation.
 
 ## Providers and usage
@@ -284,6 +286,7 @@ Type `/` at the start of the draft or after a space to browse commands. Use the 
 | Interrupt; press again to quit | `Ctrl+C` |
 | Cycle mode | `Shift+Tab` |
 | Toggle plan pane / details | `Ctrl+H` / `Ctrl+P` |
+| Show / hide queued-message blocks (Classic) | `Alt+Q` |
 | Background jobs | `Ctrl+J` |
 | Expand thinking / tool output | `Ctrl+T` / `Ctrl+O` |
 | Search transcript when focused | `Ctrl+R` |
@@ -291,6 +294,8 @@ Type `/` at the start of the draft or after a space to browse commands. Use the 
 | Help / full shortcut reference | `Ctrl+G` / `/shortcuts` |
 
 Type `/` for command suggestions and `@` for file mentions. Terminal support affects which modified key combinations are available; `/shortcuts` lists bindings by context.
+
+In Classic, `Alt+Q` hides or restores the queued-message blocks above the composer. The queue count and hidden state appear immediately to the right of the `Ctrl+H` tasks hint. Hiding does not remove, pause, or alter queued messages; selection, send-now, edit, and drop shortcuts still work. Tool headers use the OpenTUI state colors, with cyan inputs and light-blue outputs.
 
 In OpenTUI, task titles and statuses keep their original colors and formatting while extra information starts collapsed. Click the small shaded `+` / `−` button immediately after a task title, or use **Expand all** / **Collapse all** beside the progress bar. Buttons center their glyphs and change background on hover or keyboard focus without brackets or underlines; mouse clicks leave no persistent highlight. Expanded information keeps the original muted text without added fields or headers; controls follow the end of wrapped titles in narrow panes. Scrolling keeps wrapped titles together when they fit the viewport, and keyboard selection reveals the whole title without unrelated progress updates moving your reading position. With the task pane focused, `↑` / `↓` select a task, `Enter` toggles its details, `→` / `←` expand or collapse it, `E` / `C` expand or collapse all, and `PageUp` / `PageDown` scroll. `Ctrl+P` still opens the full plan view.
 

@@ -22,34 +22,64 @@ export interface TranscriptWindow {
   readonly visibleItemIds: ReadonlySet<string>;
 }
 
+interface TranscriptIndex {
+  readonly starts: readonly number[];
+  readonly totalRows: number;
+}
+
+const transcriptIndexes = new WeakMap<readonly FeedBlock[], TranscriptIndex>();
+
+function transcriptIndex(blocks: readonly FeedBlock[]): TranscriptIndex {
+  const cached = transcriptIndexes.get(blocks);
+  if (cached) return cached;
+  const starts: number[] = [];
+  let totalRows = 0;
+  for (let index = 0; index < blocks.length; index += 1) {
+    starts.push(totalRows);
+    totalRows += blocks[index]!.lines.length;
+    if (index < blocks.length - 1) totalRows += BLOCK_GAP_ROWS;
+  }
+  const result = { starts, totalRows };
+  transcriptIndexes.set(blocks, result);
+  return result;
+}
+
 export function totalTranscriptRows(blocks: readonly FeedBlock[]): number {
-  if (blocks.length === 0) return 0;
-  let total = BLOCK_GAP_ROWS * (blocks.length - 1);
-  for (const block of blocks) total += block.lines.length;
-  return total;
+  return transcriptIndex(blocks).totalRows;
+}
+
+function firstVisibleBlock(starts: readonly number[], row: number): number {
+  let lower = 0;
+  let upper = starts.length;
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2);
+    if (starts[middle]! <= row) lower = middle + 1;
+    else upper = middle;
+  }
+  return Math.max(0, lower - 1);
 }
 
 function sliceRows(
   blocks: readonly FeedBlock[],
+  index: TranscriptIndex,
   start: number,
   end: number,
 ): TranscriptWindowRow[] {
   const rows: TranscriptWindowRow[] = [];
-  let cursor = 0;
-  for (let blockIndex = 0; blockIndex < blocks.length && cursor < end; blockIndex += 1) {
+  if (start >= end) return rows;
+  const first = firstVisibleBlock(index.starts, start);
+  let cursor = index.starts[first] ?? 0;
+  for (let blockIndex = first; blockIndex < blocks.length && cursor < end; blockIndex += 1) {
     const block = blocks[blockIndex]!;
+    const lines = block.lines;
     const gap = blockIndex < blocks.length - 1 ? BLOCK_GAP_ROWS : 0;
-    const span = block.lines.length + gap;
-    if (cursor + span <= start) {
-      cursor += span;
-      continue;
-    }
+    const span = lines.length + gap;
     const from = Math.max(0, start - cursor);
     const to = Math.min(span, end - cursor);
     for (let offset = from; offset < to; offset += 1) {
       rows.push(
-        offset < block.lines.length
-          ? { key: `${block.key}:${offset}`, line: block.lines[offset]!, block, lineIndex: offset }
+        offset < lines.length
+          ? { key: `${block.key}:${offset}`, line: lines[offset]!, block, lineIndex: offset }
           : { key: `${block.key}:gap`, line: "", block, lineIndex: undefined },
       );
     }
@@ -64,12 +94,13 @@ export function planTranscriptWindow(
   offsetFromBottom: number,
 ): TranscriptWindow {
   const viewportRows = Math.max(0, Math.floor(budget));
-  const totalRows = totalTranscriptRows(blocks);
+  const index = transcriptIndex(blocks);
+  const totalRows = index.totalRows;
   const maxOffset = Math.max(0, totalRows - viewportRows);
   const offset = Math.max(0, Math.min(Math.floor(offsetFromBottom), maxOffset));
   const end = totalRows - offset;
   const start = Math.max(0, end - viewportRows);
-  const rows = viewportRows === 0 ? [] : sliceRows(blocks, start, end);
+  const rows = viewportRows === 0 ? [] : sliceRows(blocks, index, start, end);
   const visibleItemIds = new Set<string>();
   for (const row of rows) visibleItemIds.add(row.block.itemId);
   return {

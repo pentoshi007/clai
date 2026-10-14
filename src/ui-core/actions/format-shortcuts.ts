@@ -226,6 +226,8 @@ export function formatShortcutsReference(
     "",
     "Status chips under the input are clickable: `^T` · `^O` · `^U` · `^D` · `^X` · `^Q`.",
     "",
+    "Classic only: `Alt+Q` shows or hides queued-message blocks without removing queued messages. The count and visibility appear beside the tasks hint above the composer.",
+    "",
   ];
 
   for (const ctx of CONTEXT_ORDER) {

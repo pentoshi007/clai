@@ -1,5 +1,5 @@
 import { safeCwd } from "../../os/cwd.js";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, type Dirent } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -35,6 +35,16 @@ export function expandHome(p: string): string {
   return p;
 }
 
+function suggestionIsDirectory(searchDir: string, entry: Dirent): boolean | undefined {
+  if (entry.isDirectory()) return true;
+  if (entry.isFile() || entry.isBlockDevice() || entry.isCharacterDevice() || entry.isFIFO() || entry.isSocket()) return false;
+  try {
+    return statSync(join(searchDir, entry.name)).isDirectory();
+  } catch {
+    return undefined;
+  }
+}
+
 export function findFileSuggestions(
   query: string,
   baseDir: string = safeCwd(),
@@ -60,9 +70,9 @@ export function findFileSuggestions(
       : dirPart
     : resolve(baseDir, dirPart);
 
-  let entries: string[];
+  let entries: Dirent[];
   try {
-    entries = readdirSync(searchDir);
+    entries = readdirSync(searchDir, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -86,17 +96,14 @@ export function findFileSuggestions(
     });
   }
 
-  for (const name of entries) {
+  for (const entry of entries) {
+    const name = entry.name;
     if (prefix === "" && NOISE_DIRS.has(name)) continue;
     if (prefix === "" && name.startsWith(".")) continue;
     if (!name.toLowerCase().startsWith(lowerPrefix)) continue;
 
-    let isDir = false;
-    try {
-      isDir = statSync(join(searchDir, name)).isDirectory();
-    } catch {
-      continue;
-    }
+    const isDir = suggestionIsDirectory(searchDir, entry);
+    if (isDir === undefined) continue;
 
     const joined =
       dirPart === "" ? name : `${dirPart.replace(/\/$/, "")}/${name}`;

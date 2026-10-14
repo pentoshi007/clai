@@ -117,6 +117,11 @@ export function handleContextLimitPaste(host: WiringHost, text: string): void {
   host.schedulePaint();
 }
 
+export function toggleQueueVisible(host: WiringHost): void {
+  host.queueVisibleValue = !host.queueVisibleValue;
+  host.schedulePaint(true);
+}
+
 export function setQueueSelected(host: WiringHost, index: number): void {
   const count = host.services.session.getState().queued.length;
   host.queueSelectedValue = count === 0 ? 0 : Math.max(0, Math.min(index, count - 1));
@@ -301,7 +306,7 @@ export function scrollFeed(host: WiringHost, delta: number): void {
     return;
   }
   host.liveOffsetValue = next;
-  host.schedulePaint();
+  host.schedulePaint(true);
 }
 
 export function showTranscriptTopHint(host: WiringHost): void {

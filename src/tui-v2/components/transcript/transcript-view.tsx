@@ -133,6 +133,8 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   const closeOverlay = useRef<(() => void) | undefined>(undefined);
   const lastTailId = useRef(tailItem?.id);
   const followBottom = useRef(true);
+  const pinFrame = useRef<number | undefined>(undefined);
+  const pinForced = useRef(false);
   const [followSticky, setFollowSticky] = useState(true);
   const wasRunning = useRef(false);
   const dragPointer = useRef<{ x: number; y: number } | undefined>(undefined);
@@ -308,15 +310,22 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     scrollRef.current?.stopAutoScroll();
   }
 
+  function stopPinRefresh(): void {
+    if (pinFrame.current !== undefined) cancelAnimationFrame(pinFrame.current);
+    pinFrame.current = undefined;
+    pinForced.current = false;
+  }
+
+  useEffect(() => stopPinRefresh, []);
+
   function pinToBottom(options?: { forced?: boolean }): void {
-    const forced = options?.forced === true;
+    pinForced.current ||= options?.forced === true;
     const go = (): void => {
-      if (!followBottom.current) return;
       if (
         !shouldPinTranscriptBottom({
           following: followBottom.current,
           pointerGestureActive: pointerGestureActive.current,
-          forced,
+          forced: pinForced.current,
         })
       ) {
         return;
@@ -329,9 +338,14 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       sb.scrollTo(next);
     };
     go();
-    requestAnimationFrame(() => {
+    if (pinFrame.current !== undefined) return;
+    pinFrame.current = requestAnimationFrame(() => {
       go();
-      requestAnimationFrame(go);
+      pinFrame.current = requestAnimationFrame(() => {
+        pinFrame.current = undefined;
+        go();
+        pinForced.current = false;
+      });
     });
   }
 
@@ -339,6 +353,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     followBottom.current = on;
     setFollowSticky(on);
     if (!on) {
+      stopPinRefresh();
       setWindowStart((current) => current ?? mountWindow.start);
       return;
     }
@@ -521,16 +536,20 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   }, [itemCount, mountWindow.start, mountWindow.end]);
 
   useEffect(() => {
-    const tick = (): void => {
-      publishScrollRemainder(scrollRef.current);
-    };
-    tick();
-    const id = setInterval(tick, 200);
+    const sb = scrollRef.current;
+    if (!sb) return;
+    const publish = (): void => publishScrollRemainder(sb);
+    sb.verticalScrollBar.on("change", publish);
+    sb.content.on("resize", publish);
+    sb.viewport.on("resize", publish);
+    publish();
     return () => {
-      clearInterval(id);
+      sb.verticalScrollBar.off("change", publish);
+      sb.content.off("resize", publish);
+      sb.viewport.off("resize", publish);
       publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
     };
-  }, []);
+  }, [scrollRef]);
 
   useEffect(() => {
     const unregister = registerTranscriptAutoScroll({

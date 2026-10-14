@@ -8,7 +8,7 @@ import { defaultPagerMarkdownMode } from "../../../src/ui-core/rendering/pager-v
 import { formatSubagentRun } from "../../../src/ui-core/rendering/subagent-source.js";
 import { formatFsReadSection } from "../../../src/tools/fs/read-sections.js";
 import { blockContextFor } from "../../../src/classic/feed/feed-blocks.js";
-import { buildToolLines } from "../../../src/classic/blocks/tool-lines.js";
+import { buildToolLines, toolHeaderLines } from "../../../src/classic/blocks/tool-lines.js";
 import { buildBatchLines } from "../../../src/classic/blocks/batch-lines.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
 import { middleClipText } from "../../../src/ui-core/rendering/text-width.js";
@@ -34,20 +34,31 @@ describe("multi-file read presentation", () => {
     expect(presentFsReadArgs(JSON.stringify({ files: [files[0]] })).files).toHaveLength(1);
   });
 
-  it.each([40, 80, 120])("shows all six paths and statuses in compact Classic cards at %i columns", (columns) => {
+  it.each([40, 80, 120])("shows all six paths, options and statuses in collapsed and expanded inputs at %i columns", (columns) => {
     const turn = scriptedTurn();
     const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool")!;
     const item = { ...source, name: "fs.read", argsDisplay, status: "failed" as const };
     turn.spool.replace(item.toolCallId, output);
     const ctx = blockContextFor(turn.state, feedView(turn, { columns }));
-    const lines = buildToolLines(ctx, item).map(stripAnsi);
+    const preview = toolHeaderLines(ctx, item).map(stripAnsi);
+    expect(preview).toHaveLength(13);
+    expect(preview.join("\n")).not.toContain("…");
+    const expandedCtx = blockContextFor({ ...turn.state, expandOutputGlobal: true }, feedView(turn, { columns }));
+    expect(toolHeaderLines(expandedCtx, item).map(stripAnsi)).toEqual(preview);
+    const lines = buildToolLines(expandedCtx, item).map(stripAnsi);
     const text = lines.join("\n");
+    const collapsed = preview.join("\n");
     for (let index = 0; index < files.length; index += 1) {
-      expect(text).toContain(`file ${index + 1}/6: ${index === 2 ? "✗" : "✓"} ${files[index]!.path}`);
+      const path = `file ${index + 1}/6: ${index === 2 ? "✗" : "✓"} ${files[index]!.path}`;
+      expect(collapsed).toContain(path);
+      expect(collapsed).toContain(`offset=${index + 1}`);
+      expect(text).toContain(path);
       expect(text).toContain(`offset=${index + 1}`);
     }
-    expect(lines.every((line) => displayWidth(line) <= ctx.width)).toBe(true);
+    expect([...preview, ...lines].every((line) => displayWidth(line) <= ctx.width)).toBe(true);
     expect(text).not.toContain('"files"');
+    expect(item.argsDisplay).toBe(argsDisplay);
+    expect(turn.spool.tail(item.toolCallId)).toBe(output);
   });
 
   it.each([40, 80, 120])("keeps all nested paths visible in compact historical tool.batch cards at %i columns", (columns) => {

@@ -6,7 +6,7 @@ import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js
 import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-size.js";
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
 import { readBranchFromGitDir } from "./git-branch.js";
-import { nextPaintPacing } from "./paint-pacing.js";
+import { nextPaintPacing, paintIntervalMs } from "./paint-pacing.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
 const ANIMATION_INTERVAL_MS = 250;
@@ -74,17 +74,17 @@ export function attachWiring(host: WiringHost): void {
       host.composer.insertToken(text);
       host.schedulePaint();
     }),
-    host.composer.subscribe(() => host.schedulePaint()),
+    host.composer.subscribe(() => host.schedulePaint(true)),
     host.panels.subscribe(() => {
       host.syncSearchFocus();
-      host.schedulePaint();
+      host.schedulePaint(true);
     }),
     host.services.session.subscribe(() => host.onSessionChange()),
     host.services.transcript.subscribe(() => host.onTranscriptChange()),
     host.services.plan.subscribe(() => host.onPlanChange()),
     host.services.toast.subscribe(() => host.schedulePaint()),
-    host.services.focus.onChange(() => host.schedulePaint()),
-    host.services.selection.subscribe(() => host.schedulePaint()),
+    host.services.focus.onChange(() => host.schedulePaint(true)),
+    host.services.selection.subscribe(() => host.schedulePaint(true)),
     host.services.ports.jobs.subscribe(() => {
       host.disarmEscapeIfIdle();
       host.schedulePaint();
@@ -203,6 +203,7 @@ export function buildSnapshot(host: WiringHost): ClassicAppSnapshot {
     feedGeneration: host.feedGenerationValue,
     liveOffset: host.liveOffsetValue,
     planVisible: host.planVisibleValue,
+    queueVisible: host.queueVisibleValue,
     queueSelected: host.queueSelectedValue,
     cancelArmed: host.ladder.escapeArmed,
     turnStartedAt: host.turnStartedAtValue,
@@ -215,20 +216,25 @@ export function buildSnapshot(host: WiringHost): ClassicAppSnapshot {
   };
 }
 
-export function schedulePaint(host: WiringHost): void {
-  if (host.disposed || host.paintTimer) return;
-  const delay = Math.max(0, host.paintPacing.intervalMs - (host.now() - host.lastPaintAt));
+export function schedulePaint(host: WiringHost, interactive = false): void {
+  if (host.disposed) return;
+  const now = host.now();
+  const deadline = Math.max(now, host.lastPaintAt + paintIntervalMs(host.paintPacing, interactive));
+  if (host.paintDeadline !== undefined && host.paintDeadline <= deadline) return;
+  if (host.paintTimer) clearTimeout(host.paintTimer);
+  host.paintDeadline = deadline;
   host.paintTimer = setTimeout(() => {
     host.paintTimer = undefined;
+    host.paintDeadline = undefined;
     if (host.disposed) return;
     const startedAt = host.now();
     host.lastPaintAt = startedAt;
     host.snapshot = buildSnapshot(host);
     for (const listener of host.listeners) listener();
     setImmediate(() => {
-      host.paintPacing = nextPaintPacing(host.paintPacing, host.now() - startedAt);
+      if (!host.disposed) host.paintPacing = nextPaintPacing(host.paintPacing, host.now() - startedAt);
     });
-  }, delay);
+  }, Math.max(0, deadline - now));
   host.paintTimer.unref?.();
 }
 
@@ -249,7 +255,7 @@ function flushWhenSettled(host: WiringHost): void {
   const deadline = host.input.pendingDeadline;
   if (deadline !== undefined && deadline <= host.now()) {
     host.router.handleAll(host.input.flush());
-    host.schedulePaint();
+    host.schedulePaint(true);
   }
   host.scheduleDecoderFlush();
 }

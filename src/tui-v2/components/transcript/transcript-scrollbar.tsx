@@ -80,8 +80,11 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
 
   const refresh = useCallback((): void => {
     const next = readMetrics(scrollRef.current);
+    if (next.scrollTop !== prevScrollTopRef.current) {
+      prevScrollTopRef.current = next.scrollTop;
+      triggerVisible();
+    }
     setMetrics((prev) => {
-      if (prev.scrollTop !== next.scrollTop) triggerVisible();
       if (
         prev.scrollTop === next.scrollTop &&
         prev.scrollHeight === next.scrollHeight &&
@@ -99,22 +102,24 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
   }, [refresh, followKey]);
 
   useEffect(() => {
-    const id = setInterval(refresh, 100);
-    return () => clearInterval(id);
-  }, [refresh]);
+    const sb = scrollRef.current;
+    if (!sb) return;
+    sb.verticalScrollBar.on("change", refresh);
+    sb.content.on("resize", refresh);
+    sb.viewport.on("resize", refresh);
+    refresh();
+    return () => {
+      sb.verticalScrollBar.off("change", refresh);
+      sb.content.off("resize", refresh);
+      sb.viewport.off("resize", refresh);
+    };
+  }, [scrollRef, refresh]);
 
   useEffect(() => {
     return () => {
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (metrics.scrollTop !== prevScrollTopRef.current) {
-      prevScrollTopRef.current = metrics.scrollTop;
-      triggerVisible();
-    }
-  }, [metrics.scrollTop, triggerVisible]);
 
   const applyScroll = useCallback(
     (relativeY: number): void => {

@@ -258,7 +258,7 @@ describe("recording instructions", () => {
     const previousCwd = process.cwd();
     process.chdir(dir);
     try {
-      const result = await instructionsRecordTool({ add: ["No comments."] });
+      const result = await instructionsRecordTool({ add: ["No comments."], scope: "project" });
       expect(result.ok).toBe(true);
       expect(result.output).toContain("No comments.");
       expect(result.output).toContain("re-injected after compaction");
@@ -267,9 +267,10 @@ describe("recording instructions", () => {
     }
   });
 
-  it("rejects an empty call", async () => {
+  it("skips an empty call", async () => {
     const result = await instructionsRecordTool({});
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain("Skipped");
   });
 
   it("is classified safe so it never prompts for confirmation", () => {

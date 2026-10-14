@@ -4,6 +4,7 @@ import {
   PAINT_MAX_INTERVAL_MS,
   PAINT_MIN_INTERVAL_MS,
   nextPaintPacing,
+  paintIntervalMs,
   type PaintPacing,
 } from "../../../src/classic/app/paint-pacing.js";
 
@@ -12,8 +13,24 @@ function settle(samples: readonly number[]): PaintPacing {
 }
 
 describe("paint pacing", () => {
+  it("allows cheap frames within a 60 Hz interaction budget", () => {
+    expect(PAINT_MIN_INTERVAL_MS).toBeLessThanOrEqual(17);
+    expect(PAINT_MIN_INTERVAL_MS).toBeGreaterThan(0);
+  });
+
   it("keeps the fastest cadence while frames are cheap", () => {
     expect(settle(Array(20).fill(2)).intervalMs).toBe(PAINT_MIN_INTERVAL_MS);
+  });
+
+  it("retains adaptive background backoff without stalling interaction", () => {
+    const slow = settle(Array(40).fill(100));
+    expect(paintIntervalMs(slow, false)).toBe(PAINT_MAX_INTERVAL_MS);
+    expect(paintIntervalMs(slow, true)).toBe(PAINT_MIN_INTERVAL_MS * 2);
+    expect(paintIntervalMs(INITIAL_PAINT_PACING, true)).toBe(PAINT_MIN_INTERVAL_MS);
+  });
+
+  it("scales interaction pacing with the measured cost between its bounds", () => {
+    expect(paintIntervalMs({ costMs: 12, intervalMs: 48 }, true)).toBe(24);
   });
 
   it("slows the cadence in proportion to a sustained frame cost", () => {

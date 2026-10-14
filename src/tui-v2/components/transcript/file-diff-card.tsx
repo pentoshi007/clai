@@ -9,13 +9,13 @@ import {
   collapsedFileChangesLabel,
   diffCardMaxLineChars,
   gutterWidth,
-  presentFileChangePreview,
   relativeDisplayPath,
   rowBackground,
   syntaxColor,
   type PresentedDiffRow,
 } from "../../../ui-core/rendering/file-diff-view.js";
 import type { FileChange } from "../../../tools/file-diff.js";
+import { presentToolDiffPreviews, type ToolDiffPreview } from "../../../ui-core/rendering/tool-diff-preview.js";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 
@@ -148,7 +148,7 @@ function FileDiffHunks(props: {
   showPath: boolean;
   theme: Theme;
   onOpen: (change: FileChange) => void;
-  maxRows?: number;
+  rows: readonly PresentedDiffRow[];
   paneWidth: number;
 }): ReactNode {
   const {
@@ -156,7 +156,7 @@ function FileDiffHunks(props: {
     showPath,
     theme,
     onOpen,
-    maxRows = SINGLE_FILE_PREVIEW_ROWS,
+    rows,
     paneWidth,
   } = props;
   const open = useClickWithoutDrag(() => onOpen(change));
@@ -171,12 +171,11 @@ function FileDiffHunks(props: {
 
   const gutterChars = useMemo(() => gutterWidth(change), [change]);
   const maxLineChars = diffCardMaxLineChars(paneWidth, gutterChars);
-  const rows = useMemo(
-    () =>
-      presentFileChangePreview(change, { maxRows, maxLineChars }).map((row) =>
-        row.tone === "gap" || row.tone === "header" ? clipPresentedRow(row, maxLineChars) : row,
-      ),
-    [change, maxRows, maxLineChars],
+  const shownRows = useMemo(
+    () => rows.map((row) =>
+      row.tone === "gap" || row.tone === "header" ? clipPresentedRow(row, maxLineChars) : row,
+    ),
+    [rows, maxLineChars],
   );
   return (
     <box
@@ -192,7 +191,7 @@ function FileDiffHunks(props: {
           </span>
         </text>
       ) : null}
-      {rows.map((row, ri) => (
+      {shownRows.map((row, ri) => (
         <DiffCodeRow
           key={ri}
           gutter={row.gutter}
@@ -241,6 +240,7 @@ export function FileDiffBody(props: {
   changes: readonly FileChange[];
   theme: Theme;
   diffExpanded: boolean;
+  outputExpanded?: boolean;
   onOpen: (change: FileChange) => void;
   multiFilePreview?: boolean;
   contentWidth?: number | undefined;
@@ -249,6 +249,7 @@ export function FileDiffBody(props: {
     changes,
     theme,
     diffExpanded,
+    outputExpanded = false,
     onOpen,
     multiFilePreview = false,
     contentWidth,
@@ -262,9 +263,21 @@ export function FileDiffBody(props: {
   });
 
   const showHunks = diffExpanded;
-  const maxRows = multiFilePreview
-    ? WRITE_MANY_PREVIEW_ROWS
-    : SINGLE_FILE_PREVIEW_ROWS;
+  const maxFiles = multiFilePreview ? Math.min(12, changes.length) : changes.length;
+  const listed = changes.slice(0, maxFiles);
+  const showPaths = multiFilePreview || changes.length > 1;
+  const preview = useMemo<ToolDiffPreview>(() => {
+    if (!diffExpanded) return { files: [], hiddenFiles: changes.length - maxFiles };
+    return presentToolDiffPreviews(changes, {
+      expanded: outputExpanded,
+      showPaths,
+      headerRows: Number(!multiFilePreview),
+      maxFiles,
+      maxRowsPerFile: multiFilePreview ? WRITE_MANY_PREVIEW_ROWS : SINGLE_FILE_PREVIEW_ROWS,
+      maxLineChars: (change) => diffCardMaxLineChars(paneWidth, gutterWidth(change)),
+      tabWidth: 0,
+    });
+  }, [changes, diffExpanded, outputExpanded, showPaths, multiFilePreview, maxFiles, paneWidth]);
 
   return (
     <box style={{ flexDirection: "column", width: "100%", marginTop: 0 }}>
@@ -293,19 +306,19 @@ export function FileDiffBody(props: {
       ) : null}
 
       {showHunks
-        ? changes.map((change, ci) => (
+        ? preview.files.map(({ change, rows }, ci) => (
             <FileDiffHunks
               key={`${change.path}-${ci}`}
               change={change}
-              showPath={multiFilePreview || changes.length > 1}
+              rows={rows}
+              showPath={showPaths}
               theme={theme}
               onOpen={onOpen}
-              maxRows={maxRows}
               paneWidth={paneWidth}
             />
           ))
         : multiFilePreview
-          ? changes.map((change, ci) => (
+          ? listed.map((change, ci) => (
               <WriteManyCollapsedRow
                 key={`wm-c-${ci}`}
                 change={change}
@@ -315,6 +328,16 @@ export function FileDiffBody(props: {
               />
             ))
           : null}
+      {preview.hiddenFiles > 0 ? (
+        <text
+          selectable
+          content={clipDiffCardText(
+            ` ··· +${preview.hiddenFiles} more files · click for full ···`,
+            paneWidth - 4,
+          )}
+          style={{ fg: theme.muted, height: 1 }}
+        />
+      ) : null}
     </box>
   );
 }

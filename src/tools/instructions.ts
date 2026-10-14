@@ -23,10 +23,16 @@ export async function instructionsRecordTool(
   const remove = stringArray(args, "remove");
   if (add.length === 0 && remove.length === 0) {
     return {
+      ok: true,
+      exitCode: 0,
+      output: "Skipped: no reusable project-wide instructions to record or remove. No files changed; skip instructions.record when the prompt contains no such rule.",
+    };
+  }
+  if (add.length > 0 && args.scope !== "project") {
+    return {
       ok: false,
       exitCode: 1,
-      output:
-        'instructions.record requires {"add":["<standing rule>"]} and/or {"remove":["<existing rule>"]}. One short imperative sentence per entry.',
+      output: 'Not recorded: additions require scope="project" and must be reusable project-wide coding, style, workflow, security, or architectural principles. Keep one-off fixes and session/task/turn requirements in scoped conversation memory, not INSTRUCTIONS.md. Do not retry a task-specific requirement with project scope. No files changed.',
     };
   }
   const root = getActiveProjectRoot();

@@ -61,6 +61,7 @@ export class ClassicAppWiring implements WiringHost {
   rows: number;
   planVisibleValue = false;
   planKnown = false;
+  queueVisibleValue = true;
   queueSelectedValue = 0;
   feedGenerationValue = 0;
   feedNowValue: number;
@@ -87,6 +88,7 @@ export class ClassicAppWiring implements WiringHost {
   lastPaintAt = 0;
   paintPacing: PaintPacing = INITIAL_PAINT_PACING;
   paintTimer: ReturnType<typeof setTimeout> | undefined;
+  paintDeadline: number | undefined;
   resizeTimer: ReturnType<typeof setTimeout> | undefined;
   decoderTimer: ReturnType<typeof setTimeout> | undefined;
   escapeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -247,6 +249,7 @@ export class ClassicAppWiring implements WiringHost {
       onContextLimitStart: () => this.startContextLimitEditing(),
       onContextLimitKey: (key, chord) => this.handleContextLimitKey(key, chord),
       onContextLimitPaste: (text) => this.handleContextLimitPaste(text),
+      onQueueToggle: () => this.toggleQueueVisible(),
     });
 
     this.snapshot = this.buildSnapshot();
@@ -266,6 +269,7 @@ export class ClassicAppWiring implements WiringHost {
     if (this.disposed) return;
     this.router.handleAll(this.input.push(chunk));
     this.scheduleDecoderFlush();
+    if (this.paintTimer) this.schedulePaint(true);
   };
 
   observeFeed(feed: FeedSnapshot, selectionDocument?: SemanticDocument): void {
@@ -307,6 +311,10 @@ export class ClassicAppWiring implements WiringHost {
 
   setQueueSelected(index: number): void {
     interactions.setQueueSelected(this, index);
+  }
+
+  toggleQueueVisible(): void {
+    interactions.toggleQueueVisible(this);
   }
 
   startContextLimitEditing(): void {
@@ -454,8 +462,8 @@ export class ClassicAppWiring implements WiringHost {
     return lifecycle.buildSnapshot(this);
   }
 
-  schedulePaint(): void {
-    lifecycle.schedulePaint(this);
+  schedulePaint(interactive = false): void {
+    lifecycle.schedulePaint(this, interactive);
   }
 
   scheduleDecoderFlush(): void {

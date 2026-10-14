@@ -10,8 +10,18 @@ export interface QueueViewInput {
   readonly selected: number;
 }
 
-const HINTS = ["^Y/^V select", "^S send", "^] edit", "^_ drop"];
-const ASCII_HINTS = ["ctrl+y/v select", "ctrl+s send", "ctrl+] edit", "ctrl+_ drop"];
+const HINTS = ["Alt+Q hide", "^Y/^V select", "^S send", "^] edit", "^_ drop"];
+const ASCII_HINTS = ["Alt+Q hide", "ctrl+y/v select", "ctrl+s send", "ctrl+] edit", "ctrl+_ drop"];
+
+export function queueStatusLabel(count: number, visible: boolean, compact = false): string {
+  if (count === 0 && visible) return "";
+  const units = compact ? "q" : " queued";
+  const hidden = compact || count === 0 ? " hidden" : " (hidden)";
+  const queued = count > 0 ? `${count}${units}` : "Queue";
+  const state = `${queued}${visible ? "" : hidden}`;
+  const action = visible ? "hide" : "show";
+  return compact ? `${state} Alt+Q` : `${state} . Alt+Q to ${action}`;
+}
 
 export function queueRowsWanted(count: number): number {
   return count === 0 ? 0 : Math.min(count + 1, QUEUE_MAX_ROWS);
