@@ -23,7 +23,6 @@ import { discardPlan, implementPlan } from "../../../ui-core/plan/plan-lifecycle
 import { hasTaskDetails, taskDetailText, wrapTaskDisclosureTitle, TASK_DISCLOSURE_BUTTON_WIDTH } from "../../../ui-core/rendering/task-disclosure.js";
 import { revealTaskHeader, useTaskDisclosure, type TaskDisclosureBinding } from "./use-task-disclosure.js";
 import type { PlanInteractionPort } from "./plan-interaction.js";
-import "./task-title.js";
 
 export interface PlanViewProps {
   readonly theme: Theme;
@@ -283,7 +282,7 @@ const TaskRow = memo(function TaskRow(props: {
       <box style={{ flexDirection: "row", width: "100%", flexShrink: 0, alignItems: "stretch", backgroundColor: bg }}>
         <box style={{ width: 1, flexShrink: 0, alignSelf: "stretch", backgroundColor: stateColor, minHeight: 1 }} />
         <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0, justifyContent: "center", paddingLeft: 1, paddingRight: 1, paddingTop: 1, paddingBottom: 1, backgroundColor: bg }}>
-          <task-title
+          <box
             id={`plan-task-${task.id}-header`}
             style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}
           >
@@ -306,7 +305,7 @@ const TaskRow = memo(function TaskRow(props: {
                 </box>
               );
             })}
-          </task-title>
+          </box>
           {expanded && expandable ? <TaskDetails task={task} theme={theme} width={Math.max(1, width - 6)} bg={bg} /> : null}
         </box>
       </box>

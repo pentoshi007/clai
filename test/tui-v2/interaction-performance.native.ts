@@ -168,7 +168,16 @@ try {
   await settle(() => transcriptScrollPort.scrollToBottom());
   assert.ok(setup.captureCharFrame().includes("STREAM_39"));
   await settle(() => services.focus.focusRegion("transcript"));
-  await act(async () => { await delay(1100); });
+  // One-shot timers (the scrollbar's 1s hide timer) can fire late under CI
+  // load; wait for the renderer to go quiet before measuring idle frames.
+  let lastFrameAt = Date.now();
+  const markFrame = (): void => { lastFrameAt = Date.now(); };
+  setup.renderer.on("frame", markFrame);
+  const quietDeadline = Date.now() + 10_000;
+  while (Date.now() - lastFrameAt < 1000 && Date.now() < quietDeadline) {
+    await act(async () => { await delay(200); });
+  }
+  setup.renderer.off("frame", markFrame);
   await setup.renderer.idle();
   resetRenderCounts();
   let idleFrames = 0;
