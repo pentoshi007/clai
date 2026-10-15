@@ -56,6 +56,7 @@ function Harness() {
 }
 const setup = await testRender(createElement(Harness), { width: view.width, height: view.height, useThread: false });
 const violations = new Set<string>();
+const clippedTitleEdges = new Set<"top" | "bottom">();
 async function settle(action: () => unknown = () => undefined): Promise<void> {
   await act(async () => { await action(); });
   await act(async () => { await setup.flush(); });
@@ -89,27 +90,25 @@ function inspectTitles(): void {
     const row = node(`plan-task-${task.id}`);
     if (row.y >= bottom || row.y + row.height <= viewport.y) continue;
     const header = node(`plan-task-${task.id}-header`);
-    const partial = header.height <= viewport.height && (header.y < viewport.y || header.y + header.height > bottom);
     for (const line of header.getChildren()) {
       const text = line.getChildren()[0];
       assert.ok(text instanceof TextRenderable);
       const context = `${view.width}x${view.height} ${task.id}`;
       if (text.y < viewport.y || text.y >= bottom) continue;
-      const rendered = textAt(header.x, text.y, header.width);
-      if (partial) check(rendered.trim() === "", `Partial title pixels at ${header.y < viewport.y ? "top" : "bottom"}: ${context}`);
-      else {
-        visibleTitles += 1;
-        check(text.x + text.width <= header.x + header.width, `Title overflows its original padded area: ${context}`);
-        check(textAt(text.x, text.y, text.width) === text.plainText, `Title text lost or rewrapped in native cells: ${context}`);
-      }
+      if (header.y < viewport.y) clippedTitleEdges.add("top");
+      if (header.y + header.height > bottom) clippedTitleEdges.add("bottom");
+      visibleTitles += 1;
+      check(text.x + text.width <= header.x + header.width, `Title overflows its original padded area: ${context}`);
+      check(textAt(text.x, text.y, text.width) === text.plainText, `Title text lost or rewrapped in native cells: ${context}`);
     }
     const button = setup.renderer.root.findDescendantById(`plan-task-${task.id}-disclosure`);
     if (button) {
-      if (!partial && button.y >= viewport.y && button.y < bottom) {
+      if (button.y >= viewport.y && button.y < bottom) {
         check(button.width === 1 && button.height === 1, "Disclosure icons must not reserve extra padding cells");
         const end = node(`plan-task-${task.id}-title-end`);
         check(button.y === end.y && button.x === end.x + end.width + 1, `Disclosure must follow the final title word: ${view.width}x${view.height} ${task.id}`);
         check(button.x + button.width <= header.x + header.width, `Button overflows the title area: ${view.width}x${view.height} ${task.id}`);
+        check(textAt(button.x, button.y, button.width) === (binding!.state.expanded.has(task.id) ? "−" : "+"), `Visible disclosure icon lost at a viewport edge: ${view.width}x${view.height} ${task.id}`);
       }
     }
     const details = setup.renderer.root.findDescendantById(`plan-task-${task.id}-details`);
@@ -220,9 +219,10 @@ try {
     }
   }
   assert.equal(JSON.stringify(source), before);
+  assert.deepEqual([...clippedTitleEdges].sort(), ["bottom", "top"], "Native rendering must exercise partially visible titles at both viewport edges");
   console.log(JSON.stringify({ violations: [...violations] }, null, 2));
   assert.equal(violations.size, 0, "Native task viewport regressions must pass");
-  console.log("Native task viewport passed: bordered geometry, atomic title pixels at both edges, complete findings and button-only mouse interaction");
+  console.log("Native task viewport passed: bordered geometry, visible title pixels at both edges, complete findings and button-only mouse interaction");
 } finally {
   await act(async () => { setup.renderer.destroy(); });
   services.dispose();
