@@ -8,16 +8,8 @@ import {
 import { createSessionPromptsPagerSource } from "../../src/ui-core/rendering/session-prompts-pager-source.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  const open = async (...args: Parameters<typeof actual.open>) => {
-    const handle = await actual.open(...args);
-    if (args[1] === "a+") {
-      handle.truncate = () =>
-        Promise.reject(Object.assign(new Error("EPERM: operation not permitted, ftruncate"), { code: "EPERM" }));
-    }
-    return handle;
-  };
-  return { ...actual, open };
+  const { withWindowsAppendHandles } = await import("../fixtures/windows-append-handles.js");
+  return withWindowsAppendHandles(await importOriginal<typeof import("node:fs/promises")>());
 });
 
 function store(label: string): SessionPromptStore {
@@ -39,7 +31,7 @@ describe("persistent session user prompts", () => {
     expect(body).toContain("## Prompt 002");
     expect(body.match(/> Fix caching/g)).toHaveLength(2);
     for (const detail of ["2026", "codex", "gpt-5.4", "xhigh", "anthropic", "claude-sonnet", "off"]) expect(body).toContain(detail);
-    expect((await stat(restored.path)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect((await stat(restored.path)).mode & 0o777).toBe(0o600);
   });
 
   it("keeps full text on disk while naming reads a fixed number of small excerpts", async () => {
