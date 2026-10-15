@@ -1,11 +1,24 @@
 import { appendFile, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { clearAllHistory, purgeSession, saveSession } from "../../src/store/history.js";
 import {
   MAX_NAMING_PROMPTS, MAX_NAMING_PROMPT_CHARS, SessionPromptStore,
 } from "../../src/store/session-prompts.js";
 import { createSessionPromptsPagerSource } from "../../src/ui-core/rendering/session-prompts-pager-source.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const open = async (...args: Parameters<typeof actual.open>) => {
+    const handle = await actual.open(...args);
+    if (args[1] === "a+") {
+      handle.truncate = () =>
+        Promise.reject(Object.assign(new Error("EPERM: operation not permitted, ftruncate"), { code: "EPERM" }));
+    }
+    return handle;
+  };
+  return { ...actual, open };
+});
 
 function store(label: string): SessionPromptStore {
   return new SessionPromptStore(`${label}-${Math.random().toString(36).slice(2)}`);
@@ -74,6 +87,21 @@ describe("persistent session user prompts", () => {
       "Committed first prompt", "Committed second prompt",
     ]);
     expect(await readFile(journal.path, "utf8")).not.toContain("uncommitted");
+  });
+
+  it("saves and repairs prompts when append-handle ftruncate fails", async () => {
+    const journal = store("windows");
+    await journal.append({ content: "Windows first prompt" });
+    await appendFile(journal.path, "stale body suffix");
+    await appendFile(join(dirname(journal.path), "metadata.jsonl"), "{stale");
+    await appendFile(join(dirname(journal.path), "offsets.bin"), Buffer.from([7, 7, 7]));
+    await journal.append({ content: "Windows second prompt" });
+    expect(await journal.count()).toBe(2);
+    expect((await journal.namingWindow()).prompts.map((entry) => entry.preview)).toEqual([
+      "Windows first prompt", "Windows second prompt",
+    ]);
+    expect(await readFile(journal.path, "utf8")).not.toContain("stale body suffix");
+    expect((await stat(join(dirname(journal.path), "offsets.bin"))).size).toBe(2 * 16);
   });
 
   it("keeps writers for the same session consistent across independent store instances", async () => {
