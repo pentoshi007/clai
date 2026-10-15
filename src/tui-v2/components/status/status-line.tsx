@@ -125,8 +125,9 @@ function CwdViewport(props: {
       onMouseScroll={onMouseScroll}
       style={{
         width,
+        minWidth: 0,
         height: 1,
-        flexShrink: 0,
+        flexShrink: 1,
         backgroundColor: theme.background,
       }}
     >
@@ -459,7 +460,11 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           style={{
             flexDirection: "row",
             alignItems: "center",
-            flexShrink: 0,
+            flexGrow: 1,
+            flexShrink: 1,
+            flexBasis: 0,
+            minWidth: 0,
+            overflow: "hidden",
             justifyContent: "flex-end",
           }}
         >
@@ -473,22 +478,24 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           {gitBranch ? (
             <text
               selectable={false}
+              id="status-git-branch"
               content={` \ue0a0 ${gitBranch}`}
-              style={{ fg: theme.userBorder, flexShrink: 0, paddingRight: 2 }}
-            />
-          ) : null}
-          {ctxChip ? (
-            <ContextLimitChip
-              chip={ctxChip}
-              theme={theme}
-              exact={contextUsage.exact}
-              usage={contextUsage}
-              session={session}
-              onEditingStart={onContextLimitEditingStart}
-              onEditingDone={onFocusComposer}
+              wrapMode="none"
+              style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
             />
           ) : null}
         </box>
+        {ctxChip ? (
+          <ContextLimitChip
+            chip={ctxChip}
+            theme={theme}
+            exact={contextUsage.exact}
+            usage={contextUsage}
+            session={session}
+            onEditingStart={onContextLimitEditingStart}
+            onEditingDone={onFocusComposer}
+          />
+        ) : null}
       </box>
     );
   }
@@ -637,7 +644,11 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
         style={{
           flexDirection: "row",
           alignItems: "center",
-          flexShrink: 0,
+          flexGrow: 1,
+          flexShrink: 1,
+          flexBasis: 0,
+          minWidth: 0,
+          overflow: "hidden",
           justifyContent: "flex-end",
         }}
       >
@@ -651,22 +662,24 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
         {gitBranch ? (
           <text
             selectable={false}
+            id="status-git-branch"
             content={` \ue0a0 ${gitBranch}`}
-            style={{ fg: theme.userBorder, flexShrink: 0, paddingRight: 2 }}
-          />
-        ) : null}
-        {ctxChip ? (
-          <ContextLimitChip
-            chip={ctxChip}
-            theme={theme}
-            exact={contextUsage.exact}
-            usage={contextUsage}
-            session={session}
-            onEditingStart={onContextLimitEditingStart}
-            onEditingDone={onFocusComposer}
+            wrapMode="none"
+            style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
           />
         ) : null}
       </box>
+      {ctxChip ? (
+        <ContextLimitChip
+          chip={ctxChip}
+          theme={theme}
+          exact={contextUsage.exact}
+          usage={contextUsage}
+          session={session}
+          onEditingStart={onContextLimitEditingStart}
+          onEditingDone={onFocusComposer}
+        />
+      ) : null}
     </box>
   );
 });
