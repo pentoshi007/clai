@@ -46,6 +46,10 @@ const TRUECOLOR_ENV_MARKERS = [
   "WEZTERM_EXECUTABLE",
   "GHOSTTY_RESOURCES_DIR",
 ] as const;
+export const TERMINAL_IDENTITY_ENV_KEYS = [
+  "TERM", "COLORTERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION",
+  ...TRUECOLOR_ENV_MARKERS, "ConEmuANSI", "TERMINAL_EMULATOR", "VTE_VERSION",
+];
 const KITTY_KEYBOARD_TERMS = ["kitty", "ghostty", "wezterm", "foot"];
 
 function truthy(value: string | undefined): boolean {

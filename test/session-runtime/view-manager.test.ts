@@ -5,6 +5,8 @@ import type { AgentPort, RunTurnHandlers, RunTurnRequest } from "../../src/app/p
 import { RuntimeViewManager } from "../../src/session-runtime/view-manager.js";
 import type { RuntimeViewTerminal } from "../../src/session-runtime/view-terminal.js";
 import { handleNew } from "../../src/ui-core/commands/session-commands.js";
+import { runtimeTerminalOptions, runtimeViewFrame } from "../../src/session-runtime/terminal-options.js";
+import { createInkTheme } from "../../src/classic/render/ink-theme.js";
 
 vi.mock("../../src/app/controllers/session-naming.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../src/app/controllers/session-naming.js")>(),
@@ -40,6 +42,20 @@ function fixture(agent?: AgentPort) {
 }
 
 describe("independent attachment views", () => {
+  it("carries Windows Terminal truecolor through the attachment frame into Classic view services", async () => {
+    const f = fixture();
+    const frame = runtimeViewFrame({
+      type: "view-attach", clientId: "windows", columns: 120, rows: 40,
+      terminal: runtimeTerminalOptions("classic", { WT_SESSION: "windows-terminal", CLAI_THEME: "dark" }),
+    });
+    if (!frame) throw new Error("invalid Windows attachment frame");
+    f.manager.receive(frame);
+    await vi.waitFor(() => expect(f.mounted).toHaveLength(1));
+    const capabilities = f.mounted[0]!.services.capabilities;
+    expect(capabilities).toMatchObject({ colorMode: "truecolor", themeHint: "dark" });
+    expect(createInkTheme(capabilities).hex("#2563EB", "blue")).toContain("\u001b[38;2;37;99;235m");
+  });
+
   it("routes input and resize to one device and keeps the other view intact", async () => {
     const f = fixture();
     f.attach("desktop");
