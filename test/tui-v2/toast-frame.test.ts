@@ -7,6 +7,7 @@ import {
 } from "../../src/tui-v2/components/toast/toast-host.js";
 import {
   TOAST_BOX_HEIGHT,
+  TOAST_REST_TOP,
   toastAnimAt,
 } from "../../src/tui-v2/components/toast/toast-anim.js";
 import { MAX_TOAST_MESSAGE_CHARS } from "../../src/ui-core/controllers/toast-controller.js";
@@ -58,7 +59,7 @@ describe("toast notification chip", () => {
     expect(start.top).toBe(-tall);
     const hold = toastAnimAt(TOAST_ENTER_MS + 50, 2000, tall);
     expect(hold.phase).toBe("hold");
-    expect(hold.top).toBe(1);
+    expect(hold.top).toBe(TOAST_REST_TOP);
   });
 
   it("allows long status lines through the controller cap", () => {
