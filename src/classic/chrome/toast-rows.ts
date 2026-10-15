@@ -1,5 +1,6 @@
 import type { ToastItem, ToastLevel } from "../../ui-core/controllers/toast-controller.js";
-import { clipToWidth, padToWidth } from "../render/ansi-text.js";
+import { clipToWidth } from "../render/ansi-text.js";
+import { centerChromeRow } from "../../ui-core/rendering/pager-chrome.js";
 import { layoutWidth } from "../render/measure.js";
 import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
 import { MAX_TOAST_ROWS } from "./row-budget.js";
@@ -16,8 +17,8 @@ const H_PAD = 2;
 
 function pillInnerWidth(columns: number): number {
   const width = Math.max(1, Math.floor(columns));
-  const maxPill = Math.max(20, Math.min(width - 4, Math.floor(width * 0.85)));
-  return Math.max(8, maxPill - H_PAD * 2);
+  const maxPill = Math.min(width, Math.max(20, Math.min(width - 4, Math.floor(width * 0.85))));
+  return Math.max(1, maxPill - H_PAD * 2);
 }
 
 export function toastRowsWanted(
@@ -66,8 +67,8 @@ function levelGlyph(ink: InkTheme, level: ToastLevel): string {
 export function toastRows(input: ToastViewInput): readonly string[] {
   const { ink } = input;
   const width = Math.max(1, Math.floor(input.columns));
-  const maxPill = Math.max(20, Math.min(width - 4, Math.floor(width * 0.85)));
-  const inner = Math.max(8, maxPill - H_PAD * 2);
+  const maxPill = Math.min(width, Math.max(20, Math.min(width - 4, Math.floor(width * 0.85))));
+  const inner = Math.max(1, maxPill - H_PAD * 2);
   const budget = Math.max(0, Math.min(Math.floor(input.allocatedRows), MAX_TOAST_ROWS));
   if (budget === 0 || input.toasts.length === 0) return [];
 
@@ -101,7 +102,7 @@ export function toastRows(input: ToastViewInput): readonly string[] {
       const needsOverflow = isLastLineOfToast && usedToasts === Math.min(reversed.length, budget) && hidden > 0 && effectiveLines.length === displayLines.length;
       const text = needsOverflow && !line.includes(` (+${hidden})`) ? clipToWidth(`${line} (+${hidden})`, inner, ink.glyphs.ellipsis) : line;
       const pillWidth = Math.min(maxPill, Math.max(16, layoutWidth(text) + H_PAD * 2));
-      const pill = ink.plate(PLATE[toast.level], padToWidth(`${" ".repeat(H_PAD)}${text}`, pillWidth));
+      const pill = ink.plate(PLATE[toast.level], centerChromeRow(text.trim(), pillWidth));
       const leftPad = Math.max(0, Math.floor((width - pillWidth) / 2));
       const rightPad = Math.max(0, width - pillWidth - leftPad);
       rows.push(`${" ".repeat(leftPad)}${pill}${" ".repeat(rightPad)}`);

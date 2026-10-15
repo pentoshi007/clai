@@ -102,7 +102,7 @@ function isReadOnlyBase(base: string): boolean {
 
 function isSafeSubcommand(base: string, sub: string | undefined): boolean {
   if (!sub) return false;
-  const allow = subcommandSafeMap[base];
+  const allow = subcommandSafeMap.get(base);
   if (!allow) return false;
   return allow.has(sub) || allow.has(sub.replace(/^--/, ""));
 }

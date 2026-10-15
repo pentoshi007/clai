@@ -19,7 +19,7 @@ const cases = [
 ] as const;
 
 for (const width of [120, 80, 40]) {
-  for (const testCase of cases) {
+  for (const [testCase, expanded] of cases.flatMap(testCase => [false, true].map(expanded => [testCase, expanded] as const))) {
     const services = createCompositionRoot({
       noHistory: true,
       persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
@@ -38,7 +38,7 @@ for (const width of [120, 80, 40]) {
         value: { width, height: 40 },
         children: createElement(ToolCard, {
           item, theme: themeFor(services.capabilities.themeHint), spool: services.session.spool,
-          expanded: false, services, onToggle() {}, contentWidth: width - 4,
+          expanded, services, onToggle() {}, contentWidth: width - 4,
         }),
       }),
     }), { width, height: 40, useThread: false });
@@ -48,8 +48,8 @@ for (const width of [120, 80, 40]) {
       assert.ok(frame.includes(testCase.label), frame);
       assert.ok(frame.includes(testCase.action), frame);
       assert.ok(frame.includes("Password:"), frame);
-      assert.ok(frame.includes("indented value"), frame);
-      assert.ok(frame.includes("msf6 >"), frame);
+      assert.equal(frame.includes("indented value"), expanded, frame);
+      assert.equal(frame.includes("msf6 >"), expanded, frame);
       assert.ok((frame.match(/\bok\b/g) ?? []).length >= 2, frame);
       assert.ok(!frame.includes("dummy-password"), frame);
       assert.ok(!frame.includes("[/terminal.output]"), frame);

@@ -64,8 +64,17 @@ describe("toast rows", () => {
     expect(row.trim()).toBe("·  hi");
     const pillWidth = Math.max(16, displayWidth("·  hi") + 4);
     const leftPad = Math.floor((80 - pillWidth) / 2);
-    expect(row.indexOf("·") - 2).toBe(leftPad);
+    expect(row.indexOf("·")).toBe(leftPad + Math.floor((pillWidth - displayWidth("·  hi")) / 2));
     expect(row.slice(leftPad + pillWidth)).toBe(" ".repeat(80 - leftPad - pillWidth));
+  });
+
+  it.each([1, 8, 16, 24, 40, 80, 120])("centers short text inside a fitting pill at %i columns", columns => {
+    const row = rows([toast("hi")], columns, 1)[0]!;
+    expect(displayWidth(row)).toBe(columns);
+    const body = row.trim();
+    const pillWidth = Math.min(columns, Math.max(16, displayWidth(body) + 4));
+    const expected = Math.floor((columns - pillWidth) / 2) + Math.floor((pillWidth - displayWidth(body)) / 2);
+    expect(row.indexOf(body)).toBe(expected);
   });
 
   it("plates each level differently", () => {

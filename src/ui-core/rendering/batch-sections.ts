@@ -1,5 +1,5 @@
 
-import { cleanToolOutputLines, presentOutput } from "./tool-presenter.js";
+import { cleanToolOutputLines, presentOutput, type ToolOutputPreview } from "./tool-presenter.js";
 import { parseFsReadSections } from "../../tools/fs/read-sections.js";
 import { middleClipText, renderColumns } from "./text-width.js";
 
@@ -109,6 +109,7 @@ export function presentBatchSection(
   section: BatchSection,
   expanded: boolean,
   columns?: number,
+  preview: ToolOutputPreview = "head-tail",
 ): BatchSectionPresentation {
   const status = section.status ?? (section.ok ? "ok" : "fail");
   const bodyForPresent =
@@ -118,7 +119,7 @@ export function presentBatchSection(
   const compactFsRead = section.name === "fs.read" && !expanded && status !== "running";
   const presented = compactFsRead
     ? presentFsReadSection(bodyForPresent, columns)
-    : presentOutput(bodyForPresent, undefined, expanded);
+    : presentOutput(bodyForPresent, undefined, expanded, "", preview);
   const hasBody = bodyForPresent.trim().length > 0;
   let glyph = "✗";
   let statusLabel = "failed";

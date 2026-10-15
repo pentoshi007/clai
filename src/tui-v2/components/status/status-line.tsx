@@ -1,6 +1,9 @@
 /** @jsxImportSource @opentui/react */
 
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { transcriptScrollPort } from "../transcript/transcript-scroll-port.js";
+import { jumpToLatestLabel } from "../../../ui-core/rendering/jump-to-latest.js";
+import { JumpToLatest } from "./jump-to-latest.js";
 import { countRender } from "../../perf/render-counters.js";
 import {
   TextAttributes,
@@ -58,6 +61,7 @@ export interface StatusLineProps {
   readonly onTogglePlan?: (() => void) | undefined;
   readonly onJumpTop?: (() => void) | undefined;
   readonly onJumpBottom?: (() => void) | undefined;
+  readonly allowJumpToLatest?: boolean;
   readonly onCutDraft?: (() => void) | undefined;
   readonly onClearDraft?: (() => void) | undefined;
   readonly onOpenCommands?: (() => void) | undefined;
@@ -320,8 +324,19 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
 
   const queued = state.queued.length;
   const density = statusDensityForWidth(width);
+  const awayFromLatest = useSyncExternalStore(
+    transcriptScrollPort.onMetrics,
+    () => transcriptScrollPort.metrics.linesBelow > 0 || Boolean(transcriptScrollPort.metrics.hasNewerContent),
+    () => false,
+  );
+  const jumpLabel = jumpToLatestLabel(width >= 100 ? 20 : 10, true);
+  const showJump = awayFromLatest && props.allowJumpToLatest !== false && onJumpBottom !== undefined;
+  const jumpControl = showJump ? <JumpToLatest label={jumpLabel} theme={theme} onJump={() => {
+    onJumpBottom();
+    onFocusComposer?.();
+  }} /> : null;
   const cwdWidth = cwdViewportWidth(
-    width,
+    Math.max(0, width - (showJump ? renderColumns(jumpLabel) + 2 : 0)),
     density,
     renderColumns(cwdDisplay),
   );
@@ -439,6 +454,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             </>
           ) : null}
         </box>
+        {jumpControl}
         <box
           style={{
             flexDirection: "row",
@@ -614,6 +630,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           </>
         ) : null}
       </box>
+      {jumpControl}
 
       {}
       <box

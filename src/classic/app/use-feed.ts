@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { getCurrentVersion } from "../../commands/update.js";
 import { safeCwd } from "../../os/cwd.js";
 import { getConfig } from "../../store/config.js";
@@ -12,6 +12,7 @@ import { blockContextFor, buildFeedBlocks, FeedBlockCache, type FeedBlock } from
 import { planTranscriptWindow, type TranscriptWindow } from "../feed/transcript-window.js";
 import { createInkTheme, type InkTheme } from "../render/ink-theme.js";
 import { effectiveThinkingEffort } from "../../llm/capabilities.js";
+import { TranscriptResources } from "../feed/transcript-resources.js";
 
 export interface FeedSnapshot {
   readonly ink: InkTheme;
@@ -90,17 +91,21 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
   const ink = useInkTheme(input.services);
   const cache = useRef<FeedBlockCache | undefined>(undefined);
   cache.current ??= new FeedBlockCache();
+  const spool = input.services.session.spool;
+  const resources = useMemo(() => new TranscriptResources(spool), [spool]);
+  const resourceVersion = useSyncExternalStore(resources.subscribe, resources.snapshot);
+  useEffect(() => { void resources.prepare(state); }, [resources, state]);
 
   const view = useMemo(
     () => ({
       columns: input.columns,
       ink,
       now: input.now,
-      spool: input.services.session.spool,
+      spool: resources,
       generation: input.generation,
       intro: input.intro,
     }),
-    [input.columns, input.generation, input.intro, input.now, input.services.session.spool, ink],
+    [input.columns, input.generation, input.intro, input.now, resources, resourceVersion, ink],
   );
   const context = useMemo(() => blockContextFor(state, view), [state, view]);
   const blocks = useStableBlocks(useMemo(() => buildFeedBlocks(state, view, cache.current), [state, view]));

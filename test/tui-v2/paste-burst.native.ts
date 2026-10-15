@@ -158,6 +158,7 @@ try {
   const pasteFrame = setup.captureCharFrame().split("\n");
   const badgeRow = pasteFrame.findIndex((line) => /\d+ lines pasted/.test(line));
   assert.ok(badgeRow >= 0 && pasteFrame[badgeRow]?.includes("┃"), "the paste count belongs inside the composer");
+  assert.match(pasteFrame[badgeRow]!, /\[\d+ lines pasted #\d+ · Ctrl\+E\]/, "the expansion hint is inside the pasted-text brackets before hovering");
   await settle(() => setup.mockMouse.moveTo(pasteFrame[badgeRow]!.indexOf("[") + 2, badgeRow));
   const hoverFrame = setup.captureCharFrame().split("\n");
   const hint = hoverFrame.find((line) => line.includes("double-click to expand"));
@@ -199,7 +200,7 @@ try {
   await deliver(`\u001b[200~${secondBlock}\u001b[201~`);
   await settle(() => editor.insertText(after));
   const collapsed = editor.plainText;
-  const tokens = collapsed.match(/\[\d+ lines pasted #\d+\]/g)!;
+  const tokens = collapsed.match(/\[\d+ lines pasted #\d+ · Ctrl\+E\]/g)!;
   await deliver("\u0005");
   assert.equal(editor.plainText, `${before}${tokens[0]} between ${secondBlock}${after}`, "Ctrl+E expands only the nearest block");
   await settle(() => editor.insertText("!"));

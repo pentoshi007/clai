@@ -12,6 +12,9 @@ import { extractTranscriptSemanticDocument } from "../../ui-core/rendering/trans
 import type { FeedSnapshot } from "./use-feed.js";
 import type { MouseEvent } from "../input/key-event.js";
 import { handleTranscriptMouse } from "./wiring-selection.js";
+import { handleDisclosureMouse } from "./wiring-disclosure.js";
+import { handleComposerMouse } from "./wiring-composer-pointer.js";
+import { handleJumpToLatestMouse } from "./wiring-jump-to-latest.js";
 import type { WiringHost } from "./wiring-types.js";
 
 export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
@@ -182,6 +185,7 @@ export function handlePanelKey(
 }
 
 export function handleMouse(host: WiringHost, event: MouseEvent): void {
+  if (handleJumpToLatestMouse(host, event) || handleDisclosureMouse(host, event) || handleComposerMouse(host, event)) return;
   if (!host.panels.isOpen() && contextLimitChipPressed(host.contextLimitHitRegion, event)) {
     host.startContextLimitEditing();
     return;
@@ -322,17 +326,6 @@ export function showTranscriptTopHint(host: WiringHost): void {
 export function toggleSelectedItem(host: WiringHost): void {
   const itemId = host.selectedFeedItemId;
   if (!itemId || itemId === "intro") return;
-  const state = host.services.transcript.getState();
-  const item = state.byId.get(itemId);
-  if (!item) return;
-  if (item.kind === "thinking" || item.kind === "tool" || item.kind === "compacted") {
-    const fallback =
-      item.kind === "thinking"
-        ? state.expandThinkingGlobal
-        : state.expandOutputGlobal;
-    host.services.transcript.toggleItemOverride(itemId, fallback);
-    return;
-  }
   host.revealItem(itemId);
 }
 
@@ -363,7 +356,7 @@ export async function toggleOutput(host: WiringHost): Promise<void> {
       });
     return;
   }
-  host.services.transcript.toggleOutputGlobal();
+  host.services.transcript.setOutputGlobal(!state.expandOutputGlobal);
   const expanded = host.services.transcript.getState().expandOutputGlobal;
   notify(host.services, expanded ? "Output expanded · ^O" : "Output collapsed · ^O", {
     key: "output",
@@ -375,11 +368,12 @@ export function revealItem(host: WiringHost, itemId: string): void {
   if (itemId === "intro") return;
   const item = host.services.transcript.getState().byId.get(itemId);
   if (!item) return;
+  if (item.kind === "user") {
+    host.services.transcript.toggleItemOverride(itemId, false);
+    return;
+  }
   if (item.kind === "thinking" || item.kind === "tool" || item.kind === "compacted") {
-    const fallback =
-      item.kind === "thinking"
-        ? host.services.transcript.getState().expandThinkingGlobal
-        : host.services.transcript.getState().expandOutputGlobal;
+    const fallback = item.kind === "thinking" ? host.services.transcript.getState().expandThinkingGlobal : host.services.transcript.getState().expandOutputGlobal;
     host.services.transcript.toggleItemOverride(itemId, fallback);
     return;
   }

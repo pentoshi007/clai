@@ -7,7 +7,7 @@ import { ComposerController } from "../chrome/composer-controller.js";
 import { PromptHistory } from "../../ui-core/composer/prompt-history.js";
 import { bindSavedPromptHistory } from "../../ui-core/composer/saved-prompt-history.js";
 import { readTerminalSize } from "../chrome/use-terminal-size.js";
-import { gutterShellWidth } from "../render/shell-width.js";
+import { innerShellWidth } from "../render/shell-width.js";
 import type { FeedSnapshot } from "./use-feed.js";
 import { CancelLadder } from "../input/cancel-ladder.js";
 import { InputRouter } from "../input/input-router.js";
@@ -26,6 +26,7 @@ import { PanelController, type PanelSnapshot } from "../panels/panel-controller.
 import { ClassicActionHandlers, panelContextFor } from "./action-handlers.js";
 import * as interactions from "./wiring-interactions.js";
 import * as lifecycle from "./wiring-lifecycle.js";
+import { cancelTranscriptPointer } from "./wiring-selection.js";
 import { INITIAL_PAINT_PACING, type PaintPacing } from "./paint-pacing.js";
 import type {
   ClassicAppSnapshot,
@@ -83,6 +84,10 @@ export class ClassicAppWiring implements WiringHost {
   contextLimitEditingValue = false;
   contextLimitDraftValue = "";
   contextLimitHitRegion: WiringHost["contextLimitHitRegion"] = undefined;
+  composerPointerView: WiringHost["composerPointerView"] = undefined;
+  composerPointerGeometry: WiringHost["composerPointerGeometry"] = undefined;
+  jumpToLatestHitRegion: WiringHost["jumpToLatestHitRegion"] = undefined;
+  observeComposer = (view: WiringHost["composerPointerView"]): void => { this.composerPointerView = view; };
   branchRefreshTimer: ReturnType<typeof setInterval> | undefined;
   branchRefreshRequest = 0;
   lastPaintAt = 0;
@@ -140,7 +145,7 @@ export class ClassicAppWiring implements WiringHost {
       transcript: () => this.services.transcript.getState(),
       plan: () => this.services.plan.current(),
       columns: () => this.services.overlay.getState().kind === "picker" || this.services.overlay.getState().kind === "pager"
-        ? overlaySize(this.columns, this.rows).width : gutterShellWidth(this.columns),
+        ? overlaySize(this.columns, this.rows).width : innerShellWidth(this.columns),
       rows: () => this.services.overlay.getState().kind === "picker" || this.services.overlay.getState().kind === "pager"
         ? overlaySize(this.columns, this.rows).height : this.rows,
       onToast: (text) => notify(this.services, text),
@@ -230,6 +235,7 @@ export class ClassicAppWiring implements WiringHost {
         this.composer.paste(text);
       },
       onMouse: (event) => this.handleMouse(event),
+      onKeyboardInput: () => cancelTranscriptPointer(this),
       onToast: (text) => notify(this.services, text),
       closeOverlay: () => {
         this.closePanel();

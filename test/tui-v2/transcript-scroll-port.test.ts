@@ -54,6 +54,25 @@ describe("transcript scroll port", () => {
     expect(transcriptScrollPort.scrollBy(3)).toBe(false);
   });
 
+  it("publishes newer unmounted content even when the local window is at its bottom", () => {
+    publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
+    let calls = 0;
+    const stop = transcriptScrollPort.onMetrics(() => { calls += 1; });
+    try {
+      publishTranscriptScrollMetrics({ linesAbove: 0, linesBelow: 0, hasNewerContent: true });
+      expect(transcriptScrollPort.metrics.hasNewerContent).toBe(true);
+      expect(calls).toBe(2);
+      publishTranscriptScrollMetrics({ linesAbove: 0, linesBelow: 0, hasNewerContent: true });
+      expect(calls).toBe(2);
+      publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
+      expect(transcriptScrollPort.metrics).toEqual(EMPTY_SCROLL_METRICS);
+      expect(calls).toBe(3);
+    } finally {
+      stop();
+      publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
+    }
+  });
+
   it("routes top and bottom jumps through registered handlers", () => {
     expect(transcriptScrollPort.scrollToTop()).toBe(false);
     expect(transcriptScrollPort.scrollToBottom()).toBe(false);

@@ -1,4 +1,5 @@
 import { renderIntroHeaderLines } from "../../ui-core/rendering/intro-header.js";
+import { CARD_BORDER_HEX } from "../../ui-core/rendering/card-style.js";
 import { clipToWidth } from "../render/ansi-text.js";
 import { stripAnsi } from "../render/measure.js";
 import type { BlockContext } from "./block-context.js";
@@ -23,6 +24,7 @@ export function buildIntroLines(ctx: BlockContext, input: IntroBlockInput): stri
     permissions: input.permissions,
     workdir: input.workdir,
     variant: input.variant,
+    paintBorder: (text) => ctx.ink.hex(CARD_BORDER_HEX, text),
   });
   const plain = ctx.ink.colorMode === "none";
   return rendered.map((line) =>

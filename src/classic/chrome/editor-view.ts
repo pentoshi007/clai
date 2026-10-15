@@ -68,7 +68,12 @@ export function layoutEditor(state: EditorState, width: number): EditorLayout {
     }
   }
   const row = rows[caretRow] ?? { start: 0, end: 0, text: "", hardBreak: true };
-  const caretColumn = layoutWidth(state.text.slice(row.start, cursor));
+  const caretText = state.text.slice(row.start, cursor);
+  const caretBounds = boundaries(caretText);
+  let caretColumn = 0;
+  for (let index = 1; index < caretBounds.length; index += 1) {
+    caretColumn += layoutWidth(caretText.slice(caretBounds[index - 1]!, caretBounds[index]!));
+  }
 
   return { rows, caretRow, caretColumn, width: budget };
 }

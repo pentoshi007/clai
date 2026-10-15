@@ -65,7 +65,8 @@ describe("user prompt instruction continuity", () => {
     }
     expect(calls).toBe(10);
     expect(estimateMessagesTokens(messages)).toBeLessThan(1000);
-    expect(JSON.stringify(messages)).not.toContain("old evidence");
+    expect(messages.find(isCompactionMemoryMessage)?.compaction?.workHistory?.[0]?.request).toContain("Review this evidence.");
+    expect(JSON.stringify(messages)).not.toContain("old evidence ".repeat(10));
   });
 
   it.each(["serialized", "prefix-slice", "plan-implement"] as const)("retains inherited rules on the %s path", async (path) => {

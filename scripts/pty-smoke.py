@@ -320,10 +320,10 @@ def run(timeout: float) -> int:
                 timeout,
                 "classic composer",
             )
-            send(master, b"\x1bq")
+            send(master, b"\x1a")
             wait_for(
                 process, master, output, probe,
-                lambda data: "Queue hidden . Alt+Q to show" in "\n".join(probe.nonempty_rows()),
+                lambda data: "Queue hidden . Ctrl+Z to show" in "\n".join(probe.nonempty_rows()),
                 timeout, "hidden queue indicator",
             )
             shown_at = len(output)

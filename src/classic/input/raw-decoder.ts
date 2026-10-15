@@ -292,8 +292,9 @@ export class RawDecoder {
     }
     const params = body.split(";").map((part) => Number(part.split(":")[0]));
     const modifiers = modifiersFromCsi(params[1]);
-    if (finalByte === "u") {
-      const key = csiUKey(params[0] as number, modifiers);
+    const modifiedKey = finalByte === "~" && params[0] === 27 && params.length === 3;
+    if (finalByte === "u" || modifiedKey) {
+      const key = csiUKey(params[modifiedKey ? 2 : 0] as number, modifiers);
       if (key) events.push({ type: "key", key });
       return;
     }

@@ -125,7 +125,7 @@ describe("large paste", () => {
   it("shows a single bounded chip token in the draft", () => {
     const { composer } = controller();
     composer.paste(BIG);
-    expect(composer.text).toBe("[500 lines pasted #1]");
+    expect(composer.text).toBe("[500 lines pasted #1 · Ctrl+E]");
     expect(layoutEditor(composer.getSnapshot().state, 40).rows).toHaveLength(1);
     expect(composer.getSnapshot().pastes).toHaveLength(1);
   });
@@ -166,7 +166,7 @@ describe("large paste", () => {
     composer.paste(BIG);
     composer.insertText(" ");
     composer.paste(BIG);
-    expect(composer.text).toBe("[500 lines pasted #1] [500 lines pasted #2]");
+    expect(composer.text).toBe("[500 lines pasted #1 · Ctrl+E] [500 lines pasted #2 · Ctrl+E]");
     expect(composer.getSnapshot().pastes).toHaveLength(2);
     expect(composer.expand(composer.text)).toBe(`${BIG} ${BIG}`);
   });
@@ -314,7 +314,7 @@ describe("classic attachment paste", () => {
 
 describe("composer frame under a paste", () => {
   it("asks for one row for a placeholder and many for raw text", () => {
-    expect(composerTextRowsWanted({ columns: 80, text: "[500 lines pasted #1]" })).toBe(1);
+    expect(composerTextRowsWanted({ columns: 80, text: "[500 lines pasted #1 · Ctrl+E]" })).toBe(1);
     expect(composerTextRowsWanted({ columns: 80, text: BIG })).toBe(500);
   });
 

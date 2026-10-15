@@ -4,6 +4,7 @@ import { hasReasoningMarker } from "../../llm/reasoning-marker.js";
 import { ACTIVE_SKILLS_PREFIX } from "../../skills/catalog.js";
 import { compactionSourcePrefixEnd } from "./compaction-source-prefix.js";
 import { latestUserMessage } from "./latest-user-message.js";
+import { archivedWorkHistory, collectWorkHistory, compactionWorkHistoryAnchors, reconcileWorkHistory, renderWorkHistory, withoutWorkHistory, WORK_HISTORY_INPUT_CHAR_BUDGET } from "./compaction-work-history.js";
 import {
   compactionRecencyAnchors,
   hasCompletedConversationTurn,
@@ -11,6 +12,7 @@ import {
   renderRecentUserPrompts,
 } from "./compaction-recent-history.js";
 import {
+  carriedUserInstructions,
   compactionInstructionAnchors,
   reconcileCompactionUserInstructions,
 } from "./compaction-user-instructions.js";
@@ -33,6 +35,7 @@ import {
 } from "../compaction-summary.js";
 import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../durable-envelope.js";
 import { isDurableInjectedBlock } from "../durable-blocks.js";
+import { latestKeyedBlock, upsertAgentInstructionsMessage } from "../injected-blocks.js";
 import { estimateMessagesTokens } from "../request-accounting.js";
 import { isResponderResultLedgerMessage, RESPONDER_RESULT_LEDGER_PREFIX } from "../responder-context.js";
 import {
@@ -139,6 +142,7 @@ export async function compactMessagesWithSummary(
   const recentPrompts = recentUserPrompts(messages);
   const recencyAnchors = compactionRecencyAnchors(messages);
   const instructionAnchors = compactionInstructionAnchors(messages);
+  const workHistory = collectWorkHistory(messages);
   const firstMessage = messages[0];
   const preserveSystemHead =
     firstMessage?.role === "system" &&
@@ -251,18 +255,34 @@ export async function compactMessagesWithSummary(
   ]
     .filter(Boolean)
     .join("\n\n---\n\n");
+  const firstConversation = messages.findIndex((message) => message.role !== "system");
+  const sourceHead = messages.slice(0, firstConversation < 0 ? messages.length : firstConversation);
+  const serializedSource = sourceHead.length ? sourceHead : undefined;
+  const singlePassInputBudget = Math.max(0, options.singlePassInputBudgetTokens ?? 0);
+  const fixedPrompt = buildCompactionUserPrompt({
+    messageTranscript: "",
+    recencyAnchors,
+    instructionAnchors,
+    ...(durableState ? { durableState } : {}),
+    ...(options.purpose ? { purpose: options.purpose } : {}),
+  });
+  const fixedInputTokens = estimateMessagesTokens([
+    ...(serializedSource ?? [{ role: "system" as const, content: COMPACTION_SYSTEM_PROMPT }]),
+    { role: "user", content: fixedPrompt },
+  ]);
+  const historyAnchorBudget = singlePassInputBudget > 0
+    ? Math.max(0, Math.min(WORK_HISTORY_INPUT_CHAR_BUDGET, Math.floor((singlePassInputBudget - fixedInputTokens - 128) * 3.3)))
+    : WORK_HISTORY_INPUT_CHAR_BUDGET;
+  const workHistoryAnchors = compactionWorkHistoryAnchors(workHistory, historyAnchorBudget);
   const directPrompt = buildDirectCompactionPrompt({
     messages,
+    workHistoryAnchors,
     ...(options.durableEnvelope?.trim()
       ? { durableState: options.durableEnvelope.trim() }
       : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
   const directSourceMessages = visual ? undefined : messages;
-  const singlePassInputBudget = Math.max(
-    0,
-    options.singlePassInputBudgetTokens ?? 0,
-  );
   const directInputTokens = directSourceMessages
     ? estimateMessagesTokens([
         ...directSourceMessages,
@@ -279,11 +299,12 @@ export async function compactMessagesWithSummary(
     messageTranscript: "",
     recencyAnchors,
     instructionAnchors,
+    workHistoryAnchors,
     ...(durableState ? { durableState } : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
   const fixedSinglePassInputTokens = estimateMessagesTokens([
-    { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+    ...(serializedSource ?? [{ role: "system" as const, content: COMPACTION_SYSTEM_PROMPT }]),
     { role: "user", content: serializedPrompt },
   ]);
   const mapInputBudget =
@@ -296,7 +317,7 @@ export async function compactMessagesWithSummary(
         )
       : 0;
   const fixedMapInputTokens = estimateMessagesTokens([
-    { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+    ...(serializedSource ?? [{ role: "system" as const, content: COMPACTION_SYSTEM_PROMPT }]),
     {
       role: "user",
       content: buildCompactionChunkPrompt({
@@ -387,8 +408,9 @@ export async function compactMessagesWithSummary(
         purpose: options.purpose,
         recencyAnchors,
         instructionAnchors,
+        workHistoryAnchors,
       }),
-      { phase: "single" },
+      { phase: "single", ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
     );
   } else if (options.singleAdmission) {
     if (visual) {
@@ -459,8 +481,9 @@ export async function compactMessagesWithSummary(
         purpose: options.purpose,
         recencyAnchors,
         instructionAnchors,
+        workHistoryAnchors,
       }),
-      { phase: "single" },
+      { phase: "single", ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
     );
   } else {
     strategy = "map_reduce";
@@ -473,7 +496,7 @@ export async function compactMessagesWithSummary(
             total: chunks.length,
             purpose: options.purpose,
           }),
-          { phase: "map", index, total: chunks.length },
+          { phase: "map", index, total: chunks.length, ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
         );
         return stripThinking(partial ?? "").visible.trim();
       }),
@@ -491,8 +514,9 @@ export async function compactMessagesWithSummary(
         ...(options.purpose ? { purpose: options.purpose } : {}),
         recencyAnchors,
         instructionAnchors,
+        workHistoryAnchors,
       }),
-      { phase: "reduce", total: chunks.length },
+      { phase: "reduce", total: chunks.length, ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
     );
   }
 
@@ -500,7 +524,7 @@ export async function compactMessagesWithSummary(
   const normalizedSummary = normalizeCompactionSummary(
     stripThinking(rawSummary).visible,
   );
-  const instructionMemory = reconcileCompactionUserInstructions(normalizedSummary, messages, options.durableEnvelope);
+  const instructionMemory = reconcileCompactionUserInstructions(withoutWorkHistory(normalizedSummary), messages, options.durableEnvelope);
   const summary = instructionMemory.summary;
   if (!summary) {
     throw new Error("compaction failed: model returned an empty summary");
@@ -542,21 +566,24 @@ export async function compactMessagesWithSummary(
       ? [...head, responderLedger]
       : head;
   const memoryPrefix = compactionMemoryPrefixForPurpose(options.purpose);
+  const reconciledHistory = reconcileWorkHistory(workHistory, carriedUserInstructions(messages), instructionMemory.instructions);
   const memoryMsg: ChatMessage = {
     role: "system",
-    content: [memoryPrefix, summary, renderRecentUserPrompts(recentPrompts, protectedUser)]
+    content: [memoryPrefix, summary, renderWorkHistory(reconciledHistory), renderRecentUserPrompts(recentPrompts, protectedUser)]
       .filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentPrompts
         .filter((prompt) => !prompt.message || !rawTail.includes(prompt.message))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
       userInstructions: instructionMemory.instructions,
+      workHistory: archivedWorkHistory(reconciledHistory, rawTail),
     },
   };
   const envelopeMsg: ChatMessage | undefined = options.durableEnvelope?.trim()
     ? { role: "system", content: options.durableEnvelope.trim() }
     : undefined;
 
+  const instructionsBlock = latestKeyedBlock(messages, AGENT_INSTRUCTIONS_PREFIX);
   let compacted = buildLeanCompact(
     compactHead,
     memoryMsg,
@@ -564,6 +591,7 @@ export async function compactMessagesWithSummary(
     TAIL_SOFT_TIERS[0]!,
     envelopeMsg,
     protectedUser,
+    instructionsBlock,
   );
   for (let i = 1; i < TAIL_SOFT_TIERS.length; i += 1) {
     if (estimateMessagesTokens(compacted) <= POST_COMPACT_SOFT_UPPER_BAND_TOKENS) {
@@ -576,6 +604,7 @@ export async function compactMessagesWithSummary(
       TAIL_SOFT_TIERS[i]!,
       envelopeMsg,
       protectedUser,
+      instructionsBlock,
     );
   }
 
@@ -606,13 +635,16 @@ function buildLeanCompact(
   preferMax: TailPreferMax,
   envelopeMsg?: ChatMessage | undefined,
   protectedUser?: ChatMessage | undefined,
+  instructionsBlock?: string | undefined,
 ): ChatMessage[] {
-  return [
+  const messages = [
     ...head,
     memoryMsg,
     ...(envelopeMsg ? [envelopeMsg] : []),
     ...leanTailMessages(rawTail, preferMax, protectedUser),
   ];
+  upsertAgentInstructionsMessage(messages, instructionsBlock);
+  return messages;
 }
 
 function isReinjectedSystem(content: string): boolean {

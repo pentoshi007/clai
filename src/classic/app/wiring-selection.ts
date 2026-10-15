@@ -10,6 +10,15 @@ function stopAutoScroll(host: WiringHost): void {
   host.selectionAutoScrollTimer = undefined;
 }
 
+export function cancelTranscriptPointer(host: WiringHost): void {
+  if (!host.selectionPointerAnchor) return;
+  stopAutoScroll(host);
+  host.selectionPointerAnchor = undefined;
+  host.selectionPointerMoved = false;
+  host.services.selection.finishDrag();
+  host.services.focus.focusRegion("composer");
+}
+
 function updateAutoScroll(host: WiringHost): void {
   const window = host.selectionWindow;
   if (!window || !host.selectionPointerAnchor || !host.selectionPointerMoved) return;
@@ -95,7 +104,7 @@ export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void
     return;
   }
   if (event.button !== "left" || !anchor) return;
-  host.services.focus.focusRegion("transcript");
+  host.services.focus.focusRegion("composer");
   if (!event.drag) {
     stopAutoScroll(host);
     host.selectionPointerAnchor = anchor;

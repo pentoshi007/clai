@@ -175,7 +175,7 @@ export function App(): ReactNode {
   });
 
   const queuedCount = useSessionField(services.session, (state) => state.queued.length);
-  const queueRows = queuedCount > 0 ? 3 + Math.min(4, queuedCount) + (queuedCount > 4 ? 1 : 0) : 0;
+  const queueRows = queuedCount > 0 ? 2 + Math.min(4, queuedCount) + (queuedCount > 4 ? 1 : 0) : 0;
   const confirmHeight = Math.max(4, Math.min(13, Math.floor(height * 0.6), height - queueRows - 5));
   const composerMaxTextRows = maxComposerTextRows({
     terminalRows: height,
@@ -822,6 +822,7 @@ export function App(): ReactNode {
           onTogglePlan={toggleTasksPane}
           onJumpTop={jumpChatTop}
           onJumpBottom={jumpChatBottom}
+          allowJumpToLatest={overlay.kind === "none" && !contextLimitEditing}
           onCutDraft={composerActionPort.cut}
           onClearDraft={composerActionPort.clear}
           onOpenCommands={composerActionPort.openCommands}

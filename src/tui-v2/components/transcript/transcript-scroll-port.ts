@@ -13,6 +13,7 @@ export interface TranscriptScrollPort {
 export interface ScrollMetrics {
   readonly linesAbove: number;
   readonly linesBelow: number;
+  readonly hasNewerContent?: boolean;
 }
 
 export const EMPTY_SCROLL_METRICS: ScrollMetrics = {
@@ -37,7 +38,8 @@ const metricListeners = new Set<(m: ScrollMetrics) => void>();
 function publishMetrics(next: ScrollMetrics): void {
   if (
     next.linesAbove === metrics.linesAbove &&
-    next.linesBelow === metrics.linesBelow
+    next.linesBelow === metrics.linesBelow &&
+    Boolean(next.hasNewerContent) === Boolean(metrics.hasNewerContent)
   ) {
     return;
   }
@@ -112,5 +114,6 @@ export function publishTranscriptScrollMetrics(next: ScrollMetrics): void {
   publishMetrics({
     linesAbove: Math.max(0, Math.floor(next.linesAbove)),
     linesBelow: Math.max(0, Math.floor(next.linesBelow)),
+    ...(next.hasNewerContent ? { hasNewerContent: true } : {}),
   });
 }

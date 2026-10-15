@@ -33,11 +33,7 @@ function QueuePanelImpl(props: QueuePanelProps): ReactNode {
   const contentWidth = Math.max(24, width - 2);
   const visible = queued.slice(0, MAX_VISIBLE);
   const hidden = queued.length - visible.length;
-  const height =
-    2 +
-    1 +
-    visible.length +
-    (hidden > 0 ? 1 : 0);
+  const height = 2 + visible.length + (hidden > 0 ? 1 : 0);
 
   return (
     <box
@@ -54,15 +50,6 @@ function QueuePanelImpl(props: QueuePanelProps): ReactNode {
         flexDirection: "column",
       }}
     >
-      <text
-        content={pad(
-          session.running
-            ? `  ${queued.length} waiting · sends after completion · click Send now to interrupt`
-            : `  ${queued.length} waiting · Send now or Edit`,
-          contentWidth,
-        )}
-        style={{ fg: theme.muted, bg: theme.statusBackground }}
-      />
       {visible.map((text, index) => (
         <QueueRow
           key={`${index}:${text.slice(0, 24)}`}

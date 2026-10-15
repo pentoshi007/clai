@@ -34,12 +34,11 @@ import {
   completeCommonPrefix,
 } from "../panels/completion-accept.js";
 import { completionItemValues } from "../panels/completion-rows.js";
-import { findSkillMentions } from "../../skills/mentions.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
-import { findMcpMentions } from "../../mcp/mentions.js";
+import { composerMentionSpans } from "./composer-mentions.js";
 import { editorEditFor } from "./composer-keys.js";
 import type { EditorSpan } from "./editor-view.js";
-import { EMPTY_EDITOR, caretPosition, insert, logicalLines, type EditorState } from "./editor-model.js";
+import { EMPTY_EDITOR, boundaries, caretPosition, insert, logicalLines, type EditorState } from "./editor-model.js";
 
 const NO_MENU: CompletionMenu = { kind: "none" };
 const EMPTY_SPANS: readonly EditorSpan[] = [];
@@ -107,6 +106,14 @@ export class ComposerController {
 
   get text(): string {
     return this.snapshot.state.text;
+  }
+
+  setCursor(offset: number): void {
+    const state = this.snapshot.state;
+    const target = Number.isFinite(offset) ? Math.max(0, Math.min(Math.floor(offset), state.text.length)) : state.cursor;
+    const cursor = boundaries(state.text).reduce((previous, boundary) => boundary <= target ? boundary : previous, 0);
+    this.arrowBurst = { count: 0, lastAt: 0 };
+    if (cursor !== state.cursor) this.commit({ text: state.text, cursor }, { resetHistory: true });
   }
 
   expand(value: string): string {
@@ -475,17 +482,7 @@ export class ComposerController {
     const text = snapshot.state.text;
     const skills = skillNamesSnapshot();
     const servers = this.deps.mcp?.serverNames() ?? new Set<string>();
-    const spans: EditorSpan[] = [
-      ...findSkillMentions(text, skills).map((mention) => ({
-        start: mention.start,
-        end: mention.end,
-      })),
-      ...findMcpMentions(text, servers).map((mention) => ({
-        start: mention.start,
-        end: mention.end,
-        color: "aqua" as const,
-      })),
-    ];
+    const spans = composerMentionSpans(text, skills, servers);
     this.snapshot = {
       ...snapshot,
       mentionSpans: spans.length === 0 ? EMPTY_SPANS : spans,

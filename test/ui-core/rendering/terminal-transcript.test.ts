@@ -79,18 +79,26 @@ describe("terminal output parity", () => {
     ]);
   });
 
-  it("shows classic and shared v2 output bodies consistently at narrow and wide widths", () => {
+  it("previews the first three classic lines and expands the complete shared terminal body at every width", () => {
     const turn = fixture();
     expect(presentTool(turn.item).argsLabel).toBe("action");
+    expect(presentOutput(framed, undefined, false, turn.item.name).lines.slice(0, 6)).toEqual(body.split("\n"));
     for (const columns of [40, 80, 120]) {
       const ctx = blockContextFor(turn.state, feedView(turn, { columns }));
       const rows = buildToolLines(ctx, turn.item).map(stripAnsi);
-      expect(rows.every(row => displayWidth(row) <= ctx.width)).toBe(true);
       const text = rows.join("\n");
-      expect(text).toContain("help");
-      expect(text).toContain("indented value");
-      expect(text.split("ok").length).toBeGreaterThanOrEqual(3);
-      expect(text).not.toContain("[/terminal.output]");
+      expect(rows.slice(1, 4)).toEqual(["  └ msf6 > help", "    ok", "    ok"]);
+      expect(text).toContain("+ click to expand");
+      expect(text).not.toContain("indented value");
+      const expandedCtx = blockContextFor({ ...turn.state, expandOutputGlobal: true }, feedView(turn, { columns }));
+      const expanded = buildToolLines(expandedCtx, turn.item).map(stripAnsi);
+      const expandedText = expanded.join("\n");
+      expect(expandedText).toContain("      indented value");
+      expect(expandedText.split("ok")).toHaveLength(3);
+      expect(expandedText).toContain("nextCursor=50");
+      expect(expandedText).toContain("- click to collapse");
+      expect(expandedText).not.toContain("[/terminal.output]");
+      expect([...rows, ...expanded].every(row => displayWidth(row) <= ctx.width)).toBe(true);
     }
   });
 

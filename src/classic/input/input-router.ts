@@ -26,6 +26,7 @@ export interface InputRouterDeps {
   readonly onText: (text: string) => void;
   readonly onPaste: (text: string) => void;
   readonly onMouse: (event: MouseEvent) => void;
+  readonly onKeyboardInput?: (() => void) | undefined;
   readonly onToast: (text: string) => void;
   readonly closeOverlay: () => void;
   readonly dismissBlockingPrompt: () => boolean;
@@ -49,6 +50,7 @@ export class InputRouter {
       return;
     }
     if (event.type === "paste") {
+      this.deps.onKeyboardInput?.();
       if (this.deps.contextLimitEditing?.() === true) {
         this.deps.onContextLimitPaste?.(event.text);
       } else if (this.deps.acceptsPaste()) this.deps.onPaste(event.text);
@@ -67,6 +69,7 @@ export class InputRouter {
   }
 
   private routeKey(key: KeyEvent): void {
+    this.deps.onKeyboardInput?.();
     const chord = chordFromKey(key);
     const context = this.deps.focus.activeContext();
 
@@ -114,7 +117,7 @@ export class InputRouter {
       return;
     }
 
-    if (chord === "alt+q" && this.deps.onQueueToggle) {
+    if ((chord === "ctrl+z" || chord === "alt+q") && this.deps.onQueueToggle) {
       this.deps.onQueueToggle();
       return;
     }

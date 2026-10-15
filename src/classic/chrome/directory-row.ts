@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { clipToWidth, middleClipPlain } from "../render/ansi-text.js";
+import { clipToWidth, middleClipPlain, padToWidth } from "../render/ansi-text.js";
+import { jumpToLatestLabel } from "../../ui-core/rendering/jump-to-latest.js";
 import { layoutWidth } from "../render/measure.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { relativizeHome, STATUS_INSET_COLUMNS } from "./status-rows.js";
@@ -58,4 +59,22 @@ export function composerDirectoryRow(input: ComposerDirectoryViewInput): string 
   const line = `${dir.trim()}   ${hints}`;
   const shown = layoutWidth(line) <= width ? line : clipToWidth(hints, width, input.ink.glyphs.ellipsis);
   return clipToWidth(` ${shown} `, columns, input.ink.glyphs.ellipsis);
+}
+
+export function composerDirectoryView(input: ComposerDirectoryViewInput & {
+  readonly showJumpToLatest: boolean;
+}): { readonly line: string; readonly jump: { readonly left: number; readonly width: number } | undefined } {
+  if (!input.showJumpToLatest) return { line: composerDirectoryRow(input), jump: undefined };
+  const columns = Math.max(1, Math.floor(input.columns));
+  const label = jumpToLatestLabel(Math.min(columns, Math.max(3, Math.floor(columns / 3))), input.ink.unicode);
+  if (!label) return { line: composerDirectoryRow(input), jump: undefined };
+  const width = layoutWidth(label);
+  const trailing = columns > width ? 1 : 0;
+  const left = columns - width - trailing;
+  const prefixWidth = Math.max(0, left - 1);
+  const prefix = clipToWidth(composerDirectoryRow({ ...input, columns: prefixWidth }), prefixWidth, "");
+  return {
+    line: padToWidth(prefix, left) + input.ink.style(label, { fg: "inputBorder", bold: true }) + " ".repeat(trailing),
+    jump: { left, width },
+  };
 }

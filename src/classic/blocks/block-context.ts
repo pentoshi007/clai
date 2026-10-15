@@ -1,5 +1,6 @@
 import type { ToolCallId } from "../../app/events/app-event.js";
 import type { BoundedTextState } from "../../app/events/event-buffer.js";
+import type { FileChange } from "../../tools/file-diff.js";
 import type { MarkdownStreamCache } from "../../ui-core/rendering/streaming-markdown.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import { clipToWidth, expandTabs, joinSeparated, plainText, trimTrailingSpaces } from "../render/ansi-text.js";
@@ -7,11 +8,15 @@ import type { Glyphs } from "../render/glyphs.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { layoutWidth } from "../render/measure.js";
 import { wrapAnsiLineBounded } from "../render/wrap.js";
+import type { BlockDisclosure } from "./disclosure-lines.js";
 
 export interface SpoolReader {
   tail(toolCallId: ToolCallId): string;
   state(toolCallId: ToolCallId): BoundedTextState | undefined;
-  version?(toolCallId: ToolCallId): number;
+  version?(toolCallId: ToolCallId): number | string;
+  notice?(toolCallId: ToolCallId): string | undefined;
+  fileChange?(change: FileChange): FileChange;
+  fileChangeNotice?(change: FileChange): string | undefined;
 }
 
 export const EMPTY_SPOOL: SpoolReader = {
@@ -27,6 +32,8 @@ export interface BlockContext {
   readonly state: TranscriptState;
   readonly spool: SpoolReader;
   readonly markdownCache: MarkdownStreamCache | undefined;
+  readonly disclosures?: BlockDisclosure[];
+  readonly lineOffset?: number;
 }
 
 export const SUFFIX_MIN_COLUMNS = 44;

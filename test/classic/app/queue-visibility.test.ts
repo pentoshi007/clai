@@ -22,7 +22,7 @@ function withQueue(prompts: readonly string[], columns = 120): Harness {
 }
 
 function toggle(h: Harness): void {
-  h.wiring.handleData("\x1bq");
+  h.wiring.handleData("\x1a");
 }
 
 describe("classic queue visibility", () => {
@@ -119,12 +119,12 @@ describe("classic queue visibility", () => {
     try {
       await vi.waitFor(() => expect(ui.lastFrame()).toContain("QUEUED_BETA"));
       const visibleRows = h.wiring.feedViewportRows;
-      const taskQueueRow = (): string => ui.lastFrame()!.split("\n").find((row) => row.includes("Alt+Q") && /cntrl\+H|\^H/.test(row))!;
-      expect(taskQueueRow()).toMatch(/(?:cntrl\+H|\^H).*2(?: queued|q).*Alt\+Q/);
+      const taskQueueRow = (): string => ui.lastFrame()!.split("\n").find((row) => row.includes("Ctrl+Z") && /cntrl\+H|\^H/.test(row))!;
+      expect(taskQueueRow()).toMatch(/(?:cntrl\+H|\^H).*2(?: queued|q).*Ctrl\+Z/);
       toggle(h);
       await vi.waitFor(() => expect(ui.lastFrame()).not.toContain("QUEUED_ALPHA"));
       expect(ui.lastFrame()).not.toContain("QUEUED_BETA");
-      expect(taskQueueRow()).toMatch(/(?:cntrl\+H|\^H).*2(?: queued|q).*hidden.*Alt\+Q/);
+      expect(taskQueueRow()).toMatch(/(?:cntrl\+H|\^H).*2(?: queued|q).*hidden.*Ctrl\+Z/);
       await vi.waitFor(() => expect(h.wiring.feedViewportRows).toBe(visibleRows + 3));
       expect(h.services.session.getState().queued).toEqual(["QUEUED_ALPHA", "QUEUED_BETA"]);
       toggle(h);
@@ -132,7 +132,7 @@ describe("classic queue visibility", () => {
       expect(taskQueueRow()).not.toContain("hidden");
       h.wiring.togglePlan();
       await vi.waitFor(() => expect(ui.lastFrame()).toContain("Keep working"));
-      expect(taskQueueRow()).toMatch(/(?:cntrl\+H|\^H).*2(?: queued|q).*Alt\+Q/);
+      expect(taskQueueRow()).toMatch(/(?:cntrl\+H|\^H).*2(?: queued|q).*Ctrl\+Z/);
     } finally {
       ui.unmount();
       ui.cleanup();
@@ -151,7 +151,8 @@ describe("classic queue visibility", () => {
   it("documents the classic-only shortcut without rebinding other renderers", () => {
     const h = withQueue([]);
     expect(h.services.router.resolve("alt+q", "composer")).toBeUndefined();
-    expect(formatShortcutsReference()).toMatch(/Classic[^\n]*Alt\+Q[^\n]*queued/i);
+    expect(h.services.router.resolve("ctrl+z", "composer")).toBeUndefined();
+    expect(formatShortcutsReference()).toMatch(/Classic[^\n]*Ctrl\+Z[^\n]*queued/i);
   });
 });
 
@@ -173,10 +174,10 @@ it("keeps queued submission and automatic draining active while hidden during a 
   }));
   try {
     await vi.waitFor(() => expect(ui.lastFrame()).toContain("QUEUED_DURING_RUNNING"));
-    expect(ui.lastFrame()).toMatch(/cntrl\+H to expand · 1 queued . Alt\+Q to hide/);
+    expect(ui.lastFrame()).toMatch(/cntrl\+H to expand · 1 queued . Ctrl\+Z to hide/);
     toggle(h);
     await vi.waitFor(() => expect(ui.lastFrame()).not.toContain("QUEUED_DURING_RUNNING"));
-    expect(ui.lastFrame()).toMatch(/cntrl\+H to expand · 1 queued \(hidden\) . Alt\+Q to show/);
+    expect(ui.lastFrame()).toMatch(/cntrl\+H to expand · 1 queued \(hidden\) . Ctrl\+Z to show/);
     expect(h.services.session.getState().queued).toEqual(["QUEUED_DURING_RUNNING"]);
     expect(h.services.session.getState().running).toBe(true);
     finish?.();
@@ -185,7 +186,7 @@ it("keeps queued submission and automatic draining active while hidden during a 
       expect(h.services.session.getState().running).toBe(false);
       expect(h.services.session.getState().queued).toHaveLength(0);
     });
-    await vi.waitFor(() => expect(ui.lastFrame()).toContain("Queue hidden . Alt+Q to show"));
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain("Queue hidden . Ctrl+Z to show"));
     expect(h.wiring.getSnapshot().queueVisible).toBe(false);
   } finally {
     finish?.();
@@ -195,17 +196,35 @@ it("keeps queued submission and automatic draining active while hidden during a 
   }
 });
 
-it.each(["\x1bq", "\x1b[113;3u"])("accepts Alt+Q through supported terminal encoding %j", async (data) => {
+it.each(["\x1a", "\x1b[122;5u", "\x1b[27;5;122~", "\x1bq", "\x1b[113;3u"])("accepts portable queue-toggle and legacy alias encoding %j", async (data) => {
   const h = withQueue(["keep queued"]);
   h.wiring.handleData(data);
   await vi.waitFor(() => expect(h.wiring.getSnapshot().queueVisible).toBe(false));
   expect(h.services.session.getState().queued).toEqual(["keep queued"]);
 });
 
-it("does not interpret Alt+Q bytes inside a bracketed paste as a visibility action", async () => {
+it.each(["\x1a", "\x1bq"])("does not interpret queue-toggle bytes %j inside a bracketed paste as a visibility action", async (data) => {
   const h = withQueue(["keep queued"]);
-  h.wiring.handleData("\x1b[200~pasted \x1bq content\x1b[201~");
+  h.wiring.handleData(`\x1b[200~pasted ${data} content\x1b[201~`);
   await vi.waitFor(() => expect(h.wiring.getSnapshot().composer.state.text).toContain("pasted"));
   expect(h.wiring.queueVisibleValue).toBe(true);
+  expect(h.services.session.getState().queued).toEqual(["keep queued"]);
+});
+
+it("keeps Option-produced text and existing Control editing shortcuts independent of the queue toggle", async () => {
+  const h = withQueue(["keep queued"]);
+  h.wiring.handleData("œ");
+  await vi.waitFor(() => expect(h.wiring.composer.text).toBe("œ"));
+  expect(h.wiring.queueVisibleValue).toBe(true);
+  toggle(h);
+  await vi.waitFor(() => expect(h.wiring.queueVisibleValue).toBe(false));
+  h.wiring.composer.setText("abc");
+  h.wiring.handleData("\x02");
+  expect(h.wiring.composer.getSnapshot().state.cursor).toBe(2);
+  h.wiring.handleData("\x06");
+  expect(h.wiring.composer.getSnapshot().state.cursor).toBe(3);
+  h.wiring.handleData("\x11");
+  expect(h.wiring.composer.text).toBe("");
+  expect(h.wiring.queueVisibleValue).toBe(false);
   expect(h.services.session.getState().queued).toEqual(["keep queued"]);
 });

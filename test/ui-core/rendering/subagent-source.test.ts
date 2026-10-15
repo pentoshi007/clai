@@ -53,7 +53,7 @@ describe("subagent duration", () => {
 });
 
 describe("subagent presentation", () => {
-  it("shows read paths and exact options, not file bodies or protocol envelopes", () => {
+  it("shows named, option-free read lists without bodies or protocol envelopes", () => {
     const text = formatSubagentRun(run([
       { kind: "assistant", text: 'Inspecting the worker.\n```tool\n{"name":"fs.read","args":{"path":"src/worker.ts"}}\n```' },
       { kind: "tool", text: 'Calling fs.read: {"path":"src/worker.ts","offset":81,"limit":80,"lines":true}' },
@@ -61,20 +61,21 @@ describe("subagent presentation", () => {
       { kind: "tool", text: 'Calling fs.read: {"path":"src","pattern":"orchestrat.*","glob":"**/*.ts"}' },
       { kind: "tool", text: "Success: src/worker.ts:81: PRIVATE_FILE_BODY" },
     ]));
-    expect(text).toContain('✓ fs.read src/worker.ts (offset=81, limit=80, lines=true)');
-    expect(text).toContain('✓ fs.read src (pattern="orchestrat.*", glob="**/*.ts")');
+    expect(text).toContain("✓ Explored\n  └ Read src/worker.ts");
+    expect(text).toContain("✓ Explored\n  └ Read src");
+    expect(text).not.toMatch(/offset=|limit=|pattern=|glob=|lines=/);
     expect(text).toContain("Inspecting the worker.");
     expect(text).not.toMatch(/PRIVATE_FILE_BODY|```tool|\[tool\]|hasMore|In progress/);
   });
 
-  it("does not truncate command arguments and preserves denial diagnostics", () => {
+  it("retains long single-line inputs and reports denial without the result body", () => {
     const command = `inspect ${"long-path/".repeat(200)}end --option=value`;
     const text = formatSubagentRun(run([
       { kind: "tool", text: `Calling shell.exec: ${JSON.stringify({ command })}` },
       { kind: "tool", text: "Error: Tool denied: shell.exec" },
     ]));
-    expect(text).toContain(`✗ shell.exec ${command}`);
-    expect(text).toContain("Tool denied: shell.exec");
+    expect(text).toContain(`✗ Shell ${command}\n  Denied`);
+    expect(text).not.toContain("Tool denied: shell.exec");
     expect(text).not.toContain("✓");
   });
 
@@ -260,7 +261,7 @@ describe("durable subagent presentation", () => {
     try {
       const page = await source.readPage(0);
       expect(page.body).toContain("Earliest investigation update");
-      expect(page.body).toContain("✓ shell.exec pdftotext documentation.pdf -");
+      expect(page.body).toContain("✓ Shell pdftotext documentation.pdf -");
       expect(page.body).toContain("Evidence 139:");
       expect(page.body).toContain("completed · attempt 1 · openai/test");
       expect(page.body).toContain("saved conversation checkpoint");
@@ -329,8 +330,8 @@ End of quoted examples`;
     }, snapshot.id);
     try {
       const text = await source.readAll();
-      expect(text).toContain("✓ fs.read first.md");
-      expect(text).toContain("✓ fs.read second.md");
+      expect(text).toContain("✓ Explored\n  └ Read first.md");
+      expect(text).toContain("✓ Explored\n  └ Read second.md");
       expect(text).toContain(quoted);
       expect(text).toContain("True subsequent investigation update");
       expect(text).not.toMatch(/PRIVATE_TOOL_BODY|SECOND_PRIVATE_TOOL_BODY/);
@@ -363,7 +364,7 @@ End of quoted examples`;
       snapshot = { ...snapshot, events: [{ ...complete, text: complete.text.slice(0, 128_000) }] };
       const text = await source.readAll();
       expect(text).toContain("Started investigation");
-      expect(text).toContain("✓ fs.read documentation.md");
+      expect(text).toContain("✓ Explored\n  └ Read documentation.md");
       expect(text).toContain("COMPLETE_PERSISTED_END");
       expect(text.match(/Current live update:/g)).toHaveLength(1);
       expect(text).not.toContain("PRIVATE_DOCUMENT_BODY");
@@ -430,7 +431,7 @@ End of quoted examples`;
       const text = await source.readAll();
       expect(text).toContain("Investigating with verified evidence");
       expect(text.match(/Investigating/g)).toHaveLength(1);
-      expect(text).toContain("✓ fs.read README.md");
+      expect(text).toContain("✓ Explored\n  └ Read README.md");
       expect(text).not.toContain("PRIVATE_BODY");
     } finally {
       source.dispose();
@@ -462,11 +463,8 @@ End of quoted examples`;
     }, snapshot.id);
     try {
       const text = await source.readAll();
-      expect(text).toContain("✗ fs.read");
-      expect(text).toContain("file 1/2: ✓ one.md");
-      expect(text).toContain("file 2/2: ✗ missing.md");
-      expect(text).toContain("missing.md: File not found");
-      expect(text).not.toContain("PRIVATE_BODY");
+      expect(text).toContain("✗ Explored\n  └ Read one.md\n    Read ✗ missing.md");
+      expect(text).not.toMatch(/PRIVATE_BODY|File not found|file [12]\/2:/);
     } finally {
       source.dispose();
     }

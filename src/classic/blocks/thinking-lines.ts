@@ -1,54 +1,23 @@
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { thinkingElapsedLabel } from "../../ui-core/rendering/duration.js";
-import { liveThinkingDisplay } from "../../ui-core/rendering/thinking-tail.js";
 import { isItemExpanded, type ThinkingItem } from "../../ui-core/state/transcript-types.js";
-import { wrapWithPrefixes } from "../render/wrap.js";
 import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
-
-export function thinkingTokenEstimate(content: string): number {
-  return Math.max(1, Math.round(content.trim().length / 4));
-}
+import { appendDisclosure } from "./disclosure-lines.js";
+import { logicalOutputLines, outputBodyRows } from "./output-lines.js";
 
 export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): string[] {
-  const gutter = ctx.ink.style(`${ctx.glyphs.thinkingGutter} `, {
-    fg: "thinking",
-  });
-  const expanded = isItemExpanded(ctx.state, item);
   const content = sanitizeDisplayText(item.content);
+  if (!content.trim() && !item.streaming) return [];
+  const expanded = isItemExpanded(ctx.state, item);
   const elapsed = thinkingElapsedLabel(item, ctx.now);
-
-  const header = (): string[] =>
-    wrapWithPrefixes(
-        joinMeta(ctx, [
-          "thinking",
-          elapsed,
-          `${thinkingTokenEstimate(content).toLocaleString()} tokens`,
-          item.streaming
-            ? expanded
-              ? "live · Ctrl+T to collapse when done"
-              : "live · Ctrl+T to keep open"
-            : expanded
-              ? "Ctrl+T to hide"
-              : "Ctrl+T to expand",
-        ]),
-      { width: Math.max(1, ctx.width - 2) },
-    ).map((row) => clipRow(ctx, `${gutter}${ctx.ink.style(row, { fg: "thinking" })}`));
-
-  const bodyRows = (text: string): string[] =>
-    wrapWithPrefixes(text, { width: ctx.width - 2 }).map((row) =>
-      clipRow(
-        ctx,
-        `${gutter}${ctx.ink.style(row, { fg: "thinking", italic: true })}`,
-      ),
-    );
-
-  if (item.streaming) {
-    const tail = liveThinkingDisplay(content);
-    if (!tail.trim()) return header();
-    return [...header(), ...bodyRows(tail)];
+  const mark = ctx.ink.unicode ? "•" : "*";
+  const title = ctx.ink.style(`${mark} ${item.streaming ? "Thinking" : "Reasoning"}`, { fg: "thinking", bold: true });
+  const head = joinMeta(ctx, [title, elapsed ? ctx.ink.fg("userBorder", elapsed) : undefined]);
+  const lines = [clipRow(ctx, head)];
+  if (!item.streaming) appendDisclosure(ctx, lines, expanded, { chord: "Ctrl+T", inline: true });
+  if (expanded || item.streaming) {
+    const body = outputBodyRows(ctx, logicalOutputLines(content), true, { token: "thinking", branch: false });
+    lines.push(...body);
   }
-
-  if (!content.trim()) return [];
-  if (!expanded) return header();
-  return [...header(), ...bodyRows(content)];
+  return lines;
 }

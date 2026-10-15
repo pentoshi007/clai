@@ -19,6 +19,7 @@ import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/seman
 import type { TranscriptPointerGeometry } from "../feed/transcript-selection.js";
 import type { PaintPacing } from "./paint-pacing.js";
 import type { ContextLimitHitRegion } from "../chrome/context-limit-editor.js";
+import type { ComposerPointerView, ComposerPointerGeometry } from "../chrome/composer-pointer.js";
 
 export interface ResizeSource {
   readonly columns?: number | undefined;
@@ -100,6 +101,9 @@ export interface WiringHost {
   contextLimitEditingValue: boolean;
   contextLimitDraftValue: string;
   contextLimitHitRegion: ContextLimitHitRegion | undefined;
+  composerPointerView: ComposerPointerView | undefined;
+  composerPointerGeometry: ComposerPointerGeometry | undefined;
+  jumpToLatestHitRegion: { readonly left: number; readonly top: number; readonly width: number } | undefined;
   branchRefreshTimer: ReturnType<typeof setInterval> | undefined;
   branchRefreshRequest: number;
   lastPaintAt: number;

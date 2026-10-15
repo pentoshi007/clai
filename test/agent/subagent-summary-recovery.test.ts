@@ -69,7 +69,10 @@ describe("durable subagent summary recovery", () => {
     await tick();
     work[0]!.input.emit({ kind: "assistant", text: "sk-first", append: true });
     work[0]!.input.emit({ kind: "assistant", text: "second", append: true });
-    for (let index = 0; index < 150; index++) work[0]!.input.emit({ kind: "tool", text: `Read evidence ${index}: ${"x".repeat(2000)}` });
+    for (let index = 0; index < 150; index++) {
+      work[0]!.input.emit({ kind: "tool", text: `Calling fs.read: ${JSON.stringify({ path: `evidence-${index}.ts` })}` });
+      work[0]!.input.emit({ kind: "tool", text: `Success: Read evidence ${index}: ${"x".repeat(2000)}` });
+    }
     work[0]!.resolve(report);
     await manager.wait(run.id);
     expect(manager.get(run.id)?.events.length).toBeLessThanOrEqual(96);
@@ -79,8 +82,11 @@ describe("durable subagent summary recovery", () => {
     expect(content).toContain("Read evidence 149:");
     expect(content).not.toContain("sk-firstsecond");
     const source = createSubagentPagerSource(manager, run.id, 1024);
-    expect((await source.readPage(0)).body).toContain("Read evidence 0:");
-    expect((await source.search("Read evidence 149:"))?.body).toContain("Read evidence 149:");
+    const body = (await source.readPage(0)).body;
+    expect(body).toContain("✓ Explored\n  └ Read evidence-0.ts");
+    expect(body).not.toContain("Read evidence 0:");
+    expect((await source.search("Read evidence-149.ts"))?.body).toContain("Read evidence-149.ts");
+    expect(await source.search("Read evidence 149:")).toBeUndefined();
     source.dispose();
     manager.dispose();
     expect(createManager().activityPath(run.id)).toBe(path);
