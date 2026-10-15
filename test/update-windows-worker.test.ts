@@ -1,7 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runUpdateCommand } from "../src/commands/update/process.js";
 import { windowsUpdateScript, type WindowsUpdateTask } from "../src/commands/update/windows-stage.js";
@@ -24,7 +25,10 @@ async function apply(value: ReturnType<typeof fixture>, task: WindowsUpdateTask 
   const encoded = Buffer.from(JSON.stringify({ task, stage: value.stage, status: value.status, pid, lockFile, lockToken })).toString("base64");
   writeFileSync(script, windowsUpdateScript(encoded));
   await runUpdateCommand({ file: powershell!, args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script] }, { timeoutMs: 30_000 });
-  const data: unknown = JSON.parse(readFileSync(value.status, "utf8").replace(/^\uFEFF/, ""));
+  return receiptAt(value.status);
+}
+function receiptAt(status: string): { state: string; message: string } {
+  const data: unknown = JSON.parse(readFileSync(status, "utf8").replace(/^\uFEFF/, ""));
   if (!data || typeof data !== "object" || !("state" in data) || typeof data.state !== "string" || !("message" in data) || typeof data.message !== "string") throw new Error("invalid worker receipt");
   return { state: data.state, message: data.message };
 }
@@ -104,4 +108,36 @@ describe.skipIf(!powershell)("actual PowerShell worker execution on the host", (
     expect(await apply(value)).toMatchObject({ state: "failed", message: expect.stringContaining("cancelled") });
     expect(readFileSync(value.task.destination, "utf8")).toBe("previous executable");
   }, 30_000);
+});
+
+const hasBun = process.platform === "win32" && spawnSync("bun", ["--version"], { windowsHide: true }).status === 0;
+
+describe.skipIf(process.platform !== "win32")("native Windows staging handshake and owner exit", () => {
+  for (const runtime of ["node", "standalone"] as const) {
+    it.skipIf(runtime === "standalone" && !hasBun)(`acknowledges and applies after the ${runtime} owner exits`, async () => {
+      const root = mkdtempSync(join(tmpdir(), "clai-stage's & %fixture%-")); roots.push(root);
+      const fixturePath = resolve("test/fixtures/windows-update-stage.ts");
+      const executable = join(root, "stage-fixture.exe");
+      if (runtime === "standalone") {
+        await runUpdateCommand({ file: "bun", args: ["build", "--compile", fixturePath, "--outfile", executable] }, { timeoutMs: 60_000 });
+      }
+      const command = runtime === "node"
+        ? { file: process.execPath, args: ["--import", "tsx", fixturePath, root, process.execPath, version] }
+        : { file: executable, args: [root, process.execPath, version] };
+      const output = await runUpdateCommand({ ...command, env: { TEMP: root, TMP: root, TMPDIR: root } }, { timeoutMs: 90_000 });
+      const receipt: unknown = JSON.parse(output);
+      if (!receipt || typeof receipt !== "object" || !("status" in receipt) || typeof receipt.status !== "string") throw new Error("missing stage receipt");
+      const status = receipt.status;
+      await expect.poll(() => receiptAt(status), { timeout: 20_000 }).toMatchObject({ state: "applied" });
+      expect(readFileSync(join(root, "applied.txt"), "utf8")).toBe("applied after owner exit");
+      await expect.poll(() => readdirSync(root).filter((name) => name.startsWith("clai-update-stage-")), { timeout: 10_000 }).toEqual([]);
+      for (const suffix of ["stdout.log", "stderr.log"]) expect(existsSync(`${status}.${suffix}`)).toBe(true);
+      await expect.poll(() => {
+        try {
+          for (const suffix of ["stdout.log", "stderr.log"]) rmSync(`${status}.${suffix}`, { force: true });
+          return true;
+        } catch { return false; }
+      }, { timeout: 10_000 }).toBe(true);
+    }, 120_000);
+  }
 });

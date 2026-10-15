@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stageWindowsUpdate, type WindowsUpdateTask } from "../src/commands/update/windows-stage.js";
 import { runUpdateCommand } from "../src/commands/update/process.js";
 
@@ -17,42 +17,80 @@ function taskFrom(script: string): { stage: string; status: string } {
 function acknowledge(script: string): void {
   const data = taskFrom(script);
   if (state.mode === "ack") writeFileSync(join(data.stage, "ready"), "ready");
+  if (state.mode === "slow") setTimeout(() => writeFileSync(join(data.stage, "ready"), "ready"), 20_000);
+  if (state.mode === "startup-error") writeFileSync(`${data.status}.stderr.log`, "PowerShell startup parser error");
   if (state.mode === "failed") { writeFileSync(data.status, '{"state":"failed","message":"worker failed"}'); rmSync(data.stage, { recursive: true, force: true }); }
 }
-vi.mock("node:child_process", () => ({ spawn: (_file: string, args: readonly string[]) => {
+vi.mock("node:child_process", () => ({ spawn: (_file: string, args: readonly string[], options: { detached?: boolean }) => {
   state.spawns++;
   const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
   queueMicrotask(() => {
-    if (state.mode === "error") { child.emit("error", new Error("powershell unavailable")); return; }
-    child.emit("spawn"); acknowledge(args.at(-1)!);
+    child.emit("spawn");
+    if (options.detached) taskFrom(args.at(-1)!);
+    else acknowledge(args.at(-1)!);
   });
   return child;
 } }));
 vi.mock("../src/commands/update/process.js", async (original) => ({ ...await original<typeof import("../src/commands/update/process.js")>(), runUpdateCommand: vi.fn() }));
 const task: WindowsUpdateTask = { kind: "commands", commands: [], verification: { file: process.execPath, args: ["--version"] }, version: "9.9.9", allowNewer: false };
+beforeEach(() => {
+  vi.mocked(runUpdateCommand).mockImplementation(async (command) => {
+    const text = command.args.at(-1)!;
+    const match = /-File "([^"]+)"/.exec(text.replace(/''/g, "'"));
+    if (!match?.[1]) throw new Error("missing worker launch script");
+    acknowledge(match[1]);
+    return "";
+  });
+});
 afterEach(() => {
-  for (const path of [...state.directories.splice(0), ...state.statuses.splice(0)]) rmSync(path, { recursive: true, force: true });
+  const receipts = state.statuses.splice(0).flatMap((path) => [path, `${path}.stdout.log`, `${path}.stderr.log`]);
+  for (const path of [...state.directories.splice(0), ...receipts]) rmSync(path, { recursive: true, force: true });
   state.mode = "ack"; state.spawns = 0; vi.resetAllMocks(); vi.useRealTimers();
 });
 
 describe("Windows staged-worker acceptance", () => {
+  it("avoids a console-less detached PowerShell worker that exits before acknowledging", async () => {
+    vi.useFakeTimers();
+    const result = stageWindowsUpdate(task).catch((error: Error) => error);
+    await vi.advanceTimersByTimeAsync(15_100);
+    expect(await result).toBe(state.statuses[0]);
+    expect(state.spawns).toBe(0);
+    const command = vi.mocked(runUpdateCommand).mock.calls[0]![0];
+    expect(command.args.at(-1)).toContain("Start-Process -WindowStyle Hidden");
+    expect(command.args.at(-1)).not.toContain("-Verb RunAs");
+    expect(command.args.at(-1)).toContain("-RedirectStandardError");
+    expect(command.args.at(-1)).toContain("-RedirectStandardOutput");
+  });
   it("returns a receipt only after readiness and uses a new receipt for each attempt", async () => {
     const first = await stageWindowsUpdate(task);
     const second = await stageWindowsUpdate(task);
     expect(first).not.toBe(second);
-    expect(state.spawns).toBe(2);
+    expect(vi.mocked(runUpdateCommand)).toHaveBeenCalledTimes(2);
     expect(state.directories.every((path) => existsSync(join(path, "ready")))).toBe(true);
+  });
+  it("copies a standalone executable into the same acknowledged worker protocol", async () => {
+    await stageWindowsUpdate({ kind: "binary", source: process.execPath, destination: "fixture-clai.exe", digest: "staged-digest", previousDigest: "previous-digest", version: "9.9.9" });
+    expect(statSync(join(state.directories[0]!, "clai.exe")).size).toBe(statSync(process.execPath).size);
+    expect(vi.mocked(runUpdateCommand)).toHaveBeenCalledTimes(1);
+    expect(state.spawns).toBe(0);
   });
   it("does not launch after cancellation or with an incomplete lock handoff", async () => {
     const controller = new AbortController(); controller.abort();
     await expect(stageWindowsUpdate(task, { signal: controller.signal })).rejects.toThrow(/cancelled/);
     await expect(stageWindowsUpdate(task, { lockFile: "fixture.lock" })).rejects.toThrow(/lock token/);
     expect(state.spawns).toBe(0);
+    expect(vi.mocked(runUpdateCommand)).not.toHaveBeenCalled();
+  });
+  it("allows a cold PowerShell startup longer than fifteen seconds", async () => {
+    vi.useFakeTimers(); state.mode = "slow";
+    const result = stageWindowsUpdate(task);
+    await vi.advanceTimersByTimeAsync(20_100);
+    expect(await result).toBe(state.statuses[0]);
   });
   it("bounds a worker that never acknowledges readiness", async () => {
     vi.useFakeTimers(); state.mode = "none";
     const result = expect(stageWindowsUpdate(task)).rejects.toThrow(/did not acknowledge/);
-    await vi.advanceTimersByTimeAsync(15_100);
+    await vi.advanceTimersByTimeAsync(60_100);
     await result;
     expect(state.directories.every((path) => !existsSync(path))).toBe(true);
   });
@@ -60,20 +98,32 @@ describe("Windows staged-worker acceptance", () => {
     state.mode = "failed";
     await expect(stageWindowsUpdate(task)).rejects.toThrow(/worker failed/);
   });
+  it("reports captured PowerShell startup errors instead of an empty acknowledgement timeout", async () => {
+    vi.useFakeTimers(); state.mode = "startup-error";
+    const result = expect(stageWindowsUpdate(task)).rejects.toThrow(/PowerShell startup parser error/);
+    await vi.advanceTimersByTimeAsync(60_100);
+    await result;
+  });
+  it("cancels while waiting for acknowledgement and cleans staging", async () => {
+    vi.useFakeTimers(); state.mode = "none";
+    const controller = new AbortController();
+    const result = expect(stageWindowsUpdate(task, { signal: controller.signal })).rejects.toThrow(/cancelled/);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(100);
+    await result;
+    expect(state.directories.every((path) => !existsSync(path))).toBe(true);
+  });
   it("cleans staging when PowerShell is unavailable", async () => {
-    state.mode = "error";
+    vi.mocked(runUpdateCommand).mockRejectedValue(new Error("powershell unavailable"));
     await expect(stageWindowsUpdate(task)).rejects.toThrow(/powershell unavailable/);
   });
   it("requests UAC, then checks readiness before reporting staging", async () => {
-    vi.mocked(runUpdateCommand).mockImplementation(async (command) => {
-      const text = command.args.at(-1)!;
-      const match = /-File "([^"]+)"/.exec(text);
-      if (!match?.[1]) throw new Error("missing elevation script");
-      acknowledge(match[1]); return "";
-    });
     const receipt = await stageWindowsUpdate(task, {}, true);
     expect(receipt).toBe(state.statuses[0]);
-    expect(vi.mocked(runUpdateCommand).mock.calls[0]?.[0].args.at(-1)).toContain("-Verb RunAs");
+    const launch = vi.mocked(runUpdateCommand).mock.calls[0]![0].args.at(-1);
+    expect(launch).toContain("-Verb RunAs");
+    expect(launch).not.toContain("-RedirectStandardError");
+    expect(launch).not.toContain("-RedirectStandardOutput");
     expect(state.spawns).toBe(0);
   });
   it("reports declined UAC without staging success", async () => {
