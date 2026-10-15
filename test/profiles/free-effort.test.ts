@@ -21,7 +21,7 @@ const FAMILYLESS_FREE_MODELS = [
   "free-2/openrouter/free",
 ];
 
-const PROBED_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"];
+const PROBED_EFFORTS = ["none", "low", "medium", "high"];
 
 const freeReasoning = (model: string) =>
   resolveBuiltInProfile({ provider: "free", model }).reasoning;
@@ -101,14 +101,20 @@ describe("free gateway reasoning effort", () => {
     expect(emit("free-1/x-preview-f-free", true, "medium")).toEqual({
       reasoning_effort: "medium",
     });
-    expect(emit("free-2/kilo-auto/free", true, "minimal")).toEqual({
-      reasoning_effort: "minimal",
+    expect(emit("free-2/kilo-auto/free", true, "medium")).toEqual({
+      reasoning_effort: "medium",
     });
   });
 
-  it("clamps max to xhigh so the gateway never sees a rejected value", () => {
+  it("ladders an effort the gateway rejects up to the next supported value", () => {
+    expect(emit("free-1/hy3-free", true, "minimal")).toEqual({
+      reasoning_effort: "low",
+    });
+  });
+
+  it("clamps max to high so the gateway never sees a rejected value", () => {
     expect(emit("free-1/hy3-free", true, "max")).toEqual({
-      reasoning_effort: "xhigh",
+      reasoning_effort: "high",
     });
   });
 

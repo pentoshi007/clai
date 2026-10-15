@@ -2,7 +2,10 @@ import { parseCatalogFacts } from "./catalog-facts.js";
 import { readBodyCapped, readJson } from "./wire/response-errors.js";
 
 const CATALOG_URL = "https://models.dev/api.json";
-const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
+const OPENCODE_PROVIDER_APIS = new Set([
+  "https://opencode.ai/zen/v1",
+  "https://opencode.ai/inference/v1",
+]);
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const REFRESH_COOLDOWN_MS = 60 * 1000;
 const MAX_CATALOG_BYTES = 16 * 1024 * 1024;
@@ -10,6 +13,7 @@ const MAX_CATALOG_BYTES = 16 * 1024 * 1024;
 interface ModelLimits {
   readonly contextTokens?: number | undefined;
   readonly maxOutputTokens?: number | undefined;
+  readonly reasoningOptions?: unknown;
 }
 
 let limits: ReadonlyMap<string, ModelLimits> = new Map();
@@ -28,7 +32,7 @@ function zenModelLimits(payload: unknown): ReadonlyMap<string, ModelLimits> {
   const models = asRecord(provider?.models);
   if (
     typeof provider?.api !== "string" ||
-    provider.api.replace(/\/+$/, "") !== ZEN_BASE_URL ||
+    !OPENCODE_PROVIDER_APIS.has(provider.api.replace(/\/+$/, "")) ||
     !models
   ) {
     throw new Error("OpenCode Zen model limits are unavailable");
@@ -38,11 +42,19 @@ function zenModelLimits(payload: unknown): ReadonlyMap<string, ModelLimits> {
     const model = asRecord(value);
     if (!model || (model.id !== undefined && model.id !== id)) continue;
     const facts = parseCatalogFacts({ id, limit: model.limit });
-    if (facts?.contextTokens === undefined && facts?.maxOutputTokens === undefined)
+    const reasoningOptions = Array.isArray(model.reasoning_options)
+      ? model.reasoning_options
+      : undefined;
+    if (
+      facts?.contextTokens === undefined &&
+      facts?.maxOutputTokens === undefined &&
+      reasoningOptions === undefined
+    )
       continue;
     result.set(id, {
       contextTokens: facts?.contextTokens,
       maxOutputTokens: facts?.maxOutputTokens,
+      reasoningOptions,
     });
   }
   return result;
@@ -97,16 +109,25 @@ export async function supplementZenModelLimits(
     if (!observed) return entry;
     const published = supplemental.get(observed.id);
     if (!published) return entry;
+    const record = asRecord(entry);
     const contextTokens =
       observed.contextTokens === undefined ? published.contextTokens : undefined;
     const maxOutputTokens =
       observed.maxOutputTokens === undefined ? published.maxOutputTokens : undefined;
-    if (contextTokens === undefined && maxOutputTokens === undefined) return entry;
+    const reasoningOptions =
+      record?.reasoning_options === undefined ? published.reasoningOptions : undefined;
+    if (
+      contextTokens === undefined &&
+      maxOutputTokens === undefined &&
+      reasoningOptions === undefined
+    )
+      return entry;
     return {
-      ...asRecord(entry),
+      ...record,
       id: observed.id,
       ...(contextTokens === undefined ? {} : { context_length: contextTokens }),
       ...(maxOutputTokens === undefined ? {} : { max_output_tokens: maxOutputTokens }),
+      ...(reasoningOptions === undefined ? {} : { reasoning_options: reasoningOptions }),
     };
   });
 }

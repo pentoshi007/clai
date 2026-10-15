@@ -3,6 +3,7 @@ import type {
   ProviderId,
   ReasoningArtifactReplayObserver,
   ReasoningArtifactReplayTarget,
+  ReasoningEffort,
   ReasoningPreference,
   ToolChoice,
   ToolDefinition,
@@ -19,7 +20,9 @@ import {
   isReasoningUnsupported,
   modelSupportsThinking,
   modelCatalogFacts,
+  catalogAdvertisedEfforts,
 } from "../capabilities.js";
+import { nearestAcceptedEffort } from "../reasoning-controls.js";
 import { modelMaxOutputTokens } from "../context-windows.js";
 import {
   reasoningArtifactText,
@@ -285,18 +288,19 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     }
   }
   if (options.providerId === "free") {
+    const nested = reasoning.reasoning as Record<string, unknown> | undefined;
     if (/mimo/i.test(options.model)) {
       delete reasoning.reasoning_effort;
-      const nested = reasoning.reasoning as Record<string, unknown> | undefined;
       if (nested) delete nested.effort;
     } else {
-      const effort = reasoning.reasoning_effort;
-      if (effort === "xhigh" || effort === "max") {
-        reasoning.reasoning_effort = "high";
-      }
-      const nested = reasoning.reasoning as Record<string, unknown> | undefined;
-      if (nested && (nested.effort === "xhigh" || nested.effort === "max")) {
-        nested.effort = "high";
+      const accepted = catalogAdvertisedEfforts("free", options.model);
+      if (accepted?.length) {
+        const clampEffort = (value: unknown): unknown =>
+          typeof value === "string"
+            ? nearestAcceptedEffort(value as ReasoningEffort, accepted) ?? value
+            : value;
+        reasoning.reasoning_effort = clampEffort(reasoning.reasoning_effort);
+        if (nested) nested.effort = clampEffort(nested.effort);
       }
     }
   }

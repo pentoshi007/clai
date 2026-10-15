@@ -73,15 +73,15 @@ describe("MiniMax M3 documented effort contract", () => {
     ).toBe("high");
   });
 
-  it("keeps the broad gateway vocabulary for non-M3 free models", () => {
+  it("keeps the gateway vocabulary for non-M3 free models", () => {
     const efforts = displayReasoningEfforts("free", "openrouter/free");
-    expect(efforts).toContain("xhigh");
+    expect(efforts).toEqual(["none", "low", "medium", "high"]);
     expect(
       effectiveThinkingEffort("free", "openrouter/free", {
         enabled: true,
         effort: "xhigh",
       }),
-    ).toBe("xhigh");
+    ).toBe("high");
   });
 
   it("lets learned route efforts override the documented contract", () => {
@@ -135,8 +135,8 @@ describe("MiniMax M3 documented effort contract", () => {
     expect(body.reasoning?.effort).toBe("high");
   });
 
-  it("still forwards xhigh for free models outside the M3 contract", async () => {
+  it("ladders an unsupported effort for free models outside the M3 contract", async () => {
     const body = await kiloResponsesEffort("free-2/openrouter/free", "xhigh");
-    expect(body.reasoning?.effort).toBe("xhigh");
+    expect(body.reasoning?.effort).toBe("high");
   });
 });

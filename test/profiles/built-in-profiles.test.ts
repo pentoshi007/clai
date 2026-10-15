@@ -53,11 +53,9 @@ describe("unknown models stay conservative", () => {
     );
     expect(profile.reasoning.acceptedEfforts).toEqual([
       "none",
-      "minimal",
       "low",
       "medium",
       "high",
-      "xhigh",
     ]);
     const undeclared = resolveBuiltInProfile({
       provider: "aws-mantle",
