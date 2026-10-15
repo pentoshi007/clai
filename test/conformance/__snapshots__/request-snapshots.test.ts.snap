@@ -5246,14 +5246,14 @@ The user may also invoke a skill directly. When that happens, its instructions a
   </skill>
 </available_skills>
 
-Today's date: Thu Oct 15 2026
+Today's date: <date>
 
 Here is some useful information about the environment you are running in:
 <env>
-  Working directory: /home/ubuntu/projects/clai
-  Workspace root folder: /home/ubuntu/projects/clai
+  Working directory: <cwd>
+  Workspace root folder: <cwd>
   Is directory a git repo: yes
-  Platform: linux
+  Platform: <platform>
   Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.
 </env>
 When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using \`execute\` to call \`tools.opencode.session_move\` and make the worktree the session's working directory.
@@ -5984,14 +5984,14 @@ The user may also invoke a skill directly. When that happens, its instructions a
   </skill>
 </available_skills>
 
-Today's date: Thu Oct 15 2026
+Today's date: <date>
 
 Here is some useful information about the environment you are running in:
 <env>
-  Working directory: /home/ubuntu/projects/clai
-  Workspace root folder: /home/ubuntu/projects/clai
+  Working directory: <cwd>
+  Workspace root folder: <cwd>
   Is directory a git repo: yes
-  Platform: linux
+  Platform: <platform>
   Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.
 </env>
 When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using \`execute\` to call \`tools.opencode.session_move\` and make the worktree the session's working directory.
@@ -6722,14 +6722,14 @@ The user may also invoke a skill directly. When that happens, its instructions a
   </skill>
 </available_skills>
 
-Today's date: Thu Oct 15 2026
+Today's date: <date>
 
 Here is some useful information about the environment you are running in:
 <env>
-  Working directory: /home/ubuntu/projects/clai
-  Workspace root folder: /home/ubuntu/projects/clai
+  Working directory: <cwd>
+  Workspace root folder: <cwd>
   Is directory a git repo: yes
-  Platform: linux
+  Platform: <platform>
   Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.
 </env>
 When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using \`execute\` to call \`tools.opencode.session_move\` and make the worktree the session's working directory.
