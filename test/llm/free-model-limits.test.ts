@@ -385,6 +385,53 @@ describe("Free model context discovery", () => {
     expect(resolveContextWindow({ provider: "free", model: "unknown-free" })).toMatchObject({ tokens: 200_000, source: "default" });
   });
 
+  it("keeps the verified DeepSeek free window across discovery, refresh and offline reload", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "clai-free-deepseek-"));
+    vi.stubEnv("CLAI_DATA_DIR", dataDir);
+    const id = "deepseek-v4.1-flash-free";
+    let publishedContext = 200_000;
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog([id]));
+      if (url === CATALOG_URL) return jsonResponse(catalog({
+        [id]: {
+          limit: { context: publishedContext, output: 32_000 },
+          reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+        },
+      }));
+      if (url === `${ZEN_BASE_URL}/models`) return jsonResponse({ data: [{ id }] });
+      if (url === `${KILO_BASE_URL}/models`) return jsonResponse({ data: [
+        { id, isFree: true, context_length: 262_144, max_completion_tokens: 16_384 },
+      ] });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { freeProvider } = await import("../../src/llm/free.js");
+    const { modelContextWindow, modelMaxOutputTokens, resolveContextWindow } = await import("../../src/llm/context-windows.js");
+    const { clearModelCatalogFacts, displayReasoningEfforts, registerModelCatalogFacts } = await import("../../src/llm/capabilities.js");
+    const { reloadRememberedModelLimits } = await import("../../src/llm/model-limit-store.js");
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(1_000_000);
+    await freeProvider.listModels!({});
+    expect(resolveContextWindow({ provider: "free", model: `free-1/${id}` }).tokens).toBe(1_000_000);
+    expect(modelContextWindow(id, "free")).toBe(1_000_000);
+    expect(modelContextWindow(`free-2/${id}`, "free")).toBe(262_144);
+    expect(modelMaxOutputTokens("free", `free-1/${id}`)).toBe(32_000);
+    expect(displayReasoningEfforts("free", `free-1/${id}`)).toEqual(["low", "high", "max"]);
+    publishedContext = 400_000;
+    vi.mocked(Date.now).mockReturnValue(START + 30 * 60_000);
+    await freeProvider.listModels!({});
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(1_000_000);
+    clearModelCatalogFacts();
+    reloadRememberedModelLimits();
+    fetchMock.mockRejectedValue(new Error("offline"));
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(1_000_000);
+    expect(modelMaxOutputTokens("free", `free-1/${id}`)).toBe(32_000);
+    registerModelCatalogFacts("openrouter", { id, contextTokens: 131_072 });
+    registerModelCatalogFacts("free", { id: "free-1/deepseek-v4-flash-free", contextTokens: 200_000 });
+    expect(modelContextWindow(id, "openrouter")).toBe(131_072);
+    expect(modelContextWindow("free-1/deepseek-v4-flash-free", "free")).toBe(200_000);
+  });
+
   it("applies catalog reasoning efforts to free-1 models", async () => {
     dataDir = await mkdtemp(join(tmpdir(), "clai-free-efforts-"));
     vi.stubEnv("CLAI_DATA_DIR", dataDir);
