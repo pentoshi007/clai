@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, rm, stat } from "node:fs/promises";
+import { mkdir, open, rm, stat, truncate } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getHistoryDir } from "./paths.js";
@@ -176,14 +176,17 @@ export class SessionPromptStore {
         handles.push(await open(path, "a+", 0o600));
       }
       const [body, metadata, index] = handles as [FileHandle, FileHandle, FileHandle];
-      const count = Math.floor((await index.stat()).size / INDEX_BYTES);
+      const indexSize = (await index.stat()).size;
+      const count = Math.floor(indexSize / INDEX_BYTES);
       const last = count ? await readEntry(index, metadata, count) : undefined;
       const bodyEnd = last?.entry.nextOffset ?? 0;
       const metadataEnd = last?.metadataEnd ?? 0;
-      if ((await body.stat()).size < bodyEnd) throw new Error("incomplete session prompt journal");
-      await index.truncate(count * INDEX_BYTES);
-      await metadata.truncate(metadataEnd);
-      await body.truncate(bodyEnd);
+      const bodySize = (await body.stat()).size;
+      const metadataSize = (await metadata.stat()).size;
+      if (bodySize < bodyEnd) throw new Error("incomplete session prompt journal");
+      if (indexSize > count * INDEX_BYTES) await truncate(this.indexPath, count * INDEX_BYTES);
+      if (metadataSize > metadataEnd) await truncate(this.metadataPath, metadataEnd);
+      if (bodySize > bodyEnd) await truncate(this.path, bodyEnd);
       await operation({ body, metadata, index, count, bodyEnd, metadataEnd });
     } finally {
       await Promise.allSettled(handles.map((handle) => handle.close()));
