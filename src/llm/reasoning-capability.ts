@@ -31,6 +31,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   openai: [/gpt-5/i, /o1/i, /o3/i, /o4/i],
   anthropic: [/claude-(?:opus|sonnet|haiku)-(?:3-7|4|4-\d)/i, /claude-3-7/i],
   mistral: [],
+  river: [],
   nvidia: [
     /kimi-k2/i,
     /deepseek-r1/i,

@@ -196,7 +196,7 @@ export class SessionPromptStore {
 
   private async appendEntry(writer: Writer, input: SessionPromptInput): Promise<void> {
     const content = redactUserCredentialsFromMemory(input.content).replace(
-      /\b(?:gsk_|AIza|AQ\.|sk-|nvapi-|wk-|ws-)[A-Za-z0-9._-]+/g,
+      /\b(?:gsk_|rv_|AIza|AQ\.|sk-|nvapi-|wk-|ws-)[A-Za-z0-9._-]+/g,
       (credential) => redactSecrets(credential),
     );
     const number = writer.count + 1;

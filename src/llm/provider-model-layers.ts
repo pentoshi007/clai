@@ -229,19 +229,23 @@ export function modelLayerFor(
       },
     };
   }
-  if (provider === "mistral") {
-    const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
+  if (provider === "mistral" || provider === "river") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning ??
+      (provider === "mistral" ? documentedMistralReasoning(model) : undefined);
     const efforts = catalogEffortList(reasoning?.supportedEfforts) ?? [];
     const supported = reasoning?.supported === true;
     const mandatory = reasoning?.mandatory === true;
+    const evidence = providerDoc(provider === "river"
+      ? "https://docs.river.ai/guides/inference-controls/"
+      : "https://docs.mistral.ai/studio/conversations/reasoning");
     return {
-      evidence: providerDoc("https://docs.mistral.ai/studio/conversations/reasoning"),
+      evidence,
       reasoning: {
         generation: mandatory ? "mandatory" : supported ? "optional" : "none",
         control: {
           dialect: "openai-effort",
           status: supported && efforts.length > 0 ? "supported" : "unsupported",
-          evidence: providerDoc("https://docs.mistral.ai/studio/conversations/reasoning"),
+          evidence,
         },
         acceptedEfforts: efforts,
         disable: efforts.includes("none") ? "supported" : "unsupported",

@@ -47,6 +47,7 @@ import { registerModelVisionCapability } from "./capability/vision-registry.js";
 import { resolveToolDialect } from "./capability/tool-dialect.js";
 import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
+import { riverModelFacts } from "./river-models.js";
 import { scopedModelCatalogFacts } from "./catalog-context.js";
 import {
   rememberModelLimits,
@@ -275,7 +276,7 @@ export function routeReasoningIsMandatory(
   model: string,
 ): boolean {
   if (
-    provider === "cline" &&
+    (provider === "cline" || provider === "river") &&
     modelCatalogFacts(provider, model)?.reasoning?.mandatory === true
   ) return true;
   if (provider === "mistral") {
@@ -359,7 +360,7 @@ export type ReasoningEvidence =
   "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
 function familyForProvider(provider: ProviderId, model: string) {
-  if (provider === "mistral") return undefined;
+  if (provider === "mistral" || provider === "river") return undefined;
   const family = modelFamilyFor(model);
   const providerExcluded =
     family?.id === "mimo-v2" && provider !== "mimo";
@@ -394,7 +395,7 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   if (
-    (provider === "mistral" || provider === "cline") &&
+    (provider === "mistral" || provider === "cline" || provider === "river") &&
     modelCatalogFacts(provider, model)?.reasoning?.supported === false
   ) return false;
   loadLearnedCapabilities();
@@ -408,6 +409,7 @@ export function modelSupportsThinking(
 }
 
 function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
+  if (provider === "river") return modelCatalogFacts(provider, model)?.reasoning?.supported === true;
   if (provider === "cline") {
     const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
     if (declared !== undefined) return declared;
@@ -483,8 +485,10 @@ export function modelCatalogFacts(
   model: string,
 ): CatalogFacts | undefined {
   const scope = scopedModelCatalogFacts(provider);
-  if (scope) return scope.get(model.trim().toLowerCase());
-  return catalogFactsByRoute.get(catalogFactsKey(provider, model));
+  const facts = scope
+    ? scope.get(model.trim().toLowerCase())
+    : catalogFactsByRoute.get(catalogFactsKey(provider, model));
+  return provider === "river" ? riverModelFacts(model, facts) : facts;
 }
 
 export function registerModelCatalogLimits(
@@ -530,6 +534,10 @@ export function catalogAdvertisedEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  if (provider === "river") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning;
+    return reasoning?.supported === false ? [] : catalogEffortList(reasoning?.supportedEfforts) ?? [];
+  }
   if (provider === "cline") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     if (reasoning?.supported === false) return [];

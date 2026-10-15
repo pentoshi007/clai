@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { handleReasoning } from "../../src/ui-core/commands/picker-commands.js";
+import { clearModelCatalogFacts, registerModelCatalogFacts } from "../../src/llm/capabilities.js";
 import {
   createCompositionRoot,
   type AppServices,
@@ -169,4 +170,38 @@ describe("/effort on a route known not to reason", () => {
     const picker = openEffortPicker(services, "ollama", "llama3.1:8b");
     expect(picker.options.map((option) => option.value)).toContain("medium");
   });
+});
+
+
+describe("/effort follows River model controls", () => {
+  it("offers off, high and max for River DeepSeek", () => {
+    const services = makeServices();
+    const picker = openEffortPicker(services, "river", "deepseek-ai/DeepSeek-V4.1-Flash");
+    expect(picker.options.map((option) => option.value)).toEqual(["off", "high", "max"]);
+  });
+
+  it("offers low, high and max without off for mandatory River GLM", () => {
+    const services = makeServices();
+    const picker = openEffortPicker(services, "river", "zai-org/GLM-5.3-Flash");
+    expect(picker.options.map((option) => option.value)).toEqual(["low", "high", "max"]);
+  });
+});
+
+it("refreshes River effort choices from catalog metadata", () => {
+  const services = makeServices();
+  const model = "river/future-route";
+  try {
+    registerModelCatalogFacts("river", {
+      id: model,
+      reasoning: { supported: true, mandatory: true, supportedEfforts: ["low", "max"] },
+    });
+    expect(openEffortPicker(services, "river", model).options.map((option) => option.value)).toEqual(["low", "max"]);
+    registerModelCatalogFacts("river", {
+      id: model,
+      reasoning: { supported: true, mandatory: false, supportedEfforts: ["none", "high"] },
+    });
+    expect(openEffortPicker(services, "river", model).options.map((option) => option.value)).toEqual(["off", "high"]);
+  } finally {
+    clearModelCatalogFacts();
+  }
 });

@@ -5,6 +5,7 @@ import { setProviderSecret, unsetProviderSecret } from "../../../store/keys.js";
 import { providerIds } from "../../../types.js";
 import type { ProviderId } from "../../../types.js";
 import type { AppServices } from "../../bootstrap/composition-root.js";
+import { redactSecrets } from "../../../llm/provider.js";
 
 export async function addCustomProviderFlow(services: AppServices): Promise<void> {
   services.overlay.close();
@@ -91,9 +92,11 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
     const list = tempProvider.listModels;
     if (list) models = await list({ apiKey: apiKey || undefined });
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const detail = redactSecrets(apiKey ? message.replaceAll(apiKey, "[redacted]") : message);
     services.session.notice(
       "warn",
-      `could not fetch models from ${displayName}: ${err instanceof Error ? err.message : String(err)} · you can set one manually with /model <name>`,
+      `could not fetch models from ${displayName}: ${detail} · you can set one manually with /model <name>`,
     );
   } finally {
     services.toast.dismiss(fetchingToastId);
@@ -121,7 +124,7 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
   } else {
     const modelAnswer = await services.overlay.openSecret({
       title: `New custom provider · 6 of 6 · default model`,
-      prompt: `Enter the default model id for ${displayName} (you can change it later with /model <name>):`,
+      prompt: `Model discovery is unavailable or returned no models. Enter the default model id for ${displayName} (you can change it later with /model <name>):`,
       reveal: true,
     });
     defaultModel = modelAnswer?.trim() ?? "";

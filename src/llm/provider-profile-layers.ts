@@ -25,6 +25,30 @@ export const viaGateway = (detail: string): ProfileEvidence => ({
 });
 
 export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = {
+  river: {
+    evidence: providerDoc("https://docs.river.ai/guides/inference/"),
+    transport: {
+      authType: "bearer",
+      keyEnv: "RIVER_API_KEY",
+      baseUrlEnv: "RIVER_BASE_URL",
+      systemPolicy: "single-leading",
+    },
+    capabilities: { streamOptions: "unsupported", structuredOutput: "supported" },
+    reasoning: {
+      replayScope: "tool-turn",
+      finalTurnPreservation: "unsupported",
+      outputShapes: ["reasoning-content"],
+    },
+    cache: {
+      kind: "automatic-prefix",
+      cacheAffectingFields: ["messages", "tools", "tool_choice", "reasoning_effort"],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
+    terminal: { proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS, naturalEofAccepted: false },
+  },
   mistral: {
     evidence: providerDoc("https://docs.mistral.ai/api/endpoint/chat"),
     transport: {

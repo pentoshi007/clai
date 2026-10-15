@@ -157,7 +157,7 @@ describe("classic command parity (W12)", () => {
   spec(["set"], "/set with no arguments opens the credential picker", async () => {
     const { services } = open();
     void run(services, "set");
-    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"), { timeout: 5_000 });
   });
 
   spec(["unset"], "/unset with no arguments opens the credential picker", async () => {

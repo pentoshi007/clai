@@ -5,6 +5,7 @@ export const providerIds = [
   "openai",
   "anthropic",
   "mistral",
+  "river",
   "nvidia",
   "agentrouter",
   "aws-mantle",

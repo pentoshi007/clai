@@ -378,7 +378,7 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
         ? ("capability-denied" as const)
         : undefined;
   const acceptedEfforts =
-    input.provider === "mistral" && reasoningEnabled && input.reasoning?.effort !== "none"
+    (input.provider === "mistral" || input.provider === "river") && reasoningEnabled && input.reasoning?.effort !== "none"
     ? profile.reasoning.acceptedEfforts.filter((effort) => effort !== "none")
     : profile.reasoning.acceptedEfforts;
   const emittedReasoning =
