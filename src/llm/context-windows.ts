@@ -67,6 +67,9 @@ export const MIN_CUSTOM_CONTEXT_LIMIT_TOKENS = 20_000;
 const PROVIDER_CONTEXT_OVERRIDES: Partial<
   Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
 > = {
+  free: [
+    { pattern: /^(?:free-1\/)?deepseek-v4\.1-flash-free$/i, tokens: 1_000_000 },
+  ],
   mimo: [
     { pattern: /-asr$/i, tokens: 32_768 },
     { pattern: /-tts/i, tokens: 32_768 },
