@@ -100,11 +100,15 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
   const innerW = Math.max(1, (widthProp ?? 36) - 4);
   const disclosure = useTaskDisclosure(plan, scrollRef, interactionRef, props.disclosureBinding);
   const displayTasks = disclosure.tasks;
-  const revealedTaskId = focused ? disclosure.selectedId : activeId;
+  const previousTargets = useRef<{ selectedId: string | undefined; activeId: string | undefined }>({ selectedId: undefined, activeId: undefined });
 
   useEffect(() => {
-    if (revealedTaskId) revealTaskHeader(scrollRef.current, revealedTaskId);
-  }, [revealedTaskId]);
+    const previous = previousTargets.current;
+    previousTargets.current = { selectedId: disclosure.selectedId, activeId };
+    const target = focused ? disclosure.selectedId : activeId;
+    const priorTarget = focused ? previous.selectedId : previous.activeId;
+    if (target && target !== priorTarget) revealTaskHeader(scrollRef.current, target);
+  }, [focused, disclosure.selectedId, activeId]);
 
   const toggleTask = useCallback((id: string): void => {
     if (services.overlay.isOpen()) return;
