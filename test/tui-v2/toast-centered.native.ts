@@ -56,6 +56,22 @@ for (const width of [16, 40, 80, 120]) {
         }
         if (compact) assert.equal(rows.length, 1, "overlay toast must stay on one row");
       }
+      if (!compact) {
+        await act(async () => {
+          toast.clear();
+          toast.show("first toast", { level: "info", key: "stack-a", sticky: true });
+          toast.show("second toast", { level: "success", key: "stack-b", sticky: true });
+          await new Promise<void>(resolve => setTimeout(resolve, 260));
+          await setup.flush();
+        });
+        const lines = setup.captureSpans().lines;
+        const rowsWith = (plate: RGBA): number[] => lines.flatMap((line, index) =>
+          line.spans.some(span => span.bg.equals(plate) && span.width > 0) ? [index] : []);
+        const newest = rowsWith(RGBA.fromHex(theme.successBg));
+        const previous = rowsWith(RGBA.fromHex(theme.mode));
+        assert.equal(newest[0], 0, "newest toast must stick to the top row");
+        assert.equal(previous[0], newest.at(-1)! + 3, "stacked toast must sit two rows below the previous one");
+      }
       await act(async () => { toast.clear(); await setup.flush(); });
       assert.equal(setup.captureCharFrame().trim(), "", "dismissal must remove the toast");
     } finally {

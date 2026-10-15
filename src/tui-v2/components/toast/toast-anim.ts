@@ -8,7 +8,7 @@ import { easeInCubic, easeOutCubic } from "../../../ui-core/motion/ease.js";
 
 export const TOAST_BOX_HEIGHT = 1;
 
-export const TOAST_REST_TOP = 1;
+export const TOAST_REST_TOP = 0;
 
 export const TOAST_HIDDEN_TOP = -TOAST_BOX_HEIGHT;
 
