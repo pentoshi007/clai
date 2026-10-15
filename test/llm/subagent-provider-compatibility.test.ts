@@ -143,7 +143,7 @@ describe.each(["complete", "stream"] as const)("%s provider option compatibility
     });
     await run(mode, fakeProvider(attempt), withLowestReasoning(request, "free", model));
     expect(attempt.mock.calls.map(([candidate]) => candidate.thinking?.effort))
-      .toEqual(["none", "minimal", "low"]);
+      .toEqual(["none", "low"]);
     expect(isReasoningUnsupported("free", model)).toBe(false);
     expect(lowestReasoningPreference("free", model))
       .toEqual({ enabled: true, effort: "low" });

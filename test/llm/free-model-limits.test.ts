@@ -195,6 +195,59 @@ describe("OpenCode Zen serving limits", () => {
     await supplement(["unknown-free"]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("accepts the OpenCode provider published on the inference endpoint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      opencode: {
+        api: "https://opencode.ai/inference/v1",
+        models: { "exo-free": { limit: { context: 1_048_576, output: 131_072 } } },
+      },
+    })));
+    expect(parseCatalogFacts((await supplement(["exo-free"]))[0])).toMatchObject({
+      contextTokens: 1_048_576,
+      maxOutputTokens: 131_072,
+    });
+  });
+
+  it("carries catalog reasoning options so supported efforts resolve", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      opencode: {
+        api: "https://opencode.ai/inference/v1",
+        models: {
+          "effort-free": {
+            limit: { context: 200_000, output: 32_000 },
+            reasoning: true,
+            reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+          },
+        },
+      },
+    })));
+    const [entry] = await supplement(["effort-free"]);
+    expect(parseCatalogFacts(entry)?.reasoning).toMatchObject({
+      supported: true,
+      supportedEfforts: ["low", "high", "max"],
+    });
+  });
+
+  it("keeps gateway reasoning options when supplementing limits", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      opencode: {
+        api: "https://opencode.ai/inference/v1",
+        models: {
+          "kept-free": {
+            limit: { context: 200_000, output: 32_000 },
+            reasoning_options: [{ type: "effort", values: ["low"] }],
+          },
+        },
+      },
+    })));
+    const entry = {
+      id: "kept-free",
+      reasoning_options: [{ type: "effort", values: ["medium"] }],
+    };
+    const [result] = await supplement([entry]);
+    expect(parseCatalogFacts(result)?.reasoning?.supportedEfforts).toEqual(["medium"]);
+  });
 });
 
 describe("Free model context discovery", () => {
@@ -330,5 +383,33 @@ describe("Free model context discovery", () => {
     expect(modelContextWindow("shared-free", "free")).toBe(1_048_576);
     expect(modelMaxOutputTokens("free", "mimo-v2.6-flash-free")).toBe(32_000);
     expect(resolveContextWindow({ provider: "free", model: "unknown-free" })).toMatchObject({ tokens: 200_000, source: "default" });
+  });
+
+  it("applies catalog reasoning efforts to free-1 models", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "clai-free-efforts-"));
+    vi.stubEnv("CLAI_DATA_DIR", dataDir);
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["effort-free"]));
+      if (url === CATALOG_URL) return jsonResponse({
+        opencode: {
+          api: "https://opencode.ai/inference/v1",
+          models: {
+            "effort-free": {
+              limit: { context: 200_000, output: 32_000 },
+              reasoning: true,
+              reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+            },
+          },
+        },
+      });
+      if (url === `${ZEN_BASE_URL}/models`) return jsonResponse({ data: [{ id: "effort-free" }] });
+      if (url === `${KILO_BASE_URL}/models`) return jsonResponse({ data: [] });
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    const { freeProvider } = await import("../../src/llm/free.js");
+    const { displayReasoningEfforts } = await import("../../src/llm/capabilities.js");
+    await freeProvider.listModels!({});
+    expect(displayReasoningEfforts("free", "free-1/effort-free")).toEqual(["low", "high", "max"]);
   });
 });

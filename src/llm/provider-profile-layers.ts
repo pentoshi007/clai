@@ -955,7 +955,7 @@ const freeGatewayEffortLayer: ProviderProfileLayer = {
       evidence: codeFact("zen-kilo-free-effort-probed"),
     },
     generation: "optional",
-    acceptedEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    acceptedEfforts: ["none", "low", "medium", "high"],
     disable: "supported",
     disableForm: "effort-none",
     outputShapes: ["reasoning-content", "reasoning-field", "structured-details"],

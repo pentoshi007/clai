@@ -152,9 +152,9 @@ describe("effort ladder entry for opaque gateway rejections", () => {
     expect(shouldEnterEffortLadder(error, thinking("xhigh"), "free", MODEL, false)).toBe(false);
   });
 
-  it("steps down within the declared efforts when the gateway rejects one", () => {
+  it("maps a rejected effort onto the declared efforts", () => {
     expect(effortCandidatesFor("free", MODEL, "xhigh")).toEqual(["high"]);
-    expect(effortCandidatesFor("free", MODEL, "minimal")).toEqual(["none"]);
+    expect(effortCandidatesFor("free", MODEL, "minimal")).toEqual(["low"]);
   });
 });
 

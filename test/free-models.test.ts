@@ -486,7 +486,12 @@ describe("free provider (zen + kilo)", () => {
       },
     );
 
-    it("still clamps xhigh to high for other zen models", async () => {
+    it("ladders an unsupported effort down to the model's supported set", async () => {
+      const { registerModelCatalogFacts } = await import("../../src/llm/capabilities.js");
+      registerModelCatalogFacts("free", {
+        id: "free-1/hy3-free",
+        reasoning: { supported: true, supportedEfforts: ["low", "medium", "high"] },
+      });
       const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
@@ -504,6 +509,34 @@ describe("free provider (zen + kilo)", () => {
         reasoning_effort?: string;
       };
       expect(body.reasoning_effort).toBe("high");
+    });
+
+    it("sends the exact effort when the model supports it", async () => {
+      const { registerModelCatalogFacts } = await import("../../src/llm/capabilities.js");
+      registerModelCatalogFacts("free", {
+        id: "free-1/hy3-free",
+        reasoning: {
+          supported: true,
+          supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+        },
+      });
+      const fetchMock = sseCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/hy3-free",
+          messages: [{ role: "user", content: "think" }],
+          thinking: { enabled: true, effort: "max" },
+        },
+        {},
+      );
+
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+      const body = JSON.parse(String(request.body)) as {
+        reasoning_effort?: string;
+      };
+      expect(body.reasoning_effort).toBe("max");
     });
 
     it("streams Free1 completions directly without a non-streaming attempt", async () => {
