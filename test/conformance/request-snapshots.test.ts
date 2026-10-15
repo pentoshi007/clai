@@ -13,7 +13,19 @@ import {
 
 const VOLATILE_BODY_KEYS = new Set(["installation_id"]);
 
+const ENVIRONMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/Today's date: [^\n]+/g, "Today's date: <date>"],
+  [/Platform: (?:linux|darwin|win32|freebsd|openbsd|aix|sunos)/g, "Platform: <platform>"],
+];
+
+function redactEnvironment(value: string): string {
+  let out = value.replaceAll(process.cwd(), "<cwd>");
+  for (const [pattern, replacement] of ENVIRONMENT_PATTERNS) out = out.replace(pattern, replacement);
+  return out;
+}
+
 function redactBody(body: unknown): unknown {
+  if (typeof body === "string") return redactEnvironment(body);
   if (Array.isArray(body)) return body.map(redactBody);
   if (!body || typeof body !== "object") return body;
   const out: Record<string, unknown> = {};

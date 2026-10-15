@@ -1,5 +1,8 @@
 globalThis.fetch = async (input, init) => {
   const url = String(input);
+  if (url === 'https://models.opencode.ai/api.json') {
+    return Response.json({ opencode: { models: { 'big-pickle': { cost: { input: 0, output: 0 } } } } });
+  }
   if (url.endsWith('/models')) return Response.json({ data: [{ id: 'big-pickle' }] });
   if (!url.endsWith('/chat/completions')) throw new Error(`Unexpected test request: ${url}`);
   const request = JSON.parse(init.body);
