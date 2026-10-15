@@ -264,6 +264,28 @@ try {
     assertCoherentTitles(scrolling);
   }
   await capture("app-scroll-wheel");
+  await settle(() => taskScroll().scrollTo(taskScroll().scrollHeight));
+  const bottom = taskScroll().scrollTop;
+  assert.ok(bottom > 0, "The task pane must genuinely overflow for the bottom-boundary regression");
+  for (let index = 0; index < 6; index++) {
+    await settle(() => services.focus.focusRegion("composer"));
+    assert.equal(taskScroll().scrollTop, bottom, "Leaving the task pane must not reveal a stale task selection");
+    const changes: number[] = [];
+    const record = (): void => { changes.push(taskScroll().scrollTop); };
+    taskScroll().verticalScrollBar.on("change", record);
+    await settle(() => setup.mockMouse.scroll(viewport.x + 3, viewport.y + 1, "down"));
+    taskScroll().verticalScrollBar.off("change", record);
+    assert.equal(services.focus.activeContext(), "plan", "Wheel input must still focus the task pane");
+    assert.equal(taskScroll().scrollTop, bottom, "Scrolling past the final task must preserve the bottom position after refocusing");
+    assert.ok(changes.every((position) => position === bottom), "No intermediate frame may jump to a task header at the top");
+    assertCoherentTitles(scrolling);
+  }
+  await settle(() => taskScroll().scrollTo(Math.floor(bottom / 2)));
+  const middle = taskScroll().scrollTop;
+  await settle(() => services.focus.focusRegion("composer"));
+  await settle(() => setup.mockMouse.scroll(viewport.x + 3, viewport.y + 1, "down"));
+  assert.ok(taskScroll().scrollTop >= middle, "Refocusing while scrolling down must never move backward");
+  await capture("app-scroll-refocus-stable");
   for (let index = 0; index < 11; index++) {
     await settle(() => setup.mockInput.pressArrow("down"));
     assertCoherentTitles(scrolling, `t${index + 2}`);
