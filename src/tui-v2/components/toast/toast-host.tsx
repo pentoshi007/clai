@@ -12,6 +12,7 @@ import { TOAST_ENTER_MS } from "../../../ui-core/controllers/toast-controller.js
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { useToastState } from "../../../ui-core/react/use-toast.js";
 import { centerChromeRow, fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
+import { renderColumns } from "../../../ui-core/rendering/text-width.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
 import {
   TOAST_BOX_HEIGHT,
@@ -146,6 +147,18 @@ export function padToastLines(bodyLines: string[], chipWidth: number): string[] 
   return bodyLines.map((line) => centerChromeRow(fitOneLine([line.trim()], inner), chipWidth));
 }
 
+export const TOAST_MIN_CHIP_WIDTH = 16;
+
+export function toastChipWidth(
+  level: ToastLevel,
+  message: string,
+  maxWidth: number,
+): number {
+  const wrapped = wrapToastBody(level, message, Math.max(8, maxWidth - H_PAD * 2));
+  const contentWidth = Math.max(...wrapped.map((line) => renderColumns(line)), 1);
+  return Math.min(maxWidth, Math.max(TOAST_MIN_CHIP_WIDTH, contentWidth + H_PAD * 2));
+}
+
 function ToastPill(props: {
   item: ToastItem;
   theme: Theme;
@@ -164,8 +177,7 @@ function ToastPill(props: {
   const attrs = dim
     ? TextAttributes.BOLD | TextAttributes.DIM
     : TextAttributes.BOLD;
-  const blank = " ".repeat(Math.max(1, width));
-  const height = 2 + bodyLines.length;
+  const height = bodyLines.length;
 
   return (
     <box
@@ -186,11 +198,6 @@ function ToastPill(props: {
         paddingBottom: 0,
       }}
     >
-      <text
-        selectable={false}
-        content={blank}
-        style={{ fg: plate, bg: plate, height: 1, width }}
-      />
       {bodyLines.map((line, i) => (
         <text
           key={`${item.id}-L${i}`}
@@ -205,11 +212,6 @@ function ToastPill(props: {
           }}
         />
       ))}
-      <text
-        selectable={false}
-        content={blank}
-        style={{ fg: plate, bg: plate, height: 1, width }}
-      />
     </box>
   );
 }
@@ -258,22 +260,12 @@ function ToastHostImpl(props: ToastHostProps): ReactNode {
   return (
     <>
       {visible.map((item) => {
-        const innerW = Math.max(8, maxWidth - H_PAD * 2);
-        const wrapped = wrapToastBody(item.level, item.message, innerW);
-        const padded = padToastLines(wrapped, maxWidth);
-        const natural = Math.max(
-          ...padded.map((l) => l.length),
-          16,
+        const toastWidth = toastChipWidth(item.level, item.message, maxWidth);
+        const bodyLines = padToastLines(
+          wrapToastBody(item.level, item.message, Math.max(8, toastWidth - H_PAD * 2)),
+          toastWidth,
         );
-        const toastWidth = Math.min(maxWidth, natural);
-        const bodyLines =
-          toastWidth === maxWidth
-            ? padded
-            : padToastLines(
-                wrapToastBody(item.level, item.message, toastWidth - H_PAD * 2),
-                toastWidth,
-              );
-        const boxHeight = 2 + bodyLines.length;
+        const boxHeight = bodyLines.length;
         const left = Math.max(0, Math.floor((termWidth - toastWidth) / 2));
         const anim = toastAnimAt(
           item.sticky

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  TOAST_MIN_CHIP_WIDTH,
   padToastLines,
+  toastChipWidth,
   wrapToastBody,
 } from "../../src/tui-v2/components/toast/toast-host.js";
 import {
@@ -11,8 +13,8 @@ import { MAX_TOAST_MESSAGE_CHARS } from "../../src/ui-core/controllers/toast-con
 import { TOAST_ENTER_MS } from "../../src/ui-core/controllers/toast-controller.js";
 
 describe("toast notification chip", () => {
-  it("min chip height is 3 (pad + body + pad)", () => {
-    expect(TOAST_BOX_HEIGHT).toBe(3);
+  it("min chip height is 1 (body only; padding is horizontal)", () => {
+    expect(TOAST_BOX_HEIGHT).toBe(1);
   });
 
   it("wraps long messages to inner width without exceeding it", () => {
@@ -61,5 +63,35 @@ describe("toast notification chip", () => {
 
   it("allows long status lines through the controller cap", () => {
     expect(MAX_TOAST_MESSAGE_CHARS).toBeGreaterThanOrEqual(200);
+  });
+});
+
+describe("toast chip width fits its content", () => {
+  it("shrinks a short toast to the minimum chip width", () => {
+    expect(TOAST_MIN_CHIP_WIDTH).toBe(16);
+    expect(toastChipWidth("info", "hi", 80)).toBe(16);
+    expect(toastChipWidth("error", "Failed", 120)).toBe(16);
+  });
+
+  it("sizes a single-line toast to its content plus padding", () => {
+    expect(toastChipWidth("info", "Centered text", 80)).toBe(20);
+    expect(toastChipWidth("success", "saved", 80)).toBe(16);
+    const status = "provider → River · model → deepseek-ai/DeepSeek-V4.1-Flash";
+    expect(toastChipWidth("info", status, 120)).toBe(status.length + 3 + 4);
+  });
+
+  it("caps a long toast at the maximum width", () => {
+    expect(toastChipWidth("warn", "x".repeat(400), 80)).toBe(80);
+    expect(toastChipWidth("warn", "x".repeat(400), 40)).toBe(40);
+  });
+
+  it("measures CJK content by display columns", () => {
+    expect(toastChipWidth("warn", "保存完了 続行できます", 80)).toBe(28);
+  });
+
+  it("never exceeds the terminal width on narrow terminals", () => {
+    for (const width of [10, 16, 20, 24]) {
+      expect(toastChipWidth("info", "a long toast message that wraps", width)).toBeLessThanOrEqual(width);
+    }
   });
 });
