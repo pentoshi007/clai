@@ -322,7 +322,7 @@ const ADD_CUSTOM_PROVIDER = "__add_custom_provider__";
 const REMOVE_CUSTOM_PROVIDER = "__remove_custom_provider__";
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
-  free: "https://opencode.ai/zen/v1, https://api.kilo.ai/api/gateway",
+  free: "https://opencode.ai/inference/v1, https://api.kilo.ai/api/gateway",
   gemini: "https://generativelanguage.googleapis.com/v1beta",
   openrouter: "https://openrouter.ai/api/v1",
   openai: "https://api.openai.com/v1",

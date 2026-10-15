@@ -232,11 +232,7 @@ describe("lowest reasoning requests", () => {
     expect(main).toBeDefined();
     expect(child).toBeDefined();
     expect(child!.url).toEqual(main!.url);
-    const { "x-opencode-request": _mainRequest, ...mainRest } = main!.headers as Record<string, string>;
-    const { "x-opencode-request": _childRequest, ...childRest } = child!.headers as Record<string, string>;
-    expect(childRest).toEqual(mainRest);
-    expect(_mainRequest).toMatch(/^msg_[0-9a-f]{32}$/);
-    expect(_childRequest).toMatch(/^msg_[0-9a-f]{32}$/);
+    expect(child!.headers).toEqual(main!.headers);
     expect(child!.body).toMatchObject({ model, tool_choice: "auto", tools: (main!.body as Record<string, unknown>).tools });
     expect(parent.thinking).toEqual({ enabled: true, effort: "high" });
   });

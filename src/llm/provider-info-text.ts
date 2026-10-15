@@ -48,7 +48,7 @@ Docs: https://docs.mistral.ai/api/endpoint/chat`,
 WHAT IT IS
   The default provider for a fresh clai install. It bundles two keyless
   gateways behind one provider id, namespaced by source:
-    free-1/<model>   https://opencode.ai/zen/v1
+    free-1/<model>   https://opencode.ai/inference/v1
     free-2/<model>   https://api.kilo.ai/api/gateway
   Both serve free models with NO API key — requests are forwarded without an
   Authorization header. Chat Completions with SSE streaming, native tool

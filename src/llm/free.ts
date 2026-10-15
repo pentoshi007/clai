@@ -1,4 +1,6 @@
 import { kiloClientHeaders, zenClientHeaders } from "./free-client.js";
+import { withZenProfile } from "./zen-profile.js";
+import { recoverZenIdentity } from "./zen-session.js";
 
 import type {
   CompletionRequest,
@@ -25,6 +27,7 @@ import {
 import { parseCatalogFacts } from "./catalog-facts.js";
 import { modelCatalogFacts, registerModelCatalogLimits } from "./capabilities.js";
 import { withModelCatalogFacts } from "./catalog-context.js";
+import { isZenCatalogFreeIdCached, listFreeZenCatalogIds } from "./zen-catalog.js";
 import { supplementZenModelLimits } from "./free-model-limits.js";
 import { rememberedModelLimits } from "./model-limit-store.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
@@ -36,19 +39,10 @@ import {
 } from "./responses-dialect.js";
 
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
+const ZEN_REQUEST_BASE_URL = "https://opencode.ai/inference/v1";
 const KILO_BASE_URL = "https://api.kilo.ai/api/gateway";
 
 const FREE_REASONING_STYLE: ReasoningStyle = "openai";
-
-const CURATED_ZEN_MODELS: readonly string[] = [
-  "muse-spark-1.3-contributor-free",
-  "muse-spark-1.2-contributor-free",
-  "deepseek-v4-flash-free",
-  "big-pickle",
-  "mimo-v2.6-flash-free",
-  "mimo-v2.5-free",
-  "nemotron-3-ultra-free",
-];
 
 const CURATED_KILO_MODELS: readonly string[] = [
   "kilo-auto/free",
@@ -83,10 +77,10 @@ interface FreeSource {
   id: "free-1" | "free-2";
   name: string;
   baseUrl: string;
+  requestBaseUrl?: string;
   keylessApiKey: string;
   curated: readonly string[];
   responsesApi: boolean;
-  requiredTools?: boolean;
   requestHeaders(apiKey?: string): Record<string, string>;
   catalogFreeEntries(payload: unknown): unknown[];
   keylessId(id: string): boolean;
@@ -97,22 +91,19 @@ const zenSource: FreeSource = {
   id: "free-1",
   name: "opencode zen",
   baseUrl: ZEN_BASE_URL,
+  requestBaseUrl: ZEN_REQUEST_BASE_URL,
   keylessApiKey: "public",
-  curated: CURATED_ZEN_MODELS,
+  curated: [],
   responsesApi: false,
-  requiredTools: true,
   requestHeaders: zenClientHeaders,
   catalogFreeEntries(payload) {
-    return catalogEntries(payload).filter((entry) => {
-      const id = catalogEntryId(entry);
-      return /free/i.test(id) && !/^jev(?:[-.]|$)/i.test(id);
-    });
+    return catalogEntries(payload);
   },
   keylessId(id) {
-    return id.endsWith("-free") || CURATED_ZEN_MODELS.includes(id);
+    return id.endsWith("-free");
   },
   fallbackModels() {
-    return CURATED_ZEN_MODELS.filter((id) => /free/i.test(id));
+    return [];
   },
 };
 
@@ -170,8 +161,10 @@ export function isKeylessModel(model: string): boolean {
   return source.keylessId(id.trim().toLowerCase());
 }
 
-function assertModelAllowed(model: string, apiKey: string): void {
-  if (apiKey || isKeylessModel(model)) return;
+async function assertModelAllowed(model: string, apiKey: string): Promise<void> {
+  if (apiKey) return;
+  const { source, model: id } = resolveFreeSource(model);
+  if (await isKeylessFreeModel(source, id)) return;
   throw new ProviderError(
     `Free (model=${model}): this model is premium and requires an API key (402). ` +
       `Pick a free model from /model (free-1/… or free-2/… ids) or set a key with: clai set free <key>`,
@@ -194,55 +187,6 @@ function zenResponsesHeaders(
   };
 }
 
-function ensureRequiredTools(
-  request: CompletionRequest,
-  dialect: "responses" | "chat",
-): CompletionRequest {
-  const existingTools = request.tools ?? [];
-  const hasRead = existingTools.some(
-    (t) => t.name === "read" || t.wireName === "read",
-  );
-  const hasShell = existingTools.some(
-    (t) => t.name === "shell" || t.wireName === "shell",
-  );
-  let tools = existingTools;
-  if (!hasRead || !hasShell) {
-    tools = [...existingTools];
-    if (!hasRead) {
-      tools.push({
-        name: "read",
-        wireName: "read",
-        description: "Read file",
-        parameters: { type: "object", properties: {} },
-      });
-    }
-    if (!hasShell) {
-      tools.push({
-        name: "shell",
-        wireName: "shell",
-        description: "Run shell",
-        parameters: { type: "object", properties: {} },
-      });
-    }
-  }
-  const suppressTools = !request.tools?.length || request.toolChoice === "none";
-  if (dialect === "chat") {
-    return {
-      ...request,
-      tools,
-      toolChoice: suppressTools ? undefined : (request.toolChoice ?? "auto"),
-      ...(suppressTools ? { onToolCallDelta: undefined } : {}),
-    };
-  }
-  const toolChoice = request.toolChoice === "auto" ? "auto" : undefined;
-  return {
-    ...request,
-    tools,
-    toolChoice,
-    ...(suppressTools ? { onToolCallDelta: undefined } : {}),
-  };
-}
-
 function zenReasoningPayload(
   reasoning: ReasoningPreference | undefined,
 ): Record<string, unknown> | undefined {
@@ -252,7 +196,8 @@ function zenReasoningPayload(
 }
 
 const ZEN_RESPONSES_CONFIG: ResponsesDialectConfig = {
-  baseUrl: ZEN_BASE_URL,
+  baseUrl: ZEN_REQUEST_BASE_URL,
+  instructionsField: "instructions",
   providerId: "free",
   displayName: "Free",
   artifactDialect: "openai-compatible",
@@ -270,11 +215,30 @@ interface ModelCache {
   fetchedAt: number;
 }
 const modelCache = new Map<string, ModelCache>();
+
+export function resetFreeModelCacheForTesting(): void {
+  modelCache.clear();
+}
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 function sourceScopedEntry(source: FreeSource, entry: unknown): unknown {
   const id = `${source.id}/${catalogEntryId(entry)}`;
   return entry && typeof entry === "object" ? { ...entry, id } : id;
+}
+
+const ZEN_ROUTED_OUTSIDE_MODELS_LIST: readonly string[] = ["nemotron-3-ultra-free"];
+
+function servedByCatalog(
+  entries: readonly unknown[],
+  catalogFreeIds: readonly string[],
+): readonly unknown[] {
+  const free = new Set(catalogFreeIds.map((id) => id.toLowerCase()));
+  const served = entries.filter((entry) => free.has(catalogEntryId(entry).toLowerCase()));
+  const listed = new Set(served.map((entry) => catalogEntryId(entry).toLowerCase()));
+  const extras = ZEN_ROUTED_OUTSIDE_MODELS_LIST.filter(
+    (id) => free.has(id) && !listed.has(id),
+  ).map((id) => ({ id }));
+  return [...served, ...extras];
 }
 
 async function listSourceEntries(
@@ -288,8 +252,9 @@ async function listSourceEntries(
     return cached.entries;
   }
   try {
+    const identity = source.keylessApiKey || key;
     const resp = await fetch(`${source.baseUrl}/models`, {
-      headers: key ? { authorization: `Bearer ${key}` } : {},
+      headers: identity ? { authorization: `Bearer ${identity}` } : {},
     });
     const data = await readJson<unknown>(resp);
     const entries = source
@@ -332,7 +297,7 @@ async function zenResponsesCompletion(
   onToken: (token: string) => void,
 ): Promise<CompletionResult> {
   const result = await responsesStream(
-    ZEN_RESPONSES_CONFIG, ensureRequiredTools(request, "responses"), auth, onToken, model,
+    ZEN_RESPONSES_CONFIG, request, auth, onToken, model,
   );
   const suppressTools = !request.tools?.length || request.toolChoice === "none";
   return { ...result, toolCalls: suppressTools ? undefined : result.toolCalls };
@@ -349,7 +314,7 @@ function freeChatOptions(
     headers: source.requestHeaders(apiKey),
     provider: "Free" as const,
     providerId: "free" as const,
-    baseUrl: source.baseUrl,
+    baseUrl: source.requestBaseUrl ?? source.baseUrl,
     apiKey,
     model,
     messages: request.messages,
@@ -366,6 +331,11 @@ function freeChatOptions(
   };
 }
 
+function isFreeTierGateError(error: unknown): boolean {
+  if (!(error instanceof ProviderError) || error.status !== 403) return false;
+  return /FreeTierError|within OpenCode/i.test(`${error.body ?? ""} ${error.message}`);
+}
+
 async function requestFreeCompletion(
   request: CompletionRequest,
   auth: ProviderAuth,
@@ -375,14 +345,16 @@ async function requestFreeCompletion(
   request.signal?.throwIfAborted();
   const apiKey = auth.apiKey ?? "";
   const requested = request.model ?? defaultModels.free;
-  assertModelAllowed(requested, apiKey);
+  await assertModelAllowed(requested, apiKey);
   const { source, model } = resolveFreeSource(requested);
-  return withFreeModelCatalog(source, model, async () => {
-    if (usesResponsesDialect(source, model)) {
-      const result = await zenResponsesCompletion(request, auth, model, onToken);
-      return { ...result, model: requested };
-    }
-    const effective = source.requiredTools ? ensureRequiredTools(request, "chat") : request;
+  const attempt = () =>
+    withFreeModelCatalog(source, model, async () => {
+      const prepared = source.id === "free-1" ? withZenProfile(request, model) : request;
+      if (usesResponsesDialect(source, model)) {
+        const result = await zenResponsesCompletion(prepared, auth, model, onToken);
+        return { ...result, model: requested };
+      }
+      const effective = prepared;
     const options = freeChatOptions(source, model, effective, apiKey);
     const callbacks = stream
       ? { onToolCallDelta: effective.onToolCallDelta, onStreamEvent: effective.onStreamEvent }
@@ -409,12 +381,27 @@ async function requestFreeCompletion(
     }
     return result;
   });
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!isFreeTierGateError(error)) throw error;
+    await recoverZenIdentity();
+    return attempt();
+  }
 }
 
-function freeRequestAuth(request: CompletionRequest, auth: ProviderAuth): ProviderAuth {
+async function isKeylessFreeModel(source: FreeSource, model: string): Promise<boolean> {
+  const id = model.trim().toLowerCase();
+  if (source.keylessId(id)) return true;
+  if (source.id !== "free-1") return false;
+  await listFreeZenCatalogIds();
+  return isZenCatalogFreeIdCached(id);
+}
+
+async function freeRequestAuth(request: CompletionRequest, auth: ProviderAuth): Promise<ProviderAuth> {
   const requested = request.model ?? defaultModels.free;
   const { source, model } = resolveFreeSource(requested);
-  const keyless = source.keylessId(model.trim().toLowerCase());
+  const keyless = await isKeylessFreeModel(source, model);
   return keyless ? { ...auth, apiKey: source.keylessApiKey } : auth;
 }
 
@@ -429,11 +416,15 @@ export const freeProvider: LlmProvider = {
     const key = auth.apiKey ?? "";
     const perSource = await Promise.all(
       sources.map(async (source) => {
-        const entries = await listSourceEntries(source, key);
+        const fetched = await listSourceEntries(source, key);
+        const served =
+          source.id === "free-1"
+            ? servedByCatalog(fetched, (await listFreeZenCatalogIds()) ?? [])
+            : fetched;
         const enriched =
           source.id === "free-1"
-            ? await supplementZenModelLimits(entries)
-            : entries;
+            ? await supplementZenModelLimits(served)
+            : served;
         return enriched.map((entry) => sourceScopedEntry(source, entry));
       }),
     );
@@ -462,13 +453,13 @@ export const freeProvider: LlmProvider = {
     request: CompletionRequest,
     auth: ProviderAuth,
   ): Promise<CompletionResult> {
-    return requestFreeCompletion(request, freeRequestAuth(request, auth), false, () => undefined);
+    return requestFreeCompletion(request, await freeRequestAuth(request, auth), false, () => undefined);
   },
   async stream(
     request: CompletionRequest,
     auth: ProviderAuth,
     onToken: (token: string) => void,
   ): Promise<CompletionResult> {
-    return requestFreeCompletion(request, freeRequestAuth(request, auth), true, onToken);
+    return requestFreeCompletion(request, await freeRequestAuth(request, auth), true, onToken);
   },
 };
