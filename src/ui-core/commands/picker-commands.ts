@@ -1,6 +1,7 @@
 
-import { getProvider, providerAuth } from "../../llm/router.js";
-import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
+import { getProvider } from "../../llm/router.js";
+import { listProviderModels } from "../../llm/model-discovery.js";
+import { defaultModels, normalizeEndpointUrl, redactSecrets } from "../../llm/provider.js";
 import { assertProvider } from "../../llm/provider.js";
 import { providerIds, type ProviderId } from "../../types.js";
 import { getKnownModels } from "../../app/commands/catalog.js";
@@ -31,10 +32,9 @@ export async function resolveModelsForProvider(
 
   if (providerImpl.listModels) {
     try {
-      const auth = await providerAuth(provider);
-      models = await providerImpl.listModels(auth);
+      models = await listProviderModels(provider);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = redactSecrets(err instanceof Error ? err.message : String(err));
     }
   }
 
