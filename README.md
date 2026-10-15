@@ -184,6 +184,7 @@ API, keyless, and local integrations:
 | Kimi / Moonshot | `kimi` | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY`; optional `MISTRAL_BASE_URL` for regional endpoints. |
+| River | `river` | `RIVER_API_KEY`; optional `RIVER_BASE_URL`. Dynamic models, per-model efforts, images, tools, streamed reasoning, and automatic prefix caching. |
 | Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |

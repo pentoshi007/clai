@@ -5,6 +5,25 @@ import {
 } from "./provider-identity.js";
 
 export const providerInfo: Record<string, string> = {
+  river: `River — chat, images, function tools, and streamed reasoning
+
+  API          https://api.river.ai/v1
+  Credential   RIVER_API_KEY or clai set river
+  Default      deepseek-ai/DeepSeek-V4.1-Flash
+  Models       Discovered from /models; live metadata overrides documented facts
+
+  DeepSeek-V4.1-Flash: 1,048,576 context; 384,000 output; none / high / max.
+  GLM-5.3-Flash: 1,048,576 context; 128K output; low / high / max (required).
+  clai conservatively caps documented GLM output at 128,000 until live metadata.
+  /effort follows the selected model's supported settings.
+  Unchanged history prefixes can reuse River's automatic cache when available.
+  Cached input and reasoning tokens use API usage counters; hits are not guaranteed.
+  Multiple keys, key rotation, local tools, subagents, images, and cancellation
+  use the shared provider lifecycle. RIVER_BASE_URL or --url overrides the endpoint.
+
+Setup: clai set river · clai use river · /model
+Keys: https://console.river.ai/keys
+Docs: https://docs.river.ai/guides/inference/`,
   mistral: `Mistral — native chat, multimodal input, tools, and reasoning
 
   API          https://api.mistral.ai/v1

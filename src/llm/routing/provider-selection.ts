@@ -13,6 +13,7 @@ import type { ProviderId } from "../../types.js";
 import { agentrouterProvider } from "../agentrouter.js";
 import { anthropicProvider } from "../anthropic.js";
 import { mistralProvider } from "../mistral.js";
+import { riverProvider } from "../river.js";
 import { mantleProvider } from "../aws-mantle.js";
 import { bynaraProvider } from "../bynara.js";
 import { getCustomProviderSync } from "../custom-providers.js";
@@ -56,6 +57,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
   mistral: mistralProvider,
+  river: riverProvider,
   nvidia: nvidiaProvider,
   agentrouter: agentrouterProvider,
   "aws-mantle": mantleProvider,
@@ -96,6 +98,7 @@ const fallbackOrder: ProviderId[] = [
   "openai",
   "anthropic",
   "mistral",
+  "river",
   "aws-mantle",
   "ollama",
   "qwen-cloud",

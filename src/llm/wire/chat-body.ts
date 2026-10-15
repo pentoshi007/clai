@@ -377,7 +377,8 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     );
   }
   const acceptsTools =
-    !(options.providerId === "mistral" && modelCatalogFacts("mistral", options.model)?.tools === false) &&
+    !((options.providerId === "mistral" || options.providerId === "river") &&
+      modelCatalogFacts(options.providerId, options.model)?.tools === false) &&
     !(options.providerId === "openrouter" &&
       options.control?.profile.capabilities.acceptedParameters !== undefined &&
       !options.control.profile.capabilities.acceptedParameters.includes("tools"));
@@ -482,7 +483,8 @@ function portableToolHistory(
     );
     if (
       isTextOnlyModel(plan.route.provider, plan.route.model) ||
-      (plan.route.provider === "mistral" && modelCatalogFacts("mistral", plan.route.model)?.tools === false) ||
+      ((plan.route.provider === "mistral" || plan.route.provider === "river") &&
+        modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) ||
       (foreignArtifact && !hasCompatibleArtifact) ||
       (forceReasoningReplay && !replayableText)
     ) {
@@ -520,7 +522,8 @@ export function chatCompletionsBodyFromPlan(
     Boolean(extras.forceReasoningReplay),
   );
   const allowTools =
-    !(plan.route.provider === "mistral" && modelCatalogFacts("mistral", plan.route.model)?.tools === false) &&
+    !((plan.route.provider === "mistral" || plan.route.provider === "river") &&
+      modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) &&
     (plan.route.provider !== "openrouter" ||
     plan.policy.acceptedParameters === undefined ||
     plan.policy.acceptedParameters.includes("tools"));

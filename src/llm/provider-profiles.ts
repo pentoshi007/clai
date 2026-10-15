@@ -143,7 +143,7 @@ export function modelFamilyLayerFor(
   model: string,
   endpointDialect?: ReasoningControlDialect | undefined,
 ): ProviderProfileLayer | undefined {
-  if (provider === "mistral") return undefined;
+  if (provider === "mistral" || provider === "river") return undefined;
   const family = modelFamilyFor(model);
   if (!family) return undefined;
   const providerExcluded = family.id === "mimo-v2" && provider !== "mimo";

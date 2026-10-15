@@ -70,10 +70,7 @@ function authHeaders(
   const declared = resolveCustomHeaders(def.profile?.headers);
   if (def.profile?.authType === "none-keyless") return declared;
   if (def.profile?.authType === "custom-headers") return declared;
-  if (declared && apiKey) {
-    return { authorization: `Bearer ${apiKey}`, ...declared };
-  }
-  return undefined;
+  return { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}), ...declared };
 }
 
 function responsesConfig(
@@ -153,29 +150,28 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const now = Date.now();
       const cached = modelCache.get(cacheKey);
       if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
-      try {
-        const headers = def.api === "anthropic-messages"
-          ? {
-              ...(auth.apiKey ? { "x-api-key": auth.apiKey } : {}),
-              "anthropic-version": "2023-06-01",
-            }
-          : authHeaders(def, auth.apiKey) ?? {};
-        const models = def.api === "anthropic-messages"
-          ? ingestModelCatalogEntries(
-              providerId,
-              await fetchAnthropicModelEntries(baseUrl, headers),
-            )
-          : ingestOpenAiModelCatalog(
-              providerId,
-              await readJson<unknown>(
-                await fetch(`${baseUrl}/models`, { headers }),
-              ),
-            );
-        if (models.length > 0) modelCache.set(cacheKey, { models, fetchedAt: now });
-        return models;
-      } catch {
-        return [];
-      }
+      const signal = AbortSignal.timeout(15_000);
+      const headers = def.api === "anthropic-messages"
+        ? {
+            ...(auth.apiKey && !keyless ? { "x-api-key": auth.apiKey } : {}),
+            "anthropic-version": "2023-06-01",
+            ...resolveCustomHeaders(def.profile?.headers),
+          }
+        : authHeaders(def, auth.apiKey) ?? {};
+      const models = def.api === "anthropic-messages"
+        ? ingestModelCatalogEntries(
+            providerId,
+            await fetchAnthropicModelEntries(baseUrl, headers, signal),
+          )
+        : ingestOpenAiModelCatalog(
+            providerId,
+            await readJson<unknown>(
+              await fetch(`${baseUrl}/models`, { headers, signal }),
+              signal,
+            ),
+          );
+      if (models.length > 0) modelCache.set(cacheKey, { models, fetchedAt: now });
+      return models;
     },
     async ping(auth: ProviderAuth): Promise<void> {
       const apiKey = requireKey(auth);

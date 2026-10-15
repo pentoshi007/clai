@@ -12,6 +12,7 @@ export const endpointProviders: readonly ProviderId[] = [
   "tokenrouter",
   "tokenharbor",
   "mistral",
+  "river",
 ];
 
 export function providerUsesEndpoints(provider: ProviderId): boolean {
@@ -28,6 +29,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   openai: "paid-cloud",
   anthropic: "paid-cloud",
   mistral: "paid-cloud",
+  river: "paid-cloud",
   agentrouter: "paid-cloud",
   "aws-mantle": "paid-cloud",
   bynara: "free-cloud",

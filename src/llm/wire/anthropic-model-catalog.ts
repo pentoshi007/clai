@@ -9,6 +9,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 export async function fetchAnthropicModelEntries(
   baseUrl: string,
   headers: HeadersInit,
+  signal?: AbortSignal,
 ): Promise<unknown[]> {
   const entries: unknown[] = [];
   const seenCursors = new Set<string>();
@@ -17,7 +18,7 @@ export async function fetchAnthropicModelEntries(
   for (let page = 0; page < MODEL_MAX_PAGES; page += 1) {
     const url = new URL(`${baseUrl}/models`);
     if (cursor) url.searchParams.set("after_id", cursor);
-    const response = await fetch(url.toString(), { headers });
+    const response = await fetch(url.toString(), { headers, ...(signal ? { signal } : {}) });
     if (!response.ok) throw new Error(`Failed to list Anthropic models: HTTP ${response.status}`);
     const body: unknown = await response.json();
     const pageData = asRecord(body);

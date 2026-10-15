@@ -129,7 +129,7 @@ export function modelVisionSupport(
     if (vision !== undefined) return vision ? "yes" : "no";
     cached = undefined;
   }
-  if (provider === "mistral" && cached) return cached.vision ? "yes" : "no";
+  if ((provider === "mistral" || provider === "river") && cached) return cached.vision ? "yes" : "no";
   if (cached?.vision) return "yes";
   const configured = configuredVisionModel(provider);
   if (configured?.toLowerCase() === model.trim().toLowerCase()) return "yes";

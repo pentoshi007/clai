@@ -33,6 +33,22 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "river-deepseek",
+    provider: "river",
+    family: "chat_completions",
+    model: "deepseek-ai/DeepSeek-V4.1-Flash",
+    auth: { apiKey: "rv_conformance" },
+    urlContains: "/chat/completions",
+  },
+  {
+    id: "river-glm",
+    provider: "river",
+    family: "chat_completions",
+    model: "zai-org/GLM-5.3-Flash",
+    auth: { apiKey: "rv_conformance" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "openai",
     provider: "openai",
     family: "chat_completions",

@@ -146,6 +146,7 @@ export function redactSecrets(value: string): string {
   return (
     value
       .replace(/gsk_[A-Za-z0-9_-]+/g, "gsk_••••••")
+      .replace(/rv_[A-Za-z0-9_-]+/g, "rv_••••••")
       .replace(/AIza[0-9A-Za-z_-]+/g, "AIza••••••")
       .replace(/AQ\.[A-Za-z0-9_-]+/g, "AQ.••••••")
       .replace(/sk-[A-Za-z0-9._-]+/g, "sk-••••••")

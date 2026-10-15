@@ -327,6 +327,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1",
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
+  river: "https://api.river.ai/v1",
   nvidia: "https://integrate.api.nvidia.com/v1",
   agentrouter: "https://agentrouter.org/v1",
   "aws-mantle": "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1",
