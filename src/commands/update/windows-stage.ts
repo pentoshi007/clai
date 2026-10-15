@@ -141,12 +141,20 @@ try {
 `;
 }
 
+export function windowsWorkerLaunch(script: string, startupError: string, elevated = false): UpdateCommand {
+  const bootstrap = `$ErrorActionPreference = 'Stop'; try { & ${psQuote(script)} } catch { $_.Exception.Message | Set-Content -LiteralPath ${psQuote(startupError)} -Encoding UTF8; exit 1 }`;
+  const argumentsText = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(bootstrap, "utf16le").toString("base64")}`;
+  const invocation = `$ErrorActionPreference = 'Stop'; Start-Process -WindowStyle Hidden -Verb ${elevated ? "RunAs" : "Open"} -FilePath powershell.exe -ArgumentList ${psQuote(argumentsText)}`;
+  return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", invocation] };
+}
+
 export async function stageWindowsUpdate(task: WindowsUpdateTask, options: RunOptions & { readonly lockFile?: string; readonly lockToken?: string | undefined } = {}, elevated = false): Promise<string> {
   throwIfCancelled(options.signal);
   if (options.lockFile && !options.lockToken) throw new Error("cannot stage an update without its installation lock token");
   const stage = mkdtempSync(join(tmpdir(), "clai-update-stage-"));
   const identity = task.kind === "binary" ? task.destination : task.verification.file + task.verification.args.join("|");
   const status = join(tmpdir(), `clai-update-status-${createHash("sha256").update(identity).update(stage).digest("hex").slice(0, 20)}.json`);
+  const startupError = `${status}.startup-error.log`;
   let accepted = false;
   try {
     const stagedTask = task.kind === "binary" ? { ...task, source: join(stage, "clai.exe") } : task;
@@ -154,16 +162,12 @@ export async function stageWindowsUpdate(task: WindowsUpdateTask, options: RunOp
     const encoded = Buffer.from(JSON.stringify({ task: stagedTask, stage, status, pid: process.pid, lockFile: options.lockFile, lockToken: options.lockToken })).toString("base64");
     const script = join(stage, "apply-update.ps1");
     writeFileSync(script, windowsUpdateScript(encoded));
-    const argumentsText = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${script}"`;
-    const launchOptions = elevated
-      ? "-Verb RunAs"
-      : `-RedirectStandardOutput ${psQuote(`${status}.stdout.log`)} -RedirectStandardError ${psQuote(`${status}.stderr.log`)}`;
-    await runUpdateCommand({ file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'; Start-Process -WindowStyle Hidden ${launchOptions} -FilePath powershell.exe -ArgumentList ${psQuote(argumentsText)}`] }, { ...options, timeoutMs: 120_000 });
+    await runUpdateCommand(windowsWorkerLaunch(script, startupError, elevated), { ...options, timeoutMs: 120_000 });
     const deadline = Date.now() + 60_000;
     while (!existsSync(join(stage, "ready"))) {
       throwIfCancelled(options.signal);
-      if (Date.now() >= deadline || !existsSync(stage)) {
-        const failure = [status, `${status}.stderr.log`]
+      if (Date.now() >= deadline || !existsSync(stage) || existsSync(startupError)) {
+        const failure = [status, startupError]
           .filter((path) => existsSync(path))
           .map((path) => readFileSync(path, "utf8").replace(/^\uFEFF/, "").trim())
           .find((message) => message.length > 0) ?? "worker did not acknowledge the staged update after 60 seconds";
