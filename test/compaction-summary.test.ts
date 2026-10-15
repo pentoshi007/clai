@@ -415,7 +415,9 @@ describe("LLM compaction integration shape", () => {
     const memories = result.filter(isCompactionMemoryMessage);
     expect(memories).toHaveLength(1);
     expect(memories[0]?.content).toContain("Earlier turns in this session");
-    expect(result.some((message) => message.content.includes("stale resumed memory"))).toBe(false);
+    expect(result).not.toContain(messages[0]);
+    expect(memories[0]?.compaction?.workHistory?.[0]?.outcome).toContain("stale resumed memory");
+    expect(memories[0]?.content).toContain("not new requests or authorization");
   });
 });
 

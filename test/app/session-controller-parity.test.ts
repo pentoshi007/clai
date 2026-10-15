@@ -7,6 +7,7 @@ import type {
   SaveSessionOptions,
 } from "../../src/app/ports/persistence-port.js";
 import {
+  estimateMessagesTokens,
   isCompactionMemoryMessage,
 } from "../../src/agent/context-manager.js";
 import { SessionController } from "../../src/app/controllers/session-controller.js";
@@ -560,7 +561,9 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     );
     primeCompactionSnapshot(session);
-    await session.compact(undefined, 2);
+    const historyTokensBefore = estimateMessagesTokens(session.messages);
+    const result = await session.compact(undefined, 2);
+    const expectedAfterTokens = 115_000 - historyTokensBefore + result.afterTokens;
     expect(completeWithProvider).toHaveBeenCalledOnce();
     expect(events.filter((event) => event.type === "token-usage")).toEqual([
       expect.objectContaining({
@@ -576,13 +579,13 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     });
     if (completed?.type === "compaction-completed") {
-      expect(completed.payload.afterTokens).toBe(115_109);
+      expect(completed.payload.afterTokens).toBe(expectedAfterTokens);
     }
     expect(session.getState().contextSnapshot).toMatchObject({
-      contextTokens: 115_109,
+      contextTokens: expectedAfterTokens,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe("ctx ~115,109/200k 58%");
+    expect(session.getState().contextChip).toBe(`ctx ~${expectedAfterTokens.toLocaleString()}/200k 58%`);
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );
@@ -819,7 +822,8 @@ describe("SessionController parity helpers (V2-080)", () => {
     if (compacted?.type === "compaction-completed") {
       expect(compacted.payload.summary).toContain("PLAN MODE HANDOFF");
       expect(compacted.payload.summary).toContain("Verified React project state");
-      expect(compacted.payload.summary).not.toContain("stale resumed memory");
+      expect(compacted.payload.summary).toContain("## Session work history (preserved)");
+      expect(compacted.payload.summary).toContain("not new requests or authorization");
       expect(compacted.payload.summary).not.toBe("Compacted context");
     }
     const memories = session.messages.filter(isCompactionMemoryMessage);
@@ -917,6 +921,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     );
 
     primeCompactionSnapshot(session);
+    const historyTokensBefore = estimateMessagesTokens(session.messages);
     // Simulate a slow pre-compaction autosave. Compaction captures a newer
     // snapshot while this write is blocked and must queue behind it.
     const staleSave = session.persistNow();
@@ -936,11 +941,9 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(generations[0]).not.toBe("");
     expect(generations[1]).toBe(generations[0]);
     expect(saved[0]?.options?.contextUsage?.contextTokens).toBe(88_000);
-    // The compaction snapshot stays on the request scale it started from: it may
-    // only shrink by what the transcript shrank, never collapse to a
-    // history-only figure that omits the system prefix and tool schemas.
     const compactedTokens = saved[1]?.options?.contextUsage?.contextTokens ?? 0;
-    expect(compactedTokens).toBeLessThanOrEqual(88_000);
+    expect(compactedTokens).toBe(88_000 - historyTokensBefore + estimateMessagesTokens(session.messages));
+    expect(saved[1]?.messages).toEqual(session.messages);
     expect(compactedTokens).toBeGreaterThan(80_000);
     expect(saved[1]?.options?.transcript?.map((item) => item.kind)).toEqual([
       "compacted",

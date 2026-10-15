@@ -1,6 +1,7 @@
 import type { Theme } from "./theme.js";
 import { isCodeFenceClose, matchCodeFenceOpen } from "./code-block.js";
-import { wrapPagerLine } from "./pager-chrome.js";
+import { fitOneLine, wrapPagerLine } from "./pager-chrome.js";
+import { TOOL_USAGE_LINE } from "./tool-usage-label.js";
 import { renderMarkdownLines, type RenderMarkdownLinesOptions } from "./render-markdown-lines.js";
 
 export interface SubagentSpan {
@@ -17,20 +18,28 @@ function statusColor(status: string): keyof Theme {
 
 export const SUBAGENT_TOOL_CONTINUATION_INDENT = "  ";
 
-const TOOL_CALL_RE = /^(\s*)([→✓✗])(\s+)([\w-]+\.[\w.-]+)(.*)$/;
-const TOOL_OUTCOME_RE = /^\s*(?:✗\s|In progress\b|No result recorded)/;
+const READ_USAGE_RE = /^(\s{2,}(?:└\s+)?)(Read)(\s+)(✗\s+)?(.*)$/;
+const TOOL_OUTCOME_RE = /^\s*(?:✗\s|In progress\b|No result recorded|Denied\b|Failed\b)/;
 
 function isToolContinuation(line: string): boolean {
   return line.startsWith(SUBAGENT_TOOL_CONTINUATION_INDENT) && !TOOL_OUTCOME_RE.test(line);
 }
 
 export function subagentLineSpans(line: string): readonly SubagentSpan[] | undefined {
-  const tool = TOOL_CALL_RE.exec(line);
+  const tool = TOOL_USAGE_LINE.exec(line);
   if (tool) {
+    const color = statusColor(tool[2]!);
     return [
-      { text: `${tool[1]}${tool[2]}${tool[3]}`, fg: statusColor(tool[2]!) },
-      { text: tool[4]!, fg: "cyan", bold: true },
-      { text: tool[5]!, fg: "muted" },
+      { text: `${tool[1]}${tool[2]}${tool[3]}`, fg: color },
+      { text: tool[4]!, fg: color, bold: true },
+      { text: tool[5]!, fg: "inputBorder" },
+    ];
+  }
+  const read = READ_USAGE_RE.exec(line);
+  if (read) {
+    return [
+      { text: `${read[1]}${read[2]}${read[3]}`, fg: "toolOutput" },
+      { text: `${read[4] ?? ""}${read[5]}`, fg: read[4] ? "diffDel" : "inputBorder" },
     ];
   }
   const status = /^(\s*)(running|stopping|stopped|completed|partial|failed|error)(\s+·.*)$/.exec(line);
@@ -61,7 +70,7 @@ export function subagentLineSpans(line: string): readonly SubagentSpan[] | undef
   if (/^\s*#{1,6}\s+/.test(line) || /^\s*(?:Assignment|Context|Activity|Report|Findings|Evidence|Next steps|Coverage gaps)\s*$/.test(line)) {
     return [{ text: line, fg: "magenta", bold: true }];
   }
-  if (/^\s*✗\s/.test(line)) return [{ text: line, fg: "diffDel" }];
+  if (/^\s*(?:✗\s|Denied\b|Failed\b)/.test(line)) return [{ text: line, fg: "diffDel" }];
   if (/^\s*✓\s/.test(line)) return [{ text: line, fg: "success" }];
   if (/^\s*(?:→\s|Notice:|In progress\b|Waiting for the first update)/.test(line)) {
     return [{ text: line, fg: "activity" }];
@@ -75,13 +84,28 @@ export function subagentBodySpans(
 ): readonly (readonly SubagentSpan[] | undefined)[] {
   let inToolCall = false;
   return lines.map((line) => {
-    if (inToolCall && isToolContinuation(line)) return [{ text: line, fg: "muted" }];
-    inToolCall = TOOL_CALL_RE.test(line);
-    return subagentLineSpans(line);
+    const semantic = subagentLineSpans(line);
+    if (inToolCall && isToolContinuation(line)) return semantic ?? [{ text: line, fg: "inputBorder" }];
+    inToolCall = TOOL_USAGE_LINE.test(line);
+    return semantic;
   });
 }
 
 export type SubagentSpanPaint = (span: SubagentSpan) => string;
+
+function compactToolRow(line: string, spans: readonly SubagentSpan[], width: number, paint: SubagentSpanPaint): string {
+  const fitted = fitOneLine([line], width);
+  const clipped = fitted !== line;
+  let remaining = fitted.length - (clipped ? 1 : 0);
+  let row = "";
+  for (const span of spans) {
+    if (remaining <= 0) break;
+    const text = span.text.slice(0, remaining);
+    row += paint({ ...span, text });
+    remaining -= text.length;
+  }
+  return clipped ? row + paint({ text: "…", fg: "hint" }) : row;
+}
 
 export function renderSubagentMarkdownLines(
   body: string,
@@ -112,6 +136,10 @@ export function renderSubagentMarkdownLines(
       continue;
     }
     flushProse();
+    if (TOOL_USAGE_LINE.test(line) || READ_USAGE_RE.test(line)) {
+      rendered.push(compactToolRow(line, semantic, options.width, paint));
+      continue;
+    }
     let offset = 0;
     for (const chunk of wrapPagerLine(line, options.width, { preserveWhitespace: true })) {
       const end = offset + chunk.length;

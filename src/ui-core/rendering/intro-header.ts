@@ -3,8 +3,8 @@ import { normalizeProvider } from "../../llm/provider.js";
 import { getProvider } from "../../llm/router.js";
 import { renderWordmark, wordmarkWidth } from "./wordmark.js";
 import { DEFAULT_PERMISSION_MODE, permissionModeLabel } from "../../safety/permission-mode.js";
+import { CARD_BORDER_HEX, CARD_INSET_COLUMNS } from "./card-style.js";
 
-const CARD_BORDER_HEX = "#2EEBFF";
 const cardBorder = chalk.hex(CARD_BORDER_HEX);
 
 function truncateMiddle(text: string, maxWidth: number): string {
@@ -26,6 +26,7 @@ export interface IntroHeaderOptions {
   permissions: string;
   workdir: string;
   variant?: string | undefined;
+  paintBorder?: ((text: string) => string) | undefined;
 }
 
 function stripAnsiLen(s: string): number {
@@ -84,11 +85,13 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const permissions = permissionModeLabel(rawPermissions);
   const variant = opts.variant;
   const cwd = opts.workdir;
+  const paintBorder = opts.paintBorder ?? cardBorder;
+  const lead = " ".repeat(CARD_INSET_COLUMNS);
 
   const pane = Math.max(24, opts.width);
   const totalWidth = Math.max(20, pane);
 
-  const LEAD = 2;
+  const LEAD = CARD_INSET_COLUMNS;
   const OVERHEAD = 7;
   const wmWidth = wordmarkWidth("clai");
 
@@ -98,6 +101,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   if (available < minSideBySide) {
     return renderCompactCard({
       totalWidth,
+      paintBorder,
       version,
       mode,
       provider,
@@ -156,13 +160,13 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const rowCount = Math.max(wmLines.length, rightRows.length);
 
   const top =
-    "  " +
-    cardBorder(
+    lead +
+    paintBorder(
       `╭${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}╮`,
     );
   const bottom =
-    "  " +
-    cardBorder(
+    lead +
+    paintBorder(
       `╰${"─".repeat(leftWidth + 2)}┴${"─".repeat(rightWidth + 2)}╯`,
     );
 
@@ -178,12 +182,12 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     const leftCell = centerCell(paddedWm[i] ?? "", leftWidth);
     const rightCell = padCell(rightRows[i] ?? "", rightWidth);
     middle.push(
-      "  " +
-        cardBorder("│") +
+      lead +
+        paintBorder("│") +
         ` ${leftCell} ` +
-        cardBorder("│") +
+        paintBorder("│") +
         ` ${rightCell} ` +
-        cardBorder("│"),
+        paintBorder("│"),
     );
   }
 
@@ -222,6 +226,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
 
 function renderCompactCard(args: {
   totalWidth: number;
+  paintBorder: (text: string) => string;
   version: string;
   mode: string;
   provider: string;
@@ -232,13 +237,14 @@ function renderCompactCard(args: {
   cwd: string;
   wmLines: string[];
 }): string[] {
-  const { totalWidth, version, mode, provider, model, permissions, rawPermissions, variant, cwd, wmLines } = args;
-  const rule = Math.max(8, totalWidth - 4);
+  const { totalWidth, paintBorder, version, mode, provider, model, permissions, rawPermissions, variant, cwd, wmLines } = args;
+  const lead = " ".repeat(CARD_INSET_COLUMNS);
+  const rule = Math.max(8, totalWidth - CARD_INSET_COLUMNS - 2);
   const inner = Math.max(6, rule - 2);
-  const top = "  " + cardBorder(`╭${"─".repeat(rule)}╮`);
-  const bottom = "  " + cardBorder(`╰${"─".repeat(rule)}╯`);
+  const top = lead + paintBorder(`╭${"─".repeat(rule)}╮`);
+  const bottom = lead + paintBorder(`╰${"─".repeat(rule)}╯`);
   const row = (content: string): string =>
-    "  " + cardBorder("│") + ` ${padCell(content, inner)} ` + cardBorder("│");
+    lead + paintBorder("│") + ` ${padCell(content, inner)} ` + paintBorder("│");
 
   const chip = (label: string, value: string, colorFn: (s: string) => string): string => {
     const shortLabel = label.slice(0, Math.min(label.length, 4));

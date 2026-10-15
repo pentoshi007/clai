@@ -220,8 +220,11 @@ export interface OutputPresentation {
   readonly truncatedNotice: string | undefined;
 }
 
+export type ToolOutputPreview = "head-tail" | "first-three";
+
 export const TOOL_PREVIEW_HEAD_LINES = 1;
 export const TOOL_PREVIEW_TAIL_LINES = 2;
+const TOOL_PREVIEW_FIRST_LINES = 3;
 const EXPANDED_OVERFLOW_LINES_PER_END = 3;
 const EXPANDED_SAFE_CHARS = 400_000;
 const EXPANDED_SAFE_LINES = 4_000;
@@ -293,7 +296,12 @@ export function collapseOutputLines<T>(
   lines: readonly T[],
   gapLine: (hiddenLines: number) => T,
   totalLines = lines.length,
+  preview: ToolOutputPreview = "head-tail",
 ): { readonly lines: readonly T[]; readonly hiddenAboveCount: number } {
+  if (preview === "first-three") {
+    const visible = lines.slice(0, TOOL_PREVIEW_FIRST_LINES);
+    return { lines: visible, hiddenAboveCount: Math.max(0, totalLines - visible.length) };
+  }
   const head = lines.slice(0, TOOL_PREVIEW_HEAD_LINES);
   const tail = lines.slice(Math.max(head.length, lines.length - TOOL_PREVIEW_TAIL_LINES));
   const hiddenAboveCount = Math.max(0, totalLines - head.length - tail.length);
@@ -308,6 +316,7 @@ export function presentOutput(
   state: BoundedTextState | undefined,
   expanded: boolean,
   toolName = "",
+  preview: ToolOutputPreview = "head-tail",
 ): OutputPresentation {
   const totalLines = roughLineCount(tail);
   const truncatedNotice = state?.truncated
@@ -316,6 +325,12 @@ export function presentOutput(
 
   const terminal = terminalOutputView(tail, toolName);
   if (terminal) {
+    if (!expanded && preview === "first-three") {
+      return {
+        ...collapseOutputLines([...terminal.body, ...terminal.metadata], toolOutputGapLabel, undefined, preview),
+        truncatedNotice,
+      };
+    }
     const limit = expanded ? EXPANDED_SAFE_LINES : 8;
     const hiddenAboveCount = Math.max(0, terminal.body.length - limit);
     const body = hiddenAboveCount > 0
@@ -350,10 +365,10 @@ export function presentOutput(
     };
   }
 
-  const source = sampleEnds(tail, SAMPLE_CHARS);
+  const source = preview === "first-three" ? tail : sampleEnds(tail, SAMPLE_CHARS);
   const cleaned = cleanToolOutputLines(source);
   return {
-    ...collapseOutputLines(cleaned, toolOutputGapLabel, source === tail ? cleaned.length : totalLines),
+    ...collapseOutputLines(cleaned, toolOutputGapLabel, source === tail ? cleaned.length : totalLines, preview),
     truncatedNotice,
   };
 }

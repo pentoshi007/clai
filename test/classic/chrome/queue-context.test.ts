@@ -24,7 +24,7 @@ describe("classic queue context indicator", () => {
         const row = composerDirectoryRow({ ...base, columns, planVisible, queueVisible });
         const text = stripAnsi(row);
         expect(text).toMatch(/(?:cntrl\+H to (?:expand|hide)|\^H tasks) · 2(?: queued|q)/);
-        expect(text).toContain("Alt+Q");
+        expect(text).toContain("Ctrl+Z");
         expect(text.includes("hidden")).toBe(!queueVisible);
         expect(displayWidth(row)).toBeLessThanOrEqual(columns);
       }
@@ -46,25 +46,25 @@ describe("classic queue context indicator", () => {
   it("preserves the original collapsed task hint when the queue is empty and visible", () => {
     const row = composerDirectoryRow({ ...base, columns: 120, queued: 0 });
     expect(stripAnsi(row)).toContain("Tasks active . cntrl+H to expand");
-    expect(stripAnsi(row)).not.toContain("Alt+Q");
+    expect(stripAnsi(row)).not.toContain("Ctrl+Z");
   });
 
   it("shows hidden state and a recovery shortcut for an empty queue", () => {
     const row = stripAnsi(composerDirectoryRow({ ...base, columns: 120, queued: 0, queueVisible: false }));
     expect(row).toContain("Queue hidden");
-    expect(row).toContain("Alt+Q to show");
+    expect(row).toContain("Ctrl+Z to show");
   });
 
   it("shows queue status without inventing an active tasks section", () => {
     const row = stripAnsi(composerDirectoryRow({ ...base, columns: 120, hasActivePlan: false }));
     expect(row).toContain("2 queued");
-    expect(row).toContain("Alt+Q to hide");
+    expect(row).toContain("Ctrl+Z to hide");
     expect(row).not.toMatch(/tasks|cntrl\+H|\^H/);
   });
 
   it("shows a discoverable toggle in the queue header without losing its actions", () => {
     const rows = queueRows({ ink, columns: 200, allocatedRows: 3, queued: ["one", "two"], selected: 0 });
-    expect(stripAnsi(rows[0]!)).toContain("Alt+Q hide");
+    expect(stripAnsi(rows[0]!)).toContain("Ctrl+Z hide");
     for (const action of ["^Y/^V select", "^S send", "^] edit", "^_ drop"]) expect(stripAnsi(rows[0]!)).toContain(action);
   });
 

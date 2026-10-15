@@ -123,38 +123,44 @@ try {
   const livePagerFrame = await settle(() => new Promise((resolve) => setTimeout(resolve, 1100)));
   assert.match(livePagerFrame, /Elapsed 4m/);
   await waitForFrame(/FIRST LIVE FINDING/, () => workers.get(first.id)!.emit({ kind: "assistant", text: "FIRST LIVE FINDING" }));
-  const activityFrame = await waitForFrame(/✓ fs\.read/, () => {
+  const activityFrame = await waitForFrame(/✓ Explored/, () => {
     const worker = workers.get(first.id)!;
     worker.emit({ kind: "tool", text: 'Calling fs.read: {"path":"src/agent/subagents/worker.ts","offset":81,"limit":80}' });
     worker.emit({ kind: "tool", text: "Success: PRIVATE_FILE_BODY_MUST_NOT_APPEAR" });
   });
-  assert.match(activityFrame, /fs\.read src\/agent\/subagents\/worker\.ts/);
-  assert.match(activityFrame, /offset=81, limit=80/);
-  assert.doesNotMatch(activityFrame, /PRIVATE_FILE_BODY_MUST_NOT_APPEAR/);
-  assertColor("fs.read", "cyan");
+  assert.match(activityFrame, /└ Read src\/agent\/subagents\/worker\.ts/);
+  assert.doesNotMatch(activityFrame, /PRIVATE_FILE_BODY_MUST_NOT_APPEAR|offset=|limit=|fs\.read/);
+  assertColor("Explored", "success");
+  assertColor("src/agent/subagents/worker.ts", "inputBorder");
   assertColor("✓", "success");
   assertColor("Activity", "magenta");
-  await waitForFrame(/--passWithNoTests/, () => {
+  const shellFrame = await waitForFrame(/✓ Shell/, () => {
     const worker = workers.get(first.id)!;
     worker.emit({ kind: "tool", text: 'Calling shell.exec: {"command":"npm run test --coverage --reporter=json --outputFile=/tmp/clai/coverage/coverage-final.json --watch=false --passWithNoTests"}' });
-    worker.emit({ kind: "tool", text: "Success: exit 0" });
+    worker.emit({ kind: "tool", text: "Success: PRIVATE_SHELL_OUTPUT" });
   });
-  assertColor("shell.exec", "cyan");
-  assertColor("--passWithNoTests", "muted");
-  await settle(() => setup.mockInput.pressKey("r"));
-  assertColor("fs.read", "cyan");
+  assertColor("Shell", "success");
+  assertColor("npm run test", "inputBorder");
+  const shellRows = shellFrame.split("\n").filter(line => line.includes("✓ Shell"));
+  assert.equal(shellRows.length, 1);
+  assert.match(shellRows[0]!, /…/);
+  assert.doesNotMatch(shellFrame, /PRIVATE_SHELL_OUTPUT|--passWithNoTests/);
+  await waitForFrame(/--passWithNoTests/, () => setup.mockInput.pressKey("r"));
+  assertColor("Explored", "success");
   assertColor("✓", "success");
-  assertColor("--passWithNoTests", "muted");
+  assertColor("--passWithNoTests", "inputBorder");
   await settle(() => setup.mockInput.pressKey("f"));
-  await waitForFrame(/Notice: Retrying request/, () => {
+  const failedFrame = await waitForFrame(/Notice: Retrying request/, () => {
     const worker = workers.get(first.id)!;
     worker.emit({ kind: "tool", text: 'Calling web.fetch: {"url":"https://example.test"}' });
-    worker.emit({ kind: "tool", text: "Error: Test failure" });
+    worker.emit({ kind: "tool", text: "Error: PRIVATE_ERROR_BODY" });
     worker.emit({ kind: "notice", text: "Retrying request" });
   });
-  assertColor("web.fetch", "cyan");
+  assertColor("Opened", "diffDel");
   assertColor("✗", "diffDel");
+  assertColor("Failed", "diffDel");
   assertColor("Notice:", "activity");
+  assert.doesNotMatch(failedFrame, /PRIVATE_ERROR_BODY/);
   if (process.env.CLAI_SUBAGENT_CAPTURE_PATH) await writeFile(process.env.CLAI_SUBAGENT_CAPTURE_PATH, activityFrame);
   await settle(() => setup.mockInput.pressEscape());
   assert.equal(services.overlay.getState().kind, "picker");
@@ -190,7 +196,7 @@ try {
   const deliveredFrame = await settle();
   assert.doesNotMatch(deliveredFrame, /Subagents:/);
   await settle(async () => { finishMain(); await main; });
-  console.log("Native subagent inspector passed: live output, wrapped tool colors, child switching, Escape, final status, delivered-results bar removal, and uninterrupted main turn");
+  console.log("Native subagent inspector passed: styled usage without outputs, child switching, Escape, final status, delivered-results bar removal, and uninterrupted main turn");
 } finally {
   await act(async () => {
     finishMain?.();

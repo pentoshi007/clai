@@ -93,7 +93,7 @@ export const readOnlyShellCommands = new Set([
   'sublist3r', 'amass', 'subfinder', 'httpx',
 ]);
 
-export const subcommandSafeMap: Record<string, Set<string>> = {
+export const subcommandSafeMap = new Map(Object.entries({
   git: new Set([
     'status', 'log', 'diff', 'show', 'branch', 'tag',
     'remote', 'rev-parse', 'describe', 'blame',
@@ -121,9 +121,9 @@ export const subcommandSafeMap: Record<string, Set<string>> = {
   nmcli: new Set(['show', 'list', 'status', 'help']),
   route: new Set(['show', 'list', 'get', 'print', '-n']),
   arp: new Set(['-a', '-n', '-e', '-v', 'show', 'list']),
-};
+}));
 
-const NETWORK_OBJECT_WORDS: Record<string, Set<string>> = {
+const NETWORK_OBJECT_WORDS = new Map(Object.entries({
   ip: new Set([
     'addr', 'a', 'address', 'link', 'l', 'route', 'r', 'neigh', 'n',
     'neighbour', 'neighbor', 'rule', 'maddr', 'tunnel', 'netns', 'monitor',
@@ -132,7 +132,7 @@ const NETWORK_OBJECT_WORDS: Record<string, Set<string>> = {
     'device', 'dev', 'd', 'connection', 'con', 'c', 'general', 'g',
     'networking', 'n', 'radio', 'r', 'monitor', 'agent',
   ]),
-};
+}));
 
 const NETWORK_READ_VERBS = new Set([
   'show', 'list', 'sh', 'ls', 'l', 'status', 'get', 'print', 'monitor', 'help',
@@ -140,7 +140,7 @@ const NETWORK_READ_VERBS = new Set([
 
 export function commandHasStatefulSysadminArg(command: string): boolean {
   for (const segment of splitCommandSegments(command)) {
-    const objects = NETWORK_OBJECT_WORDS[segment.base];
+    const objects = NETWORK_OBJECT_WORDS.get(segment.base);
     if (segment.base === 'route' || segment.base === 'arp') {
       const words = segment.tokens
         .slice(1)
@@ -314,7 +314,7 @@ export function commandIsMutating(command: string): boolean {
   for (const segment of splitCommandSegments(command)) {
     const { base, sub } = segment;
     if (!mutatingCommandBases.has(base)) continue;
-    const allow = subcommandSafeMap[base];
+    const allow = subcommandSafeMap.get(base);
     if (allow && sub && (allow.has(sub) || allow.has(sub.replace(/^--/, "")))) {
       continue;
     }
@@ -333,7 +333,7 @@ export function commandIsScannerOnly(command: string): boolean {
       continue;
     }
     if (readOnlyShellCommands.has(segment.base)) continue;
-    const allow = subcommandSafeMap[segment.base];
+    const allow = subcommandSafeMap.get(segment.base);
     const sub = segment.sub;
     if (allow && sub && (allow.has(sub) || allow.has(sub.replace(/^--/, "")))) {
       continue;

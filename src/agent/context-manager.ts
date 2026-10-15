@@ -10,8 +10,10 @@ import {
   projectToolHistory,
 } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
+import { AGENT_INSTRUCTIONS_PREFIX, latestKeyedBlock, upsertAgentInstructionsMessage } from "./injected-blocks.js";
 import { latestUserMessage } from "./context/latest-user-message.js";
 import { recentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
+import { archivedWorkHistory, collectWorkHistory, reconcileWorkHistory, renderWorkHistory, withoutWorkHistory } from "./context/compaction-work-history.js";
 import { carriedUserInstructions, renderUserInstructions } from "./context/compaction-user-instructions.js";
 import {
   estimateImageTokens,
@@ -93,16 +95,18 @@ export function compactMessages(
 
   const userInstructions = carriedUserInstructions(messages);
   const latestUser = latestUserMessage(messages);
+  const workHistory = reconcileWorkHistory(collectWorkHistory(messages), userInstructions, userInstructions);
   const memo: ChatMessage = {
     role: "system",
     content:
       `${MECHANICAL_MEMORY_PREFIX} to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
-      [renderUserInstructions(userInstructions), bullets.join("\n")].filter(Boolean).join("\n\n"),
+      [renderUserInstructions(userInstructions), bullets.join("\n"), renderWorkHistory(workHistory)].filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentUserPrompts(messages)
         .filter((prompt) => !prompt.message || (!tail.includes(prompt.message) && prompt.message !== latestUser))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
       userInstructions,
+      workHistory: archivedWorkHistory(workHistory, latestUser ? [...tail, latestUser] : tail),
     },
   };
 
@@ -117,7 +121,9 @@ export function compactMessages(
     ledger && !head.includes(ledger) && !tail.includes(ledger) ? [ledger] : [];
   const preservedUser =
     latestUser && !tail.includes(latestUser) ? [latestUser] : [];
-  return [...head, memo, ...preservedUser, ...preservedLedger, ...tail];
+  const compacted = [...head, memo, ...preservedUser, ...preservedLedger, ...tail];
+  upsertAgentInstructionsMessage(compacted, latestKeyedBlock(messages, AGENT_INSTRUCTIONS_PREFIX));
+  return compacted;
 }
 
 export function shouldApplyAutoCompact(input: {
@@ -130,7 +136,7 @@ export function shouldApplyAutoCompact(input: {
   if (!input.summarized) return false;
   if (input.afterTokens >= input.beforeTokens) return false;
   if (hasOrphanToolMessages([...input.afterMessages])) return false;
-  const body = withoutRecentUserPrompts(input.summaryBody);
+  const body = withoutWorkHistory(withoutRecentUserPrompts(input.summaryBody));
   if (!body) return false;
   if (
     input.beforeTokens >= AUTO_COMPACT_STUB_BEFORE_TOKENS &&

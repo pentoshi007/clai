@@ -67,10 +67,11 @@ it("renders readable subagent activity and one evidence report in Classic", asyn
   const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
   try {
     const frame = view.lastFrame() ?? "";
-    expect(frame).toContain(colorInk.style("fs.read", { fg: "cyan", bold: true }).replace(/\x1b\[39m(?:\x1b\[0m)?$/, ""));
+    expect(frame).toContain("\x1b[1mExplored");
     expect(frame).toContain(colorInk.fg("success", "✓ ").replace(/\x1b\[39m(?:\x1b\[0m)?$/, ""));
     expect(frame).toContain("src/agent/subagents/worker.ts");
-    expect(frame).toContain("offset=81, limit=80");
+    expect(frame).toContain(colorInk.fg("inputBorder", "src/agent/subagents/worker.ts").replace(/\x1b\[39m(?:\x1b\[0m)?$/, ""));
+    expect(frame).not.toMatch(/offset=|limit=|fs\.read/);
     expect(frame).not.toContain("PRIVATE_FILE_BODY_MUST_NOT_APPEAR");
     expect(frame.match(/The worker delegates/g)).toHaveLength(1);
     expect(frame).toContain("No live provider was contacted.");
@@ -131,7 +132,8 @@ it("keeps the complete durable subagent transcript readable and continuously nav
     expect(complete).toContain("FIRST_DURABLE_FINDING");
     expect(complete).toContain(evidence[0]);
     expect(complete).toContain(evidence.at(-1));
-    expect(complete.includes("✓ fs.read src/agent/subagents/worker.ts (offset=81, limit=80)")).toBe(true);
+    expect(complete).toContain("✓ Explored\n  └ Read src/agent/subagents/worker.ts");
+    expect(complete).not.toMatch(/offset=|limit=/);
     expect(complete).not.toMatch(/PRIVATE_DURABLE_FILE_BODY_MUST_NOT_APPEAR|Calling fs\.read|Success:|### Attempt/);
     expect(complete.match(/FINAL_DURABLE_FINDING/g)).toHaveLength(1);
     const page = await source.readPage(0);
@@ -143,7 +145,7 @@ it("keeps the complete durable subagent transcript readable and continuously nav
     view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
     await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerBody).toBe(complete));
     await vi.waitFor(() => expect(view!.lastFrame()).toContain("FIRST_DURABLE_FINDING"));
-    expect(view.lastFrame()).toContain("fs.read");
+    expect(view.lastFrame()).toContain("Explored");
     expect(view.lastFrame()).not.toContain("PRIVATE_DURABLE_FILE_BODY_MUST_NOT_APPEAR");
     expect(view.lastFrame()!.split("\n").length).toBeLessThanOrEqual(40);
     const lines = pagerViewModel(complete, 120, 40, "formatted").searchLines;
@@ -185,7 +187,7 @@ it("keeps the complete durable subagent transcript readable and continuously nav
   }
 }, 15_000);
 
-it.each([80, 120])("keeps live tool labels, literal wrapped inputs and compact rows at %i columns in Classic", async (columns) => {
+it.each([80, 120])("keeps live named usage compact, styled and output-free at %i columns in Classic", async (columns) => {
   let run: SubagentRun = {
     id: `live-tools-${columns}`, parentSessionId: "parent", title: "Live tool inspection", prompt: "Inspect inputs",
     cwd: "/workspace", provider: "openai", model: "test", attempt: 1, status: "running",
@@ -199,6 +201,8 @@ it.each([80, 120])("keeps live tool labels, literal wrapped inputs and compact r
   const harness = createHarness({ columns, rows: 46 });
   harness.overlay.openPager(run.title, formatSubagentRun(run), source, undefined, "force");
   const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={columns} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
+  Object.defineProperty(view.stdout, "columns", { value: columns });
+  view.stdout.emit("resize");
   const emit = (kind: "tool" | "assistant", text: string): void => {
     run = { ...run, updatedAt: Date.now(), events: [...run.events, { kind, text, timestamp: Date.now(), sequence: run.events.length + 1 }] };
     for (const listener of listeners) listener();
@@ -218,39 +222,51 @@ it.each([80, 120])("keeps live tool labels, literal wrapped inputs and compact r
   };
   try {
     emit("assistant", "LIVE-TOOL-START");
-    emit("tool", `Calling shell.exec: ${JSON.stringify({ command: [
-      "printf '%s\\n' '**literal** `argument` <br> # heading | column';",
-      `CLASSIC-INPUT-START ${"docs/path_with_underscores/".repeat(8)}`,
-      "printf CLASSIC-INPUT-END",
-    ].join("\r\n") })}`);
+    const command = ["printf '%s\\n' '**literal** `argument` <br> # heading | column';", "printf CLASSIC-INPUT-END"].join("\r\n");
+    emit("tool", `Calling shell.exec: ${JSON.stringify({ command })}`);
     const formatted = await waitFor("In progress");
-    expect(formatted).toContain("→ shell.exec");
-    expect(formatted).toContain("'**literal** `argument` <br> # heading |");
+    expect(formatted).toContain("→ Shell");
+    expect(formatted).toContain("'**literal** `argument` <br> # heading");
+    expect(formatted).not.toContain("CLASSIC-INPUT-END");
+    expect(formatted.split("\n").filter(row => row.includes("→ Shell"))).toHaveLength(1);
     assertCompact(formatted, "LIVE-TOOL-START", "In progress");
     expect(harness.press("r")).toBe(true);
-    const raw = await waitFor("→ shell.exec");
-    expect(raw).toContain("CLASSIC-INPUT-END");
+    const raw = await waitFor("→ Shell");
+    expect(raw).toContain("…");
+    expect(raw).not.toContain("CLASSIC-INPUT-END");
     assertCompact(raw, "LIVE-TOOL-START", "In progress");
     emit("tool", "Success: PRIVATE_TOOL_BODY");
-    const complete = await waitFor("✓ shell.exec");
+    const complete = await waitFor("✓ Shell");
     expect(complete).not.toMatch(/In progress|PRIVATE_TOOL_BODY/);
-    assertCompact(complete, "LIVE-TOOL-START", "CLASSIC-INPUT-END");
+    assertCompact(complete, "LIVE-TOOL-START", "✓ Shell");
     const files = [
-      { path: `docs/${"first-section/".repeat(7)}FIRST-READ.md`, offset: 12, limit: 80 },
-      { path: `docs/${"second-section/".repeat(7)}SECOND-READ.md`, offset: 200, limit: 60 },
+      { path: `docs/FIRST-READ.md/${"first-section/".repeat(7)}`, offset: 12, limit: 80 },
+      { path: `docs/SECOND-READ.md/${"second-section/".repeat(7)}`, offset: 200, limit: 60 },
     ];
     emit("tool", `Calling fs.read: ${JSON.stringify({ files })}`);
-    const pendingRead = await waitFor("→ fs.read");
-    assertCompact(pendingRead, "→ fs.read", "In progress");
+    const pendingRead = await waitFor("→ Explored");
+    assertCompact(pendingRead, "→ Explored", "In progress");
     expect(harness.press("f")).toBe(true);
-    const formattedRead = await waitFor("→ fs.read");
-    assertCompact(formattedRead, "→ fs.read", "In progress");
-    emit("tool", `Success: ${files.map((file, index) => formatFsReadSection({ index: index + 1, total: 2, path: file.path, ok: true, body: "PRIVATE_TOOL_BODY" })).join("\n\n")}`);
-    const completedRead = await waitFor("✓ fs.read");
-    expect(completedRead).toContain("file 1/2: ✓");
-    expect(completedRead).toContain("file 2/2: ✓");
-    expect(completedRead).not.toMatch(/In progress|PRIVATE_TOOL_BODY/);
-    assertCompact(completedRead, "✓ fs.read", "SECOND-READ.md");
+    await vi.waitFor(() => {
+      const readRows = stripAnsiSequences(view.lastFrame() ?? "").split("\n").filter(row => /Read docs\//.test(row));
+      expect(readRows).toHaveLength(2);
+      for (const row of readRows) expect(row).toContain("…");
+    });
+    const formattedRead = await waitFor("→ Explored");
+    assertCompact(formattedRead, "→ Explored", "In progress");
+    emit("tool", `Success: ${files.map((file, index) => formatFsReadSection({ index: index + 1, total: 2, path: file.path, ok: index === 0, body: "PRIVATE_TOOL_BODY" })).join("\n\n")}`);
+    const completedRead = await waitFor("✗ Explored");
+    expect(completedRead).toContain("  └ Read docs/FIRST-READ.md");
+    expect(completedRead).toContain("    Read ✗ docs/SECOND-READ.md");
+    expect(completedRead).not.toMatch(/In progress|PRIVATE_TOOL_BODY|offset=|limit=|file [12]\/2:/);
+    assertCompact(completedRead, "✗ Explored", "SECOND-READ.md");
+    emit("tool", 'Calling web.fetch: {"url":"https://example.test"}');
+    emit("tool", "Error: Tool denied: PRIVATE_DENIAL_BODY");
+    const denied = await waitFor("Denied");
+    expect(denied).toContain("✗ Opened https://example.test");
+    expect(denied).not.toContain("PRIVATE_DENIAL_BODY");
+    expect(await source.readAll()).not.toMatch(/PRIVATE_TOOL_BODY|PRIVATE_DENIAL_BODY/);
+    expect(run.events.some(event => event.text.includes("CLASSIC-INPUT-END"))).toBe(true);
   } finally {
     view.unmount();
     harness.overlay.dispose();

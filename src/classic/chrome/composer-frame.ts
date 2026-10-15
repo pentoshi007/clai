@@ -4,6 +4,7 @@ import {
   resolveComposerTextRows,
 } from "../../ui-core/composer/composer-height.js";
 import { clipComposerMeta } from "../../ui-core/composer/composer-meta.js";
+import { CARD_BORDER_HEX } from "../../ui-core/rendering/card-style.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { COMPOSER_BORDER_ROWS, COMPOSER_DIR_ROWS, COMPOSER_GAP_ROWS } from "./row-budget.js";
 
@@ -24,7 +25,7 @@ export interface ComposerFrame {
   readonly textWidth: number;
   readonly textRows: number;
   readonly borderStyle: "round" | "classic";
-  readonly borderColor: ThemeToken;
+  readonly borderColor: string;
   readonly markColor: ThemeToken;
   readonly mark: string;
   readonly placeholder: string;
@@ -65,7 +66,7 @@ export function composerFrame(input: ComposerFrameInput): ComposerFrame {
     textWidth,
     textRows,
     borderStyle: input.unicode ? "round" : "classic",
-    borderColor: suspended ? "muted" : "inputBorder",
+    borderColor: CARD_BORDER_HEX,
     markColor: suspended ? "muted" : "inputBorder",
     mark: input.unicode ? "❯" : ">",
     placeholder: composerPlaceholder(input.mode, input.phase),

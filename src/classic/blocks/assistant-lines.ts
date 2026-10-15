@@ -22,7 +22,7 @@ export function buildAssistantLines(
   item: AssistantItem,
 ): AssistantLinesResult {
   const source = sanitizeDisplayText(stripToolCallSurfaces(item.text));
-  const bullet = ctx.ink.fg("magenta", `${ctx.glyphs.assistantBullet} `);
+  const bullet = ctx.ink.fg("magenta", ctx.ink.unicode ? "• " : "* ");
   const indent = "  ";
 
   if (!source.trim()) {

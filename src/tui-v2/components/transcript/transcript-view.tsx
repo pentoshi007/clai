@@ -73,7 +73,7 @@ function isNearBottom(sb: ScrollBoxRenderable, slack = 0): boolean {
   if (max <= 0) return true;
   return sb.scrollTop >= max - slack;
 }
-function publishScrollRemainder(sb: ScrollBoxRenderable | null): void {
+function publishScrollRemainder(sb: ScrollBoxRenderable | null, hasNewerContent: boolean): void {
   if (!sb) {
     publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
     return;
@@ -83,6 +83,7 @@ function publishScrollRemainder(sb: ScrollBoxRenderable | null): void {
   publishTranscriptScrollMetrics({
     linesAbove: top,
     linesBelow: Math.max(0, max - top),
+    hasNewerContent,
   });
 }
 export function useTranscriptFollowKey(
@@ -427,7 +428,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         if (jump.itemId) sb.scrollChildIntoView(jump.itemId);
         else if (jump.edge === "top") sb.scrollTo(0);
         else if (jump.edge === "bottom") sb.scrollTo(maxScrollTop(sb));
-        publishScrollRemainder(sb);
+        publishScrollRemainder(sb, mountWindow.newerCount > 0);
       }
       pendingWindowJump.current = undefined;
       windowShiftPending.current = false;
@@ -507,7 +508,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     if (intent.reachedNewerEdge && showNewerWindow()) return;
     sb.scrollTo(intent.nextScrollTop);
     if (!intent.leaveTail) updateFollowingFromPosition(intent.atBottom);
-    publishScrollRemainder(sb);
+    publishScrollRemainder(sb, mountWindow.newerCount > 0);
   }
 
   useEffect(() => {
@@ -526,11 +527,11 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         if (!sb) return;
         setFollowing(false);
         sb.scrollTo(0);
-        publishScrollRemainder(sb);
+        publishScrollRemainder(sb, mountWindow.newerCount > 0);
       },
       () => {
         jumpToBottom();
-        queueMicrotask(() => publishScrollRemainder(scrollRef.current));
+        queueMicrotask(() => publishScrollRemainder(scrollRef.current, mountWindow.newerCount > 0));
       },
     );
   }, [itemCount, mountWindow.start, mountWindow.end]);
@@ -538,7 +539,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
-    const publish = (): void => publishScrollRemainder(sb);
+    const publish = (): void => publishScrollRemainder(sb, mountWindow.newerCount > 0);
     sb.verticalScrollBar.on("change", publish);
     sb.content.on("resize", publish);
     sb.viewport.on("resize", publish);
@@ -549,7 +550,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       sb.viewport.off("resize", publish);
       publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
     };
-  }, [scrollRef]);
+  }, [scrollRef, mountWindow.newerCount]);
 
   useEffect(() => {
     const unregister = registerTranscriptAutoScroll({
@@ -630,7 +631,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     }
     queueMicrotask(() => {
       scrollRef.current?.scrollChildIntoView(match.itemId);
-      publishScrollRemainder(scrollRef.current);
+      publishScrollRemainder(scrollRef.current, mountWindow.newerCount > 0);
     });
   }
 
@@ -813,7 +814,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       } else if (chord === "end" || chord === "ctrl+d") {
         key.preventDefault();
         jumpToBottom();
-        publishScrollRemainder(sb);
+        publishScrollRemainder(sb, mountWindow.newerCount > 0);
       } else if (chord === "home" || chord === "ctrl+u") {
         key.preventDefault();
         clearNativeSelection();
@@ -823,7 +824,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         }
         setFollowing(false);
         sb.scrollTo(0);
-        publishScrollRemainder(sb);
+        publishScrollRemainder(sb, mountWindow.newerCount > 0);
       }
     }
   });

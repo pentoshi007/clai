@@ -34,29 +34,34 @@ describe("multi-file read presentation", () => {
     expect(presentFsReadArgs(JSON.stringify({ files: [files[0]] })).files).toHaveLength(1);
   });
 
-  it.each([40, 80, 120])("shows all six paths, options and statuses in collapsed and expanded inputs at %i columns", (columns) => {
+  it.each([40, 80, 120])("shows option-free compact paths and restores complete inputs and output at %i columns", (columns) => {
     const turn = scriptedTurn();
     const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool")!;
     const item = { ...source, name: "fs.read", argsDisplay, status: "failed" as const };
     turn.spool.replace(item.toolCallId, output);
     const ctx = blockContextFor(turn.state, feedView(turn, { columns }));
-    const preview = toolHeaderLines(ctx, item).map(stripAnsi);
-    expect(preview).toHaveLength(13);
-    expect(preview.join("\n")).not.toContain("…");
+    const header = toolHeaderLines(ctx, item);
+    const preview = header.map(stripAnsi);
+    expect(preview).toHaveLength(7);
+    const collapsed = preview.join("\n");
+    expect(collapsed).toContain("Explored");
+    expect(collapsed).not.toMatch(/…|offset=|limit=|PRIVATE_FILE_BODY/);
+    expect(header.join("\n")).toContain(ctx.ink.fg("diffDel", files[2]!.path));
     const expandedCtx = blockContextFor({ ...turn.state, expandOutputGlobal: true }, feedView(turn, { columns }));
-    expect(toolHeaderLines(expandedCtx, item).map(stripAnsi)).toEqual(preview);
+    const expandedHeader = toolHeaderLines(expandedCtx, item).map(stripAnsi);
+    expect(expandedHeader.slice(0, preview.length)).toEqual(preview);
+    expect(expandedHeader.slice(preview.length + 1).map(row => row.slice(4)).join("")).toBe(argsDisplay);
     const lines = buildToolLines(expandedCtx, item).map(stripAnsi);
     const text = lines.join("\n");
-    const collapsed = preview.join("\n");
     for (let index = 0; index < files.length; index += 1) {
-      const path = `file ${index + 1}/6: ${index === 2 ? "✗" : "✓"} ${files[index]!.path}`;
+      const path = `Read ${files[index]!.path}`;
       expect(collapsed).toContain(path);
-      expect(collapsed).toContain(`offset=${index + 1}`);
       expect(text).toContain(path);
-      expect(text).toContain(`offset=${index + 1}`);
     }
+    expect(text).toContain("PRIVATE_FILE_BODY");
+    expect(text).toContain("ENOENT");
+    expect(text).toContain("# end fs.read file=6/6");
     expect([...preview, ...lines].every((line) => displayWidth(line) <= ctx.width)).toBe(true);
-    expect(text).not.toContain('"files"');
     expect(item.argsDisplay).toBe(argsDisplay);
     expect(turn.spool.tail(item.toolCallId)).toBe(output);
   });
@@ -74,9 +79,33 @@ describe("multi-file read presentation", () => {
     expect(presented.lines.join("\n")).toContain("ENOENT");
     expect(presented.lines.join("\n")).not.toContain("PRIVATE_FILE_BODY");
     const ctx = blockContextFor(turn.state, feedView(turn, { columns }));
-    const lines = buildBatchLines(ctx, item).map(stripAnsi);
-    for (const file of files) expect(lines.join("\n")).toContain(file.path);
-    expect(lines.every((line) => displayWidth(line) <= ctx.width)).toBe(true);
+    const rows = buildBatchLines(ctx, item);
+    const lines = rows.map(stripAnsi);
+    const compact = lines.join("\n");
+    for (const file of files) expect(compact).toContain(`Read ${file.path}`);
+    expect(compact).toContain("ENOENT");
+    expect(compact).not.toMatch(/PRIVATE_FILE_BODY|offset=|limit=|hasMore|status=|# fs.read/);
+    expect(rows.join("\n")).toContain(ctx.ink.fg("diffDel", files[2]!.path));
+    const expandedCtx = blockContextFor({ ...turn.state, expandOutputGlobal: true }, feedView(turn, { columns }));
+    const expanded = buildBatchLines(expandedCtx, item).map(stripAnsi);
+    expect(expanded.join("\n")).toContain("PRIVATE_FILE_BODY");
+    expect(expanded.join("\n")).toContain("# end fs.read file=6/6");
+    expect([...lines, ...expanded].every((line) => displayWidth(line) <= ctx.width)).toBe(true);
+  });
+
+  it.each([40, 80, 120])("keeps historical single-file batch read paths option-free at %i columns", (columns) => {
+    const turn = scriptedTurn();
+    const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool")!;
+    const item = { ...source, name: "tool.batch", argsDisplay: "1 call: fs.read" };
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns }));
+    for (const metadata of ["lines=1-8 of 100 bytes=800", 'pattern="value" matches=1', "bytes=800 truncated=true"]) {
+      turn.spool.replace(item.toolCallId, `── #1 fs.read [ok]\n# fs.read path=/repo/src/app.ts ${metadata}\n1: PRIVATE_FILE_BODY`);
+      const lines = buildBatchLines(ctx, item).map(stripAnsi);
+      const text = lines.join("\n");
+      expect(text).toContain("Read /repo/src/app.ts");
+      expect(text).not.toMatch(/lines=|bytes=|pattern=|PRIVATE_FILE_BODY|# fs.read/);
+      expect(lines.every(line => displayWidth(line) <= ctx.width)).toBe(true);
+    }
   });
 
   it("opens the combined output with boundaries and original line numbers preserved", async () => {
@@ -94,7 +123,7 @@ describe("multi-file read presentation", () => {
     expect(defaultPagerMarkdownMode({ kind: "tool", toolName: "fs.read", body: output.replace("PRIVATE_FILE_BODY", "# Markdown heading") })).toBe("plain");
   });
 
-  it("shows per-file child tool options and outcomes without repeating file contents", () => {
+  it("shows option-free child read usage and failures without file contents or diagnostics", () => {
     const run: SubagentRun = {
       id: "child", parentSessionId: "parent", title: "Read evidence", prompt: "Read relevant files", cwd: "/repo",
       provider: "openai", model: "test", status: "running", attempt: 1, createdAt: 1, updatedAt: 1,
@@ -104,10 +133,9 @@ describe("multi-file read presentation", () => {
       ],
     };
     const text = formatSubagentRun(run);
-    for (let index = 0; index < files.length; index += 1) expect(text).toContain(`file ${index + 1}/6: ${index === 2 ? "✗" : "✓"} ${files[index]!.path}`);
-    expect(text).toContain("options: offset=4 · limit=8");
-    expect(text).toContain("ENOENT");
-    expect(text).not.toMatch(/PRIVATE_FILE_BODY|hasMore|"files"/);
+    expect(text).toContain("✗ Explored");
+    for (let index = 0; index < files.length; index += 1) expect(text).toContain(`Read ${index === 2 ? "✗ " : ""}${files[index]!.path}`);
+    expect(text).not.toMatch(/PRIVATE_FILE_BODY|hasMore|"files"|options:|offset=|limit=|ENOENT/);
   });
 
   it("clips long paths in the middle without losing their filename or exceeding terminal width", () => {

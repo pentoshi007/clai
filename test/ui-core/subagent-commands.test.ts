@@ -238,9 +238,12 @@ describe("shared orchestration commands", () => {
     expect(f.panels.getSnapshot().pagerBody).toContain("first live finding");
     f.press("l", "l");
     const pausedPosition = f.panels.getSnapshot().pager;
-    f.workers.get(first.id)!.emit({ kind: "tool", text: "paused output" });
+    f.workers.get(first.id)!.emit({ kind: "tool", text: 'Calling shell.exec: {"command":"inspect paused activity"}' });
+    f.workers.get(first.id)!.emit({ kind: "tool", text: "Success: paused output" });
     await flush();
-    expect(f.panels.getSnapshot().pagerBody).toContain("paused output");
+    expect(f.panels.getSnapshot().pagerBody).toContain("✓ Shell inspect paused activity");
+    expect(f.panels.getSnapshot().pagerBody).not.toContain("paused output");
+    expect(f.manager.get(first.id)?.events.some(event => event.text === "Success: paused output")).toBe(true);
     expect(f.panels.getSnapshot().pager).toMatchObject({
       follow: false,
       top: pausedPosition.top,

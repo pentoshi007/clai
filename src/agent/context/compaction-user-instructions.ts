@@ -43,6 +43,16 @@ function sectionRanges(text: string, heading: string): { start: number; end: num
   return sections;
 }
 
+export function withoutUserInstructionSections(summary: string): string {
+  const sections = [
+    ...sectionRanges(summary, USER_INSTRUCTIONS_HEADING),
+    ...sectionRanges(summary, USER_INSTRUCTION_UPDATES_HEADING),
+  ].sort((a, b) => b.start - a.start);
+  let result = summary;
+  for (const section of sections) result = result.slice(0, section.start) + result.slice(section.end);
+  return result.trim();
+}
+
 function instructionBullets(body: string): string[] {
   const bullets: string[] = [];
   let baseIndent = Number.POSITIVE_INFINITY;

@@ -555,9 +555,10 @@ describe("single-admission chunking strategies", () => {
     let measuredInputTokens = 0;
     const result = await compactMessagesWithSummary(
       history,
-      async (prompt) => {
+      async (prompt, stage) => {
+        expect(stage?.sourceMessages?.[0]).toBe(history[0]);
         measuredInputTokens = estimateMessagesTokens([
-          { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+          ...(stage?.sourceMessages ?? []),
           { role: "user", content: prompt },
         ]);
         return USABLE_SUMMARY;

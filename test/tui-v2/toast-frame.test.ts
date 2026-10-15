@@ -34,6 +34,22 @@ describe("toast notification chip", () => {
     }
   });
 
+  it("centers each toast body line inside its padding", () => {
+    expect(padToastLines(["!  hello world", "   short"], 24)).toEqual([
+      "     !  hello world     ",
+      "         short          ",
+    ]);
+    expect(padToastLines(["·  文件"], 16)).toEqual(["    ·  文件     "]);
+  });
+
+  it.each([1, 8, 16, 24, 40, 80, 120])("keeps centered text within %i columns", width => {
+    const line = padToastLines(["·  long toast message"], width)[0]!;
+    expect(line.length).toBe(width);
+    const leading = line.length - line.trimStart().length;
+    const trailing = line.length - line.trimEnd().length;
+    expect(Math.abs(leading - trailing)).toBeLessThanOrEqual(1);
+  });
+
   it("animates multi-line height off-screen fully", () => {
     const tall = 8;
     const start = toastAnimAt(0, 2000, tall);

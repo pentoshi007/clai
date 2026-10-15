@@ -238,7 +238,7 @@ describe("runSessionCompaction cache-preserving replay", () => {
     const sent = complete.mock.calls[0]![0] as {
       messages: Array<{ role: string; content: string }>;
     };
-    expect(sent.messages[0]).not.toEqual(successfulRequest.messages[0]);
+    expect(sent.messages[0]).toEqual(successfulRequest.messages[0]);
     expect(
       sent.messages.some(
         (message) =>

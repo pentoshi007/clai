@@ -5,7 +5,7 @@ import { subagentBodySpans } from "../../src/ui-core/rendering/subagent-presenta
 
 describe("continuous pager rows", () => {
   it("keeps every wrapped command character and its semantic color", () => {
-    const line = `✓ shell.exec inspect ${"docs/日本語-🔬/".repeat(60)}report.md --full`;
+    const line = `✓ Shell inspect ${"docs/日本語-🔬/".repeat(60)}report.md --full`;
     const lines = [line];
     const rows = buildPagerRows({
       display: { mode: "plain", lines: lines.map((plain) => ({ plain })) },
@@ -19,7 +19,7 @@ describe("continuous pager rows", () => {
       const painted = slicePagerSpans(spans, row.textOffset!, row.line.length);
       expect(painted.map((span) => span.text).join("")).toBe(row.line);
       if (row.textOffset! > line.indexOf("inspect")) {
-        expect(painted.every((span) => span.fg === "muted")).toBe(true);
+        expect(painted.every((span) => span.fg === "inputBorder")).toBe(true);
       }
     }
   });

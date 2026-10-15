@@ -1,42 +1,15 @@
-import {
-  batchSummaryLine,
-  buildBatchCardsFromSpool,
-  parseBatchSections,
-  presentBatchSection,
-  type BatchSection,
-} from "../../ui-core/rendering/batch-sections.js";
-import { isItemExpanded, type ToolItem } from "../../ui-core/state/transcript-types.js";
+import { buildBatchCardsFromSpool, parseBatchSections, batchSummaryLine, type BatchSection } from "../../ui-core/rendering/batch-sections.js";
+import { isItemExpanded, type ToolItem, type ToolStatus } from "../../ui-core/state/transcript-types.js";
+import { parseFsReadSections } from "../../tools/fs/read-sections.js";
+import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
-import type { ThemeToken } from "../render/ink-theme.js";
-import { alignEnds, trimTrailingSpaces } from "../render/ansi-text.js";
-import {
-  EXPANDED_LINE_ROWS,
-  joinMeta,
-  SUFFIX_MIN_COLUMNS,
-  wrapBoundedRows,
-  type BlockContext,
-} from "./block-context.js";
-import { hintRows, outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
-import { toolStatusText } from "../../ui-core/rendering/tool-presenter.js";
-import { isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
+import { clipRow, type BlockContext } from "./block-context.js";
+import { appendDisclosure } from "./disclosure-lines.js";
+import { classicToolLabel } from "./tool-label.js";
+import { logicalOutputLines, outputBodyRows } from "./output-lines.js";
+import { buildToolLines, toolHeaderLines, toolGlyph, TOOL_STATUS_TOKEN } from "./tool-lines.js";
 
-export const BATCH_COLLAPSED_ROWS = 8;
-const SUB_INDENT = 2;
-const SUB_BODY_INDENT = 4;
-
-const SECTION_TOKEN: Record<string, ThemeToken> = {
-  running: "activity",
-  ok: "success",
-  fail: "diffDel",
-  cancelled: "muted",
-};
-
-function sectionGlyph(ctx: BlockContext, status: string): string {
-  if (status === "running") return ctx.glyphs.toolRunning;
-  if (status === "ok") return ctx.glyphs.toolOk;
-  if (status === "cancelled") return ctx.glyphs.toolBlocked;
-  return ctx.glyphs.toolFailed;
-}
+export const BATCH_COLLAPSED_ROWS = 3;
 
 export function batchSectionsFor(ctx: BlockContext, item: ToolItem): BatchSection[] {
   const tail = ctx.spool.tail(item.toolCallId);
@@ -46,54 +19,45 @@ export function batchSectionsFor(ctx: BlockContext, item: ToolItem): BatchSectio
   return parsed.length > 0 ? parsed : buildBatchCardsFromSpool(tail);
 }
 
+function readPathLine(ctx: BlockContext, path: string, ok: boolean): string {
+  const label = ctx.ink.fg(ok ? "inputBorder" : "diffDel", sanitizeDisplayText(path).replace(/\n/g, " "));
+  return clipRow(ctx, `    ${ctx.ink.fg("toolOutput", "Read")} ${label}`);
+}
+
+function compactReadLines(ctx: BlockContext, section: BatchSection): string[] {
+  const files = parseFsReadSections(section.body);
+  if (files.length === 0) {
+    const path = section.body.match(/^# fs\.read path=(.+?)(?= (?:lines|pattern|bytes)=|$)/m)?.[1];
+    if (path) return [readPathLine(ctx, path, section.ok)];
+    return outputBodyRows(ctx, logicalOutputLines(section.body, section.name), false, { branch: false });
+  }
+  return files.flatMap((file) => {
+    const lines = [readPathLine(ctx, file.path, file.ok)];
+    if (!file.ok) lines.push(...outputBodyRows(ctx, logicalOutputLines(file.body, section.name), false, { token: "diffDel", branch: false }));
+    return lines;
+  });
+}
+
 export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   const expanded = isItemExpanded(ctx.state, item);
   const sections = batchSectionsFor(ctx, item);
+  if (sections.length === 0) return buildToolLines(ctx, item);
   const lines = toolHeaderLines(ctx, item);
-  const subIndent = " ".repeat(SUB_INDENT);
-  if (sections.length === 0) {
-    lines.push(...hintRows(ctx, subIndent, outputToggleLabel(expanded)));
-    return lines;
-  }
-
   const shown = expanded ? sections : sections.slice(0, BATCH_COLLAPSED_ROWS);
-  const bodyIndent = " ".repeat(SUB_BODY_INDENT);
-
-  for (const section of shown) {
-    const status = section.status ?? (section.ok ? "ok" : "fail");
-    const token = SECTION_TOKEN[status] ?? "muted";
-    const multiRead = section.name === "fs.read" && isFsReadMultiOutput(section.body);
-    const presented = presentBatchSection(section, multiRead ? false : expanded, ctx.width - SUB_BODY_INDENT);
-    const glyph = ctx.ink.fg(token, sectionGlyph(ctx, status));
-    const name = ctx.ink.fg(token, section.name);
-    const suffix =
-      ctx.width + 2 >= SUFFIX_MIN_COLUMNS && status === "running"
-        ? ctx.ink.fg(token, toolStatusText(presented.statusLabel))
-        : "";
-    lines.push(
-      alignEnds(`${subIndent}${glyph} ${name}`, suffix, ctx.width, ctx.glyphs.ellipsis),
-    );
-    if ((!expanded && !multiRead) || !section.body.trim()) continue;
-    const budget = Math.max(1, ctx.width - SUB_BODY_INDENT);
-    const rows = multiRead ? presented.lines : presented.lines.filter((line) => line.trim().length > 0).slice(0, 1);
-    for (const row of rows) {
-      const text = adaptPresenterGlyphs(row, ctx.ink.unicode);
-      for (const chunk of wrapBoundedRows(ctx, text, budget, EXPANDED_LINE_ROWS)) {
-        lines.push(trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolOutput", chunk)}`));
-      }
-    }
+  for (const [index, section] of shown.entries()) {
+    const status: ToolStatus = section.status === "fail" ? "failed" : section.status === "cancelled" ? "blocked" : section.status;
+    const token = section.status === "cancelled" ? "muted" : TOOL_STATUS_TOKEN[status];
+    const tool = { ...item, name: section.name, status };
+    const name = ctx.ink.fg(token, classicToolLabel(tool));
+    const glyph = ctx.ink.fg(token, toolGlyph(ctx, status));
+    const prefix = index === 0 ? `  ${ctx.glyphs.bodyBranch} ` : "    ";
+    const exit = section.exitCode && section.exitCode !== 0 ? ` (exit ${section.exitCode})` : "";
+    lines.push(clipRow(ctx, `${prefix}${glyph} ${name}${exit}`));
+    if (expanded) lines.push(...outputBodyRows(ctx, logicalOutputLines(section.body, section.name), true, { branch: false }));
+    else if (section.name === "fs.read") lines.push(...compactReadLines(ctx, section));
   }
-
-  const hidden = sections.length - shown.length;
-  const summary = batchSummaryLine(sections, "glyph")
-    .replaceAll("✓", ctx.glyphs.toolOk)
-    .replaceAll("●", ctx.glyphs.toolRunning)
-    .replaceAll("✗", ctx.glyphs.toolFailed);
-  const footer = joinMeta(ctx, [
-    outputToggleLabel(expanded),
-    summary === "" ? undefined : summary,
-    hidden > 0 ? `${ctx.glyphs.ellipsis} +${hidden} more` : undefined,
-  ]);
-  if (footer !== "") lines.push(...hintRows(ctx, subIndent, footer));
+  const summary = adaptPresenterGlyphs(batchSummaryLine(sections, "glyph"), ctx.ink.unicode);
+  if (summary) lines.push(clipRow(ctx, `    ${ctx.ink.fg("hint", summary)}`));
+  appendDisclosure(ctx, lines, expanded, { hidden: Math.max(0, sections.length - shown.length) });
   return lines;
 }

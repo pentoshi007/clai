@@ -21,6 +21,7 @@ import { buildToolLines } from "../blocks/tool-lines.js";
 import { buildTurnSummaryLines } from "../blocks/turn-summary-lines.js";
 import { buildUserLines } from "../blocks/user-lines.js";
 import { reflowRows } from "../render/wrap.js";
+import type { BlockDisclosure } from "../blocks/disclosure-lines.js";
 
 export type BlockKind =
   | "intro"
@@ -40,6 +41,7 @@ export interface FeedBlock {
   readonly kind: BlockKind;
   readonly open: boolean;
   readonly lines: readonly string[];
+  readonly disclosures?: readonly BlockDisclosure[];
   readonly turnId: string | undefined;
   readonly sequence: number;
 }
@@ -166,7 +168,7 @@ function blockInputs(ctx: BlockContext, item: TranscriptItem, kind: BlockKind): 
     kind,
     width: ctx.width,
     ink: ctx.ink,
-    expanded: isItemExpanded(ctx.state, item),
+    expanded: item.kind === "user" ? ctx.state.itemOverrides.get(item.id) ?? false : isItemExpanded(ctx.state, item),
     diffExpanded: tool ? isFileDiffExpanded(ctx.state, item.id) : false,
     output: tool ? ctx.spool.version?.(tool.toolCallId) ?? ctx.spool.tail(tool.toolCallId) : undefined,
     now: isOpen(item) ? ctx.now : undefined,
@@ -221,7 +223,8 @@ export class FeedBlockCache {
       return entry.block;
     }
     const markdownCache = cached?.inputs.ink === ctx.ink ? cached.markdownCache : undefined;
-    const rendered = renderLines(ctx, item, kind, markdownCache);
+    const disclosures: BlockDisclosure[] = [];
+    const rendered = renderLines({ ...ctx, disclosures }, item, kind, markdownCache);
     const lines = reflowRows(rendered.lines, ctx.width);
     const block: FeedBlock | undefined = lines.length > 0
       ? {
@@ -230,6 +233,7 @@ export class FeedBlockCache {
           kind,
           open: isOpen(item),
           lines,
+          disclosures,
           turnId: item.turnId,
           sequence: item.sequence,
         }

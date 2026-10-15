@@ -92,6 +92,7 @@ function OutputLines(props: {
           <text
             key={i}
             selectable
+            wrapMode="none"
             style={{ height: 1, width: "100%", bg: theme.statusBackground }}
           >
             <span style={{ fg: isGap ? theme.muted : gutterFg }}>{"│ "}</span>
@@ -119,7 +120,7 @@ function BatchSubCard(props: {
   contentWidth: number;
 }): ReactNode {
   const { section, theme, expanded, parentExpanded, onOpen, contentWidth } = props;
-  const presented = presentBatchSection(section, expanded, contentWidth);
+  const presented = presentBatchSection(section, expanded, contentWidth, "first-three");
   const statusText = toolStatusText(presented.statusLabel);
   const hasBody = section.body.trim().length > 0;
   const status = section.status ?? (section.ok ? "ok" : "fail");
@@ -314,6 +315,7 @@ export function ToolCard(props: {
     if (expanded) return rendered.slice(0, 60);
     return collapseOutputLines(rendered, (hiddenLines) =>
       styleAnsiLine(toolOutputGapLabel(hiddenLines), theme.muted),
+      rendered.length, "first-three",
     ).lines;
   }, [formatMdRead, item, tail, expanded, termWidth, theme, colorMode]);
 
@@ -322,7 +324,7 @@ export function ToolCard(props: {
   const { lines, hiddenAboveCount, truncatedNotice } = useMemo(
     () =>
       presentsRawOutput
-        ? presentOutput(tail, spool.state(item.toolCallId), expanded, item.name)
+        ? presentOutput(tail, spool.state(item.toolCallId), expanded, item.name, "first-three")
         : EMPTY_OUTPUT,
     [presentsRawOutput, tail, spool, item.toolCallId, item.outputBytes, expanded, item.name],
   );

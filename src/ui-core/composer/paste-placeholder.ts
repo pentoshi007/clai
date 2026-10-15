@@ -93,7 +93,7 @@ export class PasteRegistry {
     const chars = text.length;
     const entry: PastePlaceholderEntry = {
       id,
-      token: `[${pasteChipLabel(lines, chars)} #${id}]`,
+      token: `[${pasteChipLabel(lines, chars)} #${id} · Ctrl+E]`,
       text,
       lines,
       chars,
@@ -121,7 +121,7 @@ export class PasteRegistry {
 
   expand(value: string): string {
     return value.replace(
-      /\[(?:\d+ (?:lines|chars) pasted|pasted) #(\d+)\]/g,
+      /\[(?:\d+ (?:lines|chars) pasted|pasted) #(\d+) · Ctrl\+E\]/g,
       (token, id: string) => {
         const entry = this.entries.get(Number(id));
         return entry?.token === token ? entry.text : token;

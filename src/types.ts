@@ -199,7 +199,14 @@ export interface ChatMessage {
   compaction?: {
     readonly recentUserPrompts: readonly CompactedUserPrompt[];
     readonly userInstructions?: readonly CompactedUserInstruction[] | undefined;
+    readonly workHistory?: readonly CompactedWorkstream[] | undefined;
   } | undefined;
+}
+
+export interface CompactedWorkstream {
+  readonly request: string;
+  readonly outcome?: string | undefined;
+  readonly evidence?: string | undefined;
 }
 
 export interface CompactedUserInstruction {

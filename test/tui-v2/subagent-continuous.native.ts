@@ -62,7 +62,7 @@ try {
     assert.ok(Buffer.byteLength(entireBody) > 64 * 1024, "fixture must exceed the former byte page boundary");
     assert.ok(entireBody.includes("ACROSS-TRANSCRIPT EARLY"), "early saved history must remain available");
     assert.ok(entireBody.includes("ACROSS-TRANSCRIPT LATE"), "late saved history must remain available");
-    assert.ok(/✓ fs\.read docs\/section-0\.md/.test(entireBody), "saved calls must use semantic tool formatting");
+    assert.ok(entireBody.includes("✓ Explored\n  └ Read docs/section-0.md"), "saved calls must use semantic tool formatting");
     assert.ok(entireBody.includes(`${"\t".repeat(20)}TABTAIL-PRESERVED`), "source body must preserve the original tabs for copying");
     assert.ok(!/PRIVATE_TOOL_BODY_MUST_NOT_APPEAR|Calling fs\.read:|Success:|### Attempt/.test(entireBody), "saved evidence bodies and protocol must remain collapsed");
     assert.ok((await source.readPage(0)).body === entireBody, "continuous reads must expose the complete body");
@@ -122,16 +122,18 @@ try {
       const frame = await waitFor(/WRAPPED-COMMAND-END/, () => services.overlay.openPager("Complete persisted inspection", formatSubagentRun(reader!.get(started.id)!), source, undefined, "plain"));
       assert.match(frame, /ACROSS-TRANSCRIPT EARLY/);
       assert.doesNotMatch(frame, /page \d+\/\d+/);
-      assert.match(frame, /✓ fs\.read docs\/section-0\.md/);
+      assert.match(frame, /✓ Explored/);
+      assert.match(frame, /Read docs\/section-0\.md/);
       assert.match(frame, /WRAPPED-COMMAND-END/);
-      assertColor("shell.exec", "cyan");
-      assertColor("WRAPPED-COMMAND-END", "muted");
+      assertColor("Shell", "success");
+      assertColor("WRAPPED-COMMAND-END", "inputBorder");
       assertVirtualized();
-      const formatted = await waitFor(/WRAPPED-COMMAND-END/, () => setup.mockInput.pressKey("f"));
+      const formatted = await waitFor(/✓ Shell/, () => setup.mockInput.pressKey("f"));
       assert.match(formatted, /ACROSS-TRANSCRIPT EARLY/);
-      assert.doesNotMatch(formatted, /page \d+\/\d+/);
-      assertColor("shell.exec", "cyan");
-      assertColor("WRAPPED-COMMAND-END", "muted");
+      assert.doesNotMatch(formatted, /page \d+\/\d+|WRAPPED-COMMAND-END/);
+      assertColor("Shell", "success");
+      assertColor("inspect", "inputBorder");
+      assert.equal(formatted.split("\n").filter(row => row.includes("✓ Shell")).length, 1);
       assertVirtualized();
       await waitFor(/WRAPPED-COMMAND-END/, () => setup.mockInput.pressKey("r"));
       await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
@@ -207,8 +209,8 @@ try {
             "12 │ **gutter**",
           ].join("\r\n");
           const readFiles = [
-            { path: `docs/${"long-section/".repeat(9)}FIRST-READ.md`, offset: 12, limit: 80 },
-            { path: `docs/${"another-section/".repeat(8)}SECOND-READ.md`, offset: 200, limit: 60 },
+            { path: `docs/FIRST-READ.md/${"long-section/".repeat(9)}`, offset: 12, limit: 80 },
+            { path: `docs/SECOND-READ.md/${"another-section/".repeat(8)}`, offset: 200, limit: 60 },
           ];
           const assertNoToolGaps = (frame: string, first: string, last: string): void => {
             const rows = frame.split("\n");
@@ -227,46 +229,50 @@ try {
             await settle(() => setup.resize(toolWidth, 35));
             await settle(() => setup.mockInput.pressKey("r"));
             await settle(() => setup.mockInput.pressKey("\x1b[F"));
-            const pendingCommand = await waitFor(/→ shell\.exec/, () => {
+            const pendingCommand = await waitFor(/→ Shell/, () => {
               liveWorker!.emit({ kind: "assistant", text: "LIVE-TOOL-START" });
               liveWorker!.emit({ kind: "tool", text: `Calling shell.exec: ${JSON.stringify({ command: multilineCommand, cwd: "/workspace" })}` });
             });
-            assert.match(pendingCommand, /→ shell\.exec/);
             assert.match(pendingCommand, /In progress/);
+            assert.doesNotMatch(pendingCommand, /WRAP-INPUT-END|DONE-INPUT-END|\*\*gutter\*\*/);
             assertNoToolGaps(pendingCommand, "LIVE-TOOL-START", "In progress");
-            assertColor("shell.exec", "cyan");
-            assertColor("**literal**", "muted");
-            assertColor("WRAP-INPUT-END", "muted");
+            assertColor("Shell", "activity");
+            assertColor("**literal**", "inputBorder");
             await settle(() => setup.mockInput.pressKey("f"));
-            const formattedCommand = await waitFor(/DONE-INPUT-END/, () => setup.mockInput.pressKey("\x1b[F"));
-            assert.match(formattedCommand, /→ shell\.exec/);
+            const formattedCommand = await waitFor(/→ Shell/, () => setup.mockInput.pressKey("\x1b[F"));
             assert.match(formattedCommand, /\*\*literal\*\* `argument` <br> # heading/);
-            assert.match(formattedCommand, /12 │ \*\*gutter\*\*/);
+            const commandRows = formattedCommand.split("\n").filter(row => row.includes("→ Shell"));
+            assert.equal(commandRows.length, 1);
+            assert.match(commandRows[0]!, /…/);
             assertNoToolGaps(formattedCommand, "LIVE-TOOL-START", "In progress");
-            assertColor("**literal**", "muted");
-            assertColor("WRAP-INPUT-END", "muted");
-            assertColor("**gutter**", "muted");
-            const completedCommand = await waitFor(/^(?![\s\S]*In progress)[\s\S]*✓ shell\.exec/, () => liveWorker!.emit({ kind: "tool", text: "Success: PRIVATE_LIVE_TOOL_BODY" }));
-            assert.match(completedCommand, /DONE-INPUT-END/);
+            assertColor("**literal**", "inputBorder");
+            const completedCommand = await waitFor(/^(?![\s\S]*In progress)[\s\S]*✓ Shell/, () => liveWorker!.emit({ kind: "tool", text: "Success: PRIVATE_LIVE_TOOL_BODY" }));
             assert.doesNotMatch(completedCommand, /In progress|PRIVATE_LIVE_TOOL_BODY/);
-            assertNoToolGaps(completedCommand, "LIVE-TOOL-START", "DONE-INPUT-END");
-            const pendingRead = await waitFor(/→ fs\.read/, () => liveWorker!.emit({ kind: "tool", text: `Calling fs.read: ${JSON.stringify({ files: readFiles })}` }));
-            assert.match(pendingRead, /→ fs\.read/);
-            assertNoToolGaps(pendingRead, "→ fs.read", "In progress");
-            assertColor("fs.read", "cyan");
-            assertColor("FIRST-READ.md", "muted");
-            assertColor("SECOND-READ.md", "muted");
-            const completedRead = await waitFor(/^(?![\s\S]*In progress)[\s\S]*✓ fs\.read/, () => liveWorker!.emit({ kind: "tool", text: `Success: ${readFiles.map((file, index) => formatFsReadSection({ index: index + 1, total: 2, path: file.path, ok: true, body: "PRIVATE_LIVE_TOOL_BODY" })).join("\n\n")}` }));
-            assert.match(completedRead, /file 1\/2: ✓/);
-            assert.match(completedRead, /file 2\/2: ✓/);
-            assert.doesNotMatch(completedRead, /In progress|PRIVATE_LIVE_TOOL_BODY/);
-            assertNoToolGaps(completedRead, "✓ fs.read", "SECOND-READ.md");
+            assertColor("Shell", "success");
+            assertNoToolGaps(completedCommand, "LIVE-TOOL-START", "✓ Shell");
+            const pendingRead = await waitFor(/→ Explored/, () => liveWorker!.emit({ kind: "tool", text: `Calling fs.read: ${JSON.stringify({ files: readFiles })}` }));
+            assertNoToolGaps(pendingRead, "→ Explored", "In progress");
+            assertColor("Explored", "activity");
+            assertColor("FIRST-READ.md", "inputBorder");
+            assertColor("SECOND-READ.md", "inputBorder");
+            const activityRows = pendingRead.split("\n");
+            const readRows = activityRows.slice(activityRows.findLastIndex(row => row.includes("→ Explored"))).filter(row => /Read docs\//.test(row));
+            assert.equal(readRows.length, 2);
+            assert.ok(readRows.every(row => row.includes("…")));
+            const completedRead = await waitFor(/^(?![\s\S]*In progress)[\s\S]*✗ Explored/, () => liveWorker!.emit({ kind: "tool", text: `Success: ${readFiles.map((file, index) => formatFsReadSection({ index: index + 1, total: 2, path: file.path, ok: index === 0, body: "PRIVATE_LIVE_TOOL_BODY" })).join("\n\n")}` }));
+            assert.match(completedRead, /└ Read docs\/FIRST-READ.md/);
+            assert.match(completedRead, /Read ✗ docs\/SECOND-READ.md/);
+            assert.doesNotMatch(completedRead, /In progress|PRIVATE_LIVE_TOOL_BODY|offset=|limit=|file [12]\/2:/);
+            assertNoToolGaps(completedRead, "✗ Explored", "SECOND-READ.md");
+            assertColor("Explored", "diffDel");
+            assertColor("SECOND-READ.md", "diffDel");
             await settle(() => setup.mockInput.pressKey("r"));
             const rawRead = await waitFor(/SECOND-READ\.md/, () => setup.mockInput.pressKey("\x1b[F"));
-            assert.match(rawRead, /✓ fs\.read/);
-            assertNoToolGaps(rawRead, "✓ fs.read", "SECOND-READ.md");
-            assertColor("FIRST-READ.md", "muted");
-            assertColor("SECOND-READ.md", "muted");
+            assert.match(rawRead, /✗ Explored/);
+            assertNoToolGaps(rawRead, "✗ Explored", "SECOND-READ.md");
+            assertColor("FIRST-READ.md", "inputBorder");
+            assertColor("SECOND-READ.md", "diffDel");
+            assert.ok(liveManager.get(liveRun.id)!.events.some(event => event.text.includes("DONE-INPUT-END")));
             assertVirtualized();
           }
           await waitFor(/LIVE-FOLLOWED-UPDATE/, () => liveWorker!.emit({ kind: "assistant", text: "LIVE-FOLLOWED-UPDATE" }));

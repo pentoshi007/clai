@@ -89,206 +89,135 @@ describe("buildFeedBlocks", () => {
     expect(toolElapsed(ctx, item!)).toBeDefined();
   });
 
-  it("hides the requested header status words while preserving glyphs, timing and exit details", () => {
-    const source = transcriptItems(turn.state).find(
-      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
-    )!;
+  it("keeps compact headers while preserving status colors, timing and exit details", () => {
+    const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool" && item.name === "shell.exec")!;
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 120 }));
     for (const status of ["running", "ok", "failed"] as const) {
       const item = { ...source, status, exitCode: status === "failed" ? 127 : 0 };
-      const header = toolHeaderLines(ctx, item).map(stripAnsi).join("\n");
+      const rows = toolHeaderLines(ctx, item);
+      const header = rows.map(stripAnsi).join("\n");
+      expect(rows).toHaveLength(1);
       expect(header).not.toMatch(/\b(running|failed|done)\b/);
-      expect(header).toContain(status === "running" ? "●" : status === "ok" ? "✓" : "✗");
+      expect(header).toContain("• Shell");
       expect(header).toContain(toolElapsed(ctx, item)!);
       if (status === "failed") expect(header).toContain("127 · not found");
     }
   });
 
-  it("keeps fs.read cards compact while showing options and the file", () => {
-    const source = transcriptItems(turn.state).find(
-      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
-    );
-    expect(source).toBeDefined();
-    const item = {
-      ...source!,
-      name: "fs.read",
-      argsDisplay: "src/app.ts\noffset=12 · limit=8 · lines=12–19",
-    };
+  it("shows explored files without read options or content", () => {
+    const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool" && item.name === "shell.exec")!;
+    const item = { ...source, name: "fs.read", argsDisplay: "src/app.ts\noffset=12 · limit=8 · lines=12–19" };
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
     const text = buildToolLines(ctx, item).map(stripAnsi).join("\n");
-    expect(text).toContain("options: offset=12");
-    expect(text).toContain("file: src/app.ts");
-    expect(text).toContain("Ctrl+O to expand");
-    expect(text).not.toContain("PASS src/routes/users.test.ts");
+    expect(text).toContain("• Explored");
+    expect(text).toContain("  └ Read src/app.ts");
+    expect(text).toContain("+ click to expand");
+    expect(text).not.toMatch(/options|offset|limit|PASS src\/routes/);
   });
 
   it("shows only subagent titles in classic tool cards", () => {
-    const source = transcriptItems(turn.state).find(
-      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
-    );
-    expect(source).toBeDefined();
+    const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool" && item.name === "shell.exec")!;
     const prompt = "do not display this prompt";
     const context = "do not display this context";
-    const item = {
-      ...source!,
-      name: "subagent.start_many",
-      argsDisplay: formatToolArgs({
-        name: "subagent.start_many",
-        args: {
-          assignments: [
-            { title: "Map renderer", prompt, context },
-            { title: "Map classic", prompt, context },
-          ],
-        },
-      }),
-    };
+    const item = { ...source, name: "subagent.start_many", argsDisplay: formatToolArgs({
+      name: "subagent.start_many", args: { assignments: [
+        { title: "Map renderer", prompt, context }, { title: "Map classic", prompt, context },
+      ] },
+    }) };
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
     const text = buildToolLines(ctx, item).map(stripAnsi).join("\n");
-
     expect(text).toContain("subagent.start_many");
     expect(text).toContain("Map renderer, Map classic");
     expect(text).not.toContain(prompt);
     expect(text).not.toContain(context);
   });
 
-  it("shows the first line, hidden count, and last two lines in collapsed tool output", () => {
+  it("shows the first three lines and hidden count, not the output tail", () => {
     const previewTurn = scriptedTurn();
-    const source = transcriptItems(previewTurn.state).find(
-      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
-    );
-    expect(source).toBeDefined();
-    previewTurn.spool.replace(
-      source!.toolCallId,
-      Array.from({ length: 10 }, (_, index) => `preview line ${index + 1}`).join("\n"),
-    );
+    const source = transcriptItems(previewTurn.state).find((item): item is ToolItem => item.kind === "tool" && item.name === "shell.exec")!;
+    previewTurn.spool.replace(source.toolCallId, Array.from({ length: 10 }, (_, i) => `preview line ${i + 1}`).join("\n"));
     const ctx = blockContextFor(previewTurn.state, feedView(previewTurn, { columns: 80 }));
-    const text = buildToolLines(ctx, source!).map(stripAnsi).join("\n");
-    expect(text).toContain("preview line 1");
-    expect(text).toContain("preview line 9");
-    expect(text).toContain("preview line 10");
-    expect(text).not.toContain("preview line 2");
-    expect(text).not.toContain("preview line 8");
-    expect(text).toContain("… 7 more lines");
-    expect(text.indexOf("preview line 1")).toBeLessThan(text.indexOf("… 7 more lines"));
-    expect(text.indexOf("… 7 more lines")).toBeLessThan(text.indexOf("preview line 9"));
+    const text = buildToolLines(ctx, source).map(stripAnsi).join("\n");
+    for (const i of [1, 2, 3]) expect(text).toContain(`preview line ${i}`);
+    for (const i of [4, 8, 9, 10]) expect(text).not.toContain(`preview line ${i}`);
+    expect(text).toContain("+ click to expand (7 lines)");
   });
 
-  it("contains abnormally long output lines without touching normal ones", () => {
+  it("clips huge output to the terminal width without extra preview rows", () => {
     const outputTurn = scriptedTurn();
-    const source = transcriptItems(outputTurn.state).find(
-      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
-    );
-    expect(source).toBeDefined();
+    const source = transcriptItems(outputTurn.state).find((item): item is ToolItem => item.kind === "tool" && item.name === "shell.exec")!;
     const normal = `normal line ${"word ".repeat(18)}`.trim();
-    const giant = `{"payload":"${"z".repeat(20_000)}"}`;
-    outputTurn.spool.replace(source!.toolCallId, [giant, normal, "middle", "middle two", "middle three", "tail", normal].join("\n"));
-    for (const columns of [40, 80, 120]) {
+    outputTurn.spool.replace(source.toolCallId, [`{"payload":"${"z".repeat(20_000)}"}`, normal, "third", "fourth", "tail"].join("\n"));
+    for (const columns of [40, 80, 120, 240]) {
       const ctx = blockContextFor(outputTurn.state, feedView(outputTurn, { columns }));
-      const lines = buildToolLines(ctx, source!);
+      const lines = buildToolLines(ctx, source);
       const plain = lines.map(stripAnsi);
-      expect(lines.length).toBeLessThan(40);
-      expect(plain.join("\n")).toMatch(/\+\d+ chars/);
-      for (const row of plain) expect(displayWidth(row)).toBeLessThanOrEqual(columns);
-      const normalRows = plain.filter((row) => /word|normal line/.test(row));
-      expect(normalRows.join("").replace(/\s+/g, " ")).toContain(normal.slice(0, 20));
-      for (const row of plain.filter((candidate) => /\+\d+ chars/.test(candidate))) {
-        expect(row).toMatch(/^\s+z+ \S \+\d+ chars$/);
-      }
+      expect(lines).toHaveLength(5);
+      expect(plain[1]).toContain("…");
+      expect(plain[2]).toContain(normal.slice(0, 20));
+      expect(plain[3]).toContain("third");
+      for (const row of lines) expect(displayWidth(row)).toBeLessThanOrEqual(columns);
     }
   });
 
   it("expands tabs in tool output so rows keep their measured width", () => {
     const tabbed = scriptedTurn();
-    const source = transcriptItems(tabbed.state).find(
-      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
-    );
-    expect(source).toBeDefined();
-    tabbed.spool.replace(
-      source!.toolCallId,
-      "completed\tsuccess\tMerge pull request #36 from feat/rtk-output-compression\tCI\tmain\tpush\n36617238855\t4m27s\t2026-09-29T19:09:34Z",
-    );
+    const source = transcriptItems(tabbed.state).find((item): item is ToolItem => item.kind === "tool" && item.name === "shell.exec")!;
+    tabbed.spool.replace(source.toolCallId, "completed\tsuccess\tMerge pull request #36\tCI\tmain\tpush\n36617238855\t4m27s\t2026-09-29T19:09:34Z");
     const ctx = blockContextFor(tabbed.state, feedView(tabbed, { columns: 62 }));
-    for (const row of buildToolLines(ctx, source!)) {
+    for (const row of buildToolLines(ctx, source)) {
       expect(row).not.toContain("\t");
       expect(displayWidth(row)).toBeLessThanOrEqual(62);
     }
   });
 
-  it("keeps diff hunks visible while tool output is minimized", () => {
-    const state = { ...turn.state, expandOutputGlobal: false, expandFileDiffsGlobal: true };
-    const diff = buildFeedBlocks(state, feedView(turn, { columns: 96 })).find(
-      (block) => block.kind === "diff",
-    );
-    expect(diff).toBeDefined();
-    const text = diff!.lines.map(stripAnsi).join("\n");
-    expect(text).toContain("Ctrl+O to expand");
-    expect(text).not.toContain("Ctrl+O to minimize");
-    expect(text).not.toContain("file  /repo/src/routes/users.ts");
-    expect(diff!.lines.length).toBeGreaterThan(4);
+  it("keeps a three-row diff preview while output is minimized", () => {
+    const diff = buildFeedBlocks({ ...turn.state, expandOutputGlobal: false, expandFileDiffsGlobal: true }, feedView(turn, { columns: 96 })).find((block) => block.kind === "diff")!;
+    expect(diff.lines).toHaveLength(5);
+    expect(diff.lines.map(stripAnsi).join("\n")).toContain("+ click to expand");
+    expect(diff.lines.map(stripAnsi).join("\n")).not.toContain("- click to collapse");
   });
 
-  it.each(["256", "truecolor"] as const)("matches Codex diff row fills in %s feed rendering", (colorMode) => {
+  it.each(["256", "truecolor"] as const)("retains syntax and full-width Codex diff fills in %s", (colorMode) => {
     const view = feedView(turn, { columns: 96, colorMode });
-    const diff = buildFeedBlocks(turn.state, view).find((block) => block.kind === "diff");
-    expect(diff).toBeDefined();
-    const addRow = diff!.lines.find((line) => stripAnsi(line).includes("limit = 25"));
-    const delRow = diff!.lines.find((line) => stripAnsi(line).includes("findMany();"));
-    expect(addRow).toBeDefined();
-    expect(delRow).toBeDefined();
-    expect(addRow).toContain(view.ink.fg("diffAdd", "│ "));
-    expect(delRow).toContain(view.ink.fg("diffDel", "│ "));
+    const state = { ...turn.state, expandOutputGlobal: true };
+    const diff = buildFeedBlocks(state, view).find((block) => block.kind === "diff")!;
+    const addRow = diff.lines.find((line) => stripAnsi(line).includes("limit = 25"))!;
+    const delRow = diff.lines.find((line) => stripAnsi(line).includes("findMany();"))!;
+    expect(stripAnsi(addRow)).toMatch(/2 \+ /);
+    expect(stripAnsi(delRow)).toMatch(/2 - /);
     expect(addRow).toContain(view.ink.hex("#569CD6", "const"));
     expect(delRow).toContain(view.ink.hex("#569CD6", "const"));
     expect(addRow).toContain(view.ink.band("X", 1, { bg: "diffAddBg" }).split("X")[0]!);
     expect(delRow).toContain(view.ink.band("X", 1, { bg: "diffDelBg" }).split("X")[0]!);
+    expect(displayWidth(addRow)).toBe(96);
+    expect(displayWidth(delRow)).toBe(96);
   });
 
-  it("shows the Ctrl+O action for every output card state", () => {
-    const outputKinds: readonly BlockKind[] = ["tool", "batch", "diff", "compacted"];
-    for (const [expanded, label, otherLabel] of [
-      [false, "Ctrl+O to expand", "Ctrl+O to minimize"],
-      [true, "Ctrl+O to minimize", "Ctrl+O to expand"],
-    ] as const) {
-      const state = { ...turn.state, expandOutputGlobal: expanded };
-      const blocks = buildFeedBlocks(state, feedView(turn, { columns: 96 }));
-      for (const kind of outputKinds) {
-        const text = blocks
-          .filter((block) => block.kind === kind)
-          .flatMap((block) => block.lines)
-          .map(stripAnsi)
-          .join("\n");
-        expect(text, `${kind} ${expanded ? "expanded" : "collapsed"}`).toContain(label);
-        expect(text, `${kind} ${expanded ? "expanded" : "collapsed"}`).not.toContain(otherLabel);
+  it("shows the same disclosure action for every output block state", () => {
+    const kinds: readonly BlockKind[] = ["tool", "batch", "diff", "compacted"];
+    for (const expanded of [false, true]) {
+      const blocks = buildFeedBlocks({ ...turn.state, expandOutputGlobal: expanded }, feedView(turn, { columns: 96 }));
+      for (const kind of kinds) {
+        const text = blocks.filter((block) => block.kind === kind).flatMap((block) => block.lines).map(stripAnsi).join("\n");
+        expect(text).toContain(expanded ? "- click to collapse" : "+ click to expand");
+        expect(text).not.toContain(expanded ? "+ click to expand" : "- click to collapse");
       }
     }
   });
 
-  it("shows the Ctrl+O action when output bodies are empty or failed", () => {
-    const tools = transcriptItems(turn.state).filter(
-      (item): item is ToolItem => item.kind === "tool",
-    );
-    const plain = tools.find((item) => item.name === "shell.exec" && item.status === "failed");
-    const batch = tools.find((item) => item.name === "tool.batch");
-    const compacted = transcriptItems(turn.state).find((item) => item.kind === "compacted");
-    expect(plain).toBeDefined();
-    expect(batch).toBeDefined();
-    expect(compacted).toBeDefined();
-
-    for (const [expanded, label] of [
-      [false, "Ctrl+O to expand"],
-      [true, "Ctrl+O to minimize"],
-    ] as const) {
-      const state = { ...turn.state, expandOutputGlobal: expanded };
-      const ctx = blockContextFor(state, feedView(turn, { columns: 40 }));
-      const variants = [
-        buildToolLines(ctx, { ...plain!, summary: undefined }),
-        buildBatchLines(ctx, { ...batch!, toolCallId: plain!.toolCallId }),
-        buildCompactedLines(ctx, { ...compacted!, summary: "" }),
-        buildCompactedLines(ctx, { ...compacted!, error: "provider rejected compaction" }),
-      ];
-      for (const lines of variants) {
-        expect(lines.map(stripAnsi).join("\n")).toContain(label);
-        for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(ctx.width);
+  it("keeps disclosure available for empty, failed, and compaction blocks", () => {
+    const tools = transcriptItems(turn.state).filter((item): item is ToolItem => item.kind === "tool");
+    const plain = tools.find((item) => item.name === "shell.exec" && item.status === "failed")!;
+    const batch = tools.find((item) => item.name === "tool.batch")!;
+    const compacted = transcriptItems(turn.state).find((item) => item.kind === "compacted")!;
+    for (const expanded of [false, true]) {
+      const ctx = blockContextFor({ ...turn.state, expandOutputGlobal: expanded }, feedView(turn, { columns: 40 }));
+      const variants = [buildToolLines(ctx, { ...plain, summary: undefined }), buildBatchLines(ctx, { ...batch, toolCallId: plain.toolCallId }),
+        buildCompactedLines(ctx, { ...compacted, summary: "" }), buildCompactedLines(ctx, { ...compacted, error: "provider rejected compaction" })];
+      for (const rows of variants) {
+        expect(rows.map(stripAnsi).join("\n")).toContain(expanded ? "- click to collapse" : "+ click to expand");
+        for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(ctx.width);
       }
     }
   });
@@ -400,8 +329,9 @@ describe("block builders", () => {
     expect(item).toBeDefined();
     const lines = buildThinkingLines(ctx, item as never);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("thinking");
-    expect(lines[0]).toContain("Ctrl+T to expand");
+    expect(stripAnsi(lines[0]!)).toContain("Reasoning");
+    expect(stripAnsi(lines[0]!)).toContain("+ click to expand");
+    expect(stripAnsi(lines[0]!)).toContain("Ctrl+T");
   });
 
   it("expands thinking when the global toggle is on", () => {
@@ -410,7 +340,7 @@ describe("block builders", () => {
     const item = transcriptItems(state).find((i) => i.kind === "thinking");
     const lines = buildThinkingLines(ctx, item as never);
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[0]).toContain("Ctrl+T to hide");
+    expect(stripAnsi(lines[0]!)).toContain("- click to collapse");
   });
 });
 
@@ -426,20 +356,18 @@ describe("NoticeBlock (hydrated history only)", () => {
     text: "provider fell back to nvidia because the primary key was rate limited",
   };
 
-  it("renders a fixed-width plate and a 7-column body", () => {
+  it("uses a sparse warning bullet and aligned body", () => {
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 48 }));
     const lines = buildNoticeLines(ctx, notice);
-    expect(lines[0]).toContain("WARN");
+    expect(stripAnsi(lines[0]!)).toContain("⚠ provider");
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[1]!.startsWith("       ")).toBe(true);
+    expect(stripAnsi(lines[1]!).startsWith("  ")).toBe(true);
     for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(ctx.width);
   });
 
-  it("keeps the plate width identical across levels", () => {
+  it("aligns notice text across levels without plates", () => {
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80, colorMode: "none" }));
-    const widths = (["info", "warn", "error"] as const).map(
-      (level) => buildNoticeLines(ctx, { ...notice, level, text: "x" })[0]!.indexOf("x"),
-    );
+    const widths = (["info", "warn", "error"] as const).map((level) => buildNoticeLines(ctx, { ...notice, level, text: "x" })[0]!.indexOf("x"));
     expect(new Set(widths).size).toBe(1);
   });
 });

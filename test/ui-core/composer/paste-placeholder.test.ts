@@ -48,7 +48,7 @@ describe("pasteChipLabel / pastePreviewLines", () => {
 describe("PasteRegistry", () => {
   it("never recursively expands placeholder-like text inside a pasted transcript", () => {
     const registry = new PasteRegistry();
-    const a = registry.register("Pasted log mentions [3 chars pasted #2] verbatim");
+    const a = registry.register("Pasted log mentions [3 chars pasted #2 · Ctrl+E] verbatim");
     const b = registry.register("BBB");
     expect(registry.expand(`${a.token} ${b.token}`)).toBe(`${a.text} BBB`);
   });
@@ -58,7 +58,17 @@ describe("PasteRegistry", () => {
     expect(entry.lines).toBe(3);
     expect(entry.chars).toBe(5);
     expect(entry.label).toBe("3 lines pasted");
-    expect(entry.token).toContain("3 lines pasted");
+    expect(entry.token).toBe("[3 lines pasted #1 · Ctrl+E]");
+  });
+
+  it("includes the inline shortcut for character-count chips and never submits it", () => {
+    const registry = new PasteRegistry();
+    const entry = registry.register("x".repeat(1_200));
+    expect(entry.token).toBe("[1200 chars pasted #1 · Ctrl+E]");
+    expect(registry.expand(entry.token)).toBe(entry.text);
+    const edited = entry.token.replace("1200", "1201");
+    expect(registry.expand(edited)).toBe(edited);
+    expect(registry.expand("[1200 chars pasted #1]")).toBe("[1200 chars pasted #1]");
   });
 
   it("assigns increasing ids across registrations", () => {

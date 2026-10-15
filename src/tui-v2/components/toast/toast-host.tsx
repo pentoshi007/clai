@@ -11,7 +11,7 @@ import type {
 import { TOAST_ENTER_MS } from "../../../ui-core/controllers/toast-controller.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { useToastState } from "../../../ui-core/react/use-toast.js";
-import { fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
+import { centerChromeRow, fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
 import {
   TOAST_BOX_HEIGHT,
@@ -143,10 +143,7 @@ export function wrapToastBody(
 
 export function padToastLines(bodyLines: string[], chipWidth: number): string[] {
   const inner = Math.max(1, chipWidth - H_PAD * 2);
-  return bodyLines.map((line) => {
-    const clipped = line.length > inner ? line.slice(0, inner) : line;
-    return `${" ".repeat(H_PAD)}${clipped.padEnd(inner)}${" ".repeat(H_PAD)}`;
-  });
+  return bodyLines.map((line) => centerChromeRow(fitOneLine([line.trim()], inner), chipWidth));
 }
 
 function ToastPill(props: {
@@ -239,7 +236,7 @@ function ToastHostImpl(props: ToastHostProps): ReactNode {
     return (
       <text
         selectable={false}
-        content={fitOneLine([`${levelGlyph(item.level)} ${item.message.replace(/\s+/g, " ")}`], size.width)}
+        content={centerChromeRow(`${levelGlyph(item.level)} ${item.message.replace(/\s+/g, " ")}`, size.width)}
         style={{
           position: "absolute", top: 0, left: size.marginX, width: size.width, height: 1,
           zIndex: 1000, fg: theme.white, bg: levelPlate(item.level, theme),
@@ -248,7 +245,7 @@ function ToastHostImpl(props: ToastHostProps): ReactNode {
     );
   }
 
-  const maxWidth = Math.max(20, Math.min(termWidth - 4, Math.floor(termWidth * 0.85)));
+  const maxWidth = Math.min(Math.max(1, termWidth), Math.max(20, Math.min(termWidth - 4, Math.floor(termWidth * 0.85))));
   const ordered = [...items].reverse();
 
   const maxStack = Math.max(

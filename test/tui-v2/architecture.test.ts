@@ -48,6 +48,7 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "components", "transcript", "intro-card.tsx"),
   join(tuiV2Root, "components", "completion", "completion-menu.tsx"),
   join(tuiV2Root, "components", "status", "status-line.tsx"),
+  join(tuiV2Root, "components", "status", "jump-to-latest.tsx"),
   join(tuiV2Root, "components", "status", "context-limit-chip.tsx"),
   join(tuiV2Root, "components", "queue", "queue-panel.tsx"),
   join(tuiV2Root, "components", "picker", "picker.tsx"),

@@ -3,6 +3,7 @@ import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
 import { requestTokenCalibration } from "../llm/token-estimate-calibration.js";
 import type { ChatMessage, ProviderId } from "../types.js";
 import { compactionRecencyAnchors } from "./context/compaction-recent-history.js";
+import { collectWorkHistory, compactionWorkHistoryAnchors } from "./context/compaction-work-history.js";
 import {
   compactionInstructionAnchors,
   USER_INSTRUCTION_COMPACTION_GUIDANCE,
@@ -25,7 +26,8 @@ Rules:
 - PHASE AWARENESS: gather-only/await-accept gates become HISTORICAL only after observed acceptance ends that scope. Current research-only/no-implementation boundaries remain active. Compaction never grants approval.
 - Latest steering and outstanding objectives both matter. Completed plans do not authorize reopening old tasks; follow-up questions do not cancel unfinished commitments.
 - Never copy secrets into memory; refer to user credentials by purpose. The DURABLE WORK ENVELOPE carries them separately.
-- Record each useful fact once. Omit routine completed history, tool dumps, and repeated plan/state blocks. Follow the user prompt's phase-specific length target; finish every section without padding, code fences, or transcript replay.`;
+- Preserve every user workstream, including unrelated completed work, with its lasting result, useful evidence, and unresolved commitments. Give the latest unfinished work the most detail; do not confuse recency with permission to forget older work.
+- Record each useful fact once. Omit raw tool dumps and repeated plan/state blocks. Follow the user prompt's phase-specific length target; finish every section without padding, code fences, or transcript replay.`;
 
 export interface CompactionPromptParts {
   visualTranscript?: string | undefined;
@@ -34,6 +36,7 @@ export interface CompactionPromptParts {
   purpose?: "default" | "plan-implement" | undefined;
   recencyAnchors?: string | undefined;
   instructionAnchors?: string | undefined;
+  workHistoryAnchors?: string | undefined;
 }
 
 export function buildCompactionUserPrompt(parts: CompactionPromptParts): string {
@@ -134,6 +137,10 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
     "",
     USER_INSTRUCTION_COMPACTION_GUIDANCE,
     "",
+    "WORKSTREAM COVERAGE (correctness-critical):",
+    "- Cover every user workstream, oldest to newest, including unrelated completed topics and earlier unfinished commitments. Preserve each lasting result or actual answer, observed verification, important paths, and status; do not invent completion from a response or a tool request.",
+    "- The application appends a bounded Session work history (preserved) ledger. Do not reproduce that section; add mechanism-level context and unresolved dependencies that its excerpts cannot express, with the most detail for the latest unfinished work.",
+    "",
     "RECENCY (correctness-critical):",
     "- Read to the END, including the latest tool call and answer. Record the LATEST observed state; choices reverted, replaced, or abandoned are superseded, with reasons.",
     "- NEVER list completed work under Remaining work or In flight. Retain genuine outstanding commitments; omit speculative to-dos and ambiguous old approvals. Say explicitly when nothing remains.",
@@ -153,6 +160,7 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
   }
 
   if (parts.instructionAnchors) sections.push("", parts.instructionAnchors);
+  if (parts.workHistoryAnchors) sections.push("", "WORKSTREAM EVIDENCE (historical excerpts; reconcile against newer observations):", parts.workHistoryAnchors);
 
   sections.push("", "SESSION MATERIAL:", "", transcript);
   if (parts.recencyAnchors) sections.push("", parts.recencyAnchors);
@@ -163,7 +171,10 @@ export function buildDirectCompactionPrompt(input: {
   readonly durableState?: string | undefined;
   readonly purpose?: "default" | "plan-implement" | undefined;
   readonly messages?: readonly ChatMessage[] | undefined;
+  readonly workHistoryAnchors?: string | undefined;
 }): string {
+  const workHistoryAnchors = input.workHistoryAnchors ??
+    (input.messages ? compactionWorkHistoryAnchors(collectWorkHistory(input.messages)) : "");
   return buildCompactionUserPrompt({
     messageTranscript:
       "The session material is the entire conversation above this instruction, up to and including the most recent turn. Summarize all of it; do not treat this instruction as session content.",
@@ -171,6 +182,7 @@ export function buildDirectCompactionPrompt(input: {
     ...(input.purpose ? { purpose: input.purpose } : {}),
     ...(input.messages ? { recencyAnchors: compactionRecencyAnchors(input.messages) } : {}),
     ...(input.messages ? { instructionAnchors: compactionInstructionAnchors(input.messages) } : {}),
+    workHistoryAnchors,
   });
 }
 
@@ -269,6 +281,7 @@ export function buildCompactionReducePrompt(input: {
   readonly purpose?: "default" | "plan-implement" | undefined;
   readonly recencyAnchors?: string | undefined;
   readonly instructionAnchors?: string | undefined;
+  readonly workHistoryAnchors?: string | undefined;
 }): string {
   const merged = input.partials
     .map((part, index) => `REGION ${index + 1}:\n${part}`)
@@ -279,6 +292,7 @@ export function buildCompactionReducePrompt(input: {
     ...(input.purpose ? { purpose: input.purpose } : {}),
     ...(input.recencyAnchors ? { recencyAnchors: input.recencyAnchors } : {}),
     ...(input.instructionAnchors ? { instructionAnchors: input.instructionAnchors } : {}),
+    ...(input.workHistoryAnchors ? { workHistoryAnchors: input.workHistoryAnchors } : {}),
   });
 }
 

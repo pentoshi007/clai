@@ -117,6 +117,25 @@ describe("CSI, SS3, and CSI-u", () => {
   it("never leaks a CSI-u sequence as text", () => {
     for (const key of keys("\x1b[13;2u")) expect(key.text).not.toContain("\x1b");
   });
+
+  it("decodes xterm modifyOtherKeys without confusing navigation keys", () => {
+    expect(onlyKey("\x1b[27;5;122~")).toMatchObject({ name: "z", ctrl: true, text: "" });
+    expect(onlyKey("\x1b[27;3;113~")).toMatchObject({ name: "q", alt: true, text: "" });
+    expect(onlyKey("\x1b[27;2;13~")).toMatchObject({ name: "enter", shift: true });
+    expect(onlyKey("\x1b[3;5~")).toMatchObject({ name: "delete", ctrl: true });
+    expect(keys("\x1b[27;5~")).toEqual([]);
+    expect(keys("\x1b[27;5;-1~")).toEqual([]);
+    expect(keys("\x1b[27;5;1114112~")).toEqual([]);
+  });
+
+  it("buffers a modified Ctrl+Z split at every byte boundary", () => {
+    const sequence = "\x1b[27;5;122~";
+    for (let split = 1; split < sequence.length; split += 1) {
+      const decoder = new RawDecoder();
+      const events = [...decoder.push(sequence.slice(0, split)), ...decoder.push(sequence.slice(split)), ...decoder.flush()];
+      expect(events).toEqual([{ type: "key", key: expect.objectContaining({ name: "z", ctrl: true, text: "" }) }]);
+    }
+  });
 });
 
 describe("unknown sequences are dropped, never turned into text", () => {
