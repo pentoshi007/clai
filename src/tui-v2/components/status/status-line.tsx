@@ -332,10 +332,14 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
   );
   const jumpLabel = jumpToLatestLabel(width >= 100 ? 20 : 10, true);
   const showJump = awayFromLatest && props.allowJumpToLatest !== false && onJumpBottom !== undefined;
-  const jumpControl = showJump ? <JumpToLatest label={jumpLabel} theme={theme} onJump={() => {
-    onJumpBottom();
-    onFocusComposer?.();
-  }} /> : null;
+  const jumpControl = showJump ? (
+    <box id="status-jump-slot" style={{ flexDirection: "row", flexGrow: 1, flexShrink: 1, minWidth: renderColumns(jumpLabel), justifyContent: "center" }}>
+      <JumpToLatest label={jumpLabel} theme={theme} onJump={() => {
+        onJumpBottom();
+        onFocusComposer?.();
+      }} />
+    </box>
+  ) : null;
   const cwdWidth = cwdViewportWidth(
     Math.max(0, width - (showJump ? renderColumns(jumpLabel) + 2 : 0)),
     density,
@@ -455,7 +459,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             </>
           ) : null}
         </box>
-        {jumpControl}
         <box
           style={{
             flexDirection: "row",
@@ -463,27 +466,30 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             flexGrow: 1,
             flexShrink: 1,
             flexBasis: 0,
-            minWidth: 0,
+            minWidth: showJump ? renderColumns(jumpLabel) : 0,
             overflow: "hidden",
             justifyContent: "flex-end",
           }}
         >
-          {cwdWidth > 0 ? (
-            <CwdViewport
-              content={cwdDisplay}
-              width={cwdWidth}
-              theme={theme}
-            />
-          ) : null}
-          {gitBranch ? (
-            <text
-              selectable={false}
-              id="status-git-branch"
-              content={` \ue0a0 ${gitBranch}`}
-              wrapMode="none"
-              style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
-            />
-          ) : null}
+          {jumpControl}
+          <box style={{ flexDirection: "row", flexShrink: 1, minWidth: 0, maxWidth: showJump ? "50%" : "100%", overflow: "hidden", justifyContent: "flex-end" }}>
+            {cwdWidth > 0 ? (
+              <CwdViewport
+                content={cwdDisplay}
+                width={cwdWidth}
+                theme={theme}
+              />
+            ) : null}
+            {gitBranch ? (
+              <text
+                selectable={false}
+                id="status-git-branch"
+                content={` \ue0a0 ${gitBranch}`}
+                wrapMode="none"
+                style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
+              />
+            ) : null}
+          </box>
         </box>
         {ctxChip ? (
           <ContextLimitChip
@@ -637,9 +643,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           </>
         ) : null}
       </box>
-      {jumpControl}
-
-      {}
       <box
         style={{
           flexDirection: "row",
@@ -647,27 +650,30 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           flexGrow: 1,
           flexShrink: 1,
           flexBasis: 0,
-          minWidth: 0,
+          minWidth: showJump ? renderColumns(jumpLabel) : 0,
           overflow: "hidden",
           justifyContent: "flex-end",
         }}
       >
-        {cwdWidth > 0 ? (
-          <CwdViewport
-            content={cwdDisplay}
-            width={cwdWidth}
-            theme={theme}
-          />
-        ) : null}
-        {gitBranch ? (
-          <text
-            selectable={false}
-            id="status-git-branch"
-            content={` \ue0a0 ${gitBranch}`}
-            wrapMode="none"
-            style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
-          />
-        ) : null}
+        {jumpControl}
+        <box style={{ flexDirection: "row", flexShrink: 1, minWidth: 0, maxWidth: showJump ? "50%" : "100%", overflow: "hidden", justifyContent: "flex-end" }}>
+          {cwdWidth > 0 ? (
+            <CwdViewport
+              content={cwdDisplay}
+              width={cwdWidth}
+              theme={theme}
+            />
+          ) : null}
+          {gitBranch ? (
+            <text
+              selectable={false}
+              id="status-git-branch"
+              content={` \ue0a0 ${gitBranch}`}
+              wrapMode="none"
+              style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
+            />
+          ) : null}
+        </box>
       </box>
       {ctxChip ? (
         <ContextLimitChip
