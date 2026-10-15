@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runUpdateCommand } from "../src/commands/update/process.js";
-import { windowsUpdateScript, type WindowsUpdateTask } from "../src/commands/update/windows-stage.js";
+import { windowsUpdateScript, windowsWorkerLaunch, type WindowsUpdateTask } from "../src/commands/update/windows-stage.js";
 
 const powershell = process.platform === "win32" ? "powershell.exe" : process.env.CLAI_TEST_POWERSHELL;
 const roots: string[] = [];
@@ -32,7 +32,15 @@ function receiptAt(status: string): { state: string; message: string } {
   if (!data || typeof data !== "object" || !("state" in data) || typeof data.state !== "string" || !("message" in data) || typeof data.message !== "string") throw new Error("invalid worker receipt");
   return { state: data.state, message: data.message };
 }
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    for (const name of readdirSync(root).filter((entry) => entry.startsWith("clai-update-stage-"))) {
+      const stage = join(root, name);
+      if (existsSync(stage)) writeFileSync(join(stage, "cancel"), "cancel");
+    }
+    rmSync(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  }
+});
 
 describe.skipIf(!powershell)("actual PowerShell worker execution on the host", () => {
   it("promotes an actual executable, verifies it and cleans staging", async () => {
@@ -113,6 +121,16 @@ describe.skipIf(!powershell)("actual PowerShell worker execution on the host", (
 const hasBun = process.platform === "win32" && spawnSync("bun", ["--version"], { windowsHide: true }).status === 0;
 
 describe.skipIf(process.platform !== "win32")("native Windows staging handshake and owner exit", () => {
+  it("captures pre-acknowledgement failures inside the worker without keeping launcher pipes open", async () => {
+    const root = mkdtempSync(join(tmpdir(), "clai-bootstrap's & %fixture%-")); roots.push(root);
+    const script = join(root, "invalid.ps1");
+    const startupError = join(root, "startup-error.log");
+    writeFileSync(script, "throw 'worker bootstrap failed'", "utf8");
+    await runUpdateCommand(windowsWorkerLaunch(script, startupError), { timeoutMs: 15_000 });
+    await expect.poll(() => existsSync(startupError) ? readFileSync(startupError, "utf8").replace(/^\uFEFF/, "") : "", { timeout: 10_000 })
+      .toContain("worker bootstrap failed");
+  }, 30_000);
+
   for (const runtime of ["node", "standalone"] as const) {
     it.skipIf(runtime === "standalone" && !hasBun)(`acknowledges and applies after the ${runtime} owner exits`, async () => {
       const root = mkdtempSync(join(tmpdir(), "clai-stage's & %fixture%-")); roots.push(root);
@@ -124,20 +142,18 @@ describe.skipIf(process.platform !== "win32")("native Windows staging handshake 
       const command = runtime === "node"
         ? { file: process.execPath, args: ["--import", "tsx", fixturePath, root, process.execPath, version] }
         : { file: executable, args: [root, process.execPath, version] };
-      const output = await runUpdateCommand({ ...command, env: { TEMP: root, TMP: root, TMPDIR: root } }, { timeoutMs: 90_000 });
+      const output = await runUpdateCommand({ ...command, env: { TEMP: root, TMP: root, TMPDIR: root } }, { timeoutMs: 90_000 }).catch((error: unknown) => {
+        const receipts = readdirSync(root).filter((name) => name.startsWith("clai-update-status-") && /(?:\.json|\.log)$/.test(name))
+          .map((name) => `${name}: ${readFileSync(join(root, name), "utf8").slice(0, 1000)}`).join("; ");
+        throw new Error(`${error instanceof Error ? error.message : String(error)}; worker diagnostics: ${receipts || "no receipts"}`);
+      });
       const receipt: unknown = JSON.parse(output);
       if (!receipt || typeof receipt !== "object" || !("status" in receipt) || typeof receipt.status !== "string") throw new Error("missing stage receipt");
       const status = receipt.status;
       await expect.poll(() => receiptAt(status), { timeout: 20_000 }).toMatchObject({ state: "applied" });
       expect(readFileSync(join(root, "applied.txt"), "utf8")).toBe("applied after owner exit");
       await expect.poll(() => readdirSync(root).filter((name) => name.startsWith("clai-update-stage-")), { timeout: 10_000 }).toEqual([]);
-      for (const suffix of ["stdout.log", "stderr.log"]) expect(existsSync(`${status}.${suffix}`)).toBe(true);
-      await expect.poll(() => {
-        try {
-          for (const suffix of ["stdout.log", "stderr.log"]) rmSync(`${status}.${suffix}`, { force: true });
-          return true;
-        } catch { return false; }
-      }, { timeout: 10_000 }).toBe(true);
+      expect(existsSync(`${status}.startup-error.log`)).toBe(false);
     }, 120_000);
   }
 });

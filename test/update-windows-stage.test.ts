@@ -2,8 +2,8 @@ import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { stageWindowsUpdate, type WindowsUpdateTask } from "../src/commands/update/windows-stage.js";
-import { runUpdateCommand } from "../src/commands/update/process.js";
+import { stageWindowsUpdate, windowsWorkerLaunch, type WindowsUpdateTask } from "../src/commands/update/windows-stage.js";
+import { runUpdateCommand, type UpdateCommand } from "../src/commands/update/process.js";
 
 const state = vi.hoisted(() => ({ mode: "ack", directories: [] as string[], statuses: [] as string[], spawns: 0 }));
 function taskFrom(script: string): { stage: string; status: string } {
@@ -14,11 +14,16 @@ function taskFrom(script: string): { stage: string; status: string } {
   state.directories.push(data.stage); state.statuses.push(data.status);
   return { stage: data.stage, status: data.status };
 }
+function bootstrapFrom(command: UpdateCommand): string {
+  const match = /-EncodedCommand ([A-Za-z0-9+/=]+)/.exec(command.args.at(-1)!);
+  if (!match?.[1]) throw new Error("missing encoded worker bootstrap");
+  return Buffer.from(match[1], "base64").toString("utf16le");
+}
 function acknowledge(script: string): void {
   const data = taskFrom(script);
   if (state.mode === "ack") writeFileSync(join(data.stage, "ready"), "ready");
   if (state.mode === "slow") setTimeout(() => writeFileSync(join(data.stage, "ready"), "ready"), 20_000);
-  if (state.mode === "startup-error") writeFileSync(`${data.status}.stderr.log`, "PowerShell startup parser error");
+  if (state.mode === "startup-error") writeFileSync(`${data.status}.startup-error.log`, "PowerShell startup parser error");
   if (state.mode === "failed") { writeFileSync(data.status, '{"state":"failed","message":"worker failed"}'); rmSync(data.stage, { recursive: true, force: true }); }
 }
 vi.mock("node:child_process", () => ({ spawn: (_file: string, args: readonly string[], options: { detached?: boolean }) => {
@@ -35,15 +40,14 @@ vi.mock("../src/commands/update/process.js", async (original) => ({ ...await ori
 const task: WindowsUpdateTask = { kind: "commands", commands: [], verification: { file: process.execPath, args: ["--version"] }, version: "9.9.9", allowNewer: false };
 beforeEach(() => {
   vi.mocked(runUpdateCommand).mockImplementation(async (command) => {
-    const text = command.args.at(-1)!;
-    const match = /-File "([^"]+)"/.exec(text.replace(/''/g, "'"));
+    const match = /try \{ & '((?:[^']|'')+)' \}/.exec(bootstrapFrom(command));
     if (!match?.[1]) throw new Error("missing worker launch script");
-    acknowledge(match[1]);
+    acknowledge(match[1].replace(/''/g, "'"));
     return "";
   });
 });
 afterEach(() => {
-  const receipts = state.statuses.splice(0).flatMap((path) => [path, `${path}.stdout.log`, `${path}.stderr.log`]);
+  const receipts = state.statuses.splice(0).flatMap((path) => [path, `${path}.startup-error.log`]);
   for (const path of [...state.directories.splice(0), ...receipts]) rmSync(path, { recursive: true, force: true });
   state.mode = "ack"; state.spawns = 0; vi.resetAllMocks(); vi.useRealTimers();
 });
@@ -57,9 +61,19 @@ describe("Windows staged-worker acceptance", () => {
     expect(state.spawns).toBe(0);
     const command = vi.mocked(runUpdateCommand).mock.calls[0]![0];
     expect(command.args.at(-1)).toContain("Start-Process -WindowStyle Hidden");
-    expect(command.args.at(-1)).not.toContain("-Verb RunAs");
-    expect(command.args.at(-1)).toContain("-RedirectStandardError");
-    expect(command.args.at(-1)).toContain("-RedirectStandardOutput");
+    expect(command.args.at(-1)).toContain("-Verb Open");
+    expect(command.args.at(-1)).not.toContain("-RedirectStandardError");
+    expect(command.args.at(-1)).not.toContain("-RedirectStandardOutput");
+    expect(bootstrapFrom(command)).toContain(".startup-error.log");
+  });
+  it("encodes startup error reporting inside the independent worker without inheriting bootstrap pipes", () => {
+    const script = "C:\\User's & %TEMP%\\界\\apply.ps1";
+    const error = "C:\\User's & %TEMP%\\界\\startup.log";
+    const launch = windowsWorkerLaunch(script, error);
+    expect(bootstrapFrom(launch)).toContain("try { & 'C:\\User''s & %TEMP%\\界\\apply.ps1' }");
+    expect(bootstrapFrom(launch)).toContain("Set-Content -LiteralPath 'C:\\User''s & %TEMP%\\界\\startup.log' -Encoding UTF8");
+    expect(launch.args.at(-1)).toContain("-Verb Open");
+    expect(launch.args.at(-1)).not.toContain("-RedirectStandard");
   });
   it("returns a receipt only after readiness and uses a new receipt for each attempt", async () => {
     const first = await stageWindowsUpdate(task);
@@ -100,9 +114,8 @@ describe("Windows staged-worker acceptance", () => {
   });
   it("reports captured PowerShell startup errors instead of an empty acknowledgement timeout", async () => {
     vi.useFakeTimers(); state.mode = "startup-error";
-    const result = expect(stageWindowsUpdate(task)).rejects.toThrow(/PowerShell startup parser error/);
-    await vi.advanceTimersByTimeAsync(60_100);
-    await result;
+    await expect(stageWindowsUpdate(task)).rejects.toThrow(/PowerShell startup parser error/);
+    expect(vi.getTimerCount()).toBe(0);
   });
   it("cancels while waiting for acknowledgement and cleans staging", async () => {
     vi.useFakeTimers(); state.mode = "none";
