@@ -8,14 +8,17 @@ import { getProviderKeys } from "../store/keys.js";
 import type { ProviderId } from "../types.js";
 import { ProviderError } from "./http.js";
 import { buildKeyAttemptPlan, isKeyRotatableError } from "./key-rotation.js";
-import type { ProviderAuth } from "./provider.js";
+import type { LlmProvider, ProviderAuth } from "./provider.js";
 import { isRetriableError, sleep } from "./routing/error-classification.js";
 import { authForSlot } from "./routing/provider-selection.js";
 import { getProvider, providerAuth } from "./router.js";
 
 const DISCOVERY_RECOVERY_WINDOW_MS = 15_000;
 const RIVER_AUTH_RECHECK_DELAYS_MS = [250, 750, 1_500] as const;
-const inFlight = new Map<string, Promise<string[]>>();
+const inFlight = new Map<
+  string,
+  { method: NonNullable<LlmProvider["listModels"]>; promise: Promise<string[]> }
+>();
 
 function discoveryEndpoints(provider: ProviderId): (string | undefined)[] {
   if (!providerUsesEndpoints(provider)) return [undefined];
@@ -82,17 +85,17 @@ async function fetchModelRoutes(
 
 export async function listProviderModels(provider: ProviderId): Promise<string[]> {
   const impl = getProvider(provider);
-  const listModels = impl.listModels?.bind(impl);
-  if (!listModels) return [];
+  const method = impl.listModels;
+  if (!method) return [];
   const routes = await discoveryRoutes(provider);
   const key = createHash("sha256").update(JSON.stringify([provider, routes])).digest("hex");
   const pending = inFlight.get(key);
-  if (pending) return pending;
-  const task = fetchModelRoutes(provider, routes, listModels);
-  inFlight.set(key, task);
+  if (pending && pending.method === method) return pending.promise;
+  const task = fetchModelRoutes(provider, routes, method.bind(impl));
+  inFlight.set(key, { method, promise: task });
   try {
     return await task;
   } finally {
-    inFlight.delete(key);
+    if (inFlight.get(key)?.promise === task) inFlight.delete(key);
   }
 }

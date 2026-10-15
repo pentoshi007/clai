@@ -8,6 +8,7 @@ import type { ProviderId } from "../../src/types.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import { clearModelCatalogFacts, resetReasoningKnowledge } from "../../src/llm/capabilities.js";
 import { prefetchProviderCatalog, resetCatalogPrefetchState } from "../../src/llm/catalog-prefetch.js";
+import { getProvider } from "../../src/llm/router.js";
 import { createCompositionRoot, type AppServices } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { handleModel, handleProvider, resolveModelsForProvider } from "../../src/ui-core/commands/picker-commands.js";
@@ -289,6 +290,26 @@ describe("live River model discovery recovery", () => {
     expect(first).toEqual({ models: liveModels, source: "live" });
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not join an in-flight discovery started with a different listModels binding", async () => {
+    state.keys = state.keys.slice(0, 1);
+    const gate = Promise.withResolvers<void>();
+    const fetchMock = vi.fn(async () => {
+      await gate.promise;
+      return catalog();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = resolveModelsForProvider("river");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const spy = vi.spyOn(getProvider("river"), "listModels").mockResolvedValue(["river-mocked-live"]);
+    try {
+      expect(await resolveModelsForProvider("river")).toEqual({ models: ["river-mocked-live"], source: "live" });
+    } finally {
+      gate.resolve();
+      spy.mockRestore();
+    }
+    expect(await first).toEqual({ models: liveModels, source: "live" });
   });
 
   it("does not coalesce catalogs across changed credentials", async () => {
