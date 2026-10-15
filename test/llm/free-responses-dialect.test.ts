@@ -72,7 +72,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
-      "https://opencode.ai/zen/v1/responses",
+      "https://opencode.ai/inference/v1/responses",
     );
     const request = fetchMock.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
@@ -81,12 +81,12 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
       messages?: unknown;
       max_output_tokens?: number;
       tools?: Array<{ name: string }>;
+      instructions?: string;
     };
     expect(body.model).toBe("muse-spark-1.2-contributor-free");
     expect(Array.isArray(body.input)).toBe(true);
-    expect(Array.isArray(body.tools)).toBe(true);
-    expect(body.tools?.some((t) => t.name === "read")).toBe(true);
-    expect(body.tools?.some((t) => t.name === "shell")).toBe(true);
+    expect(body.tools).toBeUndefined();
+    expect(body.instructions?.startsWith("You are a title generator.")).toBe(true);
     expect(body.messages).toBeUndefined();
     expect(typeof body.max_output_tokens).toBe("number");
     expect(result.text).toBe("hi there");
@@ -161,7 +161,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
-      "https://opencode.ai/zen/v1/responses",
+      "https://opencode.ai/inference/v1/responses",
     );
     const request = fetchMock.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
@@ -200,7 +200,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
-      "https://opencode.ai/zen/v1/chat/completions",
+      "https://opencode.ai/inference/v1/chat/completions",
     );
     const request = fetchMock.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
@@ -263,7 +263,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     expect(body.input).toBeUndefined();
   });
 
-  it("sanitizes toolChoice none so the Zen gateway receives auto", async () => {
+  it("strips tools and tool_choice when toolChoice is none", async () => {
     const fetchMock = jsonResponsesMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -287,8 +287,12 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     const request = fetchMock.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
       tool_choice?: string;
+      tools?: unknown[];
+      instructions?: string;
     };
-    expect(body.tool_choice).toBe("auto");
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.instructions?.startsWith("You are a title generator.")).toBe(true);
   });
 
   it("suppresses unexpected tool calls when tools were not requested", async () => {

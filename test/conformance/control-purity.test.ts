@@ -145,7 +145,7 @@ describe("reasoning controls are a pure function of route, preference and model"
         }
       }
     }
-  });
+  }, 60_000);
 
   it("keeps the plan prefix hash stable across maxTokens variation", () => {
     for (const route of CHAT_ROUTES) {

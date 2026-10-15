@@ -34,8 +34,28 @@ function success(url: string): Response {
   }), { headers: { "content-type": "application/json" } });
 }
 
+const OPENCODE_CATALOG = {
+  opencode: {
+    api: "https://opencode.ai/inference/v1",
+    models: {
+      "big-pickle": { id: "big-pickle", cost: { input: 0, output: 0 } },
+      "future-model-free": { id: "future-model-free", cost: { input: 0, output: 0 } },
+    },
+  },
+};
+
+function completionCalls(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.filter(([url]) => String(url) !== "https://models.opencode.ai/api.json");
+}
+
 function credentialMock() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "https://models.opencode.ai/api.json") {
+      return new Response(JSON.stringify(OPENCODE_CATALOG), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const authorization = new Headers(init?.headers).get("authorization");
     return authorization === `Bearer ${staleAuth.apiKey}` ? failure() : success(String(input));
   });
@@ -82,9 +102,9 @@ it.each(modes)("uses public access for unfamiliar and unprefixed Zen models in %
   for (const model of ["free-1/future-model-free", "future-model-free", "big-pickle"]) {
     expect((await run(mode, request(model))).result.text).toBe("OK");
   }
-  expect(fetchMock).toHaveBeenCalledTimes(3);
-  for (const [url, init] of fetchMock.mock.calls) {
-    expect(String(url)).toBe("https://opencode.ai/zen/v1/chat/completions");
+  expect(completionCalls(fetchMock)).toHaveLength(3);
+  for (const [url, init] of completionCalls(fetchMock)) {
+    expect(String(url)).toBe("https://opencode.ai/inference/v1/chat/completions");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer public");
   }
 });
@@ -96,7 +116,7 @@ it.each(modes)("preserves the prompt body and cache affinity across public %s ca
     await run(mode);
     await run(mode, request(), { apiKey: "another-stored-key" });
   });
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(completionCalls(fetchMock)).toHaveLength(2);
   const first = fetchMock.mock.calls[0]![1]!;
   const second = fetchMock.mock.calls[1]![1]!;
   expect(second.body).toBe(first.body);
@@ -110,7 +130,7 @@ it.each(modes)("uses keyless Kilo authentication from the first %s request despi
   vi.stubGlobal("fetch", fetchMock);
   const { result, onStatus } = await run(mode, request("free-2/future-model:free"));
   expect(result.text).toBe("OK");
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(completionCalls(fetchMock)).toHaveLength(2);
   for (const [url, init] of fetchMock.mock.calls) {
     expect(String(url)).toContain("https://api.kilo.ai/api/gateway/");
     expect(new Headers(init?.headers).has("authorization")).toBe(false);
@@ -245,7 +265,7 @@ it.each(modes)("needs only one generation admission for keyless Kilo in %s mode"
   const result = await runGenerationAttempt(req, { provider: "free", model, mode, reason: "initial" },
     async () => (await run(mode, req)).result);
   expect(result.text).toBe("OK");
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(completionCalls(fetchMock)).toHaveLength(2);
   expect(ledger.snapshot().attempts).toHaveLength(1);
   expect(ledger.snapshot().attempts[0]).toMatchObject({ outcome: "success", reason: "initial" });
 });

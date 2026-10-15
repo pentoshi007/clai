@@ -19,6 +19,15 @@ function jsonResponse(payload: unknown): Response {
   });
 }
 
+const OPENCODE_CATALOG_URL = "https://models.opencode.ai/api.json";
+
+function openCodeCatalog(freeIds: string[]) {
+  const models = Object.fromEntries(
+    freeIds.map((id) => [id, { id, cost: { input: 0, output: 0 } }]),
+  );
+  return { opencode: { api: "https://opencode.ai/inference/v1", models } };
+}
+
 function catalog(models: Record<string, unknown>) {
   return { opencode: { api: ZEN_BASE_URL, models } };
 }
@@ -196,6 +205,7 @@ describe("Free model context discovery", () => {
     let added = false;
     vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
       const url = String(input);
+      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["existing-free", ...(added ? [addedId] : [])]));
       if (url === CATALOG_URL) return jsonResponse(catalog({
         "existing-free": { limit: { context: 262_144, output: 32_768 } },
         ...(added ? { [addedId]: { limit: { context: 1_572_864, output: 49_152 } } } : {}),
@@ -233,6 +243,7 @@ describe("Free model context discovery", () => {
     const bodies: Array<{ model: string; max_tokens: number }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
+      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["output-cap-free"]));
       if (url === CATALOG_URL) return jsonResponse(catalog({
         "output-cap-free": { limit: { context: 1_048_576, output: 65_536 } },
       }));
@@ -290,13 +301,22 @@ describe("Free model context discovery", () => {
       ] });
       throw new Error(`Unexpected request: ${url}`);
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      if (String(input) === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["shared-free", "mimo-v2.6-flash-free"]));
+      return fetchMock(input as never);
+    }));
     const { freeProvider } = await import("../../src/llm/free.js");
     const { modelContextWindow, modelMaxOutputTokens, resolveContextWindow } = await import("../../src/llm/context-windows.js");
     const { clearModelCatalogFacts } = await import("../../src/llm/capabilities.js");
     const { reloadRememberedModelLimits } = await import("../../src/llm/model-limit-store.js");
     const ids = await freeProvider.listModels!({ apiKey: "private-source-credential" });
-    expect(ids).toEqual(["free-1/mimo-v2.6-flash-free", "free-1/shared-free", "free-2/shared-free"]);
+    const zenIds = ids.filter((id) => id.startsWith("free-1/"));
+    expect(zenIds).toContain("free-1/mimo-v2.6-flash-free");
+    expect(zenIds).toContain("free-1/shared-free");
+    expect(ids.filter((id) => id.endsWith("/shared-free"))).toEqual([
+      "free-1/shared-free",
+      "free-2/shared-free",
+    ]);
     expect(modelContextWindow("free-1/shared-free", "free")).toBe(1_048_576);
     expect(modelContextWindow("free-2/shared-free", "free")).toBe(262_144);
     expect(modelMaxOutputTokens("free", "free-2/shared-free")).toBe(32_768);

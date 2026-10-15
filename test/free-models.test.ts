@@ -5,16 +5,39 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   freeProvider,
   isKeylessModel,
+  resetFreeModelCacheForTesting,
   resolveFreeSource,
 } from "../src/llm/free.js";
+import { resetZenCatalogForTesting } from "../src/llm/zen-catalog.js";
 import { ProviderError } from "../src/llm/http.js";
 import { modelContextWindow } from "../src/llm/context-windows.js";
 import { modelCatalogFacts } from "../src/llm/capabilities.js";
 import { resetResponsesWireStatesForTesting } from "../src/llm/wire/responses-first.js";
+import { recoverZenIdentity } from "../src/llm/zen-session.js";
+
+vi.mock("../src/llm/zen-session.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  recoverZenIdentity: vi.fn(async () => true),
+}));
 
 const ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const KILO_MODELS_URL = "https://api.kilo.ai/api/gateway/models";
 const MODEL_LIMITS_URL = "https://models.dev/api.json";
+
+const OPENCODE_CATALOG_URL = "https://models.opencode.ai/api.json";
+const OPENCODE_FREE_IDS = ["big-pickle", "cat-jam-free", "muse-spark-1.3-contributor-free"];
+
+function openCodeCatalog(freeIds: string[]): Record<string, unknown> {
+  const models = Object.fromEntries([
+    ...freeIds.map((id) => [id, { id, cost: { input: 0, output: 0 } }]),
+    ["paid-model", { id: "paid-model", cost: { input: 1, output: 2 } }],
+  ]);
+  return { opencode: { api: "https://opencode.ai/inference/v1", models } };
+}
+
+function zenListedModels(liveIds: string[]): string[] {
+  return liveIds.filter((id) => OPENCODE_FREE_IDS.includes(id.replace(/^free-1\//, ""))).sort();
+}
 let isolatedDataDir: string | undefined;
 
 function catalogFetchMock(
@@ -33,6 +56,12 @@ function catalogFetchMock(
         },
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
+    if (url === OPENCODE_CATALOG_URL) {
+      return new Response(JSON.stringify(openCodeCatalog(OPENCODE_FREE_IDS)), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (url.includes("kilo.ai")) {
       return new Response(JSON.stringify({ data: kiloEntries }), {
         status: 200,
@@ -47,6 +76,11 @@ function catalogFetchMock(
 }
 
 describe("free provider (zen + kilo)", () => {
+  beforeEach(() => {
+    resetZenCatalogForTesting();
+    resetFreeModelCacheForTesting();
+  });
+
   afterEach(async () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -70,8 +104,8 @@ describe("free provider (zen + kilo)", () => {
       expect(isKeylessModel("free-1/mimo-v2.6-flash-free")).toBe(true);
     });
 
-    it("treats curated ids without the suffix as keyless", () => {
-      expect(isKeylessModel("big-pickle")).toBe(true);
+    it("treats a bare id as premium unless it carries the -free suffix", () => {
+      expect(isKeylessModel("big-pickle")).toBe(false);
     });
 
     it("treats other ids as premium", () => {
@@ -82,7 +116,6 @@ describe("free provider (zen + kilo)", () => {
 
     it("applies the zen rules to free-1/ prefixed ids", () => {
       expect(isKeylessModel("free-1/deepseek-v4-flash-free")).toBe(true);
-      expect(isKeylessModel("free-1/big-pickle")).toBe(true);
       expect(isKeylessModel("free-1/gpt-5")).toBe(false);
     });
 
@@ -126,8 +159,10 @@ describe("free provider (zen + kilo)", () => {
 
       const result = await freeProvider.listModels!({});
       expect(result).toEqual([
-        "free-1/deepseek-v4-flash-free",
-        "free-1/hy3-free",
+        ...zenListedModels([
+          "free-1/deepseek-v4-flash-free",
+          "free-1/hy3-free",
+        ]),
         "free-2/kilo-auto/free",
       ]);
 
@@ -136,7 +171,11 @@ describe("free provider (zen + kilo)", () => {
       expect(urls).toContain(KILO_MODELS_URL);
       for (const call of fetchMock.mock.calls) {
         const options = call[1] as RequestInit;
-        expect(options.headers).not.toHaveProperty("authorization");
+        if (String(call[0]).startsWith(ZEN_MODELS_URL)) {
+          expect(options.headers).toMatchObject({ authorization: "Bearer public" });
+        } else {
+          expect(options.headers).not.toHaveProperty("authorization");
+        }
       }
     });
 
@@ -154,8 +193,10 @@ describe("free provider (zen + kilo)", () => {
 
       const result = await freeProvider.listModels!({});
       expect(result).toEqual([
-        "free-1/deepseek-v4-flash-free",
-        "free-1/mimo-v2.5-free",
+        ...zenListedModels([
+          "free-1/deepseek-v4-flash-free",
+          "free-1/mimo-v2.5-free",
+        ]),
         "free-2/openrouter/free",
         "free-2/stepfun/step-3.7-flash:free",
       ]);
@@ -177,14 +218,36 @@ describe("free provider (zen + kilo)", () => {
       vi.stubGlobal("fetch", fetchMock);
 
       const models = await freeProvider.listModels!({ apiKey: "free-context-limit-test-key" });
-      expect(models).toEqual([
-        "free-1/context-model-free",
-        "free-2/context-model-free",
-      ]);
-      expect(modelCatalogFacts("free", "free-1/context-model-free")?.contextTokens).toBe(777_777);
+      expect(models).toContain("free-2/context-model-free");
+      expect(models.filter((id) => id.startsWith("free-1/"))).toEqual([]);
       expect(modelCatalogFacts("free", "free-2/context-model-free")?.contextTokens).toBe(444_444);
-      expect(modelContextWindow("free-1/context-model-free", "free")).toBe(777_777);
       expect(modelContextWindow("free-2/context-model-free", "free")).toBe(444_444);
+    });
+
+    it("lists the same free-1 models with a saved key as without one", async () => {
+      const zenIds = ["cat-jam-free", "muse-spark-1.3-contributor-free", "big-pickle", "nemotron-3-ultra-free"];
+      const withCatalog = (base: ReturnType<typeof catalogFetchMock>) =>
+        vi.fn(async (input: unknown, init?: RequestInit) => {
+          if (String(input) === OPENCODE_CATALOG_URL) {
+            return new Response(JSON.stringify(openCodeCatalog([...OPENCODE_FREE_IDS, "nemotron-3-ultra-free"])), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return base(input, init);
+        });
+      vi.stubGlobal("fetch", withCatalog(catalogFetchMock(zenIds, [])));
+      const keyed = await freeProvider.listModels!({ apiKey: "saved-user-key-123" });
+
+      resetZenCatalogForTesting();
+      resetFreeModelCacheForTesting();
+      vi.stubGlobal("fetch", withCatalog(catalogFetchMock(zenIds, [])));
+      const keyless = await freeProvider.listModels!({});
+
+      const freeOf = (ids: string[]) => ids.filter((id) => id.startsWith("free-1/")).sort();
+      expect(freeOf(keyed)).toEqual(freeOf(keyless));
+      expect(freeOf(keyed)).toContain("free-1/big-pickle");
+      expect(freeOf(keyed)).toContain("free-1/nemotron-3-ultra-free");
     });
 
     it("sends the Authorization header when a key is configured", async () => {
@@ -198,12 +261,14 @@ describe("free provider (zen + kilo)", () => {
       await freeProvider.listModels!({ apiKey: "zen-key-123" });
       for (const call of fetchMock.mock.calls) {
         const options = call[1] as RequestInit;
-        if (String(call[0]) === MODEL_LIMITS_URL) {
+        if (String(call[0]) === MODEL_LIMITS_URL || String(call[0]) === OPENCODE_CATALOG_URL) {
           expect(options.headers).not.toHaveProperty("authorization");
           continue;
         }
         expect(options.headers).toMatchObject({
-          authorization: "Bearer zen-key-123",
+          authorization: String(call[0]).startsWith(ZEN_MODELS_URL)
+            ? "Bearer public"
+            : "Bearer zen-key-123",
         });
       }
     });
@@ -222,7 +287,10 @@ describe("free provider (zen + kilo)", () => {
 
       vi.spyOn(Date, "now").mockReturnValue(time + 10_000);
       const result = await freeProvider.listModels!({});
-      expect(result).toEqual(["free-1/hy3-free", "free-2/kilo-auto/free"]);
+      expect(result).toEqual([
+        ...zenListedModels(["free-1/hy3-free"]),
+        "free-2/kilo-auto/free",
+      ]);
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
@@ -247,7 +315,23 @@ describe("free provider (zen + kilo)", () => {
       expect(fetchMock).toHaveBeenCalledTimes(6);
     });
 
-    it("falls back to the curated lists when the catalog fetches fail", async () => {
+    it("lists only zero-cost catalog models that Zen serves, with no stale or paid ids", async () => {
+      const fetchMock = catalogFetchMock(
+        ["cat-jam-free", "muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor-free", "glm-5.3", "big-pickle"],
+        [],
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      vi.spyOn(Date, "now").mockReturnValue(baseTime + 10 * 60 * 60 * 1000);
+
+      const result = await freeProvider.listModels!({});
+      expect(result.filter((id) => id.startsWith("free-1/"))).toEqual([
+        "free-1/big-pickle",
+        "free-1/cat-jam-free",
+        "free-1/muse-spark-1.3-contributor-free",
+      ]);
+    });
+
+    it("invents no free-1 ids when the catalog fetches fail", async () => {
       const fetchMock = vi.fn(async () => {
         throw new Error("network down");
       });
@@ -255,8 +339,7 @@ describe("free provider (zen + kilo)", () => {
       vi.spyOn(Date, "now").mockReturnValue(baseTime + 9 * 60 * 60 * 1000);
 
       const result = await freeProvider.listModels!({});
-      expect(result).toContain("free-1/deepseek-v4-flash-free");
-      expect(result).toContain("free-1/mimo-v2.6-flash-free");
+      expect(result.filter((id) => id.startsWith("free-1/"))).toEqual([]);
       expect(result).toContain("free-2/kilo-auto/free");
       expect(result).toContain(
         "free-2/nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -279,6 +362,22 @@ describe("free provider (zen + kilo)", () => {
           choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
         }), { status: 200, headers: { "content-type": "application/json" } });
       });
+    }
+
+    function catalogAwareCompletionMock(completion: ReturnType<typeof vi.fn>) {
+      return vi.fn(async (input: unknown, init?: RequestInit) => {
+        if (String(input) === OPENCODE_CATALOG_URL) {
+          return new Response(JSON.stringify(openCodeCatalog(OPENCODE_FREE_IDS)), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return completion(input, init);
+      });
+    }
+
+    function completionRequests(fetchMock: ReturnType<typeof vi.fn>) {
+      return fetchMock.mock.calls.filter(([input]) => String(input) !== OPENCODE_CATALOG_URL) as Array<[unknown, RequestInit?]>;
     }
 
     function sseCompletionMock() {
@@ -307,7 +406,7 @@ describe("free provider (zen + kilo)", () => {
 
       const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
-        "https://opencode.ai/zen/v1/chat/completions",
+        "https://opencode.ai/inference/v1/chat/completions",
       );
       expect(request.headers).toMatchObject({
         authorization: "Bearer public",
@@ -327,7 +426,7 @@ describe("free provider (zen + kilo)", () => {
       );
 
       expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
-        "https://opencode.ai/zen/v1/chat/completions",
+        "https://opencode.ai/inference/v1/chat/completions",
       );
       const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       const body = JSON.parse(String(request.body)) as { model?: string };
@@ -351,7 +450,7 @@ describe("free provider (zen + kilo)", () => {
       );
 
       expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
-        "https://opencode.ai/zen/v1/chat/completions",
+        "https://opencode.ai/inference/v1/chat/completions",
       );
       const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       const body = JSON.parse(String(request.body)) as {
@@ -455,7 +554,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("rejects a premium model without a key with a 402-style error", async () => {
-      const fetchMock = jsonCompletionMock();
+      const fetchMock = catalogAwareCompletionMock(jsonCompletionMock());
       vi.stubGlobal("fetch", fetchMock);
 
       const error = await freeProvider
@@ -471,7 +570,7 @@ describe("free provider (zen + kilo)", () => {
       expect(error).toBeInstanceOf(ProviderError);
       expect((error as ProviderError).status).toBe(402);
       expect((error as ProviderError).message).toMatch(/requires an API key/);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(completionRequests(fetchMock)).toHaveLength(0);
     });
 
     it("rejects a premium kilo model without a key with a 402-style error", async () => {
@@ -495,7 +594,7 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("allows a premium model and sends the key when one is configured", async () => {
-      const fetchMock = sseCompletionMock();
+      const fetchMock = catalogAwareCompletionMock(sseCompletionMock());
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
@@ -506,8 +605,8 @@ describe("free provider (zen + kilo)", () => {
         { apiKey: "zen-key-123" },
       );
 
-      const request = fetchMock.mock.calls[0]![1] as RequestInit;
-      expect(request.headers).toMatchObject({
+      const [completion] = completionRequests(fetchMock);
+      expect(completion?.[1]?.headers).toMatchObject({
         authorization: "Bearer zen-key-123",
       });
     });
@@ -532,7 +631,7 @@ describe("free provider (zen + kilo)", () => {
       expect(body.reasoning_effort).toBe("high");
     });
 
-    it("presents zen requests as the opencode client with fresh request ids", async () => {
+    it("presents zen requests as the opencode client with a registered session", async () => {
       const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
@@ -546,21 +645,19 @@ describe("free provider (zen + kilo)", () => {
       const first = fetchMock.mock.calls[0]![1] as Record<string, unknown>;
       const second = fetchMock.mock.calls[1]![1] as Record<string, unknown>;
       expect(first.headers).toMatchObject({
-        "user-agent": "opencode/2.0.8",
+        "user-agent": "opencode/latest/2.0.29/cli",
         "x-opencode-client": "cli",
         authorization: "Bearer public",
       });
       const firstHeaders = first.headers as Record<string, string>;
       const secondHeaders = second.headers as Record<string, string>;
-      expect(firstHeaders["x-opencode-session"]).toMatch(/^ses_[0-9a-fA-Za-z]+$/);
-      expect(firstHeaders["x-opencode-request"]).toMatch(/^msg_[0-9a-f]{32}$/);
+      expect(firstHeaders["x-opencode-session"]).toMatch(/^ses_[A-Za-z0-9]+$/);
+      expect(firstHeaders["x-opencode-session-id"]).toBe(firstHeaders["x-opencode-session"]);
+      expect(firstHeaders["x-session-affinity"]).toBe(firstHeaders["x-opencode-session"]);
+      expect(firstHeaders["x-session-id"]).toBe(firstHeaders["x-opencode-session"]);
+      expect(secondHeaders["x-opencode-session"]).toBe(firstHeaders["x-opencode-session"]);
       expect(firstHeaders).not.toHaveProperty("x-opencode-project");
-      expect(firstHeaders).not.toHaveProperty("x-session-affinity");
-      expect(firstHeaders).not.toHaveProperty("x-session-id");
-      expect(secondHeaders["x-opencode-request"]).toMatch(/^msg_[0-9a-f]{32}$/);
-      expect(secondHeaders["x-opencode-request"]).not.toBe(
-        firstHeaders["x-opencode-request"],
-      );
+      expect(firstHeaders).not.toHaveProperty("x-opencode-request");
     });
 
     it("presents kilo requests as the kilocode client", async () => {
@@ -583,7 +680,7 @@ describe("free provider (zen + kilo)", () => {
       expect(request.headers).not.toHaveProperty("authorization");
     });
 
-    it("injects read and shell tools into free-1 chat requests when none are provided", async () => {
+    it("sends tool-less free-1 chat requests without tools and with the title profile", async () => {
       const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
@@ -597,21 +694,25 @@ describe("free provider (zen + kilo)", () => {
 
       const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       const body = JSON.parse(String(request.body)) as {
-        tools?: Array<{ function?: { name?: string } }>;
+        tools?: unknown[];
+        messages: Array<{ role: string; content: string }>;
       };
-      const names = (body.tools ?? []).map((t) => t.function?.name);
-      expect(names).toContain("read");
-      expect(names).toContain("shell");
+      expect(body.tools).toBeUndefined();
+      expect(body.messages[0]!.role).toBe("system");
+      expect(body.messages[0]!.content.startsWith("You are a title generator.")).toBe(true);
     });
 
-    it("keeps existing tools and appends read and shell for free-1 chat requests", async () => {
+    it("swaps in the opencode agent profile for tool-bearing free-1 requests", async () => {
       const fetchMock = sseCompletionMock();
       vi.stubGlobal("fetch", fetchMock);
 
       await freeProvider.complete(
         {
           model: "mimo-v2.5-free",
-          messages: [{ role: "user", content: "hi" }],
+          messages: [
+            { role: "system", content: "Be terse." },
+            { role: "user", content: "hi" },
+          ],
           tools: [
             {
               name: "fs_read",
@@ -629,10 +730,58 @@ describe("free provider (zen + kilo)", () => {
       const body = JSON.parse(String(request.body)) as {
         tools?: Array<{ function?: { name?: string } }>;
         tool_choice?: unknown;
+        messages: Array<{ role: string; content: string }>;
       };
       const names = (body.tools ?? []).map((t) => t.function?.name);
-      expect(names).toEqual(expect.arrayContaining(["fs_read", "read", "shell"]));
+      expect(names).toEqual(
+        expect.arrayContaining(["read", "shell", "edit", "glob", "grep", "write"]),
+      );
       expect(body.tool_choice).toBe("auto");
+      expect(body.messages[0]!.role).toBe("system");
+      expect(body.messages[0]!.content.startsWith("You are an AI agent running in OpenCode")).toBe(true);
+      expect(body.messages[0]!.content.endsWith("Be terse.")).toBe(true);
+    });
+
+    it("routes tool-bearing muse-spark requests through the responses API with the agent profile", async () => {
+      const fetchMock = vi.fn(async (input: unknown) => {
+        if (String(input).endsWith("/responses")) {
+          return new Response(
+            'data: {"type":"response.output_text.delta","delta":"resp-ok"}\n\ndata: {"type":"response.completed","response":{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"resp-ok"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n',
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return new Response("nope", { status: 404 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/muse-spark-1.3-contributor-free",
+          messages: [{ role: "user", content: "hi" }],
+          tools: [
+            {
+              name: "fs_read",
+              wireName: "fs_read",
+              description: "Read a file",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+          toolChoice: "auto",
+        },
+        {},
+      );
+
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+        "https://opencode.ai/inference/v1/responses",
+      );
+      const body = JSON.parse(
+        String((fetchMock.mock.calls[0]![1] as RequestInit).body),
+      ) as {
+        instructions?: string;
+        tools?: Array<{ name?: string }>;
+      };
+      expect(body.instructions).toContain("You are an AI agent running in OpenCode");
+      expect((body.tools ?? []).map((t) => t.name)).toContain("read");
     });
 
     it("does not inject read and shell tools into free-2 chat requests", async () => {
@@ -682,7 +831,7 @@ describe("free provider (zen + kilo)", () => {
       expect(result.text).toBe("ok");
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(String(fetchMock.mock.calls[0]![0])).toBe(
-        "https://opencode.ai/zen/v1/chat/completions",
+        "https://opencode.ai/inference/v1/chat/completions",
       );
     });
 
@@ -731,6 +880,165 @@ describe("free provider (zen + kilo)", () => {
       expect(bodies[0]?.max_output_tokens).toBe(128);
       expect(JSON.stringify(bodies[0]?.input)).toContain("21 multiplied by 4");
       expect(JSON.stringify(bodies[1]?.input)).toContain("hi");
+    });
+
+    it("prepends the zen passport prompt to the leading system message", async () => {
+      const fetchMock = sseCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.5-free",
+          messages: [
+            { role: "system", content: "Be terse." },
+            { role: "user", content: "hi" },
+          ],
+        },
+        {},
+      );
+
+      const body = JSON.parse(
+        String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body),
+      ) as { messages: Array<{ role: string; content: string }> };
+      expect(body.messages[0]!.role).toBe("system");
+      expect(body.messages[0]!.content.startsWith("You are a title generator.")).toBe(true);
+      expect(body.messages[0]!.content.endsWith("Be terse.")).toBe(true);
+      expect(body.messages).toHaveLength(2);
+    });
+
+    it("injects the zen passport as a system message when none exists", async () => {
+      const fetchMock = sseCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.5-free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      const body = JSON.parse(
+        String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body),
+      ) as { messages: Array<{ role: string; content: string }> };
+      expect(body.messages[0]!.role).toBe("system");
+      expect(body.messages[0]!.content.startsWith("You are a title generator.")).toBe(true);
+      expect(body.messages[1]!.content).toBe("hi");
+    });
+
+    it("leaves free-2 messages untouched by the zen passport", async () => {
+      const fetchMock = jsonCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-2/kilo-auto/free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      const chatCall = fetchMock.mock.calls.find((call) =>
+        String(call[0]).endsWith("/chat/completions"),
+      );
+      const body = JSON.parse(String(chatCall![1]?.body)) as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      expect(body.messages[0]!.content).toBe("hi");
+    });
+
+    it("routes muse-spark through the zen responses API with passport instructions", async () => {
+      const fetchMock = vi.fn(async (input: unknown) => {
+        if (String(input).endsWith("/responses")) {
+          return new Response(
+            'data: {"type":"response.output_text.delta","delta":"resp-ok"}\n\ndata: {"type":"response.completed","response":{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"resp-ok"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n',
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return new Response("nope", { status: 404 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await freeProvider.complete(
+        {
+          model: "free-1/muse-spark-1.3-contributor-free",
+          messages: [
+            { role: "system", content: "Be terse." },
+            { role: "user", content: "hi" },
+          ],
+        },
+        {},
+      );
+
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+        "https://opencode.ai/inference/v1/responses",
+      );
+      const body = JSON.parse(
+        String((fetchMock.mock.calls[0]![1] as RequestInit).body),
+      ) as { instructions?: string; input?: unknown };
+      expect(body.instructions).toContain("You are a title generator.");
+      expect(body.instructions).toContain("Be terse.");
+      expect(JSON.stringify(body.input)).not.toContain("title generator");
+      expect(result.text).toBe("resp-ok");
+    });
+
+    it("retries once through a fresh zen identity when the free-tier gate rejects", async () => {
+      vi.mocked(recoverZenIdentity).mockClear();
+      const fetchMock = vi.fn(async () => {
+        if (vi.mocked(recoverZenIdentity).mock.calls.length === 0) {
+          return new Response(
+            JSON.stringify({
+              type: "error",
+              error: {
+                type: "FreeTierError",
+                message: "OpenCode's free tier can only be used from within OpenCode.",
+              },
+            }),
+            { status: 403, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.5-free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      expect(result.text).toBe("ok");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(recoverZenIdentity).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry non-gate 403 responses", async () => {
+      vi.mocked(recoverZenIdentity).mockClear();
+      const fetchMock = vi.fn(async () =>
+        new Response(
+          JSON.stringify({ error: { message: "invalid api key" } }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        ),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        freeProvider.complete(
+          {
+            model: "free-1/mimo-v2.5-free",
+            messages: [{ role: "user", content: "hi" }],
+          },
+          {},
+        ),
+      ).rejects.toBeInstanceOf(ProviderError);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(recoverZenIdentity).not.toHaveBeenCalled();
     });
   });
 });
