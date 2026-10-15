@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -155,21 +154,19 @@ export async function stageWindowsUpdate(task: WindowsUpdateTask, options: RunOp
     const encoded = Buffer.from(JSON.stringify({ task: stagedTask, stage, status, pid: process.pid, lockFile: options.lockFile, lockToken: options.lockToken })).toString("base64");
     const script = join(stage, "apply-update.ps1");
     writeFileSync(script, windowsUpdateScript(encoded));
-    if (elevated) {
-      const argumentsText = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${script}"`;
-      await runUpdateCommand({ file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", `Start-Process -Verb RunAs -WindowStyle Hidden -FilePath powershell.exe -ArgumentList ${psQuote(argumentsText)}`] }, { ...options, timeoutMs: 120_000 });
-    } else {
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], { detached: true, stdio: "ignore", windowsHide: true });
-        child.once("error", reject);
-        child.once("spawn", () => { child.unref(); resolve(); });
-      });
-    }
-    const deadline = Date.now() + 15_000;
+    const argumentsText = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${script}"`;
+    const launchOptions = elevated
+      ? "-Verb RunAs"
+      : `-RedirectStandardOutput ${psQuote(`${status}.stdout.log`)} -RedirectStandardError ${psQuote(`${status}.stderr.log`)}`;
+    await runUpdateCommand({ file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'; Start-Process -WindowStyle Hidden ${launchOptions} -FilePath powershell.exe -ArgumentList ${psQuote(argumentsText)}`] }, { ...options, timeoutMs: 120_000 });
+    const deadline = Date.now() + 60_000;
     while (!existsSync(join(stage, "ready"))) {
       throwIfCancelled(options.signal);
       if (Date.now() >= deadline || !existsSync(stage)) {
-        const failure = existsSync(status) ? readFileSync(status, "utf8") : "worker did not acknowledge the staged update";
+        const failure = [status, `${status}.stderr.log`]
+          .filter((path) => existsSync(path))
+          .map((path) => readFileSync(path, "utf8").replace(/^\uFEFF/, "").trim())
+          .find((message) => message.length > 0) ?? "worker did not acknowledge the staged update after 60 seconds";
         throw new Error(`could not stage Windows update: ${failure.slice(0, 500)}`);
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
