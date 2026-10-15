@@ -1,3 +1,5 @@
+import { appendFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { createElement } from "react";
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +8,11 @@ import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.js";
 import { createTurnOutcome } from "../../../src/agent/turn-outcome.js";
 import { SessionPromptStore } from "../../../src/store/session-prompts.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const { withWindowsAppendHandles } = await import("../../fixtures/windows-append-handles.js");
+  return withWindowsAppendHandles(await importOriginal<typeof import("node:fs/promises")>());
+});
 
 let harness: Harness | undefined;
 let view: ReturnType<typeof render> | undefined;
@@ -145,6 +152,33 @@ describe("Classic /prompts", () => {
     expect(frame()).not.toContain("Assistant-only response");
     expect(frame()).not.toContain("No user prompts have been sent");
     expect(await journal.count()).toBe(1);
+  });
+
+  it("submits, reloads, repairs and displays prompts with Windows append-handle restrictions", async () => {
+    const h = await mount(100, {
+      async runTurn(request, handlers) {
+        handlers.onMessages?.([{ role: "user", content: request.prompt }]);
+        return createTurnOutcome({ status: "succeeded", answer: "ok", steps: 1, remainingCriteria: [] });
+      },
+    });
+    expect((await h.services.session.submit("Windows saved request 界\nPreserve multiline input")).status).toBe("completed");
+    const journal = h.services.session.promptHistory;
+    await journal.flush();
+    await Promise.all([
+      appendFile(journal.path, "uncommitted body suffix"),
+      appendFile(join(dirname(journal.path), "metadata.jsonl"), "{incomplete"),
+      appendFile(join(dirname(journal.path), "offsets.bin"), Buffer.from([1, 2, 3])),
+    ]);
+    h.services.session.loadHistory([], { sessionId: journal.sessionId });
+    expect((await h.services.session.submit("Second Windows request after reload")).status).toBe("completed");
+    await open(h);
+    await expect.poll(frame).toContain("Windows saved request 界");
+    expect(frame()).toContain("Preserve multiline input");
+    h.wiring.handleData("\x1b[F");
+    await expect.poll(frame).toContain("Second Windows request after reload");
+    expect(frame()).not.toContain("uncommitted body suffix");
+    expect(h.toastTexts().join(" ")).not.toMatch(/EPERM|could not (?:save|load) session prompts/);
+    expect(await h.services.session.promptHistory.count()).toBe(2);
   });
 
   it("reports unavailable prompt storage without rejecting the slash command", async () => {

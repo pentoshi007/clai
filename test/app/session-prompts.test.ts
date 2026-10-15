@@ -6,6 +6,11 @@ import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import { getConfig, updateConfig } from "../../src/store/config.js";
 import type { ChatMessage } from "../../src/types.js";
 
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const { withWindowsAppendHandles } = await import("../fixtures/windows-append-handles.js");
+  return withWindowsAppendHandles(await importOriginal<typeof import("node:fs/promises")>());
+});
+
 const sessions: SessionController[] = [];
 const initialConfig = getConfig();
 
