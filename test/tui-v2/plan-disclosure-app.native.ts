@@ -67,13 +67,12 @@ function assertCoherentTitles(source: SessionPlan, selectedId?: string): void {
     if (row.y >= viewport.y + viewport.height || row.y + row.height <= viewport.y) continue;
     const header = taskScroll().content.findDescendantById(`plan-task-${task.id}-header`)!;
     assert.ok(header);
-    const clipped = header.height <= viewport.height && (header.y < viewport.y || header.y + header.height > viewport.y + viewport.height);
     for (const line of header.getChildren()) {
       const text = line.getChildren()[0];
       assert.ok(text instanceof TextRenderable);
       if (text.y < viewport.y || text.y >= viewport.y + viewport.height) continue;
       const rendered = Array.from(setup.captureCharFrame().split("\n")[text.y] ?? "").slice(text.x, text.x + text.width).join("");
-      assert.equal(rendered, clipped ? " ".repeat(text.width) : text.plainText, `Real App must show a complete ${task.id} title or no title fragment`);
+      assert.equal(rendered, text.plainText, `Real App must retain every visible ${task.id} title line at either viewport edge`);
     }
     if (header.height > viewport.height) continue;
     if (task.id === selectedId) assert.ok(header.y >= viewport.y && header.y + header.height <= viewport.y + viewport.height, `Real App must reveal the complete selected ${task.id} title`);

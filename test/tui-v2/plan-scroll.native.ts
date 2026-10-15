@@ -62,20 +62,18 @@ function scrollbox(): ScrollBoxRenderable {
   assert.ok(scroll instanceof ScrollBoxRenderable);
   return scroll;
 }
-function assertCoherentTop(): void {
+function assertVisibleTitles(): void {
   const scroll = scrollbox();
   for (const task of view.plan.tasks) {
     const row = node(`plan-task-${task.id}`);
     if (row.y >= scroll.viewport.y + scroll.viewport.height || row.y + row.height <= scroll.viewport.y) continue;
     const header = node(`plan-task-${task.id}-header`);
-    const fits = header.height <= scroll.viewport.height;
-    const clipped = fits && (header.y < scroll.viewport.y || header.y + header.height > scroll.viewport.y + scroll.viewport.height);
     for (const line of header.getChildren()) {
       const text = line.getChildren()[0];
       assert.ok(text instanceof TextRenderable);
       if (text.y < scroll.viewport.y || text.y >= scroll.viewport.y + scroll.viewport.height) continue;
       const rendered = Array.from(setup.captureCharFrame().split("\n")[text.y] ?? "").slice(text.x, text.x + text.width).join("");
-      assert.equal(rendered, clipped ? " ".repeat(text.width) : text.plainText, `Task ${task.id} must show a complete title or no title fragment at scrollTop=${scroll.scrollTop}`);
+      assert.equal(rendered, text.plainText, `Task ${task.id} must retain every visible title line at scrollTop=${scroll.scrollTop}`);
     }
   }
 }
@@ -103,15 +101,15 @@ try {
   await wheel("down");
   await wheel("down");
   await capture("scroll-dark-first-wheel");
-  assertCoherentTop();
+  assertVisibleTitles();
   for (let index = 0; index < 40; index++) {
     await wheel("down");
-    assertCoherentTop();
+    assertVisibleTitles();
   }
   await capture("scroll-dark-collapsed-bottom");
   for (let index = 0; index < 40; index++) {
     await wheel("up");
-    assertCoherentTop();
+    assertVisibleTitles();
   }
   assert.equal(scrollbox().scrollTop, 0, "Wheel scrolling must return to the beginning");
 
@@ -126,11 +124,11 @@ try {
   await settle(() => interactionRef.current!.moveSelection(-100));
   for (let index = 0; index < 6; index++) {
     await settle(() => interactionRef.current!.page(1));
-    assertCoherentTop();
+    assertVisibleTitles();
   }
   for (let index = 0; index < 6; index++) {
     await settle(() => interactionRef.current!.page(-1));
-    assertCoherentTop();
+    assertVisibleTitles();
   }
   assert.equal(scrollbox().scrollTop, 0, "PageUp must return to the beginning");
 
@@ -142,7 +140,7 @@ try {
     for (const match of setup.captureCharFrame().replace(/\s/g, "").matchAll(/Finding(t\d+:\d+)/g)) seenFindings.add(match[1]!);
     const position = scrollbox().scrollTop;
     await wheel("down");
-    assertCoherentTop();
+    assertVisibleTitles();
     if (scrollbox().scrollTop === position) break;
   }
   await capture("scroll-dark-expanded-bottom");
@@ -167,14 +165,14 @@ try {
       await rerender({ ...view, width, height, theme });
       for (let index = 0; index < 12; index++) {
         await wheel("down");
-        assertCoherentTop();
+        assertVisibleTitles();
       }
       await capture(`scroll-${theme}-expanded-${width}x${height}`);
       await settle(() => interactionRef.current!.setAllExpanded(false));
-      assertCoherentTop();
+      assertVisibleTitles();
       for (let index = 0; index < 8; index++) {
         await settle(() => interactionRef.current!.page(index < 4 ? 1 : -1));
-        assertCoherentTop();
+        assertVisibleTitles();
       }
       await capture(`scroll-${theme}-collapsed-${width}x${height}`);
       await settle(() => interactionRef.current!.setAllExpanded(true));
