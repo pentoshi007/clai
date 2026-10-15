@@ -8,10 +8,22 @@ import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js"
 import { transcriptScrollPort } from "../../src/tui-v2/components/transcript/transcript-scroll-port.js";
 import { EventSequencer, createCountingIdFactory } from "../../src/app/events/sequencer.js";
 import { asMessageId, asSessionId, asTurnId } from "../../src/app/events/app-event.js";
+import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 
-for (const width of [40, 80, 120]) {
+for (const width of [40, 52, 68, 80, 120]) {
+  let finish: (() => void) | undefined;
+  let active: Promise<void> | undefined;
   const services = createCompositionRoot({
     noHistory: true,
+    agent: {
+      async runTurn(_request, handlers) {
+        await new Promise<void>(resolve => {
+          finish = resolve;
+          handlers.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return createTurnOutcome({ status: "succeeded", answer: "done", steps: 0, remainingCriteria: [] });
+      },
+    },
     persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
     capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: width, rows: 32 }),
   });
@@ -28,19 +40,26 @@ for (const width of [40, 80, 120]) {
     await act(async () => { await action(); await setup.flush(); });
   }
   const button = () => setup.renderer.root.findDescendantById("jump-to-latest");
+  const assertNavigation = () => {
+    const target = button()!;
+    assert.ok(target.x >= 0 && target.x + target.width <= width, setup.captureCharFrame());
+    const row = setup.captureCharFrame().split("\n")[target.y]!;
+    assert.match(row, /AGENT/, "metadata does not displace the mode badge");
+    assert.match(row, /ctx 0/, "metadata does not displace the context chip");
+    if (width >= 80) {
+      assert.match(row.slice(0, target.x), /2(?: queued|q)/, "the jump control follows the queue hint");
+    }
+    return target;
+  };
   try {
     await settle();
     await act(async () => { await setup.waitForFrame(frame => frame.includes("END_239")); });
+    await act(async () => { await setup.waitFor(() => setup.renderer.root.findDescendantById("status-git-branch") !== undefined); });
     assert.equal(button(), undefined, "the latest view has no jump button");
     await settle(() => transcriptScrollPort.scrollToTop());
     await act(async () => { await setup.waitFor(() => button() !== undefined); });
     assert.ok(transcriptScrollPort.metrics.hasNewerContent, "an older mounted window still has newer content");
-    const target = button()!;
-    assert.ok(target.x >= 0 && target.x + target.width <= width, setup.captureCharFrame());
-    if (width >= 80) {
-      const row = setup.captureCharFrame().split("\n")[target.y]!;
-      assert.match(row.slice(0, target.x), /2(?: queued|q)/, "the jump control follows the queue hint");
-    }
+    const target = assertNavigation();
     await settle(() => setup.mockMouse.click(target.x + 1, target.y));
     await act(async () => { await setup.waitForFrame(frame => frame.includes("END_239") && !button()); });
     assert.equal(transcriptScrollPort.metrics.linesBelow, 0);
@@ -58,7 +77,11 @@ for (const width of [40, 80, 120]) {
     await act(async () => { await setup.waitFor(() => button() !== undefined); });
     await settle(() => setup.mockInput.pressKey("d", { ctrl: true }));
     await act(async () => { await setup.waitForFrame(frame => frame.includes("END_240") && !button()); });
-    await settle(() => transcriptScrollPort.scrollBy(-12));
+    await settle(() => { active = services.session.submit("Keep the native test turn running"); });
+    assert.equal(services.session.getState().running, true);
+    await settle(() => transcriptScrollPort.scrollToTop());
+    await act(async () => { await setup.waitFor(() => button() !== undefined); });
+    assertNavigation();
     await settle(() => setup.resize(68, 28));
     if (setup.captureCharFrame().includes("END_240")) assert.equal(button(), undefined, "resize hides the control if the latest row becomes visible");
     await settle(() => transcriptScrollPort.scrollBy(-36));
@@ -69,8 +92,14 @@ for (const width of [40, 80, 120]) {
     await act(async () => { await setup.waitForFrame(frame => frame.includes("END_240") && !button()); });
     assert.deepEqual(services.session.getState().queued, queued, "jumping and resizing preserve the queue");
   } finally {
-    await act(async () => { services.dispose(); setup.renderer.destroy(); });
+    await act(async () => {
+      while (services.session.getState().queued.length) services.session.removeQueued(0);
+      finish?.();
+      await active;
+      services.dispose();
+      setup.renderer.destroy();
+    });
     await setup.renderer.idle();
   }
 }
-console.log("Native jump-to-latest passed: hidden at tail, older-window navigation, true latest, resumed follow, overlays and Ctrl+D at 40/80/120 columns");
+console.log("Native jump-to-latest passed: idle/busy long-branch layout, hidden at tail, older-window navigation, true latest, resumed follow, overlays and Ctrl+D at 40/52/68/80/120 columns");
