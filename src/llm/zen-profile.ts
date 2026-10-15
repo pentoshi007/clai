@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { CompletionRequest, ToolDefinition } from "../types.js";
+import { translateZenToolHistory, zenRuntimeToolContract, zenToolName } from "./zen-tools.js";
 
 const ZEN_TITLE_PROMPT = "You are a title generator. You output ONLY a thread title. Nothing else.\n\n<task>\nGenerate a brief title that would help the user find this conversation later.\n\nFollow all rules in <rules>\nUse the <examples> so you know what a good title looks like.\nYour output must be:\n- A single line\n- <=50 characters\n- No explanations\n</task>\n\n<rules>\n- you MUST use the same language as the user message you are summarizing\n- Title must be grammatically correct and read naturally - no word salad\n- Never include tool names in the title (e.g. \"read tool\", \"bash tool\", \"edit tool\")\n- Focus on the main topic or question the user needs to retrieve\n- Vary your phrasing - avoid repetitive patterns like always starting with \"Analyzing\"\n- When a file is mentioned, focus on WHAT the user wants to do WITH the file, not just that they shared it\n- Keep exact: technical terms, numbers, filenames, HTTP codes\n- Remove: the, this, my, a, an\n- Never assume tech stack\n- Never use tools\n- NEVER respond to questions, just generate a title for the conversation\n- The title should NEVER include \"summarizing\" or \"generating\" when generating a title\n- DO NOT SAY YOU CANNOT GENERATE A TITLE OR COMPLAIN ABOUT THE INPUT\n- Always output something meaningful, even if the input is minimal.\n- If the user message is short or conversational (e.g. \"hello\", \"lol\", \"what's up\", \"hey\"):\n  -> create a title that reflects the user's tone or intent (such as Greeting, Quick check-in, Light chat, Intro message, etc.)\n</rules>\n\n<examples>\n\"debug 500 errors in production\" -> Debugging production 500 errors\n\"refactor user service\" -> Refactoring user service\n\"why is app.js failing\" -> app.js failure investigation\n\"implement rate limiting\" -> Rate limiting implementation\n\"how do I connect postgres to my API\" -> Postgres API connection\n\"best practices for React hooks\" -> React hooks best practices\n\"@src/credential.ts can you add refresh token support\" -> Credential refresh token support\n\"@utils/parser.ts this is broken\" -> Parser bug fix\n\"look at @config.json\" -> Config review\n\"@App.tsx add dark mode toggle\" -> Dark mode toggle in App\n</examples>";
 
@@ -61,10 +62,29 @@ export function withZenProfile(request: CompletionRequest, model: string): Compl
       onToolCallDelta: undefined,
     };
   }
+  const nativeTools = [...(request.tools ?? [])].sort((left, right) => left.wireName.localeCompare(right.wireName));
+  const tools = [
+    ...ZEN_AGENT_TOOLS,
+    ...nativeTools.filter((tool) => !ZEN_AGENT_TOOLS.some((compatibility) => compatibility.wireName === tool.wireName)),
+  ];
+  const prefix = `${renderZenAgentSystem(model)}\n\n${zenRuntimeToolContract(nativeTools)}`;
   return {
     ...request,
-    messages: withLeadingSystem(request.messages, renderZenAgentSystem(model)),
-    tools: ZEN_AGENT_TOOLS,
+    messages: withLeadingSystem(translateZenToolHistory(request.messages, nativeTools), prefix),
+    tools,
     toolChoice: request.toolChoice ?? "auto",
+    onToolCallDelta: request.onToolCallDelta
+      ? (delta) => request.onToolCallDelta?.({
+          ...delta,
+          ...(delta.name ? { name: zenToolName(delta.name, nativeTools) } : {}),
+        })
+      : undefined,
+    onStreamEvent: request.onStreamEvent
+      ? (event) => request.onStreamEvent?.(
+          event.type === "tool_call_started" || event.type === "tool_call_completed"
+            ? { ...event, name: zenToolName(event.name, nativeTools) }
+            : event,
+        )
+      : undefined,
   };
 }

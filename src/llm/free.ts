@@ -1,5 +1,6 @@
 import { kiloClientHeaders, zenClientHeaders } from "./free-client.js";
 import { withZenProfile } from "./zen-profile.js";
+import { translateZenToolResult } from "./zen-tools.js";
 import { recoverZenIdentity } from "./zen-session.js";
 
 import type {
@@ -352,35 +353,34 @@ async function requestFreeCompletion(
       const prepared = source.id === "free-1" ? withZenProfile(request, model) : request;
       if (usesResponsesDialect(source, model)) {
         const result = await zenResponsesCompletion(prepared, auth, model, onToken);
-        return { ...result, model: requested };
+        return { ...translateZenToolResult(result, request.tools ?? []), model: requested };
       }
-      const effective = prepared;
-    const options = freeChatOptions(source, model, effective, apiKey);
-    const callbacks = stream
-      ? { onToolCallDelta: effective.onToolCallDelta, onStreamEvent: effective.onStreamEvent }
-      : {};
-    const thinkingEnabled = Boolean(effective.thinking?.enabled);
-    const budgets = streamIdleBudgets(thinkingEnabled);
-    const payload = stream || source.id === "free-1"
-      ? await openAiCompatibleStream({
-          ...options,
-          ...callbacks,
-          onToken,
-          idleTimeoutMs: budgets.idleTimeoutMs,
-          initialIdleTimeoutMs: thinkingEnabled
-            ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS : 60_000,
-          outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
-        })
-      : await openAiCompatibleComplete(options);
-    const result = toCompletionResult("free", requested, payload);
-    if (result.reasoningArtifacts?.length) {
-      result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
-        ...art,
-        provenance: { ...art.provenance, model: requested },
-      }));
-    }
-    return result;
-  });
+      const options = freeChatOptions(source, model, prepared, apiKey);
+      const callbacks = stream
+        ? { onToolCallDelta: prepared.onToolCallDelta, onStreamEvent: prepared.onStreamEvent }
+        : {};
+      const thinkingEnabled = Boolean(prepared.thinking?.enabled);
+      const budgets = streamIdleBudgets(thinkingEnabled);
+      const payload = stream || source.id === "free-1"
+        ? await openAiCompatibleStream({
+            ...options,
+            ...callbacks,
+            onToken,
+            idleTimeoutMs: budgets.idleTimeoutMs,
+            initialIdleTimeoutMs: thinkingEnabled
+              ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS : 60_000,
+            outputIdleTimeoutMs: budgets.outputIdleTimeoutMs,
+          })
+        : await openAiCompatibleComplete(options);
+      const result = toCompletionResult("free", requested, payload);
+      if (result.reasoningArtifacts?.length) {
+        result.reasoningArtifacts = result.reasoningArtifacts.map((art) => ({
+          ...art,
+          provenance: { ...art.provenance, model: requested },
+        }));
+      }
+      return source.id === "free-1" ? translateZenToolResult(result, request.tools ?? []) : result;
+    });
   try {
     return await attempt();
   } catch (error) {

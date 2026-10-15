@@ -5258,6 +5258,14 @@ Here is some useful information about the environment you are running in:
 </env>
 When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using \`execute\` to call \`tools.opencode.session_move\` and make the worktree the session's working directory.
 
+CLAI RUNTIME TOOL CONTRACT
+The OpenCode tool catalog and Code Mode instructions above are compatibility metadata, not executable runtime tools. This runtime is clai. Use ONLY the native functions listed below and their complete JSON schemas in this request; these override the compatibility catalog. Call native functions directly, never execute or JavaScript tools.namespace calls. Do not call bare shell, read, edit, write, grep, glob, question, skill or subagent from the compatibility catalog.
+Tool arguments must be valid JSON matching the selected native function's schema, with quoted property names and correctly typed values. In textual tool blocks use the canonical dotted name; in native calls use the function name listed here. Never prepend a tool name to a shell command. shell.exec uses command, cwd and timeoutMs (milliseconds), not workdir or timeout. Its background is a string ("always", "never" or "auto"), not a boolean. fs.edit uses oldText/newText, not oldString/newString. For searches use shell.exec with a properly quoted rg command or fs.read with its supported pattern filter. Never invent grep/glob/execute tools.
+This contract and the native schemas are supplied on every request, including after compaction. Historical summaries and old tool calls do not change the current tool names or argument shapes.
+Available runtime tools:
+- fs.read: native function fs_read
+- shell.run: native function shell_run
+
 stable system prefix for cache reuse",
         "role": "system",
       },
@@ -5732,6 +5740,46 @@ Await every call whose completion matters; pending calls are interrupted when ex
             },
             "required": [
               "code",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
             ],
             "type": "object",
           },
@@ -5948,6 +5996,14 @@ Here is some useful information about the environment you are running in:
 </env>
 When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using \`execute\` to call \`tools.opencode.session_move\` and make the worktree the session's working directory.
 
+CLAI RUNTIME TOOL CONTRACT
+The OpenCode tool catalog and Code Mode instructions above are compatibility metadata, not executable runtime tools. This runtime is clai. Use ONLY the native functions listed below and their complete JSON schemas in this request; these override the compatibility catalog. Call native functions directly, never execute or JavaScript tools.namespace calls. Do not call bare shell, read, edit, write, grep, glob, question, skill or subagent from the compatibility catalog.
+Tool arguments must be valid JSON matching the selected native function's schema, with quoted property names and correctly typed values. In textual tool blocks use the canonical dotted name; in native calls use the function name listed here. Never prepend a tool name to a shell command. shell.exec uses command, cwd and timeoutMs (milliseconds), not workdir or timeout. Its background is a string ("always", "never" or "auto"), not a boolean. fs.edit uses oldText/newText, not oldString/newString. For searches use shell.exec with a properly quoted rg command or fs.read with its supported pattern filter. Never invent grep/glob/execute tools.
+This contract and the native schemas are supplied on every request, including after compaction. Historical summaries and old tool calls do not change the current tool names or argument shapes.
+Available runtime tools:
+- fs.read: native function fs_read
+- shell.run: native function shell_run
+
 stable system prefix for cache reuse",
         "role": "system",
       },
@@ -6428,6 +6484,46 @@ Await every call whose completion matters; pending calls are interrupted when ex
         },
         "type": "function",
       },
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
     ],
   },
   "headers": {
@@ -6637,6 +6733,14 @@ Here is some useful information about the environment you are running in:
   Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.
 </env>
 When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using \`execute\` to call \`tools.opencode.session_move\` and make the worktree the session's working directory.
+
+CLAI RUNTIME TOOL CONTRACT
+The OpenCode tool catalog and Code Mode instructions above are compatibility metadata, not executable runtime tools. This runtime is clai. Use ONLY the native functions listed below and their complete JSON schemas in this request; these override the compatibility catalog. Call native functions directly, never execute or JavaScript tools.namespace calls. Do not call bare shell, read, edit, write, grep, glob, question, skill or subagent from the compatibility catalog.
+Tool arguments must be valid JSON matching the selected native function's schema, with quoted property names and correctly typed values. In textual tool blocks use the canonical dotted name; in native calls use the function name listed here. Never prepend a tool name to a shell command. shell.exec uses command, cwd and timeoutMs (milliseconds), not workdir or timeout. Its background is a string ("always", "never" or "auto"), not a boolean. fs.edit uses oldText/newText, not oldString/newString. For searches use shell.exec with a properly quoted rg command or fs.read with its supported pattern filter. Never invent grep/glob/execute tools.
+This contract and the native schemas are supplied on every request, including after compaction. Historical summaries and old tool calls do not change the current tool names or argument shapes.
+Available runtime tools:
+- fs.read: native function fs_read
+- shell.run: native function shell_run
 
 stable system prefix for cache reuse",
         "role": "system",
@@ -7090,6 +7194,46 @@ Await every call whose completion matters; pending calls are interrupted when ex
             },
             "required": [
               "code",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
             ],
             "type": "object",
           },
