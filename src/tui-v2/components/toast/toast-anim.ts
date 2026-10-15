@@ -6,7 +6,7 @@ import {
 import { easeInCubic, easeOutCubic } from "../../../ui-core/motion/ease.js";
 
 
-export const TOAST_BOX_HEIGHT = 3;
+export const TOAST_BOX_HEIGHT = 1;
 
 export const TOAST_REST_TOP = 1;
 

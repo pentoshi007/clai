@@ -28,6 +28,9 @@ for (const width of [16, 40, 80, 120]) {
           await setup.flush();
         });
         const plate = RGBA.fromHex(item.level === "success" ? theme.successBg : item.level === "error" ? theme.failedBg : theme.mode);
+        const plateRows = setup.captureSpans().lines.filter(line =>
+          line.spans.some(span => span.bg.equals(plate) && span.width > 0),
+        ).length;
         const rows = setup.captureSpans().lines.flatMap(line => {
           const spans = line.spans.filter(span => span.bg.equals(plate));
           const text = spans.map(span => span.text).join("");
@@ -40,6 +43,16 @@ for (const width of [16, 40, 80, 120]) {
           assert.ok(Math.abs(left - right) <= 1, `uncentered ${width}-column toast: ${JSON.stringify(row.text)}`);
           assert.ok(row.columns <= width, "toast plate must fit the native terminal width");
           checkedRows += 1;
+        }
+        if (!compact && width === 80 && item.message === "Failed") {
+          assert.ok(
+            rows[0]!.columns <= 20,
+            `short toast must shrink to its content, got ${rows[0]!.columns} columns`,
+          );
+          assert.equal(plateRows, 1, "single-line toast must not reserve blank padding rows");
+        }
+        if (!compact) {
+          assert.equal(plateRows, rows.length, "toast height must equal its wrapped body lines");
         }
         if (compact) assert.equal(rows.length, 1, "overlay toast must stay on one row");
       }
