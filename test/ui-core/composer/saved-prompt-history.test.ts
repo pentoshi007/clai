@@ -54,4 +54,20 @@ describe("saved composer prompt history", () => {
       expect(await f.history.nextWithSaved()).toBe("draft");
     } finally { f.dispose(); }
   });
+
+  it("recalls prompts carried into a switched store by a journal handoff", async () => {
+    const old = new SessionPromptStore(`carry-old-${Math.random()}`);
+    await old.append({ content: "Retained older prompt" });
+    await old.append({ content: "Retained newest prompt" });
+    const f = fixture(true, old);
+    try {
+      const next = new SessionPromptStore(`carry-new-${Math.random()}`);
+      f.switchStore(next);
+      await next.inheritFrom(old);
+      expect(await f.history.prevWithSaved("draft")).toBe("Retained newest prompt");
+      expect(await f.history.prevWithSaved("draft")).toBe("Retained older prompt");
+      expect(await f.history.nextWithSaved()).toBe("Retained newest prompt");
+      expect(await f.history.nextWithSaved()).toBe("draft");
+    } finally { f.dispose(); }
+  });
 });

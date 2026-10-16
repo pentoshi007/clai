@@ -82,12 +82,17 @@ export class SessionPromptStore {
   private readonly indexPath: string;
   private pending: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
+  private revisionValue = 0;
 
   constructor(readonly sessionId: string) {
     this.root = directory(sessionId);
     this.path = join(this.root, "prompts.md");
     this.metadataPath = join(this.root, "metadata.jsonl");
     this.indexPath = join(this.root, "offsets.bin");
+  }
+
+  get revision(): number {
+    return this.revisionValue;
   }
 
   append(input: SessionPromptInput): Promise<void> {
@@ -134,6 +139,7 @@ export class SessionPromptStore {
           if (staged) await rm(staged, { recursive: true, force: true });
         } finally { await release(); }
       }
+      this.revisionValue += 1;
       this.notifyListeners();
     });
   }
