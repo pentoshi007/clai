@@ -24,7 +24,7 @@ export async function evaluationSnapshot(checkout: string, surfaces: readonly st
 export function assertEvaluationSnapshot(expected: string, actual: string): void {
   if (expected !== actual) throw new Error("Evaluation source/harness changed during collection; retained trials are not a frozen comparison");
 }
-export async function evaluationProvenance(checkout: string, fixture: TokenFixture) {
+export async function evaluationProvenance(checkout: string, fixture: TokenFixture, selection?: { readonly id: string; readonly digest: string }) {
   let revision: string | null = null;
   let sourceDiffSha256: string | null = null;
   try {
@@ -33,7 +33,7 @@ export async function evaluationProvenance(checkout: string, fixture: TokenFixtu
   } catch {}
   const sourceDigests = await Promise.all(["src/prompts/system.agent.md", "src/prompts/system.ask.md", "src/prompts/embedded.ts", "src/agent/runner.ts", "src/agent/turn/loop/round-request.ts"].map(async (path) =>
     ({ path, sha256: digest(await readFile(join(checkout, path), "utf8")) })));
-  return { revision, sourceDiffSha256, profile: "legacy" as const, sourceDigests, fixtureSha256: digest(JSON.stringify({ name: fixture.name,
+  return { revision, sourceDiffSha256, profile: selection?.id ?? "legacy", profileDigest: selection?.digest ?? null, sourceDigests, fixtureSha256: digest(JSON.stringify({ name: fixture.name,
     prompts: fixture.prompts, files: fixture.files, fixtureInstructions, hiddenAssertions: fixture.hiddenAssertions, turnAssertions: fixture.turnAssertions,
     verify: String(fixture.verify), prepare: fixture.prepare ? String(fixture.prepare) : null })), node: process.version, platform: process.platform, architecture: process.arch };
 }

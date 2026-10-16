@@ -1,6 +1,6 @@
 # Implementation task ledger
 
-Status: **implementation in progress** (authorized 2026-10-16). P0–P1 delivered; P2 verified as a measured retain-baseline decision with its receipt carried into P3. P3–P6 remain pending. Checkboxes track verified criteria, not rollout approval. No optimized profile is enabled.
+Status: **implementation in progress** (authorized 2026-10-16). P0–P3 delivered with rollout limitations recorded; P4 evaluated and rejected for promotion. P5–P6 remain pending. Checkboxes track verified criteria or documented rejection, not rollout approval. No optimized profile is enabled.
 
 Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. A new optimized release prefix is allowed; no separate prefix-change approval is required. Do not check evidence-gated work before its criteria pass.
 
@@ -12,8 +12,8 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 | P1 Evaluation and regression gates | P0 | complete | `1f9ad72d`, remote equality verified; [phase-1.md](evidence/phase-1.md), [coverage](evidence/phase-1-coverage.md); limited-route baseline, no candidate/cache pass |
 | P2 Strict-prefix optimization | P1 | complete, retain baseline | `259f9f82`, push verified; [phase-2.md](evidence/phase-2.md); incremental startup/task savings 0 |
 | P3 Durable profile compatibility | P1 | explicit compatibility verified; default rollout deferred | [phase-3.md](evidence/phase-3.md); TE-022 live denominators remain blocked; delivery receipt in P4 |
-| P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |
-| P5 Tool-description candidate | P4 | pending prerequisites | — |
+| P4 Instruction candidate | P3; TE-022 still blocks promotion | evaluated; reject promotion | [phase-4.md](evidence/phase-4.md); structural preservation passes, pilot reliability/task/latency gates do not |
+| P5 Tool-description candidate | P4 attribution; no promotion without all gates | next; schema-only investigation allowed, combined remains exploratory | — |
 | P6 Evaluation and release decision | applicable candidate phases; P1 required | pending | — |
 
 P4/P5 are part of the optimization scope, not blocked on another prefix-change decision. Every candidate must keep its selected prefix stable during use and demonstrate same-or-better comparable cache reuse. Missing evidence or a regression still blocks release; do not label partial work as all phases shipped.
@@ -76,11 +76,16 @@ P4/P5 are part of the optimization scope, not blocked on another prefix-change d
 
 ## P4 — Instruction candidate (requires P3 and TE-022 evidence)
 
-- [ ] **TE-023 — Create isolated candidate instruction artifacts.** Keep legacy untouched and schema fixed; consolidate only mapped semantic duplication; no dynamic coding/security core switch.
-- [ ] **TE-024 — Preserve native/text and dynamic obligations.** Keep text-call guidance, project/user/skill/scope/plan content and edit/recovery semantics; explicit capabilities prevent mode-guidance rebound.
-- [ ] **TE-025 — Regenerate and verify artifacts.** Source/embedded/package paths agree; legacy digest unchanged; full assembled-request accounting demonstrates the candidate's real reduction (D12).
-- [ ] **TE-026 — Evaluate prompt-only behavior.** Deterministic coverage and multi-route coding/security pilot pass with no first-attempt/round/latency/quality regression; otherwise reject and retain baseline.
-- [ ] **TE-027 — Deliver P4.** Document accepted experiment or rejection, clean unreferenced artifacts, keep candidate disabled pending final gates; update ledger, commit and verify branch push.
+- [x] **TE-023 — Create isolated candidate instruction artifacts.** Keep legacy untouched and schema fixed; consolidate only mapped semantic duplication; no dynamic coding/security core switch.
+  - Verified `density-v1` changes only three mapped sections; [clause ownership](evidence/prompt-density-map.md), no domain switch or default activation.
+- [x] **TE-024 — Preserve native/text and dynamic obligations.** Keep text-call guidance, project/user/skill/scope/plan content and edit/recovery semantics; explicit capabilities prevent mode-guidance rebound.
+  - Verified 64 paired assembly shapes: tools/history/dynamic content unchanged, compact unchanged, no mode-guidance rebound. Phrase/deletion tests are structural proof, not model-equivalence proof.
+- [x] **TE-025 — Regenerate and verify artifacts.** Source/embedded/package paths agree; legacy digest unchanged; full assembled-request accounting demonstrates the candidate's real reduction (D12).
+  - Verified generation/types/build/package and Node/Bun-compiled restore/digest parity. Full-core estimated request reduction 2.72–4.65%; compact 0%; exact limited-route first-input reduction about 4%.
+- [x] **TE-026 — Evaluate prompt-only behavior.** Deterministic coverage and multi-route coding/security pilot pass with no first-attempt/round/latency/quality regression; otherwise reject and retain baseline.
+  - **Rejected for promotion**, not passed: 12 trials/44 admissions on one route all reached correct outcomes, but extra coding rounds/tool error/full-task input and latency comparisons fail gates. Broader routes/cache eligibility remain unproved. [P4 evidence](evidence/phase-4.md).
+- [x] **TE-027 — Deliver P4.** Document accepted experiment or rejection, clean unreferenced artifacts, keep candidate disabled pending final gates; update ledger, commit and verify branch push.
+  - Retain legacy; isolated candidate intentionally referenced for evaluation/compatibility only. 6 files/161 tests plus 8 files/42 adjacent regressions pass; phase commit/push receipt carried into P5.
 
 ## P5 — Tool-description candidate (requires passing P4 path)
 

@@ -18,6 +18,7 @@ export interface EvaluationConfig {
   readonly repeats: number;
   readonly maxCalls: number;
   readonly scratchRoot: string;
+  readonly candidateProfile?: "density-v1";
 }
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected evaluation configuration object");
@@ -61,12 +62,14 @@ export function parseEvaluationConfig(value: unknown, knownFixtures: readonly st
     return name;
   });
   if (typeof raw.scratchRoot !== "string" || !isAbsolute(raw.scratchRoot)) throw new Error("scratchRoot must be the absolute active session scratch path");
-  const allowed = new Set(["version", "routes", "fixtures", "repeats", "maxCalls", "scratchRoot"]);
+  const candidateProfile = raw.candidateProfile;
+  if (candidateProfile !== undefined && candidateProfile !== "density-v1") throw new Error("Unknown isolated candidate profile");
+  const allowed = new Set(["version", "routes", "fixtures", "repeats", "maxCalls", "scratchRoot", "candidateProfile"]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw new Error("Unknown or credential-bearing evaluation fields are not permitted");
   const routes = raw.routes.map(route);
   const identities = routes.map((entry) => JSON.stringify(entry));
   if (new Set(identities).size !== routes.length || new Set(fixtures).size !== fixtures.length) throw new Error("Duplicate routes or fixtures are not permitted");
-  return { version: 1, routes, fixtures, repeats: integer(raw.repeats, "repeats", 100), maxCalls: integer(raw.maxCalls, "maxCalls", 100_000), scratchRoot: resolve(raw.scratchRoot) };
+  return { version: 1, routes, fixtures, repeats: integer(raw.repeats, "repeats", 100), maxCalls: integer(raw.maxCalls, "maxCalls", 100_000), scratchRoot: resolve(raw.scratchRoot), ...(candidateProfile ? { candidateProfile } : {}) };
 }
 export function counterbalancedVariants(repeat: number): readonly ["before" | "after", "before" | "after"] {
   return repeat % 2 === 1 ? ["before", "after"] : ["after", "before"];

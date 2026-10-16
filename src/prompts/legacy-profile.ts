@@ -3,7 +3,6 @@ import type { ToolDefinition } from "../types.js";
 import { getToolDefinitions } from "../tools/definitions.js";
 import { renderAgentSystemPrompt, renderCompactAgentSystemPrompt, _AGENT_TEMPLATE, _ASK_TEMPLATE } from "./index.js";
 import type { RoutePromptBinding } from "./profile-state.js";
-import { profileRecoveryError } from "./profile-state.js";
 
 export const profileDigest = (value: string): string => createHash("sha256").update(value).digest("hex");
 
@@ -33,9 +32,4 @@ export function legacyPromptProfile(): PromptProfile {
     executionRulesInSystem: (compact: boolean) => !compact,
   });
   return legacy;
-}
-
-export function resolvePromptProfile(id: string): PromptProfile {
-  if (id === "legacy-v1") return legacyPromptProfile();
-  throw profileRecoveryError();
 }

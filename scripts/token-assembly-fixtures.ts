@@ -11,6 +11,7 @@ import { orchestrationContext } from "../src/agent/subagents/tools.js";
 import { accountAssembledRequest, estimateTextTokens } from "../src/agent/request-accounting.js";
 import { chatCompletionsBodyFromPlan } from "../src/llm/wire/chat-body.js";
 import { toOpenAiTools } from "../src/llm/adapters/openai-tools.js";
+import type { PromptProfileState } from "../src/prompts/profile-state.js";
 
 export type AssemblyFixtureKind = "coding" | "security" | "ask" | "plan";
 export interface AssemblyFixture {
@@ -59,11 +60,11 @@ function fixturePlan(): SessionPlan {
   };
 }
 
-export async function assembleTokenFixture(fixture: AssemblyFixture) {
+export async function assembleTokenFixture(fixture: AssemblyFixture, promptProfiles?: PromptProfileState) {
   const mode: Mode = fixture.kind === "ask" ? "ask" : fixture.kind === "plan" ? "plan" : "agent";
   const provider: ProviderId = fixture.vision ? "openai" : "nvidia";
   const model = fixture.vision ? "gpt-4o" : "openai/gpt-oss-20b";
-  const routing = createToolRouting({ mode, mcpPresent: fixture.mcp, toolCalling: fixture.native ? "native" : "text", useCompactSystemPrompt: () => fixture.compact });
+  const routing = createToolRouting({ mode, mcpPresent: fixture.mcp, toolCalling: fixture.native ? "native" : "text", useCompactSystemPrompt: () => fixture.compact, promptProfiles });
   const stablePrompt = routing.buildStableSystemContent(fixture.native, provider, model);
   const tools = routing.selectToolDefs(fixture.native, fixture.compact, provider, model);
   const prompt = prompts[fixture.kind];

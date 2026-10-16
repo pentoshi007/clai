@@ -28,27 +28,23 @@ ${entries.join("\n")}
 };
 `;
 
-const outPath = join(promptsDir, "embedded.ts");
-
-if (process.argv.includes("--check")) {
-  let current = "";
-  try {
-    current = readFileSync(outPath, "utf8");
-  } catch {
-    console.error(`Missing ${outPath}; run: node scripts/embed-prompts.mjs`);
-    process.exit(1);
+const candidate = readFileSync(join(promptsDir, "candidate-density-sections.md"), "utf8");
+const outputs = [
+  { path: join(promptsDir, "embedded.ts"), content: out },
+  { path: join(promptsDir, "candidate-density-embedded.ts"), content: `export const DENSITY_SECTIONS = ${JSON.stringify(candidate)};\n` },
+];
+const check = process.argv.includes("--check");
+for (const output of outputs) {
+  if (check) {
+    let current = "";
+    try { current = readFileSync(output.path, "utf8"); } catch {}
+    if (current !== output.content) {
+      console.error(`Missing or stale ${output.path}; run: node scripts/embed-prompts.mjs`);
+      process.exit(1);
+    }
+  } else {
+    mkdirSync(promptsDir, { recursive: true });
+    writeFileSync(output.path, output.content, "utf8");
   }
-  if (current !== out) {
-    console.error(
-      `Embedded prompts are stale versus the markdown sources.\n` +
-        `Run: node scripts/embed-prompts.mjs, then commit ${outPath}.`,
-    );
-    process.exit(1);
-  }
-  console.log(`Embedded prompts match their sources (${files.length} prompts)`);
-  process.exit(0);
 }
-
-mkdirSync(promptsDir, { recursive: true });
-writeFileSync(outPath, out, "utf8");
-console.log(`Wrote ${outPath} (${files.length} prompts)`);
+console.log(`Embedded prompts ${check ? "match" : "generated from"} their sources (${files.length} legacy prompts, 1 isolated candidate artifact)`);

@@ -79,6 +79,15 @@ export async function runEvaluationTrial(args: readonly string[]): Promise<void>
   globalThis.fetch = (input, init) => observer.fetch(input, init, { maxCalls: budget, fetch: originalFetch, fingerprint: (body) => fingerprints.fingerprintFinalRequest(route, body) });
   const sessionIdentity = createHash("sha256").update(JSON.stringify({ workRoot, variant, fixtureName, repetition, route })).digest("hex").slice(0, 32);
   const session = createSessionPolicy(`eval-${sessionIdentity}`);
+  let selectedProfile: string | undefined;
+  if (config.candidateProfile) selectedProfile = variant === "after" ? config.candidateProfile : "legacy-v1";
+  let selectedProfileDigest: string | undefined;
+  if (selectedProfile) {
+    const { createPromptProfiles } = await import(source("prompts/profile-state.ts")) as typeof import("../src/prompts/profile-state.js");
+    const { resolvePromptProfile } = await import(source("prompts/profile-catalog.ts")) as typeof import("../src/prompts/profile-catalog.js");
+    session.promptProfiles = createPromptProfiles(selectedProfile);
+    selectedProfileDigest = resolvePromptProfile(selectedProfile).digest;
+  }
   let messages: ChatMessage[] = [];
   let previous: SuccessfulRequestSnapshot | undefined;
   let successfulModelRounds = 0;
@@ -153,7 +162,8 @@ export async function runEvaluationTrial(args: readonly string[]): Promise<void>
     await closeFixture?.();
   }
   const cpu = process.cpuUsage(cpuStarted);
-  const provenance = await evaluationProvenance(checkout, definition);
+  const provenance = await evaluationProvenance(checkout, definition,
+    selectedProfile && selectedProfileDigest ? { id: selectedProfile, digest: selectedProfileDigest } : undefined);
   const finalSnapshot = await evaluationSnapshot(checkout);
   const snapshotStable = initialSnapshot === finalSnapshot && harnessSha256 === await evaluationSnapshot(harnessRoot, ["scripts", "package.json", "package-lock.json", "tsconfig.token-audit.json"]);
   if (!snapshotStable) { error = true; passed = false; }

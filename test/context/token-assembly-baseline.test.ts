@@ -4,6 +4,8 @@ import { assembleTokenFixture, assemblyFixtureMatrix, measureTokenAssembly } fro
 import { getToolDefinitions } from "../../src/tools/definitions.js";
 import { estimateTextTokens } from "../../src/agent/request-accounting.js";
 import baseline from "../../token-usage-audit/evidence/assembly-baseline.json" with { type: "json" };
+import { createPromptProfiles } from "../../src/prompts/profile-state.js";
+import { densifyLegacyPrompt } from "../../src/prompts/density-profile.js";
 
 vi.mock("../../src/os/detect.js", () => ({
   detectSystem: () => ({ platform: "linux", osName: "Linux", arch: "arm64", release: "synthetic", shell: "/bin/bash", cwd: "/project" }),
@@ -88,5 +90,38 @@ describe("isolated full-assembly baseline", () => {
     expect(serialized).not.toContain("apiKey");
     expect(serialized).not.toContain("Preserve synthetic project constraints in full");
     await writeFile(destination, `${serialized}\n`);
+  });
+});
+
+
+describe("prompt-only candidate complete request attribution", () => {
+  it.each(assemblyFixtureMatrix)("preserves every non-core byte for $id", async (fixture) => {
+    const before = await assembleTokenFixture(fixture, createPromptProfiles());
+    const after = await assembleTokenFixture(fixture, createPromptProfiles("density-v1"));
+    expect(after.tools).toEqual(before.tools);
+    expect(after.messages.slice(1)).toEqual(before.messages.slice(1));
+    expect(after.stablePrompt).toBe(fixture.compact ? before.stablePrompt : densifyLegacyPrompt(before.stablePrompt));
+    const baselineMeasurement = measureTokenAssembly(fixture, before);
+    const candidateMeasurement = measureTokenAssembly(fixture, after);
+    expect(candidateMeasurement.components.dynamicContext).toEqual(baselineMeasurement.components.dynamicContext);
+    expect(candidateMeasurement.components.canonicalTools).toEqual(baselineMeasurement.components.canonicalTools);
+    expect(candidateMeasurement.userTaskCopies).toBe(1);
+    if (fixture.compact) expect(candidateMeasurement).toEqual(baselineMeasurement);
+    else {
+      expect(candidateMeasurement.finalWire.bytes).toBeLessThan(baselineMeasurement.finalWire.bytes);
+      expect(candidateMeasurement.accounting.rawRequestTokens).toBeLessThan(baselineMeasurement.accounting.rawRequestTokens);
+    }
+  });
+
+  it("exports separately attributed full-request estimates only on explicit measurement", async () => {
+    const destination = process.env.CLAI_CANDIDATE_ASSEMBLY_REPORT;
+    if (!destination) return;
+    const records = [];
+    for (const fixture of assemblyFixtureMatrix) {
+      const before = measureTokenAssembly(fixture, await assembleTokenFixture(fixture, createPromptProfiles()));
+      const after = measureTokenAssembly(fixture, await assembleTokenFixture(fixture, createPromptProfiles("density-v1")));
+      records.push({ id: fixture.id, profile: "density-v1", precision: "character-estimate", before, after });
+    }
+    await writeFile(destination, `${JSON.stringify({ version: 1, providerUsage: null, records })}\n`);
   });
 });

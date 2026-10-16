@@ -17,6 +17,8 @@ describe("explicit isolated evaluation configuration", () => {
     for (const endpoint of ["https://user:pass@example.test", "https://example.test?key=secret", "file:///private"]) {
       expect(() => parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], endpoint }] }, ["search-edit"])).toThrow(/Endpoint/);
     }
+    expect(parseEvaluationConfig({ ...config, candidateProfile: "density-v1" }, ["search-edit"]).candidateProfile).toBe("density-v1");
+    expect(() => parseEvaluationConfig({ ...config, candidateProfile: "unproven-default" }, ["search-edit"])).toThrow(/candidate profile/);
     expect(counterbalancedVariants(1)).toEqual(["before", "after"]);
     expect(counterbalancedVariants(2)).toEqual(["after", "before"]);
     expect(() => parseEvaluationConfig({ ...config, maxCalls: 0 }, ["search-edit"])).toThrow(/maxCalls/);

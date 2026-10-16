@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "../types.js";
-import { profileDigest, resolvePromptProfile } from "./legacy-profile.js";
+import { profileDigest } from "./legacy-profile.js";
+import { resolvePromptProfile } from "./profile-catalog.js";
 import { freezePromptBinding, profileRecoveryError, type PromptProfileState, type RoutePromptBinding } from "./profile-state.js";
 
 export interface ProfileShape {

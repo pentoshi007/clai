@@ -11,17 +11,21 @@ afterEach(async () => {
   process.chdir(originalCwd);
   for (const key of Object.keys(process.env)) if (!(key in originalEnv)) delete process.env[key];
   Object.assign(process.env, originalEnv);
-  vi.unstubAllGlobals(); vi.restoreAllMocks();
+  vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.resetModules();
   await Promise.all(owned.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-it("collects redacted actual-runner evidence through the existing provider adapter without a remote request", async () => {
+it.each([
+  { variant: "before", candidateProfile: undefined, expectedProfile: "legacy" },
+  { variant: "before", candidateProfile: "density-v1", expectedProfile: "legacy-v1" },
+  { variant: "after", candidateProfile: "density-v1", expectedProfile: "density-v1" },
+])("collects redacted actual-runner evidence for $expectedProfile without a remote request", async ({ variant, candidateProfile, expectedProfile }) => {
   const parent = process.env.CLAI_DATA_DIR!;
   await mkdir(parent, { recursive: true });
   const workspace = await mkdtemp(join(parent, "eval-trial-"));
   owned.push(workspace);
   const configFile = join(workspace, "configuration.json");
-  await writeFile(configFile, JSON.stringify({ version: 1, routes: [{ provider: "nvidia", model: "openai/gpt-oss-20b", toolCalling: "native", thinking: { enabled: false, effort: "medium" } }], fixtures: ["independent-reads-natural"], repeats: 1, maxCalls: 6, scratchRoot: workspace }));
+  await writeFile(configFile, JSON.stringify({ version: 1, routes: [{ provider: "nvidia", model: "openai/gpt-oss-20b", toolCalling: "native", thinking: { enabled: false, effort: "medium" } }], fixtures: ["independent-reads-natural"], repeats: 1, maxCalls: 6, scratchRoot: workspace, candidateProfile }));
   process.env.NVIDIA_API_KEY = "synthetic-not-a-real-key";
   let admissions = 0;
   vi.spyOn(console, "log").mockImplementation(() => {});
@@ -31,6 +35,7 @@ it("collects redacted actual-runner evidence through the existing provider adapt
     if (!url.includes("/chat/completions")) return new Response('{"data":[]}', { headers: { "content-type": "application/json" } });
     admissions += 1;
     const body = String(init?.body ?? "");
+    expect(body.includes("working feature, not a starter/scaffold")).toBe(expectedProfile === "density-v1");
     const readDone = body.includes("call_read_alpha") && body.includes("call_read_beta");
     const delta = readDone ? { content: "alpha port 4123 enabled true; beta port 5124 enabled false; synthetic-not-a-real-key" } : {
       tool_calls: [
@@ -43,11 +48,12 @@ it("collects redacted actual-runner evidence through the existing provider adapt
     ].map((value) => `data: ${JSON.stringify(value)}\n\n`).join("") + "data: [DONE]\n\n";
     return new Response(frames, { headers: { "content-type": "text/event-stream" } });
   }));
-  await runEvaluationTrial([root, workspace, "before", "independent-reads-natural", "1", configFile, "0", "6"]);
+  await runEvaluationTrial([root, workspace, variant, "independent-reads-natural", "1", configFile, "0", "6"]);
   const serialized = await readFile(join(workspace, ".evaluation", "report.json"), "utf8");
   const report: unknown = JSON.parse(serialized);
   expect(report).toMatchObject({ passed: true, error: false, toolCalls: 2, toolErrors: 0, blockedCalls: 0, modelRounds: 2, firstAttemptValidity: 1, repairCalls: 0,
     assembly: { samples: 3 }, route: { provider: "nvidia" }, cache: { knownCacheHitRate: null } });
+  expect(report).toMatchObject({ provenance: { profile: expectedProfile, profileDigest: candidateProfile ? expect.stringMatching(/^[a-f0-9]{64}$/) : null } });
   expect(admissions).toBe(2);
   expect(serialized).not.toContain("synthetic-not-a-real-key");
   expect(serialized).not.toContain("alpha port 4123");
