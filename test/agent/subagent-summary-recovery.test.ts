@@ -27,6 +27,7 @@ function fixture() {
       input.signal.addEventListener("abort", () => resolve("This must not become a report"), { once: true });
     }) });
     managers.push(manager);
+    manager.setEnabled(true);
     return manager;
   };
   return { store, work, createManager };

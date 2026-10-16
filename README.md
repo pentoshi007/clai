@@ -236,7 +236,7 @@ When an approval prompt appears, `Ctrl+O` opens the complete pending operation, 
 
 ### Subagents and background work
 
-`/orchestrator` controls delegation and subagent model choices. `/subagents` shows assignments and lets you stop or restart an investigation. Retained findings and delivery state help the parent reuse completed research after compaction or resuming a session.
+`/orchestrator` controls delegation and subagent model choices; delegation is off by default, and `/orchestrator on` enables it. `/subagents` shows assignments and lets you stop or restart an investigation. Retained findings and delivery state help the parent reuse completed research after compaction or resuming a session.
 
 The agent can keep development servers and long commands running as background jobs. Use `/jobs` to inspect them and `/output` to browse output. Conversation-owned interactive terminals support SSH, Python/Metasploit REPLs, debuggers, and database consoles across model turns.
 

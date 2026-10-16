@@ -124,6 +124,7 @@ describe("subagent model chain", () => {
     const assignment = { title: "Investigate", prompt: "Read the implementation", cwd: "/tmp", provider: "openai", model: "test" };
     const launch = async (): Promise<string> => {
       const manager = new SubagentManager("parent", { worker: async () => "Done" });
+      manager.setEnabled(true);
       try {
         return (await manager.wait(manager.start(assignment).id)).status;
       } finally {
@@ -133,6 +134,7 @@ describe("subagent model chain", () => {
 
     setSubagentModelChain([{ provider: "free", model: "one", disabled: true }]);
     const blocked = new SubagentManager("parent", { worker: async () => "Done" });
+    blocked.setEnabled(true);
     try {
       expect(() => blocked.start(assignment)).toThrow(/All configured subagent models are disabled/);
     } finally {
@@ -141,6 +143,7 @@ describe("subagent model chain", () => {
 
     setSubagentModelChain([{ provider: "free", model: "one", disabled: true }, { provider: "free", model: "two" }]);
     const allowed = new SubagentManager("parent", { worker: async () => "Done" });
+    allowed.setEnabled(true);
     try {
       const run = allowed.start(assignment);
       expect((await allowed.wait(run.id)).status).toBe("completed");

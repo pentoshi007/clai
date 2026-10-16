@@ -122,15 +122,15 @@ try {
       assert.equal(picker.split("\n")[border]!.indexOf("╭"), size.marginX, picker);
       assert.equal(picker.split("\n").filter((row) => row.includes("│")).length, size.height - 2, picker);
     }
-    assert.equal(services.session.subagents.enabled, true);
-    await settle(() => setup.mockInput.pressArrow("down"));
-    await settle(() => setup.mockInput.pressEnter());
     assert.equal(services.session.subagents.enabled, false);
-    assert.equal(services.overlay.getState().kind, "none");
-    await settle(() => services.commands.dispatch({ name: "orchestrator" }));
     await settle(() => setup.mockInput.pressArrow("up"));
     await settle(() => setup.mockInput.pressEnter());
     assert.equal(services.session.subagents.enabled, true);
+    assert.equal(services.overlay.getState().kind, "none");
+    await settle(() => services.commands.dispatch({ name: "orchestrator" }));
+    await settle(() => setup.mockInput.pressArrow("down"));
+    await settle(() => setup.mockInput.pressEnter());
+    assert.equal(services.session.subagents.enabled, false);
     await settle(() => services.toast.clear());
 
     let selected = "";
