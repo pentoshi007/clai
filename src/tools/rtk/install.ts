@@ -79,11 +79,13 @@ interface StepOutcome {
   readonly ok: boolean;
   readonly reason?: string | undefined;
   readonly output: string;
+  readonly code?: number | undefined;
 }
 
 interface MethodOutcome {
   readonly ok: boolean;
   readonly reason?: string | undefined;
+  readonly noOp?: string | undefined;
 }
 
 interface Context {
@@ -169,12 +171,12 @@ const runStep = (step: Step, timeoutMs: number): Promise<StepOutcome> =>
         }
       }
     };
-    const finish = (ok: boolean, reason?: string): void => {
+    const finish = (ok: boolean, reason?: string, code?: number): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       process.off("exit", kill);
-      resolve({ ok, ...(reason ? { reason } : {}), output });
+      resolve({ ok, ...(reason ? { reason } : {}), output, ...(code !== undefined ? { code } : {}) });
     };
     const collect = (chunk: Buffer): void => {
       output = (output + chunk.toString("utf8")).slice(-TAIL_CHARS);
@@ -188,9 +190,11 @@ const runStep = (step: Step, timeoutMs: number): Promise<StepOutcome> =>
     child.stderr?.on("data", collect);
     child.stdout?.on("data", collect);
     child.once("error", (error) => finish(false, error.message));
-    child.once("close", (code, signal) =>
-      code === 0 ? finish(true) : finish(false, signal ? `stopped by ${signal}` : `exited with code ${code}`),
-    );
+    child.once("close", (code, signal) => {
+      if (code === 0) finish(true, undefined, 0);
+      else if (signal) finish(false, `stopped by ${signal}`);
+      else finish(false, `exited with code ${code}`, code ?? undefined);
+    });
   });
 
 const stepFailure = (outcome: StepOutcome): string =>
@@ -267,6 +271,29 @@ const runBrew = async (context: Context): Promise<MethodOutcome> => {
   return { ok: true };
 };
 
+const WINGET_NOTHING_TO_DO: Readonly<Record<number, string>> = {
+  0x8a15002b: "no applicable update found",
+  0x8a15004f: "the available version is not newer than the installed one",
+  0x8a150061: "rtk-ai.rtk is already installed",
+};
+
+const WINGET_ERROR_HINTS: Readonly<Record<number, string>> = {
+  0x8a150010: "none of the winget installers apply to this system",
+  0x8a150014: "winget has no package matching rtk-ai.rtk",
+  0x8a150019: "winget needs administrator rights for this install",
+  0x8a15003a: "winget is blocked by group policy",
+};
+
+export const classifyWingetExit = (
+  code: number | undefined,
+): { readonly ok: false; readonly noOp: string } | { readonly ok: false; readonly reason: string } | undefined => {
+  if (code === undefined) return undefined;
+  const noOp = WINGET_NOTHING_TO_DO[code];
+  if (noOp) return { ok: false, noOp };
+  const hint = WINGET_ERROR_HINTS[code];
+  return hint ? { ok: false, reason: `${hint} (winget exited with code ${code})` } : undefined;
+};
+
 const runWinget = async (context: Context): Promise<MethodOutcome> => {
   const winget = await findExecutable("winget");
   if (!winget) return { ok: false, reason: "winget is not installed" };
@@ -279,7 +306,10 @@ const runWinget = async (context: Context): Promise<MethodOutcome> => {
     },
     WINGET_TIMEOUT_MS,
   );
-  return result.ok ? { ok: true } : { ok: false, reason: stepFailure(result) };
+  if (result.ok) return { ok: true };
+  const classified = classifyWingetExit(result.code);
+  if (classified) return classified;
+  return { ok: false, reason: stepFailure(result) };
 };
 
 const runCargo = async (context: Context): Promise<MethodOutcome> => {
@@ -425,9 +455,10 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
   if (action === "install" && before.state === "ready") {
     return { ok: true, action, status: before, previousVersion: before.version };
   }
+  let latest: string | undefined;
   if (action === "update" && before.state === "ready") {
     try {
-      const latest = await latestVersion();
+      latest = await latestVersion();
       const cmp = compareSemver(before.version, latest);
       if (cmp !== undefined && cmp >= 0) {
         return {
@@ -455,10 +486,34 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
       : planInstall(WINDOWS, target);
   const work = await mkdtemp(join(tmpdir(), "clai-rtk-"));
   const failures: string[] = [];
+  const deferred: string[] = [];
+  const outdated =
+    action === "update" && before.state === "ready" && latest !== undefined && compareSemver(before.version, latest) === -1;
   try {
     for (const method of methods) {
       const context: Context = { action, target, work };
       const outcome = await runMethod(method, context);
+      if (outcome.noOp) {
+        const note = `${METHOD_LABEL[method]}: ${outcome.noOp}${outdated && latest ? ` (latest published is ${latest})` : ""}`;
+        if (outdated) {
+          deferred.push(note);
+          continue;
+        }
+        const after = await verifyInstalled(context);
+        if (after.state === "ready") {
+          return {
+            ok: true,
+            action,
+            status: after,
+            installer: METHOD_LABEL[method],
+            ...(before.state === "ready" ? { previousVersion: before.version } : {}),
+            ...(latest ? { latestVersion: latest } : {}),
+            ...(context.pathWarning ? { pathWarning: context.pathWarning } : {}),
+          };
+        }
+        failures.push(`${note} and rtk still is not usable`);
+        continue;
+      }
       if (!outcome.ok) {
         failures.push(`${METHOD_LABEL[method]}: ${outcome.reason ?? "failed"}`);
         continue;
@@ -489,12 +544,13 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
     if ((await findExecutable("curl")) === undefined && (await findExecutable("wget")) === undefined) missing.push("curl");
   }
   if (!target) missing.push(`a published rtk build for ${WINDOWS ? "this Windows arch" : "this platform"}`);
+  const reasons = [...deferred, ...failures];
   return {
     ok: false,
     action,
     reason:
-      failures.length > 0
-        ? failures.join("; ")
+      reasons.length > 0
+        ? reasons.join("; ")
         : `no supported install method available${missing.length ? ` (${missing.join("; ")})` : ""}`,
     status,
     manual: shouldSuggestBrew
