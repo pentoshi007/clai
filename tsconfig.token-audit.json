@@ -17,6 +17,8 @@
     "scripts/token-evaluation-cache.ts",
     "scripts/token-evaluation-failures.ts",
     "scripts/token-evaluation-provenance.ts",
+    "scripts/profile-token-context.ts",
+    "test/context/token-strict-context-profile.test.ts",
     "test/context/token-evaluation-provenance.test.ts",
     "test/context/token-evaluation-failures.test.ts",
     "test/context/token-evaluation-environment.test.ts",

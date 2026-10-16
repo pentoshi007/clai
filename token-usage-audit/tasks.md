@@ -1,6 +1,6 @@
 # Implementation task ledger
 
-Status: **implementation in progress** (authorized 2026-10-16). P0 and P1 technical gates are verified; P1 delivery receipt follows remote verification in P2. P2–P6 remain pending. Checkboxes track verified acceptance criteria, not rollout approval. No optimized profile is enabled.
+Status: **implementation in progress** (authorized 2026-10-16). P0–P1 delivered; P2 verified as a measured retain-baseline decision with its receipt carried into P3. P3–P6 remain pending. Checkboxes track verified criteria, not rollout approval. No optimized profile is enabled.
 
 Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. A new optimized release prefix is allowed; no separate prefix-change approval is required. Do not check evidence-gated work before its criteria pass.
 
@@ -9,8 +9,8 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 | Phase | Dependencies | State | Evidence / commit / push |
 | --- | --- | --- | --- |
 | P0 Baseline and contract lock | implementation authorization | complete | [phase-0.md](evidence/phase-0.md); `fe80e611`, push verified |
-| P1 Evaluation and regression gates | P0 | technical gate complete; delivery receipt in P2 | [phase-1.md](evidence/phase-1.md), [coverage](evidence/phase-1-coverage.md); limited-route live baseline passes; no candidate/cache-equivalence pass |
-| P2 Strict-prefix optimization | P1 | pending | — |
+| P1 Evaluation and regression gates | P0 | complete | `1f9ad72d`, remote equality verified; [phase-1.md](evidence/phase-1.md), [coverage](evidence/phase-1-coverage.md); limited-route baseline, no candidate/cache pass |
+| P2 Strict-prefix optimization | P1 | verified retain-baseline decision; delivery receipt in P3 | [phase-2.md](evidence/phase-2.md); additional startup/task savings 0; runtime unchanged |
 | P3 Durable profile compatibility | P1 | pending | — |
 | P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |
 | P5 Tool-description candidate | P4 | pending prerequisites | — |
@@ -46,11 +46,16 @@ P4/P5 are part of the optimization scope, not blocked on another prefix-change d
 
 ## P2 — Strict-prefix improvements
 
-- [ ] **TE-011 — Identify remaining redundant future context.** Profile current upserts/section filtering/plan-state output; quantify only avoidable new content, not existing deduplication or user-owned requirements.
-- [ ] **TE-012 — Implement or reject safe suppression.** Preserve full authority, clear/re-add behavior and sent history; D03/D04/D07 plus quality fixtures pass. A justified no-op is acceptable and must state zero savings.
-- [ ] **TE-013 — Implement or reject equivalent local caching.** Only after profiling; output bytes/order identical, cache bounded and mutation-safe, no latency/memory regression.
-- [ ] **TE-014 — Validate existing batching end-to-end.** D11/C06/C07 verify per-file results, partial errors, correct cursors and independent rounds without new tools or less verification.
-- [ ] **TE-015 — Deliver P2.** Publish measured benefit or retain-baseline decision; legacy prefix/catalog unchanged; all relevant gates pass; update ledger, commit and verify branch push.
+- [x] **TE-011 — Identify remaining redundant future context.** Profile current upserts/section filtering/plan-state output; quantify only avoidable new content, not existing deduplication or user-owned requirements.
+  - Verified: 1,000 samples of production paths; unchanged keyed/session/plan upserts add 0 messages/bytes; changed/clear/re-add preserve history. [P2 evidence](evidence/phase-2.md).
+- [x] **TE-012 — Implement or reject safe suppression.** Preserve full authority, clear/re-add behavior and sent history; D03/D04/D07 plus quality fixtures pass. A justified no-op is acceptable and must state zero savings.
+  - Decision: retain baseline, incremental startup/task savings 0; global seen-content suppression loses re-added authority and shortening plans drops criteria.
+- [x] **TE-013 — Implement or reject equivalent local caching.** Only after profiling; output bytes/order identical, cache bounded and mutation-safe, no latency/memory regression.
+  - Decision: reject an extra cache; prompt p95 0.357ms, selected tools 0.044ms and 60-task plan 0.062ms. Zero token benefit does not justify retention/invalidation risk. Runtime unchanged.
+- [x] **TE-014 — Validate existing batching end-to-end.** D11/C06/C07 verify per-file results, partial errors, correct cursors and independent rounds without new tools or less verification.
+  - Verified: partial success, missing-file, Unicode/range/cursor and independent-read concurrency checks; P1 natural runtime receipts retained. No new dispatcher or weakened verification.
+- [x] **TE-015 — Deliver P2.** Publish measured benefit or retain-baseline decision; legacy prefix/catalog unchanged; all relevant gates pass; update ledger, commit and verify branch push.
+  - Technical gate: 12 files / 140 tests and audit types pass; canonical and selected route digests unchanged. Commit/remote receipt carried into P3 after delivery.
 
 ## P3 — Durable profile compatibility
 
