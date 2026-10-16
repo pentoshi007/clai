@@ -57,20 +57,44 @@ for (const width of [16, 40, 80, 120]) {
         if (compact) assert.equal(rows.length, 1, "overlay toast must stay on one row");
       }
       if (!compact) {
-        await act(async () => {
-          toast.clear();
-          toast.show("first toast", { level: "info", key: "stack-a", sticky: true });
-          toast.show("second toast", { level: "success", key: "stack-b", sticky: true });
-          await new Promise<void>(resolve => setTimeout(resolve, 260));
-          await setup.flush();
-        });
-        const lines = setup.captureSpans().lines;
-        const rowsWith = (plate: RGBA): number[] => lines.flatMap((line, index) =>
-          line.spans.some(span => span.bg.equals(plate) && span.width > 0) ? [index] : []);
-        const newest = rowsWith(RGBA.fromHex(theme.successBg));
-        const previous = rowsWith(RGBA.fromHex(theme.mode));
-        assert.equal(newest[0], 0, "newest toast must stick to the top row");
-        assert.equal(previous[0], newest.at(-1)! + 3, "stacked toast must sit two rows below the previous one");
+        for (const messages of [
+          ["first toast", "second toast", "third toast"],
+          [
+            "The first notification wraps over several lines in narrow terminals",
+            "Another notification with a different height must keep the same tight spacing",
+            "The newest notification stays at the top even when its message wraps",
+          ],
+        ]) {
+          await act(async () => {
+            toast.clear();
+            toast.show(messages[0]!, { level: "info", key: "stack-a", sticky: true });
+            toast.show(messages[1]!, { level: "success", key: "stack-b", sticky: true });
+            await new Promise<void>(resolve => setTimeout(resolve, 260));
+            await setup.flush();
+          });
+          for (const count of [2, 3]) {
+            if (count === 3) {
+              await act(async () => {
+                toast.show(messages[2]!, { level: "error", key: "stack-c", sticky: true });
+                await new Promise<void>(resolve => setTimeout(resolve, 260));
+                await setup.flush();
+              });
+            }
+            const lines = setup.captureSpans().lines;
+            const plates = count === 3
+              ? [theme.failedBg, theme.successBg, theme.mode]
+              : [theme.successBg, theme.mode];
+            let nextRow = 0;
+            for (const color of plates) {
+              const plate = RGBA.fromHex(color);
+              const rows = lines.flatMap((line, index) =>
+                line.spans.some(span => span.bg.equals(plate) && span.width > 0) ? [index] : []);
+              assert.ok(rows.length > 0, `${count}-toast stack must show every toast at ${width} columns`);
+              assert.equal(rows[0], nextRow, "toasts must start at the top with one blank row between their bodies");
+              nextRow = rows.at(-1)! + 2;
+            }
+          }
+        }
       }
       await act(async () => { toast.clear(); await setup.flush(); });
       assert.equal(setup.captureCharFrame().trim(), "", "dismissal must remove the toast");

@@ -27,7 +27,7 @@ export interface ToastHostProps {
   readonly compact?: boolean;
 }
 
-const TOAST_STACK_GAP = 2;
+const TOAST_STACK_GAP = 1;
 
 const TICK_MS = 33;
 
