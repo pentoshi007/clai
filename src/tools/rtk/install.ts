@@ -65,6 +65,7 @@ const BREW_TIMEOUT_MS = 10 * 60_000;
 const WINGET_TIMEOUT_MS = 10 * 60_000;
 const CARGO_TIMEOUT_MS = 30 * 60_000;
 const EXTRACT_TIMEOUT_MS = 2 * 60_000;
+const INSTALL_PROBE_TIMEOUT_MS = 15_000;
 const TAIL_CHARS = 4_000;
 const WINDOWS = process.platform === "win32";
 
@@ -274,7 +275,7 @@ const runWinget = async (context: Context): Promise<MethodOutcome> => {
   const result = await runStep(
     {
       command: winget,
-      args: [verb, "--id", "rtk-ai.rtk", "--exact", "--silent", "--accept-source-agreements", "--accept-package-agreements"],
+      args: [verb, "--id", "rtk-ai.rtk", "--exact", "--silent", "--disable-interactivity", "--accept-source-agreements", "--accept-package-agreements"],
     },
     WINGET_TIMEOUT_MS,
   );
@@ -292,6 +293,11 @@ const runCargo = async (context: Context): Promise<MethodOutcome> => {
   return result.ok ? { ok: true } : { ok: false, reason: stepFailure(result) };
 };
 
+export const pathGuidance = (dir: string, windows: boolean = WINDOWS): string =>
+  windows
+    ? `${dir} is not on your PATH — add it to your user PATH: [Environment]::SetEnvironmentVariable('Path', "$env:Path;${dir}", 'User')`
+    : `${dir} is not on your PATH — add \`export PATH="${dir}:$PATH"\` to your shell profile`;
+
 const placeBinary = async (context: Context, staged: string, dir: string, name: string): Promise<void> => {
   const dest = join(dir, name);
   const temp = `${dest}.${process.pid}.tmp`;
@@ -305,7 +311,7 @@ const placeBinary = async (context: Context, staged: string, dir: string, name: 
   }
   context.installPath = dest;
   if (!pathContains(dir)) {
-    context.pathWarning = `${dir} is not on your PATH — add \`export PATH="${dir}:$PATH"\` to your shell profile`;
+    context.pathWarning = pathGuidance(dir);
   }
 };
 
@@ -407,7 +413,7 @@ export const planUpdate = (
 };
 
 const verifyInstalled = async (context: Context): Promise<RtkStatus> =>
-  context.installPath ? probeRtkPath(context.installPath) : detectRtk(true);
+  context.installPath ? probeRtkPath(context.installPath, INSTALL_PROBE_TIMEOUT_MS) : detectRtk(true);
 
 const latestVersion = async (): Promise<string> => (await resolveLatestTag()).replace(/^v/, "");
 
@@ -476,8 +482,12 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
   }
   const status = await detectRtk(true);
   const missing: string[] = [];
-  if ((await findExecutable("brew")) === undefined) missing.push("Homebrew");
-  if ((await findExecutable("curl")) === undefined && (await findExecutable("wget")) === undefined) missing.push("curl");
+  if (WINDOWS) {
+    if ((await findExecutable("winget")) === undefined) missing.push("winget");
+  } else {
+    if ((await findExecutable("brew")) === undefined) missing.push("Homebrew");
+    if ((await findExecutable("curl")) === undefined && (await findExecutable("wget")) === undefined) missing.push("curl");
+  }
   if (!target) missing.push(`a published rtk build for ${WINDOWS ? "this Windows arch" : "this platform"}`);
   return {
     ok: false,

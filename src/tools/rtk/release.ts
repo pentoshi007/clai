@@ -295,13 +295,17 @@ export const pathContains = (dir: string, pathValue: string = process.env.PATH ?
 };
 
 export const manualInstructions = (target: RtkTarget | undefined): string => {
+  const windows = target ? target.os === "windows" : process.platform === "win32";
+  const binaryName = windows ? "rtk.exe" : "rtk";
   const binary = target
-    ? `download ${target.asset} from ${RTK_RELEASES}/latest, extract it, and put \`rtk\` on your PATH`
-    : `download the ${RTK_RELEASES}/latest asset for your platform, extract it, and put \`rtk\` on your PATH`;
+    ? `download ${target.asset} from ${RTK_RELEASES}/latest, extract it, and put \`${binaryName}\` on your PATH`
+    : `download the ${RTK_RELEASES}/latest asset for your platform, extract it, and put \`${binaryName}\` on your PATH`;
+  const managers = windows
+    ? [`  • winget:  winget install rtk-ai.rtk`, `  • Cargo:   cargo install --git ${RTK_GITHUB}`]
+    : [`  • Homebrew: brew install rtk`, `  • Cargo:    cargo install --git ${RTK_GITHUB}`];
   return [
     `install rtk manually (${RTK_SUPPORTED}):`,
-    `  • Homebrew: brew install rtk`,
-    `  • Cargo:    cargo install --git ${RTK_GITHUB}`,
+    ...managers,
     `  • Binary:   ${binary}`,
   ].join("\n");
 };

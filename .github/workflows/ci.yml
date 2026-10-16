@@ -142,6 +142,10 @@ jobs:
         run: npx vitest run test/update-install.test.ts test/update-detection-regressions.test.ts test/update-provenance.test.ts test/update-execution.test.ts test/update-metadata.test.ts test/update-permissions.test.ts test/update-windows-stage.test.ts test/update-windows-worker.test.ts --reporter=dot
       - name: Prompt history and Classic terminal colors
         run: npx vitest run test/store/session-prompts.test.ts test/app/session-prompts.test.ts test/classic/app/prompts.test.ts test/ui-core/composer/saved-prompt-history.test.ts test/session-runtime/terminal-options.test.ts test/session-runtime/view-manager.test.ts test/ui-core/capabilities.test.ts --reporter=dot
+      - name: Minimise and Windows console fallback
+        run: npx vitest run test/ui-core/minimise-command.test.ts test/os/windows-console.test.ts --reporter=dot
+      - name: RTK install planning and Windows guidance
+        run: npx vitest run test/rtk-install.test.ts --reporter=dot
       - name: MCP transports, authentication, and storage
         run: npx vitest run test/mcp --reporter=dot
       - if: runner.os != 'Windows'

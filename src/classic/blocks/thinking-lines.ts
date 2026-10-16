@@ -5,6 +5,11 @@ import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
 import { appendDisclosure } from "./disclosure-lines.js";
 import { logicalOutputLines, outputBodyRows } from "./output-lines.js";
 
+function thinkingTokenLabel(content: string): string | undefined {
+  if (!content.trim()) return undefined;
+  return `~${Math.max(1, Math.round(content.length / 4)).toLocaleString()} tokens`;
+}
+
 export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): string[] {
   const content = sanitizeDisplayText(item.content);
   if (!content.trim() && !item.streaming) return [];
@@ -12,10 +17,15 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
   const elapsed = thinkingElapsedLabel(item, ctx.now);
   const mark = ctx.ink.unicode ? "•" : "*";
   const title = ctx.ink.style(`${mark} ${item.streaming ? "Thinking" : "Reasoning"}`, { fg: "thinking", bold: true });
-  const head = joinMeta(ctx, [title, elapsed ? ctx.ink.fg("userBorder", elapsed) : undefined]);
+  const tokens = thinkingTokenLabel(content);
+  const head = joinMeta(ctx, [
+    title,
+    elapsed ? ctx.ink.fg("userBorder", elapsed) : undefined,
+    tokens ? ctx.ink.fg("userBorder", tokens) : undefined,
+  ]);
   const lines = [clipRow(ctx, head)];
-  if (!item.streaming) appendDisclosure(ctx, lines, expanded, { chord: "Ctrl+T", inline: true });
-  if (expanded || item.streaming) {
+  appendDisclosure(ctx, lines, expanded, { chord: "Ctrl+T", inline: true });
+  if (expanded) {
     const body = outputBodyRows(ctx, logicalOutputLines(content), true, { token: "thinking", branch: false });
     lines.push(...body);
   }

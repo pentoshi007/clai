@@ -13,6 +13,7 @@ import {
 } from "../../store/scope.js";
 import { formatShortcutsReference } from "../actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../rendering/format-help.js";
+import { minimiseWindowsConsoleWindow } from "../../os/windows-console.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
@@ -439,6 +440,7 @@ export function handleShortcuts(services: AppServices): void {
 export async function handleMinimise(services: AppServices): Promise<void> {
   void services.session.persistNow().catch(() => undefined);
   if (services.requestMinimise()) return;
+  if (await minimiseWindowsConsoleWindow()) return;
   notice(
     services,
     "warn",
