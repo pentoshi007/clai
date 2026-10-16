@@ -77,3 +77,11 @@ Raw audit command outputs were kept in the session scratch directory `/tmp/clai/
 Provider documentation used: [official OpenAI prompt caching guide](https://developers.openai.com/api/docs/guides/prompt-caching), fetched successfully on 2026-10-16. Only its exact-prefix/tool-content principles are used; no pricing, model ranking, guaranteed hit rate or new provider feature support is inferred.
 
 No subagent findings contributed to this audit. Delegation was stopped at the user's request before a report was produced; subsequent investigation was direct.
+
+## Implementation evidence (separate from the original audit)
+
+- [P0 evidence](phase-0.md): checkout reconciliation, 64 isolated full-assembly fixtures and focused check outcomes.
+- [assembly-baseline.json](assembly-baseline.json): per-component canonical/serialized character estimates and hashes; synthetic inputs only, no provider-exact usage.
+- [legacy-contracts.json](legacy-contracts.json): immutable source/section/paragraph and ordered tool contracts, with responsibility/test/scenario ownership explained in [contracts.md](../contracts.md).
+
+Reproduce full assembly with `node --import tsx scripts/measure-token-overhead.ts --assembled "$SESSION_SCRATCH/assembly.json"`, using the current session's absolute scratch path. The command runs the installed offline test harness and prints counts/digests only after every fixture assertion passes. Application runtime, prompt, schema and cache-policy bytes remain unchanged by P0.

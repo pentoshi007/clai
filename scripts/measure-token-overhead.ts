@@ -3,6 +3,14 @@ import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChatMessage } from "../src/types.js";
 
+if (process.argv[2] === "--assembled") {
+  const destination = process.argv[3];
+  if (!destination) throw new Error("Usage: node --import tsx scripts/measure-token-overhead.ts --assembled <scratch-report.json>");
+  const { runAssemblyMeasurement } = await import("./measure-token-assembly.js");
+  process.stdout.write(await runAssemblyMeasurement(destination));
+  process.exit(0);
+}
+
 const baseline = process.argv[2];
 if (!baseline) throw new Error("Usage: node --import tsx scripts/measure-token-overhead.ts <baseline-checkout>");
 

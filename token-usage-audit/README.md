@@ -1,11 +1,11 @@
 # clai token-usage audit and reduction roadmap
 
-Status: audit complete; implementation not started.
+Status: implementation authorized and in progress; P0 baseline and contract checks pass. See [tasks.md](tasks.md) and [phase evidence](evidence/phase-0.md). No runtime optimization or release is claimed yet.
 
 - Audited: 2026-10-16, clai 4.15.2.
 - Source baseline: `ada38924a499a568e69984b35f99b75c375ecb98`.
 - Working branch: `audit/token-efficiency-roadmap`.
-- Scope of this delivery: audit, reproducible local measurements, design, phased implementation instructions and tasks. No runtime, prompt, schema, dependency, or cache-policy changes.
+- Original audit scope: reproducible local measurements, design, phased implementation instructions and tasks. Implementation began on owner direction on 2026-10-16; phase evidence distinguishes implemented tooling from runtime changes and unpassed release gates.
 - This folder is outside ignored `docs/` and `audit/` directories so it can be versioned normally.
 
 ## Objective and priority

@@ -1,6 +1,6 @@
 # Implementation task ledger
 
-Status: **not started**. The audit is delivered; none of the implementation checkboxes below represents work completed by that audit.
+Status: **implementation in progress** (authorized 2026-10-16). P0 baseline/contract work is active. Checkboxes below track verified implementation, not work completed by the original audit.
 
 Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. A new optimized release prefix is allowed; no separate prefix-change approval is required. Do not check evidence-gated work before its criteria pass.
 
@@ -8,7 +8,7 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 
 | Phase | Dependencies | State | Evidence / commit / push |
 | --- | --- | --- | --- |
-| P0 Baseline and contract lock | implementation authorization | pending | — |
+| P0 Baseline and contract lock | implementation authorization | in progress | [phase-0.md](evidence/phase-0.md) |
 | P1 Evaluation and regression gates | P0 | pending | — |
 | P2 Strict-prefix optimization | P1 | pending | — |
 | P3 Durable profile compatibility | P1 | pending | — |
@@ -20,9 +20,12 @@ P4/P5 are part of the optimization scope, not blocked on another prefix-change d
 
 ## P0 — Baseline and contracts
 
-- [ ] **TE-001 — Rebaseline the actual checkout.** Record commit/runtime/config/route provenance and reproduce supplied offline measurements; unexplained drift resolved before edits.
-- [ ] **TE-002 — Account for full first-request assembly.** Add synthetic real-runner context fixtures for coding/security/ask/plan, MCP, vision, skills and project rules; canonical versus serialized counts and estimate provenance explicit (D01/D02).
-- [ ] **TE-003 — Lock rule and tool contracts.** Create source-to-obligation-to-test mapping; capture ordered legacy prompt/schema digests, boundaries, aliases and flags; no required behavior unowned.
+- [x] **TE-001 — Rebaseline the actual checkout.** Record commit/runtime/config/route provenance and reproduce supplied offline measurements; unexplained drift resolved before edits.
+  - Verified: base `e450cebf`, no runtime drift from `ada38924`; old measurements and all eight inventory routes reproduced identically. [P0 evidence](evidence/phase-0.md).
+- [x] **TE-002 — Account for full first-request assembly.** Add synthetic real-runner context fixtures for coding/security/ask/plan, MCP, vision, skills and project rules; canonical versus serialized counts and estimate provenance explicit (D01/D02).
+  - Verified: 64 isolated production-assembly combinations, session-state refresh, canonical/wire attribution, images/reasoning, complete dynamic authority and deterministic repeat equality. [Measurements](evidence/assembly-baseline.json); `test/context/token-assembly-baseline.test.ts`. Live provider usage remains unknown.
+- [x] **TE-003 — Lock rule and tool contracts.** Create source-to-obligation-to-test mapping; capture ordered legacy prompt/schema digests, boundaries, aliases and flags; no required behavior unowned.
+  - Verified: all 31 source headings owned, section/paragraph boundaries protected, 47 complete ordered tool contracts and renderer bytes locked. [Contracts](contracts.md); `test/context/token-contract-ledger.test.ts`. Structural coverage is not model-behavior equivalence; P1 remains required.
 - [ ] **TE-004 — Deliver P0.** Record evidence, pass focused accounting checks and byte-equivalence baseline, update this ledger, commit and verify branch push.
 
 ## P1 — Evaluation and regression gates
