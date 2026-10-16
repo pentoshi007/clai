@@ -19,6 +19,8 @@ it.each([
   { variant: "before", candidateProfile: undefined, expectedProfile: "legacy" },
   { variant: "before", candidateProfile: "density-v1", expectedProfile: "legacy-v1" },
   { variant: "after", candidateProfile: "density-v1", expectedProfile: "density-v1" },
+  { variant: "after", candidateProfile: "concise-tools-v1", expectedProfile: "concise-tools-v1" },
+  { variant: "after", candidateProfile: "density-tools-v1", expectedProfile: "density-tools-v1" },
 ])("collects redacted actual-runner evidence for $expectedProfile without a remote request", async ({ variant, candidateProfile, expectedProfile }) => {
   const parent = process.env.CLAI_DATA_DIR!;
   await mkdir(parent, { recursive: true });
@@ -35,7 +37,8 @@ it.each([
     if (!url.includes("/chat/completions")) return new Response('{"data":[]}', { headers: { "content-type": "application/json" } });
     admissions += 1;
     const body = String(init?.body ?? "");
-    expect(body.includes("working feature, not a starter/scaffold")).toBe(expectedProfile === "density-v1");
+    expect(body.includes("working feature, not a starter/scaffold")).toBe(expectedProfile.startsWith("density-"));
+    expect(body.includes("successful reads survive sibling failure")).toBe(expectedProfile.includes("tools-v1"));
     const readDone = body.includes("call_read_alpha") && body.includes("call_read_beta");
     const delta = readDone ? { content: "alpha port 4123 enabled true; beta port 5124 enabled false; synthetic-not-a-real-key" } : {
       tool_calls: [

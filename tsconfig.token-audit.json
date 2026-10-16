@@ -43,6 +43,7 @@
     "test/context/token-contract-ledger.test.ts",
     "test/context/token-profile-binding.test.ts",
     "test/context/token-density-profile.test.ts",
+    "test/context/token-concise-tools.test.ts",
     "test/context/token-profile-persistence.test.ts",
     "test/app/session-profile-metadata.test.ts"
   ],

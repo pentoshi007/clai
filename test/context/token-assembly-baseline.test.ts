@@ -6,6 +6,7 @@ import { estimateTextTokens } from "../../src/agent/request-accounting.js";
 import baseline from "../../token-usage-audit/evidence/assembly-baseline.json" with { type: "json" };
 import { createPromptProfiles } from "../../src/prompts/profile-state.js";
 import { densifyLegacyPrompt } from "../../src/prompts/density-profile.js";
+import { conciseToolDefinitions } from "../../src/tools/definitions/candidate-descriptions.js";
 
 vi.mock("../../src/os/detect.js", () => ({
   detectSystem: () => ({ platform: "linux", osName: "Linux", arch: "arm64", release: "synthetic", shell: "/bin/bash", cwd: "/project" }),
@@ -123,5 +124,37 @@ describe("prompt-only candidate complete request attribution", () => {
       records.push({ id: fixture.id, profile: "density-v1", precision: "character-estimate", before, after });
     }
     await writeFile(destination, `${JSON.stringify({ version: 1, providerUsage: null, records })}\n`);
+  });
+});
+
+
+describe.each(["concise-tools-v1", "density-tools-v1"])("complete request attribution for %s", (profile) => {
+  it.each(assemblyFixtureMatrix)("retains all dynamic contracts for $id", async (fixture) => {
+    const before = await assembleTokenFixture(fixture, createPromptProfiles());
+    const after = await assembleTokenFixture(fixture, createPromptProfiles(profile));
+    expect(after.messages.slice(1)).toEqual(before.messages.slice(1));
+    expect(after.toolNames).toEqual(before.toolNames);
+    expect(after.tools).toEqual(before.tools ? conciseToolDefinitions(before.tools) : undefined);
+    const core = profile === "density-tools-v1" && !fixture.compact ? densifyLegacyPrompt(before.stablePrompt) : before.stablePrompt;
+    if (fixture.native) expect(after.stablePrompt).toBe(core);
+    else expect(after.stablePrompt).toBe(`${core}\n\nweb.fetch maxBytes is an integer in [1024, 1048576] captured wire-body bytes (default 262144); raise it on truncated=true only within these bounds.`);
+    const baselineMeasurement = measureTokenAssembly(fixture, before);
+    const candidateMeasurement = measureTokenAssembly(fixture, after);
+    expect(candidateMeasurement.components.dynamicContext).toEqual(baselineMeasurement.components.dynamicContext);
+    expect(candidateMeasurement.userTaskCopies).toBe(1);
+    if (fixture.native) expect(candidateMeasurement.finalWire.bytes).toBeLessThan(baselineMeasurement.finalWire.bytes);
+    if (!fixture.native && profile === "concise-tools-v1") expect(candidateMeasurement.finalWire.bytes).toBeGreaterThan(baselineMeasurement.finalWire.bytes);
+  });
+
+  it("exports isolated and combined measurements without treating estimates as usage", async () => {
+    const destination = process.env.CLAI_TOOL_CANDIDATE_ASSEMBLY_REPORT;
+    if (!destination) return;
+    const records = [];
+    for (const fixture of assemblyFixtureMatrix) {
+      const before = measureTokenAssembly(fixture, await assembleTokenFixture(fixture, createPromptProfiles()));
+      const after = measureTokenAssembly(fixture, await assembleTokenFixture(fixture, createPromptProfiles(profile)));
+      records.push({ id: fixture.id, profile, precision: "character-estimate", before, after });
+    }
+    await writeFile(`${destination}-${profile}.json`, `${JSON.stringify({ version: 1, providerUsage: null, records })}\n`);
   });
 });
