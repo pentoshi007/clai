@@ -40,7 +40,10 @@
     "test/context/token-evaluation-metrics.test.ts",
     "test/context/token-evaluation-trial.test.ts",
     "test/context/token-assembly-baseline.test.ts",
-    "test/context/token-contract-ledger.test.ts"
+    "test/context/token-contract-ledger.test.ts",
+    "test/context/token-profile-binding.test.ts",
+    "test/context/token-profile-persistence.test.ts",
+    "test/app/session-profile-metadata.test.ts"
   ],
   "exclude": ["dist", "node_modules"]
 }

@@ -223,6 +223,7 @@ export async function saveSession(
   sessionModel?: SessionModelSelection | undefined,
   location?: HistorySessionLocation | undefined,
   changes?: readonly import("../app/controllers/session-changes.js").FileLineChanges[] | undefined,
+  promptProfiles?: import("../prompts/profile-state.js").PromptProfileState | undefined,
 ): Promise<HistoryRecord> {
   if (!name) name = fallbackSessionName(messages);
 
@@ -242,6 +243,7 @@ export async function saveSession(
     messages: scrubMessages(messages),
     transcript: scrubTranscript(transcript),
     ...(changes ? { changes } : {}),
+    ...(promptProfiles ? { promptProfiles: structuredClone(promptProfiles) } : {}),
     ...(contextUsage ? { contextUsage } : {}),
     ...(previousTurn ? { previousTurn } : {}),
     ...sessionModelFields(sessionModel),
@@ -304,6 +306,7 @@ export async function upsertSession(
   sessionModel?: SessionModelSelection | undefined,
   location?: HistorySessionLocation | undefined,
   changes?: readonly import("../app/controllers/session-changes.js").FileLineChanges[] | undefined,
+  promptProfiles?: import("../prompts/profile-state.js").PromptProfileState | undefined,
 ): Promise<HistoryRecord> {
   const existing = await existingSessionHeader(id);
   const requestedRevision =
@@ -315,6 +318,7 @@ export async function upsertSession(
   const workspace = workspaceFieldsFromActive(existing, location);
   const effectiveWriterGeneration =
     writerGeneration ?? existing?.writerGeneration;
+  const effectiveProfiles = promptProfiles ?? existing?.promptProfiles;
   const record: HistoryRecord = {
     id,
     ...(effectiveWriterGeneration
@@ -330,6 +334,7 @@ export async function upsertSession(
     messages: scrubMessages(messages),
     transcript: scrubTranscript(transcript),
     ...(changes ? { changes } : existing?.changes ? { changes: existing.changes } : {}),
+    ...(effectiveProfiles ? { promptProfiles: structuredClone(effectiveProfiles) } : {}),
     ...(contextUsage
       ? { contextUsage }
       : existing?.contextUsage

@@ -18,6 +18,7 @@ export interface SaveSessionOptions {
   readonly model?: string | undefined;
   readonly thinking?: ReasoningPreference | undefined;
   readonly location?: HistorySessionLocation | undefined;
+  readonly promptProfiles?: import("../../prompts/profile-state.js").PromptProfileState | undefined;
 }
 
 

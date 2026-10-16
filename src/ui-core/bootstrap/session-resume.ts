@@ -170,6 +170,7 @@ export async function applySessionResume(
     model,
     transcript: record.transcript,
     ...(record.changes ? { changes: record.changes } : {}),
+    ...(record.promptProfiles !== undefined ? { promptProfiles: record.promptProfiles } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.workspaceFolder

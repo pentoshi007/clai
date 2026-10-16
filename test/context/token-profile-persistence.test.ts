@@ -1,0 +1,91 @@
+import { execFileSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterEach, expect, it } from "vitest";
+import { SessionPersistenceQueue } from "../../src/app/controllers/session-persistence.js";
+import { createPromptProfiles } from "../../src/prompts/profile-state.js";
+import { createToolRouting } from "../../src/agent/turn/tool-routing.js";
+import type { SaveSessionOptions } from "../../src/app/ports/persistence-port.js";
+
+const roots: string[] = [];
+const source = (path: string) => JSON.stringify(pathToFileURL(resolve(import.meta.dirname, "../../src", path)).href);
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+
+it("snapshots route metadata when queued, without copying session grants", async () => {
+  const state = createPromptProfiles();
+  const route = createToolRouting({ mode: "agent", mcpPresent: false, toolCalling: "native", useCompactSystemPrompt: () => false, promptProfiles: state });
+  route.buildStableSystemContent(true, "nvidia", "synthetic");
+  const writes: SaveSessionOptions[] = [];
+  const queue = new SessionPersistenceQueue({ saveSession: async (_messages, options) => { if (options) writes.push(options); }, loadPlan: async () => undefined, savePlan: async () => {}, deletePlan: async () => {} });
+  const pending = queue.save([{ role: "user", content: "Keep criteria" }], { sessionId: "test", promptProfiles: state });
+  route.buildStableSystemContent(false, "nvidia", "synthetic");
+  await pending;
+  expect(writes[0]?.promptProfiles?.bindings).toHaveLength(1);
+  expect(JSON.stringify(writes)).not.toContain("pentestAuthorized");
+});
+
+it("retains bindings in JSONL, SQLite, serialized transfer/recovery and a fresh process after config changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "profile-process-"));
+  roots.push(root);
+  const env = { ...process.env, CLAI_DATA_DIR: root, CLAI_CONFIG_DIR: join(root, "config"), CLAI_HISTORY_DIR: join(root, "history"), CLAI_LOG_DIR: join(root, "logs"), CLAI_ARTIFACT_DIR: join(root, "artifacts"), CLAI_SESSION_WORKSPACE_DIR: join(root, "workspaces"), CLAI_DISABLE_KEYCHAIN: "1" };
+  const imports = `
+    import {strict as assert} from 'node:assert';
+    import {writeFile,readFile} from 'node:fs/promises';
+    import {createPromptProfiles,parsePromptProfiles} from ${source("prompts/profile-state.ts")};
+    import {createToolRouting} from ${source("agent/turn/tool-routing.ts")};
+    import {createCurrentPersistencePort} from ${source("app/adapters/current-store-adapter.ts")};
+    import {getSession,upsertSession} from ${source("store/history.ts")};
+    import {readJsonlRecordsFrom,hydrateHistoryRecord,recoverOrphanedHistory} from ${source("store/history/recovery.ts")};
+    import {rowToSession,upsertSqlite} from ${source("store/history/sqlite-backend.ts")};
+    import {updateConfig} from ${source("store/config.ts")};
+  `;
+  const run = (code: string): string => execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", imports + code], { cwd: resolve(import.meta.dirname, "../.."), env, encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+  expect(run(`
+    const state=createPromptProfiles();
+    const route=createToolRouting({mode:'agent',mcpPresent:true,toolCalling:'native',useCompactSystemPrompt:()=>false,promptProfiles:state});
+    const prompt=route.buildStableSystemContent(true,'openai','gpt-4o');
+    const messages=[{role:'system',content:prompt},{role:'user',content:'Preserve all acceptance criteria'}];
+    await createCurrentPersistencePort().saveSession(messages,{sessionId:'bound',promptProfiles:state});
+    await upsertSession('ordinary',[{role:'user',content:'Legacy user-only record'}]);
+    await writeFile(${JSON.stringify(join(root, "reference.json"))},JSON.stringify({prompt,tools:route.selectToolDefs(true,false,'openai','gpt-4o')}));
+    console.log('saved');
+  `)).toBe("saved");
+  expect(run(`
+    updateConfig({slimNativePrompt:false});
+    const record=await getSession('bound');
+    assert.ok(record?.promptProfiles);
+    const reference=JSON.parse(await readFile(${JSON.stringify(join(root, "reference.json"))},'utf8'));
+    const state=parsePromptProfiles(record.promptProfiles);
+    const route=createToolRouting({mode:'agent',mcpPresent:false,toolCalling:'native',useCompactSystemPrompt:()=>true,promptProfiles:state});
+    assert.equal(route.buildStableSystemContent(true,'openai','gpt-4o'),reference.prompt);
+    assert.deepEqual(route.selectToolDefs(true,true,'openai','gpt-4o'),reference.tools);
+    await upsertSession('bound',[...record.messages,{role:'user',content:'Continue'}]);
+    const updated=await getSession('bound');
+    assert.deepEqual(updated.promptProfiles,record.promptProfiles);
+    const records=await readJsonlRecordsFrom(${JSON.stringify(join(root, "history/history.jsonl"))});
+    assert.deepEqual(records.find(r=>r.id==='bound').promptProfiles,state);
+    assert.equal((await getSession('ordinary')).promptProfiles,undefined);
+    const imported=hydrateHistoryRecord(JSON.parse(JSON.stringify(updated)));
+    assert.deepEqual(imported.promptProfiles,state);
+    const {DatabaseSync}=await import('node:sqlite');
+    const db=new DatabaseSync(':memory:');
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY,name TEXT,created_at TEXT,updated_at TEXT,writer_generation TEXT,revision INTEGER,cwd TEXT,message_count INTEGER,item_count INTEGER,has_images INTEGER,messages_json TEXT)');
+    upsertSqlite(db,updated);
+    const restored=rowToSession(db.prepare('SELECT * FROM sessions WHERE id=?').get('bound'));
+    assert.deepEqual(restored.promptProfiles,state);
+    assert.deepEqual(restored.messages,updated.messages);
+    const corrupt=JSON.parse(JSON.stringify(restored));corrupt.promptProfiles.version=999;
+    assert.equal(hydrateHistoryRecord(corrupt).messages.length,updated.messages.length);
+    assert.throws(()=>parsePromptProfiles(corrupt.promptProfiles),/No replacement profile/);
+    db.close();
+    const recovery={...updated,revision:999,updatedAt:'2099-01-01T00:00:00.000Z'};
+    await writeFile(${JSON.stringify(join(root, "history/history.jsonl.profile-recovery.tmp"))},JSON.stringify(recovery)+'\\n');
+    assert.equal((await recoverOrphanedHistory()).recovered,1);
+    const recovered=await getSession('bound');
+    assert.deepEqual(recovered.promptProfiles,state);
+    assert.deepEqual(recovered.messages,updated.messages);
+    console.log('resumed-with-identical-bytes');
+  `)).toBe("resumed-with-identical-bytes");
+}, 45000);

@@ -49,11 +49,13 @@ export class SessionPersistenceQueue {
   ): Promise<void> {
     const snapshot = messages.map((message) => ({ ...message }));
     const transcript = options.transcript ? [...options.transcript] : undefined;
+    const promptProfiles = options.promptProfiles ? structuredClone(options.promptProfiles) : undefined;
     const revision = ++this.revision;
     const writerGeneration = this.writerGeneration;
     const run = this.chain.then(() =>
       this.port.saveSession(snapshot, {
         ...options,
+        ...(promptProfiles ? { promptProfiles } : {}),
         transcript,
         writerGeneration,
         revision,

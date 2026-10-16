@@ -513,6 +513,8 @@ export async function handleSave(
       services.session.sessionId,
       [...messages],
       invocation.args.trim() || undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      services.session.promptProfiles,
     ).catch(() => undefined);
     notice(services, "info", rec ? `saved session ${rec.id}` : "save failed");
   }

@@ -32,6 +32,7 @@ export function createCurrentPersistencePort(): PersistencePort {
           sessionModel,
           options.location,
           options.changes,
+          options.promptProfiles,
         );
         return;
       }
@@ -46,6 +47,7 @@ export function createCurrentPersistencePort(): PersistencePort {
         sessionModel,
         options?.location,
         options?.changes,
+        options?.promptProfiles,
       );
     },
     loadPlan: (sessionId) => loadPlan(sessionId),

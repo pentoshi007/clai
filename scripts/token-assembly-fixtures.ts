@@ -81,7 +81,7 @@ export async function assembleTokenFixture(fixture: AssemblyFixture) {
     ...classification, prompt, mode, plan, history, previousTurn: undefined,
     sessionId: "assembly-fixture", projectContext: "Synthetic existing project with fixed coding and security acceptance criteria.",
     destinationHint: undefined, isPlanMode: mode === "plan",
-    executionRulesInSystem: stablePrompt.includes("Professional execution method — applies to every domain"),
+    executionRulesInSystem: routing.executionRulesInSystem(fixture.native, provider, model),
     skillsAvailable: true, skillIndex: { skills: [skill], truncated: false }, selectedSkillNames: [skill.name],
     inputTokenBudget: undefined,
     getMcpContext: () => fixture.mcp ? "MCP TOOL CONTEXT\nSynthetic server fixture: connected, selection off; discover before calling." : undefined,

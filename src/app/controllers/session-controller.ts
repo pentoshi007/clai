@@ -36,6 +36,8 @@ import {
   type ContextUsageTarget,
 } from "./session-context-usage.js";
 import { createSessionPolicy, type SessionPolicy } from "../../agent/session-policy.js";
+import { parsePromptProfiles, type PromptProfileState } from "../../prompts/profile-state.js";
+import { validateProfileArtifacts } from "../../prompts/profile-binding.js";
 import { SubagentManager } from "../../agent/subagents/manager.js";
 import { knownAttemptUsage, type OperationUsageSnapshot } from "../../llm/operation-usage.js";
 import { getActiveProjectRoot } from "../../agent/project-root.js";
@@ -505,6 +507,10 @@ export class SessionController implements Disposable {
     return this.history;
   }
 
+  get promptProfiles(): PromptProfileState | undefined {
+    return this.policy.promptProfiles ? structuredClone(this.policy.promptProfiles) : undefined;
+  }
+
   subscribe(listener: SessionStateListener): () => void {
     this.stateListeners.add(listener);
     return () => this.stateListeners.delete(listener);
@@ -571,8 +577,11 @@ export class SessionController implements Disposable {
       model?: string | undefined;
       transcript?: readonly ClassicTranscriptItem[] | undefined;
       changes?: readonly FileLineChanges[] | undefined;
+      promptProfiles?: PromptProfileState | undefined;
     } = {},
   ): void {
+    const profiles = parsePromptProfiles(options.promptProfiles);
+    if (profiles) validateProfileArtifacts(profiles);
     this.beginLifecycleGeneration();
     this.applyRestoredModel(options.provider, options.model);
     const healed: ChatMessage[] = messages.map((m) => ({ ...m }));
@@ -607,6 +616,7 @@ export class SessionController implements Disposable {
       this.persistence.rebind(options.persistenceRevision);
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     }
+    this.policy.promptProfiles = profiles;
     this.resetPromptHistory();
     this.changeLedger.restore(options.changes, options.transcript);
     if (this.isPromptHistoryEnabled()) {
@@ -909,6 +919,7 @@ export class SessionController implements Disposable {
       ...(this.provider ? { provider: this.provider } : {}),
       ...(this.model ? { model: this.model } : {}),
       thinking: { ...getConfig().thinking },
+      ...(this.policy.promptProfiles ? { promptProfiles: this.policy.promptProfiles } : {}),
       location: {
         cwd: safeCwd(),
         ...(workspace ? { workspaceFolder: workspace.folderName, workspaceCode: workspace.code } : {}),

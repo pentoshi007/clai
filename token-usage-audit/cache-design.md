@@ -40,7 +40,9 @@ A newly appended context section can be improved without invalidating earlier pr
 
 A new profile has a normal initial warm-up; preserving cache entries from an older release's different text is not the requirement. Keeping `prompt_cache_key` unchanged cannot transfer KV states to changed text. Same-profile resume/continuation must remain stable, and unsupported cross-version reuse must not be claimed.
 
-### Minimal profile model (proposed; not implemented)
+### Minimal profile model (explicit experimental path implemented in P3)
+
+`src/prompts/profile-{state,binding}.ts` and `legacy-profile.ts` implement durable explicit bindings. Ordinary unbound sessions keep the legacy path; no optimized default is active. [P3 evidence](evidence/phase-3.md) records preservation tests, ambiguous-old-history limits and measured explicit-path overhead. The lifecycle below remains the release contract; implemented storage does not prove cache/performance rollout gates.
 
 An immutable profile manifest needs:
 

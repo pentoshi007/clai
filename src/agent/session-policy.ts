@@ -1,4 +1,5 @@
 import type { SubagentManager } from "./subagents/manager.js";
+import type { PromptProfileState } from "../prompts/profile-state.js";
 
 export interface SessionPolicy {
   subagents?: SubagentManager;
@@ -6,6 +7,7 @@ export interface SessionPolicy {
   pentestAuthorized: { value: boolean };
   sessionId: string;
   compactPromptModes?: Map<string, boolean>;
+  promptProfiles?: PromptProfileState | undefined;
   planApproved: { value: boolean };
 }
 

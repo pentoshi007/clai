@@ -10,8 +10,8 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 | --- | --- | --- | --- |
 | P0 Baseline and contract lock | implementation authorization | complete | [phase-0.md](evidence/phase-0.md); `fe80e611`, push verified |
 | P1 Evaluation and regression gates | P0 | complete | `1f9ad72d`, remote equality verified; [phase-1.md](evidence/phase-1.md), [coverage](evidence/phase-1-coverage.md); limited-route baseline, no candidate/cache pass |
-| P2 Strict-prefix optimization | P1 | verified retain-baseline decision; delivery receipt in P3 | [phase-2.md](evidence/phase-2.md); additional startup/task savings 0; runtime unchanged |
-| P3 Durable profile compatibility | P1 | pending | — |
+| P2 Strict-prefix optimization | P1 | complete, retain baseline | `259f9f82`, push verified; [phase-2.md](evidence/phase-2.md); incremental startup/task savings 0 |
+| P3 Durable profile compatibility | P1 | explicit compatibility verified; default rollout deferred | [phase-3.md](evidence/phase-3.md); TE-022 live denominators remain blocked; delivery receipt in P4 |
 | P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |
 | P5 Tool-description candidate | P4 | pending prerequisites | — |
 | P6 Evaluation and release decision | applicable candidate phases; P1 required | pending | — |
@@ -59,13 +59,20 @@ P4/P5 are part of the optimization scope, not blocked on another prefix-change d
 
 ## P3 — Durable profile compatibility
 
-- [ ] **TE-016 — Introduce immutable legacy profile binding.** Implement resolver/manifest with exact prompt and ordered schemas; no candidate activation, no changed legacy bytes (C1/C3/C5).
-- [ ] **TE-017 — Replace brittle composition detection.** Use internal profile capabilities instead of matching prose; full/compact/native/text legacy assembly remains identical (D01/D02).
-- [ ] **TE-018 — Persist and restore route bindings.** Update all history/session/persistence callers, JSONL/SQLite and import/export/recovery; do not persist extra authorization state.
-- [ ] **TE-019 — Handle legacy/unknown/corrupt profiles safely.** No guessed defaults; actionable pre-request recovery; exact known artifacts retained; old history never discarded.
-- [ ] **TE-020 — Prove process/version transitions.** Fresh-process upgrade/resume, config changes, provider return, native/text fallback, compaction and rollback fixtures preserve supported prefix boundaries (D07–D09).
-- [ ] **TE-021 — Deliver P3.** Legacy wire equality, compatible persistence, packaged artifact availability and performance checks pass; update ledger, commit and verify branch push.
+- [x] **TE-016 — Introduce immutable legacy profile binding.** Implement resolver/manifest with exact prompt and ordered schemas; no candidate activation, no changed legacy bytes (C1/C3/C5).
+  - Verified explicit session-only binding with complete immutable artifact/route digests and bounded weak caches; ordinary default remains unbound/unchanged. [P3 evidence](evidence/phase-3.md).
+- [x] **TE-017 — Replace brittle composition detection.** Use internal profile capabilities instead of matching prose; full/compact/native/text legacy assembly remains identical (D01/D02).
+  - Verified all 64 legacy assembly cases and source/catalog locks; production no longer uses prose matching.
+- [x] **TE-018 — Persist and restore route bindings.** Update all history/session/persistence callers, JSONL/SQLite and import/export/recovery; do not persist extra authorization state.
+  - Verified records, queue, adapters, controller, resume/fallback save, actual SQL serializer, JSON record transfer and orphan-temp recovery; no grants persisted. Legacy noninteractive user/answer records intentionally remain unbound.
+- [x] **TE-019 — Handle legacy/unknown/corrupt profiles safely.** No guessed defaults; actionable pre-request recovery; exact known artifacts retained; old history never discarded.
+  - Verified version/profile/route/digest faults rejected before bound submission; controller preserves history on rejected load. Ambiguous old histories retain the ordinary legacy path without a fabricated continuity promise or new mandatory prompt.
+- [x] **TE-020 — Prove process/version transitions.** Fresh-process upgrade/resume, config changes, provider return, native/text fallback, compaction and rollback fixtures preserve supported prefix boundaries (D07–D09).
+  - Verified fresh-process persisted legacy route despite changed compact/reliability/catalog inputs; provider/native/text return identities plus existing compaction/provider tests pass. Unknown-build/profile controls reject unsupported experimental continuation. No claim that old binaries understand a future profile.
+- [x] **TE-021 — Deliver P3.** Legacy wire equality, compatible persistence, packaged artifact availability and performance checks pass; update ledger, commit and verify branch push.
+  - Decision: retain ordinary legacy default; dormant explicit path only. 36 files/303 tests plus final overlapping 6 files/101 tests, build/types/package/Node/Bun checks pass. Measured explicit copy/startup overhead prevents promoting it as a default performance improvement. Commit/push receipt carried into P4.
 - [ ] **TE-022 — Lock comparable cache baselines and candidate scope.** Record routes/settings/workloads, cold/warm classification, eligible-prefix denominator and warm hit/reuse metrics. Define tests for zero runtime prefix drift and same-or-better cache reuse (C1/C6/C9); no separate owner decision is needed for a new release prefix.
+  - Baseline scope/unknown rejection locked; subscription eligibility/eligible-token denominators remain unknown, other attempted routes unavailable. Candidate rollout scope empty. Remaining live criterion carried into P6; offline candidate investigation may proceed, but no pilot pass/default activation is inferred.
 
 ## P4 — Instruction candidate (requires P3 and TE-022 evidence)
 

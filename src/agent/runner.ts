@@ -358,6 +358,7 @@ export async function runAgentTurn(
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
       compactPromptModes: session.compactPromptModes ??= new Map(),
+      promptProfiles: session.promptProfiles,
     });
     const routeToolNames = toolRouting.routeToolNames;
     const resolveNativeTools = toolRouting.resolveNativeTools;
@@ -443,9 +444,7 @@ export async function runAgentTurn(
         projectContext,
         destinationHint,
         isPlanMode,
-        executionRulesInSystem: buildStableSystemContent(nativeToolsActive).includes(
-          "Professional execution method — applies to every domain",
-        ),
+        executionRulesInSystem: toolRouting.executionRulesInSystem(nativeToolsActive, loop.provider, loop.model),
         buildLikeTurn,
         informationalQuery,
         idleOrSocialPrompt,

@@ -57,6 +57,7 @@ export interface HistoryRecord {
   provider?: ProviderId | undefined;
   model?: string | undefined;
   thinking?: ReasoningPreference | undefined;
+  promptProfiles?: import("../../prompts/profile-state.js").PromptProfileState | undefined;
 }
 
 export let cachedSessionList:
