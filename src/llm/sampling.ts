@@ -16,6 +16,11 @@ export const DEFAULT_SAMPLING: SamplingDefaults = { temperature: 0.2 };
 
 const SAMPLING_RULES: SamplingRule[] = [
   {
+    pattern: /deepseek-v4(?:[.-]|$)/i,
+    providers: ["river"],
+    defaults: { temperature: 1.0, topP: 0.95 },
+  },
+  {
     pattern: /minimax-m3/i,
     defaults: { temperature: 1.0, topP: 0.95 },
   },

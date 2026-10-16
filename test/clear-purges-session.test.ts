@@ -1,8 +1,12 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { handleClear } from "../src/ui-core/commands/session-commands.js";
+import { handleClear, handleNew } from "../src/ui-core/commands/session-commands.js";
+import { handlePrompts } from "../src/ui-core/commands/prompt-commands.js";
+import { createSavedPromptReader, SessionPromptStore } from "../src/store/session-prompts.js";
+import * as sessionNaming from "../src/app/controllers/session-naming.js";
 import {
   createCompositionRoot,
   type AppServices,
@@ -69,15 +73,17 @@ let services: AppServices;
 
 beforeEach(() => {
   savedPlans.clear();
+  vi.spyOn(sessionNaming, "completeForSessionNaming").mockResolvedValue("TITLE: Test session");
   services = makeServices();
 });
 
 afterEach(() => {
   services.dispose();
   clearActiveSessionWorkspace();
+  vi.restoreAllMocks();
 });
 
-describe("/clear purges the whole session", () => {
+describe("/clear resets the session while retaining user prompts", () => {
   it("deletes the saved history record for the session it abandons", async () => {
     services.session.loadHistory([
       { role: "user", content: "remember this" },
@@ -160,12 +166,91 @@ describe("/clear purges the whole session", () => {
     expect(warnings).toHaveLength(0);
   });
 
-  it("reports the clear immediately rather than after the delete finishes", () => {
+  it("reports the clear immediately rather than after the delete finishes", async () => {
     services.session.loadHistory([{ role: "user", content: "hi" }]);
-    void handleClear(services);
+    const clearing = handleClear(services);
     expect(
       services.toast.getToasts().some((toast) => toast.message.includes("Session cleared")),
     ).toBe(true);
+    await clearing;
+  });
+
+  it("retains the saved prompt journal and route metadata when the old session is purged", async () => {
+    const oldStore = services.session.promptHistory;
+    const content = `Original request 日本語\n\n> A quotation\n${"Detailed requirements ".repeat(1000)}`;
+    await oldStore.append({ content, timestamp: 1791110400000, provider: "river", model: "deepseek", effort: "max" });
+    services.session.loadHistory([{ role: "user", content: "Conversation state to clear" }]);
+    const abandoned = services.session.sessionId;
+    await upsertSession(abandoned, [...services.session.messages], "clear journal subject");
+    const body = await readFile(oldStore.path, "utf8");
+
+    await handleClear(services);
+
+    expect(await getSession(abandoned)).toBeUndefined();
+    expect(await oldStore.count()).toBe(0);
+    expect(services.session.sessionId).not.toBe(abandoned);
+    expect(services.session.messages).toEqual([]);
+    expect(await readFile(services.session.promptHistory.path, "utf8")).toBe(body);
+    const restored = new SessionPromptStore(services.session.sessionId);
+    expect(await createSavedPromptReader(restored).readOlder()).toBe(content);
+    await handlePrompts(services);
+    const overlay = services.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind !== "pager") throw new Error("prompts pager did not open");
+    expect((await overlay.source!.readPage(0)).body).toContain("Original request 日本語");
+  });
+
+  it("preserves pending writes and numbering across repeated clears without restoring agent context", async () => {
+    const run = vi.spyOn(SilentAgent.prototype, "runTurn");
+    const written = services.session.promptHistory.append({ content: "First saved prompt" });
+    const cleared = handleClear(services);
+    const appended = services.session.promptHistory.append({ content: "Prompt submitted during clear" });
+    await Promise.all([written, cleared, appended]);
+    await handleClear(services);
+    services.session.setProvider("codex");
+    services.session.setModel("test-model");
+    await services.session.submit("Only this new request reaches the agent");
+    await services.session.ensurePromptHistory();
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![0].history ?? []).toEqual([]);
+    expect(JSON.stringify(run.mock.calls[0]![0])).not.toContain("First saved prompt");
+    const restored = new SessionPromptStore(services.session.sessionId);
+    expect((await restored.namingWindow()).prompts).toEqual([
+      { number: 1, preview: "First saved prompt" },
+      { number: 2, preview: "Prompt submitted during clear" },
+      { number: 3, preview: "Only this new request reaches the agent" },
+    ]);
+  });
+
+  it("keeps the previous saved copy and warns when prompt preservation fails", async () => {
+    const oldStore = services.session.promptHistory;
+    await oldStore.append({ content: "Keep this recoverable prompt" });
+    const abandoned = services.session.sessionId;
+    await upsertSession(abandoned, [{ role: "user", content: "Keep this recoverable prompt" }], "recoverable");
+    vi.spyOn(oldStore, "flush").mockRejectedValue(new Error("journal unavailable"));
+
+    await handleClear(services);
+
+    expect(services.session.messages).toEqual([]);
+    expect(await getSession(abandoned)).toBeDefined();
+    expect(await oldStore.count()).toBe(1);
+    expect(await readFile(oldStore.path, "utf8")).toContain("Keep this recoverable prompt");
+    expect(services.toast.getToasts()).toContainEqual(
+      expect.objectContaining({ level: "warn", message: expect.stringContaining("prompt history") }),
+    );
+  });
+
+  it("keeps /new isolated from the journal retained by /clear", async () => {
+    await services.session.promptHistory.append({ content: "Keep across clear, not new" });
+    await handleClear(services);
+    const oldStore = services.session.promptHistory;
+
+    await handleNew(services);
+
+    expect(await oldStore.count()).toBe(1);
+    expect(await services.session.promptHistory.count()).toBe(0);
+    expect(existsSync(services.session.promptHistory.path)).toBe(false);
   });
 
   it("keeps a different session untouched", async () => {

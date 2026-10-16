@@ -20,7 +20,7 @@ import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { filterPickerOptions } from "../../src/ui-core/rendering/picker-filter.js";
 import type { PickerOption } from "../../src/ui-core/state/types.js";
 import { getProvider } from "../../src/llm/router.js";
-import { getConfig } from "../../src/store/config.js";
+import { getConfig, setProviderEndpoints } from "../../src/store/config.js";
 import type { ProviderId } from "../../src/types.js";
 import { releaseSessionModel, resetSessionModelCache } from "../../src/store/session-model.js";
 
@@ -45,6 +45,7 @@ beforeEach(() => {
   modelDir = mkdtempSync(join(tmpdir(), "clai-provider-picker-"));
   previousModelDir = process.env.CLAI_SESSION_MODEL_DIR;
   process.env.CLAI_SESSION_MODEL_DIR = modelDir;
+  vi.stubEnv("MISTRAL_BASE_URL", "");
   resetSessionModelCache();
 });
 
@@ -54,6 +55,7 @@ afterEach(async () => {
     await releaseSessionModel(services.session.sessionId);
   }
   activeServices.clear();
+  vi.unstubAllEnvs();
   resetSessionModelCache();
   if (previousModelDir === undefined) delete process.env.CLAI_SESSION_MODEL_DIR;
   else process.env.CLAI_SESSION_MODEL_DIR = previousModelDir;
@@ -162,6 +164,38 @@ describe("/provider search is scoped to provider names", () => {
     expect(matched[0]?.value).toBe("bynara");
   });
 
+  it.each([
+    { stored: [], env: "", expected: "https://api.mistral.ai/v1" },
+    {
+      stored: ["https://api.eu.mistral.ai/v1", "https://api.us.mistral.ai/v1"],
+      env: "",
+      expected: "https://api.us.mistral.ai/v1",
+    },
+    {
+      stored: ["https://api.eu.mistral.ai/v1"],
+      env: "https://mistral-proxy.example/v1",
+      expected: "https://mistral-proxy.example/v1",
+    },
+  ])("shows Mistral endpoint $expected", async ({ stored, env, expected }) => {
+    const previous = getConfig().providerEndpoints.mistral;
+    vi.stubEnv("MISTRAL_BASE_URL", env);
+    setProviderEndpoints("mistral", stored, stored.length - 1);
+    try {
+      const services = makeServices();
+      const picker = await openProviderPicker(services);
+      const mistral = picker.options.find((option) => option.value === "mistral");
+      expect(mistral?.description).toBe(`(${expected})`);
+      expect(filterPickerOptions([...picker.options], "mistral", {
+        searchDescription: false,
+      })).toEqual([mistral]);
+      expect(filterPickerOptions([...picker.options], expected, {
+        searchDescription: false,
+      })).toEqual([]);
+    } finally {
+      setProviderEndpoints("mistral", previous?.urls ?? [], previous?.activeIndex, previous?.disabledUrls);
+    }
+  });
+
   it("shows the base url in parens as the row description without matching it", async () => {
     const services = makeServices();
     const picker = await openProviderPicker(services);
@@ -169,6 +203,8 @@ describe("/provider search is scoped to provider names", () => {
     expect(bynara?.description).toBe("(https://router.bynara.id/v1)");
     const openai = picker.options.find((option) => option.value === "openai");
     expect(openai?.description).toBe("(https://api.openai.com/v1)");
+    const mistral = picker.options.find((option) => option.value === "mistral");
+    expect(mistral?.description).toBe("(https://api.mistral.ai/v1)");
     const omnirush = picker.options.find((option) => option.value === "omnirush");
     expect(omnirush?.description).toBe("(https://omnirush.ai/omnirush/v1)");
     const qoder = picker.options.find((option) => option.value === "qoder");

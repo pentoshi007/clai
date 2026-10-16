@@ -15113,6 +15113,7 @@ exports[`serialized request snapshots > river-deepseek / images 1`] = `
     "reasoning_effort": "none",
     "stream": false,
     "temperature": 0.2,
+    "top_p": 0.95,
   },
   "headers": {
     "accept": "application/json",
@@ -15150,6 +15151,7 @@ exports[`serialized request snapshots > river-deepseek / minimal 1`] = `
     "reasoning_effort": "none",
     "stream": false,
     "temperature": 0.2,
+    "top_p": 0.95,
   },
   "headers": {
     "accept": "application/json",
@@ -15187,6 +15189,7 @@ exports[`serialized request snapshots > river-deepseek / reasoning-control 1`] =
     "reasoning_effort": "high",
     "stream": false,
     "temperature": 0.2,
+    "top_p": 0.95,
   },
   "headers": {
     "accept": "application/json",
@@ -15288,6 +15291,7 @@ exports[`serialized request snapshots > river-deepseek / tool-loop-replay 1`] = 
         "type": "function",
       },
     ],
+    "top_p": 0.95,
   },
   "headers": {
     "accept": "application/json",
@@ -15389,6 +15393,7 @@ exports[`serialized request snapshots > river-deepseek / tool-loop-replay-unsign
         "type": "function",
       },
     ],
+    "top_p": 0.95,
   },
   "headers": {
     "accept": "application/json",
@@ -15469,6 +15474,7 @@ exports[`serialized request snapshots > river-deepseek / tools 1`] = `
         "type": "function",
       },
     ],
+    "top_p": 0.95,
   },
   "headers": {
     "accept": "application/json",

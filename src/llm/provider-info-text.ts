@@ -16,6 +16,8 @@ export const providerInfo: Record<string, string> = {
   GLM-5.3-Flash: 1,048,576 context; 128K output; low / high / max (required).
   clai conservatively caps documented GLM output at 128,000 until live metadata.
   /effort follows the selected model's supported settings.
+  DeepSeek V4 uses recommended sampling defaults; sustained exact repetition
+  stops the stream rather than spending the remaining budget. Max effort is preserved.
   Unchanged history prefixes can reuse River's automatic cache when available.
   Cached input and reasoning tokens use API usage counters; hits are not guaranteed.
   Multiple keys, key rotation, local tools, subagents, images, and cancellation
@@ -167,9 +169,11 @@ MODELS
 CACHING
   - Claude models: clai places its own ephemeral cache marks on the system
     prompt and the tail of the conversation (at most four, as content blocks)
-    so history is cached with certainty on every connection. Token Harbor
+    to make history eligible for upstream prompt caching. Token Harbor
     never rewrites a request that already carries a mark.
-  - Every other model caches upstream automatically; clai adds nothing.
+    Hits still depend on prefix reuse, minimum length, routing, and the
+    five-minute cache lifetime. Cache writes are not cache hits.
+  - Other models cache upstream automatically when supported; clai adds nothing.
   - Gateway response caches (exact and semantic) are bypassed with
     X-TH-Cache-Control: bypass so an agent never gets a stale answer to a
     similar-looking question. Vendor prompt caching is unaffected.

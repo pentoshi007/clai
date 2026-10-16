@@ -76,6 +76,29 @@ describe("River provider", () => {
     expect(generations[0]!.body).not.toContain('"thinking"');
   });
 
+  it.each(["complete", "stream"] as const)("uses DeepSeek V4 sampling defaults for %s without changing max effort", async (mode) => {
+    const { generations } = transport(mode === "stream" ? () => sse([
+      { choices: [{ delta: { content: "Answer" }, finish_reason: "stop" }] },
+    ]) : completion);
+    const request = { ...REQUEST, thinking: { enabled: true, effort: "max" as const } };
+    if (mode === "stream") await riverProvider.stream!(request, { apiKey }, () => {});
+    else await riverProvider.complete(request, { apiKey });
+    expect(JSON.parse(generations[0]!.body)).toMatchObject({
+      temperature: 1,
+      top_p: 0.95,
+      reasoning_effort: "max",
+    });
+  });
+
+  it("preserves an explicit DeepSeek temperature and unrelated River sampling", async () => {
+    const { generations } = transport();
+    await riverProvider.complete({ ...REQUEST, temperature: 0.7 }, { apiKey });
+    expect(JSON.parse(generations[0]!.body)).toMatchObject({ temperature: 0.7, top_p: 0.95 });
+    await riverProvider.complete({ ...REQUEST, model: RIVER_GLM_MODEL }, { apiKey });
+    expect(JSON.parse(generations[1]!.body)).toMatchObject({ temperature: 0.2 });
+    expect(JSON.parse(generations[1]!.body)).not.toHaveProperty("top_p");
+  });
+
   it("sends tools, named selection, image content, and parses tool calls", async () => {
     const { generations } = transport(() => json({
       choices: [{ message: { content: null, reasoning_content: "Read first", tool_calls: [{
