@@ -48,10 +48,7 @@ const defaultProcessDeps: CleanupProcessDeps = {
 };
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
-  });
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function terminalStateFor(
@@ -210,7 +207,15 @@ export class CleanupCoordinator {
   private async waitForOutputDrain(runtime: SessionRuntime, budgetMs: number): Promise<void> {
     const wait = runtime.transport.waitForOutputDrain;
     if (!wait || budgetMs <= 0) return;
-    await Promise.race([wait.call(runtime.transport), delay(budgetMs)]).catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, budgetMs);
+    });
+    try {
+      await Promise.race([wait.call(runtime.transport), deadline]).catch(() => undefined);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async waitForTreeExit(

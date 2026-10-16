@@ -1,6 +1,6 @@
 # Implementation task ledger
 
-Status: **implementation in progress** (authorized 2026-10-16). P0 is delivered; P1 has a verified partial tooling checkpoint, not a completed phase. P2–P6 remain pending. Checkboxes below track verified acceptance criteria, not partial progress or work completed by the original audit.
+Status: **implementation in progress** (authorized 2026-10-16). P0 and P1 technical gates are verified; P1 delivery receipt follows remote verification in P2. P2–P6 remain pending. Checkboxes track verified acceptance criteria, not rollout approval. No optimized profile is enabled.
 
 Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. A new optimized release prefix is allowed; no separate prefix-change approval is required. Do not check evidence-gated work before its criteria pass.
 
@@ -9,7 +9,7 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 | Phase | Dependencies | State | Evidence / commit / push |
 | --- | --- | --- | --- |
 | P0 Baseline and contract lock | implementation authorization | complete | [phase-0.md](evidence/phase-0.md); `fe80e611`, push verified |
-| P1 Evaluation and regression gates | P0 | in progress; partial checkpoint | [phase-1.md](evidence/phase-1.md), `5aed3ac7` push verified; [collector limits](evaluation.md); no live/model/cache pass |
+| P1 Evaluation and regression gates | P0 | technical gate complete; delivery receipt in P2 | [phase-1.md](evidence/phase-1.md), [coverage](evidence/phase-1-coverage.md); limited-route live baseline passes; no candidate/cache-equivalence pass |
 | P2 Strict-prefix optimization | P1 | pending | — |
 | P3 Durable profile compatibility | P1 | pending | — |
 | P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |
@@ -31,18 +31,18 @@ P4/P5 are part of the optimization scope, not blocked on another prefix-change d
 
 ## P1 — Evaluation and regression gates
 
-- [ ] **TE-005 — Make paired trials route-aware and isolated.** Use existing adapters, synthetic configuration, pinned settings, counterbalanced order, explicit call budget and redacted evidence.
-  - Partial: explicit four-provider collector configuration, isolated A/B/B/A trials, generation budget guard and redacted reports implemented; dry-run, missing-key control and synthetic transport plus actual-runner smoke pass. Other gateway/local/subscription collectors and declared live routes remain unvalidated. See [evaluation.md](evaluation.md).
-- [ ] **TE-006 — Repair weak outcome verifiers.** Prove real background execution/wait and immutable fixture tests; add natural prompts without prescribed tools and independent hidden assertions (C01–C10).
-  - Partial: six natural counterparts plus question-after-build, immutable package/tests, independent numeric/boundary assertions and actual background/wait/job-state proof pass. Full C05/C08/C09/C10 model paths remain required; no model-quality equivalence is claimed.
-- [ ] **TE-007 — Capture complete efficiency metrics.** Include failed attempts, repairs, cached/write/input/output usage, auxiliary work, first-token/task latency, local overhead and unknown values; report rounds separately from invocations.
-  - Partial: every observed generation attempt (including failed/auxiliary), usage provenance, final fingerprints, tool errors/blocks, latency/CPU/RSS and explicit unknowns collected. Total-round attribution, first-attempt/repair classification, full assembly timing and comparable warm-cache denominators remain unfinished; unknown is not zero.
-- [ ] **TE-008 — Build security fixture coverage.** Implement S01–S10 with known findings and negative controls, raw/header/redirect/TLS/body-digest evidence and scope assertions.
-  - Partial: nine actual loopback evidence tests cover S01/S02/S03/S05/S06 primitives, including raw-versus-readable, credential stripping/forwarding, statuses, gzip/capture digests and flawed-versus-patched endpoints. Complete S01–S10 model fixtures, real TLS and interruption/adversarial paths remain pending.
-- [ ] **TE-009 — Prove gates detect regressions.** Add D03–D13 and fault controls for early prefix mutation, tool reorder, wrong fix, missing evidence and extra request; preserve existing cache/provider tests.
-  - Partial: targeted controls catch those five faults, missing credentials, budget exhaustion, mutation-after-question and unknown/incomplete acceptance. Existing cache/HTTP/provider regression and conformance suites pass. Complete cross-provider state/history/transition D03–D13 controls remain required.
-- [ ] **TE-010 — Deliver P1.** Baseline passes and negative controls fail as designed; update ledger/evidence, commit and verify branch push.
-  - Unfinished: the verified tooling checkpoint is not P1 completion. Missing live route/model/budget/credential selection and outstanding offline matrix work block the phase gate and all dependent runtime/profile optimization phases.
+- [x] **TE-005 — Make paired trials route-aware and isolated.** Use existing adapters, synthetic configuration, pinned settings, counterbalanced order, explicit call budget and redacted evidence.
+  - Verified: all built-in adapter selectors, explicit stored/environment/local auth, private child roots before imports, isolated counterbalanced trials, hard admissions including probes, source/harness drift guards and matching provenance. Codex native baseline available; NVIDIA 400, OpenAI 401 and Gemini 503 classified, not accepted. Other live routes remain unvalidated, not silently substituted.
+- [x] **TE-006 — Repair weak outcome verifiers.** Prove real background execution/wait and immutable fixture tests; add natural prompts without prescribed tools and independent hidden assertions (C01–C10).
+  - Verified: complete coding/lifecycle definitions and positive/negative offline assertions; natural baseline receipts cover C01–C10, including actual PTY and production Responder wake/read. Independent hidden assertions and immutable package/tests remain enforced. Corpus corrections and earlier failed/inconclusive trials are retained in [P1 evidence](evidence/phase-1.md).
+- [x] **TE-007 — Capture complete efficiency metrics.** Include failed attempts, repairs, cached/write/input/output usage, auxiliary work, first-token/task latency, local overhead and unknown values; report rounds separately from invocations.
+  - Verified: attempts/admissions/logical rounds/invocations/successes/auxiliary work remain separate; failed/unknown usage, provider precision, latency/CPU/RSS, setup/request timings and conservative execution-reliability/repair counts are reported. Per-schema validity, unobserved probe usage, refresh time, pricing and eligible-prefix denominators remain explicit limitations and block candidate acceptance; no zero-cost or cache-pass inference.
+- [x] **TE-008 — Build security fixture coverage.** Implement S01–S10 with known findings and negative controls, raw/header/redirect/TLS/body-digest evidence and scope assertions.
+  - Verified: actual loopback HTTP/TLS, redirect credentials/cookies, true statuses, compressed decoded digests, positive/patched/404 controls, scanner status/size, exploit/fix, interruption and adversarial source tests; S01–S10 each passed the available native baseline route. No external target or real sensitive document used.
+- [x] **TE-009 — Prove gates detect regressions.** Add D03–D13 and fault controls for early prefix mutation, tool reorder, wrong fix, missing evidence and extra request; preserve existing cache/provider tests.
+  - Verified: [coverage ownership](evidence/phase-1-coverage.md) maps every baseline D01–D13 surface; negative controls reject source/history/prompt/schema drift, missing/incorrect evidence, wrong fixes, extra rounds, unknowns, bad budgets and wrong job/PTY lifecycle. New profile/version, candidate schema and packaging obligations remain explicitly owned by P3/P5/P6 rather than claimed implemented here.
+- [x] **TE-010 — Deliver P1.** Baseline passes and negative controls fail as designed; update ledger/evidence, commit and verify branch push.
+  - Verified technical gate: 934 files / 10,476 tests passed, 2 files / 32 tests skipped; final context 23 files / 203 tests passed after last harness corrections; app/audit types and prompt consistency pass. Delivery receipt is carried into P2 after commit/remote verification. This is a proof harness and limited-route baseline, not an optimized release or comparable cache pass.
 
 ## P2 — Strict-prefix improvements
 

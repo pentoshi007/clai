@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pairedRejectionReasons, summarizeAttempts, wirePrefixStable, type EvaluationAttempt, type EvaluationWire, type PairedGateInput } from "../../scripts/token-evaluation-metrics.js";
+import { EvaluationEvents, pairedRejectionReasons, summarizeAttempts, wirePrefixStable, type EvaluationAttempt, type EvaluationWire, type PairedGateInput } from "../../scripts/token-evaluation-metrics.js";
 import { fingerprintFinalRequest } from "../../src/llm/request-fingerprint.js";
 import { compareEvaluationReports, type EvaluationReport } from "../../scripts/token-evaluation-report.js";
 
@@ -16,6 +16,24 @@ function wire(body: string): EvaluationWire {
 }
 
 describe("complete evaluation metrics", () => {
+  it("attributes logical failed/recovery rounds independently from provider invocations and conservatively counts repairs", () => {
+    const events = new EvaluationEvents();
+    expect(events.reliability().modelRounds).toBeNull();
+    events.diagnostic({ type: "assembly", phase: "turn-setup", elapsedMs: 3 });
+    events.diagnostic({ type: "model-round", step: 0 });
+    events.observe({ type: "tool-call", id: "first", name: "fs.edit", argsDisplay: "redacted" }, 1, 0);
+    events.observe({ type: "tool-result", id: "first", ok: false, summary: "no match" }, 2, 0);
+    events.diagnostic({ type: "model-round", step: 1 });
+    events.observe({ type: "tool-call", id: "retry", name: "fs.edit", argsDisplay: "redacted" }, 3, 0);
+    events.diagnostic({ type: "tool-repair", reason: "malformed-json" });
+    events.diagnostic({ type: "model-round", step: 2 });
+    events.diagnostic({ type: "assembly", phase: "request", elapsedMs: 5 });
+    expect(events.reliability()).toEqual({ modelRounds: 3, firstAttemptValidity: 0, repairCalls: 2 });
+    expect(events.correctiveRounds).toBe(2);
+    expect(events.turnSetupMs).toBe(3);
+    expect(events.requestAssemblyMs).toBe(5);
+  });
+
   it("includes failed/auxiliary attempts and never turns unknown cache or usage into zero", () => {
     const values = [attempt(), attempt({ ordinal: 2, outcome: "failure", usage: null }), attempt({ ordinal: 3, purpose: "auxiliary" })];
     expect(summarizeAttempts(values)).toMatchObject({ attempts: 3, failures: 1, auxiliaryAttempts: 1, inputTokens: null, outputTokens: null,
@@ -47,7 +65,10 @@ describe("complete evaluation metrics", () => {
     };
     const result = compareEvaluationReports(report, { ...report, variant: "after" });
     expect(result.accepted).toBe(false);
-    expect(result.reasons).toEqual(expect.arrayContaining(["incomplete-coverage", "modelRounds-unknown", "eligiblePrefixReuse-unknown"]));
+    expect(result.reasons).toEqual(expect.arrayContaining(["incomplete-coverage", "modelRounds-unknown", "eligiblePrefixReuse-unknown", "source-snapshot-unstable-or-unknown", "harness-provenance-unknown-or-unmatched"]));
+    const pinned = { ...report, snapshot: { initial: "source", final: "source", stable: true, harnessSha256: "same" } };
+    expect(compareEvaluationReports(pinned, pinned).reasons).not.toContain("harness-provenance-unknown-or-unmatched");
+    expect(compareEvaluationReports(pinned, { ...pinned, snapshot: { ...pinned.snapshot, harnessSha256: "different" } }).reasons).toContain("harness-provenance-unknown-or-unmatched");
     expect(compareEvaluationReports(report, { ...report, fixture: "different" }).reasons).toContain("unmatched-pair");
   });
 

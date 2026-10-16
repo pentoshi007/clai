@@ -128,6 +128,7 @@ import {
   type SessionPlan,
 } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
+import type { AgentDiagnosticSink } from "./turn/diagnostics.js";
 import {
   type SalvagedWrite,
   buildTurnHistory,
@@ -201,6 +202,7 @@ export interface AgentRunOptions {
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
   onEvent?: ((event: AgentEvent) => void) | undefined;
+  onDiagnostic?: AgentDiagnosticSink | undefined;
   onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
@@ -248,6 +250,13 @@ export async function runAgentTurn(
   prompt: string,
   options: AgentRunOptions = {},
 ): Promise<import("./turn-outcome.js").TurnOutcome> {
+  const setupStarted = options.onDiagnostic ? performance.now() : 0;
+  let setupReported = false;
+  const reportSetup = (): void => {
+    if (!options.onDiagnostic || setupReported) return;
+    setupReported = true;
+    options.onDiagnostic({ type: "assembly", phase: "turn-setup", elapsedMs: performance.now() - setupStarted });
+  };
   const agentMode: Mode =
     options.mode === "plan" ||
     options.mode === "agent" ||
@@ -825,6 +834,7 @@ export async function runAgentTurn(
       upsertActionCycleRecovery,
     };
 
+    reportSetup();
     return await withSessionAffinity(session.sessionId, () =>
       runTurnRounds(loopDeps, {
         delay: (ms) => delay(ms, options.signal),
@@ -850,6 +860,7 @@ export async function runAgentTurn(
     });
     throw error;
   } finally {
+    reportSetup();
     mcpLease?.release();
   }
 }

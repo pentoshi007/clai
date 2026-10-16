@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../src/agent/events.js";
+import type { AgentDiagnostic } from "../src/agent/turn/diagnostics.js";
 import type { GenerationAttemptInput, GenerationAttemptOutcome, RequestFingerprintV1, TokenUsage } from "../src/types.js";
 
 export interface EvaluationAttempt {
@@ -21,7 +22,9 @@ const sumKnown = (values: readonly (number | null | undefined)[]): number | null
   values.length > 0 && values.every((value) => value !== null && value !== undefined) ? values.reduce<number>((sum, value) => sum + value!, 0) : null;
 
 export function summarizeAttempts(attempts: readonly EvaluationAttempt[]) {
-  const usage = attempts.map((attempt) => attempt.usage);
+  const ordered = [...attempts].sort((left, right) => left.ordinal - right.ordinal);
+  const usage = ordered.map((attempt) => attempt.usage);
+  const firstPrimary = ordered.find((attempt) => attempt.purpose === "turn")?.usage;
   return {
     attempts: attempts.length, successes: attempts.filter((attempt) => attempt.outcome === "success").length,
     failures: attempts.filter((attempt) => attempt.outcome === "failure").length,
@@ -36,7 +39,7 @@ export function summarizeAttempts(attempts: readonly EvaluationAttempt[]) {
     cacheWriteTokens: sumKnown(usage.map((entry) => entry?.cacheCreationTokens)),
     knownInputTokens: usage.reduce((sum, entry) => sum + (entry?.promptTokensKnown === false ? 0 : entry?.promptTokens ?? 0), 0),
     knownOutputTokens: usage.reduce((sum, entry) => sum + (entry?.completionTokens ?? 0), 0),
-    firstInputTokens: usage[0]?.promptTokensKnown === false ? null : usage[0]?.promptTokens ?? null,
+    firstInputTokens: firstPrimary?.promptTokensKnown === false ? null : firstPrimary?.promptTokens ?? null,
   };
 }
 
@@ -58,7 +61,60 @@ export function wirePrefixStable(wires: readonly EvaluationWire[]): boolean | nu
   });
 }
 
+export function wireHistoryStable(wires: readonly EvaluationWire[]): boolean | null {
+  if (!wires.length || wires.some((wire) => !wire.fingerprint)) return null;
+  for (let index = 1; index < wires.length; index += 1) {
+    const previous = wires[index - 1]!.fingerprint!;
+    const next = wires[index]!.fingerprint!;
+    if (previous.serializer.id !== next.serializer.id) return null;
+    const boundary = previous.prefixes.filter((entry) => entry.boundary === "history-item").at(-1);
+    if (!boundary) return null;
+    const matched = next.prefixes.find((entry) => entry.boundary === "history-item" && entry.historyItems === boundary.historyItems);
+    if (!matched || matched.sha256 !== boundary.sha256 || matched.byteLength !== boundary.byteLength) return false;
+  }
+  return true;
+}
+
 export class EvaluationEvents {
+  modelRounds = 0;
+  protocolRepairs = 0;
+  turnSetupMs = 0;
+  requestAssemblyMs = 0;
+  assemblySamples = 0;
+  private diagnosticsSeen = false;
+  private pendingCorrection = false;
+  private readonly callNames = new Map<string, string>();
+  private readonly failedTools = new Set<string>();
+  retriedToolCalls = 0;
+  correctiveRounds = 0;
+
+  diagnostic(event: AgentDiagnostic): void {
+    this.diagnosticsSeen = true;
+    if (event.type === "model-round") {
+      this.modelRounds += 1;
+      if (this.pendingCorrection) this.correctiveRounds += 1;
+      this.pendingCorrection = false;
+    }
+    if (event.type === "tool-repair") {
+      this.protocolRepairs += 1;
+      this.pendingCorrection = true;
+    }
+    if (event.type === "assembly") {
+      this.assemblySamples += 1;
+      if (event.phase === "turn-setup") this.turnSetupMs += event.elapsedMs;
+      else this.requestAssemblyMs += event.elapsedMs;
+    }
+  }
+
+  reliability() {
+    const failed = this.toolErrors + this.blockedCalls + this.protocolRepairs;
+    return {
+      modelRounds: this.diagnosticsSeen ? this.modelRounds : null,
+      firstAttemptValidity: this.diagnosticsSeen ? (failed === 0 ? 1 : 0) : null,
+      repairCalls: this.diagnosticsSeen ? this.protocolRepairs + this.retriedToolCalls : null,
+    };
+  }
+
   toolCalls = 0;
   toolErrors = 0;
   blockedCalls = 0;
@@ -70,10 +126,21 @@ export class EvaluationEvents {
     if (event.type === "assistant-delta" && event.text && this.firstVisibleTokenMs === null) this.firstVisibleTokenMs = elapsedMs;
     if (event.type === "tool-call") {
       this.toolCalls += 1;
+      this.callNames.set(event.id, event.name);
+      if (this.failedTools.delete(event.name)) this.retriedToolCalls += 1;
       this.observedCalls.push({ name: event.name, turn });
     }
-    if (event.type === "tool-result" && !event.ok) this.toolErrors += 1;
-    if (event.type === "tool-blocked") this.blockedCalls += 1;
+    if (event.type === "tool-result" && !event.ok) {
+      this.toolErrors += 1;
+      this.pendingCorrection = true;
+      const name = this.callNames.get(event.id);
+      if (name) this.failedTools.add(name);
+    }
+    if (event.type === "tool-blocked") {
+      this.blockedCalls += 1;
+      this.pendingCorrection = true;
+      this.failedTools.add(event.name);
+    }
     if (event.type === "turn-end") this.turnStatuses.push(event.outcome.status);
   }
 }

@@ -13,6 +13,7 @@ export interface FixtureToolExecution {
 export interface FixtureEvidence {
   readonly executions: readonly FixtureToolExecution[];
   readonly observedCalls: readonly { readonly name: string; readonly turn: number }[];
+  readonly responderReceipts?: readonly { readonly jobId: string; readonly read: boolean; readonly status: string; readonly exitCode?: number | undefined }[];
 }
 export const emptyFixtureEvidence: FixtureEvidence = { executions: [], observedCalls: [] };
 
@@ -44,4 +45,33 @@ export function verifiedBackgroundCheck(answer: string, evidence: FixtureEvidenc
   return evidence.executions.indexOf(wait) > evidence.executions.indexOf(launch) && wait.args.id === receipt.id && wait.result.ok &&
     wait.job?.id === receipt.id && wait.job.status === "exited" && wait.job.exitCode === 0 &&
     /READY_CHECK:\s*42\b/.test(wait.result.output) && /READY_CHECK:\s*42\b/.test(answer);
+}
+
+export function terminalTranscriptIsCursorSafe(evidence: FixtureEvidence): boolean {
+  let cursor: number | undefined;
+  let sessionId: string | undefined;
+  for (const entry of evidence.executions.filter((value) => value.name.startsWith("terminal."))) {
+    const receipt = entry.result.interactiveSession;
+    if (!receipt) return false;
+    if (receipt.operation === "start") {
+      if (sessionId) return false;
+      sessionId = receipt.sessionId;
+      cursor = receipt.cursor;
+      continue;
+    }
+    if (entry.name === "terminal.list") continue;
+    if (entry.args.id !== sessionId) return false;
+    if (entry.name === "terminal.read" && entry.args.cursor !== cursor) return false;
+    if (entry.name === "terminal.send" && entry.args.cursor !== undefined && entry.args.cursor !== cursor) return false;
+    if ((receipt.operation === "read" || receipt.operation === "send") && receipt.page) {
+      if (cursor !== undefined && receipt.page.nextCursor < cursor) return false;
+      cursor = receipt.page.nextCursor;
+    }
+  }
+  return sessionId !== undefined;
+}
+
+export function isFixtureTestExecution(entry: FixtureToolExecution): boolean {
+  return entry.name === "shell.exec" && typeof entry.args.command === "string" &&
+    /(?:\bnode\s+--test\b|\bnpm\s+(?:run\s+)?test\b)/.test(entry.args.command);
 }

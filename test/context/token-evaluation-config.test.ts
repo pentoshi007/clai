@@ -9,7 +9,14 @@ describe("explicit isolated evaluation configuration", () => {
     for (const provider of ["nvidia", "openai", "anthropic", "gemini"]) {
       expect(parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], provider }] }, ["search-edit"]).routes[0]?.provider).toBe(provider);
     }
-    expect(() => parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], provider: "ollama" }] }, ["search-edit"])).toThrow(/unimplemented/);
+    expect(() => parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], provider: "ollama" }] }, ["search-edit"])).toThrow(/explicit endpoint/);
+    for (const provider of ["openrouter", "codex", "copilot", "kiro", "tokenrouter"]) {
+      expect(parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], provider, auth: "stored" }] }, ["search-edit"]).routes[0]?.provider).toBe(provider);
+    }
+    expect(parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], provider: "ollama", auth: "none", endpoint: "http://127.0.0.1:11434" }] }, ["search-edit"]).routes[0]?.auth).toBe("none");
+    for (const endpoint of ["https://user:pass@example.test", "https://example.test?key=secret", "file:///private"]) {
+      expect(() => parseEvaluationConfig({ ...config, routes: [{ ...config.routes[0], endpoint }] }, ["search-edit"])).toThrow(/Endpoint/);
+    }
     expect(counterbalancedVariants(1)).toEqual(["before", "after"]);
     expect(counterbalancedVariants(2)).toEqual(["after", "before"]);
     expect(() => parseEvaluationConfig({ ...config, maxCalls: 0 }, ["search-edit"])).toThrow(/maxCalls/);
@@ -33,6 +40,18 @@ describe("explicit isolated evaluation configuration", () => {
     expect(observer.auxiliaryInvocations).toBe(1);
     observer.noteRequest({ messages: [], purpose: "turn" });
     expect(observer.primaryInvocations).toBe(1);
+  });
+
+  it("guards nonstandard gateway transports and subscription retries at admission, not URL spelling", async () => {
+    const observer = new EvaluationObserver(1);
+    const input = { provider: "kiro" as const, model: "synthetic", mode: "stream" as const, reason: "initial" as const };
+    const handle = observer.begin(input, { begin: () => ({ complete: () => {} }) });
+    await observer.fetch("https://gateway.example.test/custom-generation", { body: "{}" }, { maxCalls: 1, fingerprint: () => undefined, fetch: async () => new Response("synthetic") });
+    handle.complete("failure");
+    expect(observer.generationAdmissions).toBe(1);
+    expect(observer.wires).toHaveLength(1);
+    expect(() => observer.begin({ ...input, reason: "retry" }, { begin: () => ({ complete: () => {} }) })).toThrow(/budget exhausted/);
+    expect(observer.generationAdmissions).toBe(1);
   });
 
   it("counts failed admissions, enforces budget before dispatch and never stores request bodies", async () => {

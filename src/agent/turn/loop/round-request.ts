@@ -51,6 +51,14 @@ export const requestRound = async (
   input: RoundRequestInput,
 ): Promise<RoundRequestResult> => {
   const { streamSession, responderDelivery } = input;
+  const assemblyStarted = deps.options.onDiagnostic ? performance.now() : 0;
+  let assemblyReported = false;
+  const reportAssembly = (): void => {
+    if (!deps.options.onDiagnostic || assemblyReported) return;
+    assemblyReported = true;
+    deps.options.onDiagnostic({ type: "assembly", phase: "request", elapsedMs: performance.now() - assemblyStarted });
+  };
+  deps.options.onDiagnostic?.({ type: "model-round", step: deps.loop.step });
   let completion: CompletionResult | undefined;
   let toolsAttached = false;
   try {
@@ -111,8 +119,7 @@ export const requestRound = async (
         `failed to record responder delivery attempt ${responderDelivery.id}`,
       );
     }
-    completion = await streamWithProvider(
-      buildStreamRequest({
+    const request = buildStreamRequest({
         provider: deps.loop.provider,
         model: deps.loop.model,
         messages: deps.messages,
@@ -124,7 +131,10 @@ export const requestRound = async (
         toolsAttached,
         tools: turnTools,
         onToolCallDelta: streamSession.onToolCallDelta,
-      }),
+      });
+    reportAssembly();
+    completion = await streamWithProvider(
+      request,
       streamSession.onToken,
       {
         onStatus: streamSession.onStatus,
@@ -139,6 +149,7 @@ export const requestRound = async (
     deps.loop.preferModelFallback = false;
     deps.loop.lowYieldResumptions = 0;
     } catch (streamError) {
+      reportAssembly();
       if (deps.options.signal?.aborted) throw streamError;
       if (streamError instanceof RequestOverLimitError) {
         await recoverDispatchOverLimit(deps, streamError);
@@ -218,6 +229,7 @@ export const requestRound = async (
       return { kind: "continue" };
     }
   } finally {
+    reportAssembly();
     streamSession.stopHeartbeat();
   }
   return { kind: "completed", completion: completion!, toolsAttached };

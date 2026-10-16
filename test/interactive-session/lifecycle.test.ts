@@ -56,7 +56,9 @@ afterEach(() => {
 describe("Property 6: quiet gathering obeys one absolute deadline", () => {
   it("stops at the quiet interval once output settles after delivery", async () => {
     const clock = new FakeClock();
-    const { manager, factory } = build(clock);
+    let deliveryStarted: (() => void) | undefined;
+    const delivered = new Promise<void>((resolve) => { deliveryStarted = resolve; });
+    const { manager, factory } = build(clock, {}, { ptyAvailable: false, transportOptions: { beforeWrite: async () => { deliveryStarted?.(); } } });
     const started = await manager.start({ ownerId: OWNER, command: "cmd", confirm: approve });
     const transport = factory.last();
     const pending = manager.send({
@@ -67,8 +69,8 @@ describe("Property 6: quiet gathering obeys one absolute deadline", () => {
       deadlineMs: 5_000,
       confirm: approve,
     });
-    // Let delivery settle, then keep output flowing so quiet detection extends.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await delivered;
+    await flushMicrotasks();
     transport.emit("first ");
     await clock.advance(60);
     transport.emit("second");

@@ -43,6 +43,7 @@ export const resolveAnswerPath = async (
   };
   const recoveryDecision = await recoverMissingToolCall(
     {
+      onRepair: (reason) => deps.options.onDiagnostic?.({ type: "tool-repair", reason }),
       messages: deps.messages,
       toolsAttached,
       planModeWithoutPlan: deps.isPlanMode && !deps.activePlan,

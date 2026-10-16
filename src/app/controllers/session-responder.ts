@@ -298,7 +298,7 @@ function boundedPreview(value: string): string {
   return `${text}\n[preview truncated]`;
 }
 
-function deliveryPrompt(
+export function deliveryPrompt(
   notification: ResponderNotification,
   preview: string,
   foreground: string | undefined,

@@ -1,13 +1,15 @@
 import { isAbsolute, resolve } from "node:path";
-import type { ProviderId, ReasoningEffort } from "../src/types.js";
+import { providerIds, type ProviderId, type ReasoningEffort } from "../src/types.js";
 
-const evaluationProviders: readonly ProviderId[] = ["nvidia", "openai", "anthropic", "gemini"];
+const evaluationProviders: readonly ProviderId[] = providerIds;
 
 export interface EvaluationRoute {
   readonly provider: ProviderId;
   readonly model: string;
   readonly toolCalling: "native" | "text";
   readonly thinking: { readonly enabled: boolean; readonly effort: ReasoningEffort };
+  readonly auth?: "environment" | "stored" | "none";
+  readonly endpoint?: string;
 }
 export interface EvaluationConfig {
   readonly version: 1;
@@ -28,15 +30,27 @@ function integer(value: unknown, name: string, maximum: number): number {
 function route(value: unknown): EvaluationRoute {
   const raw = object(value);
   const provider = evaluationProviders.find((id) => id === raw.provider);
-  if (!provider || typeof raw.model !== "string" || !raw.model.trim()) throw new Error("Each route needs an explicitly supported evaluation provider (nvidia/openai/anthropic/gemini) and model; other collectors remain unimplemented");
+  if (!provider || typeof raw.model !== "string" || !raw.model.trim()) throw new Error("Each route needs a known built-in provider and explicit model");
   if (raw.toolCalling !== "native" && raw.toolCalling !== "text") throw new Error("Each route needs native or text toolCalling");
   const thinking = object(raw.thinking);
   const efforts: readonly ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
   const effort = efforts.find((entry) => entry === thinking.effort);
   if (!effort || typeof thinking.enabled !== "boolean") throw new Error("Each route needs explicit thinking.enabled and effort");
-  const allowed = new Set(["provider", "model", "toolCalling", "thinking"]);
+  const auth = raw.auth;
+  if (auth !== undefined && auth !== "environment" && auth !== "stored" && auth !== "none") throw new Error("Unknown credential source");
+  if (auth === "none" && provider !== "ollama" && provider !== "free") throw new Error("This provider requires credentials");
+  const endpoint = raw.endpoint;
+  if (endpoint !== undefined) {
+    if (typeof endpoint !== "string") throw new Error("Endpoint must be a URL");
+    const url = new URL(endpoint);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("Endpoint must be an HTTP URL without credentials, query or fragment");
+  }
+  if (provider === "ollama" && endpoint === undefined) throw new Error("Local evaluation requires an explicit endpoint");
+  if (Object.keys(thinking).some((key) => key !== "enabled" && key !== "effort")) throw new Error("Unknown thinking setting");
+  const allowed = new Set(["provider", "model", "toolCalling", "thinking", "auth", "endpoint"]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw new Error("Unknown or credential-bearing route fields are not permitted");
-  return { provider, model: raw.model.trim(), toolCalling: raw.toolCalling, thinking: { enabled: thinking.enabled, effort } };
+  return { provider, model: raw.model.trim(), toolCalling: raw.toolCalling, thinking: { enabled: thinking.enabled, effort },
+    ...(auth ? { auth } : {}), ...(typeof endpoint === "string" ? { endpoint } : {}) };
 }
 export function parseEvaluationConfig(value: unknown, knownFixtures: readonly string[]): EvaluationConfig {
   const raw = object(value);

@@ -1,17 +1,23 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { emptyFixtureEvidence, immutableFilesMatch, runIndependentAssertions, verifiedBackgroundCheck, type FixtureEvidence } from "./token-fixture-evidence.js";
 import { getToolDefinition } from "../src/tools/definitions.js";
 import { isReadOnlyShellCall } from "../src/tools/read-only-shell.js";
+import { codingFixtures } from "./token-coding-fixtures.js";
+import { securityFixtures } from "./token-security-fixtures.js";
 
 export interface TokenFixture {
   name: string;
+  scenarios?: readonly string[];
+  turnAssertions?: readonly string[];
+  settleResponders?: boolean;
   files: Record<string, string>;
   prompts: string[];
   mutableFiles: readonly string[];
   hiddenAssertions?: string;
   readOnlyTurns?: readonly number[];
+  prepare?: (root: string) => Promise<{ readonly prompts: string[]; readonly verify: TokenFixture["verify"]; readonly close: () => Promise<void> }>;
   verify: (root: string, answer: string, evidence?: FixtureEvidence) => Promise<boolean>;
 }
 
@@ -94,7 +100,11 @@ export const tokenFixtures: TokenFixture[] = [
   },
 ];
 
+export const fixtureInstructions = "# Fixture project rules\n\nPreserve supplied test files and package scripts byte-for-byte. Add separate tests or inline independent checks instead of editing supplied tests. Do not add dependencies or code comments.\n";
+
 export async function seedTokenFixture(root: string, fixture: TokenFixture): Promise<void> {
+  await mkdir(join(root, ".clai"), { recursive: true });
+  await writeFile(join(root, ".clai", "INSTRUCTIONS.md"), fixtureInstructions);
   await writeFile(join(root, "package.json"), '{"type":"module","scripts":{"test":"node --test"}}\n');
   for (const [name, content] of Object.entries(fixture.files)) {
     await writeFile(join(root, name), content);
@@ -102,7 +112,7 @@ export async function seedTokenFixture(root: string, fixture: TokenFixture): Pro
 }
 
 export async function verifyTokenFixture(fixture: TokenFixture, root: string, answer: string, evidence: FixtureEvidence = emptyFixtureEvidence): Promise<boolean> {
-  const files = { ...fixture.files, "package.json": '{"type":"module","scripts":{"test":"node --test"}}\n' };
+  const files = { ...fixture.files, "package.json": '{"type":"module","scripts":{"test":"node --test"}}\n', ".clai/INSTRUCTIONS.md": fixtureInstructions };
   if (!await immutableFilesMatch(root, files, fixture.mutableFiles)) return false;
   const readOnlyTurns = new Set(fixture.readOnlyTurns ?? []);
   for (const call of evidence.observedCalls.filter((entry) => readOnlyTurns.has(entry.turn))) {
@@ -126,6 +136,14 @@ const naturalPrompts: Readonly<Record<string, readonly string[]>> = {
   "background-wait": ["Run node check.mjs once as a normal tracked background job named fixture-check, wait until it exits, and report the exact READY_CHECK line. Do not delegate or change files."],
   "continuation-crlf": ["Inspect state.mjs and change only retryLimit to 3, keeping its exact CRLF line endings.", "Continue: change backoffMs to 100 without repeating the first edit. Verify both values and preserve CRLF."],
 };
+const scenarioIds: Readonly<Record<string, readonly string[]>> = {
+  "search-edit": ["C01"], "multiple-edits": ["C02"], "debug-regression": ["C01", "C10"],
+  "independent-reads": ["C06"], "background-wait": ["C07"], "continuation-crlf": ["C03", "C09"],
+};
+for (const fixture of tokenFixtures) {
+  const scenarios = scenarioIds[fixture.name];
+  if (scenarios) fixture.scenarios = scenarios;
+}
 const contractFixtures = [...tokenFixtures];
 for (const fixture of contractFixtures) {
   const prompts = naturalPrompts[fixture.name];
@@ -133,6 +151,8 @@ for (const fixture of contractFixtures) {
 }
 const repair = contractFixtures.find((fixture) => fixture.name === "search-edit")!;
 tokenFixtures.push({
-  ...repair, name: "question-after-build", readOnlyTurns: [1],
+  ...repair, name: "question-after-build", scenarios: ["C04"], readOnlyTurns: [1],
   prompts: [naturalPrompts["search-edit"]![0]!, "Why does this implementation handle an empty cart and zero quantity correctly? Explain the current behavior only; do not make further changes."],
 });
+
+tokenFixtures.push(...codingFixtures, ...securityFixtures);

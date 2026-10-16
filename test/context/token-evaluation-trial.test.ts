@@ -32,7 +32,7 @@ it("collects redacted actual-runner evidence through the existing provider adapt
     admissions += 1;
     const body = String(init?.body ?? "");
     const readDone = body.includes("call_read_alpha") && body.includes("call_read_beta");
-    const delta = readDone ? { content: "alpha port 4123 enabled true; beta port 5124 enabled false" } : {
+    const delta = readDone ? { content: "alpha port 4123 enabled true; beta port 5124 enabled false; synthetic-not-a-real-key" } : {
       tool_calls: [
         { index: 0, id: "call_read_alpha", type: "function", function: { name: "fs_read", arguments: '{"path":"alpha.json"}' } },
         { index: 1, id: "call_read_beta", type: "function", function: { name: "fs_read", arguments: '{"path":"beta.json"}' } },
@@ -46,10 +46,15 @@ it("collects redacted actual-runner evidence through the existing provider adapt
   await runEvaluationTrial([root, workspace, "before", "independent-reads-natural", "1", configFile, "0", "6"]);
   const serialized = await readFile(join(workspace, ".evaluation", "report.json"), "utf8");
   const report: unknown = JSON.parse(serialized);
-  expect(report).toMatchObject({ passed: true, error: false, toolCalls: 2, toolErrors: 0, blockedCalls: 0, route: { provider: "nvidia" }, cache: { knownCacheHitRate: null } });
+  expect(report).toMatchObject({ passed: true, error: false, toolCalls: 2, toolErrors: 0, blockedCalls: 0, modelRounds: 2, firstAttemptValidity: 1, repairCalls: 0,
+    assembly: { samples: 3 }, route: { provider: "nvidia" }, cache: { knownCacheHitRate: null } });
   expect(admissions).toBe(2);
   expect(serialized).not.toContain("synthetic-not-a-real-key");
   expect(serialized).not.toContain("alpha port 4123");
   expect(serialized).toContain('"promptTokens":25000');
   expect(serialized).toContain('"fingerprint":{');
+  const diagnostics = await readFile(join(workspace, ".evaluation", "fixture-diagnostics.json"), "utf8");
+  expect(diagnostics).not.toContain("synthetic-not-a-real-key");
+  expect(JSON.parse(diagnostics)).toMatchObject({ answer: expect.stringContaining("alpha port 4123") });
+  expect(report).toMatchObject({ snapshot: { stable: true, harnessSha256: expect.stringMatching(/^[a-f0-9]{64}$/) } });
 }, 30_000);

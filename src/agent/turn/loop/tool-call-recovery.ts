@@ -25,6 +25,7 @@ export interface ToolCallRecoveryState {
 }
 
 export interface ToolCallRecoveryPorts {
+  readonly onRepair?: ((reason: "bare-arguments" | "sentinel" | "truncated" | "malformed-json") => void) | undefined;
   readonly messages: ChatMessage[];
   readonly toolsAttached: boolean;
   readonly planModeWithoutPlan: boolean;
@@ -236,21 +237,29 @@ export const recoverMissingToolCall = async (
   state: ToolCallRecoveryState,
   input: { readonly visible: string; readonly bareArgsOnly: boolean },
 ): Promise<ToolCallRecoveryDecision> => {
-  if (input.bareArgsOnly) {
-    if (recoverBareArgs(ports, state, input.visible) === "retry") return "retry";
+  if (input.bareArgsOnly && recoverBareArgs(ports, state, input.visible) === "retry") {
+    ports.onRepair?.("bare-arguments");
+    return "retry";
   }
   if (SENTINEL_TOOL_CALL.test(input.visible)) {
+    ports.onRepair?.("sentinel");
     return recoverSentinel(ports, input.visible);
   }
   if (looksLikeTruncatedToolCall(input.visible)) {
     const decision = await recoverTruncated(ports, state, input.visible);
-    if (decision === "retry") return "retry";
+    if (decision === "retry") {
+      ports.onRepair?.("truncated");
+      return "retry";
+    }
   }
   const hasFencedCallShape =
     countToolFences(input.visible) > 0 && FENCED_CALL_SHAPE.test(input.visible);
   if (hasFencedCallShape) {
     const decision = await recoverMalformedFence(ports, state, input.visible);
-    if (decision === "retry") return "retry";
+    if (decision === "retry") {
+      ports.onRepair?.("malformed-json");
+      return "retry";
+    }
   }
   return "proceed";
 };

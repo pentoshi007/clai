@@ -17,6 +17,7 @@ import type { TurnState } from "../../turn-state.js";
 
 import type { ResponderNotification } from "../../../tools/jobs.js";
 import type { AgentEvent } from "../../events.js";
+import type { AgentDiagnosticSink } from "../diagnostics.js";
 import type { SessionPolicy } from "../../session-policy.js";
 import type { LoopGuard } from "../../loop-guard.js";
 import type { OutcomeEnvelope } from "../../outcomes.js";
@@ -44,6 +45,7 @@ export interface ResponderDelivery {
 }
 
 export interface LoopOptions {
+  readonly onDiagnostic?: AgentDiagnosticSink | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   readonly onSuccessfulRequest?:

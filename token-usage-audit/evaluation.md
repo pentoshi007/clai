@@ -1,61 +1,75 @@
-# Evaluation tooling checkpoint
+# Evaluation collection and gates
 
-Status: **P1 partial, not a release gate pass**. The collector and targeted negative controls are implemented; the complete C01–C10 / S01–S10 model matrix, all D03–D13 transitions and live route/cache baselines are not complete. Keep TE-005–TE-010 unchecked until their full acceptance criteria pass.
+Status: P1 proof harness and limited-route baseline are verified. No optimized profile is enabled. See [phase-1.md](evidence/phase-1.md) for passed and failed trials and explicit release gaps; a baseline model pass is not candidate-quality or cache equivalence.
 
 ## Safe collection interface
 
-The old implicit NVIDIA/keychain/raw-request evaluator has been replaced by explicit configuration and isolated subprocess trials. It uses each checkout's existing runner and provider adapter, not a new HTTP protocol or NVIDIA monkeypatch. Raw prompts, wire bodies, responses, headers, credentials and model answers are not serialized into evaluation reports. Synthetic workspaces and tool artifacts stay under the active session scratch directory; do not run this against real engagement content.
-
-Create a nonsecret configuration under the active session scratch directory:
+`scripts/evaluate-token-overhead.ts` reuses each selected checkout's runner and provider adapter. Nonsecret JSON selects built-in provider/model, native/text protocol, thinking settings, fixtures, repetitions, scratch root and a whole-run generation-admission budget. No model/budget downgrade or evidence-cap reduction is part of a comparison.
 
 ```json
 {
   "version": 1,
   "routes": [{
-    "provider": "nvidia",
-    "model": "REPLACE_WITH_EXPLICITLY_SELECTED_MODEL",
+    "provider": "SELECT_BUILTIN_PROVIDER",
+    "model": "SELECT_EXACT_DEPLOYED_MODEL",
     "toolCalling": "native",
-    "thinking": { "enabled": false, "effort": "medium" }
+    "thinking": { "enabled": true, "effort": "medium" },
+    "auth": "stored"
   }],
-  "fixtures": ["search-edit-natural", "independent-reads-natural", "background-wait-natural"],
+  "fixtures": ["search-edit-natural", "independent-reads-natural", "security-s01-natural"],
   "repeats": 3,
   "maxCalls": 100,
   "scratchRoot": "/ABSOLUTE/ACTIVE/SESSION/SCRATCH"
 }
 ```
 
-The placeholder is not a recommended/validated model. Select the actual deployment routes/settings and a budget before a paid run. Both variants use the same fixed configuration and installed dependencies. `maxCalls` is the entire run's hard generation-admission budget, including failures/probes/retries; remaining budget is enforced before each child dispatch. A failed outcome stops collection rather than repeatedly sampling until it passes.
+Place configuration and all synthetic artifacts under the active session scratch directory, never in real engagement workspaces. The placeholders above are not recommendations or live-validated routes. Existing application dependencies/settings are preserved.
 
 ```sh
 node --import tsx scripts/evaluate-token-overhead.ts --dry-run "$SESSION_SCRATCH/evaluation.json" /absolute/baseline-checkout
+node --import tsx scripts/evaluate-token-overhead.ts --baseline "$SESSION_SCRATCH/evaluation.json" /absolute/baseline-checkout
 node --import tsx scripts/evaluate-token-overhead.ts --run "$SESSION_SCRATCH/evaluation.json" /absolute/baseline-checkout
 ```
 
-`--dry-run` reads no credentials and makes no provider requests. This checkpoint accepts explicit NVIDIA/OpenAI/Anthropic/Gemini routes whose generation endpoints are recognized by the admission guard; this is implemented collector scope, not a live validation claim. Other gateway, subscription and local collector paths remain unimplemented and fail configuration validation rather than bypassing the call budget. The application's actual provider support is unchanged. `--run` requires the selected provider's existing environment credential; it never retrieves the owner's stored/keychain credentials. Use the normal secure environment setup, never put a key in JSON, command arguments or committed files. No live route is validated by the offline smoke test.
+- `--dry-run`: validates the paired plan, reads no credentials and sends zero requests.
+- `--baseline`: one baseline lane, not an A/B experiment; useful for validating the corpus without doubling paid work.
+- `--run`: isolated counterbalanced A/B and B/A pairs. A failed fixture stops that run rather than resampling until it passes.
+- `maxCalls`: hard run-wide generation-admission bound, including failed requests, retries and capability probes. Each trial receives only its remaining allowance. Admission interception covers custom generation URL spellings as well as standard endpoint patterns. Unrecorded probe usage is explicitly incomplete, never free/zero.
 
-Each route/fixture/repetition gets separate before/after workspaces/config/history/session scratch. A/B and B/A order alternate by repetition; neither variant deletes the other's workspace. Configuration records intentionally contain no credentials. Trial reports retain every instrumented attempt's outcome, known/unknown usage, status and final-body fingerprints, along with tool errors/blocks, verified outcomes and resource timings. The CLI prints small receipts, not answer/request dumps. Changes to provider/model during a trial fail before sending the changed route.
+`auth` is `environment` by default; it requires the provider's existing environment variable and does not consult stored keys. Explicit `stored` reads the selected enabled slot in memory in the coordinator, never prints it or writes it to configuration/evidence. Refresh metadata is transferred only through the private child environment. `none` is restricted to keyless/local routes. Local Ollama requires an explicit `endpoint`; optional remote endpoints must be HTTP(S) without URL credentials/query/fragment. Selection of a collector is not proof that the live route works.
 
-## Verifiers and negative controls
+**Isolation starts before module imports.** Child HOME/USERPROFILE, XDG, config/history/log/artifact/job/scratch roots and temp directories are private; keychain is disabled. Only selected credentials and necessary platform variables are inherited. All other API keys, endpoint overrides, proxy hooks and NODE_OPTIONS are excluded. This is necessary because the existing fallback secret store uses `homedir()/.clai/keys.json`, not `CLAI_CONFIG_DIR`. A real fresh-process test proves an unrelated provider cannot see the owner's stored credentials.
 
-- Preserve the six original tool-directed fixtures and add six natural-language counterparts plus a question-after-build continuation.
-- Regression fixtures run independent inline assertions outside the model-visible tests. All original non-target fixture files and package scripts must remain unchanged. A hardcoded subtotal that passes the visible examples fails hidden fractional/zero-quantity cases.
-- Read-only checks reject observed mutation, plan, terminal and non-inspection shell calls, including a later unsafe shell call following a safe read. File reads need successful tool evidence, not just guessed values in the answer.
-- Background verification needs exactly one actual pollable launch, a subsequent wait on the same ID, an independently inspected terminal job state with exit 0, captured `READY_CHECK: 42` and the matching answer. A bare `42`, missing wait or different ID fails. An actual process/tool integration test proves this against the production job manager; `shell.wait` does not itself contain a background receipt, so the observer inspects the owned job state.
-- Wire controls reject changed early instruction bytes, reordered tools and changed descriptions even on failed admissions. Unknown fingerprints are not successful continuity evidence.
-- Paired gate helpers reject extra calls/rounds, unverified outcomes, worse measured latency, non-improved tokens, missing/exactness-unknown usage and missing/regressed warm-cache data. The partial collector intentionally returns `releaseEligible:false`; passing deterministic metrics does not establish live equivalence.
+The coordinator pins all tracked and untracked source/harness files plus package, lockfile and TypeScript configuration digests before collection and checks them around every child. Each child also compares its checkout snapshot before imports and after cleanup. Changed snapshots stop collection, and missing/changed snapshots make paired reports ineligible. Independent documentation/test-review work is excluded; do not modify executable source during collection or treat pre-guard exploratory runs as frozen comparisons.
 
-## Synthetic security lab
+Reports store counts, digests, usage and settings, not raw prompts/wires/tool arguments/model answers or response headers/bodies. Failed provider responses retain only a bounded redacted JSON error message and a digest of the bounded inspected error body. Synthetic fixture artifacts remain in private scratch. A mode-0600 `fixture-diagnostics.json` retains redacted synthetic answers/tool receipts for failure localization and re-evaluation without resampling; it is never committed as public report evidence. Selected credentials and the synthetic PTY secret are redacted. Do not run the corpus against private source or real engagement data.
 
-`startTokenSecurityLab` opens two owned ephemeral loopback HTTP servers and closes both on test completion. Tests independently verify S01 raw/comment/hidden/header evidence (with readable-only negative control), S02 every redirect/cookie and default-versus-explicit credential forwarding, S03 all 401/403/404/500 statuses with exact request counts, S05 gzip transfer decoding/capture truncation/body hashes and S06 a known synthetic authorization flaw versus a patched/404 control.
+## Coverage and independent assertions
 
-These are evidence-tool/fixture tests, **not model-level security reasoning passes**. S04 real TLS/private-scope transitions, S07 fuzz evidence, S08 code exploit/fix, S09 interruption and S10 adversarial mixed-task model fixtures still need their complete evaluation paths. Existing HTTP-policy, filesystem, provider and job tests remain required and are not weakened.
+The six original tool-directed fixtures remain. Natural counterparts plus focused fixtures cover C01–C10: hidden numeric/boundary assertions; immutable non-target files/tests/package scripts; CRLF/Unicode/stale evidence; read-only questions after builds; persistence/reload/invalid/IO paths; batched partial reads; finite/persistent/Responder jobs; PTY masked input/cursors/cleanup; intermediate versus complete roadmap boundaries; failed attempts/recovery.
 
-## Explicit unknowns and remaining work
+Process verifiers need real receipts and independent owned job state. A bare answer, fake wait, different ID, duplicate launch, missing ready probe/cleanup or unacknowledged Responder receipt fails. PTY assertions reject secrets in ordinary arguments/output, input resend, missing prompt evidence and cursor rewinds. Partial-read checks retain both successes and the missing-file failure rather than retrying every entry. Hidden tests execute outside model-visible fixture tests; edited tests/package scripts cannot manufacture a pass.
 
-- Successful core model rounds are counted separately from provider and auxiliary invocations. Total rounds including failed/recovered agent cycles remain `null` until independent attribution is implemented; do not equate invocations with rounds.
-- Per-attempt input/output/cache-write/cache-read usage remains separate; absent usage/cache fields are `null`, not zero. Partial known totals are labelled separately and cannot pass the token gate. Pricing/cost, first-attempt-validity and repair classification remain unknown.
-- Warm/cold request classification, eligible-prefix denominator, cache-hit/reuse metrics, long-history byte-prefix checks and per-provider permitted breakpoint transitions need the P1/P3 route baseline. A stable hash alone never means a cache hit.
-- First-visible-token and verified-task time, CPU and peak RSS are captured. The reported observer overhead times fingerprinting only, not full runner assembly overhead. No performance improvement is claimed. Percentile/uncertainty/holdout analysis remains P6.
-- Offline conformance coverage does not validate this collector on every live provider. Broader natural C05/C08/C09/C10 and complete security/negative-control trials remain required. No candidate/default activation exists here.
+S01–S10 fixture definitions use owned ephemeral loopback HTTP/TLS and synthetic source/scanner/job data:
 
-Official OpenAI documentation was fetched on 2026-10-16: [prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching). It confirms rendered tools/settings are part of exact-prefix matching and that sessions alone do not guarantee hits. No new provider API options or model-specific caching assumptions were introduced.
+| IDs | Independent evidence |
+| --- | --- |
+| S01–S03 | Raw comments/attributes/headers, repeated redirect cookies, actual per-hop credential stripping/explicit forwarding, real statuses/request counts. |
+| S04 | Real self-signed certificate rejects normally; explicit per-request bypass records disabled verification. No global TLS weakening. |
+| S05–S06 | Correct decoded capture digest, early/late evidence, capture/display distinction; flawed owner endpoint versus patched denial/404 controls. |
+| S07–S08 | Scanner path/status/size/calibration preserved, no duplicate scan; actual failed exploit regression before safe fix and passing hidden negative cases. |
+| S09–S10 | One owned scan across pause/continue; retrieved instruction injection cannot broaden scope or authorize source tampering. |
+
+These are model-invocable fixtures with independently tested verifiers. Definitions and deterministic controls alone do not establish that a model passes them. All model trials must be reported separately. Lab listeners and owned jobs/PTY sessions are closed on completion or error.
+
+## Accounting and acceptance
+
+Opt-in, non-model-visible diagnostics report logical round attempts (including failure/recovery), protocol repairs, turn-setup and request-assembly time. Provider invocations, transport admissions, successful callbacks and auxiliary invocations remain separate. The default application path does not persist/upload diagnostics or read instrumentation files.
+
+Reports retain every settled usage record, exactness/provenance and unknowns, full-task known subtotals, first primary input, output/reasoning/cache-write/read tokens, first-visible-token and verified-task time, CPU/RSS, fingerprinting overhead, setup/assembly samples, tool errors/blocks/retries and corrective rounds. First-attempt execution reliability is a conservative trial-wide score: any execution/block/protocol failure fails it, including expected negative-input work; those cases cannot silently excuse a candidate regression. It is not a per-schema parser proof. Cost stays unknown without versioned pricing. Baselines lacking diagnostics retain unknown logical counts.
+
+Cold/warm lineage is recorded separately from provider eligibility. Cache summaries include misses, known-usage eligible denominators, unknown temperature/eligibility/usage and cold writes. Eligible-prefix reuse is unknown unless all eligible unchanged-prefix denominators are independently established. Neither a stable hash nor reported cached input alone proves comparable cache eligibility.
+
+Static and historical prefix controls reject early prompt changes, ordered-description/schema changes, removed or rewritten previously submitted history and unknown fingerprints. Provider-specific supported breakpoint/compaction/replay transitions are additionally checked by existing adapter/conformance tests; the generic strict historical gate is conservative and cannot excuse unsupported transitions. Missing metrics/coverage always prevent release eligibility.
+
+P6 owns staged pilot/expanded/holdout distributions and uncertainty, not a single A/A smoke. No global model/provider-quality, latency, cost or cache improvement is claimed by the collector. Official [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) was fetched on 2026-10-16; exact-prefix behavior is not permission to infer cache hits or undocumented subscription eligibility.
