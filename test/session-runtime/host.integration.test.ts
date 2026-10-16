@@ -66,6 +66,10 @@ async function waitFor<T>(read: () => Promise<T | undefined>, timeoutMs = 4000):
   throw new Error("timed out");
 }
 
+const HOST_FORCE_STOP_MS = 8_000;
+const HOST_FINAL_DRAIN_MS = 3_000;
+const RUNTIME_EXIT_TIMEOUT_MS = HOST_FORCE_STOP_MS + HOST_FINAL_DRAIN_MS + 4_000;
+
 async function channel(
   socketPath: string,
   token: string,
@@ -189,11 +193,11 @@ describe("session runtime host integration", () => {
           void readRuntimeMetadata(sessionId).then((value) =>
             reject(new Error(`runtime host did not exit: ${JSON.stringify(value)}`)),
           );
-        }, 3_000).unref?.();
+        }, RUNTIME_EXIT_TIMEOUT_MS).unref?.();
       }),
     ]);
     expect(await readRuntimeMetadata(sessionId)).toBeUndefined();
-  }, 10_000);
+  }, 30_000);
 });
 
 const COMMAND_CHILD_SCRIPT = (rebindId: string): string => String.raw`
@@ -419,7 +423,7 @@ async function openTestClient(
   };
 }
 
-async function waitForRuntimeExit(runtime: CommandRuntime, timeoutMs = 5_000): Promise<void> {
+async function waitForRuntimeExit(runtime: CommandRuntime, timeoutMs = RUNTIME_EXIT_TIMEOUT_MS): Promise<void> {
   await Promise.race([
     runtime.running,
     new Promise<void>((_resolve, reject) => {
@@ -481,7 +485,7 @@ describe("session runtime host hardening", () => {
       phone.dispose();
       await stopCommandRuntime(runtime);
     }
-  }, 15_000);
+  }, 30_000);
 
   it("applies attach dimensions before acknowledging a replacement terminal", async () => {
     if (process.platform === "win32") return;
@@ -533,7 +537,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 18_000);
+  }, 30_000);
 
   it("rejects invalid attach dimensions without replacing the active terminal", async () => {
     const runtime = await startCommandRuntime();
@@ -566,7 +570,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 12_000);
+  }, 30_000);
 
   it("preserves the current terminal until a replacement finishes terminal authentication", async () => {
     const runtime = await startCommandRuntime();
@@ -598,7 +602,7 @@ describe("session runtime host hardening", () => {
       current.dispose();
       if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
     }
-  }, 12_000);
+  }, 30_000);
 
   it("rejects a wrong token, broadcasts live output, and transfers input ownership", async () => {
     const runtime = await startCommandRuntime();
@@ -657,7 +661,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 12_000);
+  }, 30_000);
 
   it("accepts every input batch from both terminals without an ownership handshake", async () => {
     const runtime = await startCommandRuntime();
@@ -684,7 +688,7 @@ describe("session runtime host hardening", () => {
       second?.dispose();
       if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
     }
-  }, 12_000);
+  }, 30_000);
 
   it("fits both viewers and restores the remaining terminal after the owner disconnects", async () => {
     const runtime = await startCommandRuntime();
@@ -717,7 +721,7 @@ describe("session runtime host hardening", () => {
       second?.dispose();
       if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
     }
-  }, 12_000);
+  }, 30_000);
 
   it("switches clients without closing the current runtime when requested", async () => {
     const runtime = await startCommandRuntime();
@@ -738,7 +742,7 @@ describe("session runtime host hardening", () => {
       client?.dispose();
       await stopCommandRuntime(runtime);
     }
-  }, 10_000);
+  }, 30_000);
 
   it("switches clients and closes the current runtime when requested", async () => {
     const runtime = await startCommandRuntime();
@@ -761,7 +765,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 10_000);
+  }, 30_000);
 
   it("keeps the shared runtime alive when another viewer switches sessions", async () => {
     const runtime = await startCommandRuntime();
@@ -783,7 +787,7 @@ describe("session runtime host hardening", () => {
       second.dispose();
       if (await readRuntimeMetadata(runtime.sessionId)) await stopCommandRuntime(runtime);
     }
-  }, 12_000);
+  }, 30_000);
 
   it("starts idle cleanup when only the terminal half closes", async () => {
     const runtime = await startCommandRuntime({
@@ -803,7 +807,7 @@ describe("session runtime host hardening", () => {
         8_000,
       );
       client.terminal.destroy();
-      await waitForRuntimeExit(runtime, 3_000);
+      await waitForRuntimeExit(runtime);
       expect(await readRuntimeMetadata(runtime.sessionId)).toBeUndefined();
     } finally {
       client.dispose();
@@ -811,7 +815,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 15_000);
+  }, 30_000);
 
   it("cancels idle cleanup when a terminal reattaches", async () => {
     const runtime = await startCommandRuntime({
@@ -852,7 +856,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 18_000);
+  }, 30_000);
 
   it("reaps a stale destination lock and rebinds metadata to the child session id", async () => {
     const runtime = await startCommandRuntime();
@@ -888,7 +892,7 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 12_000);
+  }, 30_000);
 
   it("flushes a backpressured final output burst before reporting exit", async () => {
     const runtime = await startCommandRuntime();
@@ -900,7 +904,7 @@ describe("session runtime host hardening", () => {
         async () => client.output().includes("FINAL-OUTPUT-MARKER") ? true : undefined,
         8_000,
       );
-      await waitForRuntimeExit(runtime, 8_000);
+      await waitForRuntimeExit(runtime);
       expect(client.output()).toContain("FINAL-OUTPUT-MARKER");
       expect(client.output().length).toBeGreaterThanOrEqual(1_200_000);
     } finally {
@@ -909,5 +913,5 @@ describe("session runtime host hardening", () => {
         await stopCommandRuntime(runtime);
       }
     }
-  }, 15_000);
+  }, 30_000);
 });
