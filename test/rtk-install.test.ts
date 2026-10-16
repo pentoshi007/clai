@@ -17,7 +17,7 @@ import {
   resolveLatestTag,
   verifyChecksum,
 } from "../src/tools/rtk/release.js";
-import { planInstall, planUpdate } from "../src/tools/rtk/install.js";
+import { planInstall, planUpdate, pathGuidance } from "../src/tools/rtk/install.js";
 import { downloadToFile, RtkDownloadError } from "../src/tools/rtk/download.js";
 
 interface TestServer {
@@ -150,6 +150,25 @@ describe("rtk install method planning", () => {
     expect(text).toContain("brew install rtk");
     expect(text).toContain("cargo install --git https://github.com/rtk-ai/rtk");
     expect(text).toContain("rtk-aarch64-unknown-linux-gnu.tar.gz");
+  });
+});
+
+describe("rtk Windows guidance", () => {
+  it("points Windows users at winget and rtk.exe instead of Homebrew", () => {
+    const text = manualInstructions(currentTarget("win32", "x86_64"));
+    expect(text).toContain("winget install rtk-ai.rtk");
+    expect(text).toContain("rtk-x86_64-pc-windows-msvc.zip");
+    expect(text).toContain("`rtk.exe` on your PATH");
+    expect(text).not.toContain("brew install rtk");
+  });
+
+  it("keeps Bourne shell PATH advice off Windows warnings", () => {
+    const windows = pathGuidance("C:\\Users\\a\\.local\\bin", true);
+    expect(windows).toContain("SetEnvironmentVariable");
+    expect(windows).not.toContain("export PATH");
+    const posix = pathGuidance("/home/a/.local/bin", false);
+    expect(posix).toContain('export PATH="/home/a/.local/bin:$PATH"');
+    expect(posix).not.toContain("SetEnvironmentVariable");
   });
 });
 

@@ -125,10 +125,10 @@ const executable = (path: string): boolean => {
   }
 };
 
-const probeCandidate = async (path: string): Promise<Candidate> => {
+const probeCandidate = async (path: string, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<Candidate> => {
   const [version, rewrite] = await Promise.all([
-    runRtk(path, ["--version"], PROBE_TIMEOUT_MS),
-    runRtk(path, ["rewrite", PROBE_COMMAND], PROBE_TIMEOUT_MS),
+    runRtk(path, ["--version"], timeoutMs),
+    runRtk(path, ["rewrite", PROBE_COMMAND], timeoutMs),
   ]);
   if (version.missing || rewrite.missing) return { state: "missing" };
   const parsed = /^rtk\s+v?(\d+\.\d+\.\d+\S*)/.exec(version.stdout.trim())?.[1];
@@ -182,8 +182,8 @@ export const rtkPathEnv = (entry: RtkPathEntry): string =>
     ? `${entry.dir}${delimiter}${augmentedPathEnv()}`
     : `${augmentedPathEnv()}${delimiter}${entry.dir}`;
 
-export const probeRtkPath = async (path: string): Promise<RtkStatus> => {
-  const candidate = await probeCandidate(path);
+export const probeRtkPath = async (path: string, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<RtkStatus> => {
+  const candidate = await probeCandidate(path, timeoutMs);
   if (candidate.state === "ready") {
     const onPath = await findExecutable("rtk");
     return path === onPath

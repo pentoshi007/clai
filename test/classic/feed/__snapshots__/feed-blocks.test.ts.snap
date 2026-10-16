@@ -295,7 +295,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none ascii 1`] = `
 > add pagination to the users endpoint and
   return metadata in the response body
 ── thinking closed
-* Reasoning - 0.4s - + click to expand - Ctrl+T
+* Reasoning - 0.... - + click to expand - Ctrl+T
 ── assistant closed
 * I'll read the route handler first.
 
@@ -361,7 +361,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
 › add pagination to the users endpoint and
   return metadata in the response body
 ── thinking closed
-• Reasoning · 0.4s · + click to expand · Ctrl+T
+• Reasoning · 0.4s… · + click to expand · Ctrl+T
 ── assistant closed
 • I'll read the route handler first.
 
@@ -427,7 +427,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
 [48;2;26;32;44m[38;2;245;179;81m> [39m[38;2;248;250;252madd pagination to the users endpoint and [39m     [0m
 [48;2;26;32;44m  [38;2;248;250;252mreturn metadata in the response body[39m          [0m
 ── thinking closed
-[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
+[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.[0m... - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m* [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -493,7 +493,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
 [48;2;26;32;44m[38;2;245;179;81m› [39m[38;2;248;250;252madd pagination to the users endpoint and [39m     [0m
 [48;2;26;32;44m  [38;2;248;250;252mreturn metadata in the response body[39m          [0m
 ── thinking closed
-[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
+[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m… · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m• [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -558,7 +558,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none ascii 1`] = `
 > add pagination to the users endpoint and return metadata in the
   response body
 ── thinking closed
-* Reasoning - 0.4s - + click to expand - Ctrl+T
+* Reasoning - 0.4s - ~18 tokens - + click to expand - Ctrl+T
 ── assistant closed
 * I'll read the route handler first.
 
@@ -622,7 +622,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
 › add pagination to the users endpoint and return metadata in the
   response body
 ── thinking closed
-• Reasoning · 0.4s · + click to expand · Ctrl+T
+• Reasoning · 0.4s · ~18 tokens · + click to expand · Ctrl+T
 ── assistant closed
 • I'll read the route handler first.
 
@@ -686,7 +686,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
 [48;2;26;32;44m[38;2;245;179;81m> [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the [39m  [0m
 [48;2;26;32;44m  [38;2;248;250;252mresponse body[39m                                                     [0m
 ── thinking closed
-[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
+[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;245;179;81m~18 tokens[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m* [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -750,7 +750,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
 [48;2;26;32;44m[38;2;245;179;81m› [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the [39m  [0m
 [48;2;26;32;44m  [38;2;248;250;252mresponse body[39m                                                     [0m
 ── thinking closed
-[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
+[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;245;179;81m~18 tokens[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m• [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -813,7 +813,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 ── user closed
 > add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-* Reasoning - 0.4s - + click to expand - Ctrl+T
+* Reasoning - 0.4s - ~18 tokens - + click to expand - Ctrl+T
 ── assistant closed
 * I'll read the route handler first.
 
@@ -876,7 +876,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 ── user closed
 › add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-• Reasoning · 0.4s · + click to expand · Ctrl+T
+• Reasoning · 0.4s · ~18 tokens · + click to expand · Ctrl+T
 ── assistant closed
 • I'll read the route handler first.
 
@@ -939,7 +939,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m> [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m [0m
 ── thinking closed
-[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
+[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;245;179;81m~18 tokens[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m* [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1002,7 +1002,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m› [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m [0m
 ── thinking closed
-[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
+[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;245;179;81m~18 tokens[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m• [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1065,7 +1065,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none ascii 1`] = `
 ── user closed
 > add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-* Reasoning - 0.4s - + click to expand - Ctrl+T
+* Reasoning - 0.4s - ~18 tokens - + click to expand - Ctrl+T
 ── assistant closed
 * I'll read the route handler first.
 
@@ -1128,7 +1128,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
 ── user closed
 › add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-• Reasoning · 0.4s · + click to expand · Ctrl+T
+• Reasoning · 0.4s · ~18 tokens · + click to expand · Ctrl+T
 ── assistant closed
 • I'll read the route handler first.
 
@@ -1191,7 +1191,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m> [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m                 [0m
 ── thinking closed
-[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
+[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;245;179;81m~18 tokens[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m* [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1254,7 +1254,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m› [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m                 [0m
 ── thinking closed
-[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
+[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;245;179;81m~18 tokens[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m• [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1317,7 +1317,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none ascii 1`] = `
 ── user closed
 > add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-* Reasoning - 0.4s - + click to expand - Ctrl+T
+* Reasoning - 0.4s - ~18 tokens - + click to expand - Ctrl+T
 ── assistant closed
 * I'll read the route handler first.
 
@@ -1380,7 +1380,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
 ── user closed
 › add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-• Reasoning · 0.4s · + click to expand · Ctrl+T
+• Reasoning · 0.4s · ~18 tokens · + click to expand · Ctrl+T
 ── assistant closed
 • I'll read the route handler first.
 
@@ -1443,7 +1443,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m> [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m                                         [0m
 ── thinking closed
-[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
+[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;245;179;81m~18 tokens[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m* [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1506,7 +1506,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m› [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m                                         [0m
 ── thinking closed
-[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
+[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;245;179;81m~18 tokens[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m• [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1569,7 +1569,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none ascii 1`] = `
 ── user closed
 > add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-* Reasoning - 0.4s - + click to expand - Ctrl+T
+* Reasoning - 0.4s - ~18 tokens - + click to expand - Ctrl+T
 ── assistant closed
 * I'll read the route handler first.
 
@@ -1632,7 +1632,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
 ── user closed
 › add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-• Reasoning · 0.4s · + click to expand · Ctrl+T
+• Reasoning · 0.4s · ~18 tokens · + click to expand · Ctrl+T
 ── assistant closed
 • I'll read the route handler first.
 
@@ -1695,7 +1695,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m> [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m                                                                                                                         [0m
 ── thinking closed
-[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
+[38;2;167;139;250m[1m* Reasoning[22m[39m - [38;2;245;179;81m0.4s[39m - [38;2;245;179;81m~18 tokens[39m - [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m* [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
@@ -1758,7 +1758,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
 ── user closed
 [48;2;26;32;44m[38;2;245;179;81m› [39m[38;2;248;250;252madd pagination to the users endpoint and return metadata in the response body[39m                                                                                                                         [0m
 ── thinking closed
-[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
+[38;2;167;139;250m[1m• Reasoning[22m[39m · [38;2;245;179;81m0.4s[39m · [38;2;245;179;81m~18 tokens[39m · [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+T[39m
 ── assistant closed
 [38;2;255;85;255m• [39m[38;2;74;222;128mI'll read the route handler first.[39m
 
