@@ -55,6 +55,7 @@ import { readJson } from "./response-errors.js";
 import { MistralContentAccumulator, mistralContentText, mistralReasoningArtifacts } from "./mistral-content.js";
 import { currentRequestPurpose } from "../request-purpose.js";
 import { openAiCompatibleStreamViaResponses } from "./responses-first.js";
+import { ReasoningLoopGuard } from "./reasoning-loop.js";
 
 import {
   createSseFrameAssembler,
@@ -412,6 +413,9 @@ export async function openAiCompatibleStream(request: {
   let reasoningSeen = "";
   let contentWireSeen = "";
   let reasoningWireSeen = "";
+  const reasoningLoopGuard = options.providerId === "river" && /deepseek/i.test(options.model)
+    ? new ReasoningLoopGuard()
+    : undefined;
   const mistralContent = options.providerId === "mistral" ? new MistralContentAccumulator() : undefined;
   let finishReason: string | undefined;
   let terminalSignal: StreamTerminalProof | undefined;
@@ -786,6 +790,7 @@ export async function openAiCompatibleStream(request: {
           } else if (finalUsageFrame && terminalSignal === undefined) {
             terminalSignal = "usage-chunk";
           }
+          if (token || toolProgress) reasoningLoopGuard?.reset();
           if (reasoningToken) {
             const normalized = mistralContent ? { delta: reasoningToken, seen: reasoningWireSeen + reasoningToken } : normalizeChannelDelta(
               reasoningToken,
@@ -794,6 +799,14 @@ export async function openAiCompatibleStream(request: {
             );
             reasoningWireSeen = normalized.seen;
             if (normalized.delta) {
+              if (reasoningLoopGuard?.append(normalized.delta)) {
+                const error = new ProviderError(
+                  `${options.provider} (model=${options.model}) stopped a repetitive reasoning loop to avoid exhausting the output budget. Retry with /effort high or choose another model.`,
+                  undefined, undefined, undefined, false,
+                );
+                idleController.abort(error);
+                throw error;
+              }
               reasoningArtifactSequence ??= artifactSequence;
               if (!reasoningSeen) {
                 learnModelEmitsReasoning(options.providerId, options.model);

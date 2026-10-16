@@ -1,3 +1,5 @@
+import { currentRequestPurpose } from "./request-purpose.js";
+
 export type TransportEventKind =
   | "responses-fallback-endpoint"
   | "responses-fallback-shape"
@@ -30,6 +32,7 @@ export function onTransportEvent(listener: TransportListener): () => void {
 }
 
 export function emitTransportEvent(event: TransportEvent): void {
+  if (currentRequestPurpose() === "auxiliary") return;
   const key = eventKey(event);
   if (emittedKeys.has(key)) return;
   emittedKeys.add(key);

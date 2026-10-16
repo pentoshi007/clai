@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, rm, stat, truncate } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, open, rename, rm, stat, truncate } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getHistoryDir } from "./paths.js";
@@ -113,6 +113,31 @@ export class SessionPromptStore {
     });
   }
 
+  inheritFrom(source: SessionPromptStore): Promise<void> {
+    const pendingSource = source.flush();
+    return this.enqueue(async () => {
+      await pendingSource;
+      const release = await acquireJsonlWriteLock();
+      let staged: string | undefined;
+      try {
+        if (await source.count() === 0) return;
+        if (await this.count() > 0) throw new Error("destination prompt journal is not empty");
+        await mkdir(dirname(this.root), { recursive: true, mode: 0o700 });
+        staged = await mkdtemp(join(dirname(this.root), ".prompts-"));
+        for (const file of ["prompts.md", "metadata.jsonl", "offsets.bin"]) {
+          await copyFile(join(source.root, file), join(staged, file));
+        }
+        await rename(staged, this.root);
+        staged = undefined;
+      } finally {
+        try {
+          if (staged) await rm(staged, { recursive: true, force: true });
+        } finally { await release(); }
+      }
+      this.notifyListeners();
+    });
+  }
+
   flush(): Promise<void> {
     return this.pending;
   }
@@ -192,6 +217,10 @@ export class SessionPromptStore {
       await Promise.allSettled(handles.map((handle) => handle.close()));
       await release();
     }
+    this.notifyListeners();
+  }
+
+  private notifyListeners(): void {
     for (const listener of this.listeners) {
       try { listener(); } catch {}
     }

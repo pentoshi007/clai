@@ -71,7 +71,7 @@ export function handleMode(services: AppServices, mode: Mode): void {
 
 export async function handleClear(services: AppServices): Promise<void> {
   const purgedId = services.session.sessionId;
-  const pendingPrompts = services.session.promptHistory.flush().catch(() => undefined);
+  const promptHistory = services.session.promptHistory;
   const purgedWorkspace = getActiveSessionWorkspace()?.folderName;
   const beforeProvider = services.session.getState().provider;
   const beforeModel = services.session.getState().model;
@@ -80,6 +80,10 @@ export async function handleClear(services: AppServices): Promise<void> {
   services.plan.clear();
   services.session.subagents.purge();
   services.session.reset({ mintNewId: true });
+  const preservedPrompts = services.session.promptHistory.inheritFrom(promptHistory).then(
+    () => true,
+    () => false,
+  );
   resetResponsesWireStatesForTesting();
   if (beforeProvider) {
     services.session.setProvider(beforeProvider);
@@ -90,13 +94,20 @@ export async function handleClear(services: AppServices): Promise<void> {
   flash(services, "Session cleared", { key: "session", level: "success" });
   await services.plan.load(services.session.sessionId).catch(() => undefined);
 
-  await pendingPrompts;
-  const outcome = await purgeCurrentSession(purgedId, purgedWorkspace);
-  if (outcome === "failed") {
+  if (await preservedPrompts) {
+    const outcome = await purgeCurrentSession(purgedId, purgedWorkspace);
+    if (outcome === "failed") {
+      notice(
+        services,
+        "warn",
+        "cleared this session in memory, but some of its saved copy could not be deleted",
+      );
+    }
+  } else {
     notice(
       services,
       "warn",
-      "cleared this session in memory, but some of its saved copy could not be deleted",
+      "cleared this session in memory, but kept its saved copy because the prompt history could not be preserved",
     );
   }
   if (!beforeProvider) {
