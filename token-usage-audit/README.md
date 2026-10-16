@@ -1,6 +1,6 @@
 # clai token-usage audit and reduction roadmap
 
-Status: implementation authorized and in progress; P0 baseline and contract checks pass. See [tasks.md](tasks.md) and [phase evidence](evidence/phase-0.md). No runtime optimization or release is claimed yet.
+Status: implementation authorized; **P0 delivered**, **P1 partial tooling checkpoint**. See [tasks.md](tasks.md), [P0 evidence](evidence/phase-0.md), [P1 evidence](evidence/phase-1.md) and [evaluation limits](evaluation.md). P2–P6 are pending. No runtime optimization or release is claimed.
 
 - Audited: 2026-10-16, clai 4.15.2.
 - Source baseline: `ada38924a499a568e69984b35f99b75c375ecb98`.
@@ -48,6 +48,6 @@ A lower UI number, shorter description, passing hash snapshot, or one successful
 
 ## Delivery versus implementation
 
-The audit's 108 selected tests passed, typecheck passed, and generated prompts matched source. No live model A/B evaluation, real cache-hit measurement, full-suite execution, or optimized runtime is claimed. Future tasks remain unchecked on purpose.
+The original audit's 108 selected tests passed, typecheck passed, and generated prompts matched source. Implementation checks and receipts are now recorded per phase; only fully satisfied tasks are checked. No live model A/B evaluation, real cache-hit measurement, full-suite execution, or optimized runtime is claimed.
 
 Implement phase by phase. Close each phase with evidence, update `tasks.md`, commit the coherent phase and push its branch using the protocol in `IMPLEMENTER.md`. Do not ship an unproven candidate merely to reach 50%.

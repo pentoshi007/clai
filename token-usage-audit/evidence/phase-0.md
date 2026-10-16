@@ -1,6 +1,6 @@
 # P0 — Baseline and contract lock
 
-Status: TE-001–TE-003 verified; TE-004 delivery pending commit/push. Implementation authorized by the owner on 2026-10-16.
+Status: TE-001–TE-004 verified and delivered in `fe80e611`; the exact verified remote receipt is recorded in [P1 evidence](phase-1.md). Implementation authorized by the owner on 2026-10-16.
 
 ## Baseline and hypothesis
 

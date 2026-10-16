@@ -1,0 +1,31 @@
+{
+  "status": "partial-checkpoint-not-phase-complete",
+  "date": "2026-10-16",
+  "baseCommit": "fe80e61101e72ab626e86a18c3d037c3f68b6601",
+  "runtimeChanged": false,
+  "releaseEligible": false,
+  "liveProviderRequests": 0,
+  "checks": {
+    "focusedRegressionFiles": 22,
+    "focusedRegressionTestsPassed": 212,
+    "conformanceFiles": 16,
+    "conformanceTestsPassed": 788,
+    "conformanceTestsSkipped": 2,
+    "harnessStrictTypecheck": "passed",
+    "dryRun": "six planned trials, zero requests, no credential access",
+    "missingCredentialControl": "blocked before trial with exit 1",
+    "actualRunnerSmoke": "synthetic transport plus actual filesystem tools; not a live model pass",
+    "actualBackgroundProcess": "launched, waited, terminal owned job state asserted and cleaned up",
+    "syntheticHttpEvidence": "nine actual loopback HTTP cases; servers closed"
+  },
+  "remaining": [
+    "complete natural coding and security model scenario matrix",
+    "all deterministic state/continuation/serializer fault controls",
+    "first-attempt argument/repair classification",
+    "total round attribution including failure/recovery",
+    "full assembly-overhead measurement",
+    "route-specific cold/warm eligible-prefix and live cache baselines",
+    "explicit live route/model/settings and approved call budget",
+    "phase delivery and TE-010 completion"
+  ]
+}

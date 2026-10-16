@@ -1,6 +1,6 @@
 # Implementation task ledger
 
-Status: **implementation in progress** (authorized 2026-10-16). P0 baseline/contract work is active. Checkboxes below track verified implementation, not work completed by the original audit.
+Status: **implementation in progress** (authorized 2026-10-16). P0 is delivered; P1 has a verified partial tooling checkpoint, not a completed phase. P2–P6 remain pending. Checkboxes below track verified acceptance criteria, not partial progress or work completed by the original audit.
 
 Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. A new optimized release prefix is allowed; no separate prefix-change approval is required. Do not check evidence-gated work before its criteria pass.
 
@@ -8,8 +8,8 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 
 | Phase | Dependencies | State | Evidence / commit / push |
 | --- | --- | --- | --- |
-| P0 Baseline and contract lock | implementation authorization | in progress | [phase-0.md](evidence/phase-0.md) |
-| P1 Evaluation and regression gates | P0 | pending | — |
+| P0 Baseline and contract lock | implementation authorization | complete | [phase-0.md](evidence/phase-0.md); `fe80e611`, push verified |
+| P1 Evaluation and regression gates | P0 | in progress; partial checkpoint | [phase-1.md](evidence/phase-1.md), [collector limits](evaluation.md); no live/model/cache pass |
 | P2 Strict-prefix optimization | P1 | pending | — |
 | P3 Durable profile compatibility | P1 | pending | — |
 | P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |
@@ -26,16 +26,23 @@ P4/P5 are part of the optimization scope, not blocked on another prefix-change d
   - Verified: 64 isolated production-assembly combinations, session-state refresh, canonical/wire attribution, images/reasoning, complete dynamic authority and deterministic repeat equality. [Measurements](evidence/assembly-baseline.json); `test/context/token-assembly-baseline.test.ts`. Live provider usage remains unknown.
 - [x] **TE-003 — Lock rule and tool contracts.** Create source-to-obligation-to-test mapping; capture ordered legacy prompt/schema digests, boundaries, aliases and flags; no required behavior unowned.
   - Verified: all 31 source headings owned, section/paragraph boundaries protected, 47 complete ordered tool contracts and renderer bytes locked. [Contracts](contracts.md); `test/context/token-contract-ledger.test.ts`. Structural coverage is not model-behavior equivalence; P1 remains required.
-- [ ] **TE-004 — Deliver P0.** Record evidence, pass focused accounting checks and byte-equivalence baseline, update this ledger, commit and verify branch push.
+- [x] **TE-004 — Deliver P0.** Record evidence, pass focused accounting checks and byte-equivalence baseline, update this ledger, commit and verify branch push.
+  - Verified: `fe80e61101e72ab626e86a18c3d037c3f68b6601` pushed to `origin/audit/token-efficiency-roadmap`; remote ref equality and clean tracking status observed. Receipt carried into P1 per delivery protocol.
 
 ## P1 — Evaluation and regression gates
 
 - [ ] **TE-005 — Make paired trials route-aware and isolated.** Use existing adapters, synthetic configuration, pinned settings, counterbalanced order, explicit call budget and redacted evidence.
+  - Partial: explicit four-provider collector configuration, isolated A/B/B/A trials, generation budget guard and redacted reports implemented; dry-run, missing-key control and synthetic transport plus actual-runner smoke pass. Other gateway/local/subscription collectors and declared live routes remain unvalidated. See [evaluation.md](evaluation.md).
 - [ ] **TE-006 — Repair weak outcome verifiers.** Prove real background execution/wait and immutable fixture tests; add natural prompts without prescribed tools and independent hidden assertions (C01–C10).
+  - Partial: six natural counterparts plus question-after-build, immutable package/tests, independent numeric/boundary assertions and actual background/wait/job-state proof pass. Full C05/C08/C09/C10 model paths remain required; no model-quality equivalence is claimed.
 - [ ] **TE-007 — Capture complete efficiency metrics.** Include failed attempts, repairs, cached/write/input/output usage, auxiliary work, first-token/task latency, local overhead and unknown values; report rounds separately from invocations.
+  - Partial: every observed generation attempt (including failed/auxiliary), usage provenance, final fingerprints, tool errors/blocks, latency/CPU/RSS and explicit unknowns collected. Total-round attribution, first-attempt/repair classification, full assembly timing and comparable warm-cache denominators remain unfinished; unknown is not zero.
 - [ ] **TE-008 — Build security fixture coverage.** Implement S01–S10 with known findings and negative controls, raw/header/redirect/TLS/body-digest evidence and scope assertions.
+  - Partial: nine actual loopback evidence tests cover S01/S02/S03/S05/S06 primitives, including raw-versus-readable, credential stripping/forwarding, statuses, gzip/capture digests and flawed-versus-patched endpoints. Complete S01–S10 model fixtures, real TLS and interruption/adversarial paths remain pending.
 - [ ] **TE-009 — Prove gates detect regressions.** Add D03–D13 and fault controls for early prefix mutation, tool reorder, wrong fix, missing evidence and extra request; preserve existing cache/provider tests.
+  - Partial: targeted controls catch those five faults, missing credentials, budget exhaustion, mutation-after-question and unknown/incomplete acceptance. Existing cache/HTTP/provider regression and conformance suites pass. Complete cross-provider state/history/transition D03–D13 controls remain required.
 - [ ] **TE-010 — Deliver P1.** Baseline passes and negative controls fail as designed; update ledger/evidence, commit and verify branch push.
+  - Unfinished: the verified tooling checkpoint is not P1 completion. Missing live route/model/budget/credential selection and outstanding offline matrix work block the phase gate and all dependent runtime/profile optimization phases.
 
 ## P2 — Strict-prefix improvements
 

@@ -85,3 +85,5 @@ No subagent findings contributed to this audit. Delegation was stopped at the us
 - [legacy-contracts.json](legacy-contracts.json): immutable source/section/paragraph and ordered tool contracts, with responsibility/test/scenario ownership explained in [contracts.md](../contracts.md).
 
 Reproduce full assembly with `node --import tsx scripts/measure-token-overhead.ts --assembled "$SESSION_SCRATCH/assembly.json"`, using the current session's absolute scratch path. The command runs the installed offline test harness and prints counts/digests only after every fixture assertion passes. Application runtime, prompt, schema and cache-policy bytes remain unchanged by P0.
+
+- [P1 partial checkpoint](phase-1.md), [bounded check record](p1-checkpoint.json) and [collector documentation](../evaluation.md): offline evaluator/verifier improvements and exact remaining coverage. This checkpoint does not complete P1 or activate a profile.

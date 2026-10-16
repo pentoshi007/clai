@@ -1,6 +1,6 @@
 # Phased implementation roadmap
 
-This is the future implementation plan, not authorization to change production behavior now. Execute using [tasks.md](tasks.md), with [IMPLEMENTER.md](IMPLEMENTER.md) governing phase evidence and commits. Every phase may conclude “retain baseline” when evidence rejects its hypothesis.
+Implementation was authorized by the owner on 2026-10-16. Execute using [tasks.md](tasks.md), with [IMPLEMENTER.md](IMPLEMENTER.md) governing phase evidence and commits. Authorization to implement does not waive any activation/evidence gate. Every phase may conclude “retain baseline” when evidence rejects its hypothesis.
 
 ## Dependency graph
 
