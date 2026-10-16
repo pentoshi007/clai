@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-16",
+  "baselineCommit": "ada38924a499a568e69984b35f99b75c375ecb98",
+  "packageVersion": "4.15.2",
+  "environment": {
+    "os": "Linux arm64",
+    "node": "24.20.0",
+    "packageManager": "npm",
+    "dependenciesInstalledByAudit": false
+  },
+  "checks": [
+    {
+      "name": "focused prompt/cache/tool regression suites",
+      "status": "passed",
+      "exitCode": 0,
+      "filesPassed": 13,
+      "testsPassed": 108,
+      "testRunner": "vitest 4.1.11",
+      "reportedDurationSeconds": 10.67,
+      "commandReference": "README.md"
+    },
+    {
+      "command": "npm run typecheck",
+      "status": "passed",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run embed-prompts:check",
+      "status": "passed",
+      "exitCode": 0,
+      "matchingPrompts": 2
+    },
+    {
+      "name": "local web.fetch maxBytes contract probe",
+      "status": "schema-validator mismatch reproduced",
+      "networkRequest": false,
+      "inputMaxBytes": 1800000,
+      "advertisedType": "integer",
+      "advertisedMinimum": null,
+      "advertisedMaximum": null,
+      "validatorMinimum": 1024,
+      "validatorMaximum": 1048576,
+      "validatorResult": "validation error"
+    }
+  ],
+  "notRun": [
+    "live model A/B evaluation",
+    "provider-exact input-token measurement",
+    "live cache-hit and latency measurement",
+    "full deterministic suite",
+    "host and native UI suites",
+    "build and packaged runtime smoke"
+  ],
+  "documentationValidation": {
+    "status": "passed",
+    "filesChecked": 14,
+    "localLinksValidated": 19,
+    "sourceReferencesValidated": 115,
+    "uniqueUncheckedImplementationTasks": 38,
+    "reproducedRoutes": 8,
+    "toolDefinitions": 47,
+    "measurementHashes": "identical on repeat run",
+    "maximumFileLines": 156,
+    "measurementUtilitySyntaxCheck": "passed"
+  },
+  "runtimeChanged": false,
+  "optimizationImplemented": false
+}

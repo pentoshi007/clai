@@ -1,0 +1,155 @@
+{
+  "estimator": "ceil(content and schema characters / 3.3); excludes provider framing; no model calls",
+  "results": [
+    {
+      "scenario": "native-default-short",
+      "before": {
+        "systemCharacters": 37781,
+        "modeCharacters": 448,
+        "schemaCharacters": 34665,
+        "toolCount": 37,
+        "toolSchemaSha256": "6db26c9c403a8758e2215537ce80c283104882909d995047c68d50f062f25835",
+        "userTaskCopies": 1,
+        "freshCharacters": 73834,
+        "freshEstimatedTokens": 22374,
+        "continuedCharacters": 74371,
+        "continuedEstimatedTokens": 22537
+      },
+      "after": {
+        "systemCharacters": 37781,
+        "modeCharacters": 448,
+        "schemaCharacters": 34665,
+        "toolCount": 37,
+        "toolSchemaSha256": "6db26c9c403a8758e2215537ce80c283104882909d995047c68d50f062f25835",
+        "userTaskCopies": 1,
+        "freshCharacters": 73834,
+        "freshEstimatedTokens": 22374,
+        "continuedCharacters": 74371,
+        "continuedEstimatedTokens": 22537
+      },
+      "freshCharactersSaved": 0,
+      "freshEstimatedTokensSaved": 0,
+      "freshReductionPercent": 0
+    },
+    {
+      "scenario": "native-default-long",
+      "before": {
+        "systemCharacters": 37781,
+        "modeCharacters": 448,
+        "schemaCharacters": 34665,
+        "toolCount": 37,
+        "toolSchemaSha256": "6db26c9c403a8758e2215537ce80c283104882909d995047c68d50f062f25835",
+        "userTaskCopies": 1,
+        "freshCharacters": 78885,
+        "freshEstimatedTokens": 23905,
+        "continuedCharacters": 79422,
+        "continuedEstimatedTokens": 24068
+      },
+      "after": {
+        "systemCharacters": 37781,
+        "modeCharacters": 448,
+        "schemaCharacters": 34665,
+        "toolCount": 37,
+        "toolSchemaSha256": "6db26c9c403a8758e2215537ce80c283104882909d995047c68d50f062f25835",
+        "userTaskCopies": 1,
+        "freshCharacters": 78885,
+        "freshEstimatedTokens": 23905,
+        "continuedCharacters": 79422,
+        "continuedEstimatedTokens": 24068
+      },
+      "freshCharactersSaved": 0,
+      "freshEstimatedTokensSaved": 0,
+      "freshReductionPercent": 0
+    },
+    {
+      "scenario": "native-compact",
+      "before": {
+        "systemCharacters": 4926,
+        "modeCharacters": 5431,
+        "schemaCharacters": 34665,
+        "toolCount": 37,
+        "toolSchemaSha256": "6db26c9c403a8758e2215537ce80c283104882909d995047c68d50f062f25835",
+        "userTaskCopies": 1,
+        "freshCharacters": 45962,
+        "freshEstimatedTokens": 13928,
+        "continuedCharacters": 46499,
+        "continuedEstimatedTokens": 14091
+      },
+      "after": {
+        "systemCharacters": 4926,
+        "modeCharacters": 5431,
+        "schemaCharacters": 34665,
+        "toolCount": 37,
+        "toolSchemaSha256": "6db26c9c403a8758e2215537ce80c283104882909d995047c68d50f062f25835",
+        "userTaskCopies": 1,
+        "freshCharacters": 45962,
+        "freshEstimatedTokens": 13928,
+        "continuedCharacters": 46499,
+        "continuedEstimatedTokens": 14091
+      },
+      "freshCharactersSaved": 0,
+      "freshEstimatedTokensSaved": 0,
+      "freshReductionPercent": 0
+    },
+    {
+      "scenario": "text-default",
+      "before": {
+        "systemCharacters": 54395,
+        "modeCharacters": 448,
+        "schemaCharacters": 0,
+        "toolCount": 37,
+        "toolSchemaSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "userTaskCopies": 1,
+        "freshCharacters": 55783,
+        "freshEstimatedTokens": 16904,
+        "continuedCharacters": 56320,
+        "continuedEstimatedTokens": 17067
+      },
+      "after": {
+        "systemCharacters": 54395,
+        "modeCharacters": 448,
+        "schemaCharacters": 0,
+        "toolCount": 37,
+        "toolSchemaSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "userTaskCopies": 1,
+        "freshCharacters": 55783,
+        "freshEstimatedTokens": 16904,
+        "continuedCharacters": 56320,
+        "continuedEstimatedTokens": 17067
+      },
+      "freshCharactersSaved": 0,
+      "freshEstimatedTokensSaved": 0,
+      "freshReductionPercent": 0
+    },
+    {
+      "scenario": "text-compact",
+      "before": {
+        "systemCharacters": 6761,
+        "modeCharacters": 5431,
+        "schemaCharacters": 0,
+        "toolCount": 37,
+        "toolSchemaSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "userTaskCopies": 1,
+        "freshCharacters": 13132,
+        "freshEstimatedTokens": 3980,
+        "continuedCharacters": 13669,
+        "continuedEstimatedTokens": 4143
+      },
+      "after": {
+        "systemCharacters": 6761,
+        "modeCharacters": 5431,
+        "schemaCharacters": 0,
+        "toolCount": 37,
+        "toolSchemaSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "userTaskCopies": 1,
+        "freshCharacters": 13132,
+        "freshEstimatedTokens": 3980,
+        "continuedCharacters": 13669,
+        "continuedEstimatedTokens": 4143
+      },
+      "freshCharactersSaved": 0,
+      "freshEstimatedTokensSaved": 0,
+      "freshReductionPercent": 0
+    }
+  ]
+}
