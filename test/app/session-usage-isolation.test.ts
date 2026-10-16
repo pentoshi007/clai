@@ -94,6 +94,7 @@ describe("session usage attribution", () => {
     });
     const value = session();
     value.recordTokenUsage(usage(40), "gpt-5.4", "codex");
+    value.subagents.setEnabled(true);
     const first = value.subagents.start({ ...assignment, title: "First", prompt: "Inspect first surface" });
     const second = value.subagents.start({ ...assignment, title: "Second", prompt: "Inspect second surface" });
     await Promise.all([value.subagents.wait(first.id), value.subagents.wait(second.id)]);

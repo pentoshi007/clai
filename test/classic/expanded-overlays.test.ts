@@ -67,7 +67,7 @@ describe("Classic expanded overlays", () => {
       const frame = ui.lastFrame() ?? "";
       if (columns >= 24) expect(frame).toContain("Orchestration");
       expect(frame).not.toContain("ctrl+c twice");
-      expect(services.session.subagents.enabled).toBe(true);
+      expect(services.session.subagents.enabled).toBe(false);
       for (const line of frame.split("\n")) expect(renderColumns(line)).toBeLessThanOrEqual(columns);
       const size = overlaySize(columns, rows);
       if (columns >= 24) {
@@ -75,8 +75,8 @@ describe("Classic expanded overlays", () => {
         expect(top).toBe(size.marginY);
         expect(frame.split("\n").filter((line) => line.includes("│")).length).toBe(size.height - 2);
       }
-      services.overlay.selectPicker("off");
-      expect(services.session.subagents.enabled).toBe(false);
+      services.overlay.selectPicker("on");
+      expect(services.session.subagents.enabled).toBe(true);
       services.overlay.openPager("Output", "body content\n".repeat(50), undefined, undefined, "plain");
       await new Promise((resolve) => setTimeout(resolve, 60));
       if (columns >= 100) await vi.waitFor(() => expect(ui.lastFrame() ?? "").toContain("c copy"), PAINT_WAIT);

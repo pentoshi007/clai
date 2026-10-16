@@ -29,6 +29,7 @@ function fixture() {
       input.signal.addEventListener("abort", () => resolve("stopped"), { once: true });
     }),
   });
+  manager.setEnabled(true);
   let current = manager;
   const harness = createHarness();
   const sessionListeners = new Set<() => void>();

@@ -24,7 +24,7 @@ const inFlight = new Map<AbortController, string>();
 const fingerprint = (parentSessionId: string, assignment: SubagentAssignment): string => createHash("sha256").update(JSON.stringify([parentSessionId, assignment.prompt, assignment.context ?? "", assignment.cwd, assignment.provider, assignment.model])).digest("hex");
 
 export class SubagentManager {
-  private active = true;
+  private active = false;
   private disposed = false;
   private readonly children = new Map<string, Child>();
   private readonly listeners = new Set<() => void>();

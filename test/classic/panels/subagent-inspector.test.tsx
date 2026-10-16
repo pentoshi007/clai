@@ -110,6 +110,7 @@ it("keeps the complete durable subagent transcript readable and continuously nav
       return report;
     },
   });
+  manager.setEnabled(true);
   const harness = createHarness({ columns: 120, rows: 46 });
   let view: ReturnType<typeof render> | undefined;
   let source: ReturnType<typeof createSubagentPagerSource> | undefined;

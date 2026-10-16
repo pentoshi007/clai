@@ -39,6 +39,7 @@ const writer = new SubagentManager("continuous-parent", {
     return report;
   },
 });
+writer.setEnabled(true);
 let reader: SubagentManager | undefined;
 try {
   const started = writer.start({ title: "Complete persisted inspection", prompt: "Inspect every documentation section", cwd: process.cwd(), provider: "openai", model: "test" });
@@ -181,6 +182,7 @@ try {
             return new Promise<string>((resolve) => input.signal.addEventListener("abort", () => resolve(report), { once: true }));
           },
         });
+        liveManager.setEnabled(true);
         let liveSource: ReturnType<typeof createSubagentPagerSource> | undefined;
         try {
           const liveRun = liveManager.start({ title: "Live continuous inspection", prompt: "Keep investigating", cwd: process.cwd(), provider: "openai", model: "test" });

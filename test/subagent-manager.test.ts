@@ -30,6 +30,7 @@ describe("SubagentManager", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1000);
     const { manager, work } = controlled();
+    manager.setEnabled(true);
     const first = manager.start(assignment);
     await tick();
     vi.setSystemTime(5000);
@@ -83,9 +84,10 @@ describe("SubagentManager", () => {
     expect(settled).toMatchObject({ activeProvider: "anthropic", activeModel: "fallback" });
   });
 
-  it("is on by default and limits active context gatherers to three", async () => {
+  it("is off by default and limits active context gatherers to three", async () => {
     const { manager, work } = controlled();
-    expect(manager.enabled).toBe(true);
+    expect(manager.enabled).toBe(false);
+    manager.setEnabled(true);
     const runs = Array.from({ length: 3 }, (_, index) => manager.start({ ...assignment, prompt: `Task ${index}` }));
     expect(new Set(runs.map((run) => run.id)).size).toBe(3);
     expect(() => manager.start({ ...assignment, prompt: "Task 3" })).toThrow("At most three");
@@ -164,6 +166,8 @@ describe("SubagentManager", () => {
   it("allows identical subagent assignments in independent parent sessions", async () => {
     const first = controlled(undefined, "first-parent");
     const second = controlled(undefined, "second-parent");
+    first.manager.setEnabled(true);
+    second.manager.setEnabled(true);
     const one = first.manager.start(assignment);
     const two = second.manager.start(assignment);
     await tick();
@@ -786,7 +790,7 @@ describe("SubagentManager", () => {
     const worker = vi.fn(async () => "Unexpected");
     const restored = new SubagentManager("parent", { worker, store: { load: () => saved, save: () => undefined, remove: () => undefined } });
     managers.push(restored);
-    expect(restored.enabled).toBe(true);
+    expect(restored.enabled).toBe(false);
     expect(restored.get(run.id)?.status).toBe("stopped");
     expect(restored.get("foreign")).toBeUndefined();
     restored.setEnabled(true);
