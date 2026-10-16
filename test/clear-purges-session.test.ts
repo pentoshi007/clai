@@ -7,6 +7,12 @@ import { handleClear, handleNew } from "../src/ui-core/commands/session-commands
 import { handlePrompts } from "../src/ui-core/commands/prompt-commands.js";
 import { createSavedPromptReader, SessionPromptStore } from "../src/store/session-prompts.js";
 import * as sessionNaming from "../src/app/controllers/session-naming.js";
+import { PromptHistory } from "../src/ui-core/composer/prompt-history.js";
+import { bindSavedPromptHistory } from "../src/ui-core/composer/saved-prompt-history.js";
+import {
+  compactMessagesWithSummary,
+  isCompactionMemoryMessage,
+} from "../src/agent/context-manager.js";
 import {
   createCompositionRoot,
   type AppServices,
@@ -251,6 +257,83 @@ describe("/clear resets the session while retaining user prompts", () => {
     expect(await oldStore.count()).toBe(1);
     expect(await services.session.promptHistory.count()).toBe(0);
     expect(existsSync(services.session.promptHistory.path)).toBe(false);
+  });
+
+  it("recalls retained prompts with up/down after /clear", async () => {
+    const history = new PromptHistory();
+    const dispose = bindSavedPromptHistory(history, services.session);
+    try {
+      await services.session.promptHistory.append({ content: "First cleared prompt" });
+      await services.session.promptHistory.append({ content: "Second cleared prompt" });
+
+      await handleClear(services);
+
+      expect(await history.prevWithSaved("draft")).toBe("Second cleared prompt");
+      expect(await history.prevWithSaved("draft")).toBe("First cleared prompt");
+      expect(await history.nextWithSaved()).toBe("Second cleared prompt");
+      expect(await history.nextWithSaved()).toBe("draft");
+    } finally {
+      dispose();
+    }
+  });
+
+  it("does not recall a journal retained by /clear in a /new session", async () => {
+    const history = new PromptHistory();
+    const dispose = bindSavedPromptHistory(history, services.session);
+    try {
+      await services.session.promptHistory.append({ content: "Only for the cleared session" });
+      await handleClear(services);
+      expect(await history.prevWithSaved("draft")).toBe("Only for the cleared session");
+
+      await handleNew(services);
+
+      expect(await history.prevWithSaved("draft")).toBeUndefined();
+    } finally {
+      dispose();
+    }
+  });
+
+  it("keeps pre-clear prompts out of the next compaction's recent-prompt memory", async () => {
+    await services.session.promptHistory.append({ content: "Pre-clear journal prompt" });
+    services.session.loadHistory([
+      { role: "user", content: "Pre-clear task alpha" },
+      { role: "assistant", content: "alpha answered" },
+      { role: "user", content: "Pre-clear task beta" },
+      { role: "assistant", content: "beta answered" },
+    ]);
+    await upsertSession(services.session.sessionId, [...services.session.messages], "pre-clear work");
+
+    await handleClear(services);
+    services.session.loadHistory([
+      { role: "user", content: "Post-clear task one" },
+      { role: "assistant", content: "one answered" },
+      { role: "user", content: "Post-clear task two" },
+      { role: "assistant", content: "two answered" },
+    ]);
+
+    const result = await compactMessagesWithSummary(
+      [...services.session.messages],
+      async () => [
+        "ORIENTATION: Post-clear questions are answered; no implementation is pending.",
+        "## Latest conversation",
+        "- The user asked two new questions after clearing the session; both were answered.",
+        "## Work completed",
+        "- Both post-clear questions were answered.",
+        "## Remaining work",
+        "- None requested.",
+      ].join("\n"),
+      { budgetTokens: 0, singlePassInputBudgetTokens: 200_000 },
+    );
+
+    const memory = result.messages.find(isCompactionMemoryMessage);
+    expect(memory).toBeDefined();
+    expect(memory!.compaction?.recentUserPrompts.map((prompt) => prompt.content)).toEqual([
+      "Post-clear task one",
+      "Post-clear task two",
+    ]);
+    expect(memory!.content).toContain("## Last 3 user prompts");
+    expect(memory!.content).toContain("Post-clear task one");
+    expect(memory!.content).not.toContain("Pre-clear");
   });
 
   it("keeps a different session untouched", async () => {

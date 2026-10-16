@@ -4,17 +4,26 @@ import { shouldStoreInPromptHistory } from "./input-history.js";
 import type { PromptHistory } from "./prompt-history.js";
 
 type PromptSession = Pick<SessionController, "promptHistory" | "isPromptHistoryEnabled" | "subscribe">;
+type PromptStore = PromptSession["promptHistory"];
 
 export function bindSavedPromptHistory(history: PromptHistory, session: PromptSession): () => void {
-  let store: PromptSession["promptHistory"] | undefined;
+  let store: PromptStore | undefined;
   let enabled: boolean | undefined;
+  let revision = -1;
+  let unsubscribeStore: (() => void) | undefined;
+
   const refresh = (): void => {
     const next = session.promptHistory;
     const active = session.isPromptHistoryEnabled();
-    if (store === next && enabled === active) return;
-    const changed = store !== undefined;
+    if (store === next && enabled === active && revision === next.revision) return;
+    if (store !== next) {
+      unsubscribeStore?.();
+      unsubscribeStore = next.subscribe(refresh);
+    }
+    const changed = store !== undefined && store !== next;
     store = next;
     enabled = active;
+    revision = next.revision;
     const reader = active ? createSavedPromptReader(next) : undefined;
     history.setOlderSource(reader ? async () => {
       while (session.isPromptHistoryEnabled() && session.promptHistory === next) {
@@ -29,6 +38,7 @@ export function bindSavedPromptHistory(history: PromptHistory, session: PromptSe
   const unsubscribe = session.subscribe(refresh);
   return () => {
     unsubscribe();
+    unsubscribeStore?.();
     history.setOlderSource(undefined);
   };
 }
