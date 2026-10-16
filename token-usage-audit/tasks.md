@@ -2,7 +2,7 @@
 
 Status: **not started**. The audit is delivered; none of the implementation checkboxes below represents work completed by that audit.
 
-Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. Do not check approval-gated work without approval.
+Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affected surfaces are in [roadmap.md](roadmap.md); test IDs are in [validation.md](validation.md). Mark tasks as verified work is completed, commit and push each phase. A new optimized release prefix is allowed; no separate prefix-change approval is required. Do not check evidence-gated work before its criteria pass.
 
 ## Phase state
 
@@ -12,11 +12,11 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 | P1 Evaluation and regression gates | P0 | pending | — |
 | P2 Strict-prefix optimization | P1 | pending | — |
 | P3 Durable profile compatibility | P1 | pending | — |
-| P4 Instruction candidate | P3 + explicit new-prefix approval | blocked pending approval and prerequisites | — |
-| P5 Tool-description candidate | P4 + same approval scope | blocked pending approval and prerequisites | — |
+| P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |
+| P5 Tool-description candidate | P4 | pending prerequisites | — |
 | P6 Evaluation and release decision | applicable candidate phases; P1 required | pending | — |
 
-Strict-lane completion without version approval must leave P4/P5 blocked and report that boundary. It is not a claim that all implementation phases shipped.
+P4/P5 are part of the optimization scope, not blocked on another prefix-change decision. Every candidate must keep its selected prefix stable during use and demonstrate same-or-better comparable cache reuse. Missing evidence or a regression still blocks release; do not label partial work as all phases shipped.
 
 ## P0 — Baseline and contracts
 
@@ -50,9 +50,9 @@ Strict-lane completion without version approval must leave P4/P5 blocked and rep
 - [ ] **TE-019 — Handle legacy/unknown/corrupt profiles safely.** No guessed defaults; actionable pre-request recovery; exact known artifacts retained; old history never discarded.
 - [ ] **TE-020 — Prove process/version transitions.** Fresh-process upgrade/resume, config changes, provider return, native/text fallback, compaction and rollback fixtures preserve supported prefix boundaries (D07–D09).
 - [ ] **TE-021 — Deliver P3.** Legacy wire equality, compatible persistence, packaged artifact availability and performance checks pass; update ledger, commit and verify branch push.
-- [ ] **TE-022 — Record explicit new-prefix decision.** Owner accepts or declines cold new-session candidate profiles; document scope/routes. A decline leaves P4/P5 blocked and directs remaining work to strict-lane reporting.
+- [ ] **TE-022 — Lock comparable cache baselines and candidate scope.** Record routes/settings/workloads, cold/warm classification, eligible-prefix denominator and warm hit/reuse metrics. Define tests for zero runtime prefix drift and same-or-better cache reuse (C1/C6/C9); no separate owner decision is needed for a new release prefix.
 
-## P4 — Instruction candidate (requires TE-022 approval)
+## P4 — Instruction candidate (requires P3 and TE-022 evidence)
 
 - [ ] **TE-023 — Create isolated candidate instruction artifacts.** Keep legacy untouched and schema fixed; consolidate only mapped semantic duplication; no dynamic coding/security core switch.
 - [ ] **TE-024 — Preserve native/text and dynamic obligations.** Keep text-call guidance, project/user/skill/scope/plan content and edit/recovery semantics; explicit capabilities prevent mode-guidance rebound.
@@ -60,7 +60,7 @@ Strict-lane completion without version approval must leave P4/P5 blocked and rep
 - [ ] **TE-026 — Evaluate prompt-only behavior.** Deterministic coverage and multi-route coding/security pilot pass with no first-attempt/round/latency/quality regression; otherwise reject and retain baseline.
 - [ ] **TE-027 — Deliver P4.** Document accepted experiment or rejection, clean unreferenced artifacts, keep candidate disabled pending final gates; update ledger, commit and verify branch push.
 
-## P5 — Tool-description candidate (requires approved P4 path)
+## P5 — Tool-description candidate (requires passing P4 path)
 
 - [ ] **TE-028 — Shorten descriptions contract-first.** Prioritize measured large tools; preserve names, order, shapes, required fields, enums, units, defaults, aliases, flags and discovery/continuation behavior.
 - [ ] **TE-029 — Correct candidate schema/validator parity.** Encode `web.fetch.maxBytes` 1,024–1,048,576 from authoritative constants; test below/at/above boundaries and actual emitted schema; preserve legacy profile bytes (D10).
@@ -73,7 +73,7 @@ Strict-lane completion without version approval must leave P4/P5 blocked and rep
 - [ ] **TE-033 — Run broader deterministic/build/package checks.** Typecheck, prompt generation check, deterministic/conformance suites, applicable host/Bun checks, source and distributed CLI smoke; inspect generated diff.
 - [ ] **TE-034 — Complete paired live and holdout evaluation.** Cold/warm/multi-turn/recovery matrix across declared-supported models; staged repetitions, failed-attempt accounting and uncertainty analysis; missing access remains blocked.
 - [ ] **TE-035 — Publish decision and achievable savings.** Per-route startup/full-task tokens, cache, quality, first-attempt validity, rounds, latency and resource metrics; choose release/retain-baseline/blocked without weakening gates.
-- [ ] **TE-036 — Activate only an approved passing profile.** New sessions only, legacy/resumed sessions pinned; bounded canary and new-session-only rollback proved. Leave unchecked if no candidate qualifies or approval is absent.
+- [ ] **TE-036 — Release only a validated passing profile.** Use the optimized default for new sessions; existing/resumed sessions stay pinned. Prove same-or-better comparable warm-cache hit/reuse, no runtime prefix mutation, bounded canary and new-session-only rollback. Leave unchecked if any required evidence is missing or a regression remains.
 - [ ] **TE-037 — Complete cleanup and compatibility review.** No dead flags/exports, stale docs, duplicate generators, dangling handlers or missing packaged assets; intentionally retained legacy artifacts documented and tested.
 - [ ] **TE-038 — Deliver final phase.** Reconcile every requested criterion and task, record residuals and remote commit refs, commit and verify branch push; never label blocked activation “released.”
 

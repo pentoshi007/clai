@@ -6,9 +6,9 @@ This is the future implementation plan, not authorization to change production b
 
 `P0 baseline/contract lock → P1 proof harness → P2 strict-prefix improvements`
 
-`P1 → P3 durable profile compatibility → owner version-transition approval → P4 prompt candidate → P5 schema candidate → P6 evaluation/release`
+`P1 → P3 durable profile compatibility → P4 prompt candidate → P5 schema candidate → P6 evaluation/release`
 
-P2 and P3 are separable after P1, but implement one coherent phase at a time. P6 also evaluates any P2 candidate; if version-transition approval is withheld, close P4/P5 as blocked and complete the strict-lane report without enabling them. Do not claim a whole-program optimization is complete while required gates are blocked.
+P2 and P3 are separable after P1, but implement one coherent phase at a time. P4/P5 are part of the requested optimization: no separate owner approval is needed merely because the optimized release uses different prefix bytes. The release gate is stable prefixes while the agent runs and same-or-better comparable warm-cache reuse, alongside quality/reliability/performance. P6 also evaluates any P2 candidate. Do not claim completion while required evidence gates are blocked.
 
 ## P0 — Establish a reproducible baseline and coverage ledger
 
@@ -85,11 +85,11 @@ P2 and P3 are separable after P1, but implement one coherent phase at a time. P6
 
 **Tests:** extend `test/app/session-cache-continuity.test.ts`, `test/agent/tool-routing.test.ts`, `test/native-prompt-cache-cross-turn.test.ts`, `test/openai-prompt-cache-cross-turn.test.ts`, `test/llm/session-cache-isolation.test.ts`, history persistence/recovery suites. Add an actual fresh-process upgrade/resume fixture, not just two calls sharing one map.
 
-**Gate:** all legacy routes render identically before/after; no authorization state persistence expansion; old history loads; corrupt metadata fails safely; no hot-path latency/memory regression. Candidate version transition requires separately recorded owner approval after this gate.
+**Gate:** all legacy routes render identically before/after; no authorization state persistence expansion; old history loads; corrupt metadata fails safely; no hot-path latency/memory regression. Record the candidate route scope and matched cold/warm cache baselines after this gate; a new release prefix does not require separate approval.
 
 **Cleanup/rollback:** one authoritative profile resolver; explicit retained compatibility artifacts, no dead flag combinations. Reverting the resolver must not strand newly written histories; demonstrate downgrade handling or keep the reader until migration is safe.
 
-## P4 — Evaluate a denser instruction profile (approval-gated)
+## P4 — Evaluate a denser instruction profile (evidence-gated)
 
 **Purpose:** remove duplicated expression without removing responsibilities.
 
@@ -106,9 +106,9 @@ P2 and P3 are separable after P1, but implement one coherent phase at a time. P6
 
 **Gate:** all obligations have equivalent coverage; offline tests and paired model pilot pass; no extra invalid calls/rounds/latency, no loss of security evidence. A lower character count alone does not close this phase.
 
-**Cleanup/rollback:** retain only the approved candidate and required legacy artifact, not a pile of unreferenced experiments. Rejecting the candidate means leaving it disabled or removing unreferenced experimental files; never changing an active binding.
+**Cleanup/rollback:** retain only the validated candidate and required legacy artifact, not a pile of unreferenced experiments. Rejecting the candidate means leaving it disabled or removing unreferenced experimental files; never changing an active binding.
 
-## P5 — Evaluate concise, precise tool descriptions (approval-gated)
+## P5 — Evaluate concise, precise tool descriptions (evidence-gated)
 
 **Purpose:** reduce the other large fixed cost without making tools harder to call.
 
@@ -137,11 +137,11 @@ P2 and P3 are separable after P1, but implement one coherent phase at a time. P6
 - Report percentage reduction per route and full task, actual cache reads/writes/unknowns, latency distributions, first-attempt validity, tool errors, rounds, quality and local resource use. Include failed attempts and auxiliary work.
 - If the 50% aspiration fails but a smaller safe gain passes every gate, recommend that gain. If any material regression or uncertainty remains, keep the candidate disabled; do not relax the gate retrospectively.
 - Publish explicit supported/validated routes. No global-default claim from one provider. Offline coverage is mandatory for all affected serializers; missing live access blocks universal rollout.
-- Activate only owner-approved new-session profiles after every applicable gate. Existing sessions remain pinned. Preserve a new-session-only rollback and compatibility artifacts.
+- Activate the validated optimized profile as the new-session default after every applicable gate, including same-or-better matched warm-cache hit rate and eligible-prefix reuse. The expected initial warm-up of a new release is not a regression. Existing sessions remain pinned; preserve a new-session-only rollback and compatibility artifacts.
 - Observe canary sessions for unexpected prefix drift, malformed calls, repeated reads, permission mistakes, cache misses, latency and quality. Use existing redacted telemetry facilities; no telemetry network opt-in changes.
 - Finish the cleanup/search/build/package review and reconcile every task before final report. Document blocked routes, rejected optimizations and residual uncertainty.
 
-**Affected surfaces:** evaluation scripts/reports, profile selection configuration only if approved, user-facing documentation, relevant help/config tests, build/package manifests if a new artifact must ship. Preserve the locked dependency set.
+**Affected surfaces:** evaluation scripts/reports, profile selection configuration only after the release gates pass, user-facing documentation, relevant help/config tests, build/package manifests if a new artifact must ship. Preserve the locked dependency set.
 
 **Gate:** the decision record explicitly states release/retain-baseline/blocked, the evidence supports that state, and phase changes are committed/pushed. Runtime smoke covers Node and Bun distribution paths; no server is required for this CLI-only change except isolated test fixtures, which must be cleaned up.
 

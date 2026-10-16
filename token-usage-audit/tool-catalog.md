@@ -55,7 +55,7 @@ For each tool, create a compact contract checklist before changing wording:
 
 Assign each fact one primary owner: tool schema for arguments; stable instructions for cross-tool policy; runtime validation for enforcement. Intentional redundancy preventing a demonstrated error is retained. A schema constraint can be cheaper and clearer than prose, but adding/changing it still changes the prefix and needs the version gate.
 
-### Highest-value candidates, conditional on approval
+### Highest-value candidates, conditional on validation
 
 - `plan.create`: shorten verbose category guidance without restricting legitimate categories or weakening acceptance criteria/dependencies; update text-route guidance as needed.
 - `subagent.start`, `shell.exec`: remove repetition between global workflow policy and purpose descriptions; retain all availability, background/responder, ownership, timeout and wait distinctions locally where models need them.

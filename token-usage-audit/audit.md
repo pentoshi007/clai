@@ -107,7 +107,7 @@ Focused cache suites cover native/text turns, MCP discovery/reconnect/catalog up
 
 `src/tools/definitions/web-2.ts` advertises `web.fetch.maxBytes` as an integer without bounds. `src/tools/web/validate-args.ts` rejects values outside 1,024–1,048,576, using constants from `src/tools/web/types.ts`. An audit fetch of 1,800,000 failed with that validation error; 1,048,576 succeeded. A direct local validator probe reproduced the mismatch without network access.
 
-**Decision:** prioritize machine-readable bounds in any approved new schema profile, even if it costs a few tokens. Keep legacy bytes intact under the strict lane; do not quietly alter them while fixing a token budget. Add structural schema/runtime boundary tests. No implementation fix is included in this audit.
+**Decision:** prioritize machine-readable bounds in the candidate schema profile, even if it costs a few tokens. A validated new release may use the corrected schema; keep already-bound session bytes intact rather than hot-swapping them while fixing a token budget. Add structural schema/runtime boundary tests. No implementation fix is included in this audit.
 
 ### A7 — HTTP evidence tooling should remain (code-supported)
 

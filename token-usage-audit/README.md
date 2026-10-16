@@ -16,14 +16,16 @@ The local synthetic native fixture measures **22,374 estimated tokens**; with MC
 
 ## Critical cache boundary
 
-**Do not edit an established prefix to make it shorter.** Tool descriptions and schemas are part of the provider-rendered prefix too. Keeping a hash or affinity key unchanged does not make changed content cache-compatible.
+**Clarified requirement: optimize the prefix between versions, never mutate it while the agent runs.** The released prompt and schemas may differ from today's baseline. Once a session/route starts, its leading instructions, ordered tool definitions and already-sent reusable history must stay stable. Dynamic state belongs in appended context, not edits to the established prefix.
 
-This roadmap has two explicitly separate lanes:
+The roadmap has two complementary workstreams:
 
-1. **Strict continuity:** preserve the current prompt, ordered schemas and sent history byte-for-byte; improve measurement, avoid redundant future context/model rounds, and optimize equivalent local work. This lane does not promise to halve startup context.
-2. **New-session profile experiment:** only after explicit owner approval, evaluate a new immutable prompt/schema profile in isolated new sessions. It necessarily starts a different cache prefix; it must never replace a profile inside an existing/resumed session. Approval of this audit is not approval to incur that transition.
+1. **Prefix-preserving efficiency:** avoid redundant future context/model rounds and optimize equivalent local work without changing the current profile.
+2. **Smaller stable profile:** shorten instructions and tool descriptions, test the complete candidate, then select the validated profile for new sessions. A new version's initial cache warm-up is expected, not a violation. No separate owner approval for that changed prefix is required beyond authorization to implement the roadmap.
 
-If “never break cache” means no new prefix even for a deliberately new session, lane 2 remains blocked. Continue lane 1 and report the attainable reduction honestly. Provider eviction, TTL, routing and model changes also prevent any client from guaranteeing a cache hit on every request.
+**Release gate:** same-or-better warm-session cache-hit rate and reuse of eligible prefix tokens under comparable provider/model/settings/workload conditions, with no runtime prefix drift or performance/quality regression. Compare baseline cold with candidate cold and baseline warm with candidate warm. A smaller prefix can produce fewer absolute cached tokens without worse cache efficiency.
+
+Existing/resumed sessions stay pinned; do not hot-swap their profile. Provider eviction, TTL and routing still prevent a guaranteed hit on every request, so measure comparable cache reuse and distinguish external misses from client-caused drift.
 
 ## Reading order
 

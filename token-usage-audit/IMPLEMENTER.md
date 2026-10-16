@@ -12,7 +12,7 @@ The user's priorities, in order, are unchanged correctness/capability, cache-pre
 
 - Preserve both software-engineering and security workflows. Do not trade away evidence, validation, recovery, authorization or task-state behavior for a shorter prompt.
 - No established-prefix edit: prompt bytes, tool descriptions/schemas/order and already-sent history are protected. A content hash or cache key cannot excuse changed bytes.
-- New prompt/schema profiles need the separate owner approval described in `cache-design.md`. Until then, legacy remains the default and all candidates remain inactive. Never auto-enable a candidate after a context-limit/config change.
+- The optimized release may use a new prompt/schema prefix; no separate prefix-change approval is required. Keep candidates isolated until quality/reliability/performance and same-or-better comparable warm-cache reuse pass. Then use the validated profile for new sessions only. Never switch an established session's profile after a context-limit/config change.
 - No universal tool dispatcher, dynamic core-tool pruning, forced text protocol, or shell-only replacement. Retain `http.fetch` and the complete accepted capability inventory.
 - No lower model, reasoning/output budget, smaller evidence cap, skipped check, truncated user instruction or weakened test to manufacture savings.
 - Match current repository versions and conventions. No unrelated dependency upgrades. New code has precise types, small cohesive functions and no code comments, consistent with project rules. Keep new files under 400–600 lines; split by responsibility rather than padding a large framework.
@@ -21,7 +21,7 @@ The user's priorities, in order, are unchanged correctness/capability, cache-pre
 
 ## Working loop
 
-1. Open the earliest ready task in `tasks.md`. Check its dependencies, profile lane and approval state.
+1. Open the earliest ready task in `tasks.md`. Check its dependencies, profile lane and evidence-gate state.
 2. Inspect current types, callers, schema enrichment, validators, state/persistence and relevant tests before editing. Use symbols/paths from the roadmap as entry points, not permission for a broad rewrite.
 3. Record a falsifiable hypothesis, expected full-request/task benefit and regression risks in a phase evidence note.
 4. Add a regression test or negative control that would catch the relevant failure. Confirm it can fail for the intended defect.
@@ -36,7 +36,7 @@ Use `[ ]` for unfinished tasks and `[x]` only for satisfied acceptance criteria.
 
 A task record needs: status, concise result/decision, source/test references, measured before/after where relevant, evidence location and residual gaps. For a rejected candidate, mark the evaluation task done only when rejection and baseline retention are documented; do not mark release/activation done.
 
-At each phase boundary update the phase table and its delivery task. Technical work may be verified while pushing is blocked; state those separately. Tasks whose gate was never approved stay blocked, not checked as if implemented.
+At each phase boundary update the phase table and its delivery task. Technical work may be verified while pushing is blocked; state those separately. Tasks whose evidence gate has not passed stay unfinished or blocked, not checked as if implemented. Do not add another approval stop solely because a new release uses an optimized prefix.
 
 If new evidence adds required work, append a clearly named task with dependencies and acceptance criteria in the correct phase. Preserve completed tasks. Do not broaden a phase-specific user request or stop between phases when the user explicitly requested the complete authorized roadmap.
 

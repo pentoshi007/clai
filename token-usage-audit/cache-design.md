@@ -12,6 +12,7 @@
 | C6 | Continuation, retry, fallback, compaction and upgrade never silently pick a smaller prompt/schema for an already established profile. | Old-session replay across process restart and version change, plus fault injection. |
 | C7 | Provider-exact usage, estimates, cache reads/writes and failed-attempt costs remain distinguishable. | Usage-parser and UI-projection tests; unknown is not zero. |
 | C8 | Security evidence and coding contracts are not truncated or deferred merely to hit a target. | Independent outcome assertions and first-attempt tool checks in `validation.md`. |
+| C9 | After normal warm-up, comparable cache-hit rate and eligible-prefix reuse are the same or better than baseline; no optimization-induced runtime prefix drift. | Paired warm-session measurements on matched routes/settings/workloads, plus byte-identical established-prefix assertions; report external misses and unknown usage separately. |
 
 C1/C2 do not mean every request has the same whole-prompt hash: newly appended history changes the request and often the compiled fingerprint. Preserve the already-sent sequence and compare the reusable boundary. Likewise a stable logical fingerprint is insufficient: `compileRequestPlan` excludes request-context messages from some sections, while adapters still send them.
 
@@ -35,7 +36,9 @@ A newly appended context section can be improved without invalidating earlier pr
 
 ## 3. Lane V: versioned new-session experiment
 
-**Blocked by default.** Owner approval must explicitly acknowledge that a new prompt/schema is a different cache prefix and starts cold relative to the old one. Never imply that keeping `prompt_cache_key` unchanged transfers KV states to changed text.
+**Part of the optimization roadmap, gated by evidence rather than a separate prefix-change approval.** The user permits a different optimized prefix after the fixes. The invariant is that the selected prefix stays stable while the agent runs and yields same-or-better comparable cache reuse. Evaluate a candidate in isolated sessions, then make a passing profile the new-session default at release. Do not activate an untested candidate or hot-swap an established session.
+
+A new profile has a normal initial warm-up; preserving cache entries from an older release's different text is not the requirement. Keeping `prompt_cache_key` unchanged cannot transfer KV states to changed text. Same-profile resume/continuation must remain stable, and unsupported cross-version reuse must not be claimed.
 
 ### Minimal profile model (proposed; not implemented)
 
@@ -68,8 +71,8 @@ Proposed new modules may be small focused profile manifest/resolver modules unde
 ### Lifecycle and migration
 
 1. **Legacy session still running:** retain its currently bound prompt/schema exactly; never hot-swap on a config refresh.
-2. **New session with no explicit candidate selection:** keep the legacy default.
-3. **New session explicitly selecting a validated candidate:** resolve once, bind once and report its new-profile status outside the prompt.
+2. **New session during development/evaluation:** use the legacy default unless the isolated trial explicitly selects a candidate.
+3. **New session after validated release:** select the released optimized default, resolve once and bind once. A per-session opt-in is not required; profile identity remains metadata outside the prompt.
 4. **Restart/resume with known profile reference:** load exact immutable artifacts before constructing the next turn; no fallback to current default.
 5. **Legacy history without profile metadata:** attempt only a deterministic mapping to a known legacy artifact based on trustworthy stored provenance. Do not guess from the present model/context limit or reconstruct missing bytes from a summary. If identity cannot be established, require a user-visible continuation/new-session decision rather than silently claiming continuity.
 6. **Missing/corrupt/unsupported profile:** fail safely before network submission with actionable recovery. Preserve history and do not discard tasks or job ownership.
