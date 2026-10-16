@@ -145,7 +145,7 @@ jobs:
       - name: Minimise and Windows console fallback
         run: npx vitest run test/ui-core/minimise-command.test.ts test/os/windows-console.test.ts --reporter=dot
       - name: RTK install planning and Windows guidance
-        run: npx vitest run test/rtk-install.test.ts --reporter=dot
+        run: npx vitest run test/rtk-install.test.ts test/rtk-maintenance-windows.test.ts --reporter=dot
       - name: MCP transports, authentication, and storage
         run: npx vitest run test/mcp --reporter=dot
       - if: runner.os != 'Windows'
