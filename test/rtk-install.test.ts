@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   compareSemver,
@@ -174,8 +174,19 @@ describe("rtk Windows guidance", () => {
 
 describe("rtk install dir and PATH", () => {
   it("detects whether an install dir is already on PATH", () => {
-    expect(pathContains("/home/a/.local/bin", "/usr/bin:/home/a/.local/bin")).toBe(true);
-    expect(pathContains("/home/a/.local/bin", "/usr/bin:/bin")).toBe(false);
+    expect(pathContains("/home/a/.local/bin", ["/usr/bin", "/home/a/.local/bin"].join(delimiter))).toBe(true);
+    expect(pathContains("/home/a/.local/bin", ["/usr/bin", "/bin"].join(delimiter))).toBe(false);
+  });
+
+  it("folds Windows PATH entries case-insensitively", () => {
+    const original = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    try {
+      expect(pathContains("/tools/rtk", ["/windows", "/TOOLS/RTK"].join(delimiter))).toBe(true);
+      expect(pathContains("/tools/rtk", ["/windows", "/other"].join(delimiter))).toBe(false);
+    } finally {
+      Object.defineProperty(process, "platform", { value: original });
+    }
   });
 });
 
