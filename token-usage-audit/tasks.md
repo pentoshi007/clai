@@ -9,7 +9,7 @@ Read [IMPLEMENTER.md](IMPLEMENTER.md) first. Acceptance details and exact affect
 | Phase | Dependencies | State | Evidence / commit / push |
 | --- | --- | --- | --- |
 | P0 Baseline and contract lock | implementation authorization | complete | [phase-0.md](evidence/phase-0.md); `fe80e611`, push verified |
-| P1 Evaluation and regression gates | P0 | in progress; partial checkpoint | [phase-1.md](evidence/phase-1.md), [collector limits](evaluation.md); no live/model/cache pass |
+| P1 Evaluation and regression gates | P0 | in progress; partial checkpoint | [phase-1.md](evidence/phase-1.md), `5aed3ac7` push verified; [collector limits](evaluation.md); no live/model/cache pass |
 | P2 Strict-prefix optimization | P1 | pending | — |
 | P3 Durable profile compatibility | P1 | pending | — |
 | P4 Instruction candidate | P3 + TE-022 cache baseline | pending prerequisites | — |

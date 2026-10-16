@@ -34,3 +34,7 @@ Verified partial checkpoint (not P1 delivery):
 See [evaluation.md](../evaluation.md) and [bounded check record](p1-checkpoint.json). TE-005–TE-010 stay unchecked: the full natural C01–C10/S01–S10 matrix, all D03–D13 state/history/serializer transitions, supported additional collectors, reliable first-attempt/round/assembly attribution and matched live cache/performance baselines still need work. P2–P6 cannot be claimed or activated from this partial checkpoint.
 
 Next implementation work is completing the remaining P1 offline matrix and attribution, then selecting actual supported live routes/settings and an explicit paid-call budget with environment credentials before running pilot trials. No runtime token savings are claimed. This coherent tested tooling checkpoint may be committed/pushed without labelling the phase complete; its remote receipt is recorded after verifying delivery.
+
+## Checkpoint delivery receipt
+
+Commit `5aed3ac762c38bb2fd45791bfff82c32c2535472` (`test(tokens): harden isolated evaluation checkpoint`) was pushed to `origin/audit/token-efficiency-roadmap`. `git ls-remote` returned that exact commit and clean tracking status was observed. This is a **partial tooling checkpoint**, not TE-010/P1 completion. The separate receipt update also corrects the P0 original-file count from 15 to 14; all original files were read, and no technical result changes.

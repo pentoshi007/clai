@@ -7,7 +7,7 @@ Status: TE-001–TE-004 verified and delivered in `fe80e611`; the exact verified
 - Implementation base: `e450cebf4b51749bdd6c4a0de00a86390cd04e58`; audit source base: `ada38924a499a568e69984b35f99b75c375ecb98`.
 - `git diff ada38924 -- src scripts test package.json package-lock.json` is empty before implementation. Branch is `audit/token-efficiency-roadmap`, initially clean and tracking origin.
 - Host: Linux arm64, Node 24.20.0, npm 11.19.0; Bun is installed. No dependencies changed.
-- All 15 existing audit files were read. The stopped historical subagent has no report; no delegated evidence is used.
+- All 14 original audit files were read (count verified against the `e450cebf` tree). The stopped historical subagent has no report; no delegated evidence is used.
 - Reproduced both supplied measurement utilities. Baseline measurement and all eight route records are identical. Canonical ordered catalog digest remains `02631147c616726c7fb421b355e359a09828eb56190036e282073db641b3c6c7`.
 
 Hypothesis: current simplified fixtures omit material dynamic context. Controlled fixtures using the runner's section builder, message composer, accounting service and final serializer will expose that contribution without changing application behavior. Expected optimization benefit in P0: **zero**; its deliverable is reliable attribution and regression protection.
