@@ -59,6 +59,7 @@ export const universalVisionPatterns: RegExp[] = [
 ];
 
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
+  constellation: [],
   river: [/^deepseek-ai\/DeepSeek-V4\.1-Flash$/i, /^zai-org\/GLM-5\.3-Flash$/i],
   mistral: [
     /^mistral-small-(?:latest|2603)/i,

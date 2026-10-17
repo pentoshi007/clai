@@ -526,7 +526,7 @@ export function chatCompletionsBodyFromPlan(
     Boolean(extras.forceReasoningReplay),
   );
   const allowTools =
-    !((plan.route.provider === "mistral" || plan.route.provider === "river") &&
+    !((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "constellation") &&
       modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) &&
     (plan.route.provider !== "openrouter" ||
     plan.policy.acceptedParameters === undefined ||

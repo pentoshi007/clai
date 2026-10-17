@@ -8,6 +8,7 @@ export const providerIds = [
   "river",
   "nvidia",
   "agentrouter",
+  "constellation",
   "aws-mantle",
   "ollama",
   "bynara",

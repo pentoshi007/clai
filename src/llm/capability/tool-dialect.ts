@@ -12,6 +12,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   openrouter: "openai",
   nvidia: "openai",
   agentrouter: "openai",
+  constellation: "openai",
   bynara: "openai",
   "qwen-cloud": "openai",
   modal: "openai",

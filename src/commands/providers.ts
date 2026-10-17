@@ -142,6 +142,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "NVIDIA NIM keys usually start with nvapi-";
   if (provider === "agentrouter")
     return "AgentRouter keys usually start with sk- (issued at https://agentrouter.org/console/token)";
+  if (provider === "constellation")
+    return "Constellation Gate keys start with sk-gw- (create one at https://app.constellationgate.ai/)";
   if (provider === "aws-mantle")
     return "Mantle keys are alphanumeric with base64 characters (at least 8 characters)";
   if (provider === "bynara")

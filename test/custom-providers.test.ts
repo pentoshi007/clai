@@ -10,6 +10,8 @@ describe('custom providers', () => {
     vi.resetModules();
     configDir = mkdtempSync(join(tmpdir(), 'clai-custom-test-'));
     vi.stubEnv('CLAI_CONFIG_DIR', configDir);
+    vi.stubEnv('HOME', configDir);
+    vi.stubEnv('CLAI_DISABLE_KEYCHAIN', '1');
   });
 
   afterEach(() => {
