@@ -4,6 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { processIdentityTracker } from "../os/process-identity.js";
 import { processAlive } from "../os/process-tree.js";
 import { startPtyProcess } from "../interactive-session/transport-node-pty.js";
+import { startPipeProcess } from "../interactive-session/transport-pipe.js";
 import type {
   ProcessOutcome,
   TerminalDimensions,
@@ -357,16 +358,22 @@ export class SessionRuntimeHost {
     env[RUNTIME_TOKEN_ENV] = this.token;
     env[RUNTIME_SESSION_ENV] = this.sessionId;
     if (this.payload.independentViews) env[RUNTIME_VIEWS_ENV] = "1";
-    const result = await startPtyProcess({
+    else delete env[RUNTIME_VIEWS_ENV];
+    const request = {
       file: this.payload.launch.file,
       args: this.payload.launch.args,
       cwd: this.payload.cwd,
       env,
-      dimensions: {
-        columns: this.payload.columns,
-        rows: this.payload.rows,
-      },
-    });
+    };
+    const result = this.payload.independentViews
+      ? await startPipeProcess(request)
+      : await startPtyProcess({
+          ...request,
+          dimensions: {
+            columns: this.payload.columns,
+            rows: this.payload.rows,
+          },
+        });
     this.transport = result.transport;
     this.transport.onOutput((event) => this.publishOutput(event.bytes));
     this.transport.onExit((outcome) => {

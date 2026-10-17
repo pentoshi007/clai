@@ -84,3 +84,9 @@ export function runtimeChildSessionId(): string | undefined {
   const value = process.env[RUNTIME_SESSION_ENV]?.trim();
   return value && value.length <= 256 ? value : undefined;
 }
+
+export function isIndependentRuntimeChild(): boolean {
+  return process.env[RUNTIME_VIEWS_ENV] === "1" &&
+    runtimeChildSessionId() !== undefined &&
+    Boolean(process.env[RUNTIME_SOCKET_ENV] && process.env[RUNTIME_TOKEN_ENV]);
+}

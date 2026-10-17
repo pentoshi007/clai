@@ -163,7 +163,7 @@ describe("durable client terminal handoff", () => {
     vi.spyOn(process, "stdin", "get").mockReturnValue(input as unknown as NodeJS.ReadStream);
     vi.spyOn(process, "stdout", "get").mockReturnValue(output as unknown as NodeJS.WriteStream);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    mocks.probePtyCapability.mockResolvedValue({ available: true, platform: process.platform });
+    mocks.probePtyCapability.mockResolvedValue({ available: false, platform: process.platform, reason: "not installed" });
     mocks.findLiveRuntime.mockImplementation(async (id: string) => metadata(id));
     mocks.probeRuntime.mockResolvedValue(false);
     mocks.connect.mockResolvedValueOnce(control).mockResolvedValueOnce(terminal);
@@ -196,6 +196,16 @@ describe("durable client terminal handoff", () => {
   function detach(socket = control): void {
     socket.frame({ type: "detached", sessionId: "first", reason: "requested" });
   }
+
+  it("attaches and minimises even when native PTY probing would throw", async () => {
+    mocks.probePtyCapability.mockRejectedValueOnce(new Error("native addon unavailable"));
+    const running = run();
+    await attached();
+    control.frame({ type: "detached", sessionId: "first", reason: "minimise" });
+    expect(await running).toBe(true);
+    expect(mocks.probePtyCapability).not.toHaveBeenCalled();
+    expect(output.writes.join("")).toContain("running in the background");
+  });
 
   it.each(["detach", "exit"])("flushes terminal reset before restoring raw mode on %s", async (outcome) => {
     output.holdResets = true;

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCompositionRoot, type AppServices } from "../../src/ui-core/bootstrap/composition-root.js";
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
 import { minimiseWindowsConsoleWindow } from "../../src/os/windows-console.js";
+import { setRuntimeDetachUnavailableReason } from "../../src/session-runtime/availability.js";
 
 vi.mock("../../src/os/windows-console.js", () => ({
   minimiseWindowsConsoleWindow: vi.fn(async () => false),
@@ -18,6 +19,7 @@ function build(requestMinimise: () => boolean): AppServices {
 
 afterEach(() => {
   for (const services of active.splice(0)) services.dispose();
+  setRuntimeDetachUnavailableReason(undefined);
   vi.restoreAllMocks();
   vi.clearAllMocks();
 });
@@ -55,6 +57,14 @@ describe("minimise commands", () => {
     const notice = vi.spyOn(services.session, "notice");
     await services.commands.dispatch({ name: "minmize" });
     expect(notice).toHaveBeenCalledWith("warn", expect.stringContaining("background detach is unavailable"));
+  });
+
+  it("reports the specific startup failure instead of a generic restart hint", async () => {
+    setRuntimeDetachUnavailableReason("runtime startup failed (permission denied); fix permissions and restart clai");
+    const services = build(() => false);
+    const notice = vi.spyOn(services.session, "notice");
+    await services.commands.dispatch({ name: "minimise" });
+    expect(notice).toHaveBeenCalledWith("warn", expect.stringContaining("permission denied"));
   });
 
   it("minimises the console window when the launch cannot detach", async () => {

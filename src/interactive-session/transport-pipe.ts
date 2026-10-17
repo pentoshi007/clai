@@ -229,6 +229,32 @@ export async function startPipeTransport(
     env: { ...(request.env ?? process.env), PATH: augmentedPathEnv() },
     windowsHide: true,
   });
+  return await finishPipeLaunch(child, request);
+}
+
+export interface PipeProcessLaunchRequest extends Omit<LaunchRequest, "command"> {
+  readonly file: string;
+  readonly args: readonly string[];
+}
+
+export async function startPipeProcess(request: PipeProcessLaunchRequest): Promise<LaunchResult> {
+  const child = spawn(request.file, [...request.args], {
+    cwd: request.cwd,
+    detached: supportsProcessGroups(),
+    stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...(request.env ?? process.env),
+      PATH: augmentedPathEnv((request.env ?? process.env).PATH),
+    },
+    windowsHide: true,
+  });
+  return await finishPipeLaunch(child, request);
+}
+
+async function finishPipeLaunch(
+  child: ChildProcess,
+  request: Pick<LaunchRequest, "onLaunchIdentity">,
+): Promise<LaunchResult> {
   let transport: PipeTransport | undefined;
   let identityNotified = false;
   try {

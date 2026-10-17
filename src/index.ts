@@ -55,7 +55,7 @@ import { resumeCommand } from "./ui-core/rendering/exit-summary.js";
 import { warnOnce } from "./ui/warn-once.js";
 import { tryRunDurableInteractive } from "./session-runtime/client.js";
 import { runRuntimeHostFromEnvironment } from "./session-runtime/host.js";
-import { runtimeChildSessionId, RUNTIME_VIEWS_ENV } from "./session-runtime/launch.js";
+import { isIndependentRuntimeChild, runtimeChildSessionId } from "./session-runtime/launch.js";
 import { listLiveSessionRuntimes } from "./session-runtime/discovery.js";
 
 interface GlobalOptions {
@@ -123,7 +123,7 @@ async function startInteractive(
     ...resolved,
     ...(childSessionId ? { sessionId: childSessionId } : {}),
   };
-  if (process.env[RUNTIME_VIEWS_ENV] === "1" && childSessionId) {
+  if (isIndependentRuntimeChild()) {
     const { startIndependentRuntime } = await import("./session-runtime/start-runtime.js");
     await startIndependentRuntime(interactiveOptions);
     return;
@@ -178,7 +178,7 @@ async function oneShot(
   const model = options.model ?? getProviderModel(activeProvider);
   const prompt =
     promptFromArgs ||
-    (resolveUiChoice(options) === "noninteractive" && !process.stdin.isTTY
+    (!isIndependentRuntimeChild() && resolveUiChoice(options) === "noninteractive" && !process.stdin.isTTY
       ? await readStdinText(process.stdin)
       : "");
 
