@@ -12,6 +12,7 @@ import type { ActionId } from "../../../src/ui-core/actions/action-id.js";
 import { keyEvent, type MouseEvent } from "../../../src/classic/input/key-event.js";
 import type { FeedBlock } from "../../../src/classic/feed/feed-blocks.js";
 import { planTranscriptWindow } from "../../../src/classic/feed/transcript-window.js";
+import { TranscriptViewport } from "../../../src/classic/feed/transcript-viewport.js";
 import { createHarness, type Harness } from "./harness.js";
 
 let harness: Harness | undefined;
@@ -53,6 +54,7 @@ function fakeFeed(
 ): never {
   const totalRows = geometry.totalRows ?? 1;
   const viewportRows = geometry.viewportRows ?? totalRows;
+  const offset = Math.min(harness!.wiring.liveOffsetValue, Math.max(0, totalRows - viewportRows));
   const rows = Array.from({ length: Math.min(totalRows, viewportRows) }, (_, i) => ({
     key: `r${i}`,
     line: "",
@@ -60,16 +62,18 @@ function fakeFeed(
   }));
   return {
     columns: 96,
-    generation: 0,
+    generation: harness!.wiring.feedGenerationValue,
+    navigationVersion: harness!.wiring.feedNavigationVersion,
+    requestedOffset: harness!.wiring.liveOffsetValue,
     blocks: [{ itemId: lastItemId }],
     window: {
       rows,
       height: rows.length,
       totalRows,
       maxOffset: Math.max(0, totalRows - viewportRows),
-      offset: 0,
-      scrollAbove: Math.max(0, totalRows - viewportRows),
-      scrollBelow: 0,
+      offset,
+      scrollAbove: Math.max(0, totalRows - viewportRows - offset),
+      scrollBelow: offset,
       viewportRows,
       firstItemId: lastItemId,
       lastItemId,
@@ -268,7 +272,9 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
     const window = planTranscriptWindow([block], 2, 0);
     harness.wiring.observeFeed({
       columns: 96,
-      generation: 0,
+      generation: harness.wiring.feedGenerationValue,
+      navigationVersion: harness.wiring.feedNavigationVersion,
+      requestedOffset: harness.wiring.liveOffsetValue,
       blocks: [block],
       window,
     } as never);
@@ -304,7 +310,7 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
       sequence: 0,
     };
     const window = planTranscriptWindow([block], 5, 5);
-    harness.wiring.observeFeed({ columns: 96, generation: 0, blocks: [block], window } as never);
+    harness.wiring.observeFeed({ columns: 96, generation: harness.wiring.feedGenerationValue, navigationVersion: harness.wiring.feedNavigationVersion, requestedOffset: harness.wiring.liveOffsetValue, blocks: [block], window } as never);
     harness.wiring.setTranscriptSelectionGeometry({ left: 0, top: 2 });
     harness.wiring.handleMouse(mouse({ x: 0, y: 3 }));
     harness.wiring.handleMouse(mouse({ x: 4, y: 2, drag: true }));
@@ -338,15 +344,37 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
   it("pins the viewport to the same rows while content grows, until scrolled home", async () => {
     harness = createHarness();
     seedTurn();
-    harness.wiring.observeFeed(fakeFeed("a", { totalRows: 40, viewportRows: 10 }));
+    const viewport = new TranscriptViewport();
+    const observe = (height: number) => {
+      const block: FeedBlock = { key: "a", itemId: "a", kind: "assistant", open: false, lines: Array.from({ length: height }, (_, index) => `row ${index}`), turnId: undefined, sequence: 0 };
+      const input = { columns: 96, generation: harness!.wiring.feedGenerationValue, navigationVersion: harness!.wiring.feedNavigationVersion, offset: harness!.wiring.liveOffsetValue };
+      const window = viewport.plan([block], 10, input);
+      harness!.wiring.observeFeed({ ...input, requestedOffset: input.offset, blocks: [block], window } as never);
+      return window;
+    };
+    observe(40);
     harness.wiring.scrollFeed(5);
-    await vi.waitFor(() =>
-      expect(harness!.wiring.getSnapshot().liveOffset).toBe(5),
-    );
-    harness.wiring.observeFeed(fakeFeed("a", { totalRows: 46, viewportRows: 10 }));
-    harness.wiring.schedulePaint();
-    await vi.waitFor(() =>
-      expect(harness!.wiring.getSnapshot().liveOffset).toBe(11),
-    );
+    const paused = observe(40);
+    const grown = observe(46);
+    expect(grown.rows[0]!.key).toBe(paused.rows[0]!.key);
+    await vi.waitFor(() => expect(harness!.wiring.getSnapshot().liveOffset).toBe(11));
+    harness.wiring.scrollFeed(-Number.MAX_SAFE_INTEGER);
+    expect(observe(50).offset).toBe(0);
+  });
+
+  it("does not apply an older offset correction after a new navigation command", () => {
+    harness = createHarness();
+    harness.wiring.observeFeed(fakeFeed("a", { totalRows: 100, viewportRows: 10 }));
+    const version = harness.wiring.feedNavigationVersion;
+    harness.wiring.scrollFeed(5);
+    harness.wiring.observeFeed({
+      columns: 96,
+      generation: harness.wiring.feedGenerationValue,
+      navigationVersion: version,
+      requestedOffset: 5,
+      blocks: [],
+      window: { totalRows: 100, maxOffset: 90, offset: 25, viewportRows: 10 },
+    } as never);
+    expect(harness.wiring.liveOffsetValue).toBe(5);
   });
 });

@@ -3,6 +3,7 @@ import { asToolCallId } from "../../../app/events/app-event.js";
 import type { ToolCallId } from "../../../app/events/app-event.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../../../app/ports/transcript-item.js";
 import { EMPTY_TRANSCRIPT_STATE } from "../transcript-types.js";
+import { flattenTranscriptHistory } from "../transcript-history.js";
 import { validLineChangeTotals } from "../../../app/controllers/session-changes.js";
 import type { AssistantItem, CompactedItem, ThinkingItem, ToolItem, ToolStatus, TranscriptItem, TranscriptState, TurnSummaryItem, UserItem } from "../transcript-types.js";
 
@@ -32,7 +33,7 @@ export function hydrateFromClassicTranscript(
   const toolOutputs = new Map<ToolCallId, string>();
   let sequence = 0;
 
-  for (const raw of items) {
+  for (const raw of flattenTranscriptHistory(items)) {
     sequence += 1;
     const id = raw.id || `hist-${sequence}`;
     const base = {

@@ -13,7 +13,7 @@ function isBun(): boolean {
 }
 
 function isEmbeddedEntry(path: string): boolean {
-  return path.includes("$bunfs") || path.startsWith("bun:");
+  return /\$bunfs|~BUN[\\/]root|^bun:/i.test(path);
 }
 
 function filteredExecArgv(): string[] {
@@ -89,4 +89,12 @@ export function isIndependentRuntimeChild(): boolean {
   return process.env[RUNTIME_VIEWS_ENV] === "1" &&
     runtimeChildSessionId() !== undefined &&
     Boolean(process.env[RUNTIME_SOCKET_ENV] && process.env[RUNTIME_TOKEN_ENV]);
+}
+
+export function reportRuntimeStartupError(error: unknown): void {
+  if (!process.connected || !process.send) return;
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    process.send({ type: "runtime-startup-error", message: message.slice(0, 1_000) }, () => undefined);
+  } catch {}
 }

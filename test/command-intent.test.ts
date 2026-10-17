@@ -134,3 +134,15 @@ describe("command-intent — cost signals do not choose execution mode", () => {
     }
   });
 });
+
+describe("command-intent prototype property names", () => {
+  it.each(Object.getOwnPropertyNames(Object.prototype))("does not treat %s as a package manager", (name) => {
+    expect(looksLongRunning(name)).toBe(false);
+    expect(looksLongRunning(`${name} --help`)).toBe(false);
+  });
+
+  it("classifies search expressions containing prototype property names without throwing", () => {
+    expect(looksLongRunning('rg -n "new Interactive|journal|constructor|processIdentity" src')).toBe(false);
+    expect(looksLongRunning('rg "constructor|processIdentity" src && npm run dev')).toBe(true);
+  });
+});

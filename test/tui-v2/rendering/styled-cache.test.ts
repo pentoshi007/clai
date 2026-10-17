@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { styleAnsiLine } from "../../../src/tui-v2/rendering/styled-markdown.js";
+import { joinStyledLines, styleAnsiLine } from "../../../src/tui-v2/rendering/styled-markdown.js";
 import { RenderCache } from "../../../src/ui-core/rendering/render-cache.js";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -53,5 +53,15 @@ describe("styled render cache memory", () => {
     const replay = styleAnsiLine(source, "#ffffff");
     expect(replay).not.toBe(first);
     expect(replay).toEqual(first);
+  });
+});
+
+describe("multiline native text", () => {
+  it("preserves every chunk, line boundary, style and Unicode character", () => {
+    const lines = [styleAnsiLine("\x1b[31m日本語 🧪\x1b[0m", "#ffffff"), styleAnsiLine("", "#ffffff"), styleAnsiLine("last", "#ffffff")];
+    const joined = joinStyledLines(lines);
+    expect(joined.chunks.map((chunk) => chunk.text).join("")).toBe("日本語 🧪\n \nlast");
+    expect(joined.chunks[0]).toBe(lines[0]!.chunks[0]);
+    expect(joinStyledLines([]).chunks).toEqual([]);
   });
 });

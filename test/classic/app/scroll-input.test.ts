@@ -26,7 +26,7 @@ function setup() {
   const view = feedView(turn, { columns: 100 });
   const blocks = buildFeedBlocks(state, view);
   const window = planTranscriptWindow(blocks, 12, 0);
-  h.wiring.observeFeed({ columns: 100, generation: 0, ink: view.ink, context: {} as never, blocks, window });
+  h.wiring.observeFeed({ columns: 100, generation: h.wiring.feedGenerationValue, navigationVersion: h.wiring.feedNavigationVersion, requestedOffset: h.wiring.liveOffsetValue, ink: view.ink, context: {} as never, blocks, window });
   h.wiring.setTranscriptSelectionGeometry({ left: 0, top: 0 });
 }
 

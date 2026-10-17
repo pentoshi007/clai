@@ -11,7 +11,7 @@ let jsonlWriteChain: Promise<void> = Promise.resolve();
 
 export function queueJsonlWrite<T>(
   operation: () => Promise<T>,
-  fallback: () => T,
+  fallback: (error: unknown) => T,
 ): Promise<T> {
   invalidateSessionListCache();
   const run = jsonlWriteChain.then(async () => {
@@ -26,7 +26,7 @@ export function queueJsonlWrite<T>(
       }
     } catch (err: any) {
       if (err?.code === "EACCES") handlePermissionError(err);
-      return fallback();
+      return fallback(err);
     }
   });
   jsonlWriteChain = run.then(
@@ -211,6 +211,6 @@ async function upsertJsonlUnderLock(
 export async function upsertJsonl(record: HistoryRecord): Promise<HistoryRecord> {
   return queueJsonlWrite(
     () => upsertJsonlUnderLock(record),
-    () => record,
+    (error) => { throw error; },
   );
 }

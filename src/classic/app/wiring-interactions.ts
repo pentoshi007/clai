@@ -19,23 +19,16 @@ import type { WiringHost } from "./wiring-types.js";
 
 export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
   const window = feed.window;
-  const anchor = host.feedWindowAnchor;
   if (
-    host.liveOffsetValue > 0 &&
-    anchor !== undefined &&
-    anchor.columns === feed.columns &&
-    anchor.generation === feed.generation &&
-    window.totalRows > anchor.totalRows
+    feed.navigationVersion === host.feedNavigationVersion &&
+    feed.generation === host.feedGenerationValue &&
+    feed.requestedOffset === host.liveOffsetValue &&
+    host.liveOffsetValue !== window.offset
   ) {
-    host.liveOffsetValue += window.totalRows - anchor.totalRows;
+    host.liveOffsetValue = window.offset;
+    host.schedulePaint();
   }
-  host.feedWindowAnchor = {
-    totalRows: window.totalRows,
-    columns: feed.columns,
-    generation: feed.generation,
-  };
   host.maxLiveOffset = window.maxOffset;
-  if (host.liveOffsetValue > host.maxLiveOffset) host.liveOffsetValue = host.maxLiveOffset;
   host.feedViewportRows = window.viewportRows;
   host.scrollAboveValue = window.scrollAbove;
   host.scrollBelowValue = window.offset;
@@ -299,7 +292,9 @@ export const WHEEL_SCROLL_ROWS = 3;
 
 export function scrollFeed(host: WiringHost, delta: number): void {
   const next = Math.max(0, Math.min(host.maxLiveOffset, host.liveOffsetValue + delta));
+  host.feedNavigationVersion += 1;
   if (next === host.liveOffsetValue) {
+    host.schedulePaint(true);
     if (delta > 0 && !host.scrollToastShown) {
       host.scrollToastShown = true;
       notify(host.services, "transcript is already at the top · Ctrl+R to search", {
@@ -315,6 +310,7 @@ export function scrollFeed(host: WiringHost, delta: number): void {
 
 export function showTranscriptTopHint(host: WiringHost): void {
   host.liveOffsetValue = host.maxLiveOffset;
+  host.feedNavigationVersion += 1;
   host.schedulePaint();
   notify(
     host.services,
@@ -451,8 +447,8 @@ export function bumpFeedGeneration(host: WiringHost): void {
   host.feedGenerationValue += 1;
   host.activeTurnId = undefined;
   host.liveOffsetValue = 0;
+  host.feedNavigationVersion += 1;
   host.maxLiveOffset = 0;
-  host.feedWindowAnchor = undefined;
   host.feedNowValue = host.now();
 }
 

@@ -3,6 +3,7 @@ import { type ChatMessage } from "../../types.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../../app/ports/transcript-item.js";
 import { type ToolCallId } from "../../app/events/app-event.js";
 import { type TranscriptState } from "./transcript-types.js";
+import { flattenTranscriptHistory } from "./transcript-history.js";
 import { HydrateResult, hydrateFromClassicTranscript } from "./hydrate/classic-transcript.js";
 import { enrichToolsFromMessages, hydrateFromMessages } from "./hydrate/from-messages.js";
 export { fileChangesFromToolArgs } from "./hydrate/from-messages.js";
@@ -47,10 +48,6 @@ export interface SessionVisualInput {
 
 const RESTORED_TOOL_ARGS = { restored: "Arguments available in the full session record" };
 
-function visualTranscriptItem(item: ClassicTranscriptItem): ClassicTranscriptItem {
-  return item.kind === "compacted" ? { ...item, originalItems: [] } : item;
-}
-
 function visualMessage(message: ChatMessage): ChatMessage {
   if (!message.toolCalls) return message;
   return {
@@ -68,7 +65,7 @@ export function prepareSessionVisualInput(
   messages: readonly ChatMessage[],
 ): SessionVisualInput {
   return {
-    transcript: transcript?.map(visualTranscriptItem),
+    transcript: transcript ? flattenTranscriptHistory(transcript) : undefined,
     messages: messages.map(visualMessage),
   };
 }
@@ -178,10 +175,7 @@ function serializeTranscriptItem(
         kind: "compacted",
         id: item.id,
         summary: item.summary,
-        originalItems: serializeOriginalItems(
-          item.originalItems,
-          resolveToolOutput,
-        ),
+        originalItems: [],
         done: true,
         beforeTokens: item.beforeTokens,
         afterTokens: item.afterTokens,
@@ -195,9 +189,8 @@ function serializeTranscriptItem(
   }
 }
 
-const ORIGINAL_ITEM_MAX_CHARS = 16_000;
-const ORIGINAL_TOTAL_MAX_CHARS = 2_000_000;
 const ARTIFACT_TOOL_OUTPUT_TAIL_CHARS = 4_000;
+const serializedItems = new WeakMap<AnyTranscriptItem, ClassicTranscriptItem>();
 
 function persistedToolOutput(item: AnyTranscriptItem, output: string): string {
   if (item.kind !== "tool") return output;
@@ -210,70 +203,6 @@ function persistedToolOutput(item: AnyTranscriptItem, output: string): string {
     return output;
   }
   return output.slice(output.length - ARTIFACT_TOOL_OUTPUT_TAIL_CHARS);
-}
-
-function originalItemSize(item: ClassicTranscriptItem): number {
-  switch (item.kind) {
-    case "user":
-    case "assistant":
-    case "notice":
-      return item.text.length;
-    case "thinking":
-      return item.content.length;
-    case "tool":
-      return item.output.length + item.argsDisplay.length;
-    case "compacted":
-      return item.summary.length;
-    default:
-      return 0;
-  }
-}
-
-function capOriginalText(value: string): string {
-  return value.length <= ORIGINAL_ITEM_MAX_CHARS
-    ? value
-    : `${value.slice(0, ORIGINAL_ITEM_MAX_CHARS)}\n…[truncated in compacted history]`;
-}
-
-function capOriginalItem(item: ClassicTranscriptItem): ClassicTranscriptItem {
-  switch (item.kind) {
-    case "user":
-      return { ...item, text: capOriginalText(item.text) };
-    case "assistant":
-      return { ...item, text: capOriginalText(item.text) };
-    case "thinking":
-      return { ...item, content: capOriginalText(item.content) };
-    case "tool":
-      return {
-        ...item,
-        argsDisplay: capOriginalText(item.argsDisplay),
-        output: capOriginalText(item.output),
-      };
-    case "compacted":
-      return { ...item, summary: capOriginalText(item.summary) };
-    default:
-      return item;
-  }
-}
-
-function serializeOriginalItems(
-  originals: readonly AnyTranscriptItem[] | undefined,
-  resolveToolOutput: (item: AnyTranscriptItem) => string,
-): ClassicTranscriptItem[] {
-  if (!originals || originals.length === 0) return [];
-  const out: ClassicTranscriptItem[] = [];
-  let total = 0;
-  for (let index = originals.length - 1; index >= 0; index -= 1) {
-    const serialized = serializeTranscriptItem(originals[index]!, resolveToolOutput);
-    if (!serialized) continue;
-    const capped = capOriginalItem(serialized);
-    const size = originalItemSize(capped);
-    if (out.length > 0 && total + size > ORIGINAL_TOTAL_MAX_CHARS) break;
-    total += size;
-    out.push(capped);
-  }
-  out.reverse();
-  return out;
 }
 
 export function serializeForHistory(
@@ -291,12 +220,19 @@ export function serializeForHistory(
       ? ((item as { output?: string }).output ?? "")
       : "";
   };
-  const out: ClassicTranscriptItem[] = [];
+  const items: AnyTranscriptItem[] = [];
   for (const id of state.order) {
     const item = state.byId.get(id);
-    if (!item) continue;
-    const serialized = serializeTranscriptItem(item, resolveToolOutput);
-    if (serialized) out.push(serialized);
+    if (item) items.push(item);
+  }
+  const out: ClassicTranscriptItem[] = [];
+  for (const item of flattenTranscriptHistory(items)) {
+    const reusable = item.kind !== "tool";
+    const serialized = (reusable ? serializedItems.get(item) : undefined)
+      ?? serializeTranscriptItem(item, resolveToolOutput);
+    if (!serialized) continue;
+    if (reusable) serializedItems.set(item, serialized);
+    out.push(serialized);
   }
   return out;
 }

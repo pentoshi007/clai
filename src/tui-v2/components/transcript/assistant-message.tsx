@@ -17,7 +17,7 @@ import {
   type StyledLine,
 } from "../../rendering/styled-markdown.js";
 import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
-import { selectableRowStyle } from "./selectable-line.js";
+import { StyledTextBlock } from "./styled-text-block.js";
 
 const BODY_INDENT = 2;
 
@@ -84,15 +84,7 @@ export function AssistantMessage(props: {
       <text content=" " selectable />
       {lines.length > 0 ? (
         <box style={{ flexDirection: "column", paddingLeft: BODY_INDENT, width: "100%", marginBottom: 1 }}>
-          {lines.map((content, i) => (
-            <text
-              key={i}
-              content={content ?? " "}
-              selectable
-              wrapMode="none"
-              style={selectableRowStyle(theme.background)}
-            />
-          ))}
+          <StyledTextBlock lines={lines} background={theme.background} />
         </box>
       ) : null}
     </box>

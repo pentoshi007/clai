@@ -2,7 +2,6 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { chmod, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { processIdentityTracker } from "../os/process-identity.js";
-import { processAlive } from "../os/process-tree.js";
 import { startPtyProcess } from "../interactive-session/transport-node-pty.js";
 import { startPipeProcess } from "../interactive-session/transport-pipe.js";
 import type {
@@ -18,6 +17,7 @@ import {
   RUNTIME_TOKEN_ENV,
   RUNTIME_VIEWS_ENV,
   decodeRuntimeHostPayload,
+  reportRuntimeStartupError,
 } from "./launch.js";
 import { isRuntimeSocketPath, runtimeSocketPath } from "./paths.js";
 import {
@@ -262,6 +262,7 @@ export class SessionRuntimeHost {
   private phase: RuntimeMetadata["phase"] = "starting";
   private error: string | undefined;
   private lease: RuntimeLease | undefined;
+  private hostIdentity: string | undefined;
   private server: Server | undefined;
   private readonly connections = new Set<Socket>();
   private transport: SessionTransport | undefined;
@@ -313,12 +314,13 @@ export class SessionRuntimeHost {
     }
     if (!this.lease) return;
     try {
+      this.hostIdentity = await processIdentityTracker.captureAsync(process.pid);
       await this.startServer();
       await this.writeMetadataNow();
       this.installSignals();
       await this.startChild();
       this.phase = "running";
-      this.queueMetadata();
+      await this.writeMetadataNow();
       const outcome = await this.exitPromise;
       this.exitOutcome = outcome;
       await this.flushTerminalOutput();
@@ -331,6 +333,7 @@ export class SessionRuntimeHost {
     } catch (error) {
       this.phase = "failed";
       this.error = errorText(error);
+      reportRuntimeStartupError(error);
       await this.writeMetadataNow().catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 1_500));
     } finally {
@@ -388,26 +391,23 @@ export class SessionRuntimeHost {
     if (this.exitOutcome || !this.transport) return;
     this.livenessTimer = setTimeout(() => {
       this.livenessTimer = undefined;
-      const transport = this.transport;
-      if (!transport || this.exitOutcome) return;
-      const expected = transport.identity;
-      const comparison = expected
-        ? processIdentityTracker.compare(transport.pid, expected)
-        : processAlive(transport.pid)
-          ? "unknown"
-          : "gone";
-      const provenDead = comparison === "gone" || comparison === "mismatch";
-      this.livenessMisses = provenDead ? this.livenessMisses + 1 : 0;
-      if (this.livenessMisses >= 2) {
-        this.resolveExit?.({
-          endedAt: Date.now(),
-          exitCode: this.expectedExitCode ?? 1,
-        });
-        return;
-      }
-      this.armChildLiveness();
+      void this.checkChildLiveness();
     }, 500);
     this.livenessTimer.unref?.();
+  }
+
+  private async checkChildLiveness(): Promise<void> {
+    const transport = this.transport;
+    if (!transport || this.exitOutcome || this.cleaning) return;
+    const comparison = await processIdentityTracker.compareAsync(transport.pid, transport.identity, { refresh: false }).catch(() => "unknown");
+    if (this.exitOutcome || this.cleaning) return;
+    const provenDead = comparison === "gone" || comparison === "mismatch";
+    this.livenessMisses = provenDead ? this.livenessMisses + 1 : 0;
+    if (this.livenessMisses >= 2) {
+      this.resolveExit?.({ endedAt: Date.now(), exitCode: this.expectedExitCode ?? 1 });
+      return;
+    }
+    this.armChildLiveness();
   }
 
   private async accept(socket: Socket): Promise<void> {
@@ -1037,9 +1037,7 @@ export class SessionRuntimeHost {
       version: RUNTIME_PROTOCOL_VERSION,
       sessionId: this.sessionId,
       hostPid: process.pid,
-      ...(processIdentityTracker.capture(process.pid)
-        ? { hostIdentity: processIdentityTracker.capture(process.pid) }
-        : {}),
+      ...(this.hostIdentity ? { hostIdentity: this.hostIdentity } : {}),
       ...(childPid ? { childPid } : {}),
       ...(childIdentity ? { childIdentity } : {}),
       socketPath: this.socketPath,
@@ -1149,10 +1147,15 @@ export async function runRuntimeHostFromEnvironment(): Promise<boolean> {
   const encoded = process.env[RUNTIME_HOST_ENV];
   if (!encoded) return false;
   delete process.env[RUNTIME_HOST_ENV];
-  const payload = decodeRuntimeHostPayload(encoded);
-  if (!payload) throw new Error("invalid session runtime host payload");
-  await new SessionRuntimeHost(payload).run();
-  return true;
+  try {
+    const payload = decodeRuntimeHostPayload(encoded);
+    if (!payload) throw new Error("invalid session runtime host payload");
+    await new SessionRuntimeHost(payload).run();
+    return true;
+  } catch (error) {
+    reportRuntimeStartupError(error);
+    throw error;
+  }
 }
 
 export function runtimeHostClientId(): string {

@@ -6,6 +6,7 @@ import {
 } from "../attachments/image-content.js";
 import { prepareImageForModel } from "../attachments/image-prepare.js";
 import type { TranscriptItem } from "../app/ports/transcript-item.js";
+import { flattenTranscriptHistory } from "../ui-core/state/transcript-history.js";
 import type { PreviousTurnSignal } from "../agent/continue-orient.js";
 import { redactSecrets } from "../llm/provider.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../llm/reasoning-artifacts.js";
@@ -164,7 +165,7 @@ function isSettledItem(item: TranscriptItem): boolean {
 
 function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[] | undefined {
   if (!items) return undefined;
-  const durable = items.filter((item) => item.kind !== "notice");
+  const durable = flattenTranscriptHistory(items).filter((item) => item.kind !== "notice");
   return durable.map((item) => {
     const reusable = isSettledItem(item);
     if (reusable) {
@@ -203,7 +204,7 @@ function scrubTranscriptItem(item: TranscriptItem): TranscriptItem {
       return {
         ...item,
         summary: redactSecretsCached(item.summary),
-        originalItems: scrubTranscript(item.originalItems) ?? [],
+        originalItems: [],
         done: true,
       };
     default: {

@@ -169,6 +169,7 @@ export function onTranscriptChange(host: WiringHost): void {
     if (latestTurnId && latestTurnId !== host.activeTurnId) {
       host.activeTurnId = latestTurnId;
       host.liveOffsetValue = 0;
+      host.feedNavigationVersion += 1;
       host.turnStartedAtValue ??= host.now();
     }
   }
@@ -202,6 +203,7 @@ export function buildSnapshot(host: WiringHost): ClassicAppSnapshot {
     animationTick: host.animationTickValue,
     feedGeneration: host.feedGenerationValue,
     liveOffset: host.liveOffsetValue,
+    feedNavigationVersion: host.feedNavigationVersion,
     planVisible: host.planVisibleValue,
     queueVisible: host.queueVisibleValue,
     queueSelected: host.queueSelectedValue,

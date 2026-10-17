@@ -48,8 +48,8 @@ export function selectEvictableRuntimes(
     .slice(0, overflow);
 }
 
-function terminableHost(metadata: RuntimeMetadata): boolean {
-  const comparison = processIdentityTracker.compare(
+async function terminableHost(metadata: RuntimeMetadata): Promise<boolean> {
+  const comparison = await processIdentityTracker.compareAsync(
     metadata.hostPid,
     metadata.hostIdentity,
   );
@@ -68,7 +68,7 @@ export async function enforceIdleRuntimeCap(
   for (const victim of victims) {
     const current = await readRuntimeMetadata(victim.sessionId).catch(() => undefined);
     if (!current || current.hostPid !== victim.hostPid || !idleDetached(current)) continue;
-    if (!terminableHost(current)) continue;
+    if (!await terminableHost(current)) continue;
     try {
       process.kill(current.hostPid, "SIGTERM");
       stopped += 1;

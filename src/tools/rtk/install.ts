@@ -1,11 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, access } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
 import { augmentedPathEnv, findExecutable } from "../../os/command.js";
-import { detectRtk, forgetRtk, probeRtkPath, type RtkStatus } from "./binary.js";
+import { detectRtk, forgetRtk, inspectRtkPath, probeRtkPath, type RtkStatus } from "./binary.js";
 import { downloadToFile } from "./download.js";
+import { extractVerifiedZipBinary } from "./archive.js";
+import { placeVerifiedBinary } from "./binary-placement.js";
 import {
   RTK_GITHUB,
   assetUrl,
@@ -237,17 +239,6 @@ const extractTar = async (context: Context, file: string, name: string): Promise
   (await runQuiet("tar", ["-xzf", file, name], context.work)) ||
   (await runQuiet("tar", ["-xzf", file, "-C", context.work, name], context.work));
 
-const extractZip = async (context: Context, file: string, name: string): Promise<boolean> => {
-  const script = `Expand-Archive -LiteralPath '${file.replace(/'/g, "''")}' -DestinationPath '${context.work.replace(/'/g, "''")}' -Force`;
-  if (!(await runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], context.work))) {
-    return false;
-  }
-  return access(join(context.work, name), constants.F_OK).then(
-    () => true,
-    () => false,
-  );
-};
-
 const originOf = async (path: string): Promise<RtkInstallMethod | undefined> => {
   const real = await realpath(path).catch(() => path);
   const home = homedir();
@@ -332,15 +323,7 @@ export const pathGuidance = (dir: string, windows: boolean = WINDOWS): string =>
 
 const placeBinary = async (context: Context, staged: string, dir: string, name: string): Promise<void> => {
   const dest = join(dir, name);
-  const temp = `${dest}.${process.pid}.tmp`;
-  await copyFile(staged, temp);
-  if (context.target?.os !== "windows") await chmod(temp, 0o755);
-  try {
-    await rename(temp, dest);
-  } catch (error) {
-    await rm(temp, { force: true }).catch(() => undefined);
-    throw error;
-  }
+  await placeVerifiedBinary(staged, dest, context.target?.os === "windows");
   context.installPath = dest;
   if (!pathContains(dir)) {
     context.pathWarning = pathGuidance(dir);
@@ -389,11 +372,24 @@ const runBinary = async (context: Context): Promise<MethodOutcome> => {
   }
   const name = target.os === "windows" ? "rtk.exe" : "rtk";
   emit({ action: context.action, phase: "extracting", method: "GitHub releases" });
-  const extracted =
-    target.asset.endsWith(".zip") ? await extractZip(context, file, name) : await extractTar(context, file, name);
-  if (!extracted) return { ok: false, reason: "could not extract the rtk archive (need `tar`, or PowerShell on Windows)" };
   try {
-    await placeBinary(context, join(context.work, name), dir, name);
+    if (target.asset.endsWith(".zip")) await extractVerifiedZipBinary(archive, context.work, name);
+    else if (!(await extractTar(context, file, name))) return { ok: false, reason: "could not extract the rtk archive (need `tar`)" };
+  } catch (error) {
+    return { ok: false, reason: `could not extract the rtk archive: ${describe(error)}` };
+  }
+  const staged = join(context.work, name);
+  try {
+    if (target.os !== "windows") await chmod(staged, 0o755);
+    const candidate = await inspectRtkPath(staged, INSTALL_PROBE_TIMEOUT_MS);
+    if (candidate.state !== "ready" || !meetsMinimum(candidate.version)) {
+      return { ok: false, reason: "downloaded rtk binary is not usable on this system; the previous installation was not replaced" };
+    }
+    const comparison = compareSemver(candidate.version, release.version);
+    if (comparison === undefined || comparison < 0) {
+      return { ok: false, reason: `downloaded rtk binary reports ${candidate.version}, expected ${release.version}; the previous installation was not replaced` };
+    }
+    await placeBinary(context, staged, dir, name);
   } catch (error) {
     return { ok: false, reason: `could not install to ${dir}: ${describe(error)}` };
   }
@@ -426,7 +422,7 @@ export const planInstall = (
 ): readonly RtkInstallMethod[] =>
   windows
     ? target
-      ? ["winget", "binary", "cargo"]
+      ? ["binary", "winget", "cargo"]
       : ["winget", "cargo"]
     : target
       ? ["brew", "binary", "cargo"]
@@ -440,8 +436,8 @@ export const planUpdate = (
   const fallbacks: readonly RtkInstallMethod[] = target ? ["binary", "cargo"] : ["cargo"];
   if (origin === "brew") return ["brew", ...fallbacks];
   if (origin === "winget") return windows ? ["winget", ...fallbacks] : fallbacks;
-  if (origin === "cargo") return ["cargo"];
-  return windows && origin === undefined ? ["winget", ...fallbacks] : fallbacks;
+  if (origin === "cargo") return windows && target ? ["cargo", "binary"] : ["cargo"];
+  return windows && origin === undefined ? planInstall(true, target) : fallbacks;
 };
 
 const verifyInstalled = async (context: Context): Promise<RtkStatus> =>

@@ -112,6 +112,7 @@ export function ClassicApp(
     now: snapshot.feedNow,
     generation: snapshot.feedGeneration,
     liveOffset: snapshot.liveOffset,
+    navigationVersion: snapshot.feedNavigationVersion,
     intro,
   });
   const selectionDocument = useMemo(

@@ -22,8 +22,14 @@ export interface TranscriptWindow {
   readonly visibleItemIds: ReadonlySet<string>;
 }
 
+export interface TranscriptRowAnchor {
+  readonly blockKey: string;
+  readonly lineIndex: number | undefined;
+}
+
 interface TranscriptIndex {
   readonly starts: readonly number[];
+  readonly positions: ReadonlyMap<string, number>;
   readonly totalRows: number;
 }
 
@@ -33,19 +39,36 @@ function transcriptIndex(blocks: readonly FeedBlock[]): TranscriptIndex {
   const cached = transcriptIndexes.get(blocks);
   if (cached) return cached;
   const starts: number[] = [];
+  const positions = new Map<string, number>();
   let totalRows = 0;
   for (let index = 0; index < blocks.length; index += 1) {
     starts.push(totalRows);
-    totalRows += blocks[index]!.lines.length;
+    positions.set(blocks[index]!.key, index);
+    totalRows += blocks[index]!.rowCount ?? blocks[index]!.lines.length;
     if (index < blocks.length - 1) totalRows += BLOCK_GAP_ROWS;
   }
-  const result = { starts, totalRows };
+  const result = { starts, positions, totalRows };
   transcriptIndexes.set(blocks, result);
   return result;
 }
 
 export function totalTranscriptRows(blocks: readonly FeedBlock[]): number {
   return transcriptIndex(blocks).totalRows;
+}
+
+export function offsetForTranscriptAnchor(
+  blocks: readonly FeedBlock[],
+  budget: number,
+  anchor: TranscriptRowAnchor,
+): number | undefined {
+  const index = transcriptIndex(blocks);
+  const position = index.positions.get(anchor.blockKey);
+  if (position === undefined) return undefined;
+  const block = blocks[position]!;
+  const height = block.rowCount ?? block.lines.length;
+  const gap = position < blocks.length - 1 ? BLOCK_GAP_ROWS : 0;
+  const line = Math.max(0, Math.min(anchor.lineIndex ?? height, height + gap - 1));
+  return index.totalRows - index.starts[position]! - line - Math.max(0, Math.floor(budget));
 }
 
 function firstVisibleBlock(starts: readonly number[], row: number): number {

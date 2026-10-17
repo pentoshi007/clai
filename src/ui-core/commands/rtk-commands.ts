@@ -141,7 +141,7 @@ const maintenanceOption = ({ status, maintenance }: RtkView): PickerOption[] => 
           label: "Install rtk",
           icon: "↓",
           tone: "accent",
-          description: `${process.platform === "win32" ? "winget, then a checksum-verified binary, then cargo" : "Homebrew, then a checksum-verified release binary, then cargo"} · clai stays usable meanwhile`,
+          description: `${process.platform === "win32" ? "checksum-verified portable binary; no package manager required" : "Homebrew, then a checksum-verified release binary, then cargo"} · clai stays usable meanwhile`,
         },
       ];
 };

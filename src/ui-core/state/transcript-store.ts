@@ -1,6 +1,7 @@
 
 import type { AnyAppEvent } from "../../app/events/app-event.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../../app/ports/transcript-item.js";
+import { flattenTranscriptHistory } from "./transcript-history.js";
 import {
   applyAppEvent,
   TranscriptSequenceError,
@@ -23,6 +24,7 @@ export class TranscriptStore {
   private pendingEvents: AnyAppEvent[] = [];
   private contentSource: TranscriptStore | undefined;
   private contentSnapshot: TranscriptState | undefined;
+  private disposed = false;
 
   private static readonly COALESCED_EVENT_TYPES = new Set<string>([
     "assistant-delta",
@@ -61,10 +63,7 @@ export class TranscriptStore {
       transcript,
       dispose() {
         unsubscribe();
-        transcript.clearPendingEvents();
-        transcript.listeners.clear();
-        transcript.contentSource = undefined;
-        transcript.contentSnapshot = undefined;
+        transcript.dispose();
       },
     };
   }
@@ -85,6 +84,7 @@ export class TranscriptStore {
   }
 
   dispatch(event: AnyAppEvent): void {
+    if (this.disposed) return;
     if (this.contentSource) { this.contentSource.dispatch(event); return; }
     if (TranscriptStore.COALESCED_EVENT_TYPES.has(event.type)) {
       const lastQueuedSequence =
@@ -208,8 +208,21 @@ export class TranscriptStore {
   }
 
   subscribe(listener: TranscriptListener): () => void {
+    if (this.disposed) return () => {};
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    try { this.getState(); }
+    finally {
+      this.disposed = true;
+      this.clearPendingEvents();
+      this.listeners.clear();
+      this.contentSource = undefined;
+      this.contentSnapshot = undefined;
+    }
   }
 
   reset(): void {
@@ -232,7 +245,7 @@ export class TranscriptStore {
     if (this.contentSource) { this.contentSource.hydrate(next, options); return; }
     const current = this.getState();
     if (options && "persistBase" in options) {
-      this.persistBase = options.persistBase ?? [];
+      this.persistBase = flattenTranscriptHistory(options.persistBase ?? []);
       this.persistHydratedIds = new Set(next.order);
     }
     const rebase = options?.rebaseSequence !== false;
@@ -275,7 +288,7 @@ export class TranscriptStore {
   }
 
   private setState(next: TranscriptState): void {
-    if (this.applyState(next)) this.flushNotify();
+    if (!this.disposed && this.applyState(next)) this.flushNotify();
   }
 
   private flushPendingEvents(): boolean {

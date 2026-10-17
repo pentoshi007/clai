@@ -183,18 +183,16 @@ export const rtkPathEnv = (entry: RtkPathEntry): string =>
     ? `${entry.dir}${delimiter}${augmentedPathEnv()}`
     : `${augmentedPathEnv()}${delimiter}${entry.dir}`;
 
-export const probeRtkPath = async (path: string, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<RtkStatus> => {
+export const inspectRtkPath = async (path: string, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<RtkStatus> => {
   const candidate = await probeCandidate(path, timeoutMs);
-  if (candidate.state === "ready") {
-    const onPath = await findExecutable("rtk");
-    return path === onPath
-      ? { state: "ready", path, version: candidate.version }
-      : { state: "ready", path, version: candidate.version, pathEntry: shimPathEntry(path) };
-  }
-  if (candidate.state === "incompatible") {
-    return { state: "incompatible", path, version: candidate.version };
-  }
-  return { state: "missing" };
+  return candidate.state === "missing" ? candidate : { ...candidate, path };
+};
+
+export const probeRtkPath = async (path: string, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<RtkStatus> => {
+  const status = await inspectRtkPath(path, timeoutMs);
+  if (status.state !== "ready") return status;
+  const onPath = await findExecutable("rtk");
+  return path === onPath ? status : { ...status, pathEntry: shimPathEntry(path) };
 };
 
 const probe = async (): Promise<RtkStatus> => {

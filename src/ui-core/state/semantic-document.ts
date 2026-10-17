@@ -52,7 +52,7 @@ export function normalizeSemanticDocument(document: SemanticDocument): SemanticD
     if (!block.id) throw new Error("semantic blocks require a stable id");
     if (ids.has(block.id)) throw new Error(`duplicate semantic block id: ${block.id}`);
     ids.add(block.id);
-    return { id: block.id, text: block.text };
+    return { id: block.id, get text() { return block.text; } };
   });
   return { blocks };
 }

@@ -6,7 +6,8 @@ import type {
   TranscriptItem,
   TranscriptState,
 } from "../../ui-core/state/transcript-types.js";
-import { isFileDiffExpanded, isItemExpanded } from "../../ui-core/state/transcript-types.js";
+import { EMPTY_TRANSCRIPT_STATE, isFileDiffExpanded, isItemExpanded } from "../../ui-core/state/transcript-types.js";
+import { ObjectRenderCache } from "../../ui-core/rendering/object-render-cache.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { contentWidth } from "../render/measure.js";
 import { EMPTY_SPOOL, type BlockContext, type SpoolReader } from "../blocks/block-context.js";
@@ -41,6 +42,7 @@ export interface FeedBlock {
   readonly kind: BlockKind;
   readonly open: boolean;
   readonly lines: readonly string[];
+  readonly rowCount?: number;
   readonly disclosures?: readonly BlockDisclosure[];
   readonly turnId: string | undefined;
   readonly sequence: number;
@@ -143,9 +145,24 @@ interface BlockInputs {
 
 interface CachedBlock {
   readonly inputs: BlockInputs;
-  readonly lines: readonly string[];
   readonly markdownCache: MarkdownStreamCache | undefined;
   readonly block: FeedBlock | undefined;
+}
+
+interface BlockLayout {
+  readonly lines: readonly string[];
+  readonly disclosures: readonly BlockDisclosure[];
+}
+
+function layoutContext(ctx: BlockContext, inputs: BlockInputs): BlockContext {
+  return {
+    ...ctx,
+    state: {
+      ...EMPTY_TRANSCRIPT_STATE,
+      itemOverrides: new Map([[inputs.item.id, inputs.expanded]]),
+      fileDiffOverrides: new Map([[inputs.item.id, inputs.diffExpanded]]),
+    },
+  };
 }
 
 function sameInputs(left: BlockInputs, right: BlockInputs): boolean {
@@ -177,6 +194,21 @@ function blockInputs(ctx: BlockContext, item: TranscriptItem, kind: BlockKind): 
 
 export class FeedBlockCache {
   private entries = new Map<string, CachedBlock>();
+  private readonly layouts: ObjectRenderCache<BlockInputs, BlockLayout>;
+
+  constructor(maxLayoutBytes = 16 * 1024 * 1024) {
+    this.layouts = new ObjectRenderCache(maxLayoutBytes);
+  }
+
+  get retainedLayoutBytes(): number {
+    return this.layouts.weight;
+  }
+
+  private retainLayout(inputs: BlockInputs, layout: BlockLayout): BlockLayout {
+    const weight = layout.lines.reduce((total, line) => total + line.length * 2 + 64, 0)
+      + layout.disclosures.length * 128;
+    return this.layouts.set(inputs, "", layout, weight);
+  }
   private intro: { input: IntroBlockInput; width: number; ink: InkTheme; block: FeedBlock | undefined; generation: number } | undefined;
 
   introBlock(ctx: BlockContext, input: IntroBlockInput, generation: number): FeedBlock | undefined {
@@ -216,39 +248,56 @@ export class FeedBlockCache {
     const inputs = blockInputs(ctx, item, kind);
     const key = `${generation}:${item.id}`;
     const cached = this.entries.get(item.id);
-    if (cached && sameInputs(cached.inputs, inputs)) {
-      const reusable = !cached.block || cached.block.key === key;
-      const entry = reusable ? cached : { ...cached, block: { ...cached.block!, key } };
-      next.set(item.id, entry);
-      return entry.block;
+    if (cached && sameInputs(cached.inputs, inputs) && (!cached.block || cached.block.key === key)) {
+      next.set(item.id, cached);
+      return cached.block;
     }
     const markdownCache = cached?.inputs.ink === ctx.ink ? cached.markdownCache : undefined;
     const disclosures: BlockDisclosure[] = [];
     const rendered = renderLines({ ...ctx, disclosures }, item, kind, markdownCache);
     const lines = reflowRows(rendered.lines, ctx.width);
-    const block: FeedBlock | undefined = lines.length > 0
-      ? {
-          key,
-          itemId: item.id,
-          kind,
-          open: isOpen(item),
-          lines,
-          disclosures,
-          turnId: item.turnId,
-          sequence: item.sequence,
-        }
+    if (cached) this.layouts.remove(cached.inputs);
+    this.retainLayout(inputs, { lines, disclosures });
+    const block = lines.length > 0
+      ? this.lazyBlock(inputs, layoutContext(ctx, inputs), key, lines.length)
       : undefined;
     next.set(item.id, {
       inputs,
-      lines,
       markdownCache: item.kind === "assistant" && item.streaming ? rendered.markdownCache : undefined,
       block,
     });
     return block;
   }
 
+  private lazyBlock(inputs: BlockInputs, ctx: BlockContext, key: string, rowCount: number): FeedBlock {
+    const { item, kind } = inputs;
+    const layout = (): BlockLayout => {
+      const cached = this.layouts.get(inputs, "");
+      if (cached) return cached;
+      const disclosures: BlockDisclosure[] = [];
+      const rendered = renderLines({ ...ctx, disclosures }, item, kind, undefined);
+      const result = { lines: reflowRows(rendered.lines, ctx.width), disclosures };
+      return this.entries.get(item.id)?.inputs === inputs ? this.retainLayout(inputs, result) : result;
+    };
+    return {
+      key,
+      itemId: item.id,
+      kind,
+      open: isOpen(item),
+      rowCount,
+      get lines() { return layout().lines; },
+      get disclosures() { return layout().disclosures; },
+      turnId: item.turnId,
+      sequence: item.sequence,
+    };
+  }
+
   commit(next: Map<string, CachedBlock>): void {
+    for (const [id, entry] of this.entries) {
+      if (!next.has(id)) this.layouts.remove(entry.inputs);
+    }
     this.entries = next;
+    if (next.size === 0) this.layouts.clear();
   }
 }
 

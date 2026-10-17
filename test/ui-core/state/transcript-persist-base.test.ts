@@ -207,16 +207,11 @@ describe("transcript persist base", () => {
     const persisted = snapshot(store);
     const compacted = persisted.find((item) => item.kind === "compacted");
     expect(compacted).toBeDefined();
-    expect(
-      compacted && compacted.kind === "compacted"
-        ? compacted.originalItems.map((item) => item.kind)
-        : [],
-    ).toContain("user");
-    expect(
-      compacted && compacted.kind === "compacted"
-        ? compacted.originalItems.map((item) => item.kind)
-        : [],
-    ).toContain("assistant");
+    expect(persisted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "user", text: "build a provider" }),
+      expect.objectContaining({ kind: "assistant", text: "Working on it" }),
+    ]));
+    expect(compacted).toMatchObject({ originalItems: [] });
   });
 
   it("round-trips compacted originalItems through a resume", () => {
@@ -241,20 +236,17 @@ describe("transcript persist base", () => {
     const persisted = snapshot(store);
     const compacted = persisted.find((item) => item.kind === "compacted");
     expect(compacted).toBeDefined();
-    if (compacted && compacted.kind === "compacted") {
-      expect(compacted.originalItems.map((item) => item.id)).toEqual([
-        "u0",
-        "a0",
-      ]);
-    }
+    expect(compacted).toMatchObject({ originalItems: [] });
     expect(persisted.map((item) => item.id)).toEqual([
       "u1",
+      "u0",
+      "a0",
       "compacted-c1",
       "a1",
     ]);
   });
 
-  it("bounds compacted originalItems so long sessions stay small", () => {
+  it("keeps full tool text once instead of duplicating or truncating compacted originals", () => {
     const store = new TranscriptStore(100000, 0);
     const seq = new EventSequencer(asSessionId("s1"));
     const spool = new Map<string, string>();
@@ -285,11 +277,10 @@ describe("transcript persist base", () => {
     );
     const compacted = persisted.find((item) => item.kind === "compacted");
     expect(compacted).toBeDefined();
-    if (compacted && compacted.kind === "compacted") {
-      const bytes = JSON.stringify(compacted.originalItems).length;
-      expect(bytes).toBeLessThanOrEqual(2_100_000);
-      expect(compacted.originalItems.length).toBeGreaterThan(0);
-    }
+    expect(compacted).toMatchObject({ originalItems: [] });
+    const tools = persisted.filter((item) => item.kind === "tool");
+    expect(tools).toHaveLength(500);
+    expect(tools.every((item) => item.output === "X".repeat(256 * 1024))).toBe(true);
   });
 
   it("persists only a tail for artifact-backed tools and restores full output on resume", async () => {

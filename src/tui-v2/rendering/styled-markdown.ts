@@ -1,4 +1,4 @@
-import type { StyledText } from "@opentui/core";
+import { StyledText, type TextChunk } from "@opentui/core";
 import {
   renderMarkdownLines,
   type AnsiLine,
@@ -12,6 +12,16 @@ import { ansiToStyledText } from "./ansi-to-styled.js";
 import { RenderCache } from "../../ui-core/rendering/render-cache.js";
 
 export type StyledLine = StyledText;
+
+export function joinStyledLines(lines: readonly StyledLine[]): StyledText {
+  const chunks: TextChunk[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (index > 0) chunks.push({ __isChunk: true, text: "\n" });
+    if (line.chunks.length === 0) chunks.push({ __isChunk: true, text: " " });
+    else for (const chunk of line.chunks) chunks.push(chunk);
+  }
+  return new StyledText(chunks);
+}
 
 export interface StyledMarkdownOptions extends RenderMarkdownLinesOptions {
   readonly defaultFg?: string | undefined;

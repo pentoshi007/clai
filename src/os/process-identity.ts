@@ -1,5 +1,5 @@
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { processAlive } from "./process-tree.js";
@@ -9,6 +9,7 @@ export type ProcessIdentityComparison = "match" | "mismatch" | "gone" | "unknown
 export interface ProcessIdentityProvider {
   readonly platform: NodeJS.Platform | "test";
   capture(pid: number): string | undefined;
+  captureAsync?(pid: number): Promise<string | undefined>;
 }
 
 const IDENTITY_TTL_MS = 15_000;
@@ -67,6 +68,14 @@ function readWindowsProcessStart(pid: number): string | undefined {
   return undefined;
 }
 
+function readProcessStartAsync(file: string, args: readonly string[]): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    execFile(file, args, {
+      encoding: "utf8", timeout: PROBE_TIMEOUT_MS, windowsHide: true, maxBuffer: 64 * 1024,
+    }, (error, stdout) => resolve(error ? undefined : stdout.trim() || undefined));
+  });
+}
+
 export const defaultProcessIdentityProvider: ProcessIdentityProvider = {
   platform: process.platform,
   capture(pid) {
@@ -74,10 +83,23 @@ export const defaultProcessIdentityProvider: ProcessIdentityProvider = {
     if (process.platform === "win32") return readWindowsProcessStart(pid);
     return readPsProcessStart(pid);
   },
+  async captureAsync(pid) {
+    if (process.platform === "linux") return readLinuxProcessStart(pid);
+    if (process.platform !== "win32") {
+      return await readProcessStartAsync("ps", ["-p", String(pid), "-o", "lstart="]);
+    }
+    const query = `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CreationDate`;
+    for (const shell of ["powershell.exe", "pwsh.exe"]) {
+      const raw = await readProcessStartAsync(shell, ["-NoProfile", "-NonInteractive", "-Command", query]);
+      if (raw) return raw;
+    }
+    return undefined;
+  },
 };
 
 export class ProcessIdentityTracker {
   private readonly cache = new Map<number, { value: string | undefined; at: number }>();
+  private readonly pending = new Map<number, Promise<string | undefined>>();
 
   constructor(
     private readonly provider: ProcessIdentityProvider = defaultProcessIdentityProvider,
@@ -99,6 +121,40 @@ export class ProcessIdentityTracker {
     return value;
   }
 
+  async captureAsync(pid: number | undefined, options: { refresh?: boolean } = {}): Promise<string | undefined> {
+    if (!pid || pid <= 0) return undefined;
+    const cached = this.cache.get(pid);
+    if (cached && !options.refresh && this.now() - cached.at < IDENTITY_TTL_MS) return cached.value;
+    const existing = this.pending.get(pid);
+    if (existing) return await existing;
+    const pending = Promise.resolve().then(() => this.provider.captureAsync
+      ? this.provider.captureAsync(pid)
+      : this.provider.capture(pid)).then((raw) => {
+      const value = raw ? hashEvidence(raw) : undefined;
+      if (this.pending.get(pid) === pending) {
+        const now = this.now();
+        this.cache.set(pid, { value, at: now });
+        this.prune(now);
+      }
+      return value;
+    }).finally(() => {
+      if (this.pending.get(pid) === pending) this.pending.delete(pid);
+    });
+    this.pending.set(pid, pending);
+    return await pending;
+  }
+
+  async compareAsync(
+    pid: number | undefined,
+    expected: string | undefined,
+    options: { refresh?: boolean } = {},
+  ): Promise<ProcessIdentityComparison> {
+    if (!pid || pid <= 0 || !this.alive(pid)) return "gone";
+    const current = await this.captureAsync(pid, { refresh: options.refresh ?? true });
+    if (!current || !expected) return "unknown";
+    return current === expected ? "match" : "mismatch";
+  }
+
   compare(
     pid: number | undefined,
     expected: string | undefined,
@@ -111,7 +167,9 @@ export class ProcessIdentityTracker {
   }
 
   forget(pid: number | undefined): void {
-    if (pid) this.cache.delete(pid);
+    if (!pid) return;
+    this.cache.delete(pid);
+    this.pending.delete(pid);
   }
 
   private prune(now: number): void {

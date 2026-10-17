@@ -1,5 +1,6 @@
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import type { TranscriptItem } from "../../app/ports/transcript-item.js";
+import { flattenTranscriptHistory } from "../../ui-core/state/transcript-history.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../../llm/reasoning-artifacts.js";
 import { restoreResponsesReplay } from "../../llm/responses-replay.js";
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
@@ -78,6 +79,7 @@ export function invalidateSessionListCache(): void {
 export function hydrateHistoryRecord(record: HistoryRecord): HistoryRecord {
   return {
     ...record,
+    ...(record.transcript ? { transcript: flattenTranscriptHistory(record.transcript) } : {}),
     messages: record.messages.map((message) => restoreResponsesReplay(canonicalizeChatMessageReasoningArtifacts(message))),
   };
 }

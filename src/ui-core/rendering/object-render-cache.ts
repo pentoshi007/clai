@@ -18,6 +18,11 @@ export class ObjectRenderCache<K extends object, V> {
     return this.retainedWeight;
   }
 
+  clear(): void {
+    this.entries.clear();
+    this.retainedWeight = 0;
+  }
+
   get(key: K, signature: string): V | undefined {
     const entry = this.entries.get(key);
     if (!entry || entry.signature !== signature) return undefined;
@@ -47,7 +52,7 @@ export class ObjectRenderCache<K extends object, V> {
     return this.set(key, signature, value, weigh(value));
   }
 
-  private remove(key: K): void {
+  remove(key: K): void {
     const entry = this.entries.get(key);
     if (!entry) return;
     this.entries.delete(key);

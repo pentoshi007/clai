@@ -31,7 +31,7 @@ function setup(options: { columns?: number; rows?: number; offset?: number; item
     const view = { ...feedView(turn, { columns }), spool: h!.services.session.spool };
     const blocks = buildFeedBlocks(state, view);
     const window = planTranscriptWindow(blocks, options.rows ?? 60, offset);
-    h!.wiring.observeFeed({ ink: view.ink, context: blockContextFor(state, view), blocks, window, columns, generation: 0 });
+    h!.wiring.observeFeed({ ink: view.ink, context: blockContextFor(state, view), blocks, window, columns, generation: h!.wiring.feedGenerationValue, navigationVersion: h!.wiring.feedNavigationVersion, requestedOffset: h!.wiring.liveOffsetValue });
     h!.wiring.setTranscriptSelectionGeometry({ left: 2, top: 3 });
     return window;
   };

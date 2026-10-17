@@ -125,7 +125,7 @@ export async function reapStaleRuntimeLock(sessionId: string): Promise<boolean> 
   if (!Number.isSafeInteger(owner.pid) || Number(owner.pid) <= 0) return false;
   const pid = Number(owner.pid);
   const identity = typeof owner.identity === "string" ? owner.identity : undefined;
-  const comparison = processIdentityTracker.compare(pid, identity);
+  const comparison = await processIdentityTracker.compareAsync(pid, identity);
   const stale =
     comparison === "gone" ||
     comparison === "mismatch" ||
@@ -147,15 +147,21 @@ export async function tryAcquireRuntimeLease(
     if ((error as NodeJS.ErrnoException).code === "EEXIST") return undefined;
     throw error;
   }
-  await handle.writeFile(
-    `${JSON.stringify({
-      pid: process.pid,
-      identity: processIdentityTracker.capture(process.pid, { refresh: true }),
-      createdAt: new Date().toISOString(),
-    })}\n`,
-    "utf8",
-  );
-  await handle.sync().catch(() => undefined);
+  try {
+    await handle.writeFile(
+      `${JSON.stringify({
+        pid: process.pid,
+        identity: await processIdentityTracker.captureAsync(process.pid),
+        createdAt: new Date().toISOString(),
+      })}\n`,
+      "utf8",
+    );
+    await handle.sync().catch(() => undefined);
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(path, { force: true }).catch(() => undefined);
+    throw error;
+  }
   let released = false;
   return {
     sessionId,

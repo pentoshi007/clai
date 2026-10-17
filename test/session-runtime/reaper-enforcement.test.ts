@@ -17,7 +17,7 @@ vi.mock("../../src/session-runtime/store.js", () => ({
 }));
 
 vi.mock("../../src/os/process-identity.js", () => ({
-  processIdentityTracker: { compare: mocks.compare },
+  processIdentityTracker: { compareAsync: mocks.compare },
 }));
 
 vi.mock("../../src/os/process-tree.js", () => ({

@@ -1,14 +1,10 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
 import type { Socket } from "node:net";
 import type { ResumeTarget } from "../ui-core/bootstrap/session-resume.js";
 import { resolveResumeTarget } from "../ui-core/bootstrap/session-resume.js";
 import { mintSessionId } from "../app/controllers/session-persistence.js";
 import { setRuntimeDetachUnavailableReason } from "./availability.js";
 import { safeCwd } from "../os/cwd.js";
-import { updateOriginEnvironment } from "../os/update-origin.js";
-import { findBunExecutable, isBunRuntime } from "../os/bun-runtime.js";
 import { getConfig } from "../store/config.js";
 import { listSessionSummaries } from "../store/history.js";
 import {
@@ -23,12 +19,6 @@ import {
   RUNTIME_CHILD_ENV,
   RUNTIME_DISABLE_ENV,
   RUNTIME_HOST_ENV,
-  RUNTIME_SESSION_ENV,
-  RUNTIME_SOCKET_ENV,
-  RUNTIME_TOKEN_ENV,
-  RUNTIME_VIEWS_ENV,
-  encodeRuntimeHostPayload,
-  selfLaunchSpec,
 } from "./launch.js";
 import {
   JsonFrameChannel,
@@ -36,7 +26,6 @@ import {
   readFirstFrame,
   sendFrame,
 } from "./protocol.js";
-import { readRuntimeMetadata } from "./store.js";
 import { TERMINAL_MODE_RESET } from "../os/screen-sequences.js";
 import { ALT_SCREEN_OFF, AltScreenTracker } from "./alt-screen.js";
 import {
@@ -44,27 +33,16 @@ import {
   type RuntimeAckFrame,
   type RuntimeAuthFrame,
   type RuntimeHostFrame,
-  type RuntimeHostPayload,
   type RuntimeMetadata,
   type RuntimeTerminalOptions,
 } from "./types.js";
 import { runtimeTerminalOptions } from "./terminal-options.js";
+import { startRuntimeHost, type RuntimeTarget } from "./startup.js";
 
-const START_TIMEOUT_MS = 10_000;
-const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
-const MIN_IDLE_TIMEOUT_MS = 60_000;
-const MAX_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 const TERMINAL_RESTORE = TERMINAL_MODE_RESET;
 
 export function terminalRestoreSequence(altScreenActive: boolean): string {
   return altScreenActive ? `${TERMINAL_RESTORE}${ALT_SCREEN_OFF}` : TERMINAL_RESTORE;
-}
-
-interface RuntimeTarget {
-  readonly sessionId: string;
-  readonly cwd?: string | undefined;
-  readonly resumeId?: string | undefined;
-  readonly resumeLatest?: "directory" | "global" | undefined;
 }
 
 type AttachOutcome =
@@ -90,10 +68,6 @@ export interface DurableInteractiveOptions {
   readonly ui?: RuntimeTerminalOptions["ui"] | undefined;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function terminalColumns(): number {
   return Math.max(20, Math.min(1_000, process.stdout.columns ?? 100));
 }
@@ -101,16 +75,6 @@ function terminalColumns(): number {
 function terminalRows(): number {
   return Math.max(5, Math.min(500, process.stdout.rows ?? 30));
 }
-
-function idleTimeoutMs(): number {
-  const configured = Number(process.env.CLAI_SESSION_RUNTIME_IDLE_MS);
-  if (!Number.isFinite(configured)) return DEFAULT_IDLE_TIMEOUT_MS;
-  return Math.max(
-    MIN_IDLE_TIMEOUT_MS,
-    Math.min(MAX_IDLE_TIMEOUT_MS, Math.floor(configured)),
-  );
-}
-
 function hostFrame(value: unknown): RuntimeHostFrame | undefined {
   if (!value || typeof value !== "object") return undefined;
   const frame = value as Partial<RuntimeHostFrame>;
@@ -187,93 +151,6 @@ async function openChannel(
   }
 }
 
-function childEnvironment(payload: string): NodeJS.ProcessEnv {
-  const env = updateOriginEnvironment();
-  delete env[RUNTIME_CHILD_ENV];
-  delete env[RUNTIME_SOCKET_ENV];
-  delete env[RUNTIME_TOKEN_ENV];
-  delete env[RUNTIME_SESSION_ENV];
-  delete env[RUNTIME_VIEWS_ENV];
-  env[RUNTIME_HOST_ENV] = payload;
-  return env;
-}
-
-function brokerLaunch(entryPath: string) {
-  if (!isBunRuntime() && process.platform !== "win32") {
-    const bun = findBunExecutable();
-    if (bun) return { file: bun, args: [entryPath] };
-  }
-  return selfLaunchSpec(entryPath, []);
-}
-
-async function startRuntimeHost(
-  options: DurableInteractiveOptions,
-  target: RuntimeTarget,
-): Promise<RuntimeMetadata> {
-  const childArgs = [
-    ...options.childArgs,
-    ...(target.resumeId ? ["--resume", target.resumeId] : []),
-    ...(target.resumeLatest ? [target.resumeLatest === "global" ? "--resume" : "--continue"] : []),
-  ];
-  const runtimeLaunch = brokerLaunch(options.entryPath);
-  const childLaunch = { file: runtimeLaunch.file, args: [...runtimeLaunch.args, ...childArgs] };
-  const cwd = target.cwd && (await stat(target.cwd).catch(() => undefined))?.isDirectory()
-    ? target.cwd
-    : safeCwd();
-  const payload: RuntimeHostPayload = {
-    version: RUNTIME_PROTOCOL_VERSION,
-    sessionId: target.sessionId,
-    cwd,
-    launch: childLaunch,
-    columns: terminalColumns(),
-    rows: terminalRows(),
-    idleTimeoutMs: idleTimeoutMs(),
-    independentViews: true,
-  };
-  const hostLaunch = brokerLaunch(options.entryPath);
-  const child = spawn(hostLaunch.file, [...hostLaunch.args], {
-    cwd: payload.cwd,
-    env: childEnvironment(encodeRuntimeHostPayload(payload)),
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  });
-  let launchError: Error | undefined;
-  child.once("error", (error) => {
-    launchError = error;
-  });
-  child.unref();
-
-  let ready = false;
-  try {
-    const deadline = Date.now() + START_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (launchError) throw launchError;
-      const metadata = await readRuntimeMetadata(target.sessionId);
-      if (metadata?.phase === "failed") {
-        throw new Error(metadata.error ?? "session runtime failed to start");
-      }
-      if (
-        metadata?.phase === "running" &&
-        (await probeRuntime(metadata))
-      ) {
-        ready = true;
-        return metadata;
-      }
-      const winner = await findLiveRuntime(target.sessionId).catch(() => undefined);
-      if (winner?.phase === "running") {
-        ready = true;
-        return winner;
-      }
-      await delay(50);
-    }
-    throw new Error("session runtime did not become ready within 10 seconds");
-  } finally {
-    if (!ready && child.pid && child.exitCode === null && !child.killed) {
-      child.kill("SIGTERM");
-    }
-  }
-}
 
 async function ensureRuntime(
   options: DurableInteractiveOptions,

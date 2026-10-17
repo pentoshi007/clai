@@ -82,12 +82,12 @@ export function looksLikeOneShotScaffolder(command: string): boolean {
   return SCAFFOLD_FOREGROUND_PATTERNS.some((p) => p.test(command));
 }
 
-const PACKAGE_OPERATIONS: Record<string, ReadonlySet<string>> = {
-  npm: new Set(["i", "install", "add", "ci", "uninstall", "remove", "view", "info", "list", "ls", "pack", "publish", "audit", "outdated", "update"]),
-  yarn: new Set(["add", "install", "remove", "info", "list", "pack", "publish", "audit", "outdated", "upgrade"]),
-  pnpm: new Set(["add", "install", "i", "remove", "rm", "view", "info", "list", "ls", "pack", "publish", "audit", "outdated", "update"]),
-  bun: new Set(["add", "install", "remove", "rm", "update", "outdated"]),
-};
+const PACKAGE_OPERATIONS = new Map<string, ReadonlySet<string>>([
+  ["npm", new Set(["i", "install", "add", "ci", "uninstall", "remove", "view", "info", "list", "ls", "pack", "publish", "audit", "outdated", "update"])],
+  ["yarn", new Set(["add", "install", "remove", "info", "list", "pack", "publish", "audit", "outdated", "upgrade"])],
+  ["pnpm", new Set(["add", "install", "i", "remove", "rm", "view", "info", "list", "ls", "pack", "publish", "audit", "outdated", "update"])],
+  ["bun", new Set(["add", "install", "remove", "rm", "update", "outdated"])],
+]);
 
 const OPTIONS_WITH_VALUE = new Set([
   "--workspace", "-w", "--prefix", "--cwd", "--config", "--userconfig",
@@ -120,7 +120,7 @@ function looksLikeForegroundPackageOperation(segment: string): boolean {
   if (baseCommand(tokens[index]) === "corepack") index += 1;
 
   const manager = baseCommand(tokens[index]);
-  const operations = PACKAGE_OPERATIONS[manager];
+  const operations = PACKAGE_OPERATIONS.get(manager);
   if (!operations) return false;
   index += 1;
   while (tokens[index]?.startsWith("-")) {
