@@ -91,7 +91,7 @@ process.stdout.write(JSON.stringify(metadata) + "\\n");
       await exited.catch(() => undefined);
       metadata ??= await readRuntimeMetadata(sessionId);
       if (metadata) {
-        terminateProcessTree(metadata.hostPid, { signal: "SIGTERM" });
+        terminateProcessTree(metadata.hostPid, { signal: process.platform === "win32" ? "SIGKILL" : "SIGTERM" });
         await expect.poll(() => processAlive(metadata!.hostPid), { timeout: 15_000 }).toBe(false);
       }
       await rm(root, { recursive: true, force: true });
