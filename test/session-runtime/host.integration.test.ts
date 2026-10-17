@@ -291,7 +291,7 @@ socket.on("data", chunk => {
       process.stdout.write("GLOBAL_OUTPUT_MUST_NOT_APPEAR\r\n");
     } else if (frame.type === "view-attach" || frame.type === "view-resize") {
       dimensions.set(frame.clientId, frame.columns + "x" + frame.rows);
-      output(frame.clientId, frame.clientId + ":" + dimensions.get(frame.clientId) + ":backend:" + process.stdout.columns + "x" + process.stdout.rows + "\n");
+      output(frame.clientId, frame.clientId + ":" + dimensions.get(frame.clientId) + ":backend:" + (process.stdout.isTTY ? "pty" : "pipe") + "\n");
     } else if (frame.type === "view-input") {
       const input = Buffer.from(frame.data, "base64").toString("utf8");
       if (input === "m") setTimeout(() => send({type:"minimise",clientId:frame.clientId}), 40);
@@ -317,9 +317,8 @@ async function startCommandRuntime(options: {
   idleTimeoutMs?: number;
   independentViews?: boolean;
 } = {}): Promise<CommandRuntime | undefined> {
-  const capability = await probePtyCapability();
   const bun = findBunExecutable();
-  if (!capability.available && !bun) return undefined;
+  if (!options.independentViews && !(await probePtyCapability()).available && !bun) return undefined;
   const sessionId = `command-runtime-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const rebindId = `${sessionId}-rebound`;
   const fixturePath = join(
@@ -454,14 +453,13 @@ async function stopCommandRuntime(runtime: CommandRuntime): Promise<void> {
 }
 
 describe("session runtime host hardening", () => {
-  it("isolates each terminal's dimensions, input, output, and minimise request", async () => {
-    if (process.platform === "win32") return;
+  it("isolates each terminal's dimensions, input, output, and minimise request without a PTY", async () => {
     const runtime = await startCommandRuntime({ independentViews: true });
     if (!runtime) return;
     const desktop = await openTestClient(runtime.metadata, "desktop", { columns: 140, rows: 44 });
     const phone = await openTestClient(runtime.metadata, "phone", { columns: 38, rows: 20 });
     try {
-      await waitFor(async () => desktop.output().includes("desktop:140x44:backend:100x30") && phone.output().includes("phone:38x20:backend:100x30") ? true : undefined);
+      await waitFor(async () => desktop.output().includes("desktop:140x44:backend:pipe") && phone.output().includes("phone:38x20:backend:pipe") ? true : undefined);
       expect(desktop.output()).not.toContain("phone:");
       expect(phone.output()).not.toContain("desktop:");
       expect(desktop.output() + phone.output()).not.toContain("GLOBAL_OUTPUT_MUST_NOT_APPEAR");
@@ -472,7 +470,7 @@ describe("session runtime host hardening", () => {
       expect(phone.output()).not.toContain("desktop-private");
       const desktopBefore = desktop.output();
       sendFrame(phone.control, { type: "resize", columns: 28, rows: 12 });
-      await waitFor(async () => phone.output().includes("phone:28x12:backend:100x30") ? true : undefined);
+      await waitFor(async () => phone.output().includes("phone:28x12:backend:pipe") ? true : undefined);
       expect(desktop.output()).toBe(desktopBefore);
       sendFrame(desktop.control, { type: "input", data: Buffer.from("m").toString("base64") });
       sendFrame(phone.control, { type: "input", data: Buffer.from("phone-still-live").toString("base64") });

@@ -5,7 +5,7 @@ import type { Socket } from "node:net";
 import type { ResumeTarget } from "../ui-core/bootstrap/session-resume.js";
 import { resolveResumeTarget } from "../ui-core/bootstrap/session-resume.js";
 import { mintSessionId } from "../app/controllers/session-persistence.js";
-import { probePtyCapability } from "../interactive-session/transport-node-pty.js";
+import { setRuntimeDetachUnavailableReason } from "./availability.js";
 import { safeCwd } from "../os/cwd.js";
 import { updateOriginEnvironment } from "../os/update-origin.js";
 import { findBunExecutable, isBunRuntime } from "../os/bun-runtime.js";
@@ -713,15 +713,19 @@ function reportDetach(outcome: Extract<AttachOutcome, { kind: "detach" }>): void
   );
 }
 
-function runtimeEligible(options: DurableInteractiveOptions): boolean {
-  return (
-    process.env[RUNTIME_CHILD_ENV] !== "1" &&
-    process.env[RUNTIME_HOST_ENV] === undefined &&
-    process.env[RUNTIME_DISABLE_ENV] !== "1" &&
-    options.noHistory !== true &&
-    !getConfig().privateMode &&
-    Boolean(process.stdin.isTTY && process.stdout.isTTY)
-  );
+function runtimeIneligibleReason(options: DurableInteractiveOptions): string | undefined {
+  if (process.env[RUNTIME_CHILD_ENV] === "1" || process.env[RUNTIME_HOST_ENV] !== undefined) {
+    return "the runtime connection is not available in this child process; reconnect with clai --resume";
+  }
+  if (process.env[RUNTIME_DISABLE_ENV] === "1") {
+    return `${RUNTIME_DISABLE_ENV}=1 disables background sessions; unset it and restart clai`;
+  }
+  if (options.noHistory) return "--no-history disables background sessions; restart without --no-history";
+  if (getConfig().privateMode) return "private mode disables background sessions; disable private mode and restart clai";
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return "stdin and stdout must both be interactive terminals; restart clai without input/output redirection";
+  }
+  return undefined;
 }
 
 function runtimeFallbackMessage(error: unknown): string {
@@ -733,11 +737,10 @@ function runtimeFallbackMessage(error: unknown): string {
 export async function tryRunDurableInteractive(
   options: DurableInteractiveOptions,
 ): Promise<boolean> {
-  if (!runtimeEligible(options)) return false;
+  const reason = runtimeIneligibleReason(options);
+  setRuntimeDetachUnavailableReason(reason);
+  if (reason) return false;
   try {
-    const capability = await probePtyCapability();
-    if (!capability.available) return false;
-
     const outcome = await runRuntimeClient(options);
     if (outcome.kind === "exit") {
       process.exitCode = outcome.exitCode;
@@ -751,8 +754,10 @@ export async function tryRunDurableInteractive(
       process.exitCode = 1;
       return true;
     }
+    const detail = runtimeFallbackMessage(error);
+    setRuntimeDetachUnavailableReason(`runtime startup failed (${detail}); resolve the startup error and restart clai`);
     process.stderr.write(
-      `Durable session runtime unavailable (${runtimeFallbackMessage(error)}); using foreground mode.\n`,
+      `Durable session runtime unavailable (${detail}); using foreground mode.\n`,
     );
     return false;
   }

@@ -14,6 +14,7 @@ import {
 import { formatShortcutsReference } from "../actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../rendering/format-help.js";
 import { minimiseWindowsConsoleWindow } from "../../os/windows-console.js";
+import { runtimeDetachUnavailableMessage } from "../../session-runtime/availability.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
@@ -444,7 +445,7 @@ export async function handleMinimise(services: AppServices): Promise<void> {
   notice(
     services,
     "warn",
-    "background detach is unavailable in this launch; keep this terminal open or restart clai normally",
+    runtimeDetachUnavailableMessage(),
   );
 }
 

@@ -7,6 +7,12 @@ import {
 } from "../../src/session-runtime/launch.js";
 
 const probePtyCapability = vi.hoisted(() => vi.fn());
+const findLiveRuntime = vi.hoisted(() => vi.fn());
+
+vi.mock("../../src/session-runtime/discovery.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/session-runtime/discovery.js")>()),
+  findLiveRuntime,
+}));
 
 vi.mock("../../src/interactive-session/transport-node-pty.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/interactive-session/transport-node-pty.js")>()),
@@ -17,6 +23,10 @@ import {
   runtimeClientAuthFrame,
   tryRunDurableInteractive,
 } from "../../src/session-runtime/client.js";
+import {
+  runtimeDetachUnavailableMessage,
+  setRuntimeDetachUnavailableReason,
+} from "../../src/session-runtime/availability.js";
 
 const runtimeEnv = [RUNTIME_CHILD_ENV, RUNTIME_DISABLE_ENV, RUNTIME_HOST_ENV] as const;
 const savedEnv = new Map<string, string | undefined>();
@@ -33,6 +43,8 @@ function setTty(target: NodeJS.ReadStream | NodeJS.WriteStream, value: boolean):
 describe("durable interactive client fallback", () => {
   beforeEach(() => {
     probePtyCapability.mockReset();
+    findLiveRuntime.mockReset();
+    setRuntimeDetachUnavailableReason(undefined);
     updateConfig({ privateMode: false });
     stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
     stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
@@ -83,19 +95,24 @@ describe("durable interactive client fallback", () => {
   it("gates no-history, private, disabled, and non-TTY launches without probing PTY", async () => {
     const options = { entryPath: "/tmp/clai-entry.js", childArgs: [] } as const;
     expect(await tryRunDurableInteractive({ ...options, noHistory: true })).toBe(false);
+    expect(runtimeDetachUnavailableMessage()).toContain("restart without --no-history");
     updateConfig({ privateMode: true });
     expect(await tryRunDurableInteractive(options)).toBe(false);
+    expect(runtimeDetachUnavailableMessage()).toContain("disable private mode and restart");
     updateConfig({ privateMode: false });
     process.env[RUNTIME_DISABLE_ENV] = "1";
     expect(await tryRunDurableInteractive(options)).toBe(false);
+    expect(runtimeDetachUnavailableMessage()).toContain(RUNTIME_DISABLE_ENV);
     delete process.env[RUNTIME_DISABLE_ENV];
     setTty(process.stdout, false);
     expect(await tryRunDurableInteractive(options)).toBe(false);
+    expect(runtimeDetachUnavailableMessage()).toContain("input/output redirection");
     expect(probePtyCapability).not.toHaveBeenCalled();
+    expect(findLiveRuntime).not.toHaveBeenCalled();
   });
 
-  it("warns and falls back to foreground when runtime capability setup throws", async () => {
-    probePtyCapability.mockRejectedValueOnce(new Error("PTY probe exploded\nwith detail"));
+  it("retains the startup failure for the minimise command", async () => {
+    findLiveRuntime.mockRejectedValueOnce(new Error("runtime setup exploded\nwith detail"));
     const stderr = vi
       .spyOn(process.stderr, "write")
       .mockImplementation((() => true) as typeof process.stderr.write);
@@ -105,23 +122,18 @@ describe("durable interactive client fallback", () => {
     });
     expect(handled).toBe(false);
     expect(stderr).toHaveBeenCalledWith(
-      expect.stringMatching(/Durable session runtime unavailable \(PTY probe exploded with detail\); using foreground mode\./),
+      expect.stringMatching(/Durable session runtime unavailable \(runtime setup exploded with detail\); using foreground mode\./),
     );
+    expect(runtimeDetachUnavailableMessage()).toContain("runtime startup failed (runtime setup exploded with detail)");
   });
 
-  it("quietly falls back when no PTY implementation is available", async () => {
-    probePtyCapability.mockResolvedValueOnce({
-      available: false,
-      platform: process.platform,
-      reason: "not installed",
-    });
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((() => true) as typeof process.stderr.write);
+  it.each([RUNTIME_CHILD_ENV, RUNTIME_HOST_ENV])("does not recursively launch from %s", async (key) => {
+    process.env[key] = "1";
     expect(await tryRunDurableInteractive({
       entryPath: "/tmp/clai-entry.js",
       childArgs: [],
     })).toBe(false);
-    expect(stderr).not.toHaveBeenCalled();
+    expect(findLiveRuntime).not.toHaveBeenCalled();
+    expect(probePtyCapability).not.toHaveBeenCalled();
   });
 });
