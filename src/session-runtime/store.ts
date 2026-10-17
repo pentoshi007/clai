@@ -1,6 +1,7 @@
 import { chmod, open, readFile, readdir, rename, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { processIdentityTracker } from "../os/process-identity.js";
 import { processAlive } from "../os/process-tree.js";
 import { RUNTIME_PROTOCOL_VERSION, type RuntimeMetadata } from "./types.js";
@@ -62,6 +63,20 @@ export function createRuntimeToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+async function replaceMetadataFile(temporary: string, path: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporary, path);
+      return;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      const sharingError = code === "EPERM" || code === "EACCES" || code === "EBUSY";
+      if (process.platform !== "win32" || !sharingError || attempt >= 8) throw error;
+      await delay(Math.min(25 * 2 ** attempt, 200));
+    }
+  }
+}
+
 export async function writeRuntimeMetadata(metadata: RuntimeMetadata): Promise<void> {
   await ensureRuntimeDirectories();
   const path = runtimeMetadataPath(metadata.sessionId);
@@ -76,7 +91,7 @@ export async function writeRuntimeMetadata(metadata: RuntimeMetadata): Promise<v
   try {
     await writeFile(temporary, body, { mode: 0o600 });
     await chmod(temporary, 0o600).catch(() => undefined);
-    await rename(temporary, path);
+    await replaceMetadataFile(temporary, path);
     await chmod(path, 0o600).catch(() => undefined);
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);
