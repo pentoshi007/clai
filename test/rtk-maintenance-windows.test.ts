@@ -55,6 +55,7 @@ describe("winget exit classification", () => {
   it("treats no-applicable-update and already-installed codes as nothing to do", async () => {
     const { classifyWingetExit } = await import("../src/tools/rtk/install.js");
     expect(classifyWingetExit(2316632107)).toEqual({ ok: false, noOp: "no applicable update found" });
+    expect(classifyWingetExit(2316632107 | 0)).toEqual({ ok: false, noOp: "no applicable update found" });
     expect(classifyWingetExit(0x8a15004f)).toEqual({
       ok: false,
       noOp: "the available version is not newer than the installed one",
@@ -76,19 +77,19 @@ describe("Windows rtk maintenance with winget", () => {
   const stubs = async (): Promise<{ install: typeof import("../src/tools/rtk/install.js"); binary: typeof import("../src/tools/rtk/binary.js") }> => {
     const binary = await import("../src/tools/rtk/binary.js");
     vi.mocked(binary.forgetRtk).mockImplementation(() => undefined);
-    vi.mocked(binary.probeRtkPath).mockResolvedValue(ready("0.24"));
+    vi.mocked(binary.probeRtkPath).mockResolvedValue(ready("0.24.0"));
     return { install: await import("../src/tools/rtk/install.js"), binary };
   };
 
   it("reports rtk as already the latest instead of failing on winget's no-applicable-update code", async () => {
     const { install, binary } = await stubs();
-    vi.mocked(binary.detectRtk).mockResolvedValue(ready("0.24"));
+    vi.mocked(binary.detectRtk).mockResolvedValue(ready("0.24.0"));
     winget.exitCode = 2316632107;
     const result = await install.runRtkMaintenance("update");
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.installer).toBe("winget");
-      expect(result.status.version).toBe("0.24");
+      expect(result.installer).toBeUndefined();
+      expect(result.status.version).toBe("0.24.0");
     }
   });
 
@@ -108,7 +109,7 @@ describe("Windows rtk maintenance with winget", () => {
 
   it("accepts winget's already-installed code during install", async () => {
     const { install, binary } = await stubs();
-    vi.mocked(binary.detectRtk).mockResolvedValueOnce({ state: "missing" }).mockResolvedValue(ready("0.24"));
+    vi.mocked(binary.detectRtk).mockResolvedValueOnce({ state: "missing" }).mockResolvedValue(ready("0.24.0"));
     winget.exitCode = 0x8a150061;
     const result = await install.runRtkMaintenance("install");
     expect(result.ok).toBe(true);

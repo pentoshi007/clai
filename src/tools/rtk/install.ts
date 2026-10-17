@@ -13,6 +13,7 @@ import {
   currentTarget,
   installDir,
   manualInstructions,
+  meetsMinimum,
   pathContains,
   releaseForTag,
   resolveLatestTag,
@@ -146,7 +147,7 @@ const runStep = (step: Step, timeoutMs: number): Promise<StepOutcome> =>
     let child: ChildProcess;
     try {
       child = spawn(step.command, [...step.args], {
-        stdio: ["ignore", "ignore", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
         detached: !WINDOWS,
         env: {
@@ -288,9 +289,10 @@ export const classifyWingetExit = (
   code: number | undefined,
 ): { readonly ok: false; readonly noOp: string } | { readonly ok: false; readonly reason: string } | undefined => {
   if (code === undefined) return undefined;
-  const noOp = WINGET_NOTHING_TO_DO[code];
+  const normalized = code >>> 0;
+  const noOp = WINGET_NOTHING_TO_DO[normalized];
   if (noOp) return { ok: false, noOp };
-  const hint = WINGET_ERROR_HINTS[code];
+  const hint = WINGET_ERROR_HINTS[normalized];
   return hint ? { ok: false, reason: `${hint} (winget exited with code ${code})` } : undefined;
 };
 
@@ -302,7 +304,7 @@ const runWinget = async (context: Context): Promise<MethodOutcome> => {
   const result = await runStep(
     {
       command: winget,
-      args: [verb, "--id", "rtk-ai.rtk", "--exact", "--silent", "--disable-interactivity", "--accept-source-agreements", "--accept-package-agreements"],
+      args: [verb, "--id", "rtk-ai.rtk", "--exact", "--source", "winget", "--silent", "--disable-interactivity", "--accept-source-agreements", "--accept-package-agreements"],
     },
     WINGET_TIMEOUT_MS,
   );
@@ -439,7 +441,7 @@ export const planUpdate = (
   if (origin === "brew") return ["brew", ...fallbacks];
   if (origin === "winget") return windows ? ["winget", ...fallbacks] : fallbacks;
   if (origin === "cargo") return ["cargo"];
-  return fallbacks;
+  return windows && origin === undefined ? ["winget", ...fallbacks] : fallbacks;
 };
 
 const verifyInstalled = async (context: Context): Promise<RtkStatus> =>
@@ -452,7 +454,7 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
   const before = await detectRtk(true);
   const action: RtkMaintenanceAction = requested === "update" && before.state !== "ready" ? "install" : requested;
   const target = currentTarget();
-  if (action === "install" && before.state === "ready") {
+  if (action === "install" && before.state === "ready" && meetsMinimum(before.version)) {
     return { ok: true, action, status: before, previousVersion: before.version };
   }
   let latest: string | undefined;
@@ -500,7 +502,7 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
           continue;
         }
         const after = await verifyInstalled(context);
-        if (after.state === "ready") {
+        if (after.state === "ready" && meetsMinimum(after.version)) {
           return {
             ok: true,
             action,
@@ -519,18 +521,23 @@ const perform = async (requested: RtkMaintenanceAction): Promise<RtkMaintenanceR
         continue;
       }
       const after = await verifyInstalled(context);
-      if (after.state === "ready") {
-        return {
-          ok: true,
-          action,
-          status: after,
-          installer: METHOD_LABEL[method],
-          ...(before.state === "ready" ? { previousVersion: before.version } : {}),
-          ...(context.pathWarning ? { pathWarning: context.pathWarning } : {}),
-        };
+      if (after.state !== "ready" || !meetsMinimum(after.version)) {
+        failures.push(`${METHOD_LABEL[method]}: ran but rtk still is not usable (\`rtk rewrite\` did not respond or the version is unsupported)`);
+        continue;
       }
-      failures.push(`${METHOD_LABEL[method]}: ran but rtk still is not usable (\`rtk rewrite\` did not respond)`);
-      if (action === "update") break;
+      const comparison = latest ? compareSemver(after.version, latest) : undefined;
+      if (latest && (comparison === undefined || comparison < 0)) {
+        failures.push(`${METHOD_LABEL[method]}: rtk ${after.version} is still installed (latest published is ${latest})`);
+        continue;
+      }
+      return {
+        ok: true,
+        action,
+        status: after,
+        installer: METHOD_LABEL[method],
+        ...(before.state === "ready" ? { previousVersion: before.version } : {}),
+        ...(context.pathWarning ? { pathWarning: context.pathWarning } : {}),
+      };
     }
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => undefined);

@@ -65,12 +65,13 @@ describe("rtk release target detection", () => {
     expect(currentTarget("linux", "x64")?.asset).toBe("rtk-x86_64-unknown-linux-musl.tar.gz");
     expect(currentTarget("linux", "arm64")?.asset).toBe("rtk-aarch64-unknown-linux-gnu.tar.gz");
     expect(currentTarget("win32", "x64")?.asset).toBe("rtk-x86_64-pc-windows-msvc.zip");
+    expect(currentTarget("win32", "arm64")).toEqual(currentTarget("win32", "x64"));
   });
 
   it("returns undefined for unsupported platforms and arches", () => {
     expect(currentTarget("freebsd", "x64")).toBeUndefined();
     expect(currentTarget("linux", "s390x")).toBeUndefined();
-    expect(currentTarget("win32", "arm64")).toBeUndefined();
+    expect(currentTarget("win32", "ia32")).toBeUndefined();
     expect(operatingSystem("aix")).toBeUndefined();
     expect(machineOf("ppc64")).toBeUndefined();
   });
@@ -94,6 +95,7 @@ describe("rtk semver handling", () => {
   it("enforces the rewrite-capable minimum", () => {
     expect(meetsMinimum("0.23.0")).toBe(true);
     expect(meetsMinimum("0.50.0")).toBe(true);
+    expect(meetsMinimum("1.0.0")).toBe(true);
     expect(meetsMinimum("0.22.9")).toBe(false);
     expect(meetsMinimum(undefined)).toBe(false);
   });
@@ -139,6 +141,8 @@ describe("rtk install method planning", () => {
   it("updates through the recorded origin but keeps fallbacks", () => {
     expect(planUpdate(false, "brew", linux)).toEqual(["brew", "binary", "cargo"]);
     expect(planUpdate(true, "winget", windows)).toEqual(["winget", "binary", "cargo"]);
+    expect(planUpdate(true, undefined, windows)).toEqual(["winget", "binary", "cargo"]);
+    expect(planUpdate(true, "binary", windows)).toEqual(["binary", "cargo"]);
     expect(planUpdate(false, "cargo", linux)).toEqual(["cargo"]);
     expect(planUpdate(false, undefined, linux)).toEqual(["binary", "cargo"]);
     expect(planUpdate(false, undefined, undefined)).toEqual(["cargo"]);
@@ -159,6 +163,10 @@ describe("rtk Windows guidance", () => {
     expect(text).toContain("winget install rtk-ai.rtk");
     expect(text).toContain("rtk-x86_64-pc-windows-msvc.zip");
     expect(text).toContain("`rtk.exe` on your PATH");
+    expect(text).toContain("winget upgrade --id rtk-ai.rtk --exact --source winget");
+    expect(text).toContain("requires Rust");
+    expect(text).toContain("rtk gain");
+    expect(text).toContain("Windows 11");
     expect(text).not.toContain("brew install rtk");
   });
 

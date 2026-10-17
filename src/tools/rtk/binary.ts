@@ -5,6 +5,7 @@ import { delimiter, dirname, join } from "node:path";
 import { augmentedPathEnv, findExecutable } from "../../os/command.js";
 import { getDataDir } from "../../store/paths.js";
 import { rtkSessionEnv } from "../../store/rtk-usage.js";
+import { compareSemver, installDir } from "./release.js";
 
 export interface RtkPathEntry {
   readonly dir: string;
@@ -199,21 +200,20 @@ export const probeRtkPath = async (path: string, timeoutMs: number = PROBE_TIMEO
 const probe = async (): Promise<RtkStatus> => {
   try {
     const onPath = await findExecutable("rtk");
-    const candidates = [...new Set([...(onPath ? [onPath] : []), ...knownLocations()])].filter(
-      executable,
-    );
+    const candidates = [...new Set([...(onPath ? [onPath] : []), join(installDir(), BINARY), ...knownLocations()])].filter(executable);
     let incompatible: RtkStatus | undefined;
+    let best: Extract<RtkStatus, { state: "ready" }> | undefined;
     for (const path of candidates) {
       const candidate = await probeCandidate(path);
-      if (candidate.state === "ready") {
-        return path === onPath
-          ? { state: "ready", path, version: candidate.version }
-          : { state: "ready", path, version: candidate.version, pathEntry: shimPathEntry(path) };
+      if (candidate.state === "ready" && (!best || compareSemver(candidate.version, best.version) === 1)) {
+        best = { state: "ready", path, version: candidate.version };
+        if (!WINDOWS && !process.env.RTK_INSTALL_DIR?.trim()) break;
       }
       if (candidate.state === "incompatible") {
         incompatible ??= { state: "incompatible", path, version: candidate.version };
       }
     }
+    if (best) return best.path === onPath ? best : { ...best, pathEntry: shimPathEntry(best.path) };
     return incompatible ?? { state: "missing" };
   } catch {
     return { state: "missing" };
