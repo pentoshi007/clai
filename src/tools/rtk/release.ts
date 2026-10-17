@@ -53,8 +53,10 @@ export const currentTarget = (
   arch: string = process.arch,
 ): RtkTarget | undefined => {
   const os = operatingSystem(platform);
-  const machine = machineOf(arch);
-  if (!os || !machine) return undefined;
+  const nativeMachine = machineOf(arch);
+  if (!os || !nativeMachine) return undefined;
+  const machine = os === "windows" && nativeMachine === "aarch64" && !ASSETS.windows.aarch64
+    ? "x86_64" : nativeMachine;
   const asset = ASSETS[os][machine];
   return asset ? { os, machine, asset } : undefined;
 };
@@ -93,8 +95,8 @@ export const compareSemver = (left: string, right: string): number | undefined =
 };
 
 export const meetsMinimum = (version: string | undefined): boolean => {
-  const parsed = parseSemver(version);
-  return parsed !== undefined && parsed.minor >= RTK_MIN_MINOR;
+  const comparison = compareSemver(version ?? "", `0.${RTK_MIN_MINOR}.0`);
+  return comparison !== undefined && comparison >= 0;
 };
 
 export class RtkNetworkError extends Error {
@@ -301,11 +303,17 @@ export const manualInstructions = (target: RtkTarget | undefined): string => {
     ? `download ${target.asset} from ${RTK_RELEASES}/latest, extract it, and put \`${binaryName}\` on your PATH`
     : `download the ${RTK_RELEASES}/latest asset for your platform, extract it, and put \`${binaryName}\` on your PATH`;
   const managers = windows
-    ? [`  • winget:  winget install rtk-ai.rtk`, `  • Cargo:   cargo install --git ${RTK_GITHUB}`]
-    : [`  • Homebrew: brew install rtk`, `  • Cargo:    cargo install --git ${RTK_GITHUB}`];
+    ? [
+        "  • Install: winget install rtk-ai.rtk --exact --source winget",
+        "  • Update:  winget upgrade --id rtk-ai.rtk --exact --source winget",
+      ]
+    : ["  • Homebrew: brew install rtk"];
   return [
     `install rtk manually (${RTK_SUPPORTED}):`,
     ...managers,
     `  • Binary:   ${binary}`,
+    ...(windows ? ["  • ARM64: the Windows x64 binary requires x64 emulation (Windows 11); otherwise build with Cargo."] : []),
+    `  • Cargo (requires Rust): cargo install --git ${RTK_GITHUB} --locked --force`,
+    "  • Verify: rtk --version and rtk gain (do not use the unrelated `cargo install rtk` crate)",
   ].join("\n");
 };
