@@ -67,9 +67,9 @@ export class ClassicAppWiring implements WiringHost {
   feedGenerationValue = 0;
   feedNowValue: number;
   liveOffsetValue = 0;
+  feedNavigationVersion = 0;
   maxLiveOffset = 0;
   feedViewportRows = 0;
-  feedWindowAnchor: WiringHost["feedWindowAnchor"] = undefined;
   selectedFeedItemId: string | undefined;
   scrollAboveValue = 0;
   scrollBelowValue = 0;

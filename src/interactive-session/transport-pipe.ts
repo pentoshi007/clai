@@ -24,7 +24,9 @@ class PipeTransport implements SessionTransport {
   readonly kind = "pipe" as const;
   readonly pid: number;
   readonly processGroupId: number | undefined;
-  readonly identity: string | undefined;
+  private processIdentity: string | undefined;
+
+  get identity(): string | undefined { return this.processIdentity; }
 
   private readonly outputListeners = new Set<(event: TransportOutput) => void>();
   private readonly exitListeners = new Set<(outcome: ProcessOutcome) => void>();
@@ -43,7 +45,6 @@ class PipeTransport implements SessionTransport {
   constructor(private readonly child: ChildProcess) {
     this.pid = child.pid ?? -1;
     this.processGroupId = supportsProcessGroups() ? child.pid : undefined;
-    this.identity = processIdentityTracker.capture(child.pid, { refresh: true });
 
     child.stdout?.on("data", (chunk: Buffer) => this.emitOutput("stdout", chunk));
     child.stderr?.on("data", (chunk: Buffer) => this.emitOutput("stderr", chunk));
@@ -64,6 +65,10 @@ class PipeTransport implements SessionTransport {
       this.outputDrained = true;
       this.resolveOutputDrain();
     });
+  }
+
+  async captureIdentity(): Promise<void> {
+    this.processIdentity = await processIdentityTracker.captureAsync(this.pid, { refresh: true });
   }
 
   private emitOutput(stream: "stdout" | "stderr", chunk: Buffer): void {
@@ -258,8 +263,10 @@ async function finishPipeLaunch(
   let transport: PipeTransport | undefined;
   let identityNotified = false;
   try {
+    const spawned = waitForSpawn(child);
     if (child.pid) {
       transport = new PipeTransport(child);
+      await transport.captureIdentity();
       request.onLaunchIdentity?.({
         pid: transport.pid,
         processGroupId: transport.processGroupId,
@@ -267,7 +274,7 @@ async function finishPipeLaunch(
       });
       identityNotified = true;
     }
-    const error = await waitForSpawn(child);
+    const error = await spawned;
     if (error) {
       throw new LaunchFailure(
         error.code ?? "UNKNOWN",
@@ -286,6 +293,7 @@ async function finishPipeLaunch(
     }
     transport ??= new PipeTransport(child);
     if (!identityNotified) {
+      await transport.captureIdentity();
       request.onLaunchIdentity?.({
         pid: transport.pid,
         processGroupId: transport.processGroupId,

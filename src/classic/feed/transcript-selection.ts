@@ -57,7 +57,7 @@ function blockText(block: FeedBlock): string {
 function semanticBlock(block: FeedBlock): SemanticBlock {
   let semantic = semanticBlocks.get(block);
   if (!semantic) {
-    semantic = { id: block.key ?? block.itemId, text: blockText(block) };
+    semantic = { id: block.key ?? block.itemId, get text() { return blockText(block); } };
     semanticBlocks.set(block, semantic);
   }
   return semantic;

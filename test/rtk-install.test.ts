@@ -128,9 +128,9 @@ describe("rtk install method planning", () => {
   const linux = currentTarget("linux", "x64");
   const windows = currentTarget("win32", "x64");
 
-  it("prefers a package manager, then a verified binary, then cargo", () => {
+  it("preserves Homebrew on POSIX and uses a verified portable binary first on Windows", () => {
     expect(planInstall(false, linux)).toEqual(["brew", "binary", "cargo"]);
-    expect(planInstall(true, windows)).toEqual(["winget", "binary", "cargo"]);
+    expect(planInstall(true, windows)).toEqual(["binary", "winget", "cargo"]);
   });
 
   it("skips the binary step when no build is published for the platform", () => {
@@ -141,8 +141,10 @@ describe("rtk install method planning", () => {
   it("updates through the recorded origin but keeps fallbacks", () => {
     expect(planUpdate(false, "brew", linux)).toEqual(["brew", "binary", "cargo"]);
     expect(planUpdate(true, "winget", windows)).toEqual(["winget", "binary", "cargo"]);
-    expect(planUpdate(true, undefined, windows)).toEqual(["winget", "binary", "cargo"]);
+    expect(planUpdate(true, undefined, windows)).toEqual(["binary", "winget", "cargo"]);
     expect(planUpdate(true, "binary", windows)).toEqual(["binary", "cargo"]);
+    expect(planUpdate(true, "cargo", windows)).toEqual(["cargo", "binary"]);
+    expect(planUpdate(true, "cargo", undefined)).toEqual(["cargo"]);
     expect(planUpdate(false, "cargo", linux)).toEqual(["cargo"]);
     expect(planUpdate(false, undefined, linux)).toEqual(["binary", "cargo"]);
     expect(planUpdate(false, undefined, undefined)).toEqual(["cargo"]);

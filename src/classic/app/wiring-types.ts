@@ -28,12 +28,6 @@ export interface ResizeSource {
   off(event: "resize", listener: () => void): unknown;
 }
 
-export interface FeedWindowAnchor {
-  readonly totalRows: number;
-  readonly columns: number;
-  readonly generation: number;
-}
-
 export interface ClassicAppSnapshot {
   readonly session: SessionState;
   readonly transcript: TranscriptState;
@@ -50,6 +44,7 @@ export interface ClassicAppSnapshot {
   readonly animationTick: number;
   readonly feedGeneration: number;
   readonly liveOffset: number;
+  readonly feedNavigationVersion: number;
   readonly planVisible: boolean;
   readonly queueVisible: boolean;
   readonly queueSelected: number;
@@ -84,9 +79,9 @@ export interface WiringHost {
   feedGenerationValue: number;
   feedNowValue: number;
   liveOffsetValue: number;
+  feedNavigationVersion: number;
   maxLiveOffset: number;
   feedViewportRows: number;
-  feedWindowAnchor: FeedWindowAnchor | undefined;
   selectedFeedItemId: string | undefined;
   scrollAboveValue: number;
   scrollBelowValue: number;

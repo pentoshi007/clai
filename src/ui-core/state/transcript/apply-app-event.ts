@@ -41,23 +41,6 @@ function pushNotice(
   });
 }
 
-const MAX_COMPACTION_ORIGINAL_ITEMS = 2_000;
-
-function snapshotCompactionOriginals(
-  state: TranscriptState,
-  compactedId: string,
-): readonly TranscriptItem[] {
-  const items: TranscriptItem[] = [];
-  for (const id of state.order) {
-    if (id === compactedId) continue;
-    const item = state.byId.get(id);
-    if (item) items.push(item);
-  }
-  return items.length <= MAX_COMPACTION_ORIGINAL_ITEMS
-    ? items
-    : items.slice(items.length - MAX_COMPACTION_ORIGINAL_ITEMS);
-}
-
 function appendTurnSummary(
   state: TranscriptState,
   event: AnyAppEvent,
@@ -401,7 +384,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "compaction-completed": {
       const id = `compacted-${event.payload.compactionId}`;
       const existing = withSeq.byId.get(id);
-      const originalItems = snapshotCompactionOriginals(withSeq, id);
       const completed: CompactedItem =
         existing?.kind === "compacted"
           ? {
@@ -418,7 +400,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
               error: undefined,
               startedAt: existing.startedAt ?? existing.timestamp,
               endedAt: event.timestamp,
-              originalItems,
+              originalItems: [],
             }
           : {
               id,
@@ -435,7 +417,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
               streaming: false,
               startedAt: event.timestamp,
               endedAt: event.timestamp,
-              originalItems,
+              originalItems: [],
             };
       return existing
         ? updateItem(withSeq, id, () => completed)

@@ -135,7 +135,6 @@ jobs:
       - name: Process-tree termination contract
         run: npx vitest run test/process-tree.test.ts --reporter=dot
       - uses: oven-sh/setup-bun@v2
-        if: runner.os == 'Windows'
         with:
           bun-version: 1.3.14
       - name: Updater provenance, execution and native PowerShell contracts
@@ -144,8 +143,10 @@ jobs:
         run: npx vitest run test/store/session-prompts.test.ts test/app/session-prompts.test.ts test/classic/app/prompts.test.ts test/ui-core/composer/saved-prompt-history.test.ts test/session-runtime/terminal-options.test.ts test/session-runtime/view-manager.test.ts test/ui-core/capabilities.test.ts --reporter=dot
       - name: Minimise and Windows console fallback
         run: npx vitest run test/ui-core/minimise-command.test.ts test/os/windows-console.test.ts --reporter=dot
-      - name: RTK install planning and Windows guidance
-        run: npx vitest run test/rtk-install.test.ts test/rtk-maintenance-windows.test.ts --reporter=dot
+      - name: Detached runtime startup, reattachment and process identity
+        run: npx vitest run test/session-runtime/startup.test.ts test/session-runtime/startup-identity.test.ts test/session-runtime/startup.integration.test.ts test/session-runtime/cli-pipe.integration.test.ts test/session-runtime/launch.test.ts test/os/process-identity.test.ts test/interactive-session/pipe-process.test.ts --reporter=dot
+      - name: RTK portable installation, updates and archive integrity
+        run: npx vitest run test/rtk-install.test.ts test/rtk-maintenance-windows.test.ts test/rtk-windows-binary-fallback.test.ts test/rtk-windows-portable.test.ts test/rtk-archive.test.ts test/rtk-binary-selection.test.ts test/rtk-command.test.ts --reporter=dot
       - name: MCP transports, authentication, and storage
         run: npx vitest run test/mcp --reporter=dot
       - if: runner.os != 'Windows'

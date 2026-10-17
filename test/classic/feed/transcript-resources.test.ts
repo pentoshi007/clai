@@ -168,3 +168,51 @@ describe("classic full transcript resources", () => {
     expect(text).toContain("Some diff details were not retained");
   });
 });
+
+describe("Classic visible resource lifetime", () => {
+  it("does not load off-screen artifacts and releases them when leaving the viewport", async () => {
+    const f = await fixture();
+    await f.resources.prepare(f.state, []);
+    expect(f.resources.tail(f.item.toolCallId)).toBe(f.spool.tail(f.item.toolCallId));
+    await f.resources.prepare(f.state, [f.item.id]);
+    expect(f.resources.tail(f.item.toolCallId)).toContain("FIRST");
+    await f.resources.prepare(f.state, []);
+    expect(f.resources.tail(f.item.toolCallId)).toBe(f.spool.tail(f.item.toolCallId));
+  });
+
+  it("does not invalidate unrelated tool versions when another artifact loads", async () => {
+    const f = await fixture();
+    const other = transcriptItems(f.turn.state).find((item): item is ToolItem => item.kind === "tool" && item.toolCallId !== f.item.toolCallId)!;
+    const before = f.resources.version(other.toolCallId);
+    await f.resources.prepare(f.state, [f.item.id]);
+    expect(f.resources.version(other.toolCallId)).toBe(before);
+  });
+
+  it("cancels queued and active reads on disposal without publishing stale results", async () => {
+    const f = await fixture("FIRST\n" + "body\n".repeat(100_000));
+    let notifications = 0;
+    f.resources.subscribe(() => { notifications += 1; });
+    const pending = f.resources.prepare(f.state, [f.item.id]);
+    f.resources.dispose();
+    await pending;
+    expect(notifications).toBe(0);
+    expect(f.resources.tail(f.item.toolCallId)).toBe(f.spool.tail(f.item.toolCallId));
+    await f.resources.prepare(f.state, [f.item.id]);
+    expect(f.resources.tail(f.item.toolCallId)).toContain("FIRST");
+  });
+});
+
+it("invalidates only the tool owning a completed diff snapshot", async () => {
+  const f = await fixture();
+  const other = transcriptItems(f.turn.state).find((item): item is ToolItem => item.kind === "tool" && item.toolCallId !== f.item.toolCallId)!;
+  const after = Array.from({ length: 80 }, (_, i) => `const VALUE_${i} = ${i};`).join("\n");
+  const snapshotPath = join(f.dir, "scoped-diff.txt");
+  await writeFile(snapshotPath, after);
+  const change = buildFileChange({ path: "scope.ts", kind: "create", before: "", after, snapshotPath });
+  const item = { ...f.item, name: "fs.write", fileChanges: [change] };
+  const before = f.resources.version(other.toolCallId);
+  const own = f.resources.version(item.toolCallId);
+  await f.resources.prepare({ ...f.state, byId: new Map([[item.id, item]]) });
+  expect(f.resources.version(other.toolCallId)).toBe(before);
+  expect(f.resources.version(item.toolCallId)).not.toBe(own);
+});

@@ -44,7 +44,7 @@ import {
 import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
 import { shouldDefaultFormattedView } from "../../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.js";
-import { selectableRowStyle } from "./selectable-line.js";
+import { StyledTextBlock } from "./styled-text-block.js";
 import { parseFsReadSections } from "../../../tools/fs/read-sections.js";
 import { middleClipText, renderColumns } from "../../../ui-core/rendering/text-width.js";
 
@@ -714,15 +714,7 @@ export function ToolCard(props: {
             {formatMdRead ? " OUTPUT · formatted " : " OUTPUT "}
           </text>
           {mdPreview && mdPreview.length > 0 ? (
-            mdPreview.map((content, i) => (
-              <text
-                key={`md-${i}`}
-                content={content ?? " "}
-                selectable
-                wrapMode="none"
-                style={selectableRowStyle(theme.statusBackground)}
-              />
-            ))
+            <StyledTextBlock lines={mdPreview} background={theme.statusBackground} />
           ) : (
             <OutputLines lines={lines} theme={theme} gutterFg={theme.toolOutput} />
           )}

@@ -408,6 +408,7 @@ export function createCompositionRoot(
       plan.dispose();
       omnirushSessionUpload.dispose();
       session.dispose();
+      transcript.dispose();
       void mcp.closeAll();
     },
   };

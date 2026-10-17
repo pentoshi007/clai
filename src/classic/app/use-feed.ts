@@ -9,7 +9,8 @@ import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import type { IntroBlockInput } from "../blocks/intro-lines.js";
 import type { BlockContext } from "../blocks/block-context.js";
 import { blockContextFor, buildFeedBlocks, FeedBlockCache, type FeedBlock } from "../feed/feed-blocks.js";
-import { planTranscriptWindow, type TranscriptWindow } from "../feed/transcript-window.js";
+import type { TranscriptWindow } from "../feed/transcript-window.js";
+import { TranscriptViewport } from "../feed/transcript-viewport.js";
 import { createInkTheme, type InkTheme } from "../render/ink-theme.js";
 import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import { TranscriptResources } from "../feed/transcript-resources.js";
@@ -21,6 +22,8 @@ export interface FeedSnapshot {
   readonly window: TranscriptWindow;
   readonly columns: number;
   readonly generation: number;
+  readonly navigationVersion: number;
+  readonly requestedOffset: number;
 }
 
 function displayWorkdir(workdir: string): string {
@@ -69,6 +72,7 @@ export interface UseFeedInput {
   readonly now: number;
   readonly generation: number;
   readonly liveOffset: number;
+  readonly navigationVersion: number;
   readonly intro: IntroBlockInput | undefined;
 }
 
@@ -91,10 +95,12 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
   const ink = useInkTheme(input.services);
   const cache = useRef<FeedBlockCache | undefined>(undefined);
   cache.current ??= new FeedBlockCache();
+  const viewport = useRef<TranscriptViewport | undefined>(undefined);
+  viewport.current ??= new TranscriptViewport();
   const spool = input.services.session.spool;
   const resources = useMemo(() => new TranscriptResources(spool), [spool]);
   const resourceVersion = useSyncExternalStore(resources.subscribe, resources.snapshot);
-  useEffect(() => { void resources.prepare(state); }, [resources, state]);
+  useEffect(() => () => resources.dispose(), [resources]);
 
   const view = useMemo(
     () => ({
@@ -110,9 +116,21 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
   const context = useMemo(() => blockContextFor(state, view), [state, view]);
   const blocks = useStableBlocks(useMemo(() => buildFeedBlocks(state, view, cache.current), [state, view]));
   const window = useMemo(
-    () => planTranscriptWindow(blocks, input.liveBudgetRows, input.liveOffset),
-    [blocks, input.liveBudgetRows, input.liveOffset],
+    () => viewport.current!.plan(blocks, input.liveBudgetRows, {
+      columns: input.columns,
+      generation: input.generation,
+      navigationVersion: input.navigationVersion,
+      offset: input.liveOffset,
+    }),
+    [blocks, input.liveBudgetRows, input.liveOffset, input.columns, input.generation, input.navigationVersion],
   );
+  useEffect(() => { void resources.prepare(state, window.visibleItemIds); }, [resources, state, window.visibleItemIds]);
 
-  return { ink, context, blocks, window, columns: input.columns, generation: input.generation };
+  return {
+    ink, context, blocks, window,
+    columns: input.columns,
+    generation: input.generation,
+    navigationVersion: input.navigationVersion,
+    requestedOffset: input.liveOffset,
+  };
 }

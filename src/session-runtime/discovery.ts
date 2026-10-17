@@ -48,7 +48,7 @@ export async function probeRuntime(
 }
 
 async function reapIfStale(metadata: RuntimeMetadata): Promise<void> {
-  const comparison = processIdentityTracker.compare(
+  const comparison = await processIdentityTracker.compareAsync(
     metadata.hostPid,
     metadata.hostIdentity,
   );

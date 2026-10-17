@@ -409,3 +409,41 @@ describe("thinking focus", () => {
     expect(store.getState().focusedThinkingId).toBeUndefined();
   });
 });
+
+describe("TranscriptStore disposal", () => {
+  it("flushes accepted text, removes pending timers and ignores late events", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new TranscriptStore();
+      const seq = new EventSequencer(asSessionId("dispose"));
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.dispatch(seq.build("assistant-delta", { text: "retained 日本語 🧪" }, undefined));
+      expect(vi.getTimerCount()).toBe(1);
+      store.dispose();
+      store.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      expect([...store.getState().byId.values()][0]).toMatchObject({ text: "retained 日本語 🧪" });
+      store.dispatch(seq.build("assistant-delta", { text: "late" }, undefined));
+      vi.runAllTimers();
+      expect(listener).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      expect([...store.getState().byId.values()][0]).toMatchObject({ text: "retained 日本語 🧪" });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("detaches forked views without affecting their source or retained snapshot", () => {
+    const source = new TranscriptStore();
+    const seq = new EventSequencer(asSessionId("fork-dispose"));
+    source.dispatch(seq.build("turn-started", { prompt: "first" }, undefined));
+    const fork = source.fork();
+    const listener = vi.fn();
+    fork.transcript.subscribe(listener);
+    fork.dispose();
+    source.dispatch(seq.build("turn-started", { prompt: "second" }, undefined));
+    expect(listener).not.toHaveBeenCalled();
+    expect(fork.transcript.getState().order).toHaveLength(1);
+    expect(source.getState().order).toHaveLength(2);
+    source.dispose();
+  });
+});

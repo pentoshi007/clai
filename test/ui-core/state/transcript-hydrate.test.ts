@@ -694,12 +694,13 @@ describe("prepareSessionVisualInput", () => {
 
     const visual = prepareSessionVisualInput(transcript, messages);
 
-    expect(visual.transcript).toHaveLength(transcript.length);
+    expect(visual.transcript).toHaveLength(transcript.length + 1);
+    expect(visual.transcript?.[0]).toMatchObject({ id: "old", text: "old" });
     expect(visual.messages).toHaveLength(messages.length);
     const tool = visual.transcript!.find((item) => item.kind === "tool");
     expect(tool?.kind === "tool" ? tool.output.length : 0).toBe(80_000);
     expect(tool?.kind === "tool" ? tool.argsDisplay.length : 0).toBe(80_000);
-    const compacted = visual.transcript![0]!;
+    const compacted = visual.transcript![1]!;
     expect(compacted.kind === "compacted" ? compacted.summary.length : 0).toBe(80_000);
     expect(compacted.kind === "compacted" ? compacted.originalItems : undefined).toEqual([]);
     expect(visual.messages.at(-1)?.content.length).toBe(80_000);

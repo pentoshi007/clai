@@ -3,7 +3,7 @@ import type { FeedBlock } from "./feed-blocks.js";
 export const BLOCK_GAP_ROWS = 1;
 
 export function blockHeight(block: FeedBlock): number {
-  return block.lines.length;
+  return block.rowCount ?? block.lines.length;
 }
 
 export function totalHeight(blocks: readonly FeedBlock[], gap = BLOCK_GAP_ROWS): number {

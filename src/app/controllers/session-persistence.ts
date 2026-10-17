@@ -26,10 +26,19 @@ function mintWriterGeneration(): string {
   return `${String(lastWriterEpochMicros).padStart(16, "0")}-${String(process.pid).padStart(8, "0")}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+interface PendingSave {
+  messages: readonly ChatMessage[];
+  options: SaveSessionOptions;
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+  readonly reject: (error: unknown) => void;
+}
+
 export class SessionPersistenceQueue {
   private writerGeneration = mintWriterGeneration();
   private revision = 0;
-  private chain: Promise<void> = Promise.resolve();
+  private readonly pending: PendingSave[] = [];
+  private writing = false;
 
   constructor(private readonly port: PersistencePort) {}
 
@@ -48,19 +57,49 @@ export class SessionPersistenceQueue {
     options: Omit<SaveSessionOptions, "revision">,
   ): Promise<void> {
     const snapshot = messages.map((message) => ({ ...message }));
-    const transcript = options.transcript ? [...options.transcript] : undefined;
-    const revision = ++this.revision;
-    const writerGeneration = this.writerGeneration;
-    const run = this.chain.then(() =>
-      this.port.saveSession(snapshot, {
-        ...options,
-        transcript,
-        writerGeneration,
-        revision,
-      }),
-    );
-    this.chain = run.catch(() => undefined);
-    return run;
+    const savedOptions: SaveSessionOptions = {
+      ...options,
+      transcript: options.transcript ? [...options.transcript] : undefined,
+      writerGeneration: this.writerGeneration,
+      revision: ++this.revision,
+    };
+    const latest = this.pending.at(-1);
+    if (
+      options.sessionId !== undefined &&
+      latest?.options.sessionId === options.sessionId &&
+      latest.options.writerGeneration === this.writerGeneration
+    ) {
+      latest.messages = snapshot;
+      latest.options = { ...savedOptions, name: savedOptions.name ?? latest.options.name };
+      return latest.promise;
+    }
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
+    });
+    this.pending.push({ messages: snapshot, options: savedOptions, promise, resolve, reject });
+    void this.drain();
+    return promise;
+  }
+
+  private async drain(): Promise<void> {
+    if (this.writing) return;
+    this.writing = true;
+    try {
+      while (this.pending.length > 0) {
+        const next = this.pending.shift()!;
+        try {
+          await this.port.saveSession(next.messages, next.options);
+          next.resolve();
+        } catch (error) {
+          next.reject(error);
+        }
+      }
+    } finally {
+      this.writing = false;
+    }
   }
 }
 

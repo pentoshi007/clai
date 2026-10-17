@@ -208,11 +208,9 @@ describe("history JSONL sidecar index", () => {
     for (const [i, id] of sessionIds.entries()) {
       const rec = await getSession(id);
       expect(rec?.messages[1]?.content).toBe(`answer ${i}`);
-      const compacted = rec?.transcript?.find((t) => t.kind === "compacted");
-      expect(compacted && compacted.kind === "compacted"
-        ? compacted.originalItems[0]
-        : undefined,
-      ).toMatchObject({ id: `orig-${i}` });
+      expect(rec?.transcript?.map((item) => item.id)).toEqual([`u-${i}`, `orig-${i}`, `c-${i}`]);
+      expect(rec?.transcript?.find((item) => item.id === `orig-${i}`)).toMatchObject({ text: `earlier ${i}` });
+      expect(rec?.transcript?.find((item) => item.kind === "compacted")).toMatchObject({ originalItems: [] });
     }
   }, 30_000);
 });

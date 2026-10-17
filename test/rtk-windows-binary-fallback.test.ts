@@ -1,11 +1,13 @@
 import { EventEmitter } from "node:events";
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { zipFixture } from "./helpers/zip-fixture.js";
+
+const fixture = zipFixture([{ name: "rtk.exe", body: "verified release fixture" }]);
 
 const originalPlatform = process.platform;
 Object.defineProperty(process, "platform", { value: "win32" });
@@ -20,32 +22,26 @@ vi.mock("../src/os/command.js", async (original) => ({
 vi.mock("../src/tools/rtk/binary.js", async (original) => ({
   ...await original<typeof import("../src/tools/rtk/binary.js")>(),
   detectRtk: vi.fn(async () => state.badProbe ? { state: "missing" } : { ...old, version: state.afterVersion }),
+  inspectRtkPath: vi.fn(async (path: string) => ({ state: "ready", path, version: "0.24.0" })),
   probeRtkPath: vi.fn(async (path: string) => ({ state: "ready", path, version: "0.24.0" })),
   forgetRtk: vi.fn(),
 }));
 vi.mock("../src/tools/rtk/release.js", async (original) => ({
   ...await original<typeof import("../src/tools/rtk/release.js")>(),
   resolveLatestTag: vi.fn(async () => "v0.24.0"),
-  releaseForTag: vi.fn(async () => ({ tag: "v0.24.0", version: "0.24.0", checksums: new Map([["rtk-x86_64-pc-windows-msvc.zip", createHash("sha256").update(Buffer.from("verified release fixture")).digest("hex")]]) })),
+  releaseForTag: vi.fn(async () => ({ tag: "v0.24.0", version: "0.24.0", checksums: new Map([["rtk-x86_64-pc-windows-msvc.zip", createHash("sha256").update(fixture).digest("hex")]]) })),
   currentTarget: () => ({ os: "windows", machine: "x86_64", asset: "rtk-x86_64-pc-windows-msvc.zip" }),
   installDir: () => state.dir,
 }));
 vi.mock("../src/tools/rtk/download.js", () => ({
-  downloadToFile: vi.fn(async (_url: string, file: string) => writeFile(file, Buffer.from("verified release fixture"))),
+  downloadToFile: vi.fn(async (_url: string, file: string) => writeFile(file, fixture)),
 }));
 vi.mock("node:child_process", async (original) => ({
   ...await original<typeof import("node:child_process")>(),
-  spawn: vi.fn((command: string, _args: string[], options: { cwd?: string }) => {
+  spawn: vi.fn(() => {
     const child = new EventEmitter() as ChildProcess;
     Object.assign(child, { stderr: new EventEmitter(), stdout: new EventEmitter(), pid: 4242, kill: () => true });
-    queueMicrotask(() => {
-      if (command === "powershell.exe") {
-        writeFileSync(join(options.cwd!, "rtk.exe"), "fixture executable");
-        child.emit("close", 0, null);
-      } else {
-        child.emit("close", state.code, null);
-      }
-    });
+    queueMicrotask(() => child.emit("close", state.code, null));
     return child;
   }),
 }));
