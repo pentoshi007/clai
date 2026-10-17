@@ -2,6 +2,7 @@ import type { ProviderId } from "../types.js";
 import { FAMILYLESS_ENDPOINT_LAYERS } from "./provider-profile-layers.js";
 
 export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
+  constellation: [],
   free: [/deepseek/i, /kimi/i, /minimax/i, /mimo/i, /nemotron/i],
   freebuff: [
     /deepseek/i,

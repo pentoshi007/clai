@@ -81,6 +81,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "constellation",
+    provider: "constellation",
+    family: "chat_completions",
+    model: "openai/gpt-5-4-mini",
+    auth: { apiKey: "sk-gw-conformance" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "bynara",
     provider: "bynara",
     family: "chat_completions",

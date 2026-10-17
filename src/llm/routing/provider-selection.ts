@@ -16,6 +16,7 @@ import { mistralProvider } from "../mistral.js";
 import { riverProvider } from "../river.js";
 import { mantleProvider } from "../aws-mantle.js";
 import { bynaraProvider } from "../bynara.js";
+import { constellationProvider } from "../constellation.js";
 import { getCustomProviderSync } from "../custom-providers.js";
 import { explabsProvider } from "../explabs.js";
 import { fireworksProvider } from "../fireworks.js";
@@ -60,6 +61,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   river: riverProvider,
   nvidia: nvidiaProvider,
   agentrouter: agentrouterProvider,
+  constellation: constellationProvider,
   "aws-mantle": mantleProvider,
   ollama: ollamaProvider,
   bynara: bynaraProvider,
@@ -94,6 +96,7 @@ const fallbackOrder: ProviderId[] = [
   "gemini",
   "openrouter",
   "agentrouter",
+  "constellation",
   "bynara",
   "openai",
   "anthropic",

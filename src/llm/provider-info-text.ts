@@ -5,6 +5,28 @@ import {
 } from "./provider-identity.js";
 
 export const providerInfo: Record<string, string> = {
+  constellation: `Constellation Gate — OpenAI-compatible model gateway
+
+  API          https://gateway.constellationgate.ai/v1
+  Credential   GATE_API_KEY or clai set constellation (sk-gw-…)
+  Default      openai/gpt-5-4-mini
+  Models       Live /models catalog; context/output limits, reasoning, vision, and tools
+
+  /effort uses advertised or runtime-learned settings for the selected model.
+  Gate's catalog currently advertises reasoning support, not effort vocabularies;
+  clai learns missing settings through the shared reasoning negotiation lifecycle.
+  Stable message/tool prefixes preserve upstream cache reuse. Cached input,
+  cache writes, reasoning tokens, and live context use API usage counters.
+  Cache hits depend on the selected upstream and are not guaranteed.
+  Streaming, local tools, parallel calls, subagents, key rotation, and cancellation
+  use the shared provider lifecycle. This integration uses pay-through-Gate auth;
+  bring-your-own-upstream credentials are not configured by this provider.
+  Key validation sends a one-token generation because /models is public.
+  Gate balance and model-specific access restrictions still apply.
+
+Setup: clai set constellation · clai use constellation · /model
+Keys: https://app.constellationgate.ai/
+Docs: https://docs.constellationgate.ai/guides/openai-sdk/`,
   river: `River — chat, images, function tools, and streamed reasoning
 
   API          https://api.river.ai/v1

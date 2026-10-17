@@ -106,6 +106,7 @@ An environment credential is also used directly when no stored credentials take 
 | AgentRouter | `agentrouter` | `AGENTROUTER_API_KEY` |
 | AWS Mantle | `aws-mantle` | `ANTHROPIC_API_KEY` for this integration's configured endpoint. |
 | Bynara | `bynara` | `BYNARA_API_KEY` |
+| Constellation Gate | `constellation` | `GATE_API_KEY` |
 | ExpLabs | `explabs` | `EXPLABS_API_KEY` |
 | Fireworks | `fireworks` | `FIREWORKS_API_KEY` |
 | Hetzner | `hetzner` | `HETZNER_API_KEY` |
@@ -131,6 +132,14 @@ Discovered limits are cached for 30 minutes and retained locally for later sessi
 Agent turns retry temporary HTTP 429 failures up to four times, with visible waits of 5, 8, 10, and 15 seconds. This includes gateway responses that report an unavailable upstream endpoint. Shorter provider retry hints can shorten a wait. Standalone requests allow three retries by default.
 
 Retries preserve the conversation and tool definitions; cancelling the turn cancels the wait. Explicit billing or insufficient account quota errors require an account or provider change. If the gateway remains unavailable after the retry budget, select another model with `/model` or provider with `/provider`. Cross-provider fallback follows `/fallback` and `/freeonly` settings.
+
+### Constellation Gate
+
+Create a `sk-gw-…` key in the [Gate dashboard](https://app.constellationgate.ai/), then run `clai set constellation` and `clai use constellation`, or set `GATE_API_KEY`. Aliases include `gate`, `constellationgate`, and `constellation-gate`. The integration uses [pay-through-Gate authentication](https://docs.constellationgate.ai/getting-started/authentication/), not BYOK upstream headers; prepaid balance and model access rules apply. Key verification sends a one-token request because the catalog is public and does not validate credentials.
+
+The [OpenAI-compatible endpoint](https://docs.constellationgate.ai/guides/openai-sdk/) is `https://gateway.constellationgate.ai/v1`. `/model` discovers model IDs, context/output limits, vision, reasoning, and function-tool support from `/models`, cached per credential for one minute. Transient catalog failures retain the last successful catalog for that credential; authentication failures are not hidden. The default is `openai/gpt-5-4-mini`.
+
+Streaming, tools and tool-result replay, parallel calls, images, cancellation, multiple keys, subagents, and usage accounting use the shared provider lifecycle in both UIs. `/context` uses catalog limits and reported prompt usage. `/effort` follows advertised or runtime-learned settings; reasoning tags alone do not imply every effort is supported. Unchanged message and tool prefixes preserve automatic upstream cache reuse; cached input and cache-write counters are reported when returned by the API. Cache hits are controlled by Gate and its upstream providers, not guaranteed by clai.
 
 ### Mistral
 

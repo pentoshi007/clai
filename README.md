@@ -193,6 +193,7 @@ API, keyless, and local integrations:
 | AgentRouter | `agentrouter` | `AGENTROUTER_API_KEY` |
 | AWS Mantle | `aws-mantle` | `ANTHROPIC_API_KEY` for the configured Mantle endpoint. |
 | Bynara | `bynara` | `BYNARA_API_KEY` |
+| Constellation Gate | `constellation` | `GATE_API_KEY` |
 | ExpLabs | `explabs` | `EXPLABS_API_KEY` |
 | Fireworks | `fireworks` | `FIREWORKS_API_KEY` |
 | Hetzner | `hetzner` | `HETZNER_API_KEY` |

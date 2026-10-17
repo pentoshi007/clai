@@ -360,7 +360,7 @@ export type ReasoningEvidence =
   "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
 function familyForProvider(provider: ProviderId, model: string) {
-  if (provider === "mistral" || provider === "river") return undefined;
+  if (provider === "mistral" || provider === "river" || provider === "constellation") return undefined;
   const family = modelFamilyFor(model);
   const providerExcluded =
     family?.id === "mimo-v2" && provider !== "mimo";
@@ -395,7 +395,7 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   if (
-    (provider === "mistral" || provider === "cline" || provider === "river") &&
+    (provider === "mistral" || provider === "cline" || provider === "river" || provider === "constellation") &&
     modelCatalogFacts(provider, model)?.reasoning?.supported === false
   ) return false;
   loadLearnedCapabilities();
@@ -534,6 +534,11 @@ export function catalogAdvertisedEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  if (provider === "constellation") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning;
+    if (reasoning?.supported === false) return [];
+    return wireRejectionEfforts.get(reasoningKey(provider, model)) ?? catalogEffortList(reasoning?.supportedEfforts);
+  }
   if (provider === "river") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     return reasoning?.supported === false ? [] : catalogEffortList(reasoning?.supportedEfforts) ?? [];
@@ -597,7 +602,7 @@ export function registerModelCatalog(
   );
   for (const model of models) {
     if (!model.id) continue;
-    if (provider === "cline") {
+    if (provider === "cline" || provider === "constellation") {
       catalogReasoningEfforts.delete(reasoningKey(provider, model.id));
       catalogReasoningSupport.delete(reasoningKey(provider, model.id));
     }

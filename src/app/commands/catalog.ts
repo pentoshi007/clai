@@ -274,6 +274,7 @@ export const knownModels: Record<string, string[]> = {
     "gpt-5.5",
   ],
   "aws-mantle": [],
+  constellation: ["openai/gpt-5-4-mini"],
   bynara: [
     "mimo-v2.5-free",
     "mimo-v2.5-pro-free",
