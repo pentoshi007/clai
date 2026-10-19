@@ -6,7 +6,7 @@ import type {
   TaskState,
 } from "../../store/plan.js";
 import { foregroundActiveTask, planProgress } from "../../store/plan.js";
-import stringWidth from "string-width";
+import { terminalWidth } from "./text-width.js";
 import { sanitizeDisplayText } from "./sanitize-display.js";
 
 const planGraphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -208,19 +208,19 @@ export function wrapPlanText(text: string, width: number): string[] {
   const clean = sanitizeDisplayText(text).replace(/\s+/g, " ").trim();
   if (!clean) return [""];
   const max = Number.isFinite(width) ? Math.max(1, Math.floor(width)) : 1;
-  if (stringWidth(clean) <= max) return [clean];
+  if (terminalWidth(clean) <= max) return [clean];
   const lines: string[] = [];
   let line = "";
   let columns = 0;
   for (const { segment } of planGraphemes.segment(clean)) {
-    const piece = stringWidth(segment) > max ? "…" : segment;
-    const size = stringWidth(piece);
+    const piece = terminalWidth(segment) > max ? "…" : segment;
+    const size = terminalWidth(piece);
     while (line && columns + size > max) {
       const space = line.lastIndexOf(" ");
       const split = piece === " " || space <= 0 ? line.length : space;
       lines.push(line.slice(0, split).trimEnd());
       line = line.slice(split).trimStart();
-      columns = stringWidth(line);
+      columns = terminalWidth(line);
     }
     if (line || piece !== " ") {
       line += piece;

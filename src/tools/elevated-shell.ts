@@ -22,7 +22,7 @@ const TTY_ONLY_MESSAGE =
 
 const WINDOWS_ELEVATION_MESSAGE =
   "This command needs elevation, which clai cannot automate on Windows without a terminal. " +
-  "Run it in an interactive session with terminal.start, or from an elevated terminal.";
+  "You can run without elevation, start an interactive session with terminal.start, or use an elevated terminal.";
 
 function truncateForPrompt(command: string, max = 160): string {
   const oneLine = command.replace(/\s+/g, " ").trim();

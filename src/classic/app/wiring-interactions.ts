@@ -29,6 +29,7 @@ export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
     host.schedulePaint();
   }
   host.maxLiveOffset = window.maxOffset;
+  host.feedLayoutPending = window.layoutPending;
   host.feedViewportRows = window.viewportRows;
   host.scrollAboveValue = window.scrollAbove;
   host.scrollBelowValue = window.offset;
@@ -291,7 +292,8 @@ export function closePanel(host: WiringHost): boolean {
 export const WHEEL_SCROLL_ROWS = 3;
 
 export function scrollFeed(host: WiringHost, delta: number): void {
-  const next = Math.max(0, Math.min(host.maxLiveOffset, host.liveOffsetValue + delta));
+  const limit = host.feedLayoutPending && delta > 0 ? Number.MAX_SAFE_INTEGER : host.maxLiveOffset;
+  const next = Math.max(0, Math.min(limit, host.liveOffsetValue + delta));
   host.feedNavigationVersion += 1;
   if (next === host.liveOffsetValue) {
     host.schedulePaint(true);
@@ -309,7 +311,7 @@ export function scrollFeed(host: WiringHost, delta: number): void {
 }
 
 export function showTranscriptTopHint(host: WiringHost): void {
-  host.liveOffsetValue = host.maxLiveOffset;
+  host.liveOffsetValue = host.feedLayoutPending ? Number.MAX_SAFE_INTEGER : host.maxLiveOffset;
   host.feedNavigationVersion += 1;
   host.schedulePaint();
   notify(
@@ -449,6 +451,7 @@ export function bumpFeedGeneration(host: WiringHost): void {
   host.liveOffsetValue = 0;
   host.feedNavigationVersion += 1;
   host.maxLiveOffset = 0;
+  host.feedLayoutPending = false;
   host.feedNowValue = host.now();
 }
 
