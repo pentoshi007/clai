@@ -32,6 +32,7 @@ import type {
   ClassicAppSnapshot,
   ResizeSource,
   WiringHost,
+  AnimationDemand,
 } from "./wiring-types.js";
 
 export type { ClassicAppSnapshot } from "./wiring-types.js";
@@ -80,6 +81,7 @@ export class ClassicAppWiring implements WiringHost {
   previousOrder: readonly string[] = [];
   tickValue = 0;
   animationTickValue = 0;
+  caretAwakeAt: number;
   cwdValue = safeCwd();
   branchValue: string | undefined;
   contextLimitEditingValue = false;
@@ -122,6 +124,7 @@ export class ClassicAppWiring implements WiringHost {
     this.columns = size.columns;
     this.rows = size.rows;
     this.feedNowValue = this.now();
+    this.caretAwakeAt = this.feedNowValue;
     this.previousSessionId = this.services.session.sessionId;
     const promptHistory = new PromptHistory();
     this.disposers.push(bindSavedPromptHistory(promptHistory, this.services.session));
@@ -274,6 +277,7 @@ export class ClassicAppWiring implements WiringHost {
 
   handleData = (chunk: string): void => {
     if (this.disposed) return;
+    this.caretAwakeAt = this.now();
     this.router.handleAll(this.input.push(chunk));
     this.scheduleDecoderFlush();
     if (this.paintTimer) this.schedulePaint(true);
@@ -441,8 +445,8 @@ export class ClassicAppWiring implements WiringHost {
     return interactions.needsCadence(this);
   }
 
-  needsAnimation(): boolean {
-    return interactions.needsAnimation(this);
+  animationDemand(): AnimationDemand {
+    return interactions.animationDemand(this);
   }
 
   dispose(): void {
