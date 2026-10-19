@@ -44,6 +44,8 @@ import {
   type TerminalCapabilityReport,
 } from "./capabilities.js";
 import { onTransportEvent, type TransportEvent } from "../../llm/transport-events.js";
+import { onOwnershipFailure } from "../../os/permissions.js";
+import { repairClaiOwnership } from "../../store/ownership.js";
 import {
   bindOmnirushSessionUpload,
   type OmnirushSessionUploadBinding,
@@ -113,6 +115,9 @@ export interface AppServices {
   readonly hasOtherViews?: (() => boolean) | undefined;
   dispose(): void;
 }
+
+const STARTUP_OWNERSHIP_REPAIR_DELAY_MS = 2_000;
+const STARTUP_OWNERSHIP_REPAIR_MS = 1_500;
 
 export function createCompositionRoot(
   options: CompositionOptions = {},
@@ -359,6 +364,17 @@ export function createCompositionRoot(
     jobs: ports.jobs,
     interruptible,
   });
+  let ownershipReported = false;
+  const unsubscribeOwnership = onOwnershipFailure((failure) => {
+    if (ownershipReported) return;
+    ownershipReported = true;
+    session.notice(
+      "warn",
+      `Could not return ${failure.path} to ${failure.username} (${failure.code}); other clai sessions may not be able to read it. Fix with: sudo chown -R ${failure.username} "${failure.path}"`,
+    );
+  });
+  const startupRepair = setTimeout(() => { void repairClaiOwnership(STARTUP_OWNERSHIP_REPAIR_MS).catch(() => undefined); }, STARTUP_OWNERSHIP_REPAIR_DELAY_MS);
+  startupRepair.unref?.();
   const unsubscribePlanJobs = ports.jobs.subscribe((change) => {
     if (change.type !== "notification") return;
     const job = ports.jobs.get(change.jobId);
@@ -410,6 +426,8 @@ export function createCompositionRoot(
       disposed = true;
       unsubscribeTransport();
       unsubscribePlanJobs();
+      unsubscribeOwnership();
+      clearTimeout(startupRepair);
       interruptible.cancelAll();
       overlay.dispose();
       selection.dispose();

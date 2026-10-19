@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { fstatSync, readFileSync } from "node:fs";
+import { isatty } from "node:tty";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -10,7 +11,16 @@ export interface InvokingUser {
   readonly home: string;
 }
 
-let cached: { key: string; user: InvokingUser } | undefined;
+interface InvokingSource {
+  readonly uid?: number | undefined;
+  readonly username?: string | undefined;
+  readonly required: boolean;
+}
+
+const UNSET_LOGIN_UID = 4_294_967_295;
+const USERNAME = /^[\w.-]+$/;
+
+let cached: { key: string; user: InvokingUser | undefined } | undefined;
 
 function numericId(value: string | undefined): number | undefined {
   if (!value || !/^\d+$/.test(value)) return undefined;
@@ -18,41 +28,103 @@ function numericId(value: string | undefined): number | undefined {
   return Number.isSafeInteger(id) && id >= 0 ? id : undefined;
 }
 
-function passwdUser(raw: string, uid: number): InvokingUser | undefined {
+function userId(value: string | undefined): number | undefined {
+  const id = numericId(value);
+  return id ? id : undefined;
+}
+
+function passwdUser(raw: string, match: { uid?: number | undefined; username?: string | undefined }): InvokingUser | undefined {
   for (const line of raw.split("\n")) {
-    const [username, , userId, groupId, , home] = line.split(":");
+    const [username, , rawUid, groupId, , home] = line.split(":");
+    const uid = numericId(rawUid);
     const gid = numericId(groupId);
-    if (numericId(userId) === uid && gid !== undefined && username && home && isAbsolute(home)) {
+    if (uid === undefined || gid === undefined || !username || !home || !isAbsolute(home)) continue;
+    if ((match.uid === undefined || match.uid === uid) && (match.username === undefined || match.username === username)) {
       return { uid, gid, username, home };
     }
   }
   return undefined;
 }
 
-function lookupUser(uid: number): InvokingUser | undefined {
-  if (process.platform !== "darwin") {
-    const local = passwdUser(readFileSync("/etc/passwd", "utf8"), uid);
-    if (local) return local;
-    return passwdUser(execFileSync("/usr/bin/getent", ["passwd", String(uid)], { encoding: "utf8", timeout: 1_000 }), uid);
-  }
-  const username = process.env.SUDO_USER;
-  if (!username || !/^[\w.-]+$/.test(username)) return undefined;
+function linuxUser(match: { uid?: number | undefined; username?: string | undefined }): InvokingUser | undefined {
+  const local = passwdUser(readFileSync("/etc/passwd", "utf8"), match);
+  if (local) return local;
+  const key = match.uid !== undefined ? String(match.uid) : match.username!;
+  return passwdUser(execFileSync("/usr/bin/getent", ["passwd", key], { encoding: "utf8", timeout: 1_000 }), match);
+}
+
+function macUsername(uid: number): string | undefined {
+  const raw = execFileSync("/usr/bin/dscl", [".", "-search", "/Users", "UniqueID", String(uid)], { encoding: "utf8", timeout: 1_000 });
+  const username = /^(\S+)/.exec(raw)?.[1];
+  return username && USERNAME.test(username) ? username : undefined;
+}
+
+function macUser(match: { uid?: number | undefined; username?: string | undefined }): InvokingUser | undefined {
+  const username = match.username ?? (match.uid !== undefined ? macUsername(match.uid) : undefined);
+  if (!username || !USERNAME.test(username)) return undefined;
   const raw = execFileSync("/usr/bin/dscl", [".", "-read", `/Users/${username}`, "NFSHomeDirectory", "UniqueID", "PrimaryGroupID"], { encoding: "utf8", timeout: 1_000 });
   const home = /^NFSHomeDirectory:\s*(.+)$/m.exec(raw)?.[1]?.trim();
-  const userId = numericId(/^UniqueID:\s*(\d+)$/m.exec(raw)?.[1]);
+  const uid = numericId(/^UniqueID:\s*(\d+)$/m.exec(raw)?.[1]);
   const gid = numericId(/^PrimaryGroupID:\s*(\d+)$/m.exec(raw)?.[1]);
-  return userId === uid && gid !== undefined && home && isAbsolute(home) ? { uid, gid, username, home } : undefined;
+  if (uid === undefined || gid === undefined || !home || !isAbsolute(home)) return undefined;
+  return match.uid === undefined || match.uid === uid ? { uid, gid, username, home } : undefined;
+}
+
+function lookupUser(source: InvokingSource): InvokingUser | undefined {
+  const user = process.platform === "darwin"
+    ? macUser({ uid: source.uid, username: source.username })
+    : linuxUser(source.uid !== undefined ? { uid: source.uid } : { username: source.username });
+  return user && user.uid !== 0 ? user : undefined;
+}
+
+function loginUid(): number | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const id = userId(readFileSync("/proc/self/loginuid", "utf8").trim());
+    return id === UNSET_LOGIN_UID ? undefined : id;
+  } catch {
+    return undefined;
+  }
+}
+
+function terminalOwner(): number | undefined {
+  for (const fd of [0, 1, 2]) {
+    if (!isatty(fd)) continue;
+    try {
+      const owner = fstatSync(fd).uid;
+      if (owner > 0) return owner;
+    } catch {}
+  }
+  return undefined;
+}
+
+function invokingSource(): InvokingSource | undefined {
+  const sudo = userId(process.env.SUDO_UID);
+  if (sudo) {
+    const username = process.env.SUDO_USER;
+    return { uid: sudo, ...(username && USERNAME.test(username) ? { username } : {}), required: true };
+  }
+  const pkexec = userId(process.env.PKEXEC_UID);
+  if (pkexec) return { uid: pkexec, required: true };
+  const doas = process.env.DOAS_USER;
+  if (doas && USERNAME.test(doas) && doas !== "root") return { username: doas, required: true };
+  const login = loginUid();
+  if (login) return { uid: login, required: false };
+  const owner = terminalOwner();
+  return owner ? { uid: owner, required: false } : undefined;
 }
 
 export function getInvokingUser(): InvokingUser | undefined {
   if (process.platform === "win32" || process.getuid?.() !== 0) return undefined;
-  const uid = numericId(process.env.SUDO_UID);
-  if (uid === undefined || uid === 0) return undefined;
-  const key = `${process.platform}:${uid}:${process.env.SUDO_USER ?? ""}`;
+  const source = invokingSource();
+  if (!source) return undefined;
+  const key = `${process.platform}:${source.uid ?? ""}:${source.username ?? ""}:${source.required}`;
   if (cached?.key === key) return cached.user;
   let user: InvokingUser | undefined;
-  try { user = lookupUser(uid); } catch {}
-  if (!user) throw new Error(`Cannot resolve the invoking sudo user (${uid}); refusing to create a separate root history store.`);
+  try { user = lookupUser(source); } catch {}
+  if (!user && source.required) {
+    throw new Error(`Cannot resolve the invoking user (${source.username ?? source.uid}); refusing to create a separate root history store.`);
+  }
   cached = { key, user };
   return user;
 }

@@ -1,5 +1,6 @@
 import type { AppServices } from "./composition-root.js";
 import { settleWithin } from "../../os/settle-within.js";
+import { repairClaiOwnership } from "../../store/ownership.js";
 
 export const SHUTDOWN_CLEANUP_BUDGET_MS = 2_500;
 
@@ -21,6 +22,7 @@ export async function shutdownServices(
     await services.session.shutdown();
   } finally {
     const upload = services.omnirushSessionUpload.close();
-    await settleWithin(Promise.allSettled([cleanup, upload]), deadline - Date.now());
+    const ownership = repairClaiOwnership(Math.max(0, deadline - Date.now()));
+    await settleWithin(Promise.allSettled([cleanup, upload, ownership]), deadline - Date.now());
   }
 }
