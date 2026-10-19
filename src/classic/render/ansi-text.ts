@@ -17,21 +17,33 @@ interface Token {
   readonly value: string;
 }
 
-function asciiLetter(code: number): boolean {
-  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+function csiEnd(text: string, end: number): number {
+  while (end < text.length) {
+    const code = text.charCodeAt(end);
+    if (code >= 0x40 && code <= 0x7e) return end + 1;
+    if (code < 0x20 || code > 0x3f) return end;
+    end += 1;
+  }
+  return end;
+}
+
+function oscEnd(text: string, end: number): number {
+  while (end < text.length) {
+    const code = text.charCodeAt(end);
+    if (code === 0x07) return end + 1;
+    if (code === 0x1b && text.charCodeAt(end + 1) === 0x5c) return end + 2;
+    end += 1;
+  }
+  return end;
 }
 
 function escapeEnd(text: string, index: number): number {
   let end = index + 1;
   const introducer = text[end];
   if (introducer === "[") {
-    end += 1;
-    while (end < text.length && !asciiLetter(text.charCodeAt(end))) end += 1;
-    end += 1;
+    end = csiEnd(text, end + 1);
   } else if (introducer === "]") {
-    end += 1;
-    while (end < text.length && text.charCodeAt(end) !== 0x07) end += 1;
-    end += 1;
+    end = oscEnd(text, end + 1);
   } else {
     end += 1;
   }
