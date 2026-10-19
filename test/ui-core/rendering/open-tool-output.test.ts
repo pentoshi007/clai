@@ -256,3 +256,102 @@ describe("large output pager", () => {
     opened?.source?.dispose();
   });
 });
+
+describe("tool pager regions", () => {
+  const capture = () => {
+    const calls: { body: string; source: { dispose(): void } | undefined; highlightPath: string | undefined; regions: Record<string, unknown> | undefined }[] = [];
+    const services = {
+      overlay: {
+        openPager(
+          _title: string,
+          body: string,
+          source: { dispose(): void } | undefined,
+          highlightPath: string | undefined,
+          _markdown: string | undefined,
+          regions: Record<string, unknown> | undefined,
+        ) {
+          calls.push({ body, source, highlightPath, regions });
+          return true;
+        },
+      },
+      session: { notice() {}, spool: { tail: () => "file1.txt\nfile2.txt" } },
+    } as never;
+    return { calls, services };
+  };
+
+  it("marks every line of a multi-line shell.exec command as input, blank lines included", async () => {
+    const { calls, services } = capture();
+    const command = "cat > /tmp/x.sh <<'EOF'\necho one\n\necho two\nEOF";
+    await openToolOutputPager(services, {
+      toolCallId: "shell-heredoc",
+      name: "shell.exec",
+      argsDisplay: command,
+      artifactPath: undefined,
+    } as never);
+    const opened = calls[0]!;
+    expect(opened.regions).toEqual({ inputEnd: 5 });
+    const lines = opened.body.split("\n");
+    expect(lines.slice(0, 5).join("\n")).toBe(`command: ${command}`);
+    expect(lines.slice(6)).toEqual(["file1.txt", "file2.txt"]);
+  });
+
+  it("bounds fs.read highlighting to the verbatim file body", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-fs-read-regions-"));
+    tempDirs.push(dir);
+    const path = join(dir, "sample.ts");
+    const content = "const a = 1;\nok\n── banner ──\nartifact: kept\nexport {};";
+    await writeFile(path, content);
+    const { calls, services } = capture();
+    await openToolOutputPager(services, {
+      toolCallId: "fs-read-regions",
+      name: "fs.read",
+      argsDisplay: path,
+      artifactPath: undefined,
+    } as never);
+    const opened = calls[0]!;
+    expect(opened.highlightPath).toBe(path);
+    const { codeStart, codeEnd } = opened.regions as { codeStart: number; codeEnd: number };
+    expect(opened.body.split("\n").slice(codeStart, codeEnd).join("\n")).toBe(content);
+    expect(opened.body.split("\n")[codeEnd + 1]).toBe("── full file ──");
+  });
+
+  it("pages long source files from disk and highlights every page", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-fs-read-paged-"));
+    tempDirs.push(dir);
+    const path = join(dir, "long.ts");
+    await writeFile(path, Array.from({ length: 3_000 }, (_, i) => `export const v${i} = ${i};`).join("\n"));
+    const { calls, services } = capture();
+    await openToolOutputPager(services, {
+      toolCallId: "fs-read-paged",
+      name: "fs.read",
+      argsDisplay: path,
+      artifactPath: undefined,
+    } as never);
+    const opened = calls[0]!;
+    expect(opened.source).toBeDefined();
+    expect(opened.highlightPath).toBe(path);
+    expect(opened.regions).toEqual({ codeStart: 0, codeOnEveryPage: true });
+    expect(opened.body.startsWith("export const v0 = 0;")).toBe(true);
+    opened.source?.dispose();
+  });
+
+  it("keeps every page highlighted when only the header and note push a file past the inline budget", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-fs-read-boundary-"));
+    tempDirs.push(dir);
+    const path = join(dir, "boundary.ts");
+    await writeFile(path, Array.from({ length: 1_999 }, (_, i) => `export const v${i} = ${i};`).join("\n"));
+    const { calls, services } = capture();
+    await openToolOutputPager(services, {
+      toolCallId: "fs-read-boundary",
+      name: "fs.read",
+      argsDisplay: path,
+      artifactPath: undefined,
+    } as never);
+    const opened = calls[0]!;
+    expect(opened.source).toBeDefined();
+    expect(opened.source?.path).toBe(path);
+    expect(opened.regions).toEqual({ codeStart: 0, codeOnEveryPage: true });
+    expect(opened.body.startsWith("export const v0 = 0;")).toBe(true);
+    opened.source?.dispose();
+  });
+});
