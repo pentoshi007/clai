@@ -260,7 +260,7 @@ function PagerLineImpl(props: {
   }
 
   const codeSpans = props.tone === "input" ? undefined : precomputedSpans;
-  const baseFg = props.tone === "input" ? theme.aqua : baseLineFg(line, theme);
+  const baseFg = props.tone === "input" ? theme.userBorder : baseLineFg(line, theme);
   const wrapProps = props.subagent ? { wrapMode: "word" as const } : {};
   if (!hasQuery || matches.length === 0) {
     if (codeSpans && codeSpans.length > 0) {
