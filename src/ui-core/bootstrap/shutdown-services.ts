@@ -1,9 +1,15 @@
 import type { AppServices } from "./composition-root.js";
+import { settleWithin } from "../../os/settle-within.js";
 
-export async function shutdownServices(services: AppServices): Promise<void> {
+export const SHUTDOWN_CLEANUP_BUDGET_MS = 2_500;
+
+export async function shutdownServices(
+  services: AppServices,
+  cleanupBudgetMs = SHUTDOWN_CLEANUP_BUDGET_MS,
+): Promise<void> {
   services.overlay.cancelBlockingPrompt();
-  const results = await Promise.allSettled([
-    services.session.shutdown(),
+  const deadline = Date.now() + cleanupBudgetMs;
+  const cleanup = Promise.allSettled([
     services.mcp.closeAll(),
     services.ports.interactiveSessions.closeAll("app-shutdown").then((result) => {
       for (const failure of result.failures) {
@@ -11,7 +17,10 @@ export async function shutdownServices(services: AppServices): Promise<void> {
       }
     }),
   ]);
-  const persistence = results[0];
-  if (persistence?.status === "rejected") throw persistence.reason;
-  await services.omnirushSessionUpload.close();
+  try {
+    await services.session.shutdown();
+  } finally {
+    const upload = services.omnirushSessionUpload.close();
+    await settleWithin(Promise.allSettled([cleanup, upload]), deadline - Date.now());
+  }
 }
