@@ -45,7 +45,7 @@ describe("windows managed privilege boundary", () => {
     Object.defineProperty(process, "platform", { value: "win32", configurable: true });
     const result = await runToolCall({ name: "shell.exec", args: { command: "sudo whoami", background: "never" } });
     expect(result).toMatchObject({ ok: false, exitCode: 1 });
-    expect(result.output).toMatch(/secure password modal|run without elevation/);
+    expect(result.output).toMatch(/run without elevation/);
     expect(result.output).not.toMatch(/Password:/);
   });
 });

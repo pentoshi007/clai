@@ -17,6 +17,23 @@ const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 describe("tokenize", () => {
+  it("ends CSI at any final byte and OSC at BEL or ST without swallowing visible text", () => {
+    expect(tokenize("\x1b[200~hello")).toEqual([
+      { kind: "escape", value: "\x1b[200~" },
+      { kind: "text", value: "hello" },
+    ]);
+    expect(tokenize("\x1b]8;;https://example.test\x1b\\label\x1b]8;;\x1b\\!")).toEqual([
+      { kind: "escape", value: "\x1b]8;;https://example.test\x1b\\" },
+      { kind: "text", value: "label" },
+      { kind: "escape", value: "\x1b]8;;\x1b\\" },
+      { kind: "text", value: "!" },
+    ]);
+    expect(tokenize("\x1b[12日本")).toEqual([
+      { kind: "escape", value: "\x1b[12" },
+      { kind: "text", value: "日本" },
+    ]);
+  });
+
   it("separates escapes from printable runs", () => {
     expect(tokenize(`${RED}ab${RESET}`)).toEqual([
       { kind: "escape", value: RED },
