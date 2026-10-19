@@ -5,7 +5,7 @@ import { ClassicApp } from "../../../src/classic/app/ClassicApp.js";
 import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
 import { hydrateFromClassicTranscript } from "../../../src/ui-core/state/transcript-hydrate.js";
 import { createHarness } from "./harness.js";
-import { diffedChangeTranscript, savedChanges, savedChangeTranscript } from "../../fixtures/session-changes.js";
+import { diffedChangeTranscript, largeChangeTranscript, savedChanges, savedChangeTranscript } from "../../fixtures/session-changes.js";
 
 describe("Classic session changes", () => {
   it.each([120, 80, 40])("renders saved run totals and /changes at %s columns", async (columns) => {
@@ -68,4 +68,30 @@ describe("Classic session changes", () => {
       expect(frame()).not.toContain("diff not kept");
     } finally { view.unmount(); h.dispose(); }
   });
+
+  it("keeps a /changes body far larger than one artifact page in a single continuous view", async () => {
+    const transcript = largeChangeTranscript(120);
+    const h = createHarness({ columns: 100, rows: 30, commands: true });
+    h.services.session.loadHistory([], { sessionId: "large-changes", transcript });
+    h.services.transcript.hydrate(hydrateFromClassicTranscript(transcript).state);
+    const view = render(createElement(ServicesProvider, {
+      services: h.services, children: createElement(ClassicApp, { wiring: h.wiring }),
+    }));
+    const frame = () => view.lastFrame()?.replace(/[│║]/g, "").replace(/\s+/g, " ") ?? "";
+    try {
+      h.wiring.composer.setText("/changes");
+      h.wiring.handleData("\r");
+      await expect.poll(frame).toContain("Session changes");
+      const pager = h.services.overlay.getState();
+      expect(pager.kind).toBe("pager");
+      if (pager.kind !== "pager") return;
+      const body = await pager.source!.readAll();
+      expect(Buffer.byteLength(body)).toBeGreaterThan(256 * 1024);
+      await expect.poll(() => h.wiring.panels.getSnapshot().pagerBody).toBe(body);
+      h.wiring.handleData("\x1b[F");
+      await expect.poll(frame).toContain("60 + export const FILE_99_LINE_59 = 59;");
+      h.wiring.handleData("\x1b[H");
+      await expect.poll(frame).toContain("Total · +7200 -0 · 120 files");
+    } finally { view.unmount(); h.dispose(); }
+  }, 60_000);
 });

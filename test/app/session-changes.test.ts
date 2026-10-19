@@ -130,6 +130,10 @@ describe("session line changes", () => {
       expect(diffs).toContain("│ delete · /repo/old.ts");
       expect(diffs).toContain("1 │ − one");
       expect(diffs).not.toContain("diff not kept");
+      expect(pager.source?.layout).toBe("continuous");
+      const page = await pager.source!.readPage(0);
+      expect(page.body).toBe(body);
+      expect([page.pageNumber, page.pageCount, page.nextOffset]).toEqual([1, 1, page.totalBytes]);
     }
     const changed = vi.fn();
     const unwatch = pager.kind === "pager" ? pager.source!.watch!(changed) : () => {};
