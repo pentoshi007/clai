@@ -235,8 +235,6 @@ Read [configuration and privacy](guides/configuration.md) and [SECURITY.md](SECU
 
 Built by [pentoshi007](https://github.com/pentoshi007).
 
-<a href="https://tryhackme.com/p/pentoshi"><img src="https://cdn-images.tryhackme.com/public-profile/pentoshi/badge-dark-9dfedffd1085.png" alt="pentoshi's TryHackMe badge" width="400"></a>
-
 ## License
 
 [MIT](LICENSE) © pentoshi007
