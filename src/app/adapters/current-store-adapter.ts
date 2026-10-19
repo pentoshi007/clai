@@ -1,7 +1,11 @@
-import { saveSession, upsertSession } from "../../store/history.js";
+import { pendingSessionMerge, saveSession, upsertSession, type HistoryRecord } from "../../store/history.js";
 import { deletePlan, loadPlan, mutatePlan, savePlan } from "../../store/plan.js";
-import type { PersistencePort } from "../ports/persistence-port.js";
+import type { PersistedSessionMerge, PersistencePort } from "../ports/persistence-port.js";
 import type { TranscriptItem } from "../ports/transcript-item.js";
+
+function mergedTranscript(record: HistoryRecord | undefined): PersistedSessionMerge | undefined {
+  return record?.pendingMerge && record.transcript ? { transcript: record.transcript } : undefined;
+}
 
 export function createCurrentPersistencePort(): PersistencePort {
   return {
@@ -20,7 +24,7 @@ export function createCurrentPersistencePort(): PersistencePort {
             }
           : undefined;
       if (options?.sessionId) {
-        await upsertSession(
+        const canonical = await upsertSession(
           options.sessionId,
           list,
           options.name,
@@ -32,8 +36,9 @@ export function createCurrentPersistencePort(): PersistencePort {
           sessionModel,
           options.location,
           options.changes,
+          options.unsyncedItemIds,
         );
-        return;
+        return mergedTranscript(canonical);
       }
       await saveSession(
         list,
@@ -48,6 +53,7 @@ export function createCurrentPersistencePort(): PersistencePort {
         options?.changes,
       );
     },
+    pendingSessionMerge: async (sessionId) => mergedTranscript(await pendingSessionMerge(sessionId)),
     loadPlan: (sessionId) => loadPlan(sessionId),
     savePlan: (plan) => savePlan(plan),
     mutatePlan: (sessionId, reducer) => mutatePlan(sessionId, reducer),

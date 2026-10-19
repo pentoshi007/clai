@@ -9,6 +9,7 @@ import {
 import {
   EMPTY_TRANSCRIPT_STATE,
   isItemExpanded,
+  type TranscriptItem,
   type TranscriptState,
 } from "./transcript-types.js";
 
@@ -263,6 +264,37 @@ export class TranscriptStore {
       pendingThinkingId: undefined,
       runningStatus: undefined,
     });
+  }
+
+  insertPersisted(
+    mergedOrder: readonly string[],
+    items: ReadonlyMap<string, TranscriptItem>,
+    persistBase: readonly ClassicTranscriptItem[],
+  ): void {
+    if (this.contentSource) { this.contentSource.insertPersisted(mergedOrder, items, persistBase); return; }
+    const current = this.getState();
+    const live = new Set(current.order);
+    const byId = new Map(current.byId);
+    const inserted = new Map<string | undefined, string[]>();
+    let anchor: string | undefined;
+    for (const id of mergedOrder) {
+      if (live.has(id)) {
+        anchor = id;
+        continue;
+      }
+      const item = items.get(id);
+      if (!item || byId.has(id)) continue;
+      byId.set(id, item);
+      const group = inserted.get(anchor);
+      if (group) group.push(id);
+      else inserted.set(anchor, [id]);
+    }
+    if (inserted.size === 0) return;
+    const order = [...(inserted.get(undefined) ?? [])];
+    for (const id of current.order) order.push(id, ...(inserted.get(id) ?? []));
+    this.persistBase = flattenTranscriptHistory(persistBase);
+    for (const id of items.keys()) this.persistHydratedIds.add(id);
+    this.setState({ ...current, order, byId });
   }
 
   mergePersistSnapshot(

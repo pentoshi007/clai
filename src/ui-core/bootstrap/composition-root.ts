@@ -35,6 +35,7 @@ import { getSkillIndex } from "../../skills/registry.js";
 import { safeCwd } from "../../os/cwd.js";
 import { TranscriptStore } from "../state/transcript-store.js";
 import { serializeForHistory } from "../state/transcript-hydrate.js";
+import { absorbPersistedTranscript } from "./session-merge.js";
 import { PlanController } from "../../app/controllers/plan-controller.js";
 import { createOverlayConfirmPort, createOverlaySecretPort } from "./overlay-ports.js";
 import {
@@ -336,6 +337,14 @@ export function createCompositionRoot(
       return transcript.mergePersistSnapshot(
         serializeForHistory(transcript.getState(), (id) => live.spool.peekTail(id)),
       );
+    },
+    absorbPersistedTranscript: (incoming) => {
+      const live = sessionRef;
+      if (!live) return [];
+      const current = transcript.mergePersistSnapshot(
+        serializeForHistory(transcript.getState(), (id) => live.spool.peekTail(id)),
+      );
+      return absorbPersistedTranscript(transcript, live.spool, current, incoming);
     },
   });
   sessionRef = session;
