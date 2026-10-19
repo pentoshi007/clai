@@ -8,6 +8,7 @@ describe("target-specific release bundles", () => {
     const args = targetBuildArguments(target, "/output");
     for (const name of nativePackages) expect(args.includes(name)).toBe(!keep.includes(name));
     expect(args).toContain("--minify");
+    expect(args).toContain("--splitting");
     expect(args).toContain(target);
     if (target.includes("linux")) {
       expect(keep).toEqual([`@opentui/core-linux-${target.split("-")[2]}`]);

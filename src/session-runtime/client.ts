@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { Socket } from "node:net";
-import type { ResumeTarget } from "../ui-core/bootstrap/session-resume.js";
-import { resolveResumeTarget } from "../ui-core/bootstrap/session-resume.js";
-import { mintSessionId } from "../app/controllers/session-persistence.js";
+import type { ResumeTarget } from "../ui-core/bootstrap/resume-option.js";
+import { mintSessionId } from "../app/controllers/session-id.js";
 import { setRuntimeDetachUnavailableReason } from "./availability.js";
 import { safeCwd } from "../os/cwd.js";
 import { getConfig } from "../store/config.js";
-import { listSessionSummaries } from "../store/history.js";
 import {
   findLiveRuntime,
   latestLiveRuntime,
@@ -172,6 +170,7 @@ async function initialTarget(
   if (!resume) return { sessionId: mintSessionId() };
   if (resume.kind === "latest") {
     if (resume.scope === "global") {
+      const { listSessionSummaries } = await import("../store/history.js");
       const [live, summaries] = await Promise.all([
         latestLiveRuntime(),
         listSessionSummaries(1, { recovery: "blocking" }),
@@ -185,6 +184,7 @@ async function initialTarget(
     }
     const live = await latestLiveRuntime(safeCwd());
     if (live) return { sessionId: live.sessionId };
+    const { resolveResumeTarget } = await import("../ui-core/bootstrap/session-resume.js");
     const resolved = await resolveResumeTarget(resume);
     if (resolved.record) {
       return { sessionId: resolved.record.id, resumeId: resolved.record.id };
@@ -193,6 +193,7 @@ async function initialTarget(
   }
   const live = await findLiveRuntime(resume.id);
   if (live) return { sessionId: live.sessionId };
+  const { resolveResumeTarget } = await import("../ui-core/bootstrap/session-resume.js");
   const resolved = await resolveResumeTarget(resume);
   if (resolved.record) {
     return { sessionId: resolved.record.id, resumeId: resolved.record.id };
@@ -207,6 +208,7 @@ async function switchTarget(
   const live = await findLiveRuntime(sessionId);
   if (live) return { sessionId: live.sessionId };
   if (fresh) return { sessionId };
+  const { resolveResumeTarget } = await import("../ui-core/bootstrap/session-resume.js");
   const resolved = await resolveResumeTarget({ kind: "id", id: sessionId });
   if (!resolved.record) {
     throw new Error(resolved.error ?? `session ${sessionId} is unavailable`);
