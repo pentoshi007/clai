@@ -18,6 +18,9 @@ import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdow
 import { renderColumns } from "./text-width.js";
 import { wrapPagerLine } from "./pager-chrome.js";
 import { paintLineChangeCounts } from "./line-change-labels.js";
+import { diffMarkdownRows, emptyDiffRowState } from "./markdown-diff-rows.js";
+import { detectThemeHint } from "../bootstrap/capabilities.js";
+import { themeFor } from "./theme.js";
 export { renderInlineMarkdown };
 
 export const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
@@ -31,6 +34,7 @@ export type MarkdownAppearance = CodeBlockAppearance & {
   readonly quotePrefix?: string | undefined;
   readonly literalQuotes?: boolean | undefined;
   readonly lineChangeColors?: boolean | undefined;
+  readonly diffLines?: boolean | undefined;
 };
 
 interface RenderContext {
@@ -320,10 +324,19 @@ export function renderMarkdown(
   const hasWidth = typeof width === "number";
   const cols = width ?? (process.stdout.columns || 80);
   const wrapWidth = hasWidth ? Math.max(12, cols - 2) : Math.max(40, cols - 6);
+  const diffState = appearance?.diffLines ? emptyDiffRowState() : undefined;
+  const diffTheme = diffState ? appearance?.theme ?? themeFor(detectThemeHint(process.env)) : undefined;
 
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
+
+    const diffRows = diffState && diffTheme ? diffMarkdownRows(line, wrapWidth, diffState, context.paint, diffTheme) : undefined;
+    if (diffRows) {
+      for (const row of diffRows) resultLines.push(`${OUTPUT_INDENT}${row}`);
+      i++;
+      continue;
+    }
 
     const fenceOpen = matchCodeFenceOpen(line);
     if (fenceOpen) {

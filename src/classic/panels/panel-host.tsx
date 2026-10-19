@@ -49,9 +49,7 @@ export function PanelHost(props: PanelHostProps): ReactNode {
         props.ink,
         subagent ? undefined : pagerPaintOptions(overlay, props.ink, snapshot.pagerPageOffset),
         pagerSubagentPaint(overlay, props.ink),
-        overlay.source?.quotePrefix,
-        overlay.source?.literalQuotes,
-        overlay.source?.lineChangeColors,
+        overlay.source,
       );
       return (
         <PagerPanel

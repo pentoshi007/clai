@@ -115,7 +115,7 @@ export function Pager(props: PagerProps): ReactNode {
     const pagerBody = continuous ? displayBody.replace(/\t/g, "    ") : displayBody;
     if (viewMode === "formatted") {
       let clean = pagerBody;
-      if (!isSubagent) {
+      if (!isSubagent && !source?.diffLines) {
         const stripped = stripPagerLineGutters(pagerBody);
         clean = /^\d+:\s?/m.test(pagerBody) || /^#\s*fs\.read\b/m.test(pagerBody)
           ? extractFsReadFileBody(pagerBody) || stripped
@@ -131,6 +131,7 @@ export function Pager(props: PagerProps): ReactNode {
         quotePrefix: source?.quotePrefix,
         literalQuotes: source?.literalQuotes,
         lineChangeColors: source?.lineChangeColors,
+        diffLines: source?.diffLines,
         subagentPaint: isSubagent ? subagentPaint : undefined,
       });
     }
@@ -142,7 +143,7 @@ export function Pager(props: PagerProps): ReactNode {
       theme,
       colorMode,
     });
-  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint, continuous, source?.quotePrefix, source?.literalQuotes, source?.lineChangeColors]);
+  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint, continuous, source?.quotePrefix, source?.literalQuotes, source?.lineChangeColors, source?.diffLines]);
 
   const lines = useMemo(
     () => display.lines.map((l) => l.plain),
