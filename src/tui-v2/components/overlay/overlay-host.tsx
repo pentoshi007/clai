@@ -132,6 +132,7 @@ function OverlayHostImpl(props: OverlayHostProps): ReactNode {
           source={state.source}
           highlightPath={state.highlightPath}
           markdown={state.markdown}
+          regions={state.regions}
         />
       ) : null}
       {state.kind === "jobs" ? <JobsPanel services={services} theme={theme} /> : null}

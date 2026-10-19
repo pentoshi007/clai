@@ -5,6 +5,7 @@ import {
   highlightLineForPath,
   type SyntaxSpan,
 } from "../../../ui-core/rendering/syntax-highlight.js";
+import type { PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
 import type { preparePagerDisplay } from "../../rendering/pager-markdown.js";
 import { parseDiffLine } from "./pager-line.js";
 
@@ -19,6 +20,7 @@ export interface PagerRow {
   readonly kind: PagerRowKind;
   readonly textOffset?: number | undefined;
   readonly spans?: readonly SyntaxSpan[] | undefined;
+  readonly tone?: "input" | undefined;
 }
 
 export interface LineSearch {
@@ -36,10 +38,15 @@ export function buildPagerRows(input: {
   readonly isSubagent: boolean;
   readonly highlightPath: string;
   readonly wrapRows?: boolean | undefined;
+  readonly regions?: PagerBodyRegions | undefined;
 }): PagerRow[] {
   const { display, lines, contentCols, useDiffGutters, isSubagent, highlightPath } = input;
   const rows: PagerRow[] = [];
   const carry = emptyCarry();
+  const regions = display.mode === "plain" ? input.regions : undefined;
+  const inputEnd = regions?.inputEnd ?? 0;
+  const codeStart = highlightPath ? regions?.codeStart : undefined;
+  const codeEnd = regions?.codeEnd ?? lines.length;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
     if (display.mode === "markdown") {
@@ -83,8 +90,22 @@ export function buildPagerRows(input: {
       });
       continue;
     }
+    const tone = index < inputEnd ? "input" : undefined;
+    const spans =
+      codeStart !== undefined && index >= codeStart && index < codeEnd
+        ? highlightLineForPath(line, highlightPath, carry)
+        : undefined;
+    let spanOffset = 0;
     wrapPagerLine(line, contentCols, { preserveWhitespace: true }).forEach((chunk, part) => {
-      rows.push({ key: `${index}-${part}`, index, line: chunk, kind: "plain" });
+      rows.push({
+        key: `${index}-${part}`,
+        index,
+        line: chunk,
+        kind: "plain",
+        ...(tone ? { tone } : {}),
+        ...(spans ? { spans: slicePagerSpans(spans, spanOffset, chunk.length) } : {}),
+      });
+      spanOffset += chunk.length;
     });
   }
   return rows;
