@@ -125,8 +125,15 @@ export function attachWiring(host: WiringHost): void {
   host.tickTimer.unref?.();
 
   host.animationTimer = setInterval(() => {
-    if (!host.needsAnimation()) return;
+    const demand = host.animationDemand();
+    if (demand === "none") {
+      if (host.animationTickValue % 4 < 2) return;
+      host.animationTickValue += 4 - (host.animationTickValue % 4);
+      host.schedulePaint();
+      return;
+    }
     host.animationTickValue += 1;
+    if (demand === "caret" && host.animationTickValue % 2 !== 0) return;
     host.schedulePaint();
   }, ANIMATION_INTERVAL_MS);
   host.animationTimer.unref?.();

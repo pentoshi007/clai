@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { INITIAL_PAINT_PACING, PAINT_MIN_INTERVAL_MS } from "../../../src/classic/app/paint-pacing.js";
 import { createHarness, type Harness } from "./harness.js";
+import { CARET_BLINK_IDLE_MS } from "../../../src/classic/app/wiring-interactions.js";
 
 vi.mock("../../../src/classic/app/git-branch.js", () => ({
   readBranchFromGitDir: async () => "test-branch",
@@ -89,6 +90,27 @@ describe("classic paint scheduling", () => {
     wiring.handleData("\x1b[999~");
     await vi.advanceTimersByTimeAsync(100);
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("repaints an idle composer only when the caret blinks and rests it visible once idle", async () => {
+    vi.useFakeTimers();
+    harness = createHarness();
+    const { wiring } = harness;
+    harness.services.focus.focusRegion("composer");
+    await vi.advanceTimersByTimeAsync(100);
+    const listener = vi.fn();
+    wiring.subscribe(listener);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(listener.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(listener.mock.calls.length).toBeLessThanOrEqual(5);
+    await vi.advanceTimersByTimeAsync(CARET_BLINK_IDLE_MS);
+    const settled = listener.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(listener).toHaveBeenCalledTimes(settled);
+    expect(wiring.getSnapshot().animationTick % 4).toBeLessThan(2);
+    wiring.handleData("x");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(listener.mock.calls.length).toBeGreaterThan(settled + 2);
   });
 
   it("cancels queued paints and ignores input after disposal", async () => {
