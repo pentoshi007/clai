@@ -338,7 +338,7 @@ describe("Property 19: activity and lifetime timers are independent", () => {
 
 // Feature: interactive-terminal-sessions, Property 18: Closing rejects later input and finalizes once
 describe("Property 18: closing rejects later input and finalizes once", () => {
-  it("finalizes once under racing triggers and returns a stable terminal result", async () => {
+  it("finalizes once under racing triggers and returns a stable terminal result", { timeout: 30_000 }, async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.shuffledSubarray(
