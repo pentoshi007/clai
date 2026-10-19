@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { ProviderError } from "./http.js";
 import { FREEBUFF_API_BASE_URL } from "./freebuff-auth.js";
+import { freebuffCatalogSnapshot } from "./freebuff-models.js";
+import { freebuffActingUserHeaders } from "./freebuff-wire.js";
 
 const RUN_PATH = "/api/v1/agent-runs";
 const RUN_TIMEOUT_MS = 30_000;
@@ -93,12 +95,17 @@ const BASE2_AGENT_BY_MODEL: Readonly<Record<string, string>> = {
   "z-ai/glm-5.3-prime": "base2-free-glm-5-3-prime",
 };
 
-const FALLBACK_AGENT_ID = "codebuff/base2-free";
+const FALLBACK_AGENT_ID = "base2-free";
+export const FREEBUFF_CATALOG_AGENT_ID = "base3-free-catalog";
 
 export function freebuffAgentId(model: string): string {
   const id = model.trim();
-  const agent = BASE3_AGENT_BY_MODEL[id] ?? BASE2_AGENT_BY_MODEL[id];
-  return agent ? `codebuff/${agent}` : FALLBACK_AGENT_ID;
+  return BASE3_AGENT_BY_MODEL[id] ?? BASE2_AGENT_BY_MODEL[id] ?? FALLBACK_AGENT_ID;
+}
+
+export function freebuffAgentIdForToken(token: string, model: string): string {
+  const row = freebuffCatalogSnapshot(token)?.rows.find((candidate) => candidate.key === model.trim());
+  return row ? FREEBUFF_CATALOG_AGENT_ID : freebuffAgentId(model);
 }
 
 export interface FreebuffRun {
@@ -125,35 +132,82 @@ function runSignal(signal: AbortSignal | undefined): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
+const RUN_RETRIES = 3;
+const RUN_RETRY_BASE_MS = 1_000;
+const RUN_RETRY_CAP_MS = 8_000;
+const RETRYABLE_RUN_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+function runRetryDelay(attempt: number): number {
+  return Math.min(RUN_RETRY_BASE_MS * 2 ** attempt, RUN_RETRY_CAP_MS);
+}
+
+function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort(): void {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 async function postRun(
   token: string,
   body: Record<string, unknown>,
   action: string,
   deps: FreebuffRunDeps,
 ): Promise<Record<string, unknown> | undefined> {
-  const response = await (deps.fetch ?? fetch)(runUrl(deps.baseUrl ?? FREEBUFF_API_BASE_URL), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: runSignal(deps.signal),
-  });
-  const text = await response.text().catch(() => "");
-  if (!response.ok) {
-    throw new ProviderError(
+  const url = runUrl(deps.baseUrl ?? FREEBUFF_API_BASE_URL);
+  const requestBody = JSON.stringify(body);
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RUN_RETRIES; attempt += 1) {
+    let response: Response;
+    try {
+      response = await (deps.fetch ?? fetch)(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "user-agent": "Bun/1.3.14",
+          accept: "*/*",
+          "accept-encoding": "gzip, deflate, br",
+          ...freebuffActingUserHeaders(),
+        },
+        body: requestBody,
+        signal: runSignal(deps.signal),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt === RUN_RETRIES || deps.signal?.aborted) throw error;
+      await delay(runRetryDelay(attempt), deps.signal);
+      continue;
+    }
+    const text = await response.text().catch(() => "");
+    if (response.ok) {
+      if (!text) return undefined;
+      try {
+        return JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        return undefined;
+      }
+    }
+    lastError = new ProviderError(
       `Freebuff ${action} failed (${response.status}${text ? `: ${text.slice(0, 300)}` : ""})`,
       response.status,
       text.slice(0, 2_000),
     );
+    if (!RETRYABLE_RUN_STATUSES.has(response.status) || attempt === RUN_RETRIES) throw lastError;
+    await delay(runRetryDelay(attempt), deps.signal);
   }
-  if (!text) return undefined;
-  try {
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
+  throw lastError instanceof Error ? lastError : new ProviderError(`Freebuff ${action} failed after retries.`);
 }
 
 export async function startFreebuffRun(
@@ -161,7 +215,7 @@ export async function startFreebuffRun(
   model: string,
   deps: FreebuffRunDeps = {},
 ): Promise<FreebuffRun> {
-  const agentId = freebuffAgentId(model);
+  const agentId = freebuffAgentIdForToken(token, model);
   const payload = await postRun(
     token,
     { action: "START", agentId, ancestorRunIds: [] },

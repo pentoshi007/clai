@@ -45,6 +45,7 @@ export async function openAiCompatibleComplete(options: {
   maxTokens?: number | undefined;
   temperature?: number | undefined;
   headers?: Record<string, string> | undefined;
+  signingHeaders?: ((body: string) => Promise<Record<string, string>> | Record<string, string>) | undefined;
   signal?: AbortSignal | undefined;
   reasoning?: ReasoningPreference | undefined;
   discoverCapabilities?: boolean | undefined;
@@ -109,6 +110,7 @@ export async function openAiCompatibleComplete(options: {
           ? { authorization: `Bearer ${options.apiKey}` }
           : {}),
         ...options.headers,
+        ...(options.signingHeaders ? await options.signingHeaders(requestBody) : {}),
       },
       body: requestBody,
       verbose: process.env.CLAI_VERBOSE === "true",

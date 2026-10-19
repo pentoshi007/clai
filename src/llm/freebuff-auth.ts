@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { freebuffFingerprintId } from "./freebuff-fingerprint.js";
+import { setFreebuffActingUserId } from "./freebuff-wire.js";
 import { ProviderError } from "./http.js";
 
 export const FREEBUFF_WEB_BASE_URL = "https://freebuff.com";
@@ -138,7 +140,7 @@ export async function startFreebuffDeviceAuth(
   options: { fingerprintId?: string | undefined; signal?: AbortSignal | undefined } = {},
   deps: FreebuffAuthDeps = {},
 ): Promise<FreebuffDeviceAuthStart> {
-  const fingerprintId = options.fingerprintId ?? createFreebuffFingerprintId();
+  const fingerprintId = options.fingerprintId ?? await freebuffFingerprintId();
   const response = await (deps.fetch ?? fetch)(
     `${deps.webBaseUrl ?? FREEBUFF_WEB_BASE_URL}/api/auth/cli/code`,
     {
@@ -188,7 +190,10 @@ export async function pollFreebuffDeviceAuth(
       const payload = await payloadOf(response);
       if (response.ok) {
         const user = authUser(recordOf(payload)?.user);
-        if (user) return { token: user.authToken, user };
+        if (user) {
+          if (user.id) setFreebuffActingUserId(user.id);
+          return { token: user.authToken, user };
+        }
       }
     } catch (error) {
       if (options.signal?.aborted) throw error;
@@ -218,6 +223,8 @@ export async function validateFreebuffToken(
     const error = apiError("Freebuff authentication", response, payload);
     throw new ProviderError(`${error.message}. Run \`clai auth freebuff\` to sign in again.`, error.status, error.body);
   }
+  const id = recordOf(payload)?.id;
+  if (typeof id === "string" && id) setFreebuffActingUserId(id);
 }
 
 export async function importExistingFreebuffToken(
@@ -238,7 +245,9 @@ export async function importExistingFreebuffToken(
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
     const user = authUser(recordOf(parsed)?.default);
-    return user ? { token: user.authToken, source: path } : undefined;
+    if (!user) return undefined;
+    if (user.id) setFreebuffActingUserId(user.id);
+    return { token: user.authToken, source: path };
   } catch {
     return undefined;
   }

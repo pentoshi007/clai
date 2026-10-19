@@ -76,6 +76,7 @@ export async function openAiCompatibleStream(request: {
   maxTokens?: number | undefined;
   temperature?: number | undefined;
   headers?: Record<string, string> | undefined;
+  signingHeaders?: ((body: string) => Promise<Record<string, string>> | Record<string, string>) | undefined;
   signal?: AbortSignal | undefined;
   onToken: (token: string) => void;
   reasoning?: ReasoningPreference | undefined;
@@ -228,6 +229,7 @@ export async function openAiCompatibleStream(request: {
           ? { authorization: `Bearer ${options.apiKey}` }
           : {}),
         ...options.headers,
+        ...(options.signingHeaders ? await options.signingHeaders(requestBody) : {}),
       },
       body: requestBody,
       verbose: process.env.CLAI_VERBOSE === "true",

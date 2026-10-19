@@ -128,11 +128,17 @@ describe("Freebuff mocked login-to-catalog integration", () => {
             remainingMs: 3_600_000,
           });
         }
-        if (url.endsWith("/api/v1/freebuff/session")) {
+        if (url.endsWith("/api/v1/freebuff/models")) {
           return json(200, {
-            status: "none",
-            rateLimitsByModel: { [MODEL]: {} },
+            protocol: 1,
+            version: "catalog-e2e",
+            issuedAt: Date.now(),
+            fetchId: "fetch-e2e",
+            rows: [{ key: MODEL, handle: MODEL }],
           });
+        }
+        if (url.endsWith("/api/v1/freebuff/device-keys")) {
+          return json(200, { keyId: "e2e-device-key" });
         }
         if (url.endsWith("/chat/completions")) return sse();
         if (url.endsWith("/api/v1/agent-runs")) return json(200, { runId: "e2e-run" });
@@ -150,10 +156,15 @@ describe("Freebuff mocked login-to-catalog integration", () => {
     );
     expect(completion.text).toBeTruthy();
 
-    const probe = calls.find((call) => call.method === "GET")!;
-    expect(probe.url).toBe("https://www.codebuff.com/api/v1/freebuff/session");
+    const probe = calls.find((call) => call.url.endsWith("/api/v1/freebuff/models"))!;
+    expect(probe.method).toBe("GET");
     expect(probe.headers.authorization).toBe(`Bearer ${TOKEN}`);
-    expect(calls.some((call) => call.url.includes("/session/admission"))).toBe(true);
+    expect(probe.headers["x-freebuff-catalog-protocol"]).toBe("1");
+    expect(probe.headers["x-freebuff-client"]).toBe("cli");
+    const admission = calls.find((call) => call.url.endsWith("/session/admission"))!;
+    expect(admission.headers["x-freebuff-catalog-fetch"]).toBe("fetch-e2e");
+    expect(admission.headers["x-freebuff-device-key"]).toBe("e2e-device-key");
+    expect(admission.headers["x-freebuff-device-sig"]).toBeTruthy();
     const chat = calls.find((call) => call.url.endsWith("/chat/completions"))!;
     expect(chat.body).toMatchObject({
       codebuff_metadata: { run_id: "e2e-run", freebuff_instance_id: "cli:e2e-instance" },

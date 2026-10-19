@@ -33,3 +33,12 @@ for (const [key, sub] of Object.entries(defaultRoot)) {
     process.env[key] = join(root, sub);
   }
 }
+
+const freebuffBase = process.env.CLAI_TEST_BASE_FREEBUFF_CONFIG_DIR ?? process.env.FREEBUFF_CONFIG_DIR;
+if (process.env.CI && freebuffBase) {
+  process.env.CLAI_TEST_BASE_FREEBUFF_CONFIG_DIR = freebuffBase;
+  mkdirSync(freebuffBase, { recursive: true });
+  process.env.FREEBUFF_CONFIG_DIR = mkdtempSync(join(freebuffBase, "vitest-"));
+} else {
+  process.env.FREEBUFF_CONFIG_DIR = join(root, "manicode");
+}

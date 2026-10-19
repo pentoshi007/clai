@@ -66,9 +66,15 @@ describe("Freebuff dynamic catalog", () => {
       "fetch",
       (async () =>
         json(200, {
-          status: "none",
-          rateLimitsByModel: { "anthropic/claude-opus-5": {}, "vendor/new-model": {} },
-          freebucks: { prices: { "openai/gpt-6-sol": 0 } },
+          protocol: 1,
+          version: "catalog-test-1",
+          issuedAt: Date.now(),
+          fetchId: "fetch-1",
+          rows: [
+            { key: "anthropic/claude-opus-5", handle: "anthropic/claude-opus-5" },
+            { key: "vendor/new-model", handle: "vendor/new-model" },
+            { key: "openai/gpt-6-sol", handle: "openai/gpt-6-sol" },
+          ],
         })) as typeof fetch,
     );
 
@@ -84,15 +90,13 @@ describe("Freebuff dynamic catalog", () => {
       "fetch",
       (async () =>
         json(200, {
-          status: "none",
-          rateLimitsByModel: {
-            "mimo/mimo-v2.5": {},
-            "mimo/mimo-v2.6-pro": {},
-          },
-          freebucks: {
-            prices: { "mimo/mimo-v2.5": 10, "mimo/mimo-v2.6-pro": 30 },
-            planRequiredModelIds: ["mimo/mimo-v2.6-pro"],
-          },
+          protocol: 1,
+          version: "catalog-test-2",
+          issuedAt: Date.now(),
+          rows: [
+            { key: "mimo/mimo-v2.5", handle: "mimo/mimo-v2.5", access: "open" },
+            { key: "mimo/mimo-v2.6-pro", handle: "mimo/mimo-v2.6-pro", access: "locked" },
+          ],
         })) as typeof fetch,
     );
 
@@ -106,7 +110,12 @@ describe("Freebuff dynamic catalog", () => {
     vi.stubGlobal(
       "fetch",
       (async () =>
-        json(200, { status: "none", rateLimitsByModel: { "cached/model": {} } })) as typeof fetch,
+        json(200, {
+          protocol: 1,
+          version: "catalog-test-3",
+          issuedAt: Date.now(),
+          rows: [{ key: "cached/model", handle: "cached/model" }],
+        })) as typeof fetch,
     );
     const first = await fetchFreebuffModelIds("freebuff-catalog-token-0002");
     expect(first).toContain("cached/model");
@@ -143,7 +152,12 @@ describe("Freebuff dynamic catalog", () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
       const token = new Headers(init?.headers).get("authorization");
       const model = token === `Bearer ${tokenA}` ? "account-a/model" : "account-b/model";
-      return json(200, { status: "none", rateLimitsByModel: { [model]: {} } });
+      return json(200, {
+        protocol: 1,
+        version: "catalog-test-5",
+        issuedAt: Date.now(),
+        rows: [{ key: model, handle: model }],
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -163,7 +177,12 @@ describe("Freebuff dynamic catalog", () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => {
       calls += 1;
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return json(200, { status: "none", rateLimitsByModel: { "account/model": {} } });
+      return json(200, {
+        protocol: 1,
+        version: "catalog-test-6",
+        issuedAt: Date.now(),
+        rows: [{ key: "account/model", handle: "account/model" }],
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
 

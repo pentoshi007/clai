@@ -55,7 +55,7 @@ function json(status: number, body: unknown): Response {
 }
 
 describe("Freebuff session protocol", () => {
-  it("sends the CLI multi-session admission headers with a zero wallet limit", async () => {
+  it("sends the CLI multi-session admission headers with the session wallet limit", async () => {
     const calls = stubFetch(() =>
       json(200, { status: "active", instanceId: "cli:abc", model: "deepseek/deepseek-v4-flash" }),
     );
@@ -73,7 +73,9 @@ describe("Freebuff session protocol", () => {
     expect(call.headers["x-freebuff-desktop-attempt-id"]).toBe("abc");
     expect(call.headers["x-freebuff-instance-id"]).toBe("cli:abc");
     expect(call.headers["x-freebuff-model"]).toBe("deepseek/deepseek-v4-flash");
-    expect(call.headers["x-freebuff-wallet-spend-limit"]).toBe("0");
+    expect(call.headers["x-freebuff-wallet-spend-limit"]).toBe("session");
+    expect(call.headers["x-freebuff-client-version"]).toBe("0.2.29");
+    expect(call.headers["x-freebuff-env"]).toMatch(/^v1;/);
   });
 
   it("marks heartbeat GETs and never beats the admission route", async () => {
