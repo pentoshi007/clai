@@ -71,25 +71,25 @@ describe("scrollbar segments do not overlap", () => {
 });
 
 describe("inline shell.exec input is bounded to three visual rows", () => {
-  it("wraps a single very long command into at most three rows plus a pager hint", () => {
+  it("wraps a single very long command into three rows including the pager hint", () => {
     const rows = boundArgsRows(`python3 -c '${"x = 1; ".repeat(400)}'`, 40).split("\n");
-    expect(rows).toHaveLength(4);
-    for (const row of rows.slice(0, 3)) expect(row.length).toBeLessThanOrEqual(40);
-    expect(rows[3]).toBe("··· click for full ···");
+    expect(rows).toHaveLength(3);
+    for (const row of rows.slice(0, 2)) expect(row.length).toBeLessThanOrEqual(40);
+    expect(rows[2]).toBe("··· click for full ···");
   });
 
   it("counts lines hidden by wrapping into the existing more-lines hint", () => {
     const presented = clampArgsDisplay(["a".repeat(100), "second", "third", "fourth", "fifth"].join("\n"))!;
     const rows = boundArgsRows(presented, 40).split("\n");
-    expect(rows).toHaveLength(4);
-    expect(rows[3]).toBe("··· +4 more lines · click for full ···");
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toBe("··· +4 more lines · click for full ···");
   });
 
   it("caps visible input characters on wide terminals before the row cap", () => {
     const rows = boundArgsRows(`python3 -c '${"x = 1; ".repeat(400)}'`, 250).split("\n");
     const shown = rows.slice(0, -1);
     expect(shown.join("").length).toBeLessThanOrEqual(ARGS_PREVIEW_MAX_CHARS);
-    expect(shown.length).toBeLessThanOrEqual(3);
+    expect(rows.length).toBeLessThanOrEqual(3);
     expect(rows.at(-1)).toBe("··· click for full ···");
   });
 
@@ -97,7 +97,13 @@ describe("inline shell.exec input is bounded to three visual rows", () => {
     const long = "y".repeat(150);
     const rows = boundArgsRows([long, long, long].join("\n"), 250).split("\n");
     expect(rows.slice(0, -1).join("").length).toBeLessThanOrEqual(ARGS_PREVIEW_MAX_CHARS);
+    expect(rows).toHaveLength(3);
     expect(rows.at(-1)).toBe("··· +1 more line · click for full ···");
+  });
+
+  it("uses all three rows for content when nothing is hidden", () => {
+    expect(boundArgsRows("one\ntwo\nthree", 40).split("\n")).toEqual(["one", "two", "three"]);
+    expect(boundArgsRows("one\ntwo\nthree\nfour", 40).split("\n")).toEqual(["one", "two", "··· +2 more lines · click for full ···"]);
   });
 
   it("leaves short commands untouched", () => {

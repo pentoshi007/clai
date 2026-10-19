@@ -85,16 +85,14 @@ export const ARGS_PREVIEW_MAX_CHARS = 240;
 
 const ARGS_PREVIEW_MIN_FRAGMENT = 16;
 
-export function boundArgsRows(
-  argsDisplay: string,
-  width: number,
-  maxRows = ARGS_PREVIEW_MAX_LINES,
-  maxChars = ARGS_PREVIEW_MAX_CHARS,
-): string {
-  const lines = argsDisplay.split("\n");
-  const marker = ARGS_MORE_MARKER.exec(lines.at(-1) ?? "");
-  const logical = marker ? lines.slice(0, -1) : lines;
-  let hidden = marker ? Number(marker[1]) : 0;
+interface ArgsLayout {
+  readonly rows: readonly string[];
+  readonly hidden: number;
+  readonly clipped: boolean;
+}
+
+function layoutArgsRows(logical: readonly string[], carried: number, width: number, maxRows: number, maxChars: number): ArgsLayout {
+  let hidden = carried;
   let clipped = false;
   let budget = Math.max(1, maxChars);
   const rows: string[] = [];
@@ -122,11 +120,27 @@ export function boundArgsRows(
       break;
     }
   }
-  if (hidden > 0) {
-    rows.push(`··· +${hidden} more line${hidden === 1 ? "" : "s"} · click for full ···`);
-  } else if (clipped) {
-    rows.push("··· click for full ···");
+  return { rows, hidden, clipped };
+}
+
+export function boundArgsRows(
+  argsDisplay: string,
+  width: number,
+  maxRows = ARGS_PREVIEW_MAX_LINES,
+  maxChars = ARGS_PREVIEW_MAX_CHARS,
+): string {
+  const lines = argsDisplay.split("\n");
+  const marker = ARGS_MORE_MARKER.exec(lines.at(-1) ?? "");
+  const logical = marker ? lines.slice(0, -1) : lines;
+  const carried = marker ? Number(marker[1]) : 0;
+  let layout = layoutArgsRows(logical, carried, width, maxRows, maxChars);
+  const truncated = layout.hidden > 0 || layout.clipped;
+  if (truncated && maxRows > 1 && layout.rows.length >= maxRows) {
+    layout = layoutArgsRows(logical, carried, width, maxRows - 1, maxChars);
   }
+  const { rows, hidden, clipped } = layout;
+  if (hidden > 0) return [...rows, `··· +${hidden} more line${hidden === 1 ? "" : "s"} · click for full ···`].join("\n");
+  if (clipped) return [...rows, "··· click for full ···"].join("\n");
   return rows.join("\n");
 }
 
