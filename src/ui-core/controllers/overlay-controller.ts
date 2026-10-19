@@ -2,6 +2,7 @@
 import type { FocusController, OverlayContext } from "./focus-controller.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
 import type { ArtifactPagerSource } from "../rendering/artifact-pager-source.js";
+import type { PagerBodyRegions } from "../rendering/pager-regions.js";
 import type { OperationReview } from "../../app/operation-review.js";
 
 export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch" | "mcp-oauth";
@@ -124,6 +125,7 @@ export type OverlayState =
       readonly source?: ArtifactPagerSource | undefined;
       readonly highlightPath?: string | undefined;
       readonly markdown?: "auto" | "force" | "plain" | undefined;
+      readonly regions?: PagerBodyRegions | undefined;
     }
   | { readonly kind: "jobs" };
 
@@ -183,7 +185,7 @@ export class OverlayController {
 
   replacePagerBody(body: string): void {
     if (this.state.kind !== "pager") return;
-    this.state = { ...this.state, body };
+    this.state = { ...this.state, body, regions: undefined };
     this.notify();
   }
 
@@ -193,6 +195,7 @@ export class OverlayController {
     source?: ArtifactPagerSource,
     highlightPath?: string,
     markdown?: "auto" | "force" | "plain",
+    regions?: PagerBodyRegions,
   ): boolean {
     const pager = {
       kind: "pager" as const,
@@ -201,6 +204,7 @@ export class OverlayController {
       ...(source ? { source } : {}),
       ...(highlightPath ? { highlightPath } : {}),
       ...(markdown ? { markdown } : {}),
+      ...(regions ? { regions } : {}),
     };
     const stackable = this.state.kind === "confirm" || this.state.kind === "secret" || this.state.kind === "jobs" || this.state.kind === "picker";
     const opened =
