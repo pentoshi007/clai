@@ -2,68 +2,62 @@
 
 # clai
 
-**An open-source AI coding and security agent for your terminal.**
-
-Use 35+ model providers from one CLI: free keyless models, your ChatGPT, GitHub Copilot or Kiro account, any API key, or a local Ollama model.
+An open-source AI coding and security agent for the terminal.
 
 [![CI](https://github.com/pentoshi007/clai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pentoshi007/clai/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/pentoshi007/clai?label=release&color=2eebff)](https://github.com/pentoshi007/clai/releases)
 [![npm](https://img.shields.io/npm/v/@pentoshi/clai?color=cb3837&logo=npm)](https://www.npmjs.com/package/@pentoshi/clai)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ade80)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-64748b)](#install)
-[![GitHub stars](https://img.shields.io/github/stars/pentoshi007/clai?style=flat&logo=github&color=f5b351)](https://github.com/pentoshi007/clai/stargazers)
 
-[Install](#install) · [Quick start](#quick-start) · [Features](#why-clai) · [Providers](#supported-providers) · [Docs](#documentation) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Terminals](#interfaces-and-terminals) · [Providers](#supported-providers) · [Docs](#documentation)
 
-<img src=".github/assets/clai-opentui.svg" alt="clai editing a file, running tests and summarizing the result in the OpenTUI interface" width="900">
+<img src=".github/assets/clai-opentui.svg" alt="clai in the OpenTUI interface: it reads src/server.ts, adds a /health endpoint, runs the tests and summarizes the result" width="860">
 
 </div>
 
-## Why clai
+clai reads your repository, edits files with reviewable diffs, runs commands and tests, and works with 35+ model providers: a keyless free tier, account sign-ins (ChatGPT, GitHub Copilot, Kiro, Cline, Qoder), API keys, or a local Ollama model. It ships as a single native binary and needs no account to start.
 
-clai reads your repository, edits files with reviewable diffs, runs commands and tests, and keeps working when you close the terminal. It is a single native binary with no account required to start.
+## Features
 
-| | |
-| --- | --- |
-| 🆓 **Free to start** | The keyless Free provider works out of the box: no sign-up and no API key. Availability and limits depend on the hosted service. |
-| 🔌 **Bring any model** | 35+ providers, including ChatGPT, GitHub Copilot, Kiro, Cline and Qoder account sign-ins, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, NVIDIA NIM and local Ollama. Multiple keys per provider rotate automatically, and cross-provider fallback is optional. |
-| 🔁 **Sessions that survive disconnects** | `/minimise` detaches while the agent keeps working. Reattach later from another terminal or over SSH, even from your phone. Several terminals can share one live session, each with its own size and scroll position. |
-| 🧭 **Ask, agent and plan modes** | Ask questions without side effects, let the agent execute, or have it gather evidence and propose a plan you approve with `/implement`. |
-| 🛠️ **Real tools** | File edits with diffs, shell commands, background jobs, interactive terminals (SSH, REPLs, debuggers, database consoles), web search, MCP servers, Agent Skills and parallel subagents. |
-| 📜 **Long sessions, nothing lost** | Every transcript item stays reachable. Context compaction keeps the model focused without losing your instructions. `/changes` shows per-file line counts and diffs for the session, and `/prompts` lists every prompt you sent. |
-| 🖥️ **Two interfaces** | A fast OpenTUI interface on macOS and Linux, and the Classic interface everywhere, including Windows and narrow terminals. |
-| 🛡️ **Authorized security testing** | Scoped engagements with authorized targets, exclusions, phases and rate limits for testing systems you own or have permission to assess. |
-| 📦 **Native and self-updating** | Checksum-verified binaries for macOS, Linux and Windows on x64 and ARM64, plus Homebrew and npm. `clai update` updates the installation you are running. |
+- **Any model, one CLI.** 35+ providers, from Anthropic, OpenAI, Gemini, DeepSeek and OpenRouter to NVIDIA NIM and local Ollama. The keyless Free provider works without sign-up.
+- **Multiple keys and accounts with automatic rotation.** Add up to 10 API keys or signed-in accounts per provider. On a rate limit, clai waits for the provider's `Retry-After` hint, retries, then moves to the next key. Auth and quota errors switch keys immediately, and the key that last worked is tried first next time. Optional cross-provider fallback (`/fallback on`) covers outages.
+- **Persistent sessions.** `/minimise` detaches while the agent keeps working. Reattach from another terminal or over SSH; several terminals can share one live session.
+- **Ask, agent and plan modes.** Read-only questions, autonomous execution, or a reviewed plan you approve with `/implement`.
+- **Tools.** File edits with diffs, shell commands, background jobs, interactive terminals (SSH, REPLs, debuggers, database consoles), web search, MCP servers, Agent Skills and parallel subagents.
+- **Long sessions.** Context compaction keeps the model focused without dropping your instructions. `/changes` shows per-file diffs for the session and `/prompts` lists every prompt you sent.
+- **Authorized security testing.** Scoped engagements with targets, exclusions, phases and rate limits, for systems you own or have permission to assess.
+- **Native and self-updating.** Checksum-verified binaries for macOS, Linux and Windows on x64 and ARM64, plus Homebrew and npm. `clai update` updates whichever installation you are running.
 
 ## Install
 
-**macOS and Linux**
+macOS and Linux:
 
 ```sh
 curl -fsSL https://downloads.clai.aniketpandey.website/install/install.sh | sh
 ```
 
-**Homebrew**
+Homebrew:
 
 ```sh
 brew tap pentoshi007/clai && brew install clai
 ```
 
-**Windows (PowerShell)**
+Windows (PowerShell):
 
 ```powershell
 irm https://downloads.clai.aniketpandey.website/install/install.ps1 | iex
 ```
 
-**npm** (Node.js 22 or later)
+npm (Node.js 22 or later):
 
 ```sh
 npm install -g @pentoshi/clai
 ```
 
-The install script verifies the binary's published SHA256 checksum and installs to `/usr/local/bin` by default; set `CLAI_BIN_DIR` to choose another directory. Native releases include the runtime, so Node.js is only needed for the npm package. On macOS and Linux, the npm installer sets up Bun for the OpenTUI interface when needed; set `CLAI_NO_BUN_AUTO_INSTALL=1` to skip it and use `clai --classic`. Manual downloads are on [GitHub Releases](https://github.com/pentoshi007/clai/releases).
+The install script verifies the binary's SHA256 checksum and installs to `/usr/local/bin`; set `CLAI_BIN_DIR` to change it. Native releases bundle the runtime, so Node.js is only needed for the npm package. On macOS and Linux the npm installer sets up Bun for the OpenTUI interface when needed; set `CLAI_NO_BUN_AUTO_INSTALL=1` to skip it and use `clai --classic`. Manual downloads are on [GitHub Releases](https://github.com/pentoshi007/clai/releases).
 
-This README follows the `main` branch; packaged releases can lag behind it. Use [source setup](CONTRIBUTING.md#source-setup) to run the current development version. To update, run `/update` inside clai or `clai update` in your shell ([how updates work](guides/updating.md)).
+This README tracks `main`; packaged releases can lag behind it. See [source setup](CONTRIBUTING.md#source-setup) to run the development version and [updating](guides/updating.md) for how `clai update` works.
 
 ## Quick start
 
@@ -71,23 +65,23 @@ This README follows the `main` branch; packaged releases can lag behind it. Use 
 clai
 ```
 
-A fresh setup uses the keyless **Free** provider in **ask** mode. Type `/agent` to let clai execute tasks, or `/plan` to review a plan first.
+A fresh setup uses the keyless Free provider in ask mode. Type `/agent` to let clai execute tasks, or `/plan` to review a plan first.
 
-Sign in with an account you already have:
+Sign in with an existing account:
 
 ```sh
 clai auth chatgpt      # or: copilot, kiro, cline, qoder, omnirush
 clai use chatgpt
 ```
 
-Use an API key (you are prompted with hidden input):
+Add an API key (prompted with hidden input). Run it again to add more keys for rotation:
 
 ```sh
 clai set deepseek
 clai use deepseek
 ```
 
-Run a local model with Ollama (start Ollama and pull a model first):
+Use a local Ollama model (start Ollama and pull a model first):
 
 ```sh
 clai set ollama --url http://localhost:11434
@@ -95,7 +89,7 @@ clai use ollama
 clai model <downloaded-model>
 ```
 
-Run one-shot prompts and pipelines:
+One-shot prompts and pipelines:
 
 ```sh
 clai "explain this repository and identify its entrypoint"
@@ -107,11 +101,23 @@ git diff | clai --quiet "review this diff for bugs"
 
 | Mode | What it does |
 | --- | --- |
-| `ask` | Questions, explanations and read-only investigation. The default for new setups. |
+| `ask` | Questions, explanations and read-only investigation. Default for new setups. |
 | `agent` | Executes tasks with file, shell and other tools under your permission policy. |
-| `plan` | Gathers evidence and writes a plan. Review it with `/view-plan`, run it with `/implement` or drop it with `/discard`. |
+| `plan` | Gathers evidence and writes a plan. Review with `/view-plan`, run with `/implement`, drop with `/discard`. |
 
-Switch with `/ask`, `/agent`, `/plan` or `Shift+Tab`. Fresh setups use **full-access** permissions; `/permissions default` asks before actions and `/permissions auto-allow` approves eligible actions automatically. These policies govern clai's own tools and are not an OS sandbox. See [working with clai](guides/usage.md#modes-and-permissions).
+Switch with `/ask`, `/agent`, `/plan` or `Shift+Tab`. New setups use full-access permissions; `/permissions default` asks before actions and `/permissions auto-allow` approves eligible actions automatically. These policies govern clai's own tools and are not an OS sandbox. See [modes and permissions](guides/usage.md#modes-and-permissions).
+
+## Interfaces and terminals
+
+clai has two interfaces: OpenTUI, the default on macOS and Linux, and Classic, which runs everywhere. OpenTUI is not supported on Windows, so native Windows always uses Classic. Mouse support (clicking, scrolling, hover previews) depends on the terminal; use one of these:
+
+| Platform | Interface | Recommended terminal | Other supported terminals |
+| --- | --- | --- | --- |
+| macOS | OpenTUI (default), Classic with `--classic` | [iTerm2](https://iterm2.com/) | [Kitty](https://sw.kovidgoyal.net/kitty/), [WezTerm](https://wezterm.org/), [Alacritty](https://alacritty.org/), Terminal.app |
+| Linux | OpenTUI (default), Classic with `--classic` | [Kitty](https://sw.kovidgoyal.net/kitty/) | [WezTerm](https://wezterm.org/), [Alacritty](https://alacritty.org/) |
+| Windows | Classic only (OpenTUI not supported) | [Windows Terminal](https://learn.microsoft.com/windows/terminal/) | [WezTerm](https://wezterm.org/), [Alacritty](https://alacritty.org/) |
+
+The interface follows the OS clai runs on: WSL and SSH sessions on a Linux host get OpenTUI, while mouse and key handling come from your local terminal and any multiplexer in between. OpenTUI also needs at least 60×14 cells and falls back to Classic below that. See the [terminal interface guide](guides/interface.md) for shortcuts and troubleshooting.
 
 ## Persistent sessions
 
@@ -123,14 +129,14 @@ clai -c                # the latest session for this directory
 clai history           # list sessions and whether an agent is running
 ```
 
-Start clai on a cloud VM, detach, reconnect from a laptop or a phone over SSH, and keep going with the same agent. Every attached terminal sees the same conversation and can type, with its own size, draft and scroll position. Attaching another terminal never starts a second agent. On Linux and macOS, `sudo clai` uses your own account's history and configuration, so normal and elevated launches share sessions. Details: [persistent sessions](guides/sessions.md).
+Start clai on a remote machine, detach, and reattach later over SSH with the same agent. Every attached terminal sees the same conversation and keeps its own size, draft and scroll position; attaching never starts a second agent. On Linux and macOS, `sudo clai` uses your own account's history and configuration. Details: [persistent sessions](guides/sessions.md).
 
 ## Supported providers
 
-Account sign-ins, API keys, keyless access and local endpoints are all supported. Run `clai set <provider>` to add a key (or `--from-env <variable>` to import one), `/model` to pick a model, and `/usage` to see token and cache usage. The [provider guide](PROVIDERS.md) covers each provider's setup.
+Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from the environment), `/set` to manage, disable or reorder keys, `/model` to pick a model, and `/usage` to see token and cache usage. The [provider guide](PROVIDERS.md) covers each provider.
 
 <details>
-<summary><b>Account sign-ins</b> (ChatGPT, GitHub Copilot, Cline, Kiro, OmniRush, Qoder, Freebuff)</summary>
+<summary><b>Account sign-ins</b>: ChatGPT, GitHub Copilot, Cline, Kiro, OmniRush, Qoder, Freebuff</summary>
 
 | Provider | Sign-in command | Notes |
 | --- | --- | --- |
@@ -145,7 +151,7 @@ Account sign-ins, API keys, keyless access and local endpoints are all supported
 </details>
 
 <details>
-<summary><b>API, keyless and local providers</b> (30 providers including Free, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter)</summary>
+<summary><b>API, keyless and local providers</b>: 30 providers including Free, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter</summary>
 
 | Provider | Provider ID | Credential or endpoint variable |
 | --- | --- | --- |
@@ -158,7 +164,7 @@ Account sign-ins, API keys, keyless access and local endpoints are all supported
 | Kimi / Moonshot | `kimi` | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY`; optional `MISTRAL_BASE_URL` for regional endpoints. |
-| River | `river` | `RIVER_API_KEY`; optional `RIVER_BASE_URL`. Dynamic models, per-model efforts, images, tools, streamed reasoning, and automatic prefix caching. |
+| River | `river` | `RIVER_API_KEY`; optional `RIVER_BASE_URL`. |
 | Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
@@ -188,24 +194,25 @@ Account sign-ins, API keys, keyless access and local endpoints are all supported
 | --- | --- |
 | `/agent`, `/ask`, `/plan` | Switch mode |
 | `/provider`, `/model`, `/models` | Choose a provider and model |
+| `/set`, `/fallback` | Manage keys and accounts; toggle cross-provider fallback |
 | `/effort` | Set reasoning effort where supported |
-| `/changes` | Per-file line counts and full diffs for this session |
+| `/changes` | Per-file line counts and diffs for this session |
 | `/history`, `/new`, `/save <name>`, `/prompts` | Browse, start, name and inspect sessions |
 | `/compact`, `/context`, `/usage` | Manage context and see token usage |
 | `/jobs`, `/output` | Background jobs and retained tool output |
-| `/subagents`, `/orchestrator` | Delegate research to subagents |
+| `/subagents`, `/orchestrator` | Delegate work to subagents |
 | `/mcp`, `/skills` | MCP servers and Agent Skills |
 | `/minimise` | Detach and keep the agent running |
 
-Type `/` for suggestions and `@` to mention files. `/help` lists everything and `/shortcuts` shows key bindings. See the [full command reference](guides/commands.md).
+Type `/` for suggestions and `@` to mention files. `/help` lists everything and `/shortcuts` shows key bindings. See the [command reference](guides/commands.md).
 
 ## Documentation
 
 | Guide | Contents |
 | --- | --- |
-| [Persistent sessions](guides/sessions.md) | Detach and resume, SSH and multiple terminals, sudo, history and context compaction |
-| [Working with clai](guides/usage.md) | Modes and permissions, subagents, background jobs and interactive terminals, security testing, models and key rotation, project context, skills and MCP |
-| [Terminal interface](guides/interface.md) | OpenTUI and Classic, recommended terminals, keyboard shortcuts, paste and transcript controls |
+| [Persistent sessions](guides/sessions.md) | Detach and resume, SSH and multiple terminals, sudo, history and compaction |
+| [Working with clai](guides/usage.md) | Modes and permissions, subagents, background jobs, interactive terminals, security testing, models and key rotation, project context, skills and MCP |
+| [Terminal interface](guides/interface.md) | OpenTUI and Classic, terminals, keyboard shortcuts, paste and transcript controls |
 | [Commands](guides/commands.md) | Every slash command and CLI flag |
 | [Configuration and privacy](guides/configuration.md) | Config file, private mode, retention, credential storage and the encrypted `/creds` vault |
 | [Updating](guides/updating.md) | How `clai update` handles each installation method |
@@ -215,18 +222,20 @@ Type `/` for suggestions and `@` to mention files. `/help` lists everything and 
 ## Privacy and security
 
 - History, prompt journals and logs stay on your machine under `~/.clai/`. Private mode (`clai privacy on`) and `--no-history` turn persistence off.
-- Credentials saved with `clai set` or account sign-in are kept in `~/.clai/keys.json`, a **plaintext** file with `0600` permissions on POSIX, and in the OS keyring when one is available. Freeform secrets in `/creds` are encrypted with AES-256-GCM.
+- Credentials from `clai set` or account sign-in are stored in `~/.clai/keys.json`, a plaintext file with `0600` permissions on POSIX, and in the OS keyring when available. Freeform secrets in `/creds` are encrypted with AES-256-GCM.
 - Cloud requests send the conversation context and relevant tool results to the provider you select.
 
-Read [configuration and privacy](guides/configuration.md) and [SECURITY.md](SECURITY.md) before using clai with sensitive data. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+Read [configuration and privacy](guides/configuration.md) and [SECURITY.md](SECURITY.md) before using clai with sensitive data, and report vulnerabilities as described there.
 
 ## Contributing
 
-Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers source setup, architecture boundaries and the CI checks. Report bugs in [Issues](https://github.com/pentoshi007/clai/issues), ask questions in [Discussions](https://github.com/pentoshi007/clai/discussions), and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) covers source setup, architecture boundaries and CI checks. Report bugs in [Issues](https://github.com/pentoshi007/clai/issues), ask questions in [Discussions](https://github.com/pentoshi007/clai/discussions), and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-If clai is useful to you, a ⭐ helps other developers find it.
+## Author
 
-[![Star History Chart](https://api.star-history.com/svg?repos=pentoshi007/clai&type=Date)](https://star-history.com/#pentoshi007/clai&Date)
+Built by [pentoshi007](https://github.com/pentoshi007).
+
+<a href="https://tryhackme.com/p/pentoshi"><img src="https://cdn-images.tryhackme.com/public-profile/pentoshi/badge-dark-9dfedffd1085.png" alt="pentoshi's TryHackMe badge" width="400"></a>
 
 ## License
 
