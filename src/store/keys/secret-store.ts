@@ -3,6 +3,8 @@ import type { ProviderStatus } from "../../types.js";
 import { getConfig } from "../config.js";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { getUserHome } from "../../os/user-identity.js";
+import { getDataDir } from "../paths.js";
+import { adoptLegacyFile } from "../legacy-location.js";
 import { basename, dirname, join } from "node:path";
 
 export const serviceName = 'clai';
@@ -101,6 +103,7 @@ async function withKeytar<T>(
 }
 
 async function readFallback(): Promise<FallbackKeys> {
+  await adoptLegacyFile(keysFile, join(getDataDir(), 'keys.json'));
   if (!(await safeExists(keysFile))) {
     return {};
   }
