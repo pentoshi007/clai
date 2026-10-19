@@ -16,6 +16,7 @@ import {
   type BatchSection,
 } from "../../../ui-core/rendering/batch-sections.js";
 import {
+  boundArgsRows,
   presentFsReadArgs,
   collapseOutputLines,
   presentOutput,
@@ -272,6 +273,11 @@ export function ToolCard(props: {
   // The supplied pane width includes both borders and the card's horizontal padding.
   const cardInnerWidth = Math.max(0, (contentWidth ?? termWidth - 6) - 4);
   const diffPaneWidth = Math.max(20, contentWidth ?? termWidth - 6);
+  const argsWidth = Math.max(8, cardInnerWidth - (argsLabel ? argsLabel.length + 2 : 0));
+  const boundedArgs = useMemo(
+    () => (argsDisplay ? boundArgsRows(argsDisplay, argsWidth) : undefined),
+    [argsDisplay, argsWidth],
+  );
   const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
   const tailFormatted = useMemo(
@@ -369,6 +375,7 @@ export function ToolCard(props: {
     void openToolOutputPager(services, item);
   };
   const openFullClick = useClickWithoutDrag(openFull);
+  const openInputClick = useClickWithoutDrag(() => { void openToolOutputPager(services, item); });
 
   const openFileChange = (change: FileChange): void => {
     if (expanded) return;
@@ -626,12 +633,14 @@ export function ToolCard(props: {
             paddingTop: 0,
             flexShrink: 0,
           }}
+          onMouseDown={openInputClick.onMouseDown}
+          onMouseUp={openInputClick.onMouseUp}
         >
           <text selectable style={{ fg: theme.muted, width: argsLabel.length + 2, flexShrink: 0 }}>
             {argsLabel}:{" "}
           </text>
-          <text selectable style={{ fg: theme.inputBorder, flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
-            {argsDisplay}
+          <text selectable wrapMode="none" style={{ fg: theme.inputBorder, flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
+            {boundedArgs}
           </text>
         </box>
       ) : null}
