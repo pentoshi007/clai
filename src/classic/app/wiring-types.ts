@@ -58,6 +58,8 @@ export interface ClassicAppSnapshot {
   readonly scrollBelow: number;
 }
 
+export type AnimationDemand = "frames" | "caret" | "none";
+
 export interface WiringHost {
   readonly services: AppServices;
   readonly now: () => number;
@@ -92,6 +94,7 @@ export interface WiringHost {
   previousOrder: readonly string[];
   tickValue: number;
   animationTickValue: number;
+  caretAwakeAt: number;
   cwdValue: string;
   branchValue: string | undefined;
   contextLimitEditingValue: boolean;
@@ -145,7 +148,7 @@ export interface WiringHost {
   bumpFeedGeneration(): void;
   disarmEscapeIfIdle(): void;
   needsCadence(): boolean;
-  needsAnimation(): boolean;
+  animationDemand(): AnimationDemand;
   itemTitle(item: TranscriptItem): string;
   submit(prompt: string): void;
   moveQueueSelection(delta: number): void;
