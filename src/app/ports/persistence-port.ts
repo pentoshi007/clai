@@ -18,6 +18,11 @@ export interface SaveSessionOptions {
   readonly model?: string | undefined;
   readonly thinking?: ReasoningPreference | undefined;
   readonly location?: HistorySessionLocation | undefined;
+  readonly unsyncedItemIds?: readonly string[] | undefined;
+}
+
+export interface PersistedSessionMerge {
+  readonly transcript: readonly TranscriptItem[];
 }
 
 
@@ -25,7 +30,8 @@ export interface PersistencePort {
   saveSession(
     messages: readonly ChatMessage[],
     options?: SaveSessionOptions,
-  ): Promise<void>;
+  ): Promise<PersistedSessionMerge | void>;
+  pendingSessionMerge?(sessionId: string): Promise<PersistedSessionMerge | undefined>;
   loadPlan(sessionId: string): Promise<SessionPlan | undefined>;
   savePlan(plan: SessionPlan): Promise<void>;
   mutatePlan?(

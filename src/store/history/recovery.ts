@@ -59,6 +59,7 @@ export interface HistoryRecord {
   model?: string | undefined;
   thinking?: ReasoningPreference | undefined;
   pendingMerge?: true | undefined;
+  unsyncedItemIds?: readonly string[] | undefined;
 }
 
 export let cachedSessionList:
