@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ProviderError } from "./http.js";
+import { settleWithin } from "../os/settle-within.js";
 import {
   callFreebuffSession,
   freebuffSessionMetadata,
@@ -332,11 +333,14 @@ export async function disposeFreebuffSessionManager(): Promise<void> {
   if (sharedManager === manager) sharedManager = undefined;
 }
 
+export const FREEBUFF_SHUTDOWN_BUDGET_MS = 1_000;
+
 export async function runFreebuffSessionShutdownCleanup(
   runEpilogue?: () => void | Promise<void>,
+  budgetMs = FREEBUFF_SHUTDOWN_BUDGET_MS,
 ): Promise<void> {
   try {
-    await disposeFreebuffSessionManager();
+    await settleWithin(disposeFreebuffSessionManager(), budgetMs);
   } finally {
     await runEpilogue?.();
   }

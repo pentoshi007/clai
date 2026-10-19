@@ -297,4 +297,20 @@ describe("FreebuffSessionManager", () => {
     expect(calls[1]!.url).toBe(`${BASE}/api/v1/freebuff/session/attempt`);
     expect(calls[1]!.headers.authorization).toBe(`Bearer ${TOKEN}`);
   });
+
+  it("prints the exit epilogue on time when releasing the session never answers", async () => {
+    const methods: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      methods.push(init?.method ?? "GET");
+      if (init?.method === "DELETE") return new Promise<Response>(() => undefined);
+      return new Response(JSON.stringify({ status: "active", instanceId: "instance-stuck" }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    await freebuffSessionManager().ensureAdmission(TOKEN, "stuck-model");
+    const epilogue = vi.fn();
+    const started = Date.now();
+    await runFreebuffSessionShutdownCleanup(epilogue, 50);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(epilogue).toHaveBeenCalledTimes(1);
+    expect(methods).toEqual(["POST", "DELETE"]);
+  });
 });

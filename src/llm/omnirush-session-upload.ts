@@ -31,7 +31,7 @@ export interface OmnirushUploadResult {
 export type OmnirushUploadRunner = (
   command: string,
   args: readonly string[],
-  options: { readonly cwd: string },
+  options: { readonly cwd: string; readonly detached?: boolean | undefined },
 ) => Promise<OmnirushUploadResult>;
 
 export interface OmnirushCliSessionUploaderOptions {
@@ -72,11 +72,24 @@ function uploadCommand(): string {
   return process.env.OMNIRUSH_CLI_PATH?.trim() || "omnirush";
 }
 
+function startDetached(command: string, args: readonly string[], cwd: string): Promise<OmnirushUploadResult> {
+  return new Promise((resolve, reject) => {
+    const child = execa(command, args, { cwd, detached: true, cleanup: false, stdio: "ignore", reject: false, windowsHide: true });
+    child.catch(() => undefined);
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve({ exitCode: 0 });
+    });
+  });
+}
+
 async function defaultRunner(
   command: string,
   args: readonly string[],
-  options: { readonly cwd: string },
+  options: { readonly cwd: string; readonly detached?: boolean | undefined },
 ): Promise<OmnirushUploadResult> {
+  if (options.detached) return startDetached(command, args, options.cwd);
   const result = await execa(command, args, {
     all: true,
     cwd: options.cwd,
@@ -235,7 +248,7 @@ export class OmnirushCliSessionUploader {
         const result = await this.runner(
           this.command,
           ["upload", "--dir", this.workspaceDir, "--yes"],
-          { cwd: this.workspaceDir },
+          { cwd: this.workspaceDir, ...(phase === "session_end" ? { detached: true } : {}) },
         );
         if (result.exitCode !== 0) this.report(uploadFailureMessage(result));
       } catch (error) {
