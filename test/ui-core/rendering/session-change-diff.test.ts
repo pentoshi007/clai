@@ -8,12 +8,13 @@ import { syntaxColor } from "../../../src/ui-core/rendering/file-diff-view.js";
 import { renderMarkdownLines } from "../../../src/ui-core/rendering/render-markdown-lines.js";
 import { sessionChangeDiff } from "../../../src/ui-core/rendering/session-change-diff.js";
 import { themeFor } from "../../../src/ui-core/rendering/theme.js";
+import { nearestAnsi256 } from "../../../src/ui-core/rendering/ansi-palette.js";
 
 const theme = themeFor("dark");
 const paint = new Chalk({ level: 3 });
 const numbered = (count: number) => Array.from({ length: count }, (_, index) => `const v${index} = ${index};`).join("\n") + "\n";
 
-function render(body: string, width = 80, colorMode: "truecolor" | "none" = "truecolor"): string[] {
+function render(body: string, width = 80, colorMode: "truecolor" | "256" | "none" = "truecolor"): string[] {
   return renderMarkdownLines(body, {
     width, stripOuterIndent: true, theme, colorMode,
     quotePrefix: "", literalQuotes: true, lineChangeColors: true, diffLines: true,
@@ -97,6 +98,21 @@ describe("session change diffs", () => {
     expect(python).toContain(`${openSeq(syntaxColor("keyword", theme))}def`);
     expect(rows[plain.indexOf("  │ edit · /repo/a.ts")]).toContain(`${openSeq(theme.muted)}edit · /repo/a.ts`);
     expect(rows.find((row) => stripVTControlCharacters(row).startsWith("+2 -1"))).toContain(`${openSeq(theme.success)}+2`);
+  });
+
+  it("keeps green and red washes on 256-colour terminals instead of collapsing them to grey", () => {
+    const text = sessionChangeDiff(buildFileChange({ path: "/repo/a.ts", before: "let a = 1;\n", after: "const a = 1;\n", kind: "edit" }));
+    const rows = render(text, 80, "256");
+    const plain = rows.map((row) => stripVTControlCharacters(row).trimEnd());
+    const added = rows[plain.indexOf("1 │ + const a = 1;")]!;
+    const removed = rows[plain.indexOf("1 │ - let a = 1;")]!;
+    const addWash = nearestAnsi256(theme.diffAddBg, true);
+    const delWash = nearestAnsi256(theme.diffDelBg, true);
+    expect([addWash, delWash]).not.toContain(nearestAnsi256(theme.diffAddBg));
+    expect(added.startsWith(`\u001b[48;5;${addWash}m`)).toBe(true);
+    expect(removed.startsWith(`\u001b[48;5;${delWash}m`)).toBe(true);
+    expect(added).toContain(`\u001b[38;5;${nearestAnsi256(syntaxColor("keyword", theme))}mconst`);
+    expect(added).toContain(`\u001b[38;5;${nearestAnsi256(theme.diffAdd)}m│ `);
   });
 
   it("wraps long diff lines under the code column and keeps plain text when colour is off", () => {

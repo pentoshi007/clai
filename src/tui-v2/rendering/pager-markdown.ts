@@ -1,5 +1,6 @@
 import type { ColorMode } from "../../app/ports/terminal-port.js";
-import { renderStyledMarkdownLines, styleAnsiLines } from "./styled-markdown.js";
+import { styleAnsiLine, type StyledLine } from "./styled-markdown.js";
+import { renderMarkdownLines, type AnsiLine } from "../../ui-core/rendering/render-markdown-lines.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { looksLikeMarkdown } from "../../ui-core/rendering/pager-source.js";
 import {
@@ -10,7 +11,7 @@ import type { Theme } from "../../ui-core/rendering/theme.js";
 
 export type PagerMarkdownMode = "auto" | "force" | "plain";
 
-export type PagerStyledLine = ReturnType<typeof renderStyledMarkdownLines>[number];
+export type PagerStyledLine = StyledLine;
 
 export interface PagerDisplayLine {
   readonly plain: string;
@@ -29,6 +30,15 @@ export interface PreparePagerDisplayOptions {
   readonly lineChangeColors?: boolean | undefined;
   readonly diffLines?: boolean | undefined;
   readonly subagentPaint?: SubagentSpanPaint | undefined;
+}
+
+const SGR_SEQUENCE = /\x1b\[[^m]*m/g;
+
+function lazyStyledLine(ansi: AnsiLine, defaultFg: string | undefined): PagerDisplayLine {
+  return {
+    plain: sanitizeDisplayText(ansi.replace(SGR_SEQUENCE, "")) || " ",
+    get styled() { return styleAnsiLine(ansi, defaultFg); },
+  };
 }
 
 function plainLines(body: string): PagerDisplayLine[] {
@@ -67,18 +77,13 @@ export function preparePagerDisplay(
       lineChangeColors: options.lineChangeColors,
       diffLines: options.diffLines,
     };
-    const styled = options.subagentPaint
-      ? styleAnsiLines(renderSubagentMarkdownLines(sanitized, appearance, options.subagentPaint), options.defaultFg)
-      : renderStyledMarkdownLines(sanitized, appearance);
-    if (styled.length === 0) {
+    const ansi = options.subagentPaint
+      ? renderSubagentMarkdownLines(sanitized, appearance, options.subagentPaint)
+      : renderMarkdownLines(sanitized, appearance);
+    if (ansi.length === 0) {
       return { mode: "plain", lines: plainLines(sanitized) };
     }
-    const lines: PagerDisplayLine[] = styled.map((st) => {
-      const joined = st.chunks.map((c) => c.text).join("");
-      const plain = sanitizeDisplayText(joined) || " ";
-      return { plain, styled: st };
-    });
-    return { mode: "markdown", lines };
+    return { mode: "markdown", lines: ansi.map((line) => lazyStyledLine(line, options.defaultFg)) };
   } catch {
     return { mode: "plain", lines: plainLines(sanitized) };
   }

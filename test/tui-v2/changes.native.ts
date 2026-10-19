@@ -10,7 +10,7 @@ import { attachCommandHandlers } from "../../src/ui-core/commands/command-handle
 import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { hydrateFromClassicTranscript } from "../../src/ui-core/state/transcript-hydrate.js";
 import { getProvider } from "../../src/llm/router.js";
-import { diffedChangeTranscript, savedChanges, savedChangeTranscript } from "../fixtures/session-changes.js";
+import { diffedChangeTranscript, largeChangeTranscript, savedChanges, savedChangeTranscript } from "../fixtures/session-changes.js";
 import { syntaxColor } from "../../src/ui-core/rendering/file-diff-view.js";
 import { themeFor } from "../../src/ui-core/rendering/theme.js";
 
@@ -130,6 +130,46 @@ for (const width of [120, 60]) {
     assert.deepEqual(spanOn("- const v6 = 6;", "const").bg.toInts(), RGBA.fromHex(theme.diffDelBg).toInts());
     assert.deepEqual(spanOn("+ def run():", "def").fg.toInts(), RGBA.fromHex(syntaxColor("keyword", theme)).toInts());
     assert.ok(spans().some((span) => span.text.includes("+1") && span.fg.toInts().join() === RGBA.fromHex(theme.success).toInts().join()));
+  } finally {
+    await act(async () => { services.dispose(); setup.renderer.destroy(); });
+    await setup.renderer.idle();
+  }
+}
+{
+  const transcript = largeChangeTranscript(120);
+  const services = createCompositionRoot({
+    noHistory: true, provider: "free", model: "fixture-model",
+    updates: { async check() { return { state: "current", currentVersion: "0.0.0", updateAvailable: false }; } },
+    persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: 100, rows: 40 }),
+  });
+  services.session.loadHistory([], { sessionId: "large-changes", transcript });
+  services.transcript.hydrate(hydrateFromClassicTranscript(transcript).state);
+  attachCommandHandlers(services);
+  const setup = await testRender(createElement(ServicesProvider, { services, children: createElement(App) }), { width: 100, height: 40, kittyKeyboard: true, useThread: false });
+  async function settle(action: () => unknown = () => undefined): Promise<string> {
+    await act(async () => { await action(); });
+    await act(async () => { await setup.flush(); });
+    return setup.captureCharFrame().replace(/[│║]/g, "").replace(/\s+/g, " ");
+  }
+  async function waitFor(text: string): Promise<string> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const frame = await settle();
+      if (frame.includes(text)) return frame;
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    }
+    throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
+  }
+  try {
+    await settle(() => setup.mockInput.typeText("/changes"));
+    await settle(() => setup.mockInput.pressEnter());
+    const opened = await waitFor("Total · +7200 -0 · 120 files");
+    assert.ok(!/page \d+\/\d+/.test(opened), opened);
+    const pager = services.overlay.getState();
+    assert.equal(pager.kind === "pager" && pager.source?.layout, "continuous");
+    await settle(() => setup.mockInput.pressKey("\x1b[F"));
+    const bottom = await waitFor("60 + export const FILE_99_LINE_59 = 59;");
+    assert.ok(!/page \d+\/\d+/.test(bottom), bottom);
   } finally {
     await act(async () => { services.dispose(); setup.renderer.destroy(); });
     await setup.renderer.idle();
