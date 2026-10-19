@@ -168,9 +168,8 @@ describe("V2-094 security audit", () => {
         rel.endsWith("selection-controller.ts") ||
         rel.endsWith("osc52-clipboard.ts") ||
         rel.endsWith("use-native-selection-copy.ts") ||
-        // Explicit user-triggered copy (pager `c`, prompt actions).
+        // Explicit user-triggered copy (pager `c`).
         rel.endsWith("pager.tsx") ||
-        rel.endsWith("prompt-actions-modal.tsx") ||
         // Explicit user-triggered cut of their own draft (Ctrl+Shift+X).
         rel.endsWith("composer/draft-actions.ts");
       if (!allowed) offenders.push(rel);

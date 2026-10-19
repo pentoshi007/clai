@@ -97,7 +97,9 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
   const focused = props.focused ?? services.focus.activeContext() === "plan";
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const activeId = plan ? activeTaskId(plan) : undefined;
-  const innerW = Math.max(1, (widthProp ?? 36) - 4);
+  const paneWidth = widthProp ?? 36;
+  const headerWidth = Math.max(1, paneWidth - 4);
+  const taskWidth = Math.max(1, paneWidth - 3);
   const disclosure = useTaskDisclosure(plan, scrollRef, interactionRef, props.disclosureBinding);
   const displayTasks = disclosure.tasks;
   const previousTargets = useRef<{ selectedId: string | undefined; activeId: string | undefined }>({ selectedId: undefined, activeId: undefined });
@@ -136,7 +138,7 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
     >
       {plan ? (
         <>
-          <PlanHeader theme={theme} plan={plan} services={services} width={innerW} summary={disclosure.summary} onSetAllExpanded={setAllExpanded} />
+          <PlanHeader theme={theme} plan={plan} services={services} width={headerWidth} summary={disclosure.summary} onSetAllExpanded={setAllExpanded} />
           <scrollbox
             id="plan-tasks"
             ref={scrollRef}
@@ -153,7 +155,7 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
                 key={task.id}
                 task={task}
                 theme={theme}
-                width={innerW}
+                width={taskWidth}
                 active={task.id === activeId}
                 selected={focused && disclosure.keyboardFocusVisible && task.id === disclosure.selectedId}
                 expanded={disclosure.expanded.has(task.id)}
@@ -285,7 +287,7 @@ const TaskRow = memo(function TaskRow(props: {
     <box id={`plan-task-${task.id}`} style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
       <box style={{ flexDirection: "row", width: "100%", flexShrink: 0, alignItems: "stretch", backgroundColor: bg }}>
         <box style={{ width: 1, flexShrink: 0, alignSelf: "stretch", backgroundColor: stateColor, minHeight: 1 }} />
-        <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0, justifyContent: "center", paddingLeft: 1, paddingRight: 1, paddingTop: 1, paddingBottom: 1, backgroundColor: bg }}>
+        <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0, justifyContent: "center", paddingLeft: 1, paddingTop: 1, paddingBottom: 1, backgroundColor: bg }}>
           <box
             id={`plan-task-${task.id}-header`}
             style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}
