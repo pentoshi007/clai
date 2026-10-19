@@ -30,6 +30,7 @@ import {
   stripPagerLineGutters,
 } from "../../../ui-core/rendering/pager-source.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
+import { pagerRegionsForPage, type PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
 import {
   PagerLine,
   bodyOnlyForCopy,
@@ -52,6 +53,7 @@ export interface PagerProps {
   readonly source?: ArtifactPagerSource | undefined;
   readonly highlightPath?: string | undefined;
   readonly markdown?: PagerMarkdownMode | undefined;
+  readonly regions?: PagerBodyRegions | undefined;
 }
 
 type PagerViewMode = "formatted" | "raw";
@@ -85,6 +87,7 @@ export function Pager(props: PagerProps): ReactNode {
     source,
     highlightPath,
     markdown = "auto",
+    regions,
   } = props;
   const colorMode = services.capabilities.colorMode;
   const continuous = source?.layout === "continuous";
@@ -178,12 +181,17 @@ export function Pager(props: PagerProps): ReactNode {
     height: Math.max(1, innerH - Number(innerH >= 3) - Number(innerH >= 2)),
   });
   const hasQuery = query.trim().length > 0;
+  const rowHighlightPath = viewMode === "raw" && highlightPath ? highlightPath : "";
+  const rowRegions = useMemo(
+    () => (viewMode === "raw" ? pagerRegionsForPage(regions, artifactPage?.offset) : undefined),
+    [viewMode, regions, artifactPage?.offset],
+  );
   const rowModels = useMemo(
     () => buildPagerRows({
       display, lines, contentCols, useDiffGutters, isSubagent,
-      highlightPath: pathForHighlight, wrapRows: continuous,
+      highlightPath: rowHighlightPath, wrapRows: continuous, regions: rowRegions,
     }),
-    [display, lines, contentCols, useDiffGutters, isSubagent, pathForHighlight, continuous],
+    [display, lines, contentCols, useDiffGutters, isSubagent, rowHighlightPath, continuous, rowRegions],
   );
   const rowWindow = continuous
     ? pagerRowWindow(rowModels.length, viewport.top, viewport.height)
