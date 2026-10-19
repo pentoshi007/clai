@@ -1,4 +1,7 @@
 import type { RendererHandle } from "../../ui-core/bootstrap/lifecycle.js";
+import { settleWithin } from "../../os/settle-within.js";
+
+export const RENDERER_TEARDOWN_BUDGET_MS = 1_000;
 
 export interface OpenTuiRendererControl {
   pause(): void;
@@ -14,6 +17,7 @@ export interface OpenTuiRendererHandleParts {
   readonly finalized: Promise<void>;
   readonly disarmTerminalRescue: () => void;
   readonly disposeServices: () => void;
+  readonly teardownBudgetMs?: number | undefined;
 }
 
 export interface OpenTuiRendererHandle {
@@ -29,6 +33,7 @@ export function createOpenTuiRendererHandle(
     resolveDone = resolve;
   });
 
+  const budget = parts.teardownBudgetMs ?? RENDERER_TEARDOWN_BUDGET_MS;
   let suspension: Promise<void> | undefined;
   let unmountError: unknown;
   const suspend = (): Promise<void> => {
@@ -36,7 +41,7 @@ export function createOpenTuiRendererHandle(
       try { parts.unmount(); }
       catch (error) { unmountError = error; }
       parts.renderer.pause();
-      await parts.renderer.idle();
+      await settleWithin(parts.renderer.idle(), budget);
       parts.renderer.suspend();
     })();
     return suspension;
@@ -50,7 +55,7 @@ export function createOpenTuiRendererHandle(
       try {
         await suspend();
         parts.renderer.destroy();
-        await parts.finalized;
+        await settleWithin(parts.finalized, budget);
         parts.disarmTerminalRescue();
       } finally {
         parts.disposeServices();
