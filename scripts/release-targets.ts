@@ -29,8 +29,7 @@ export function parseReleaseTarget(value: string): ReleaseTarget {
 export function targetNativePackages(target: ReleaseTarget): readonly string[] {
   if (target.includes("windows")) return [];
   const [, platform, arch] = target.split("-");
-  const name = `@opentui/core-${platform}-${arch}`;
-  return platform === "linux" ? [name, `${name}-musl`] : [name];
+  return [`@opentui/core-${platform}-${arch}`];
 }
 
 export function targetBuildArguments(target: ReleaseTarget, output: string): string[] {
