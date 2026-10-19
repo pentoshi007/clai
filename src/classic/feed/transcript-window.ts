@@ -13,6 +13,7 @@ export interface TranscriptWindow {
   readonly height: number;
   readonly totalRows: number;
   readonly maxOffset: number;
+  readonly layoutPending: boolean;
   readonly offset: number;
   readonly scrollAbove: number;
   readonly scrollBelow: number;
@@ -36,6 +37,14 @@ interface TranscriptIndex {
 
 const transcriptIndexes = new WeakMap<readonly FeedBlock[], TranscriptIndex>();
 
+function gapAfter(blocks: readonly FeedBlock[], index: number): number {
+  return index < blocks.length - 1 ? BLOCK_GAP_ROWS : 0;
+}
+
+function blockRows(block: FeedBlock): number {
+  return block.rowCount ?? block.lines.length;
+}
+
 function transcriptIndex(blocks: readonly FeedBlock[]): TranscriptIndex {
   const cached = transcriptIndexes.get(blocks);
   if (cached && cached.pending.every((block) => block.layoutPending)) return cached;
@@ -45,8 +54,8 @@ function transcriptIndex(blocks: readonly FeedBlock[]): TranscriptIndex {
   for (let index = 0; index < blocks.length; index += 1) {
     starts.push(totalRows);
     positions.set(blocks[index]!.key, index);
-    totalRows += blocks[index]!.rowCount ?? blocks[index]!.lines.length;
-    if (index < blocks.length - 1) totalRows += BLOCK_GAP_ROWS;
+    const rows = blockRows(blocks[index]!);
+    totalRows += rows + gapAfter(blocks, index);
   }
   const result = { starts, positions, totalRows, pending: blocks.filter((block) => block.layoutPending) };
   transcriptIndexes.set(blocks, result);
@@ -62,12 +71,13 @@ export function offsetForTranscriptAnchor(
   budget: number,
   anchor: TranscriptRowAnchor,
 ): number | undefined {
-  const index = transcriptIndex(blocks);
-  const position = index.positions.get(anchor.blockKey);
+  const position = transcriptIndex(blocks).positions.get(anchor.blockKey);
   if (position === undefined) return undefined;
+  measureBelow(blocks, position);
+  const index = transcriptIndex(blocks);
   const block = blocks[position]!;
-  const height = block.rowCount ?? block.lines.length;
-  const gap = position < blocks.length - 1 ? BLOCK_GAP_ROWS : 0;
+  const height = blockRows(block);
+  const gap = gapAfter(blocks, position);
   const line = Math.max(0, Math.min(anchor.lineIndex ?? height, height + gap - 1));
   return index.totalRows - index.starts[position]! - line - Math.max(0, Math.floor(budget));
 }
@@ -96,8 +106,7 @@ function sliceRows(
   for (let blockIndex = first; blockIndex < blocks.length && cursor < end; blockIndex += 1) {
     const block = blocks[blockIndex]!;
     const lines = block.lines;
-    const gap = blockIndex < blocks.length - 1 ? BLOCK_GAP_ROWS : 0;
-    const span = lines.length + gap;
+    const span = lines.length + gapAfter(blocks, blockIndex);
     const from = Math.max(0, start - cursor);
     const to = Math.min(span, end - cursor);
     for (let offset = from; offset < to; offset += 1) {
@@ -112,34 +121,36 @@ function sliceRows(
   return rows;
 }
 
+function measureFromBottom(blocks: readonly FeedBlock[], rows: number): void {
+  let covered = 0;
+  for (let index = blocks.length - 1; index >= 0 && covered < rows; index -= 1) {
+    const block = blocks[index]!;
+    const rows = block.layoutPending && block.measure ? block.measure() : blockRows(block);
+    covered += rows + gapAfter(blocks, index);
+  }
+}
+
+function measureBelow(blocks: readonly FeedBlock[], position: number): void {
+  for (let index = position; index < blocks.length; index += 1) {
+    const block = blocks[index]!;
+    if (block.layoutPending) block.measure?.();
+  }
+}
+
 export function planTranscriptWindow(
   blocks: readonly FeedBlock[],
   budget: number,
   offsetFromBottom: number,
 ): TranscriptWindow {
   const viewportRows = Math.max(0, Math.floor(budget));
-  let index = transcriptIndex(blocks);
-  let requestedOffset = offsetFromBottom;
-  let totalRows = index.totalRows;
-  let maxOffset = Math.max(0, totalRows - viewportRows);
-  let offset = Math.max(0, Math.min(Math.floor(requestedOffset), maxOffset));
-  let start = Math.max(0, totalRows - offset - viewportRows);
-  let rows: TranscriptWindowRow[] = [];
-  for (;;) {
-    const first = firstVisibleBlock(index.starts, start);
-    const block = blocks[first];
-    const anchor = block ? { blockKey: block.key, lineIndex: start - index.starts[first]! } : undefined;
-    rows = viewportRows === 0 ? [] : sliceRows(blocks, index, start, totalRows - offset);
-    const measured = transcriptIndex(blocks);
-    if (measured === index) break;
-    requestedOffset = offset === 0 ? 0 : start === 0 ? Number.MAX_SAFE_INTEGER
-      : anchor ? offsetForTranscriptAnchor(blocks, viewportRows, anchor) ?? offset : offset;
-    index = measured;
-    totalRows = index.totalRows;
-    maxOffset = Math.max(0, totalRows - viewportRows);
-    offset = Math.max(0, Math.min(Math.floor(requestedOffset), maxOffset));
-    start = Math.max(0, totalRows - offset - viewportRows);
-  }
+  const requestedOffset = Math.max(0, Math.floor(offsetFromBottom));
+  measureFromBottom(blocks, Math.min(Number.MAX_SAFE_INTEGER, requestedOffset + viewportRows));
+  const index = transcriptIndex(blocks);
+  const totalRows = index.totalRows;
+  const maxOffset = Math.max(0, totalRows - viewportRows);
+  const offset = Math.min(requestedOffset, maxOffset);
+  const start = Math.max(0, totalRows - offset - viewportRows);
+  const rows = viewportRows === 0 ? [] : sliceRows(blocks, index, start, totalRows - offset);
   const visibleItemIds = new Set<string>();
   for (const row of rows) visibleItemIds.add(row.block.itemId);
   return {
@@ -147,6 +158,7 @@ export function planTranscriptWindow(
     height: rows.length,
     totalRows,
     maxOffset,
+    layoutPending: index.pending.length > 0,
     offset,
     scrollAbove: start,
     scrollBelow: offset,

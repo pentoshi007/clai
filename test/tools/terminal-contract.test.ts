@@ -31,7 +31,7 @@ describe("terminal model contract", () => {
     expect(property("terminal.read", "waitMs").maximum).toBe(30_000);
     expect(property("terminal.start", "columns").minimum).toBe(2);
     expect(property("terminal.send", "submit").default).toBe("enter");
-    expect(property("terminal.send", "secretSource").enum).toEqual(["auto", "user", "prompt"]);
+    expect(property("terminal.send", "secretSource").enum).toEqual(["auto", "user", "prompt", "sudo", "store"]);
     expect(property("terminal.send", "secretSource").default).toBe("auto");
     expect(property("terminal.send", "secretSource").description).toContain("user requires it");
     expect(property("terminal.send", "view").description).toMatch(/each event as base64/i);

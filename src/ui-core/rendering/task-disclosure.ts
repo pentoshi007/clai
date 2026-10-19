@@ -1,4 +1,4 @@
-import stringWidth from "string-width";
+import { terminalWidth } from "./text-width.js";
 import type { PlanTask, SessionPlan } from "../../store/plan.js";
 import { activeTaskId, wrapPlanText } from "./plan-view.js";
 
@@ -27,9 +27,9 @@ export function wrapTaskDisclosureTitle(title: string, width: number, expandable
   if (!expandable) return lines;
   const last = lines[lines.length - 1]!;
   const finalWidth = Math.max(1, width - 6 - TASK_DISCLOSURE_BUTTON_WIDTH);
-  if (stringWidth(last) <= finalWidth) return lines;
+  if (terminalWidth(last) <= finalWidth) return lines;
   const space = last.lastIndexOf(" ");
-  if (space > 0 && stringWidth(last.slice(space + 1)) <= finalWidth) {
+  if (space > 0 && terminalWidth(last.slice(space + 1)) <= finalWidth) {
     return [...lines.slice(0, -1), last.slice(0, space), last.slice(space + 1)];
   }
   return [...lines.slice(0, -1), ...wrapPlanText(last, finalWidth)];

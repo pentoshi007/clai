@@ -1,17 +1,19 @@
 import type { TranscriptItem } from "../../app/ports/transcript-item.js";
 import { flattenTranscriptHistory } from "../../ui-core/state/transcript-history.js";
 
-export function preserveTranscript(
-  existing: readonly TranscriptItem[] | undefined,
-  incoming: readonly TranscriptItem[] | undefined,
+function hasCompaction(items: readonly TranscriptItem[]): boolean {
+  return items.some((item) => item.kind === "compacted");
+}
+
+export function mergeTranscripts(
+  winner: readonly TranscriptItem[] | undefined,
+  loser: readonly TranscriptItem[] | undefined,
 ): TranscriptItem[] | undefined {
-  if (!existing?.length) return incoming ? [...incoming] : undefined;
-  if (!incoming?.length) return [...existing];
-  const replacements = new Map(incoming.map((item) => [item.id, item]));
-  const merged = existing.map((item) => replacements.get(item.id) ?? item);
-  const known = new Set(existing.map((item) => item.id));
-  for (const item of incoming) {
-    if (!known.has(item.id)) merged.push(item);
-  }
-  return flattenTranscriptHistory(merged);
+  if (!winner?.length) return loser ? flattenTranscriptHistory([...loser]) : undefined;
+  if (!loser?.length) return [...winner];
+  if (hasCompaction(winner)) return [...winner];
+  const known = new Set(winner.map((item) => item.id));
+  const appended = loser.filter((item) => !known.has(item.id));
+  if (appended.length === 0) return [...winner];
+  return flattenTranscriptHistory([...winner, ...appended]);
 }

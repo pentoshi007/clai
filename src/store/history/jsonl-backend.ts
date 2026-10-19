@@ -6,7 +6,7 @@ import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
 import { backupActiveHistory, compareHistoryFreshness, dedupeHistoryById, ensureHistoryRecovered, HistoryRecord, hydrateHistoryRecord, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, readJsonlRecordsFrom, sortHistoryByUpdatedDesc } from "./recovery.js";
 import { appendRecordsToFile, archiveFilePath } from "./sqlite-backend.js";
 import { mkdir } from "node:fs/promises";
-import { preserveTranscript } from "./transcript-merge.js";
+import { mergeTranscripts } from "./transcript-merge.js";
 
 let jsonlWriteChain: Promise<void> = Promise.resolve();
 
@@ -191,11 +191,11 @@ async function upsertJsonlUnderLock(
   if (existingEntry && (stale || changedWriter || mayLoseItems)) {
     const stored = await readIndexedHistoryRecord<HistoryRecord>(jsonlFilePath(), existingEntry);
     if (stored) {
-      const preferred = stale ? stored : record;
-      const other = stale ? record : stored;
-      const transcript = preserveTranscript(other.transcript, preferred.transcript);
+      const winner = stale ? stored : record;
+      const loser = stale ? record : stored;
+      const transcript = mergeTranscripts(winner.transcript, loser.transcript);
       if (stale && (transcript?.length ?? 0) === (stored.transcript?.length ?? 0)) return hydrateHistoryRecord(stored);
-      record = { ...preferred, transcript };
+      record = { ...winner, transcript };
     }
   }
 

@@ -656,6 +656,18 @@ describe("classic command parity (W12)", () => {
     expect(getConfig().rtk).toBe(false);
   });
 
+  spec(["creds"], "/creds opens the encrypted credential picker without revealing stored text", async () => {
+    const { services } = open();
+    await run(services, "creds");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
+    const state = services.overlay.getState();
+    if (state.kind === "picker") {
+      expect(state.request.title).toBe("Credentials · encrypted local store");
+      expect(state.request.options.map((option) => option.value)).toEqual(expect.arrayContaining(["add", "sudo"]));
+    }
+    services.overlay.close();
+  });
+
   spec(["subagents"], "/subagents opens the shared picker and returns to the main conversation", async () => {
     const { services } = open();
     await run(services, "subagents");
