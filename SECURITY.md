@@ -22,7 +22,7 @@ Coordinate disclosure with the maintainer while the report is validated and a fi
 
 clai executes tools with the privileges of the user running it. Tool classification, confirmation prompts, mode restrictions, and engagement scope are application policies; they are not an OS sandbox.
 
-Fresh configurations use **auto-allow** permissions. Confirmation behavior varies between `default`, `auto-allow`, and `full-access`; deletion is not universally subject to a prompt. See [modes and permissions](README.md#modes-and-permissions) for the user-facing policy. Hard safety blocks and configured scope checks still apply.
+Fresh configurations use **full-access** permissions. Confirmation behavior varies between `default`, `auto-allow`, and `full-access`; deletion is not universally subject to a prompt. See [modes and permissions](guides/usage.md#modes-and-permissions) for the user-facing policy. Hard safety blocks and configured scope checks still apply.
 
 Saved API credentials and account tokens are retained in **plaintext** at `~/.clai/keys.json`, with restricted permissions (`0600` on POSIX). The OS keyring is also used when available, but the recovery file remains on disk. Access by the same user or a privileged process is outside that file's protection boundary.
 

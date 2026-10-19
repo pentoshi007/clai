@@ -208,7 +208,7 @@ Use `/usage` to inspect reported cached input and cache writes. An initial cache
 - Applicable authentication, quota, rate-limit, and server failures can rotate credentials. The most recently successful credential is preferred.
 - Cross-provider fallback is opt-in through `/fallback on`. `/freeonly on` restricts fallback by clai's configured provider categories; this filter does not determine a model's price or account bill.
 
-Saved credentials are retained in the plaintext recovery file `~/.clai/keys.json`, with restricted POSIX permissions, and are also written to the OS keyring when available. See [configuration and privacy](README.md#configuration-and-privacy).
+Saved credentials are retained in the plaintext recovery file `~/.clai/keys.json`, with restricted POSIX permissions, and are also written to the OS keyring when available. See [configuration and privacy](guides/configuration.md).
 
 ## Web search
 
