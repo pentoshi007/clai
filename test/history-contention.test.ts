@@ -66,4 +66,26 @@ describe("independent session storage", () => {
     expect(saved?.messages[0]?.content).toBe("current context");
     expect(saved?.transcript?.map((item) => item.id)).toEqual(expect.arrayContaining([first.id, late.id, newest.id]));
   });
+
+  it("keeps an older writer's late items in a compacted session through the newer writer's later saves", async () => {
+    const { upsertSession, getSession } = await import("../src/store/history.js");
+    const shared = [
+      { id: "c-first", kind: "user" as const, text: "first", done: true },
+      { id: "c-summary", kind: "compacted" as const, summary: "memory", originalItems: [], done: true },
+      { id: "c-after", kind: "user" as const, text: "after compaction", done: true },
+    ];
+    const late = { id: "c-late", kind: "assistant" as const, text: "finished in minimized sudo process", done: true };
+    const resumed = { id: "c-resumed", kind: "user" as const, text: "resumed prompt", done: true };
+    const answer = { id: "c-answer", kind: "assistant" as const, text: "resumed answer", done: true };
+    await upsertSession("compacted-writers", [], undefined, shared, undefined, 10, "0001-writer-a");
+    await upsertSession("compacted-writers", [{ role: "user", content: "current" }], undefined, [...shared, resumed], undefined, 1, "0002-writer-b");
+    await upsertSession("compacted-writers", [{ role: "user", content: "stale" }], undefined, [...shared, late], undefined, 11, "0001-writer-a");
+    expect((await getSession("compacted-writers"))?.transcript?.map((item) => item.id))
+      .toEqual(["c-first", "c-summary", "c-after", "c-late", "c-resumed"]);
+    await upsertSession("compacted-writers", [{ role: "user", content: "current" }], undefined, [...shared, resumed, answer], undefined, 2, "0002-writer-b");
+    const saved = await getSession("compacted-writers");
+    expect(saved?.messages[0]?.content).toBe("current");
+    expect(saved?.transcript?.map((item) => item.id))
+      .toEqual(["c-first", "c-summary", "c-after", "c-late", "c-resumed", "c-answer"]);
+  });
 });

@@ -45,6 +45,7 @@ export interface FeedBlock {
   readonly lines: readonly string[];
   readonly rowCount?: number;
   readonly layoutPending?: boolean;
+  readonly measure?: () => number;
   readonly disclosures?: readonly BlockDisclosure[];
   readonly turnId: string | undefined;
   readonly sequence: number;
@@ -284,15 +285,20 @@ export class FeedBlockCache {
     const { item, kind } = inputs;
     let measuredRows = rowCount;
     const estimate = rowCount ?? estimatedBlockRows(item, ctx.width);
-    const layout = (): BlockLayout => {
-      const cached = this.layouts.get(inputs, "");
-      if (cached) return cached;
+    const render = (): BlockLayout => {
       const disclosures: BlockDisclosure[] = [];
       const rendered = renderLines({ ...ctx, disclosures }, item, kind, undefined);
       const result = { lines: reflowRows(rendered.lines, ctx.width), disclosures };
       measuredRows = result.lines.length;
+      return result;
+    };
+    const layout = (): BlockLayout => {
+      const cached = this.layouts.get(inputs, "");
+      if (cached) return cached;
+      const result = render();
       return this.entries.get(item.id)?.inputs === inputs ? this.retainLayout(inputs, result) : result;
     };
+    const measure = (): number => measuredRows ?? this.layouts.get(inputs, "")?.lines.length ?? render().lines.length;
     return {
       key,
       itemId: item.id,
@@ -300,6 +306,7 @@ export class FeedBlockCache {
       open: isOpen(item),
       get rowCount() { return measuredRows ?? estimate; },
       get layoutPending() { return measuredRows === undefined; },
+      measure,
       get lines() { return layout().lines; },
       get disclosures() { return layout().disclosures; },
       turnId: item.turnId,

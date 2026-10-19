@@ -17,39 +17,52 @@ interface Token {
   readonly value: string;
 }
 
-export function tokenize(text: string): Token[] {
-  if (!ESCAPE_START.test(text)) {
-    return text.length > 0 ? [{ kind: "text", value: text }] : [];
+function csiEnd(text: string, end: number): number {
+  while (end < text.length) {
+    const code = text.charCodeAt(end);
+    if (code >= 0x40 && code <= 0x7e) return end + 1;
+    if (code < 0x20 || code > 0x3f) return end;
+    end += 1;
   }
+  return end;
+}
+
+function oscEnd(text: string, end: number): number {
+  while (end < text.length) {
+    const code = text.charCodeAt(end);
+    if (code === 0x07) return end + 1;
+    if (code === 0x1b && text.charCodeAt(end + 1) === 0x5c) return end + 2;
+    end += 1;
+  }
+  return end;
+}
+
+function escapeEnd(text: string, index: number): number {
+  let end = index + 1;
+  const introducer = text[end];
+  if (introducer === "[") {
+    end = csiEnd(text, end + 1);
+  } else if (introducer === "]") {
+    end = oscEnd(text, end + 1);
+  } else {
+    end += 1;
+  }
+  return Math.min(end, text.length);
+}
+
+export function tokenize(text: string): Token[] {
+  let escape = text.indexOf("\x1b");
+  if (escape < 0) return text.length > 0 ? [{ kind: "text", value: text }] : [];
   const tokens: Token[] = [];
   let index = 0;
-  let run = "";
-  while (index < text.length) {
-    if (text.charCodeAt(index) !== 0x1b) {
-      run += text[index];
-      index += 1;
-      continue;
-    }
-    if (run.length > 0) {
-      tokens.push({ kind: "text", value: run });
-      run = "";
-    }
-    let end = index + 1;
-    if (text[end] === "[") {
-      end += 1;
-      while (end < text.length && !/[A-Za-z]/.test(text[end]!)) end += 1;
-      end += 1;
-    } else if (text[end] === "]") {
-      end += 1;
-      while (end < text.length && text.charCodeAt(end) !== 0x07) end += 1;
-      end += 1;
-    } else {
-      end += 1;
-    }
-    tokens.push({ kind: "escape", value: text.slice(index, Math.min(end, text.length)) });
-    index = Math.min(end, text.length);
+  while (escape >= 0) {
+    if (escape > index) tokens.push({ kind: "text", value: text.slice(index, escape) });
+    const end = escapeEnd(text, escape);
+    tokens.push({ kind: "escape", value: text.slice(escape, end) });
+    index = end;
+    escape = text.indexOf("\x1b", index);
   }
-  if (run.length > 0) tokens.push({ kind: "text", value: run });
+  if (index < text.length) tokens.push({ kind: "text", value: text.slice(index) });
   return tokens;
 }
 
@@ -61,6 +74,7 @@ function extendedColorArgs(codes: readonly number[], index: number): number {
 }
 
 export function hasOpenStyle(text: string): boolean {
+  if (!text.includes("\x1b")) return false;
   let foreground = false;
   let background = false;
   let bold = false;

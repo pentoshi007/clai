@@ -54,8 +54,8 @@ export const TOOL_DEFINITIONS_TERMINAL: ToolDefinition[] = [
         kind: { type: "string", enum: ["text", "secret", "control", "eof"] },
         text: { type: "string", description: "text only; never passwords." },
         secretPrompt: { type: "string", description: "secret only: nonsecret masked-input label." },
-        secretSource: { type: "string", enum: ["auto", "user", "prompt", "sudo", "store"], default: "auto", description: "auto: one user password or masked input; user requires it; prompt: masked input only; sudo: this machine's /creds password (only at a local sudo prompt); store: private entry by credentialId." },
-        credentialId: { type: "string", description: "secret only: ID from creds.list for a password-only entry; sends its full contents without exposing them to the model. Use secretSource store or auto." },
+        secretSource: { type: "string", enum: ["auto", "user", "prompt", "sudo", "store"], default: "auto", description: "auto: one user password or masked input; user requires it; prompt: masked input only; sudo: /creds machine password at a local sudo prompt; store: credentialId entry." },
+        credentialId: { type: "string", description: "secret only: creds.list ID; sent without exposing it to the model." },
         submit: { type: "string", enum: ["enter", "none"], default: "enter", description: "text/secret: enter adds Enter (omit trailing newline); none types only." },
         control: {
           type: "string",

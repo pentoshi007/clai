@@ -4,13 +4,15 @@ import { fixOwner, handlePermissionError, safeExists } from "../os/permissions.j
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import net from "node:net";
+import { getUserHome } from "../os/user-identity.js";
 import { getDataDir } from "./paths.js";
+import { adoptLegacyFile } from "./legacy-location.js";
 
 const scopeFile =
   process.env.CLAI_SCOPE_FILE ??
   (process.env.VITEST_WORKER_ID
     ? join(tmpdir(), `clai-scope-${process.env.VITEST_WORKER_ID}.json`)
-    : join(getDataDir(), "scope.json"));
+    : join(getUserHome(), ".clai", "scope.json"));
 
 export interface EngagementScope {
   name?: string | undefined;
@@ -34,6 +36,9 @@ let cachedMtimeMs = 0;
 
 export async function loadScope(): Promise<EngagementScope | undefined> {
   try {
+    if (!process.env.CLAI_SCOPE_FILE && !process.env.VITEST_WORKER_ID) {
+      await adoptLegacyFile(scopeFile, join(getDataDir(), "scope.json"));
+    }
     if (!(await safeExists(scopeFile))) {
       cached = undefined;
       cacheLoaded = true;
