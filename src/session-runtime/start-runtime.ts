@@ -29,6 +29,7 @@ export async function startIndependentRuntime(options: IndependentRuntimeOptions
   setAllowInteractiveStdinInherit(false);
   const manager = new RuntimeViewManager(bridge);
   let lifecycle: RendererLifecycle | undefined;
+  const pendingResume = options.resume ? resolveResumeTarget(options.resume) : undefined;
   const seeded = await seedSessionModel(options.sessionId, {
     provider: options.provider, model: options.model, modelExplicit: options.modelExplicit === true,
     inheritLastUsed: options.resume === undefined, freeCatalogFallback: options.resume === undefined,
@@ -61,8 +62,7 @@ export async function startIndependentRuntime(options: IndependentRuntimeOptions
     onError: (error) => { console.error(error instanceof Error ? error.message : String(error)); },
   });
   try {
-    const resolution = options.resume ? await resolveResumeTarget(options.resume) : undefined;
-    await applyResumeResolution(services, resolution);
+    await applyResumeResolution(services, await pendingResume);
     await lifecycle.start();
     unbind = bindRuntimeChildBridge(bridge, services, () => { void lifecycle?.shutdownAndExit(0); });
     if (!await bridge.connect()) throw new Error("could not connect independent session runtime");
