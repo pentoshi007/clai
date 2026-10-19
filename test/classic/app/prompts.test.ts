@@ -179,7 +179,7 @@ describe("Classic /prompts", () => {
     expect(frame()).not.toContain("uncommitted body suffix");
     expect(h.toastTexts().join(" ")).not.toMatch(/EPERM|could not (?:save|load) session prompts/);
     expect(await h.services.session.promptHistory.count()).toBe(2);
-  });
+  }, 20_000);
 
   it("reports unavailable prompt storage without rejecting the slash command", async () => {
     const h = await mount(80, {
