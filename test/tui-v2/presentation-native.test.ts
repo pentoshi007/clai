@@ -13,6 +13,8 @@ const cases = [
   ["queue-panel", "Native queue panel passed"],
   ["toast-centered", "Native centered toasts passed"],
   ["tool-output-preview", "Native output previews passed"],
+  ["tool-input-pager", "Native tool input pager passed"],
+  ["pager-colors", "Native pager colors passed"],
 ] as const;
 
 describe.skipIf(!bun)("native terminal presentation", () => {

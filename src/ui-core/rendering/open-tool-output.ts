@@ -14,6 +14,7 @@ import type { FileChange } from "../../tools/file-diff.js";
 import { formatModalPlainText } from "./file-diff-view.js";
 import { defaultPagerMarkdownMode } from "./pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "./pager-source.js";
+import type { PagerBodyRegions } from "./pager-regions.js";
 import { presentFsReadArgs } from "./tool-presenter.js";
 
 interface SearchHit {
@@ -327,8 +328,12 @@ export async function openToolOutputPager(
         if (sourcePath) {
           try {
             const info = await stat(sourcePath);
-            if (info.isFile() && info.size <= FULL_SOURCE_FILE_MAX_BYTES) {
-              body = await readFile(sourcePath, "utf8");
+            const text =
+              info.isFile() && info.size <= FULL_SOURCE_FILE_MAX_BYTES
+                ? await readFile(sourcePath, "utf8")
+                : undefined;
+            if (text !== undefined && !exceedsInlinePagerBudget(text)) {
+              body = text;
               highlightPath = sourcePath;
               openedSourceFile = true;
             } else if (info.isFile()) {
@@ -366,16 +371,20 @@ export async function openToolOutputPager(
       }
     }
 
-    body = body
-      .replace(/^(ok|failed)\n/gm, "")
-      .replace(/^Tool\s+\S+\s+result\s*\([^)]*\)\s*:?\s*\n?/gim, "")
-      .replace(/^full output saved to .+\n?/gim, "")
-      .replace(/^artifact: .+\n?/gim, "")
-      .trimEnd();
+    body = openedSourceFile
+      ? body.trimEnd()
+      : body
+          .replace(/^(ok|failed)\n/gm, "")
+          .replace(/^Tool\s+\S+\s+result\s*\([^)]*\)\s*:?\s*\n?/gim, "")
+          .replace(/^full output saved to .+\n?/gim, "")
+          .replace(/^artifact: .+\n?/gim, "")
+          .trimEnd();
 
-    if (!artifactSource) body = formatToolPagerBody(body);
+    if (!artifactSource && !openedSourceFile) body = formatToolPagerBody(body);
 
     let header = "";
+    let headerLines = 0;
+    let commandLines = 0;
     if (options.bodyOverride === undefined) {
       const label = cleanArgsLabel(item.name, item.argsDisplay);
       if (label) {
@@ -388,6 +397,8 @@ export async function openToolOutputPager(
                 ? "path"
                 : "query";
         header = `${kind}: ${label}\n\n`;
+        headerLines = header.split("\n").length - 1;
+        if (kind === "command") commandLines = headerLines - 1;
       }
     }
 
@@ -404,9 +415,8 @@ export async function openToolOutputPager(
 
     const title =
       options.titleOverride ?? toolPagerTitle(item.name, item.argsDisplay);
-    const pagerBody = artifactSource
-      ? body || "(no output)"
-      : `${header}${body || "(no output)"}${note}`;
+    const shownBody = body || "(no output)";
+    const pagerBody = artifactSource ? shownBody : `${header}${shownBody}${note}`;
     const mdMode = defaultPagerMarkdownMode({
       kind: "tool",
       toolName: item.name,
@@ -419,7 +429,21 @@ export async function openToolOutputPager(
           ? body || "(no output)"
           : extractFsReadFileBody(body) || body || "(no output)"
         : pagerBody;
-    if (!artifactSource && exceedsInlinePagerBudget(finalBody)) {
+    let regions: PagerBodyRegions | undefined;
+    if (mdMode !== "force") {
+      if (openedSourceFile && artifactSource) {
+        regions = { codeStart: 0, codeOnEveryPage: true };
+      } else if (openedSourceFile) {
+        regions = { codeStart: headerLines, codeEnd: headerLines + (body ? body.split("\n").length : 0) };
+      } else if (!artifactSource && commandLines > 0) {
+        regions = { inputEnd: commandLines };
+      }
+    }
+    if (!artifactSource && openedSourceFile && highlightPath && mdMode !== "force" && exceedsInlinePagerBudget(finalBody)) {
+      artifactSource = createArtifactPagerSource(highlightPath);
+      finalBody = (await artifactSource.readPage(0)).body;
+      regions = { codeStart: 0, codeOnEveryPage: true };
+    } else if (!artifactSource && exceedsInlinePagerBudget(finalBody)) {
       const paged = await pageTextBody(
         finalBody,
         highlightPath ?? item.artifactPath,
@@ -433,6 +457,7 @@ export async function openToolOutputPager(
       artifactSource,
       mdMode === "force" ? undefined : highlightPath,
       mdMode,
+      regions,
     );
     if (!opened) {
       services.session.notice("warn", "could not open output pager (another overlay is open)");
