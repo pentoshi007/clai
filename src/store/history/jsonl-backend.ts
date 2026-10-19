@@ -188,14 +188,17 @@ async function upsertJsonlUnderLock(
   const stale = existingEntry && compareHistoryFreshness(record, summaryFreshness(existingEntry.summary)) <= 0;
   const changedWriter = existingEntry?.summary.writerGeneration !== record.writerGeneration;
   const mayLoseItems = existingEntry && existingEntry.summary.itemCount > (record.transcript?.length ?? 0);
-  if (existingEntry && (stale || changedWriter || mayLoseItems)) {
+  const pendingMerge = existingEntry?.summary.pendingMerge === true;
+  if (existingEntry && (stale || changedWriter || mayLoseItems || pendingMerge)) {
     const stored = await readIndexedHistoryRecord<HistoryRecord>(jsonlFilePath(), existingEntry);
     if (stored) {
       const winner = stale ? stored : record;
       const loser = stale ? record : stored;
       const transcript = mergeTranscripts(winner.transcript, loser.transcript);
       if (stale && (transcript?.length ?? 0) === (stored.transcript?.length ?? 0)) return hydrateHistoryRecord(stored);
-      record = { ...winner, transcript };
+      const { pendingMerge: _pendingMerge, ...base } = winner;
+      const unseen = (transcript?.length ?? 0) > (winner.transcript?.length ?? 0);
+      record = { ...base, transcript, ...(unseen ? { pendingMerge: true as const } : {}) };
     }
   }
 

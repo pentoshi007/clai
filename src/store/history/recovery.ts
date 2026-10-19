@@ -58,6 +58,7 @@ export interface HistoryRecord {
   provider?: ProviderId | undefined;
   model?: string | undefined;
   thinking?: ReasoningPreference | undefined;
+  pendingMerge?: true | undefined;
 }
 
 export let cachedSessionList:
