@@ -1,11 +1,12 @@
 import {
   PLAN_MAX_WIDTH,
   PLAN_MIN_WIDTH,
+  PLAN_OVERLAY_SHARE,
   type PlanPlacement,
 } from "../../ui-core/layout/compute-layout.js";
 
 const PREFERRED_CHAT_WIDTH = 24;
-const PLAN_CHAT_GAP = 2;
+const PLAN_CHAT_GAP = 1;
 
 export interface AppWidthBudgetInput {
   readonly terminalWidth: number;
@@ -58,13 +59,13 @@ export function appWidthBudget(input: AppWidthBudgetInput): AppWidthBudget {
     planChatGap = PLAN_CHAT_GAP;
     const desiredPlanWidth = Math.min(
       PLAN_MAX_WIDTH,
-      Math.max(PLAN_MIN_WIDTH, Math.floor(terminalWidth * 0.4)),
+      Math.max(PLAN_MIN_WIDTH, Math.floor(terminalWidth * PLAN_OVERLAY_SHARE)),
     );
     overlayPlanWidth = Math.min(
       desiredPlanWidth,
       contentInnerWidth - PREFERRED_CHAT_WIDTH - planChatGap,
     );
-    overlayReserveWidth = overlayPlanWidth + planChatGap;
+    overlayReserveWidth = overlayPlanWidth;
     showPlanOverlay = overlayPlanWidth >= PLAN_MIN_WIDTH;
   }
 
