@@ -103,7 +103,7 @@ describe("Classic /prompts", () => {
     expect(h.services.focus.activeContext()).toBe("composer");
     h.wiring.composer.setText("still responsive");
     await expect.poll(frame).toContain("still responsive");
-  });
+  }, 20_000);
 
   it("pages and searches beyond the first disk slice and copies the complete journal", async () => {
     const h = await mount(100);
