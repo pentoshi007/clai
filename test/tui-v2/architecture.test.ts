@@ -57,7 +57,6 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "components", "modal", "secret-modal.tsx"),
   join(tuiV2Root, "components", "modal", "text-editor-modal.tsx"),
   join(tuiV2Root, "components", "modal", "scope-modal.tsx"),
-  join(tuiV2Root, "components", "modal", "prompt-actions-modal.tsx"),
   join(tuiV2Root, "components", "modal", "keys-modal.tsx"),
   join(tuiV2Root, "components", "pager", "pager.tsx"),
   join(tuiV2Root, "components", "pager", "pager-line.tsx"),
