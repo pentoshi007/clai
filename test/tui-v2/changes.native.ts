@@ -10,7 +10,8 @@ import { attachCommandHandlers } from "../../src/ui-core/commands/command-handle
 import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { hydrateFromClassicTranscript } from "../../src/ui-core/state/transcript-hydrate.js";
 import { getProvider } from "../../src/llm/router.js";
-import { savedChanges, savedChangeTranscript } from "../fixtures/session-changes.js";
+import { diffedChangeTranscript, savedChanges, savedChangeTranscript } from "../fixtures/session-changes.js";
+import { syntaxColor } from "../../src/ui-core/rendering/file-diff-view.js";
 import { themeFor } from "../../src/ui-core/rendering/theme.js";
 
 spyOn(getProvider("free"), "listModels").mockResolvedValue([]);
@@ -79,5 +80,60 @@ for (const width of [120, 80, 40]) {
     await setup.renderer.idle();
   }
 }
+for (const width of [120, 60]) {
+  const services = createCompositionRoot({
+    noHistory: true, provider: "free", model: "fixture-model",
+    updates: { async check() { return { state: "current", currentVersion: "0.0.0", updateAvailable: false }; } },
+    persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: width, rows: 45 }),
+  });
+  services.session.loadHistory([], { sessionId: `diffed-change-${width}`, transcript: diffedChangeTranscript });
+  services.transcript.hydrate(hydrateFromClassicTranscript(diffedChangeTranscript).state);
+  attachCommandHandlers(services);
+  const setup = await testRender(createElement(ServicesProvider, { services, children: createElement(App) }), { width, height: 45, kittyKeyboard: true, useThread: false });
+  const theme = themeFor(services.capabilities.themeHint);
+  const spans = () => setup.captureSpans().lines.flatMap((line) => line.spans);
+  async function settle(action: () => unknown = () => undefined): Promise<string> {
+    await act(async () => { await action(); });
+    await act(async () => { await setup.flush(); });
+    return setup.captureCharFrame().replace(/[│║]/g, "").replace(/\s+/g, " ");
+  }
+  async function waitFor(text: string): Promise<string> {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const frame = await settle();
+      if (frame.includes(text)) return frame;
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    }
+    throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
+  }
+  function spanOn(row: string, text: string) {
+    const line = setup.captureSpans().lines.find((candidate) => candidate.spans.map((span) => span.text).join("").includes(row));
+    assert.ok(line, `Missing row: ${row}`);
+    const span = line.spans.find((candidate) => candidate.text.includes(text));
+    assert.ok(span, `Missing ${text} on ${row}`);
+    return span;
+  }
+  try {
+    await settle(() => setup.mockInput.typeText("/changes"));
+    await settle(() => setup.mockInput.pressEnter());
+    await waitFor("+1 -1 /repo/src/answer.ts");
+    await settle(() => setup.mockInput.pressKey("\x1b[F"));
+    const frame = await waitFor("7 + const answer = 42;");
+    assert.ok(frame.includes("edit · /repo/src/answer.ts"), frame);
+    assert.ok(frame.includes("7 - const v6 = 6;"), frame);
+    assert.ok(frame.includes("create · /repo/tools/run.py"), frame);
+    assert.ok(frame.includes("1 + def run():"), frame);
+    assert.ok(!frame.includes("diff not kept"), frame);
+    const added = spanOn("+ const answer = 42;", "const");
+    assert.deepEqual(added.fg.toInts(), RGBA.fromHex(syntaxColor("keyword", theme)).toInts());
+    assert.deepEqual(added.bg.toInts(), RGBA.fromHex(theme.diffAddBg).toInts());
+    assert.deepEqual(spanOn("- const v6 = 6;", "const").bg.toInts(), RGBA.fromHex(theme.diffDelBg).toInts());
+    assert.deepEqual(spanOn("+ def run():", "def").fg.toInts(), RGBA.fromHex(syntaxColor("keyword", theme)).toInts());
+    assert.ok(spans().some((span) => span.text.includes("+1") && span.fg.toInts().join() === RGBA.fromHex(theme.success).toInts().join()));
+  } finally {
+    await act(async () => { services.dispose(); setup.renderer.destroy(); });
+    await setup.renderer.idle();
+  }
+}
 assert.equal(requests.mock.calls.length, 0);
-console.log("Native changes passed: persistent per-run summaries, session totals, per-file lists, long filenames and empty sessions at 120/80/40 columns");
+console.log("Native changes passed: persistent per-run summaries, session totals, per-file lists, per-file diffs, long filenames and empty sessions at 120/80/40 columns");

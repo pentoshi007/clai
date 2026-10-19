@@ -29,7 +29,9 @@ describe("session line changes", () => {
     expect(frozen.totals).toEqual({ added: 2, removed: 3 });
     expect(ledger.snapshot()).toEqual({ totals: { added: 3, removed: 4 }, files: [
       { path: "/repo/app.ts", added: 3, removed: 2 }, { path: "/repo/old.ts", added: 0, removed: 2 },
-    ] });
+    ], changes: [edit, remove, followup] });
+    expect(ledger.snapshot()).toBe(ledger.snapshot());
+    expect(frozen.changes).toEqual([edit, remove]);
   });
 
   it("omits absent, zero, binary and invalid line statistics", () => {
@@ -39,7 +41,7 @@ describe("session line changes", () => {
       { ...edit, binary: true },
       { ...edit, stats: { ...edit.stats, added: NaN } },
     ])).toEqual([]);
-    expect(new SessionChanges().snapshot()).toEqual({ totals: undefined, files: [] });
+    expect(new SessionChanges().snapshot()).toEqual({ totals: undefined, files: [], changes: [] });
   });
 
   it("restores older tool statistics through compaction and isolates session switches", () => {
@@ -48,10 +50,13 @@ describe("session line changes", () => {
     const ledger = new SessionChanges();
     ledger.restore(undefined, [compacted, tool]);
     expect(ledger.snapshot().totals).toEqual({ added: 2, removed: 1 });
+    expect(ledger.snapshot().changes).toEqual([edit]);
     ledger.restore([{ path: "other-session.ts", added: 8, removed: 9 }], [tool]);
     expect(ledger.snapshot().files).toEqual([{ path: "other-session.ts", added: 8, removed: 9 }]);
+    expect(ledger.snapshot().changes).toEqual([edit]);
     ledger.restore();
     expect(ledger.snapshot().totals).toBeUndefined();
+    expect(ledger.snapshot().changes).toEqual([]);
   });
 
   it("round-trips line counts through the SQLite history payload", () => {
@@ -116,6 +121,15 @@ describe("session line changes", () => {
       expect(body).toContain("+3 -4");
       expect(body).toContain("+3 -2  /repo/app.ts");
       expect(body).toContain("+0 -2  /repo/old.ts");
+      const diffs = body.slice(body.indexOf("---"));
+      expect(diffs.indexOf("> +3 -2  /repo/app.ts")).toBeLessThan(diffs.indexOf("│ edit · /repo/app.ts"));
+      expect(diffs).toContain("1 │ − old");
+      expect(diffs).toContain("1 │ + new");
+      expect(diffs).toContain("2 │ + extra");
+      expect(diffs).toContain("2 │ + fixed");
+      expect(diffs).toContain("│ delete · /repo/old.ts");
+      expect(diffs).toContain("1 │ − one");
+      expect(diffs).not.toContain("diff not kept");
     }
     const changed = vi.fn();
     const unwatch = pager.kind === "pager" ? pager.source!.watch!(changed) : () => {};
