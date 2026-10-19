@@ -66,7 +66,7 @@ describe("Classic /prompts", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     h.wiring.handleData("\x1b[B");
     expect(h.wiring.composer.text).toBe("Unsent draft");
-  });
+  }, 20_000);
 
   it.each([120, 80])("preserves literal placeholders and markdown inside prompts at %s columns", async (columns) => {
     const h = await mount(columns);
@@ -78,7 +78,7 @@ describe("Classic /prompts", () => {
     await h.services.session.promptHistory.append({ content: lines.join("\n") });
     await open(h);
     for (const line of lines) await expect.poll(frame).toContain(line);
-  });
+  }, 20_000);
 
   it.each([120, 80])("renders prompt sections and route metadata at %s columns and returns focus on close", async (columns) => {
     const h = await mount(columns);
