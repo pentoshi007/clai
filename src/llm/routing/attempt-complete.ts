@@ -33,6 +33,7 @@ import {
   hasImageInput,
   preflightEffort,
   reasoningWireKey,
+  recoverRejectedMainEffort,
   requestForRoute,
   retireRejectedReasoningReplay,
   revertVisionSubstitution,
@@ -113,6 +114,10 @@ export async function tryCompleteOnce(
     }
     return result;
   } catch (error) {
+    const recoveredEffort = await recoverRejectedMainEffort({
+      provider, providerId, model, request: activeRequest, auth, singleDispatch, onStatus,
+    }, error);
+    if (recoveredEffort) return runAttempt(recoveredEffort, "adaptation");
     if (hasImageInput(activeRequest) && isImageInputUnsupportedError(error)) {
       if (!isKnownPatternVisionModel(providerId, model)) {
         learnModelVisionCapability(providerId, model, false);

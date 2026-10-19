@@ -11,8 +11,11 @@ export const RIVER_GLM_MODEL = "zai-org/GLM-5.3-Flash";
 
 export function documentedRiverModelFacts(model: string): CatalogFacts | undefined {
   const id = model.trim().toLowerCase();
-  if (id !== RIVER_DEFAULT_MODEL.toLowerCase() && id !== RIVER_GLM_MODEL.toLowerCase())
-    return undefined;
+  if (
+    id !== RIVER_DEFAULT_MODEL.toLowerCase() &&
+    id !== `${RIVER_DEFAULT_MODEL}-1017`.toLowerCase() &&
+    id !== RIVER_GLM_MODEL.toLowerCase()
+  ) return undefined;
   const mandatory = id === RIVER_GLM_MODEL.toLowerCase();
   return {
     id: model,

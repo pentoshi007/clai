@@ -128,7 +128,7 @@ export function fallbackEffortsFor(
 }
 
 const OPAQUE_PARAMETER_REJECTION_RE =
-  /invalid request|invalid parameter|unsupported parameter|unknown parameter|unrecognized|extra inputs are not permitted|not a valid/i;
+  /invalid (?:inference )?request|invalid parameter|unsupported parameter|unknown parameter|unrecognized|extra inputs are not permitted|not a valid/i;
 
 const NON_EFFORT_REJECTION_RE =
   /model is not supported|model is unavailable|model not found|no such model|unknown model|rate limit|quota|insufficient|authentication|authorization|permission/i;
@@ -153,6 +153,13 @@ function isOpaqueParameterRejection(
     GENERIC_SERVER_ERROR_BODY_RE.test((error.body ?? "").trim());
   if (!parameterRejected && !opaqueGatewayCrash) return false;
   return !NON_EFFORT_REJECTION_RE.test(haystack);
+}
+
+export function shouldContinueEffortPreflight(error: unknown): boolean {
+  if (shouldContinueEffortLadder(error)) return true;
+  if (!(error instanceof ProviderError) || (error.status !== 400 && error.status !== 422)) return false;
+  const text = `${error.message}\n${error.body ?? ""}`;
+  return OPAQUE_PARAMETER_REJECTION_RE.test(text) && !NON_EFFORT_REJECTION_RE.test(text);
 }
 
 export function shouldContinueEffortLadder(error: unknown): boolean {

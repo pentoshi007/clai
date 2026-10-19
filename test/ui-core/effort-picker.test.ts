@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { handleReasoning } from "../../src/ui-core/commands/picker-commands.js";
-import { clearModelCatalogFacts, registerModelCatalogFacts } from "../../src/llm/capabilities.js";
+import { buildDefaultCommandRegistry } from "../../src/app/commands/registry.js";
+import { clearModelCatalogFacts, registerModelCatalogFacts, registerWireRejectionEfforts, resetReasoningKnowledge } from "../../src/llm/capabilities.js";
+import { rememberMainEffort } from "../../src/llm/main-effort-discovery.js";
+import { getConfig, setThinking } from "../../src/store/config.js";
 import {
   createCompositionRoot,
   type AppServices,
@@ -174,9 +177,12 @@ describe("/effort on a route known not to reason", () => {
 
 
 describe("/effort follows River model controls", () => {
-  it("offers off, high and max for River DeepSeek", () => {
+  it.each([
+    "deepseek-ai/DeepSeek-V4.1-Flash",
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  ])("offers off, high and max for River %s", (model) => {
     const services = makeServices();
-    const picker = openEffortPicker(services, "river", "deepseek-ai/DeepSeek-V4.1-Flash");
+    const picker = openEffortPicker(services, "river", model);
     expect(picker.options.map((option) => option.value)).toEqual(["off", "high", "max"]);
   });
 
@@ -204,4 +210,30 @@ it("refreshes River effort choices from catalog metadata", () => {
   } finally {
     clearModelCatalogFacts();
   }
+});
+
+it.each(["high", "none"] as const)("marks the discovered River effort %s as active instead of a stale preference", (effort) => {
+  const services = makeServices();
+  const previous = { ...getConfig().thinking };
+  const model = "deepseek-ai/DeepSeek-V4.1-Flash-1017";
+  try {
+    resetReasoningKnowledge();
+    rememberMainEffort("river", model, "max", effort);
+    registerWireRejectionEfforts("river", model, [effort]);
+    setThinking({ enabled: true, effort: "max" });
+    const picker = openEffortPicker(services, "river", model);
+    expect(picker.options.filter((option) => option.active).map((option) => option.value)).toEqual([
+      effort === "none" ? "off" : effort,
+    ]);
+  } finally {
+    setThinking(previous);
+    resetReasoningKnowledge();
+    services.dispose();
+  }
+});
+
+it("routes /efforts to the same picker and handler as /effort", () => {
+  const registry = buildDefaultCommandRegistry();
+  expect(registry.parse("/efforts")).toEqual(registry.parse("/effort"));
+  expect(registry.parse("/efforts max")).toEqual(registry.parse("/effort max"));
 });

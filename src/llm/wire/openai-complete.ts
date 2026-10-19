@@ -8,6 +8,7 @@ import type {
   ToolDefinition,
 } from "../../types.js";
 import { learnModelEmitsReasoning } from "../capabilities.js";
+import { mainEffortProbe } from "../main-effort-discovery.js";
 import { ProviderError } from "../http.js";
 import { isOperationPolicyError } from "../operation-ledger.js";
 import { generationFetch } from "../operation-usage.js";
@@ -169,7 +170,9 @@ export async function openAiCompatibleComplete(options: {
   const toolCalls = parseOpenAiMessageToolCalls(message?.tool_calls);
   const nativeContent = options.providerId === "mistral" ? mistralContentText(message?.content) : undefined;
   const text = nativeContent?.text ?? (typeof message?.content === "string" ? message.content : "");
-  if (!text && toolCalls.length === 0 && !(nativeContent?.reasoning && choice?.finish_reason === "length")) {
+  const truncatedEffortProbe = mainEffortProbe(options.providerId, options.model) !== undefined &&
+    choice?.finish_reason === "length" && Boolean(openAiReasoningText(message)?.trim());
+  if (!text && toolCalls.length === 0 && !truncatedEffortProbe && !(nativeContent?.reasoning && choice?.finish_reason === "length")) {
     throw new ProviderError(
       `${options.provider} returned no completion text (model=${options.model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
     );

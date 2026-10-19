@@ -39,6 +39,7 @@ import {
   preflightEffort,
   preservedFailure,
   reasoningWireKey,
+  recoverRejectedMainEffort,
   requestForRoute,
   retireRejectedReasoningReplay,
   revertVisionSubstitution,
@@ -226,6 +227,12 @@ export async function tryStreamOnce(
     learnVisionOnSuccess();
     return result;
   } catch (error) {
+    if (emittedBytes === 0) {
+      const recoveredEffort = await recoverRejectedMainEffort({
+        provider, providerId, model, request: activeRequest, auth, singleDispatch, onStatus,
+      }, error);
+      if (recoveredEffort) return runAttempt(recoveredEffort, "adaptation");
+    }
     if (
       emittedBytes === 0 &&
       hasImageInput(activeRequest) &&

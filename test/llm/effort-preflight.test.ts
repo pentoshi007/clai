@@ -72,20 +72,14 @@ describe("session-scoped effort preflight", () => {
     const { seen, probe } = prober(["max"]);
     await runEffortPreflight(route(), probe);
     expect(seen).toEqual(["max"]);
-    expect(displayReasoningEfforts(PROVIDER, MODEL)).toEqual(FULL_SCALE);
+    expect(displayReasoningEfforts(PROVIDER, MODEL)).toEqual(["max"]);
   });
 
   it("climbs down the ladder until the route accepts an effort", async () => {
     const { seen, probe } = prober(["high"]);
     await runEffortPreflight(route(), probe);
     expect(seen).toEqual(["max", "xhigh", "high"]);
-    expect(displayReasoningEfforts(PROVIDER, MODEL)).toEqual([
-      "none",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-    ]);
+    expect(displayReasoningEfforts(PROVIDER, MODEL)).toEqual(["high"]);
   });
 
   it("never probes a route whose vocabulary is already known", async () => {

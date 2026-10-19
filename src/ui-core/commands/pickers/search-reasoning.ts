@@ -2,6 +2,7 @@ import type { CommandInvocation } from "../../../app/commands/command.js";
 import { clearReasoningRejection, displayReasoningEfforts, effectiveThinkingEffort, modelCatalogFacts, modelReasoningEvidence, modelReasoningIsMandatory, modelSupportsThinking, routeReasoningIsMandatory } from "../../../llm/capabilities.js";
 import { getConfig, getExaSearchType, setActiveSearchProvider, setExaSearchType, setThinking } from "../../../store/config.js";
 import { saveSessionModel as saveSessionThinking } from "../../../store/session-model.js";
+import { hasMainEffortKnowledge, resolvedMainEffort } from "../../../llm/main-effort-discovery.js";
 import { getSearchProviderKey, setSecret } from "../../../store/keys.js";
 import { assertSearchProvider, searchProviders } from "../../../tools/web/providers/provider.js";
 import { asExaSearchType, exaSearchTypeDescriptions, exaSearchTypes, searchProviderIds } from "../../../tools/web/types.js";
@@ -120,11 +121,13 @@ export function handleReasoning(services: AppServices, invocation: CommandInvoca
   const current = getConfig().thinking;
   const provider = services.session.getState().provider ?? getConfig().defaultProvider;
   const model = services.session.getState().model ?? "";
+  const effective = effectiveThinkingEffort(provider, model, current);
+  const activeEffort = effective === "none" ? "off" : effective ?? "off";
   const options: PickerOption[] = reasoningOptionValues(provider, model).map((value) => ({
     value,
     label: value,
     description: value === "on" ? "enable reasoning" : REASONING_DESCRIPTIONS[value] ?? "",
-    active: value === "on" ? current.enabled : value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
+    active: value === "on" ? current.enabled : value === activeEffort,
   }));
   if (options.length === 0) {
     services.session.notice("info", `${provider}/${model} uses reasoning without adjustable effort controls`);
@@ -205,11 +208,12 @@ function applyReasoning(services: AppServices, value: string): void {
     return;
   }
   if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(lower)) {
+    const effort = lower as ReasoningEffort;
     clearRouteReasoningRejection(services);
-    setThinking({ enabled: true, effort: lower as ReasoningEffort });
+    setThinking({ enabled: true, effort });
     persistSessionThinking(services);
-    services.session.notice("info", `thinking → ${lower}`);
-    warnUnacceptedEffort(services, lower);
+    services.session.notice("info", `thinking → ${effort}`);
+    warnUnacceptedEffort(services, effort);
     return;
   }
   services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
@@ -232,12 +236,18 @@ function clearRouteReasoningRejection(services: AppServices): void {
   clearReasoningRejection(provider, model);
 }
 
-function warnUnacceptedEffort(services: AppServices, effort: string): void {
+function warnUnacceptedEffort(services: AppServices, effort: ReasoningEffort): void {
   const provider = services.session.getState().provider ?? getConfig().defaultProvider;
   const model = services.session.getState().model ?? "";
   if (!model) return;
   const accepted = displayReasoningEfforts(provider, model) ?? [];
   if (accepted.length === 0 || accepted.includes(effort)) return;
+  if (hasMainEffortKnowledge(provider, model) &&
+      !modelCatalogFacts(provider, model)?.reasoning?.supportedEfforts &&
+      resolvedMainEffort(provider, model, effort) === undefined) {
+    services.session.notice("info", `${provider}/${model} has not verified ${effort} yet — the next request will check it`);
+    return;
+  }
   services.session.notice(
     "warn",
     `${provider}/${model} advertises ${accepted.join(", ")} — ${effort} will be mapped to the nearest of those`,

@@ -11,7 +11,7 @@ import {
 const ALIAS_GROUPS: Record<string, readonly string[]> = {
   orchestrator: ["orchestration", "orchastrator"],
   search: ["search-provider"],
-  effort: ["reasoning"],
+  effort: ["efforts", "reasoning"],
   think: ["thinking"],
   minimise: ["minimize", "minmize"],
   redraw: ["refresh"],
