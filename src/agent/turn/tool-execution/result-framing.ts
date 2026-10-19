@@ -45,23 +45,24 @@ export const frameToolResult = async (
   result: ToolResult,
 ): Promise<FramedResult> => {
   const output = result.output.trim();
-  const artifactPath =
-    result.outputPath ??
-    (output ? await ports.saveArtifact(call, output) : undefined);
+  const artifactPath = result.sensitive
+    ? undefined
+    : result.outputPath ?? (output ? await ports.saveArtifact(call, output) : undefined);
   const framed: ToolResult = {
     ...result,
     outputPath: artifactPath,
     truncated: result.truncated ?? Boolean(artifactPath),
   };
   if (artifactPath) ports.setJobArtifact(artifactPath);
-  const contextOutput = ports.formatContext(call, framed);
-  ports.emitToolResult(framed, contextOutput, artifactPath);
-  ports.onToolResult?.(call, framed);
+  const contextOutput = result.sensitive ? framed.output : ports.formatContext(call, framed);
+  const publicResult = result.sensitive ? { ...framed, output: "[private credential delivered to model; not logged]" } : framed;
+  ports.emitToolResult(publicResult, result.sensitive ? publicResult.output : contextOutput, artifactPath);
+  ports.onToolResult?.(call, publicResult);
   await ports.audit("tool.result", {
     call,
     ok: result.ok,
     exitCode: result.exitCode,
-    output: result.output.slice(0, 4_000),
+    output: publicResult.output.slice(0, 4_000),
   });
   await ports.recordEngagementOutcome(artifactPath);
   ports.recordLedgerCall(call, result.ok, artifactPath);

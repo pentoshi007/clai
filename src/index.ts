@@ -1,3 +1,4 @@
+import "./os/user-environment.js";
 import { Command, Option } from "commander";
 import chalk from "chalk";
 import { fileURLToPath } from "node:url";

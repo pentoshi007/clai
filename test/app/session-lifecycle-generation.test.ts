@@ -144,3 +144,28 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
 });
 
 vi.setConfig({ testTimeout: 15_000 });
+
+it("persists final abort callbacks before shutdown completes", async () => {
+  const saved: string[][] = [];
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => { started = resolve; });
+  const session = new SessionController({
+    sessionId: "shutdown-final-callback",
+    emit: () => undefined,
+    persistence: fakePersistence(saved),
+    agent: {
+      async runTurn(_request, handlers) {
+        started();
+        await new Promise<void>((resolve) => handlers.signal?.addEventListener("abort", () => setTimeout(resolve, 20), { once: true }));
+        handlers.onMessages?.([{ role: "user", content: "keep prompt" }, { role: "assistant", content: "keep final callback" }]);
+        return succeeded();
+      },
+    },
+  });
+  const turn = session.submit("keep prompt");
+  await ready;
+  await session.shutdown();
+  await turn;
+  expect(saved.at(-1)).toContain("keep final callback");
+  session.dispose();
+});

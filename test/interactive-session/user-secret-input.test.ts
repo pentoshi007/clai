@@ -166,3 +166,38 @@ describe("user-provided terminal secret input", () => {
     expect(factory.last().writes).toEqual([]);
   });
 });
+
+
+describe("stored terminal secret input", () => {
+  it.each(["store", "sudo"])("delivers a %s credential without a UI or secret in arguments", async (source) => {
+    const { saveCredential, setMachineSudoPassword } = await import("../../src/store/credentials.js");
+    const { resetKnownSecrets } = await import("../../src/security/known-secrets.js");
+    const dir = mkdtempSync(join(tmpdir(), "clai-terminal-vault-"));
+    const original = process.env.CLAI_DATA_DIR;
+    process.env.CLAI_DATA_DIR = dir;
+    try {
+      const value = "stored-terminal-fixture-試験🙂";
+      const id = source === "store" ? await saveCredential({ title: "Password only", content: value }) : undefined;
+      if (source === "sudo") await setMachineSudoPassword(value);
+      const { manager, send, factory, started } = await fixture();
+      const requestSecret = vi.fn();
+      const args = { id: started.sessionId, kind: "secret", secretSource: source, ...(id ? { credentialId: id } : {}), quietMs: 100 };
+      const pending = send(args, { sessionId: ownerId, confirmed: true, requestSecret });
+      await expect.poll(() => factory.last().writes.length).toBe(1);
+      factory.last().emit(`echo ${value.slice(0, 8)}`);
+      factory.last().emit(`${value.slice(8)}\n`);
+      const result = await pending;
+      expect(result.ok).toBe(true);
+      expect(requestSecret).not.toHaveBeenCalled();
+      expect(factory.last().writes).toEqual([`${value}\r`]);
+      expect(JSON.stringify({ args, result })).not.toContain(value);
+      await manager.close({ ownerId, id: started.sessionId });
+      expect(readFileSync(started.artifact.path, "utf8")).not.toContain(value);
+    } finally {
+      if (original === undefined) delete process.env.CLAI_DATA_DIR;
+      else process.env.CLAI_DATA_DIR = original;
+      resetKnownSecrets();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

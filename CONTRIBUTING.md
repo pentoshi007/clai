@@ -41,7 +41,8 @@ The tests use fixtures, isolated storage, and a mocked browser launcher; provide
 | `npm run test:deterministic -- test/mcp` | Check MCP transports, tool catalogs, authentication, and concurrent credential/config storage with local fixtures. |
 | `npm run embed-prompts:check` | Check that embedded prompts match their source Markdown. |
 | `npm run release:verify` | Validate dependency pins, lockfile, and release metadata. |
-| `npm run compile` | Build native release binaries through Bun. |
+| `npm run compile` | Build all six minified native release targets through Bun. |
+| `npm run compile -- --target bun-linux-arm64` | Build one target; `--target` is repeatable and `--outdir` selects the output directory. |
 | `npm run doctor` | Inspect available tools and provider configuration. |
 
 To run a focused test:

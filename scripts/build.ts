@@ -1,41 +1,19 @@
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { execa } from 'execa';
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { parseArgs } from "node:util";
+import { execa } from "execa";
+import { parseReleaseTarget, releaseTargets, targetBuildArguments, targetNativePackages } from "./release-targets.js";
 
-const targets = [
-  'bun-darwin-arm64',
-  'bun-darwin-x64',
-  'bun-linux-x64',
-  'bun-linux-arm64',
-  'bun-windows-x64',
-  'bun-windows-arm64',
-] as const;
-
-// Bun resolves every @opentui/core-* dynamic import at compile time; force-
-// install all platform packages (npm skips non-host os/cpu without --force).
-await execa('node', ['scripts/install-opentui-platforms.mjs'], {
-  stdio: 'inherit',
-});
-
-await mkdir('release', { recursive: true });
-
+const { values } = parseArgs({ options: { target: { type: "string", multiple: true }, outdir: { type: "string", default: "release" } } });
+const targets = [...new Set((values.target ?? releaseTargets).map(parseReleaseTarget))];
+const packages = [...new Set(targets.flatMap(targetNativePackages))];
+if (packages.length > 0) {
+  await execa("node", ["scripts/install-opentui-platforms.mjs", ...packages], { stdio: "inherit" });
+}
+await mkdir(values.outdir, { recursive: true });
 for (const target of targets) {
-  const exe = target.includes('windows') ? '.exe' : '';
-  const out = join('release', `clai-${target}${exe}`);
-  console.log(`Building ${out}`);
-  await execa(
-    'bun',
-    [
-      'build',
-      './src/index.ts',
-      '--compile',
-      '--target',
-      target,
-      '--outfile',
-      out,
-    ],
-    {
-      stdio: 'inherit',
-    },
-  );
+  const extension = target.includes("windows") ? ".exe" : "";
+  const output = join(values.outdir, `clai-${target}${extension}`);
+  console.log(`Building ${output}`);
+  await execa(process.execPath, targetBuildArguments(target, output), { stdio: "inherit" });
 }

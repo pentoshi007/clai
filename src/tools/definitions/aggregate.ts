@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "../../types.js";
 import { TOOL_DEFINITIONS_CONTEXT_2 } from "./context-2.js";
+import { TOOL_DEFINITIONS_CREDENTIALS } from "./credentials.js";
 import { def, emptyObject } from "./define.js";
 import { TOOL_DEFINITIONS_FILES } from "./files.js";
 import { TOOL_DEFINITIONS_SHELL } from "./shell.js";
@@ -14,6 +15,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_WEB_1,
   ...TOOL_DEFINITIONS_WEB_2,
   ...TOOL_DEFINITIONS_CONTEXT_2,
+  ...TOOL_DEFINITIONS_CREDENTIALS,
   ...TOOL_DEFINITIONS_SUBAGENTS,
   def(
     "skill.load",

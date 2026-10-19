@@ -456,6 +456,7 @@ export interface ToolResult {
   exitCode?: number | undefined;
   runFailure?: boolean | undefined;
   outputPath?: string | undefined;
+  sensitive?: boolean | undefined;
   backgroundJob?: BackgroundJobReceipt | undefined;
   truncated?: boolean | undefined;
   suppressedRepeat?: boolean | undefined;

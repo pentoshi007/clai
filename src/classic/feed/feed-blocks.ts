@@ -23,6 +23,7 @@ import { buildTurnSummaryLines } from "../blocks/turn-summary-lines.js";
 import { buildUserLines } from "../blocks/user-lines.js";
 import { reflowRows } from "../render/wrap.js";
 import type { BlockDisclosure } from "../blocks/disclosure-lines.js";
+import { estimatedBlockRows } from "./estimated-height.js";
 
 export type BlockKind =
   | "intro"
@@ -43,6 +44,7 @@ export interface FeedBlock {
   readonly open: boolean;
   readonly lines: readonly string[];
   readonly rowCount?: number;
+  readonly layoutPending?: boolean;
   readonly disclosures?: readonly BlockDisclosure[];
   readonly turnId: string | undefined;
   readonly sequence: number;
@@ -58,6 +60,7 @@ export interface FeedViewInput {
   readonly spool?: SpoolReader | undefined;
   readonly generation: number;
   readonly intro?: IntroBlockInput | undefined;
+  readonly deferLayout?: boolean | undefined;
 }
 
 export function blockContextFor(state: TranscriptState, view: FeedViewInput): BlockContext {
@@ -244,13 +247,21 @@ export class FeedBlockCache {
     kind: BlockKind,
     generation: number,
     next: Map<string, CachedBlock>,
+    deferLayout = false,
   ): FeedBlock | undefined {
     const inputs = blockInputs(ctx, item, kind);
     const key = `${generation}:${item.id}`;
     const cached = this.entries.get(item.id);
     if (cached && sameInputs(cached.inputs, inputs) && (!cached.block || cached.block.key === key)) {
+      if (!deferLayout && cached.block?.layoutPending) void cached.block.lines;
       next.set(item.id, cached);
       return cached.block;
+    }
+    if (deferLayout && !isOpen(item)) {
+      if (cached) this.layouts.remove(cached.inputs);
+      const block = this.lazyBlock(inputs, layoutContext(ctx, inputs), key);
+      next.set(item.id, { inputs, markdownCache: undefined, block });
+      return block;
     }
     const markdownCache = cached?.inputs.ink === ctx.ink ? cached.markdownCache : undefined;
     const disclosures: BlockDisclosure[] = [];
@@ -269,14 +280,17 @@ export class FeedBlockCache {
     return block;
   }
 
-  private lazyBlock(inputs: BlockInputs, ctx: BlockContext, key: string, rowCount: number): FeedBlock {
+  private lazyBlock(inputs: BlockInputs, ctx: BlockContext, key: string, rowCount?: number): FeedBlock {
     const { item, kind } = inputs;
+    let measuredRows = rowCount;
+    const estimate = rowCount ?? estimatedBlockRows(item, ctx.width);
     const layout = (): BlockLayout => {
       const cached = this.layouts.get(inputs, "");
       if (cached) return cached;
       const disclosures: BlockDisclosure[] = [];
       const rendered = renderLines({ ...ctx, disclosures }, item, kind, undefined);
       const result = { lines: reflowRows(rendered.lines, ctx.width), disclosures };
+      measuredRows = result.lines.length;
       return this.entries.get(item.id)?.inputs === inputs ? this.retainLayout(inputs, result) : result;
     };
     return {
@@ -284,7 +298,8 @@ export class FeedBlockCache {
       itemId: item.id,
       kind,
       open: isOpen(item),
-      rowCount,
+      get rowCount() { return measuredRows ?? estimate; },
+      get layoutPending() { return measuredRows === undefined; },
       get lines() { return layout().lines; },
       get disclosures() { return layout().disclosures; },
       turnId: item.turnId,
@@ -322,7 +337,7 @@ export function buildFeedBlocks(
       continue;
     }
     const kind: BlockKind = item.kind === "tool" ? toolBlockKind(item) : item.kind;
-    const block = cache.itemBlock(ctx, item, kind, view.generation, next);
+    const block = cache.itemBlock(ctx, item, kind, view.generation, next, view.deferLayout);
     if (block) blocks.push(block);
   }
   cache.commit(next);

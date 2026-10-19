@@ -524,6 +524,7 @@ async function runRuntimeClient(
     stdin.on("data", discardInput);
     stdin.setRawMode?.(true);
     stdin.resume();
+    process.stdout.write("Loading session…\r\n");
     let target = await initialTarget(options.resume);
     for (;;) {
       if (interrupted) return interrupted;

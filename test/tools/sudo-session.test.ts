@@ -107,7 +107,7 @@ describe("obtainSudoPassword", () => {
       { requestSecret, title: "t", prompt: "p" },
       deps,
     );
-    expect(prompts).toBe(1);
+    await expect.poll(() => prompts).toBe(1);
 
     releasePrompt?.("batch-pw");
     const [outcomeA, outcomeB] = await Promise.all([a, b]);

@@ -12,6 +12,7 @@ import { redactSecrets } from "../llm/provider.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../llm/reasoning-artifacts.js";
 import { redactResponsesReplay, restoreResponsesReplay } from "../llm/responses-replay.js";
 import { redactSecretsCached } from "./redaction-cache.js";
+import { knownSecretsRevision } from "../security/known-secrets.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
 import { getActiveSessionWorkspace } from "./session-workspace.js";
@@ -92,6 +93,17 @@ function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function scrubArgument(value: unknown): unknown {
+  if (typeof value === "string") return redactSecretsCached(value);
+  if (Array.isArray(value)) return value.map(scrubArgument);
+  if (value !== null && typeof value === "object") return scrubArguments(Object.fromEntries(Object.entries(value)));
+  return value;
+}
+
+function scrubArguments(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(args).map(([key, value]) => [key, scrubArgument(value)]));
+}
+
 function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((source) => {
     const message = restoreResponsesReplay(source);
@@ -104,6 +116,11 @@ function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
     return canonicalizeChatMessageReasoningArtifacts({
       ...rest,
       content: redactSecretsCached(message.content),
+      ...(message.toolCalls ? { toolCalls: message.toolCalls.map((call) => ({
+        ...call,
+        args: scrubArguments(call.args),
+        ...(call.rawArguments ? { rawArguments: redactSecretsCached(call.rawArguments) } : {}),
+      })) } : {}),
       ...(message.responsesReplay ? {
         responsesReplay: redactResponsesReplay(message.responsesReplay, redactSecretsCached),
       } : {}),
@@ -150,11 +167,8 @@ export function materializeHistoryImages(
   });
 }
 
-/**
- * Settled transcript items are immutable, so their scrubbed projection can be
- * reused across autosaves instead of re-redacting the whole transcript.
- */
-const scrubbedItems = new WeakMap<TranscriptItem, TranscriptItem>();
+let scrubbedItems = new WeakMap<TranscriptItem, TranscriptItem>();
+let scrubbedRevision = knownSecretsRevision();
 
 function isSettledItem(item: TranscriptItem): boolean {
   if (item.done !== true) return false;
@@ -165,6 +179,10 @@ function isSettledItem(item: TranscriptItem): boolean {
 
 function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[] | undefined {
   if (!items) return undefined;
+  if (scrubbedRevision !== knownSecretsRevision()) {
+    scrubbedItems = new WeakMap();
+    scrubbedRevision = knownSecretsRevision();
+  }
   const durable = flattenTranscriptHistory(items).filter((item) => item.kind !== "notice");
   return durable.map((item) => {
     const reusable = isSettledItem(item);
@@ -345,13 +363,6 @@ export async function upsertSession(
     ...workspace,
   };
 
-  if (
-    existing &&
-    requestedRevision !== undefined &&
-    compareHistoryFreshness(record, existing) <= 0
-  ) {
-    return existing.messages.length > 0 ? existing : ((await getSession(id)) ?? existing);
-  }
   if (getConfig().privateMode) return record;
 
   invalidateSessionListCache();

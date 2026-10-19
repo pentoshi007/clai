@@ -26,6 +26,10 @@ Fresh configurations use **auto-allow** permissions. Confirmation behavior varie
 
 Saved API credentials and account tokens are retained in **plaintext** at `~/.clai/keys.json`, with restricted permissions (`0600` on POSIX). The OS keyring is also used when available, but the recovery file remains on disk. Access by the same user or a privileged process is outside that file's protection boundary.
 
+The separate `/creds` vault uses authenticated AES-256-GCM encryption. On Linux/macOS, its master key is a local `0600` file in a `0700` credential directory; this does not defend against an attacker who can read both files, the same account, or root. On Windows the master key is sealed with current-user DPAPI. Losing the key makes the vault unreadable; corruption and key failures do not silently replace stored data. Backups must include the matching key, and Windows DPAPI recovery also depends on the account's protection material.
+
+`creds.list` returns metadata only. `creds.get` deliberately sends a selected freeform credential to the configured model provider, according to the chosen permission policy; its result is excluded from normal UI, hooks, audit bodies, and output artifacts. Known values are registered for persistence redaction, but arbitrary freeform content and transformations cannot be exhaustively identified. Machine sudo passwords cannot be retrieved by the model and are sent only through the local secret-input path. Native Windows UAC remains an OS boundary.
+
 History, prompt journals, logs, and tool artifacts can contain project data and command results. Private mode and `--no-history` disable chat persistence but do not erase previously saved data or prevent necessary provider requests. Recognized secrets are redacted in supported paths; this is not a guarantee that every arbitrary secret is removed.
 
 Hosted providers receive the request context and relevant tool results. MCP servers, shell commands, and installed skills can interact with external services according to their configuration. OmniRush's optional metadata upload is described in [PROVIDERS.md](PROVIDERS.md#omnirush-lifecycle-uploads).

@@ -13,6 +13,7 @@ import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import { EXIT_SUMMARY_RESET } from "../../os/screen-sequences.js";
 import { writeTerminalAndWait } from "../../os/terminal-write.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
+import { shutdownServices } from "../../ui-core/bootstrap/shutdown-services.js";
 import {
   applyResumeResolution,
   resolveResumeTarget,
@@ -58,6 +59,7 @@ export async function startClassic(
   setAllowInteractiveStdinInherit(false);
   const startedAt = Date.now();
   const capabilities = readCapabilitiesFromProcess();
+  if (capabilities.isTTY) await writeTerminalAndWait("Loading session…\n");
   const session = createTerminalSession();
   const servicesRef: { current: AppServices | undefined } = { current: undefined };
   const wiringRef: { current: ClassicAppWiring | undefined } = { current: undefined };
@@ -164,26 +166,8 @@ export async function startClassic(
     disposers: [
       () => disposeRuntimeBridge(),
       epilogue.capture,
-      async () => {
-        await services.session.persistNow().catch(() => undefined);
-      },
-      async () => {
-        await services.omnirushSessionUpload.close();
-      },
       restoreConsole,
-      async () => {
-        await services.mcp.closeAll().catch(() => undefined);
-      },
-      async () => {
-        const result = await services.ports.interactiveSessions
-          .closeAll("app-shutdown")
-          .catch(() => undefined);
-        for (const failure of result?.failures ?? []) {
-          console.warn(
-            `clai interactive-session cleanup: [${failure.code}] ${failure.message}`,
-          );
-        }
-      },
+      () => shutdownServices(services),
     ],
     epilogue: () => runFreebuffSessionShutdownCleanup(epilogue.run),
     onSigint: () => {

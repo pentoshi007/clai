@@ -6,6 +6,7 @@ import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
 import { backupActiveHistory, compareHistoryFreshness, dedupeHistoryById, ensureHistoryRecovered, HistoryRecord, hydrateHistoryRecord, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, readJsonlRecordsFrom, sortHistoryByUpdatedDesc } from "./recovery.js";
 import { appendRecordsToFile, archiveFilePath } from "./sqlite-backend.js";
 import { mkdir } from "node:fs/promises";
+import { preserveTranscript } from "./transcript-merge.js";
 
 let jsonlWriteChain: Promise<void> = Promise.resolve();
 
@@ -122,9 +123,10 @@ const HISTORY_COMPACT_MIN_BYTES = 1_000_000;
 
 const HISTORY_COMPACT_LIVE_RATIO = 0.6;
 
-function summaryFreshness(summary: HistorySummary): HistoryRecord {
+function summaryFreshness(summary: HistorySummary): HistoryRecord & { itemCount: number } {
   return {
     id: summary.id,
+    itemCount: summary.itemCount,
     writerGeneration: summary.writerGeneration,
     revision: summary.revision,
     createdAt: summary.createdAt,
@@ -183,15 +185,18 @@ async function upsertJsonlUnderLock(
   )) ?? await rebuildHistoryIndex<HistoryRecord>(jsonlFilePath(), jsonlIndexFilePath());
 
   const existingEntry = entries.find((entry) => entry.id === record.id);
-  if (
-    existingEntry &&
-    compareHistoryFreshness(record, summaryFreshness(existingEntry.summary)) <= 0
-  ) {
-    const stored = await readIndexedHistoryRecord<HistoryRecord>(
-      jsonlFilePath(),
-      existingEntry,
-    );
-    if (stored) return hydrateHistoryRecord(stored);
+  const stale = existingEntry && compareHistoryFreshness(record, summaryFreshness(existingEntry.summary)) <= 0;
+  const changedWriter = existingEntry?.summary.writerGeneration !== record.writerGeneration;
+  const mayLoseItems = existingEntry && existingEntry.summary.itemCount > (record.transcript?.length ?? 0);
+  if (existingEntry && (stale || changedWriter || mayLoseItems)) {
+    const stored = await readIndexedHistoryRecord<HistoryRecord>(jsonlFilePath(), existingEntry);
+    if (stored) {
+      const preferred = stale ? stored : record;
+      const other = stale ? record : stored;
+      const transcript = preserveTranscript(other.transcript, preferred.transcript);
+      if (stale && (transcript?.length ?? 0) === (stored.transcript?.length ?? 0)) return hydrateHistoryRecord(stored);
+      record = { ...preferred, transcript };
+    }
   }
 
   const result = await appendIndexedHistoryRecord(

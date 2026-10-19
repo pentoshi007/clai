@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-/**
- * Force-install every @opentui/core-* platform package so Bun can
- * cross-compile (`bun build --compile --target …`) on a single host.
- *
- * npm skips packages whose package.json `os`/`cpu` fields do not match the
- * runner (e.g. darwin-arm64 on ubuntu-latest). Even `npm install --force`
- * still omits non-host platforms, and `npm install --os=… --cpu=…` replaces
- * previously installed platforms. So we `npm pack` each tarball and extract
- * it into node_modules ourselves.
- */
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
@@ -63,7 +53,13 @@ function run(cmd, args, opts = {}) {
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
-const specs = platforms.map((name) => {
+const requested = process.argv.slice(2);
+const selected = requested.length > 0 ? [...new Set(requested)] : platforms;
+for (const name of selected) {
+  if (!platforms.includes(name)) throw new Error(`Unsupported OpenTUI platform package: ${name}`);
+}
+
+const specs = selected.map((name) => {
   const ver = versionOf(name);
   if (!ver) {
     console.error(`Missing version for ${name} in package.json`);
@@ -78,8 +74,13 @@ for (const s of specs) console.log(`  ${s.spec}`);
 const work = mkdtempSync(join(tmpdir(), "opentui-platforms-"));
 
 try {
-  for (const { name, spec } of specs) {
+  for (const { name, spec, ver } of specs) {
     const dest = join(root, "node_modules", ...name.split("/"));
+    const installed = join(dest, "package.json");
+    if (existsSync(installed) && JSON.parse(readFileSync(installed, "utf8")).version === ver) {
+      console.log(`  Already present: ${spec}`);
+      continue;
+    }
     console.log(`Packing ${spec}…`);
 
     const before = new Set(readdirSync(work));
@@ -119,7 +120,7 @@ try {
 rmSync(work, { recursive: true, force: true });
 
 let missing = 0;
-for (const name of platforms) {
+for (const name of selected) {
   const dir = join(root, "node_modules", ...name.split("/"));
   if (!existsSync(dir)) {
     console.error(`Missing after install: ${dir}`);
@@ -133,4 +134,4 @@ if (missing > 0) {
   process.exit(1);
 }
 
-console.log("All OpenTUI platform packages present.");
+console.log("Requested OpenTUI platform packages present.");

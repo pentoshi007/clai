@@ -23,17 +23,23 @@ import { isPrintable } from "./picker-panel.js";
 export interface TextEditorPanelState {
   readonly editor: EditorState;
   readonly top: number;
+  readonly preserveTabs?: boolean | undefined;
 }
 
 export function textEditorInitialState(
   request?: TextEditorRequest,
 ): TextEditorPanelState {
-  const text = sanitizeEditorInput(request?.initialValue ?? "");
-  return { editor: { text, cursor: text.length }, top: 0 };
+  const text = sanitizeEditorInput(request?.initialValue ?? "", request?.preserveTabs);
+  return { editor: { text, cursor: text.length }, top: 0, ...(request?.preserveTabs ? { preserveTabs: true } : {}) };
 }
 
-export function sanitizeEditorInput(text: string): string {
-  return stripAnsi(text).replace(/\r\n?/g, "\n").replace(/\t/g, "  ");
+export function sanitizeEditorInput(text: string, preserveTabs = false): string {
+  const clean = stripAnsi(text).replace(/\r\n?/g, "\n");
+  return preserveTabs ? clean : clean.replace(/\t/g, "  ");
+}
+
+function displayEditor(state: TextEditorPanelState): EditorState {
+  return state.preserveTabs ? { ...state.editor, text: state.editor.text.replace(/\t/g, "→") } : state.editor;
 }
 
 function bodyRows(rows: number): number {
@@ -66,9 +72,12 @@ export function textEditorKey(
   if (chord === "enter" || chord === "shift+enter") {
     return handled(commit(state, insert(state.editor, "\n"), input));
   }
+  if (chord === "tab" && state.preserveTabs) {
+    return handled(commit(state, insert(state.editor, "\t"), input));
+  }
   if (chord === "up" || chord === "down") {
-    const next = moveVisual(state.editor, width, chord === "up" ? -1 : 1);
-    return handled(commit(state, next, input));
+    const next = moveVisual(displayEditor(state), width, chord === "up" ? -1 : 1);
+    return handled(commit(state, { ...state.editor, cursor: next.cursor }, input));
   }
   if (chord === "ctrl+r") {
     return handled(commit(state, EMPTY_EDITOR, input));
@@ -78,7 +87,7 @@ export function textEditorKey(
     return handled(commit(state, edit(state.editor, width), input));
   }
   if (isPrintable(chord, input.text)) {
-    const clean = sanitizeEditorInput(input.text ?? "");
+    const clean = sanitizeEditorInput(input.text ?? "", state.preserveTabs);
     if (clean.length === 0) return handled(state);
     return handled(commit(state, insert(state.editor, clean), input));
   }
@@ -90,7 +99,7 @@ export function textEditorPaste(
   text: string,
   view: { columns: number; rows: number },
 ): TextEditorPanelState {
-  const clean = sanitizeEditorInput(text);
+  const clean = sanitizeEditorInput(text, state.preserveTabs);
   if (clean.length === 0) return state;
   return commit(state, insert(state.editor, clean), view);
 }
@@ -100,8 +109,9 @@ function commit(
   editor: EditorState,
   view: { columns: number; rows: number },
 ): TextEditorPanelState {
-  const layout = layoutEditor(editor, panelBodyWidth(view.columns));
-  return { editor, top: scrollTop(layout, bodyRows(view.rows), state.top) };
+  const next = { ...state, editor };
+  const layout = layoutEditor(displayEditor(next), panelBodyWidth(view.columns));
+  return { ...next, top: scrollTop(layout, bodyRows(view.rows), state.top) };
 }
 
 export interface TextEditorViewInput {
@@ -117,10 +127,11 @@ export function textEditorView(input: TextEditorViewInput): PanelFrameInput {
   const { ink, state, request } = input;
   const width = panelBodyWidth(input.columns);
   const height = bodyRows(input.rows);
-  const layout = layoutEditor(state.editor, width);
+  const displayed = displayEditor(state);
+  const layout = layoutEditor(displayed, width);
   const top = scrollTop(layout, height, state.top);
   const rendered = renderEditor({
-    state: state.editor,
+    state: displayed,
     layout,
     ink,
     height,

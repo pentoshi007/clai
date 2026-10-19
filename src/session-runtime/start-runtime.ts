@@ -1,6 +1,7 @@
 import type { Mode, ProviderId } from "../types.js";
 import { createCompositionRoot } from "../ui-core/bootstrap/composition-root.js";
 import { RendererLifecycle } from "../ui-core/bootstrap/lifecycle.js";
+import { shutdownServices } from "../ui-core/bootstrap/shutdown-services.js";
 import { installConsoleGuard } from "../ui-core/bootstrap/console-guard.js";
 import { isSuppressedConsoleMessage } from "../ui-core/bootstrap/console-suppress.js";
 import { resolveResumeTarget, applyResumeResolution, type ResumeTarget } from "../ui-core/bootstrap/session-resume.js";
@@ -49,15 +50,11 @@ export async function startIndependentRuntime(options: IndependentRuntimeOptions
   bridge.setViewHandler((frame) => manager.receive(frame));
   let unbind = (): void => bridge.dispose();
   lifecycle = new RendererLifecycle({
-    handle: { start() {}, async destroy() { await manager.dispose(); services.dispose(); } },
+    handle: { start() {}, suspend: () => manager.dispose(), destroy() { services.dispose(); } },
     disposers: [
       () => unbind(),
-      () => services.session.persistNow().catch(() => undefined),
-      () => services.omnirushSessionUpload.close(),
       restoreConsole,
-      () => services.mcp.closeAll().catch(() => undefined),
-      () => services.ports.interactiveSessions.closeAll("app-shutdown").then(() => undefined),
-      () => manager.dispose(),
+      () => shutdownServices(services),
     ],
     epilogue: () => runFreebuffSessionShutdownCleanup(),
     onSigint: () => services.session.abort(),

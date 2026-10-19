@@ -72,6 +72,10 @@ export function TextEditorModal(props: TextEditorModalProps): ReactNode {
       services.overlay.answerTextEditor(undefined);
       return;
     }
+    if (chord === "tab" && request.preserveTabs) {
+      key.preventDefault();
+      editorRef.current?.insertText("\t");
+    }
   }
 
   return (

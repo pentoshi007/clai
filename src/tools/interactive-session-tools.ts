@@ -1,6 +1,7 @@
 
 import { loadScopeForSession, type EngagementScope } from "../store/scope.js";
 import { resolveUserPassword } from "../agent/context/user-credentials.js";
+import { getCredential, getMachineSudoPassword } from "../store/credentials.js";
 import {
   InteractiveSessionManager,
   interactiveSessionManager,
@@ -67,11 +68,23 @@ function optionalView(args: Record<string, unknown>): OutputView | undefined {
 
 async function secretValue(args: Record<string, unknown>, options: ToolRunOptions | undefined): Promise<string> {
   const source = optionalString(args, "secretSource") ?? "auto";
-  if (source !== "auto" && source !== "user" && source !== "prompt") {
-    throw new Error("secretSource must be auto, user, or prompt");
+  if (!["auto", "user", "prompt", "sudo", "store"].includes(source)) {
+    throw new Error("secretSource must be auto, user, prompt, sudo, or store");
   }
   const prompt = optionalString(args, "secretPrompt") ?? "Enter secret";
   options?.signal?.throwIfAborted();
+  const credentialId = optionalString(args, "credentialId");
+  if (credentialId !== undefined || source === "store") {
+    if (!credentialId || (source !== "auto" && source !== "store")) throw new Error("credentialId requires secretSource auto or store");
+    const credential = await getCredential(credentialId);
+    if (!credential) throw new Error("Stored freeform credential not found; no input was sent.");
+    return credential.content;
+  }
+  if (source === "sudo") {
+    const password = await getMachineSudoPassword();
+    if (password === undefined) throw new Error("No machine sudo credential is configured in /creds; no input was sent.");
+    return password;
+  }
   if (source !== "prompt") {
     const supplied = resolveUserPassword(options ?? {});
     if (supplied.status === "available") return supplied.value;
@@ -103,8 +116,8 @@ async function parseInput(
   options: ToolRunOptions | undefined,
 ): Promise<SessionInput> {
   const kind = requireString(args, "kind");
-  if (kind !== "secret" && (args.secretSource !== undefined || args.secretPrompt !== undefined)) {
-    throw new Error("secretSource and secretPrompt are only allowed when kind is secret");
+  if (kind !== "secret" && (args.secretSource !== undefined || args.secretPrompt !== undefined || args.credentialId !== undefined)) {
+    throw new Error("secretSource, secretPrompt, and credentialId are only allowed when kind is secret");
   }
   if (kind === "text") {
     const text = args.text;

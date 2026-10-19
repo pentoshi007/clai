@@ -75,11 +75,6 @@ export async function listSessionSummaries(
     );
     summaries = sortSummaries(rebuilt.map((entry) => entry.summary));
     coversAll = true;
-  } else {
-    void rebuildHistoryIndex<HistoryRecord>(
-      jsonlFilePath(),
-      jsonlIndexFilePath(),
-    );
   }
 
   if (sessionListGeneration === loadGeneration) {

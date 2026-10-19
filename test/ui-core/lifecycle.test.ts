@@ -300,3 +300,21 @@ describe("RendererLifecycle start failure", () => {
     expect(destroyed).toBe(true);
   });
 });
+
+it("releases terminal input before waiting for slow durable cleanup", async () => {
+  const order: string[] = [];
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const lifecycle = new RendererLifecycle({
+    process: new FakeProcess(),
+    handle: { start: () => undefined, suspend: () => { order.push("terminal-restored"); }, destroy: () => { order.push("destroy"); } },
+    disposers: [async () => { order.push("saving"); await pending; order.push("saved"); }],
+  });
+  await lifecycle.start();
+  const shutdown = lifecycle.shutdown();
+  await Promise.resolve();
+  expect(order).toEqual(["terminal-restored", "saving"]);
+  release();
+  await shutdown;
+  expect(order).toEqual(["terminal-restored", "saving", "saved", "destroy"]);
+});

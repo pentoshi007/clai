@@ -2,6 +2,8 @@ import type { ToolCall, ToolResult } from "../types.js";
 import type { SecretPort } from "../app/ports/secret-port.js";
 import type { ToolRunOptions } from "./tool-types.js";
 import { spawnArgv } from "./shell.js";
+import { getMachineSudoPassword } from "../store/credentials.js";
+import { registerKnownSecret, redactKnownSecrets } from "../security/known-secrets.js";
 
 
 export const SUDO_SESSION_TTL_MS = 5 * 60_000;
@@ -20,7 +22,7 @@ export type SudoAuthOutcome =
   | { readonly status: "failed"; readonly detail: string };
 
 export interface SudoAuthOptions {
-  readonly requestSecret: SecretPort["request"];
+  readonly requestSecret?: SecretPort["request"] | undefined;
   readonly operation?: ToolCall | undefined;
   readonly title: string;
   readonly prompt: string;
@@ -39,6 +41,7 @@ export interface SudoAuthDependencies {
     noArtifact?: boolean | undefined;
     interactiveStdin?: boolean | "auto" | undefined;
   }) => Promise<ToolResult>) | undefined;
+  readonly getStoredPassword?: (() => Promise<string | undefined>) | undefined;
   readonly now?: (() => number) | undefined;
   readonly ttlMs?: number | undefined;
 }
@@ -63,14 +66,26 @@ export function obtainSudoPassword(
   if (inFlightAuth) return inFlightAuth;
 
   const task = (async (): Promise<SudoAuthOutcome> => {
-    const password = await options.requestSecret({
-      title: options.title,
-      prompt: options.prompt,
-      operation: options.operation,
-    });
+    if (options.signal?.aborted) return { status: "cancelled" };
+    let stored: string | undefined;
+    let password: string | undefined;
+    try {
+      stored = await (dependencies.getStoredPassword ?? getMachineSudoPassword)();
+      if (stored === undefined && !options.requestSecret) {
+        return { status: "failed", detail: "No machine sudo credential or secure password prompt is available. Configure /creds or use an interactive terminal." };
+      }
+      password = stored ?? await options.requestSecret?.({
+        title: options.title,
+        prompt: options.prompt,
+        operation: options.operation,
+      });
+    } catch {
+      return { status: "failed", detail: "The machine credential could not be unlocked. Check /creds; no password prompt was opened." };
+    }
     if (password === undefined || options.signal?.aborted) {
       return { status: "cancelled" };
     }
+    registerKnownSecret(password);
     const stdinText = formatSudoStdinPassword(password);
     const runAuth = dependencies.runAuth ?? spawnArgv;
     let auth: ToolResult;
@@ -88,9 +103,9 @@ export function obtainSudoPassword(
     } catch (error) {
       return {
         status: "failed",
-        detail: `sudo authentication could not start: ${
+        detail: redactKnownSecrets(`sudo authentication could not start: ${
           error instanceof Error ? error.message : String(error)
-        }`,
+        }`),
       };
     }
     if (options.signal?.aborted || auth.exitCode === 130) {
@@ -99,7 +114,7 @@ export function obtainSudoPassword(
     if (!auth.ok) {
       return {
         status: "failed",
-        detail: (auth.output ?? "").trim().slice(0, 400),
+        detail: `${stored !== undefined ? "Stored machine sudo password was rejected; update or remove it in /creds. " : ""}${redactKnownSecrets(auth.output ?? "").trim().slice(0, 400)}`,
       };
     }
     cachedPassword = { value: password, expiresAt: now() + ttlMs };
@@ -107,9 +122,10 @@ export function obtainSudoPassword(
   })();
 
   inFlightAuth = task;
-  void task.finally(() => {
+  const clear = (): void => {
     if (inFlightAuth === task) inFlightAuth = undefined;
-  });
+  };
+  void task.then(clear, clear);
   return task;
 }
 
