@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { pagerLines } from "../../../src/classic/panels/pager-panel.js";
+import { PAGER_INITIAL_STATE, pagerLines, pagerView } from "../../../src/classic/panels/pager-panel.js";
+import { paintSearchMatches } from "../../../src/classic/panels/pager-search-paint.js";
+import { panelFrameRows } from "../../../src/classic/panels/panel-frame.js";
 import { PanelHost } from "../../../src/classic/panels/panel-host.js";
 import { stripAnsi } from "../../../src/classic/render/measure.js";
 import { syntaxColor } from "../../../src/ui-core/rendering/file-diff-view.js";
@@ -121,5 +123,36 @@ describe("classic pager regions", () => {
     expect(stripAnsi(frame)).toContain(firstShown);
     expect(frame).not.toContain(opening((text) => colorInk.fg("aqua", text), firstShown));
     harness.overlay.close();
+  });
+});
+
+describe("classic pager search keeps colours", () => {
+  const keywordOpen = colorInk.hex(syntaxColor("keyword", colorInk.theme), "\u0000").split("\u0000")[0]!;
+  const inverseOpen = colorInk.inverse("\u0000").split("\u0000")[0]!;
+  const body = ["file: sample.ts", "", "export const answer = 42;", "export function other() {}", ""].join("\n");
+  const paint = { path: "sample.ts", ink: colorInk, regions: { codeStart: 2, codeEnd: 4 } };
+
+  it("highlights only the match and leaves syntax colours on matching and non-matching rows", () => {
+    const lines = pagerLines(body, 80, 12, "raw", false, undefined, paint);
+    const plain = lines.map(stripAnsi);
+    const frame = pagerView({ ink: colorInk, columns: 80, rows: 12, title: "fs.read", lines, state: { ...PAGER_INITIAL_STATE, format: "raw", query: "answer" } });
+    const rows = panelFrameRows(frame).rows;
+    const matchRow = rows.find((row) => stripAnsi(row).includes("export const answer"))!;
+    const otherRow = rows.find((row) => stripAnsi(row).includes("export function other"))!;
+    expect(matchRow).toContain(`${keywordOpen}export`);
+    expect(matchRow).toContain(`${inverseOpen}answer`);
+    expect(otherRow).toContain(`${keywordOpen}export`);
+    expect(otherRow).not.toContain(inverseOpen);
+    expect(rows.map(stripAnsi).join("\n")).toContain(plain[2]!);
+  });
+
+  it("keeps the match highlighted across colour resets inside it", () => {
+    const styled = `\u001b[31mab\u001b[0mcd\u001b[32mef\u001b[39m`;
+    const painted = paintSearchMatches(colorInk, styled, [{ text: "a", kind: "plain" }, { text: "bcde", kind: "match" }, { text: "f", kind: "plain" }]);
+    expect(stripAnsi(painted)).toBe("abcdef");
+    const resetAt = painted.indexOf("\u001b[0m");
+    expect(painted.slice(resetAt, resetAt + 4 + inverseOpen.length)).toBe(`\u001b[0m${inverseOpen}`);
+    expect(painted.indexOf(inverseOpen)).toBeLessThan(painted.indexOf("b"));
+    expect(paintSearchMatches(ink, styled, [{ text: "abcdef", kind: "match" }])).toBe(styled);
   });
 });

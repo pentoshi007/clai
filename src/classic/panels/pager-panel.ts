@@ -27,6 +27,7 @@ import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-f
 import { handled, unhandled, type PanelKeyResult } from "./panel-effect.js";
 import { diffPagerLines } from "./pager-diff.js";
 import { regionPagerLines } from "./pager-region-paint.js";
+import { paintSearchMatches } from "./pager-search-paint.js";
 import { pagerRegionsForPage, type PagerBodyRegions } from "../../ui-core/rendering/pager-regions.js";
 
 export type PagerFormat = "formatted" | "raw";
@@ -360,23 +361,6 @@ export interface PagerViewInput {
   readonly subagent?: boolean | undefined;
 }
 
-function paintSegments(
-  ink: InkTheme,
-  line: string,
-  lineIndex: number,
-  matches: readonly PagerMatch[],
-  activeMatchIndex: number,
-): string {
-  const segments = segmentPagerLine(line, lineIndex, matches, activeMatchIndex);
-  let out = "";
-  for (const segment of segments) {
-    if (segment.kind === "plain") out += segment.text;
-    else if (segment.kind === "match") out += ink.inverse(segment.text);
-    else out += ink.style(segment.text, { inverse: true, bold: true });
-  }
-  return sealStyle(out);
-}
-
 export function pagerView(input: PagerViewInput): PanelFrameInput {
   const { ink, state } = input;
   const height = panelBodyHeight(input.rows);
@@ -396,7 +380,7 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
     const painted =
       state.query === ""
         ? sealStyle(styled)
-        : paintSegments(ink, plain, index, matches, state.matchIndex);
+        : paintSearchMatches(ink, styled, segmentPagerLine(plain, index, matches, state.matchIndex));
     const caret = index === state.caret ? ink.fg("inputBorder", ink.glyphs.caret) : " ";
     body.push(sealStyle(`${panelBodyWidth(input.columns) >= 3 ? `${caret} ` : ""}${painted}`));
   }
