@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import net from "node:net";
 import { getUserHome } from "../os/user-identity.js";
 import { getDataDir } from "./paths.js";
+import { adoptLegacyFile } from "./legacy-location.js";
 
 const scopeFile =
   process.env.CLAI_SCOPE_FILE ??
@@ -35,6 +36,9 @@ let cachedMtimeMs = 0;
 
 export async function loadScope(): Promise<EngagementScope | undefined> {
   try {
+    if (!process.env.CLAI_SCOPE_FILE && !process.env.VITEST_WORKER_ID) {
+      await adoptLegacyFile(scopeFile, join(getDataDir(), "scope.json"));
+    }
     if (!(await safeExists(scopeFile))) {
       cached = undefined;
       cacheLoaded = true;
