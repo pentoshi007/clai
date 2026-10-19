@@ -98,7 +98,7 @@ async function updateVault(update: (entries: Credential[]) => Credential[]): Pro
   await mkdir(paths.directory, { recursive: true, mode: 0o700 });
   await fixOwner(paths.directory);
   if (process.platform !== "win32") await chmod(paths.directory, 0o700);
-  const release = await acquireStorageWriteLock(paths.lock);
+  const release = await acquireStorageWriteLock(paths.lock, "credential");
   try {
     await saveVault(update(await loadVault()));
   } finally {

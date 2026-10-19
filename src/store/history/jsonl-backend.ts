@@ -121,7 +121,7 @@ async function writeJsonlAtomic(
 
 const HISTORY_COMPACT_MIN_BYTES = 1_000_000;
 
-const HISTORY_COMPACT_LIVE_RATIO = 0.6;
+const HISTORY_COMPACT_MIN_STALE_BYTES = 8 * 1024 * 1024;
 
 function summaryFreshness(summary: HistorySummary): HistoryRecord & { itemCount: number } {
   return {
@@ -144,7 +144,8 @@ function shouldCompactHistory(result: {
   const limit = getConfig().historyRetentionLimit;
   if (limit > 0 && result.entries.length > limit) return true;
   if (result.fileSize < HISTORY_COMPACT_MIN_BYTES) return false;
-  return result.liveBytes / result.fileSize < HISTORY_COMPACT_LIVE_RATIO;
+  const staleBytes = result.fileSize - result.liveBytes;
+  return staleBytes >= Math.max(HISTORY_COMPACT_MIN_STALE_BYTES, result.liveBytes);
 }
 
 async function compactJsonlUnderLock(entries: readonly HistoryIndexEntry[]): Promise<void> {
