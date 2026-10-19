@@ -16,6 +16,7 @@ import { renderColumns } from "../../../ui-core/rendering/text-width.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
 import {
   TOAST_BOX_HEIGHT,
+  nextToastFrameDelay,
   toastAnimAt,
 } from "./toast-anim.js";
 
@@ -224,10 +225,20 @@ function ToastHostImpl(props: ToastHostProps): ReactNode {
 
   useEffect(() => {
     if (items.length === 0 || compact) return;
-    const id = setInterval(() => setNow(Date.now()), TICK_MS);
-    (id as unknown as { unref?: () => void }).unref?.();
-    return () => clearInterval(id);
-  }, [items.length > 0, compact]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (at: number): void => {
+      const delay = nextToastFrameDelay(items, at, TICK_MS);
+      timer = delay === undefined ? undefined : setTimeout(tick, delay);
+      (timer as unknown as { unref?: () => void } | undefined)?.unref?.();
+    };
+    const tick = (): void => {
+      const at = Date.now();
+      setNow(at);
+      schedule(at);
+    };
+    schedule(Date.now());
+    return () => clearTimeout(timer);
+  }, [items, compact]);
 
   if (items.length === 0) return null;
 

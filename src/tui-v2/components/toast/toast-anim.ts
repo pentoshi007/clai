@@ -48,3 +48,27 @@ export function toastAnimAt(
   }
   return { phase: "gone", top: hiddenTop, visibility: 0 };
 }
+
+export interface ToastTiming {
+  readonly createdAt: number;
+  readonly durationMs: number;
+  readonly sticky?: boolean | undefined;
+}
+
+export function nextToastFrameDelay(
+  items: readonly ToastTiming[],
+  now: number,
+  frameMs: number,
+): number | undefined {
+  let next: number | undefined;
+  for (const item of items) {
+    const age = Math.max(0, now - item.createdAt);
+    const holdEnd = item.sticky ? Number.POSITIVE_INFINITY : TOAST_ENTER_MS + Math.max(0, item.durationMs);
+    let wait: number | undefined;
+    if (age < TOAST_ENTER_MS) wait = frameMs;
+    else if (age < holdEnd) wait = Number.isFinite(holdEnd) ? holdEnd - age : undefined;
+    else if (age < holdEnd + TOAST_EXIT_MS) wait = frameMs;
+    if (wait !== undefined) next = next === undefined ? wait : Math.min(next, wait);
+  }
+  return next === undefined ? undefined : Math.max(1, Math.ceil(next));
+}
