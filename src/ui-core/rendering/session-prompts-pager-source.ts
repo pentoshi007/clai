@@ -18,7 +18,7 @@ export function createSessionPromptsPagerSource(
   const subscriptions = new Set<() => void>();
   let disposed = false;
   const active = async (): Promise<ArtifactPagerSource> => {
-    await store.flush();
+    await store.idle();
     if (disposed) throw new Error("session prompts pager is disposed");
     return await store.count() > 0 ? file : empty;
   };
