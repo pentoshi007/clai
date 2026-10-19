@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARGS_PREVIEW_MAX_CHARS,
   boundArgsRows,
   clampArgsDisplay,
   presentTool,
@@ -82,6 +83,21 @@ describe("inline shell.exec input is bounded to three visual rows", () => {
     const rows = boundArgsRows(presented, 40).split("\n");
     expect(rows).toHaveLength(4);
     expect(rows[3]).toBe("··· +4 more lines · click for full ···");
+  });
+
+  it("caps visible input characters on wide terminals before the row cap", () => {
+    const rows = boundArgsRows(`python3 -c '${"x = 1; ".repeat(400)}'`, 250).split("\n");
+    const shown = rows.slice(0, -1);
+    expect(shown.join("").length).toBeLessThanOrEqual(ARGS_PREVIEW_MAX_CHARS);
+    expect(shown.length).toBeLessThanOrEqual(3);
+    expect(rows.at(-1)).toBe("··· click for full ···");
+  });
+
+  it("applies the character cap across several long lines", () => {
+    const long = "y".repeat(150);
+    const rows = boundArgsRows([long, long, long].join("\n"), 250).split("\n");
+    expect(rows.slice(0, -1).join("").length).toBeLessThanOrEqual(ARGS_PREVIEW_MAX_CHARS);
+    expect(rows.at(-1)).toBe("··· +1 more line · click for full ···");
   });
 
   it("leaves short commands untouched", () => {
