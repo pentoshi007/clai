@@ -375,6 +375,7 @@ export function ToolCard(props: {
     void openToolOutputPager(services, item);
   };
   const openFullClick = useClickWithoutDrag(openFull);
+  const openInputClick = useClickWithoutDrag(() => { void openToolOutputPager(services, item); });
 
   const openFileChange = (change: FileChange): void => {
     if (expanded) return;
@@ -632,6 +633,8 @@ export function ToolCard(props: {
             paddingTop: 0,
             flexShrink: 0,
           }}
+          onMouseDown={openInputClick.onMouseDown}
+          onMouseUp={openInputClick.onMouseUp}
         >
           <text selectable style={{ fg: theme.muted, width: argsLabel.length + 2, flexShrink: 0 }}>
             {argsLabel}:{" "}
