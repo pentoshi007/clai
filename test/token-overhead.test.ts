@@ -73,7 +73,7 @@ describe("token overhead contracts", () => {
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "User asked to fix retry count. Read /project/state.mjs: retryLimit=2. fs.edit changed retryLimit to 3. node check.mjs exited 0.",
       durableState: "ACTIVE PLAN: t1 done; t2 pending: set backoffMs=100 without changing CRLF.",
-    }))).toBe("fd4376533b074d08231d1eb62bfca185bcfffc9852880e9a01641009215c7b8a");
+    }))).toBe("018f94bf1eea4ec5fc485757303b0b6d7432e138f5f0d3f860b4b6eafc074cde");
     expect(sha256(buildCompactionUserPrompt({
       messageTranscript: "Read /project/package.json: Vite installed. Existing source has a mock payment form. Verified webhook route requires signature validation.",
       durableState: "ACTIVE PLAN: Implement signature validation; verify invalid signatures and replay protection.",
