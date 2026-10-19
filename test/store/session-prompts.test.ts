@@ -159,4 +159,34 @@ describe("persistent session user prompts", () => {
     await clearAllHistory();
     expect(await journal.count()).toBe(0);
   });
+
+  it("repairs a journal whose body lost its tail instead of rejecting every later prompt", async () => {
+    const journal = store("torn");
+    await journal.append({ content: "first retained prompt" });
+    await journal.append({ content: "second prompt lost by a torn write" });
+    const { truncate } = await import("node:fs/promises");
+    const body = await readFile(journal.path, "utf8");
+    await truncate(journal.path, Buffer.byteLength(body.slice(0, body.indexOf("## Prompt 002"))) + 4);
+    await journal.append({ content: "third prompt after repair" });
+    const reopened = new SessionPromptStore(journal.sessionId);
+    expect(await reopened.count()).toBe(2);
+    const text = await readFile(reopened.path, "utf8");
+    expect(text).toContain("first retained prompt");
+    expect(text).toContain("third prompt after repair");
+    expect(text).not.toContain("second prompt lost");
+  });
+
+  it("keeps /prompts readable after an earlier journal write failed", async () => {
+    const journal = store("reader-safe");
+    await journal.append({ content: "visible prompt" });
+    const failing = (journal as unknown as { enqueue(operation: () => Promise<void>): Promise<void> })
+      .enqueue(async () => { throw new Error("simulated lock timeout"); });
+    await expect(failing).rejects.toThrow("simulated lock timeout");
+    await expect(journal.flush()).rejects.toThrow("simulated lock timeout");
+    const pager = createSessionPromptsPagerSource(journal);
+    try {
+      expect((await pager.readPage(0)).body).toContain("visible prompt");
+      expect((await journal.namingWindow()).count).toBe(1);
+    } finally { pager.dispose(); }
+  });
 });
