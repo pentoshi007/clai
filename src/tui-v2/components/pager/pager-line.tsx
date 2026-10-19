@@ -66,6 +66,7 @@ function PagerLineImpl(props: {
   diffGutters?: boolean | undefined;
   subagent?: boolean | undefined;
   subagentSpans?: readonly SubagentSpan[] | undefined;
+  tone?: "input" | undefined;
 }): ReactNode {
   const {
     line,
@@ -249,9 +250,28 @@ function PagerLineImpl(props: {
     );
   }
 
-  const baseFg = baseLineFg(line, theme);
+  const codeSpans = props.tone === "input" ? undefined : precomputedSpans;
+  const baseFg = props.tone === "input" ? theme.aqua : baseLineFg(line, theme);
   const wrapProps = props.subagent ? { wrapMode: "word" as const } : {};
   if (!hasQuery || matches.length === 0) {
+    if (codeSpans && codeSpans.length > 0) {
+      return (
+        <text
+          id={`pager-line-${index}`}
+          selectable
+          style={{
+            width: "100%",
+            bg: isActiveLine ? theme.rowA : theme.background,
+          }}
+        >
+          {codeSpans.map((sp, i) => (
+            <span key={i} style={{ fg: syntaxColor(sp.kind, theme) }}>
+              {sp.text || (i === 0 ? " " : "")}
+            </span>
+          ))}
+        </text>
+      );
+    }
     return (
       <text
         id={`pager-line-${index}`}
