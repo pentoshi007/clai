@@ -168,11 +168,13 @@ function boxShape(char: string, x: number, y: number, color: string): string {
   const parts: string[] = [];
   const [up, right, down, left] = arms;
   const stroke = (weight: number): number => (weight === 2 ? HEAVY_STROKE : LIGHT_STROKE);
-  // Each arm extends half a stroke past the centre so junctions close cleanly.
-  if (up) parts.push(`M${fmt(cx - stroke(up) / 2)} ${fmt(y)}h${fmt(stroke(up))}V${fmt(cy + stroke(up) / 2)}h${fmt(-stroke(up))}Z`);
-  if (down) parts.push(`M${fmt(cx - stroke(down) / 2)} ${fmt(cy - stroke(down) / 2)}h${fmt(stroke(down))}V${fmt(y + LINE_HEIGHT)}h${fmt(-stroke(down))}Z`);
-  if (left) parts.push(`M${fmt(x)} ${fmt(cy - stroke(left) / 2)}H${fmt(cx + stroke(left) / 2)}v${fmt(stroke(left))}H${fmt(x)}Z`);
-  if (right) parts.push(`M${fmt(cx - stroke(right) / 2)} ${fmt(cy - stroke(right) / 2)}H${fmt(x + CELL_WIDTH)}v${fmt(stroke(right))}H${fmt(cx - stroke(right) / 2)}Z`);
+  // Each arm extends half a stroke past the centre so junctions close cleanly,
+  // and slightly past the cell edge so neighbouring cells join without seams.
+  const o = 0.4;
+  if (up) parts.push(`M${fmt(cx - stroke(up) / 2)} ${fmt(y - o)}h${fmt(stroke(up))}V${fmt(cy + stroke(up) / 2)}h${fmt(-stroke(up))}Z`);
+  if (down) parts.push(`M${fmt(cx - stroke(down) / 2)} ${fmt(cy - stroke(down) / 2)}h${fmt(stroke(down))}V${fmt(y + LINE_HEIGHT + o)}h${fmt(-stroke(down))}Z`);
+  if (left) parts.push(`M${fmt(x - o)} ${fmt(cy - stroke(left) / 2)}H${fmt(cx + stroke(left) / 2)}v${fmt(stroke(left))}H${fmt(x - o)}Z`);
+  if (right) parts.push(`M${fmt(cx - stroke(right) / 2)} ${fmt(cy - stroke(right) / 2)}H${fmt(x + CELL_WIDTH + o)}v${fmt(stroke(right))}H${fmt(cx - stroke(right) / 2)}Z`);
   return `<path d="${parts.join("")}" fill="${color}"/>`;
 }
 
@@ -181,12 +183,39 @@ function isPrivateUse(char: string): boolean {
   return code >= 0xe000 && code <= 0xf8ff;
 }
 
+// Powerline branch glyph (U+E0A0) used before the git branch in the status
+// line. Viewer fonts rarely include it, so draw a branch icon in its cell.
+const POWERLINE_BRANCH = "\ue0a0";
+
+function branchShape(x: number, y: number, color: string): string {
+  const stem = x + 2.4;
+  const fork = x + 6.4;
+  return [
+    `<g fill="none" stroke="${color}" stroke-width="1.3" stroke-linecap="round">`,
+    `<path d="M${fmt(stem)} ${fmt(y + 5.6)}V${fmt(y + 11.4)}"/>`,
+    `<path d="M${fmt(fork)} ${fmt(y + 7.1)}C${fmt(fork)} ${fmt(y + 10)} ${fmt(stem)} ${fmt(y + 9)} ${fmt(stem)} ${fmt(y + 11.4)}"/>`,
+    `<circle cx="${fmt(stem)}" cy="${fmt(y + 4.1)}" r="1.5"/>`,
+    `<circle cx="${fmt(stem)}" cy="${fmt(y + 12.9)}" r="1.5"/>`,
+    `<circle cx="${fmt(fork)}" cy="${fmt(y + 5.6)}" r="1.5"/>`,
+    `</g>`,
+  ].join("");
+}
+
 function renderSvg(lines: readonly (readonly CapturedSpan[])[], background: string): string {
   const width = Math.ceil(COLUMNS * CELL_WIDTH + PADDING * 2);
   const height = Math.ceil(lines.length * LINE_HEIGHT + PADDING * 2 + TITLE_BAR);
   const backgrounds: string[] = [];
   const shapes: string[] = [];
   const texts: string[] = [];
+  // Vertical line runs keyed by x, merged across rows for the same reason as
+  // horizontal runs below.
+  const vlines = new Map<string, { x: number; top: number; bottom: number; color: string; stroke: number }>();
+  const flushVline = (key: string): void => {
+    const v = vlines.get(key);
+    if (!v) return;
+    shapes.push(`<rect x="${fmt(v.x - v.stroke / 2)}" y="${fmt(v.top)}" width="${fmt(v.stroke)}" height="${fmt(v.bottom - v.top)}" fill="${v.color}"/>`);
+    vlines.delete(key);
+  };
   lines.forEach((spans, row) => {
     const y = TITLE_BAR + PADDING + row * LINE_HEIGHT;
     let column = 0;
@@ -196,6 +225,15 @@ function renderSvg(lines: readonly (readonly CapturedSpan[])[], background: stri
       if (!run) return;
       backgrounds.push(`<rect x="${fmt(PADDING + run.start * CELL_WIDTH)}" y="${y}" width="${fmt((run.end - run.start) * CELL_WIDTH)}" height="${LINE_HEIGHT}" fill="${run.color}"/>`);
       run = undefined;
+    };
+    // Runs of plain horizontal lines become a single rect: per-cell pieces
+    // leave faint anti-aliasing ticks at every cell boundary.
+    let line: { x: number; end: number; color: string; stroke: number } | undefined;
+    const flushLine = (): void => {
+      if (!line) return;
+      const top = y + LINE_HEIGHT / 2 - line.stroke / 2;
+      shapes.push(`<rect x="${fmt(line.x)}" y="${fmt(top)}" width="${fmt(line.end - line.x)}" height="${fmt(line.stroke)}" fill="${line.color}"/>`);
+      line = undefined;
     };
     for (const span of spans) {
       const bg = hex(span.bg);
@@ -231,6 +269,34 @@ function renderSvg(lines: readonly (readonly CapturedSpan[])[], background: stri
         const cells = Math.max(1, stringWidth(segment));
         const x = PADDING + cell * CELL_WIDTH;
         const block = BLOCKS[segment];
+        if (segment === "─" || segment === "━") {
+          flushWord();
+          const stroke = segment === "━" ? HEAVY_STROKE : LIGHT_STROKE;
+          if (line && line.color === fg && line.stroke === stroke && Math.abs(line.end - x) < 0.01) {
+            line.end = x + CELL_WIDTH;
+          } else {
+            flushLine();
+            line = { x, end: x + CELL_WIDTH, color: fg, stroke };
+          }
+          cell += cells;
+          continue;
+        }
+        flushLine();
+        if (segment === "│" || segment === "┃") {
+          flushWord();
+          const stroke = segment === "┃" ? HEAVY_STROKE : LIGHT_STROKE;
+          const cx = x + CELL_WIDTH / 2;
+          const key = fmt(cx);
+          const v = vlines.get(key);
+          if (v && v.color === fg && v.stroke === stroke && Math.abs(v.bottom - y) < 0.01) {
+            v.bottom = y + LINE_HEIGHT;
+          } else {
+            flushVline(key);
+            vlines.set(key, { x: cx, top: y, bottom: y + LINE_HEIGHT, color: fg, stroke });
+          }
+          cell += cells;
+          continue;
+        }
         if (block) {
           flushWord();
           const [bx, by, bw, bh] = block;
@@ -239,6 +305,9 @@ function renderSvg(lines: readonly (readonly CapturedSpan[])[], background: stri
         } else if (BOX[segment]) {
           flushWord();
           shapes.push(boxShape(segment, x, y, fg));
+        } else if (segment === POWERLINE_BRANCH) {
+          flushWord();
+          shapes.push(branchShape(x, y, fg));
         } else if (!segment.trim() || isPrivateUse(segment)) {
           flushWord();
         } else if ([...segment].length === 1) {
@@ -255,8 +324,10 @@ function renderSvg(lines: readonly (readonly CapturedSpan[])[], background: stri
       flushWord();
       column = end;
     }
+    flushLine();
     flushRun();
   });
+  for (const key of [...vlines.keys()]) flushVline(key);
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="clai running in a terminal with the OpenTUI interface">`,
     `<rect width="${width}" height="${height}" rx="10" fill="${background}"/>`,
