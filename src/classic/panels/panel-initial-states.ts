@@ -31,6 +31,7 @@ export const EMPTY_SNAPSHOT_BASE = {
   pagerBody: "",
   pagerMarkdown: "plain" as const,
   pagerLive: false,
+  pagerPageOffset: 0,
   jobs: JOBS_INITIAL_STATE,
   scope: EMPTY_SCOPE,
   keys: EMPTY_KEYS,

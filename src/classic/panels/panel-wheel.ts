@@ -2,7 +2,7 @@ import type { BackgroundJob } from "../../app/ports/jobs-port.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import { jobsKey } from "./jobs-panel.js";
 import { keysKey } from "./keys-panel.js";
-import { pagerDiffOptions, pagerKey, pagerSubagentPaint, pagerViewModel } from "./pager-panel.js";
+import { pagerPaintOptions, pagerKey, pagerSubagentPaint, pagerViewModel } from "./pager-panel.js";
 import type { PanelEffect } from "./panel-effect.js";
 import type { PanelSnapshot } from "./panel-controller.js";
 import { pickerKey } from "./picker-panel.js";
@@ -56,7 +56,7 @@ export function panelWheelMove(
         snapshot.pager.format,
         Boolean(subagentPaint),
         undefined,
-        pagerDiffOptions(snapshot.overlay),
+        pagerPaintOptions(snapshot.overlay, undefined, snapshot.pagerPageOffset),
         subagentPaint,
         snapshot.overlay.source?.quotePrefix,
         snapshot.overlay.source?.literalQuotes,
