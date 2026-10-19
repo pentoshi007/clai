@@ -3,7 +3,8 @@ import { copyFile, mkdir, mkdtemp, open, rename, rm, stat, truncate } from "node
 import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getHistoryDir } from "./paths.js";
-import { acquireJsonlWriteLock } from "./history/jsonl-lock.js";
+import { acquireStorageWriteLock } from "./history/jsonl-lock.js";
+import { fixOwner } from "../os/permissions.js";
 import { redactSecrets } from "../llm/provider.js";
 import { redactUserCredentialsFromMemory } from "../agent/context/user-credentials.js";
 import { formatPromptSection } from "./session-prompts-format.js";
@@ -122,9 +123,11 @@ export class SessionPromptStore {
     const pendingSource = source.flush();
     return this.enqueue(async () => {
       await pendingSource;
-      const release = await acquireJsonlWriteLock();
+      const locks = [`${source.root}.lock`, `${this.root}.lock`].sort();
+      const releases: (() => Promise<void>)[] = [];
       let staged: string | undefined;
       try {
+        for (const path of new Set(locks)) releases.push(await acquireStorageWriteLock(path));
         if (await source.count() === 0) return;
         if (await this.count() > 0) throw new Error("destination prompt journal is not empty");
         await mkdir(dirname(this.root), { recursive: true, mode: 0o700 });
@@ -132,12 +135,14 @@ export class SessionPromptStore {
         for (const file of ["prompts.md", "metadata.jsonl", "offsets.bin"]) {
           await copyFile(join(source.root, file), join(staged, file));
         }
+        await fixOwner(staged);
+        for (const file of ["prompts.md", "metadata.jsonl", "offsets.bin"]) await fixOwner(join(staged, file));
         await rename(staged, this.root);
         staged = undefined;
       } finally {
         try {
           if (staged) await rm(staged, { recursive: true, force: true });
-        } finally { await release(); }
+        } finally { for (const release of releases.reverse()) await release(); }
       }
       this.revisionValue += 1;
       this.notifyListeners();
@@ -199,12 +204,14 @@ export class SessionPromptStore {
   }
 
   private async write(operation: (writer: Writer) => Promise<void>): Promise<void> {
-    const release = await acquireJsonlWriteLock();
+    const release = await acquireStorageWriteLock(`${this.root}.lock`);
     const handles: FileHandle[] = [];
     try {
       await mkdir(this.root, { recursive: true, mode: 0o700 });
+      await fixOwner(this.root);
       for (const path of [this.path, this.metadataPath, this.indexPath]) {
         handles.push(await open(path, "a+", 0o600));
+        await fixOwner(path);
       }
       const [body, metadata, index] = handles as [FileHandle, FileHandle, FileHandle];
       const indexSize = (await index.stat()).size;
@@ -219,6 +226,9 @@ export class SessionPromptStore {
       if (metadataSize > metadataEnd) await truncate(this.metadataPath, metadataEnd);
       if (bodySize > bodyEnd) await truncate(this.path, bodyEnd);
       await operation({ body, metadata, index, count, bodyEnd, metadataEnd });
+      await body.sync();
+      await metadata.sync();
+      await index.sync();
     } finally {
       await Promise.allSettled(handles.map((handle) => handle.close()));
       await release();
@@ -266,9 +276,9 @@ export class SessionPromptStore {
 }
 
 export async function removeSessionPrompts(sessionId: string): Promise<boolean> {
-  const release = await acquireJsonlWriteLock();
+  const root = directory(sessionId);
+  const release = await acquireStorageWriteLock(`${root}.lock`);
   try {
-    const root = directory(sessionId);
     const exists = await stat(root).then(() => true, (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return false;
       throw error;

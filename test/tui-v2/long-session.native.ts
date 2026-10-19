@@ -21,7 +21,10 @@ const services = createCompositionRoot({
   updates: { async check() { return { state: "current", currentVersion: "test", updateAvailable: false }; } },
   capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: 100, rows: 32 }),
 });
-const items: AssistantItem[] = Array.from({ length: 240 }, (_, index) => ({
+const count = Number(process.argv[2] ?? 240);
+assert.ok(Number.isSafeInteger(count) && count >= 240);
+const last = count - 1;
+const items: AssistantItem[] = Array.from({ length: count }, (_, index) => ({
   id: `long-${index}`, kind: "assistant", streaming: false, sequence: index, timestamp: 0, turnId: undefined,
   text: Array.from({ length: 100 }, (_, row) => `ITEM_${index}_ROW_${row} 日本語 🧪 **complete**`).join("\n"),
 }));
@@ -36,7 +39,7 @@ function nodes(node: Renderable = setup.renderer.root): number {
   return 1 + node.getChildren().reduce((total, child) => total + nodes(child), 0);
 }
 function scrollbox(node: Renderable = setup.renderer.root): ScrollBoxRenderable | undefined {
-  if (node instanceof ScrollBoxRenderable && node.content.findDescendantById("long-239")) return node;
+  if (node instanceof ScrollBoxRenderable && node.content.findDescendantById(`long-${last}`)) return node;
   for (const child of node.getChildren()) {
     const found = scrollbox(child);
     if (found) return found;
@@ -56,10 +59,10 @@ try {
   await settle();
   const scroll = scrollbox();
   assert.ok(scroll);
-  assert.match(setup.captureCharFrame(), /ITEM_239_ROW_99/);
+  assert.match(setup.captureCharFrame(), new RegExp(`ITEM_${last}_ROW_99`));
   metrics.nodes = nodes();
   assert.ok(metrics.nodes < 800, String(metrics.nodes));
-  assert.equal(services.transcript.getState().order.length, 240);
+  assert.equal(services.transcript.getState().order.length, count);
   assert.equal(setup.renderer.root.findDescendantById("long-0"), undefined);
   await settle(() => transcriptScrollPort.scrollToTop());
   const first = setup.renderer.root.findDescendantById("long-0");
@@ -80,9 +83,9 @@ try {
   await settle(() => setup.mockInput.pressEnter());
   assert.ok(setup.renderer.root.findDescendantById("long-180"));
   await settle(() => transcriptScrollPort.scrollToBottom());
-  assert.match(setup.captureCharFrame(), /ITEM_239_ROW_99/);
+  assert.match(setup.captureCharFrame(), new RegExp(`ITEM_${last}_ROW_99`));
   await settle(() => setup.resize(60, 24));
-  assert.match(setup.captureCharFrame(), /ITEM_239_ROW_99/);
+  assert.match(setup.captureCharFrame(), new RegExp(`ITEM_${last}_ROW_99`));
   await settle(() => setup.resize(100, 32));
   await settle(() => {
     services.focus.focusRegion("transcript");
@@ -109,7 +112,7 @@ try {
   });
   await settle(() => services.transcript.dispatch(seq.build("assistant-message", { messageId: seq.ids.message(), text: "STREAM_FIRST 日本語 🧪\nSTREAM_LAST complete" }, turn)));
   assert.match(setup.captureCharFrame(), /STREAM_LAST complete/);
-  assert.equal(services.transcript.getState().order.length, 241);
+  assert.equal(services.transcript.getState().order.length, count + 1);
   metrics.finalNodes = nodes();
   assert.ok(metrics.finalNodes < 850);
   metrics.rssMiB = process.memoryUsage().rss / 1048576;

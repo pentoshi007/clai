@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { getDataDir } from "../store/paths.js";
+import { getStorageUid, getUserHome } from "../os/user-identity.js";
+import { fixOwner } from "../os/permissions.js";
 
 const MAX_UNIX_SOCKET_PATH_BYTES = 96;
 const UNIX_SOCKET_KEY_LENGTH = 24;
@@ -20,9 +22,8 @@ export function getRuntimeDir(): string {
 }
 
 function runtimeOwnerKey(): string {
-  return typeof process.getuid === "function"
-    ? String(process.getuid())
-    : createHash("sha256").update(homedir()).digest("hex").slice(0, 12);
+  const uid = getStorageUid();
+  return uid !== undefined ? String(uid) : createHash("sha256").update(getUserHome()).digest("hex").slice(0, 12);
 }
 
 function fallbackSocketRoot(): string {
@@ -60,11 +61,15 @@ export function runtimeSocketPath(sessionId: string): string {
 
 async function ensurePrivateFallbackRoot(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
-  const stats = await lstat(path);
+  let stats = await lstat(path);
   if (!stats.isDirectory() || stats.isSymbolicLink()) {
     throw new Error(`unsafe session runtime socket directory: ${path}`);
   }
-  if (typeof process.getuid === "function" && stats.uid !== process.getuid()) {
+  if (stats.uid === 0 && process.getuid?.() === 0) {
+    await fixOwner(path);
+    stats = await lstat(path);
+  }
+  if (getStorageUid() !== undefined && stats.uid !== getStorageUid()) {
     throw new Error(`session runtime socket directory has a different owner: ${path}`);
   }
   await chmod(path, 0o700);
@@ -73,6 +78,8 @@ async function ensurePrivateFallbackRoot(path: string): Promise<void> {
 export async function ensureRuntimeDirectories(): Promise<void> {
   const runtimeDir = getRuntimeDir();
   await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+  await fixOwner(getDataDir());
+  await fixOwner(runtimeDir);
   await chmod(runtimeDir, 0o700).catch(() => undefined);
   if (process.platform === "win32") return;
   const socketRoot = getRuntimeSocketRoot();
@@ -81,6 +88,7 @@ export async function ensureRuntimeDirectories(): Promise<void> {
     return;
   }
   await mkdir(socketRoot, { recursive: true, mode: 0o700 });
+  await fixOwner(socketRoot);
   await chmod(socketRoot, 0o700).catch(() => undefined);
 }
 

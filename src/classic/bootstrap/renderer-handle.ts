@@ -29,16 +29,23 @@ export function createClassicRenderer(parts: ClassicRendererParts): ClassicRende
     resolveDone = resolve;
   });
 
+  let suspended = false;
+  const suspend = (): void => {
+    if (suspended) return;
+    suspended = true;
+    parts.control.unmount();
+    parts.session.detachInput();
+    parts.session.leave();
+  };
   const handle: RendererHandle = {
     start() {
       parts.session.enter();
       parts.session.attachInput(parts.onData);
       parts.control.mount();
     },
+    suspend,
     destroy() {
-      parts.control.unmount();
-      parts.session.detachInput();
-      parts.session.leave();
+      suspend();
       parts.disposeServices();
       resolveDone();
     },

@@ -97,12 +97,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      # Platform packages declare os/cpu; without --force, npm skips non-host
-      # targets and `bun build --compile --target …` fails to resolve imports.
-      - name: Install all @opentui/core platform binaries for cross-compile
-        run: node scripts/install-opentui-platforms.mjs
-      - name: Build binary
-        run: bun build ./src/index.ts --compile --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+      - name: Build target-specific binary
+        run: bun run scripts/build.ts --target ${{ matrix.target }}
       - name: Compute SHA256 sidecar
         run: |
           set -euo pipefail

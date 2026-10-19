@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, stat, rm } from "node:fs/promises";
 import { fixOwner, handlePermissionError, safeExists } from "../os/permissions.js";
 
 import { dirname, join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import net from "node:net";
 import { getDataDir } from "./paths.js";
 
@@ -10,7 +10,7 @@ const scopeFile =
   process.env.CLAI_SCOPE_FILE ??
   (process.env.VITEST_WORKER_ID
     ? join(tmpdir(), `clai-scope-${process.env.VITEST_WORKER_ID}.json`)
-    : join(homedir(), ".clai", "scope.json"));
+    : join(getDataDir(), "scope.json"));
 
 export interface EngagementScope {
   name?: string | undefined;

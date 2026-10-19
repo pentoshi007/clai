@@ -201,6 +201,8 @@ export class SessionController implements Disposable {
   private lastTurnResult: TurnResult | undefined;
   private restoredPreviousTurn: PreviousTurnSignal | undefined;
   private activeTurnGeneration: number | undefined;
+  private closing = false;
+  private readonly settledWaiters = new Set<() => void>();
   private readonly projectContext = createContextProjector((snapshot) =>
     formatContextChip(snapshot, { compact: false }),
   );
@@ -877,6 +879,24 @@ export class SessionController implements Disposable {
     );
   }
 
+  async shutdown(): Promise<void> {
+    this.closing = true;
+    this.abort("session is closing");
+    this.prompts.clear();
+    if (this.unsettledTurns > 0) {
+      let finish: () => void = () => undefined;
+      const settled = new Promise<void>((resolve) => { finish = resolve; });
+      this.settledWaiters.add(finish);
+      const timer = setTimeout(finish, 2_000);
+      try { await settled; }
+      finally {
+        clearTimeout(timer);
+        this.settledWaiters.delete(finish);
+      }
+    }
+    await this.persistNow();
+  }
+
   async persistNow(name?: string): Promise<void> {
     if (this.deps.noHistory || getConfig().privateMode) {
       this.settlePersistedResponderResults();
@@ -1099,7 +1119,7 @@ export class SessionController implements Disposable {
       if (sameGeneration) {
         this.lastTurnResult = result;
         this.restoredPreviousTurn = undefined;
-        this.loopRecovery.handle(result);
+        if (!this.closing) this.loopRecovery.handle(result);
       }
       if (
         sameGeneration &&
@@ -1110,10 +1130,14 @@ export class SessionController implements Disposable {
         await this.persistNow();
       }
       for (const listener of this.turnEndListeners) listener(result);
-      if (sameGeneration) this.prompts.settle(result);
+      if (sameGeneration && !this.closing) this.prompts.settle(result);
       return result;
     } finally {
       this.unsettledTurns -= 1;
+      if (this.unsettledTurns === 0) {
+        for (const finish of this.settledWaiters) finish();
+        this.settledWaiters.clear();
+      }
       this.responder?.scheduleWake();
       this.subagentDelivery.scheduleWake();
     }

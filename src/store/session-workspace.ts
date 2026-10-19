@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { fixOwnerSync } from "../os/permissions.js";
 
 export interface SessionWorkspace {
   readonly code: string;
@@ -91,6 +92,8 @@ export function ensureSessionWorkspaceDirs(ws: SessionWorkspace): void {
   try {
     mkdirSync(ws.rootDir, { recursive: true });
     mkdirSync(ws.tempDir, { recursive: true });
+    fixOwnerSync(ws.rootDir);
+    fixOwnerSync(ws.tempDir);
   } catch {
   }
 }

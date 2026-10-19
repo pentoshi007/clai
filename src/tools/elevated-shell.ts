@@ -1,4 +1,5 @@
 import { commandAvailable } from "../os/pkgmgr.js";
+import { getMachineSudoPassword } from "../store/credentials.js";
 import type { ToolResult } from "../types.js";
 import type { BackgroundSpawnSpec } from "./jobs.js";
 import type { ToolRunOptions } from "./tool-types.js";
@@ -60,19 +61,6 @@ export async function preparePrivilegedBackgroundArgv(
       },
     };
   }
-  if (!options.requestSecret) {
-    return {
-      prepared: false,
-      result: {
-        ok: false,
-        exitCode: 1,
-        output:
-          "This background command requires administrator access, but no secure password prompt is available. " +
-          "Run it from the interactive TUI or choose an explicitly unprivileged operation.",
-      },
-    };
-  }
-
   const outcome = await obtainSudoPassword(
     {
       requestSecret: options.requestSecret,
@@ -166,7 +154,6 @@ export async function tryRunElevatedWithoutTty(
     isRoot?: (() => boolean) | undefined;
   } = {},
 ): Promise<ToolResult | undefined> {
-  if (!options.requestSecret) return undefined;
   const kind = interactiveStdinKind(command);
   if (!kind) return undefined;
   if (kind === "tty") {
@@ -178,6 +165,13 @@ export async function tryRunElevatedWithoutTty(
 
   const isRoot = dependencies.isRoot ?? (() => process.getuid?.() === 0);
   if (isRoot()) return undefined;
+  if (!options.requestSecret) {
+    try {
+      if (await getMachineSudoPassword() === undefined) return undefined;
+    } catch {
+      return { ok: false, exitCode: 1, output: "Machine sudo credentials could not be unlocked. Check /creds; no command was started." };
+    }
+  }
 
   const available = dependencies.available ?? commandAvailable;
   if (!(await available("sudo"))) {

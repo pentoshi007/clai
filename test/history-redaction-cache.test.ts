@@ -96,3 +96,23 @@ describe("persistence redaction reuse", () => {
     expect(first.output).not.toContain("sk-abcdefghijklmnopqrstuv");
   });
 });
+
+
+it("refreshes settled projections after a credential is learned without changing live history", async () => {
+  const { upsertSession, getSession } = await import("../src/store/history.js");
+  const { registerKnownSecret } = await import("../src/security/known-secrets.js");
+  const secret = "learned-credential-fixture";
+  const item: TranscriptItem = { kind: "user", id: "credential-user", text: `Keep ${secret} private`, done: true };
+  const messages = [{ role: "user" as const, content: item.text }];
+  await upsertSession("credential-cache", messages, undefined, [item]);
+  registerKnownSecret(secret);
+  const calls = [{ id: "call", name: "http.fetch", args: { headers: { Authorization: secret }, nested: [secret] }, rawArguments: JSON.stringify({ password: secret }) }];
+  const live = [...messages, { role: "assistant" as const, content: "", toolCalls: calls }];
+  const prefix = JSON.stringify(live);
+  await upsertSession("credential-cache", live, undefined, [item]);
+  const restored = await getSession("credential-cache");
+  expect(JSON.stringify(restored?.transcript)).not.toContain(secret);
+  expect(JSON.stringify(restored?.messages)).not.toContain(secret);
+  expect(JSON.stringify(live)).toBe(prefix);
+  expect(item.text).toContain(secret);
+});

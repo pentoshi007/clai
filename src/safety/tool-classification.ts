@@ -26,6 +26,13 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only operation" };
   }
 
+  if (call.name === "creds.list") {
+    return { level: "safe", reason: "Credential titles only; secret contents are excluded" };
+  }
+  if (call.name === "creds.get") {
+    return { level: "confirm", reason: "Discloses a private credential to the configured model provider" };
+  }
+
   if (call.name === "skill.load" || call.name === "skill.list") {
     return { level: "safe", reason: "Read-only Agent Skill lookup" };
   }

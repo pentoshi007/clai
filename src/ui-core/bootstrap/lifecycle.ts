@@ -2,6 +2,7 @@
 export interface RendererHandle {
   start(): void | Promise<void>;
   destroy(): void | Promise<void>;
+  suspend?(): void | Promise<void>;
 }
 
 export interface ProcessLike {
@@ -72,6 +73,11 @@ export class RendererLifecycle {
 
   private async runShutdown(): Promise<void> {
     this.removeHandlers();
+    try {
+      await this.options.handle.suspend?.();
+    } catch (error) {
+      this.options.onError?.(error);
+    }
     for (let i = this.disposers.length - 1; i >= 0; i--) {
       const disposer = this.disposers[i];
       if (!disposer) continue;

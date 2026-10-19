@@ -19,7 +19,8 @@ const memory = () => {
   return { heapMiB: value.heapUsed / 1048576, rssMiB: value.rss / 1048576 };
 };
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
-const view = { columns: 100, ink: createInkTheme({ themeHint: "dark", colorMode: "truecolor", unicode: true }), now: 0, generation: 0 };
+const deferred = process.argv.includes("--lazy");
+const view = { columns: 100, ink: createInkTheme({ themeHint: "dark", colorMode: "truecolor", unicode: true }), now: 0, generation: 0, deferLayout: deferred };
 
 if (process.argv.includes("--soak")) {
   const store = new TranscriptStore();
@@ -82,7 +83,7 @@ if (process.argv.includes("--soak")) {
   const first = planTranscriptWindow(blocks, 30, window.totalRows);
   assert.equal(first.firstItemId, "assistant-0");
   assert.equal(window.lastItemId, `assistant-${count - 1}`);
-  assert.equal(window.totalRows, count * 101 - 1);
+  if (!deferred) assert.equal(window.totalRows, count * 101 - 1);
   assert.equal(document.blocks.length, count);
   assert.ok(cache.retainedLayoutBytes <= 16 * 1024 * 1024);
   console.log(JSON.stringify({ workload: "classic-100-lines-per-message", count, sourceBytes: items.reduce((total, item) => total + Buffer.byteLength(item.text), 0), buildMs, before, retained, layoutBytes: cache.retainedLayoutBytes, totalRows: window.totalRows, mountedRows: window.rows.length, updateMs }, null, 2));

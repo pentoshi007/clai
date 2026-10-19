@@ -1,4 +1,5 @@
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
+import { getUserHome } from "../os/user-identity.js";
 import { join, resolve, sep } from "node:path";
 import { getActiveSessionTempDir } from "./session-workspace.js";
 
@@ -10,7 +11,7 @@ function envPath(name: string): string | undefined {
 export function getDataDir(): string {
   const configured = envPath("CLAI_DATA_DIR");
   if (configured) return configured;
-  const home = homedir();
+  const home = getUserHome();
   const workerId = process.env.VITEST_WORKER_ID?.trim();
   if (workerId) {
     const tempRoot = resolve(tmpdir());

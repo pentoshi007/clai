@@ -6,6 +6,7 @@ import type {
 import { providerIds } from "../types.js";
 import type { ReasoningStyle } from "./http.js";
 import { providerInfo } from "./provider-info-text.js";
+import { redactKnownSecrets } from "../security/known-secrets.js";
 import {
   CHATGPT_SUBSCRIPTION_DISPLAY_NAME,
   GITHUB_COPILOT_DISPLAY_NAME,
@@ -144,7 +145,7 @@ export function maskSecretTail(secret: string): string {
 
 export function redactSecrets(value: string): string {
   return (
-    value
+    redactKnownSecrets(value)
       .replace(/gsk_[A-Za-z0-9_-]+/g, "gsk_••••••")
       .replace(/rv_[A-Za-z0-9_-]+/g, "rv_••••••")
       .replace(/AIza[0-9A-Za-z_-]+/g, "AIza••••••")

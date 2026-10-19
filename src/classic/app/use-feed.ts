@@ -110,6 +110,7 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
       spool: resources,
       generation: input.generation,
       intro: input.intro,
+      deferLayout: true,
     }),
     [input.columns, input.generation, input.intro, input.now, resources, resourceVersion, ink],
   );

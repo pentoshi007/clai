@@ -1,4 +1,5 @@
 import { redactSecrets } from "../llm/provider.js";
+import { knownSecretsRevision } from "../security/known-secrets.js";
 
 const MAX_ENTRIES = 1_024;
 const MAX_CACHED_CHARS = 8_000_000;
@@ -8,6 +9,7 @@ const cache = new Map<string, string>();
 let cachedChars = 0;
 let hits = 0;
 let misses = 0;
+let secretRevision = knownSecretsRevision();
 
 function evictUntilWithinBudget(): void {
   while (
@@ -22,12 +24,11 @@ function evictUntilWithinBudget(): void {
   }
 }
 
-/**
- * Redaction is pure, so identical persisted text never needs a second regex
- * pass. Autosaves resend the same closed transcript items every turn, which is
- * where the repeated whole-transcript scrub cost came from.
- */
 export function redactSecretsCached(text: string): string {
+  if (secretRevision !== knownSecretsRevision()) {
+    resetRedactionCache();
+    secretRevision = knownSecretsRevision();
+  }
   if (text.length < MIN_CACHED_LENGTH) return redactSecrets(text);
   const cached = cache.get(text);
   if (cached !== undefined) {

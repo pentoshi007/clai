@@ -10,6 +10,7 @@ import type { Mode, ProviderId, ReasoningPreference } from "../../types.js";
 import Conf from "conf";
 import { statSync } from "node:fs";
 import { dirname } from "node:path";
+import { getConfigDirectory } from "../../os/user-identity.js";
 
 export interface ProviderEndpoints {
   urls: string[];
@@ -144,9 +145,10 @@ const defaults: ClaiConfig = {
 
 export const store = (() => {
   try {
+    const directory = getConfigDirectory();
     const s = new Conf<ClaiConfig>({
       projectName: "clai",
-      ...(process.env.CLAI_CONFIG_DIR ? { cwd: process.env.CLAI_CONFIG_DIR } : {}),
+      ...(directory ? { cwd: directory } : {}),
       defaults,
     });
     const dir = dirname(s.path);

@@ -1,33 +1,18 @@
 import { chownSync, statSync } from "node:fs";
 import { chown, stat } from "node:fs/promises";
 import { dirname } from "node:path";
+import { getInvokingUser } from "./user-identity.js";
 
 export function fixOwnerSync(path: string): void {
-  if (process.platform === "win32") return;
-  if (process.getuid && process.getuid() === 0 && process.env.SUDO_UID) {
-    const uid = parseInt(process.env.SUDO_UID, 10);
-    const gid = process.env.SUDO_GID ? parseInt(process.env.SUDO_GID, 10) : uid;
-    if (!isNaN(uid)) {
-      try {
-        chownSync(path, uid, gid);
-      } catch {
-      }
-    }
-  }
+  const user = getInvokingUser();
+  if (!user) return;
+  try { chownSync(path, user.uid, user.gid); } catch {}
 }
 
 export async function fixOwner(path: string): Promise<void> {
-  if (process.platform === "win32") return;
-  if (process.getuid && process.getuid() === 0 && process.env.SUDO_UID) {
-    const uid = parseInt(process.env.SUDO_UID, 10);
-    const gid = process.env.SUDO_GID ? parseInt(process.env.SUDO_GID, 10) : uid;
-    if (!isNaN(uid)) {
-      try {
-        await chown(path, uid, gid);
-      } catch {
-      }
-    }
-  }
+  const user = getInvokingUser();
+  if (!user) return;
+  try { await chown(path, user.uid, user.gid); } catch {}
 }
 
 export function handlePermissionError(err: any): never {

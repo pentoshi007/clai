@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { chmod, rm } from "node:fs/promises";
+import { fixOwner } from "../os/permissions.js";
 import { createServer, type Server, type Socket } from "node:net";
 import { processIdentityTracker } from "../os/process-identity.js";
 import { startPtyProcess } from "../interactive-session/transport-node-pty.js";
@@ -349,6 +350,7 @@ export class SessionRuntimeHost {
     this.server = server;
     await listen(server, this.socketPath);
     if (process.platform !== "win32") {
+      await fixOwner(this.socketPath);
       await chmod(this.socketPath, 0o600).catch(() => undefined);
     }
   }

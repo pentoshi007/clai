@@ -123,7 +123,7 @@ export async function appendIndexedHistoryRecord<T extends HistoryRecordShape>(
       if (result.bytesWritten <= 0) throw new Error("Failed to append session history");
       written += result.bytesWritten;
     }
-    await handle.sync().catch(() => undefined);
+    await handle.sync();
   } finally {
     await handle.close();
   }
@@ -223,8 +223,9 @@ export async function readIndexedHistoryRecord<T>(
     const record = JSON.parse(bytes.toString("utf8").trim()) as T & {
       id?: string;
       revision?: number;
+      writerGeneration?: string;
     };
-    if (record.id !== entry.id) return undefined;
+    if (record.id !== entry.id || record.writerGeneration !== entry.summary.writerGeneration) return undefined;
     if (
       entry.summary.revision !== undefined &&
       record.revision !== entry.summary.revision

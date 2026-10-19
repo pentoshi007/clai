@@ -4,6 +4,7 @@ import {
   INTERACTIVE_SESSION_TOOL_NAMES,
 } from "./interactive-session-tools.js";
 import { instructionsRecordTool } from "./instructions.js";
+import { credentialTools } from "./credentials.js";
 import {
   canonicalizeExternalToolName,
   externalToolDispatcher,
@@ -41,6 +42,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
     output: "Subagent tools require the active parent session with /orchestration on.",
   })])),
   ...createInteractiveSessionHandlers(),
+  ...credentialTools,
   ...toolRegistry_SHELL_1,
   ...toolRegistry_FILES_1,
   ...toolRegistry_WEB,

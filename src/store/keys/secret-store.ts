@@ -2,7 +2,7 @@ import { fixOwner, handlePermissionError, safeExists } from "../../os/permission
 import type { ProviderStatus } from "../../types.js";
 import { getConfig } from "../config.js";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { getDataDir } from "../paths.js";
 import { basename, dirname, join } from "node:path";
 
 export const serviceName = 'clai';
@@ -11,7 +11,7 @@ export const serviceName = 'clai';
 // is NOT encrypted; it is plaintext that the OS protects with file permissions.
 const keychainModuleName = '@napi-rs/keyring/keytar.js';
 
-export const keysFile = join(homedir(), '.clai', 'keys.json');
+export const keysFile = join(getDataDir(), 'keys.json');
 
 type KeytarLike = {
   getPassword(service: string, account: string): Promise<string | null>;

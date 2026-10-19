@@ -54,6 +54,10 @@ export const slashCommands: SlashCommand[] = [
     description: "list providers and multi-keys (masked)",
   },
   {
+    command: "/creds",
+    description: "manage encrypted freeform credentials and this machine's sudo password",
+  },
+  {
     command: "/info",
     usage: "[provider]",
     description: "show info for the active or specified provider",

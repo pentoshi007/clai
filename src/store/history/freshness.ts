@@ -3,6 +3,8 @@ export interface HistoryFreshness {
   readonly revision?: number | undefined;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly transcript?: readonly unknown[] | undefined;
+  readonly itemCount?: number | undefined;
 }
 
 export function historyRevision(record: Pick<HistoryFreshness, "revision"> | undefined): number {
@@ -26,7 +28,9 @@ export function compareHistoryFreshness(left: HistoryFreshness, right: HistoryFr
   }
   const delta = historyRevision(left) - historyRevision(right);
   if (delta !== 0) return delta;
-  if (historyRevision(left) > 0) return 0;
+  if (historyRevision(left) > 0) {
+    return (left.transcript?.length ?? left.itemCount ?? 0) - (right.transcript?.length ?? right.itemCount ?? 0);
+  }
   const timestamp = (record: HistoryFreshness): number => Date.parse(record.updatedAt || record.createdAt || "") || 0;
   return timestamp(left) - timestamp(right);
 }

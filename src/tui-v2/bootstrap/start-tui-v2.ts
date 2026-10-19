@@ -16,6 +16,7 @@ import {
 } from "../../ui-core/bootstrap/theme-mode-cache.js";
 import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
+import { shutdownServices } from "../../ui-core/bootstrap/shutdown-services.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import {
   EXIT_SUMMARY_RESET,
@@ -207,26 +208,8 @@ export async function startTuiV2(
       disposeShrinkResizeGuard,
       () => disposeRuntimeBridge(),
       epilogue.capture,
-      async () => {
-        await services.session.persistNow().catch(() => undefined);
-      },
-      async () => {
-        await services.omnirushSessionUpload.close();
-      },
       restoreConsole,
-      async () => {
-        await services.mcp.closeAll().catch(() => undefined);
-      },
-      async () => {
-        const result = await services.ports.interactiveSessions
-          .closeAll("app-shutdown")
-          .catch(() => undefined);
-        for (const failure of result?.failures ?? []) {
-          console.warn(
-            `clai interactive-session cleanup: [${failure.code}] ${failure.message}`,
-          );
-        }
-      },
+      () => shutdownServices(services),
     ],
     epilogue: () => runFreebuffSessionShutdownCleanup(epilogue.run),
     onSigint: () => {

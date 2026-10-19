@@ -8,6 +8,8 @@ describe("OpenTUI renderer teardown", () => {
     const events: string[] = [];
     let releaseIdle!: () => void;
     let releaseFinalized!: () => void;
+    let markDestroy!: () => void;
+    const destructionRequested = new Promise<void>((resolve) => { markDestroy = resolve; });
     const idle = new Promise<void>((resolve) => {
       releaseIdle = resolve;
     });
@@ -33,6 +35,7 @@ describe("OpenTUI renderer teardown", () => {
       },
       destroy() {
         events.push("destroy-requested");
+        markDestroy();
       },
     };
     const { handle, done } = createOpenTuiRendererHandle({
@@ -57,7 +60,7 @@ describe("OpenTUI renderer teardown", () => {
     expect(events).not.toContain("summary");
 
     releaseIdle();
-    await Promise.resolve();
+    await destructionRequested;
 
     expect(events).toEqual([
       "mount",

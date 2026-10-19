@@ -141,7 +141,13 @@ Independent views apply to runtimes started with v4.14.0 or later. Agents alread
 
 Durable sessions require an interactive terminal, a compatible PTY transport, and history enabled. Private mode and `--no-history` use foreground sessions. Saved history remains available after the live process ends; an active process still depends on its host machine remaining running.
 
+### Elevated launches
+
+On Linux and macOS, `sudo clai` uses the invoking account's configuration, history, and runtime identity. A normal `clai --resume` can reconnect to a session minimised from `sudo clai`, and vice versa. Explicit `CLAI_*_DIR` overrides still apply. Existing separate root-account history is left untouched rather than silently imported into another account; keep it when reviewing older sessions. Windows uses the current account's storage, including same-account elevation.
+
 ### History and context
+
+Long transcripts retain every saved item while rendering and laying out only the visible window. Scrolling back, searching, and copying can still reach earlier items. Loading feedback appears before session restoration; prompt journals have per-session locks so an unrelated history save does not block `/prompts`.
 
 `/new` starts a fresh session and saves the previous one. If work is still running or another terminal is attached, that session remains available to its agent and other viewers. `/save <name>` names a session, and `/prompts` browses sent prompts with their timestamps and provider, model, and effort metadata. Up/Down recalls the active session's sent prompts after reopening it. Prompt text is displayed literally, including placeholders such as `<provider>`.
 
@@ -317,7 +323,8 @@ Run `clai --help` for CLI flags and `clai <command> --help` for a subcommand. In
 | `/ask`, `/agent`, `/plan` | Switch working mode. |
 | `/view-plan`, `/implement`, `/discard` | Review, execute, or discard a plan. |
 | `/provider [name]`, `/model [name]`, `/models [filter]` | Select providers and models. |
-| `/set [provider]`, `/unset [provider]`, `/keys`, `/info [provider]` | Configure credentials and inspect provider setup. |
+| `/set [provider]`, `/unset [provider]`, `/keys`, `/info [provider]` | Configure provider credentials and inspect provider setup. |
+| `/creds` | Manage encrypted freeform credentials and this machine's sudo password. |
 | `/effort [level]`, `/reasoning [level]` | Set reasoning effort or open its picker. |
 | `/fallback [on\|off]`, `/freeonly [on\|off]` | Configure fallback. |
 | `/orchestrator`, `/subagents` | Manage delegation and inspect subagents. |
@@ -389,6 +396,12 @@ clai privacy retention 0
 Private mode disables chat and prompt persistence and durable background attachment; `--no-history` applies to a single invocation. Retention defaults to `0` (unlimited saved sessions). These settings do not erase previously saved data. `clai privacy clear-history`, `clear-logs`, `clear-artifacts`, and `clear-all` explicitly delete retained data; the corresponding `/privacy` actions are available in the UI.
 
 Credentials saved with `clai set` or account sign-in are retained in `~/.clai/keys.json`, a **plaintext** file with restricted permissions (`0600` on POSIX). clai also attempts to store them in the OS keyring when available; the local file is retained for recovery. Recognized secrets are masked or redacted in supported displays and storage paths, but review logs and transcripts before sharing them.
+
+`/creds` is a separate encrypted store under `~/.clai/credentials/`. Add a nonsecret title and arbitrary multiline text (including SSH keys and tabs); Ctrl+S saves and Esc cancels in either UI. Entries can be edited, renamed, or deleted. `creds.list` exposes titles and IDs; `creds.get` deliberately discloses a selected freeform entry to the configured model provider, subject to the selected permission policy. Long entries are paged. Credential contents are not added to the system/tool prefix or written as tool-output artifacts. For a password-only entry, `terminal.send kind:"secret" credentialId:<id>` sends it directly without revealing it to the model.
+
+The fixed **Machine sudo password** entry is never returned by `creds.get`. Privileged shell commands supply it directly to sudo stdin, including background commands and sessions with no attached UI. Rejected stored passwords fail without opening another prompt; update or remove the entry in `/creds`. An explicit local sudo terminal prompt can use `secretSource:"sudo"`. Windows administrator elevation still uses native UAC; a stored password cannot bypass Windows consent or account boundaries.
+
+The vault uses AES-256-GCM. Its local master key is permission-restricted on Linux/macOS and protected with current-user DPAPI on Windows. Back up the vault and its matching key together; a missing or damaged key does not reset the store. On Linux/macOS, access to the account or both files defeats this at-rest protection. Arbitrary text can contain secrets that automatic redaction cannot infer, so do not share transcripts or logs without reviewing them. See [SECURITY.md](SECURITY.md).
 
 Cloud requests send the model's context and relevant tool results to the selected provider. Provider-specific metadata uploads, including OmniRush's optional lifecycle upload, are described in the [provider guide](PROVIDERS.md#omnirush-lifecycle-uploads).
 

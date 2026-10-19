@@ -22,9 +22,9 @@ describe("transcript mount windows", () => {
       newerCount: 0,
     });
     expect(resolveTranscriptMountWindow(1_000, undefined)).toEqual({
-      start: 880,
+      start: 1_000 - DEFAULT_TRANSCRIPT_MOUNT_ROWS,
       end: 1_000,
-      olderCount: 880,
+      olderCount: 1_000 - DEFAULT_TRANSCRIPT_MOUNT_ROWS,
       newerCount: 0,
     });
   });
@@ -65,8 +65,8 @@ describe("transcript mount windows", () => {
 
   it("centers search targets where possible and clamps both edges", () => {
     expect(transcriptWindowStartForItem(1_000, 0)).toBe(0);
-    expect(transcriptWindowStartForItem(1_000, 500)).toBe(440);
-    expect(transcriptWindowStartForItem(1_000, 999)).toBe(880);
+    expect(transcriptWindowStartForItem(1_000, 500)).toBe(500 - DEFAULT_TRANSCRIPT_MOUNT_ROWS / 2);
+    expect(transcriptWindowStartForItem(1_000, 999)).toBe(1_000 - DEFAULT_TRANSCRIPT_MOUNT_ROWS);
     expect(transcriptWindowStartForItem(20, 10)).toBe(0);
     expect(transcriptWindowStartForItem(0, 10)).toBe(0);
   });

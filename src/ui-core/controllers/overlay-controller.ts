@@ -49,6 +49,7 @@ export interface TextEditorRequest {
   readonly initialValue?: string | undefined;
   readonly placeholder?: string | undefined;
   readonly submitLabel?: string | undefined;
+  readonly preserveTabs?: boolean | undefined;
 }
 
 export interface KeysEditorSlotView {

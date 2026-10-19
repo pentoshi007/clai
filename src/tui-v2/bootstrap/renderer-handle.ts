@@ -29,21 +29,26 @@ export function createOpenTuiRendererHandle(
     resolveDone = resolve;
   });
 
+  let suspension: Promise<void> | undefined;
+  let unmountError: unknown;
+  const suspend = (): Promise<void> => {
+    suspension ??= (async () => {
+      try { parts.unmount(); }
+      catch (error) { unmountError = error; }
+      parts.renderer.pause();
+      await parts.renderer.idle();
+      parts.renderer.suspend();
+    })();
+    return suspension;
+  };
   const handle: RendererHandle = {
     start() {
       parts.mount();
     },
+    suspend,
     async destroy() {
-      let unmountError: unknown;
       try {
-        parts.unmount();
-      } catch (error) {
-        unmountError = error;
-      }
-      try {
-        parts.renderer.pause();
-        await parts.renderer.idle();
-        parts.renderer.suspend();
+        await suspend();
         parts.renderer.destroy();
         await parts.finalized;
         parts.disarmTerminalRescue();

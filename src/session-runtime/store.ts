@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { processIdentityTracker } from "../os/process-identity.js";
 import { processAlive } from "../os/process-tree.js";
+import { fixOwner } from "../os/permissions.js";
 import { RUNTIME_PROTOCOL_VERSION, type RuntimeMetadata } from "./types.js";
 import {
   ensureRuntimeDirectories,
@@ -90,6 +91,7 @@ export async function writeRuntimeMetadata(metadata: RuntimeMetadata): Promise<v
   }
   try {
     await writeFile(temporary, body, { mode: 0o600 });
+    await fixOwner(temporary);
     await chmod(temporary, 0o600).catch(() => undefined);
     await replaceMetadataFile(temporary, path);
     await chmod(path, 0o600).catch(() => undefined);
@@ -171,7 +173,8 @@ export async function tryAcquireRuntimeLease(
       })}\n`,
       "utf8",
     );
-    await handle.sync().catch(() => undefined);
+    await handle.sync();
+    await fixOwner(path);
   } catch (error) {
     await handle.close().catch(() => undefined);
     await rm(path, { force: true }).catch(() => undefined);
