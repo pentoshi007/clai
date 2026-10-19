@@ -8,7 +8,6 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { useOverlayState } from "../../../ui-core/react/use-overlay.js";
 import { Picker } from "../picker/picker.js";
 import { ConfirmModal } from "../modal/confirm-modal.js";
-import { PromptActionsModal } from "../modal/prompt-actions-modal.js";
 import { createSecretDraft, SecretModal, type SecretDraft } from "../modal/secret-modal.js";
 import { ScopeModal } from "../modal/scope-modal.js";
 import { KeysModal } from "../modal/keys-modal.js";
@@ -119,9 +118,6 @@ function OverlayHostImpl(props: OverlayHostProps): ReactNode {
     >
       {state.kind === "picker" ? (
         <Picker services={services} theme={theme} request={state.request} />
-      ) : null}
-      {state.kind === "prompt-actions" ? (
-        <PromptActionsModal services={services} theme={theme} request={state.request} />
       ) : null}
       {state.kind === "pager" ? (
         <Pager

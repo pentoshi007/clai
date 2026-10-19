@@ -664,39 +664,11 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     jumpToMatch(prevMatchIndex(matches, matchIndex));
   }
 
-  const resendPrompt = useCallback(
-    (prompt: string): void => {
-      void (async () => {
-        const trimmed = prompt.trim();
-        if (services.commands.looksLikeCommand(trimmed)) {
-          const invocation = services.commands.parse(trimmed);
-          if (!invocation) {
-            services.session.notice(
-              "warn",
-              `unknown command: ${trimmed.split(/\s/, 1)[0] ?? trimmed}. Try /help`,
-            );
-            return;
-          }
-          if (!(await services.commands.dispatch(invocation))) {
-            services.session.notice(
-              "warn",
-              `command /${invocation.name} is not available right now`,
-            );
-          }
-          return;
-        }
-        if (services.session.getState().running) services.session.enqueue(prompt);
-        else await services.session.submit(prompt);
-      })();
-    },
-    [services],
-  );
-
   const openUserPrompt = useCallback(
     (prompt: string): void => {
-      services.overlay.openPromptActions({ prompt, onResend: () => resendPrompt(prompt) });
+      services.overlay.openPager("Prompt", prompt, undefined, undefined, "plain");
     },
-    [services, resendPrompt],
+    [services],
   );
 
   function onWheelScroll(event: MouseEvent): void {
