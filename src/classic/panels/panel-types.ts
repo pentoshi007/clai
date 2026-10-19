@@ -27,6 +27,7 @@ export interface PanelSnapshot {
   readonly pagerBody: string;
   readonly pagerMarkdown: PagerMarkdownMode;
   readonly pagerLive: boolean;
+  readonly pagerPageOffset: number;
   readonly jobs: JobsPanelState;
   readonly secret: SecretPanelState;
   readonly textEditor: TextEditorPanelState;

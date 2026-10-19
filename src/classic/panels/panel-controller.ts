@@ -4,7 +4,7 @@ import { confirmKey, confirmRowsWanted } from "./confirm-panel.js";
 import { jobsKey, JOBS_INITIAL_STATE } from "./jobs-panel.js";
 import { keysInitialState, keysKey } from "./keys-panel.js";
 import {
-  pagerDiffOptions,
+  pagerPaintOptions,
   pagerSubagentPaint,
   pagerKey,
   pagerViewModel,
@@ -357,6 +357,7 @@ export class PanelController {
           pagerBody: state.body,
           pagerMarkdown,
           pagerLive: state.source?.watch !== undefined,
+          pagerPageOffset: 0,
         });
         this.pagerSource.activate(state);
         return;
@@ -392,12 +393,12 @@ export class PanelController {
 
   private pagerView(body: string, overlay: OverlayState): PagerViewModel {
     const format = this.snapshot.pager.format;
-    const diff = pagerDiffOptions(overlay);
+    const paint = pagerPaintOptions(overlay, undefined, this.snapshot.pagerPageOffset);
     const subagentPaint = pagerSubagentPaint(overlay);
     const quotePrefix = overlay.kind === "pager" ? overlay.source?.quotePrefix : undefined;
     const literalQuotes = overlay.kind === "pager" ? overlay.source?.literalQuotes : undefined;
     const lineChangeColors = overlay.kind === "pager" ? overlay.source?.lineChangeColors : undefined;
-    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, Boolean(subagentPaint), undefined, diff, subagentPaint, quotePrefix, literalQuotes, lineChangeColors);
+    return pagerViewModel(body, this.deps.columns(), this.deps.rows(), format, Boolean(subagentPaint), undefined, paint, subagentPaint, quotePrefix, literalQuotes, lineChangeColors);
   }
 
   private apply(effects: readonly PanelEffect[]): void {
