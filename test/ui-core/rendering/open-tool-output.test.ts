@@ -334,4 +334,24 @@ describe("tool pager regions", () => {
     expect(opened.body.startsWith("export const v0 = 0;")).toBe(true);
     opened.source?.dispose();
   });
+
+  it("keeps every page highlighted when only the header and note push a file past the inline budget", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-fs-read-boundary-"));
+    tempDirs.push(dir);
+    const path = join(dir, "boundary.ts");
+    await writeFile(path, Array.from({ length: 1_999 }, (_, i) => `export const v${i} = ${i};`).join("\n"));
+    const { calls, services } = capture();
+    await openToolOutputPager(services, {
+      toolCallId: "fs-read-boundary",
+      name: "fs.read",
+      argsDisplay: path,
+      artifactPath: undefined,
+    } as never);
+    const opened = calls[0]!;
+    expect(opened.source).toBeDefined();
+    expect(opened.source?.path).toBe(path);
+    expect(opened.regions).toEqual({ codeStart: 0, codeOnEveryPage: true });
+    expect(opened.body.startsWith("export const v0 = 0;")).toBe(true);
+    opened.source?.dispose();
+  });
 });

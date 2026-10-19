@@ -439,7 +439,11 @@ export async function openToolOutputPager(
         regions = { inputEnd: commandLines };
       }
     }
-    if (!artifactSource && exceedsInlinePagerBudget(finalBody)) {
+    if (!artifactSource && openedSourceFile && highlightPath && mdMode !== "force" && exceedsInlinePagerBudget(finalBody)) {
+      artifactSource = createArtifactPagerSource(highlightPath);
+      finalBody = (await artifactSource.readPage(0)).body;
+      regions = { codeStart: 0, codeOnEveryPage: true };
+    } else if (!artifactSource && exceedsInlinePagerBudget(finalBody)) {
       const paged = await pageTextBody(
         finalBody,
         highlightPath ?? item.artifactPath,
