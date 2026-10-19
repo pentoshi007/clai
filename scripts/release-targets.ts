@@ -39,7 +39,7 @@ export function targetBuildArguments(target: ReleaseTarget, output: string): str
   if (platform === "windows") exclude.push("@opentui/core", "@opentui/react");
   return [
     "build", "./src/index.ts", "--compile", "--target", target, "--outfile", output,
-    "--minify", "--define", `process.platform=${JSON.stringify(platform === "windows" ? "win32" : platform)}`,
+    "--minify", "--splitting", "--define", `process.platform=${JSON.stringify(platform === "windows" ? "win32" : platform)}`,
     "--define", `process.arch=${JSON.stringify(arch)}`,
     ...exclude.flatMap((name) => ["--external", name]),
   ];
