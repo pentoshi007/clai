@@ -120,7 +120,17 @@ export async function startTuiV2(
   runtimeBridge?.setRepaintHandler(requestRepaint);
   if (runtimeBridge) await runtimeBridge.connect();
   let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
-  const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
+  const [reportedThemeMode, seeded, pendingResume] = await Promise.all([
+    renderer.waitForThemeMode(300).catch(() => null),
+    seedSessionModel(options.sessionId, {
+      provider: options.provider,
+      model: options.model,
+      modelExplicit: options.modelExplicit === true,
+      inheritLastUsed: options.resume === undefined,
+      freeCatalogFallback: options.resume === undefined,
+    }),
+    options.resume ? resolveResumeTarget(options.resume) : undefined,
+  ]);
   if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
     rememberThemeMode(reportedThemeMode);
   }
@@ -139,13 +149,6 @@ export async function startTuiV2(
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
     current: undefined,
   };
-  const seeded = await seedSessionModel(options.sessionId, {
-    provider: options.provider,
-    model: options.model,
-    modelExplicit: options.modelExplicit === true,
-    inheritLastUsed: options.resume === undefined,
-    freeCatalogFallback: options.resume === undefined,
-  });
   const services = createCompositionRoot({
     provider: seeded.provider,
     model: seeded.model,
@@ -179,9 +182,6 @@ export async function startTuiV2(
     columns: () => process.stdout.columns,
     write: (text) => writeTerminalAndWait(`${EXIT_SUMMARY_RESET}${text}`),
   });
-  const pendingResume = options.resume
-    ? await resolveResumeTarget(options.resume)
-    : undefined;
   await applyResumeResolution(services, pendingResume);
 
   const { handle, done } = createOpenTuiRendererHandle({

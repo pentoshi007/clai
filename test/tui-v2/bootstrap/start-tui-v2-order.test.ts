@@ -8,7 +8,7 @@ describe("OpenTUI resume bootstrap order", () => {
     const guard = source.indexOf("installConsoleGuard({");
     const renderer = source.indexOf("await createCliRenderer({");
     const loading = source.indexOf("Loading session…");
-    const resolve = source.indexOf("await resolveResumeTarget(options.resume)");
+    const resolve = source.indexOf("resolveResumeTarget(options.resume)");
     const hydrate = source.indexOf("await applyResumeResolution(services, pendingResume)");
     const mount = source.indexOf("createElement(App)");
     const start = source.indexOf("await lifecycle.start()");
@@ -40,17 +40,22 @@ describe("OpenTUI resume bootstrap order", () => {
     const bridge = source.indexOf("createRuntimeChildBridge(true)");
     const register = source.indexOf("runtimeBridge?.setRepaintHandler(requestRepaint)");
     const connect = source.indexOf("await runtimeBridge.connect()");
-    const theme = source.indexOf("await renderer.waitForThemeMode(");
-    const seed = source.indexOf("await seedSessionModel(");
-    const resolve = source.indexOf("await resolveResumeTarget(");
+    const concurrent = source.indexOf("await Promise.all([");
+    const theme = source.indexOf("renderer.waitForThemeMode(");
+    const seed = source.indexOf("seedSessionModel(");
+    const resolve = source.indexOf("resolveResumeTarget(");
     const hydrate = source.indexOf("await applyResumeResolution(");
 
     expect(handler).toBeGreaterThan(loading);
     expect(bridge).toBeGreaterThan(handler);
     expect(register).toBeGreaterThan(bridge);
     expect(source.slice(loading, register)).not.toMatch(/\bawait\b/);
-    for (const wait of [connect, theme, seed, resolve, hydrate]) {
+    for (const wait of [connect, concurrent, theme, seed, resolve, hydrate]) {
       expect(wait).toBeGreaterThan(register);
+    }
+    for (const wait of [theme, seed, resolve]) {
+      expect(wait).toBeGreaterThan(concurrent);
+      expect(wait).toBeLessThan(hydrate);
     }
     expect(source.slice(handler, bridge)).toContain("repaintAttachedScreen({");
     const binding = source.slice(source.indexOf("disposeRuntimeBridge = bindRuntimeChildBridge("));
