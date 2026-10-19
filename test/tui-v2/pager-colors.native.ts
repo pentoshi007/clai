@@ -55,8 +55,8 @@ try {
       await settle(() => openToolOutputPager(services, {
         toolCallId: shell, name: "shell.exec", argsDisplay: "printf INPUT_FIRST\n\nprintf INPUT_AFTER_BLANK", artifactPath: undefined,
       }));
-      assert.deepEqual((await waitFor("INPUT_FIRST")).fg.toInts(), color(theme.aqua), "command input is aqua");
-      assert.deepEqual((await waitFor("INPUT_AFTER_BLANK")).fg.toInts(), color(theme.aqua), "input after a blank line stays aqua");
+      assert.deepEqual((await waitFor("INPUT_FIRST")).fg.toInts(), color(theme.userBorder), "command input is userBorder yellow");
+      assert.deepEqual((await waitFor("INPUT_AFTER_BLANK")).fg.toInts(), color(theme.userBorder), "input after a blank line stays userBorder yellow");
       assert.deepEqual((await waitFor("SHELL_OUTPUT_ONE")).fg.toInts(), color(theme.foreground), "output stays foreground");
       await settle(() => services.overlay.close());
 
@@ -95,4 +95,4 @@ try {
   rmSync(directory, { recursive: true, force: true });
 }
 
-console.log("Native pager colors passed: aqua shell input, foreground output and fs.read syntax highlighting, including while searching, at 100/60 columns");
+console.log("Native pager colors passed: userBorder-yellow shell input, foreground output and fs.read syntax highlighting, including while searching, at 100/60 columns");

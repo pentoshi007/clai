@@ -204,6 +204,12 @@ export function App(): ReactNode {
   const splitPlanW = widthBudget.splitPlanWidth;
   const overlayPlanW = widthBudget.overlayReserveWidth;
   const chatContentWidth = widthBudget.chatContentWidth;
+  const transcriptContentWidth = widthBudget.transcriptContentWidth;
+  const blockingOverlay =
+    overlay.kind === "secret" ||
+    overlay.kind === "confirm" ||
+    overlay.kind === "scope-editor" ||
+    overlay.kind === "keys-editor";
   const planRendered =
     (layout.plan.placement === "split" && splitPlanW > 0) ||
     (layout.plan.placement === "overlay" && widthBudget.showPlanOverlay);
@@ -721,6 +727,7 @@ export function App(): ReactNode {
               width: chatContentWidth,
               flexGrow: splitPlanW > 0 || overlayPlanW > 0 ? 0 : 1,
               flexShrink: 1,
+              flexDirection: "column",
               backgroundColor: theme.background,
               paddingRight: planChatGap > 0 ? planChatGap : 0,
             }}
@@ -729,8 +736,26 @@ export function App(): ReactNode {
               services={services}
               theme={theme}
               focused={focusContext === "transcript" && overlay.kind === "none"}
-              contentWidth={widthBudget.transcriptContentWidth}
+              contentWidth={transcriptContentWidth}
               scrollRef={transcriptScrollRef}
+            />
+            <QueuePanel
+              services={services}
+              theme={theme}
+              width={transcriptContentWidth}
+              onEdit={editComposerDraft}
+            />
+            <ResponderPanel
+              services={services}
+              theme={theme}
+              width={transcriptContentWidth}
+              blockingOverlay={blockingOverlay}
+            />
+            <SubagentsPanel
+              services={services}
+              theme={theme}
+              width={transcriptContentWidth}
+              blockingOverlay={blockingOverlay}
             />
           </box>
           {layout.plan.placement === "split" && planRendered ? (
@@ -753,44 +778,12 @@ export function App(): ReactNode {
           ) : null}
         </box>
 
-        {}
-        <QueuePanel
-          services={services}
-          theme={theme}
-          width={contentInnerWidth}
-          onEdit={editComposerDraft}
-        />
-
-        {}
         <OverlayHost
           services={services}
           theme={theme}
           width={contentInnerWidth}
           height={overlay.kind === "confirm" ? confirmHeight : height}
           docked
-        />
-
-        <ResponderPanel
-          services={services}
-          theme={theme}
-          width={contentInnerWidth}
-          blockingOverlay={
-            overlay.kind === "secret" ||
-            overlay.kind === "confirm" ||
-            overlay.kind === "scope-editor" ||
-            overlay.kind === "keys-editor"
-          }
-        />
-        <SubagentsPanel
-          services={services}
-          theme={theme}
-          width={contentInnerWidth}
-          blockingOverlay={
-            overlay.kind === "secret" ||
-            overlay.kind === "confirm" ||
-            overlay.kind === "scope-editor" ||
-            overlay.kind === "keys-editor"
-          }
         />
 
         {}

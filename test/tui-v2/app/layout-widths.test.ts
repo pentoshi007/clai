@@ -62,7 +62,8 @@ describe("OpenTUI App width budget", () => {
     });
     expect(usable.showPlanOverlay).toBe(true);
     expect(usable.overlayPlanWidth).toBe(34);
-    expect(usable.chatContentWidth).toBe(24);
+    expect(usable.chatContentWidth).toBe(26);
+    expect(usable.transcriptContentWidth).toBe(25);
   });
 
   it("moves focus away from a plan hidden by a narrow resize", () => {
@@ -85,10 +86,10 @@ describe("OpenTUI App width budget", () => {
     expect(transition[1]?.chatContentWidth).toBe(20);
     expect(transition[2]).toMatchObject({
       contentInnerWidth: 96,
-      overlayPlanWidth: 40,
-      overlayReserveWidth: 42,
-      chatContentWidth: 54,
-      transcriptContentWidth: 52,
+      overlayPlanWidth: 37,
+      overlayReserveWidth: 37,
+      chatContentWidth: 59,
+      transcriptContentWidth: 58,
     });
     expect(transition[3]?.chatContentWidth).toBe(20);
     expect(transition[4]).toEqual(transition[2]);
