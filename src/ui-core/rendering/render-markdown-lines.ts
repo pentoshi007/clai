@@ -1,6 +1,7 @@
 import type { ColorMode } from "../../app/ports/terminal-port.js";
 import type { Theme } from "./theme.js";
 import { renderMarkdown } from "./markdown.js";
+import { parseModalDiffLine } from "./file-diff-view.js";
 
 export type AnsiLine = string;
 
@@ -12,6 +13,7 @@ export interface RenderMarkdownLinesOptions {
   readonly quotePrefix?: string | undefined;
   readonly literalQuotes?: boolean | undefined;
   readonly lineChangeColors?: boolean | undefined;
+  readonly diffLines?: boolean | undefined;
 }
 
 export function preprocessAssistantMarkdown(text: string): string {
@@ -28,8 +30,10 @@ export function renderMarkdownLines(
   options: RenderMarkdownLinesOptions,
 ): AnsiLine[] {
   if (!text) return [];
-  const prepared = options.literalQuotes
-    ? text.split("\n").map((line) => line.startsWith("> ") ? line : preprocessAssistantMarkdown(line)).join("\n")
+  const verbatim = (line: string): boolean =>
+    (options.literalQuotes === true && line.startsWith("> ")) || (options.diffLines === true && parseModalDiffLine(line) !== null);
+  const prepared = options.literalQuotes || options.diffLines
+    ? text.split("\n").map((line) => verbatim(line) ? line : preprocessAssistantMarkdown(line)).join("\n")
     : preprocessAssistantMarkdown(text);
   const width = Math.max(20, options.width);
   const rendered = renderMarkdown(prepared, width, {
@@ -38,6 +42,7 @@ export function renderMarkdownLines(
     quotePrefix: options.quotePrefix,
     literalQuotes: options.literalQuotes,
     lineChangeColors: options.lineChangeColors,
+    diffLines: options.diffLines,
   }).replace(/\n+$/, "");
   if (!rendered) return [];
 
