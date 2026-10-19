@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { isInternalChatMessage, type ChatImage, type ChatMessage, type ToolCall, type ToolResult } from "../types.js";
 import {
   imageBudgetFor,
@@ -323,6 +324,7 @@ export async function upsertSession(
   sessionModel?: SessionModelSelection | undefined,
   location?: HistorySessionLocation | undefined,
   changes?: readonly import("../app/controllers/session-changes.js").FileLineChanges[] | undefined,
+  unsyncedItemIds?: readonly string[] | undefined,
 ): Promise<HistoryRecord> {
   const existing = await existingSessionHeader(id);
   const requestedRevision =
@@ -361,6 +363,7 @@ export async function upsertSession(
         : {}),
     ...sessionModelFields(sessionModel, existing),
     ...workspace,
+    ...(unsyncedItemIds?.length ? { unsyncedItemIds: [...unsyncedItemIds] } : {}),
   };
 
   if (getConfig().privateMode) return record;
@@ -376,6 +379,20 @@ export async function upsertSession(
   if (canonical === record) rememberWrittenHeader(canonical);
   else writtenHeaders.delete(id);
   return canonical;
+}
+
+const mergeProbes = new Map<string, string>();
+
+export async function pendingSessionMerge(id: string): Promise<HistoryRecord | undefined> {
+  if (getConfig().privateMode) return undefined;
+  const info = await stat(jsonlFilePath()).catch(() => undefined);
+  if (!info) return undefined;
+  const stamp = `${info.size}:${info.mtimeMs}`;
+  if (mergeProbes.get(id) === stamp) return undefined;
+  mergeProbes.set(id, stamp);
+  const entries = await readValidatedHistoryIndex(jsonlFilePath(), jsonlIndexFilePath());
+  if (entries?.find((entry) => entry.id === id)?.summary.pendingMerge !== true) return undefined;
+  return getSession(id);
 }
 
 export async function saveToolCall(
