@@ -2,8 +2,7 @@ import stringWidth from "string-width";
 
 // biome-ignore lint: ANSI escape sequences are intentional.
 const SGR = /\x1b\[[0-9;]*m/g;
-// biome-ignore lint: ESC and C1 controls start sequences that string-width strips as a whole.
-const CONTROL_SEQUENCE_START = /[\x1b\x80-\x9f]/;
+const CONTROL_SEQUENCE_START = new RegExp("[\\u001b\\u0080-\\u009f]");
 
 function printableAscii(code: number): boolean {
   return code >= 0x20 && code < 0x7f;
