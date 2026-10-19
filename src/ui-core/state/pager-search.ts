@@ -83,3 +83,33 @@ export function segmentPagerLine(
   }
   return segments;
 }
+
+export interface OverlaidPagerPiece<T> {
+  readonly source: T;
+  readonly text: string;
+  readonly kind: PagerLineSegment["kind"];
+}
+
+export function overlayPagerSegments<T extends { readonly text: string }>(
+  pieces: readonly T[],
+  segments: readonly PagerLineSegment[],
+): OverlaidPagerPiece<T>[] {
+  const out: OverlaidPagerPiece<T>[] = [];
+  let segment = 0;
+  let segmentLeft = segments[0]?.text.length ?? 0;
+  for (const source of pieces) {
+    let text = source.text;
+    while (text.length > 0) {
+      while (segmentLeft === 0 && segment < segments.length - 1) {
+        segment += 1;
+        segmentLeft = segments[segment]!.text.length;
+      }
+      const kind = segments[segment]?.kind ?? "plain";
+      const take = segmentLeft > 0 ? Math.min(segmentLeft, text.length) : text.length;
+      out.push({ source, text: text.slice(0, take), kind });
+      text = text.slice(take);
+      segmentLeft = Math.max(0, segmentLeft - take);
+    }
+  }
+  return out;
+}

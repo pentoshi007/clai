@@ -75,6 +75,17 @@ try {
       const after = bodySpans().find((span) => span.text.trim() === "AFTER_RULE");
       assert.ok(after, "file content after a box-drawing line is shown");
       assert.notDeepEqual(after.fg.toInts(), color(theme.chip), "file content after a box-drawing line stays highlighted");
+      await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
+      await settle(() => setup.mockInput.typeText("SOURCE_ANSWER"));
+      await settle(() => setup.mockInput.pressEnter());
+      const hit = await waitFor("SOURCE_ANSWER");
+      assert.notDeepEqual(hit.bg.toInts(), color(theme.background), "the search match is highlighted");
+      const matchedKeyword = bodySpans().find((span) => span.text.trim() === "export");
+      assert.ok(matchedKeyword, setup.captureCharFrame());
+      assert.deepEqual(matchedKeyword.fg.toInts(), color(theme.synKeyword), "keywords on the matching line keep their colour");
+      const otherKeyword = bodySpans().find((span) => span.text.trim() === "function");
+      assert.ok(otherKeyword);
+      assert.deepEqual(otherKeyword.fg.toInts(), color(theme.synKeyword), "keywords on other lines keep their colour while searching");
       await settle(() => services.overlay.close());
     } finally {
       await act(async () => { services.dispose(); setup.renderer.destroy(); });
@@ -84,4 +95,4 @@ try {
   rmSync(directory, { recursive: true, force: true });
 }
 
-console.log("Native pager colors passed: aqua shell input, foreground output and fs.read syntax highlighting at 100/60 columns");
+console.log("Native pager colors passed: aqua shell input, foreground output and fs.read syntax highlighting, including while searching, at 100/60 columns");

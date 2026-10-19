@@ -1,10 +1,12 @@
 /** @jsxImportSource @opentui/react */
 
 import { memo, type ReactNode } from "react";
-import { TextAttributes } from "@opentui/core";
+import { RGBA, StyledText, TextAttributes, type TextChunk } from "@opentui/core";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
+  overlayPagerSegments,
   segmentPagerLine,
+  type PagerLineSegment,
   type PagerMatch,
 } from "../../../ui-core/state/pager-search.js";
 import { parseModalDiffLine, syntaxColor } from "../../../ui-core/rendering/file-diff-view.js";
@@ -38,6 +40,29 @@ export function baseLineFg(line: string, theme: Theme): string {
 }
 
 export const parseDiffLine = parseModalDiffLine;
+
+function matchStyle(kind: PagerLineSegment["kind"], theme: Theme): { fg: string; bg: string; attributes: number } | undefined {
+  if (kind === "active") return { fg: theme.background, bg: theme.activity, attributes: TextAttributes.BOLD };
+  if (kind === "match") return { fg: theme.white, bg: theme.selection, attributes: TextAttributes.BOLD };
+  return undefined;
+}
+
+function syntaxMatchSpans(spans: readonly SyntaxSpan[], segments: readonly PagerLineSegment[], theme: Theme): ReactNode[] {
+  return overlayPagerSegments(spans, segments).map((piece, i) => (
+    <span key={i} style={matchStyle(piece.kind, theme) ?? { fg: syntaxColor(piece.source.kind, theme) }}>
+      {piece.text}
+    </span>
+  ));
+}
+
+function styledWithMatches(styled: StyledText, segments: readonly PagerLineSegment[], theme: Theme): StyledText {
+  return new StyledText(overlayPagerSegments(styled.chunks, segments).map((piece): TextChunk => {
+    const style = matchStyle(piece.kind, theme);
+    const { fg, bg, attributes } = piece.source;
+    if (!style) return { __isChunk: true, text: piece.text, ...(fg ? { fg } : {}), ...(bg ? { bg } : {}), ...(attributes ? { attributes } : {}) };
+    return { __isChunk: true, text: piece.text, fg: RGBA.fromHex(style.fg), bg: RGBA.fromHex(style.bg), attributes: style.attributes };
+  }));
+}
 
 export function bodyOnlyForCopy(full: string): string {
   return full
@@ -105,7 +130,19 @@ function PagerLineImpl(props: {
 
   if (markdownMode) {
     const body = line.length > 0 ? line : " ";
-    if (!hasQuery && styled) {
+    const lineHasMatch = hasQuery && matches.some((m) => m.line === index);
+    if (styled && lineHasMatch) {
+      return (
+        <text
+          id={`pager-line-${index}`}
+          content={styledWithMatches(styled, segmentPagerLine(body, index, matches, activeMatchIndex), theme)}
+          selectable
+          wrapMode="word"
+          style={{ width: "100%", bg: theme.background }}
+        />
+      );
+    }
+    if (styled) {
       return (
         <text
           id={`pager-line-${index}`}
@@ -195,42 +232,14 @@ function PagerLineImpl(props: {
           }}
         >
           <text selectable style={{ height: 1, width: "100%" }}>
-            {segs
-              ? segs.map((seg, i) => {
-                  if (seg.kind === "plain") {
-                    return (
-                      <span key={i} style={{ fg: theme.foreground }}>
-                        {seg.text}
-                      </span>
-                    );
-                  }
-                  if (seg.kind === "active") {
-                    return (
-                      <span
-                        key={i}
-                        style={{
-                          fg: theme.background,
-                          bg: theme.activity,
-                          attributes: TextAttributes.BOLD,
-                        }}
-                      >
-                        {seg.text}
-                      </span>
-                    );
-                  }
-                  return (
-                    <span
-                      key={i}
-                      style={{
-                        fg: theme.white,
-                        bg: theme.selection,
-                        attributes: TextAttributes.BOLD,
-                      }}
-                    >
-                      {seg.text}
-                    </span>
-                  );
-                })
+            {segs && parsed.tone !== "header"
+              ? syntaxMatchSpans(spans, segs, theme)
+              : segs
+              ? overlayPagerSegments([{ text: parsed.code }], segs).map((piece, i) => (
+                  <span key={i} style={matchStyle(piece.kind, theme) ?? { fg: theme.muted }}>
+                    {piece.text}
+                  </span>
+                ))
               : spans.map((sp, i) => (
                   <span
                     key={i}
@@ -289,6 +298,17 @@ function PagerLineImpl(props: {
   }
 
   const segments = segmentPagerLine(line, index, matches, activeMatchIndex);
+  if (codeSpans && codeSpans.length > 0) {
+    return (
+      <text
+        id={`pager-line-${index}`}
+        selectable
+        style={{ width: "100%", bg: isActiveLine ? theme.rowA : theme.background }}
+      >
+        {syntaxMatchSpans(codeSpans, segments, theme)}
+      </text>
+    );
+  }
   return (
     <text
       id={`pager-line-${index}`}
