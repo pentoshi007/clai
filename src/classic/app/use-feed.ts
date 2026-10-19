@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getCurrentVersion } from "../../commands/update.js";
 import { safeCwd } from "../../os/cwd.js";
 import { getConfig } from "../../store/config.js";
@@ -14,6 +14,7 @@ import { TranscriptViewport } from "../feed/transcript-viewport.js";
 import { createInkTheme, type InkTheme } from "../render/ink-theme.js";
 import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import { TranscriptResources } from "../feed/transcript-resources.js";
+import { BackgroundLayout } from "../feed/background-layout.js";
 
 export interface FeedSnapshot {
   readonly ink: InkTheme;
@@ -97,6 +98,10 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
   cache.current ??= new FeedBlockCache();
   const viewport = useRef<TranscriptViewport | undefined>(undefined);
   viewport.current ??= new TranscriptViewport();
+  const background = useRef<BackgroundLayout | undefined>(undefined);
+  background.current ??= new BackgroundLayout();
+  const [layoutVersion, setLayoutVersion] = useState(0);
+  useEffect(() => () => background.current?.dispose(), []);
   const spool = input.services.session.spool;
   const resources = useMemo(() => new TranscriptResources(spool), [spool]);
   const resourceVersion = useSyncExternalStore(resources.subscribe, resources.snapshot);
@@ -116,6 +121,7 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
   );
   const context = useMemo(() => blockContextFor(state, view), [state, view]);
   const blocks = useStableBlocks(useMemo(() => buildFeedBlocks(state, view, cache.current), [state, view]));
+  useEffect(() => background.current!.schedule(blocks, () => setLayoutVersion((version) => version + 1)), [blocks]);
   const window = useMemo(
     () => viewport.current!.plan(blocks, input.liveBudgetRows, {
       columns: input.columns,
@@ -123,7 +129,7 @@ export function useFeed(input: UseFeedInput): FeedSnapshot {
       navigationVersion: input.navigationVersion,
       offset: input.liveOffset,
     }),
-    [blocks, input.liveBudgetRows, input.liveOffset, input.columns, input.generation, input.navigationVersion],
+    [blocks, layoutVersion, input.liveBudgetRows, input.liveOffset, input.columns, input.generation, input.navigationVersion],
   );
   useEffect(() => { void resources.prepare(state, window.visibleItemIds); }, [resources, state, window.visibleItemIds]);
 
