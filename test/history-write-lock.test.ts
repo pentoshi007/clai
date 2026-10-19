@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,6 +87,74 @@ describe("jsonl write lock", () => {
       "timed out waiting for history write lock",
     );
     await first();
+  }, 60_000);
+});
+
+describe("jsonl write lock ownership evidence", () => {
+  const age = (path: string, ms: number) => {
+    const at = new Date(Date.now() - ms);
+    utimesSync(path, at, at);
+  };
+
+  it("reaps a lock whose live pid now belongs to a different process", async () => {
+    const { acquireJsonlWriteLock } = await import("../src/store/history/jsonl-lock.js");
+    mkdirSync(dataDir, { recursive: true });
+    const path = join(dataDir, "history.jsonl.lock");
+    writeFileSync(path, `${process.ppid}-${Date.now()}-recycled-${"0".repeat(64)}`);
+    age(path, 10_000);
+    const release = await acquireJsonlWriteLock();
+    await release();
+  });
+
+  it("keeps a heartbeating lock owned by a living writer", async () => {
+    const { acquireStorageWriteLock } = await import("../src/store/history/jsonl-lock.js");
+    const path = join(dataDir, "heartbeat.lock");
+    const held = await acquireStorageWriteLock(path, "prompt journal");
+    try {
+      const token = readFileSync(path, "utf8");
+      age(path, 60_000);
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      expect(Date.now() - statSync(path).mtimeMs).toBeLessThan(5_000);
+      expect(readFileSync(path, "utf8")).toBe(token);
+    } finally {
+      await held();
+    }
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("reaps an abandoned lock whose token was never written", async () => {
+    const { acquireJsonlWriteLock } = await import("../src/store/history/jsonl-lock.js");
+    mkdirSync(dataDir, { recursive: true });
+    const path = join(dataDir, "history.jsonl.lock");
+    writeFileSync(path, "");
+    age(path, 60_000);
+    const release = await acquireJsonlWriteLock();
+    await release();
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "reaps an unreadable lock left by another account once its heartbeat is stale",
+    async () => {
+      const { acquireJsonlWriteLock } = await import("../src/store/history/jsonl-lock.js");
+      mkdirSync(dataDir, { recursive: true });
+      const path = join(dataDir, "history.jsonl.lock");
+      writeFileSync(path, `${process.pid}-${Date.now()}-other-account`);
+      chmodSync(path, 0o000);
+      age(path, 60_000);
+      const release = await acquireJsonlWriteLock();
+      await release();
+    },
+  );
+
+  it("names the contended store in its timeout", async () => {
+    const { acquireStorageWriteLock } = await import("../src/store/history/jsonl-lock.js");
+    const held = await acquireStorageWriteLock(join(dataDir, "journal.lock"), "prompt journal");
+    try {
+      await expect(acquireStorageWriteLock(join(dataDir, "journal.lock"), "prompt journal"))
+        .rejects.toThrow("timed out waiting for prompt journal write lock");
+    } finally {
+      await held();
+    }
   }, 60_000);
 });
 

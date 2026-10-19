@@ -67,6 +67,19 @@ async function readEntry(index: FileHandle, metadata: FileHandle, number: number
   return { entry, metadataEnd: offset + length };
 }
 
+async function consistentTail(
+  index: FileHandle,
+  metadata: FileHandle,
+  indexed: number,
+  bodySize: number,
+): Promise<{ count: number; last: Awaited<ReturnType<typeof readEntry>> | undefined }> {
+  for (let number = indexed; number > 0; number -= 1) {
+    const last = await readEntry(index, metadata, number).catch(() => undefined);
+    if (last && last.entry.nextOffset <= bodySize) return { count: number, last };
+  }
+  return { count: 0, last: undefined };
+}
+
 interface Writer {
   readonly body: FileHandle;
   readonly metadata: FileHandle;
@@ -127,7 +140,7 @@ export class SessionPromptStore {
       const releases: (() => Promise<void>)[] = [];
       let staged: string | undefined;
       try {
-        for (const path of new Set(locks)) releases.push(await acquireStorageWriteLock(path));
+        for (const path of new Set(locks)) releases.push(await acquireStorageWriteLock(path, "prompt journal"));
         if (await source.count() === 0) return;
         if (await this.count() > 0) throw new Error("destination prompt journal is not empty");
         await mkdir(dirname(this.root), { recursive: true, mode: 0o700 });
@@ -153,6 +166,10 @@ export class SessionPromptStore {
     return this.pending;
   }
 
+  idle(): Promise<void> {
+    return this.pending.catch(() => undefined);
+  }
+
   captureCount(): Promise<number> {
     let count = 0;
     // Keep the snapshot behind pending imports and ahead of future submissions.
@@ -174,7 +191,7 @@ export class SessionPromptStore {
   }
 
   async namingWindow(): Promise<NamingPromptWindow> {
-    await this.flush();
+    await this.idle();
     const count = await this.count();
     if (!count) return { count: 0, prompts: [] };
     const recentStart = Math.max(1, count - 7);
@@ -204,7 +221,7 @@ export class SessionPromptStore {
   }
 
   private async write(operation: (writer: Writer) => Promise<void>): Promise<void> {
-    const release = await acquireStorageWriteLock(`${this.root}.lock`);
+    const release = await acquireStorageWriteLock(`${this.root}.lock`, "prompt journal");
     const handles: FileHandle[] = [];
     try {
       await mkdir(this.root, { recursive: true, mode: 0o700 });
@@ -215,13 +232,11 @@ export class SessionPromptStore {
       }
       const [body, metadata, index] = handles as [FileHandle, FileHandle, FileHandle];
       const indexSize = (await index.stat()).size;
-      const count = Math.floor(indexSize / INDEX_BYTES);
-      const last = count ? await readEntry(index, metadata, count) : undefined;
-      const bodyEnd = last?.entry.nextOffset ?? 0;
-      const metadataEnd = last?.metadataEnd ?? 0;
       const bodySize = (await body.stat()).size;
       const metadataSize = (await metadata.stat()).size;
-      if (bodySize < bodyEnd) throw new Error("incomplete session prompt journal");
+      const { count, last } = await consistentTail(index, metadata, Math.floor(indexSize / INDEX_BYTES), bodySize);
+      const bodyEnd = last?.entry.nextOffset ?? 0;
+      const metadataEnd = last?.metadataEnd ?? 0;
       if (indexSize > count * INDEX_BYTES) await truncate(this.indexPath, count * INDEX_BYTES);
       if (metadataSize > metadataEnd) await truncate(this.metadataPath, metadataEnd);
       if (bodySize > bodyEnd) await truncate(this.path, bodyEnd);
@@ -277,7 +292,7 @@ export class SessionPromptStore {
 
 export async function removeSessionPrompts(sessionId: string): Promise<boolean> {
   const root = directory(sessionId);
-  const release = await acquireStorageWriteLock(`${root}.lock`);
+  const release = await acquireStorageWriteLock(`${root}.lock`, "prompt journal");
   try {
     const exists = await stat(root).then(() => true, (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return false;
