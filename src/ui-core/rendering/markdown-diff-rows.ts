@@ -1,4 +1,5 @@
 import type { ChalkInstance } from "chalk";
+import { nearestAnsi16, nearestAnsi256 } from "./ansi-palette.js";
 import { expandTabs, parseModalDiffLine, sliceSpans, syntaxColor, type ParsedDiffLine } from "./file-diff-view.js";
 import { wrapPagerLine } from "./pager-chrome.js";
 import { emptyCarry, highlightLineForPath, type HighlightCarry, type SyntaxSpan } from "./syntax-highlight.js";
@@ -24,6 +25,19 @@ export function diffHeaderPath(parsed: ParsedDiffLine): string | undefined {
   return parsed.tone === "header" ? HEADER_PATH.exec(parsed.code)?.[1] : undefined;
 }
 
+type Paint = (text: string) => string;
+
+function foreground(paint: ChalkInstance, color: string): ChalkInstance {
+  if (paint.level >= 3) return paint.hex(color);
+  if (paint.level === 2) return paint.ansi256(nearestAnsi256(color));
+  return paint[nearestAnsi16(color)];
+}
+
+function background(paint: ChalkInstance, color: string): Paint {
+  if (paint.level >= 3) return paint.bgHex(color);
+  return paint.bgAnsi256(nearestAnsi256(color, true));
+}
+
 function toneColors(parsed: ParsedDiffLine, theme: Theme): { rail: string; mark: string; wash: string | undefined } {
   if (parsed.tone === "add") return { rail: theme.diffAdd, mark: theme.diffAdd, wash: theme.diffAddBg };
   if (parsed.tone === "del") return { rail: theme.diffDel, mark: theme.diffDel, wash: theme.diffDelBg };
@@ -31,10 +45,10 @@ function toneColors(parsed: ParsedDiffLine, theme: Theme): { rail: string; mark:
 }
 
 function paintCode(paint: ChalkInstance, theme: Theme, parsed: ParsedDiffLine, chunk: string, spans: readonly SyntaxSpan[] | undefined): string {
-  if (parsed.tone === "header") return paint.hex(theme.muted)(chunk);
-  if (!spans?.length) return paint.hex(theme.foreground)(chunk);
+  if (parsed.tone === "header") return foreground(paint, theme.muted)(chunk);
+  if (!spans?.length) return foreground(paint, theme.foreground)(chunk);
   let out = "";
-  for (const span of spans) out += paint.hex(syntaxColor(span.kind, theme))(span.text);
+  for (const span of spans) out += foreground(paint, syntaxColor(span.kind, theme))(span.text);
   return out;
 }
 
@@ -68,8 +82,8 @@ export function diffMarkdownRows(
   chunks.forEach((chunk, part) => {
     const gutter = part === 0 ? parsed.gutter : blank;
     const rowMark = part === 0 ? mark : " ";
-    const rule = `${paint.hex(theme.diffGutter)(`${gutter} `)}${paint.hex(colors.rail)("│ ")}`;
-    const marked = header ? rule : `${rule}${rowMark === " " ? "  " : paint.bold.hex(colors.mark)(`${rowMark} `)}`;
+    const rule = `${foreground(paint, theme.diffGutter)(`${gutter} `)}${foreground(paint, colors.rail)("│ ")}`;
+    const marked = header ? rule : `${rule}${rowMark === " " ? "  " : foreground(paint.bold, colors.mark)(`${rowMark} `)}`;
     const slice = spans ? sliceSpans(spans, offset, offset + chunk.length) : undefined;
     const row = `${marked}${paintCode(paint, theme, parsed, chunk, slice)}`;
     offset += chunk.length;
@@ -78,7 +92,7 @@ export function diffMarkdownRows(
       return;
     }
     const used = renderColumns(`${gutter} │ ${header ? "" : "  "}${chunk}`);
-    rows.push(paint.bgHex(wash)(`${row}${" ".repeat(Math.max(0, width - used))}`));
+    rows.push(background(paint, wash)(`${row}${" ".repeat(Math.max(0, width - used))}`));
   });
   return rows;
 }
