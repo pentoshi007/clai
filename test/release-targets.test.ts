@@ -3,15 +3,15 @@ import { describe, expect, it } from "vitest";
 import { nativePackages, parseReleaseTarget, releaseTargets, targetBuildArguments, targetNativePackages } from "../scripts/release-targets.js";
 
 describe("target-specific release bundles", () => {
-  it.each(releaseTargets)("keeps only usable native libraries for %s without losing libc support", (target) => {
+  it.each(releaseTargets)("keeps only the native library %s can load", (target) => {
     const keep = targetNativePackages(target);
     const args = targetBuildArguments(target, "/output");
     for (const name of nativePackages) expect(args.includes(name)).toBe(!keep.includes(name));
     expect(args).toContain("--minify");
     expect(args).toContain(target);
     if (target.includes("linux")) {
-      expect(keep).toHaveLength(2);
-      expect(keep.some((name) => name.endsWith("-musl"))).toBe(true);
+      expect(keep).toEqual([`@opentui/core-linux-${target.split("-")[2]}`]);
+      expect(args).toContain(`@opentui/core-linux-${target.split("-")[2]}-musl`);
     }
     if (target.includes("darwin")) expect(keep).toHaveLength(1);
     if (target.includes("windows")) {
@@ -19,6 +19,12 @@ describe("target-specific release bundles", () => {
       expect(args).toContain("@opentui/core");
       expect(args).toContain("@opentui/react");
       expect(args).toContain('process.platform="win32"');
+    }
+  });
+
+  it("does not force React production builds, which stall the compiled OpenTUI renderer", () => {
+    for (const target of releaseTargets) {
+      expect(targetBuildArguments(target, "/output").some((arg) => arg.includes("NODE_ENV"))).toBe(false);
     }
   });
 
