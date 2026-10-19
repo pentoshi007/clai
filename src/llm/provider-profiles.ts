@@ -13,6 +13,7 @@ import {
   type WireApi,
 } from "./provider-profile.js";
 import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
+import { hasMainEffortKnowledge, isEffortControlDialect, mainEffortProbe } from "./main-effort-discovery.js";
 import { modelFamilyFor } from "./model-families.js";
 import {
   isReasoningUnsupported,
@@ -267,6 +268,9 @@ function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
     (profile.reasoning.acceptedEfforts.length === 0
       ? modelReasoningEfforts(provider, model)
       : undefined);
+  const discovered = hasMainEffortKnowledge(provider, model) && Boolean(wireEfforts?.length) &&
+    modelCatalogFacts(provider, model)?.reasoning?.supported !== false &&
+    isEffortControlDialect(profile.reasoning.control.dialect);
   if (!suppressed && !mandatory && !learnedEfforts?.length) return profile;
   const observed: ProfileEvidence = {
     source: "observed",
@@ -277,6 +281,12 @@ function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
     reasoning: {
       ...profile.reasoning,
       ...(learnedEfforts?.length ? { acceptedEfforts: learnedEfforts } : {}),
+      ...(discovered ? {
+        generation: mandatory ? "mandatory" as const : "optional" as const,
+        control: { ...profile.reasoning.control, status: "supported" as const, evidence: observed },
+        disable: wireEfforts!.includes("none") ? "supported" as const : "unsupported" as const,
+        disableForm: wireEfforts!.includes("none") ? "effort-none" as const : "none-documented" as const,
+      } : {}),
       ...(mandatory
         ? { generation: "mandatory" as const, disable: "unsupported" as const }
         : {}),
@@ -293,6 +303,22 @@ function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
   };
 }
 
+function effortProbeProfile(profile: ProviderProfile): ProviderProfile {
+  const effort = mainEffortProbe(profile.route.provider, profile.route.model);
+  if (effort === undefined) return profile;
+  return {
+    ...profile,
+    reasoning: {
+      ...profile.reasoning,
+      generation: "optional",
+      acceptedEfforts: [effort],
+      disable: "supported",
+      disableForm: "effort-none",
+      control: { ...profile.reasoning.control, status: "supported" },
+    },
+  };
+}
+
 export function resolveBuiltInProfile(input: {
   provider: ProviderId;
   model: string;
@@ -302,7 +328,7 @@ export function resolveBuiltInProfile(input: {
   catalogLayer?: ProviderProfileLayer | undefined;
 }): ProviderProfile {
   const layers = builtInProfileLayers(input.provider, input.model);
-  return observedReasoningOverlay(
+  return effortProbeProfile(observedReasoningOverlay(
     applyObservedControlRejections(
       resolveProviderProfile({
         provider: input.provider,
@@ -317,7 +343,7 @@ export function resolveBuiltInProfile(input: {
         },
       }),
     ),
-  );
+  ));
 }
 
 export function directDeepSeekV4Layer(): ProviderProfileLayer {

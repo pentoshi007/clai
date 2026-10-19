@@ -18,6 +18,7 @@ import {
   selectReasoningArtifactsForReplay,
 } from "./reasoning-artifacts.js";
 import { compileRequestPlan } from "./request-plan.js";
+import { hasMainEffortKnowledge, mainEffortProbe } from "./main-effort-discovery.js";
 import type { RequestPlanV1 } from "./request-plan.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
 import { stripImagesFromMessages } from "./wire/capability-errors.js";
@@ -349,9 +350,14 @@ export function buildResponsesBody(
     temperature: options.temperature,
     maxTokens: options.maxTokens,
   });
-  const reasoning = plan.controls.controlSuppression
+  let reasoning = plan.controls.controlSuppression
     ? undefined
     : config.reasoningPayload(plan.controls.reasoning, options.model);
+  const exactEffort = mainEffortProbe(config.providerId, options.model);
+  if (exactEffort !== undefined) reasoning = { effort: exactEffort };
+  else if (hasMainEffortKnowledge(config.providerId, options.model) && plan.controls.reasoning && !plan.controls.controlSuppression) {
+    reasoning = { ...reasoning, effort: plan.controls.reasoning.enabled ? plan.controls.reasoning.effort : "none" };
+  }
   const input = toResponsesInput(
     [...plan.timeline.messages],
     plan.images.visionAccepted,

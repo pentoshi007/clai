@@ -48,6 +48,7 @@ import { resolveToolDialect } from "./capability/tool-dialect.js";
 import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
 import { riverModelFacts } from "./river-models.js";
+import { resetMainEffortKnowledge, resolvedMainEffort } from "./main-effort-discovery.js";
 import { scopedModelCatalogFacts } from "./catalog-context.js";
 import {
   rememberModelLimits,
@@ -124,6 +125,7 @@ function scopedKnowledge(
 }
 
 export function resetReasoningKnowledge(): void {
+  resetMainEffortKnowledge();
   scopedReasoningKnowledge.clear();
   resetReasoningKnowledgeFromState();
   resetRememberedModelLimits();
@@ -185,7 +187,7 @@ export function effectiveThinkingEffort(
   if (isReasoningUnsupported(provider, model)) return undefined;
   if (!modelSupportsThinking(provider, model)) return undefined;
   const efforts = displayReasoningEfforts(provider, model);
-  return clampEffortToRoute(
+  return resolvedMainEffort(provider, model, thinking.effort) ?? clampEffortToRoute(
     thinking.effort,
     provider === "mistral" && thinking.effort !== "none"
       ? efforts?.filter((effort) => effort !== "none")
@@ -409,14 +411,17 @@ export function modelSupportsThinking(
 }
 
 function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
-  if (provider === "river") return modelCatalogFacts(provider, model)?.reasoning?.supported === true;
+  if (provider === "river") {
+    const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
+    if (declared !== undefined) return declared;
+  }
   if (provider === "cline") {
     const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
     if (declared !== undefined) return declared;
   }
   if (provider === "mistral") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
-    return reasoning?.supported === true;
+    if (reasoning?.supported !== undefined) return reasoning.supported;
   }
   const key = reasoningKey(provider, model);
   const declared = catalogReasoningSupport.get(key);
@@ -443,6 +448,7 @@ export function displayReasoningEfforts(
       : learnedRouteEfforts(provider, model) ?? modelReasoningEfforts(provider, model);
   }
   return (
+    learnedRouteEfforts(provider, model) ??
     modelReasoningEfforts(provider, model) ?? endpointAcceptedEfforts(provider)
   );
 }
@@ -541,7 +547,7 @@ export function catalogAdvertisedEfforts(
   }
   if (provider === "river") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
-    return reasoning?.supported === false ? [] : catalogEffortList(reasoning?.supportedEfforts) ?? [];
+    return reasoning?.supported === false ? [] : catalogEffortList(reasoning?.supportedEfforts);
   }
   if (provider === "cline") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;

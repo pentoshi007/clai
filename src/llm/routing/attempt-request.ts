@@ -10,12 +10,13 @@ import type {
   SuccessfulRequestSnapshot,
 } from "../../types.js";
 import {
+  effectiveThinkingEffort,
   markModelUnavailable,
   modelAcceptsImages,
   modelSupportsVision,
   visionSubstitutionOrigin,
 } from "../capabilities.js";
-import { buildReasoningPayload, stripImagesFromMessages } from "../http.js";
+import { buildReasoningPayload, reasoningRejectionAdvice, stripImagesFromMessages } from "../http.js";
 import type { ReasoningStyle } from "../http.js";
 import { isBuiltInProviderId } from "../provider-profile.js";
 import { resolveBuiltInProfile } from "../provider-profiles.js";
@@ -30,7 +31,8 @@ import {
   type EffortProbeOutcome,
 } from "../wire/effort-preflight.js";
 import { withSendableImages } from "../wire/image-payloads.js";
-import { isModelNotFoundError, shouldContinueEffortLadder } from "./error-classification.js";
+import { isModelNotFoundError, shouldContinueEffortLadder, shouldContinueEffortPreflight, shouldEnterEffortLadder } from "./error-classification.js";
+import { forgetMainEffort, resolvedMainEffort, withMainEffortProbe } from "../main-effort-discovery.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 import { legacyReasoningBlockFromArtifacts } from "../reasoning-artifacts.js";
 
@@ -223,6 +225,7 @@ export interface EffortPreflightInput {
   auth: ProviderAuth;
   singleDispatch: boolean;
   onStatus: ((message: string) => void) | undefined;
+  rejectedEffort?: ReasoningEffort | undefined;
 }
 
 function probeRequestFor(
@@ -249,14 +252,20 @@ async function probeEffort(
   effort: ReasoningEffort,
 ): Promise<EffortProbeOutcome> {
   const probe = probeRequestFor(input.request, effort);
+  const main = input.request.purpose === "turn";
+  const run = () => withUnrecordedTransport(
+    () => input.provider.complete(probe, input.auth, input.onStatus),
+    PREFLIGHT_MAX_TOKENS,
+  );
   try {
-    await withUnrecordedTransport(
-      () => input.provider.complete(probe, input.auth, input.onStatus),
-      PREFLIGHT_MAX_TOKENS,
-    );
+    if (main) await withMainEffortProbe({ provider: input.providerId, model: input.model, effort }, run);
+    else await run();
     return "accepted";
   } catch (error) {
-    return shouldContinueEffortLadder(error) ? "unsupported" : "abort";
+    if (!main) return shouldContinueEffortLadder(error) ? "unsupported" : "abort";
+    if (!shouldContinueEffortPreflight(error)) throw error;
+    const acceptedEfforts = reasoningRejectionAdvice(error)?.acceptedEfforts;
+    return acceptedEfforts?.length ? { acceptedEfforts } : "unsupported";
   }
 }
 
@@ -274,12 +283,33 @@ export async function preflightEffort(
     endpoint: input.auth.baseUrl,
     requested: thinking.effort,
     purpose: input.request.purpose,
+    rejectedEffort: input.rejectedEffort,
   };
   if (!needsEffortPreflight(route)) return;
+  if (input.rejectedEffort) forgetMainEffort(input.providerId, input.model, input.rejectedEffort);
   input.onStatus?.(
     `i ${input.providerId}/${input.model} checking which reasoning efforts it accepts`,
   );
   await runEffortPreflight(route, (effort) => probeEffort(input, effort));
+  if (route.purpose === "turn") {
+    const effective = resolvedMainEffort(input.providerId, input.model, thinking.effort);
+    if (effective) input.onStatus?.(`i ${input.providerId}/${input.model} reasoning effort → ${effective === "none" ? "off" : effective}`);
+  }
+}
+
+export async function recoverRejectedMainEffort(
+  input: EffortPreflightInput,
+  error: unknown,
+): Promise<CompletionRequest | undefined> {
+  const { providerId, model, request, singleDispatch } = input;
+  if (request.purpose !== "turn" || singleDispatch || providerId === "codex") return undefined;
+  if (!request.thinking || reasoningRejectionAdvice(error)?.acceptedEfforts.length) return undefined;
+  if (!shouldEnterEffortLadder(error, request.thinking, providerId, model, singleDispatch)) return undefined;
+  const rejectedEffort = effectiveThinkingEffort(providerId, model, request.thinking) ?? request.thinking.effort;
+  await preflightEffort({ ...input, rejectedEffort });
+  const effort = resolvedMainEffort(providerId, model, request.thinking.effort);
+  if (effort === undefined || effort === rejectedEffort) return undefined;
+  return { ...request, thinking: { enabled: effort !== "none", effort } };
 }
 
 export function requestForRoute(

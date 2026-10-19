@@ -31,6 +31,7 @@ afterEach(() => {
 describe("River model facts", () => {
   it.each([
     [RIVER_DEFAULT_MODEL, ["none", "high", "max"], 384_000, false],
+    ["deepseek-ai/DeepSeek-V4.1-Flash-1017", ["none", "high", "max"], 384_000, false],
     [RIVER_GLM_MODEL, ["low", "high", "max"], 128_000, true],
   ] as const)("provides documented capabilities before discovery for %s", (model, efforts, output, mandatory) => {
     expect(modelReasoningEfforts("river", model)).toEqual(efforts);
@@ -59,25 +60,25 @@ describe("River model facts", () => {
     expect(riverModelCatalog({ error: "unavailable" })).toEqual([]);
   });
 
-  it("gives live limits and advertised efforts precedence over documented facts", () => {
+  it.each([RIVER_DEFAULT_MODEL, "deepseek-ai/DeepSeek-V4.1-Flash-1017"])("gives live metadata precedence for %s", (model) => {
     const models = riverModelCatalog({ data: [{
-      id: RIVER_DEFAULT_MODEL,
+      id: model,
       context_length: 800_000,
       max_output_tokens: 64_000,
       reasoning: { supported_efforts: ["none", "low", "high"], default_effort: "low" },
       capabilities: { vision: false, function_calling: false },
     }] });
     registerModelCatalog("river", models);
-    expect(modelCatalogFacts("river", RIVER_DEFAULT_MODEL)).toMatchObject({
+    expect(modelCatalogFacts("river", model)).toMatchObject({
       contextTokens: 800_000,
       maxOutputTokens: 64_000,
       vision: false,
       tools: false,
     });
-    expect(displayReasoningEfforts("river", RIVER_DEFAULT_MODEL)).toEqual(["none", "low", "high"]);
-    expect(modelSupportsVision("river", RIVER_DEFAULT_MODEL)).toBe(false);
-    expect(resolveToolDialect("river", RIVER_DEFAULT_MODEL)).toBe("none");
-    expect(resolveContextWindow({ provider: "river", model: RIVER_DEFAULT_MODEL }).tokens).toBe(800_000);
+    expect(displayReasoningEfforts("river", model)).toEqual(["none", "low", "high"]);
+    expect(modelSupportsVision("river", model)).toBe(false);
+    expect(resolveToolDialect("river", model)).toBe("none");
+    expect(resolveContextWindow({ provider: "river", model }).tokens).toBe(800_000);
   });
 
   it("does not let model-family inference invent facts for future routes", () => {

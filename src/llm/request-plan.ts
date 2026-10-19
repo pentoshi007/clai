@@ -40,6 +40,7 @@ import {
 import type { StreamTerminalPolicy } from "./stream-terminal.js";
 import { providerWireApi, resolveBuiltInProfile } from "./provider-profiles.js";
 import { clampEffortToRoute } from "./route-dialect-registry.js";
+import { mainEffortProbe, resolvedMainEffort } from "./main-effort-discovery.js";
 import { customProviderProfileFor } from "./custom-provider-profile.js";
 
 
@@ -381,19 +382,20 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     (input.provider === "mistral" || input.provider === "river") && reasoningEnabled && input.reasoning?.effort !== "none"
     ? profile.reasoning.acceptedEfforts.filter((effort) => effort !== "none")
     : profile.reasoning.acceptedEfforts;
-  const emittedReasoning =
-    !preserveCodexEffort &&
-    input.reasoning &&
-    acceptedEfforts.length > 0 &&
-    !acceptedEfforts.includes(input.reasoning.effort)
-      ? {
-          ...input.reasoning,
-          effort: clampEffortToRoute(
-            input.reasoning.effort,
-            acceptedEfforts,
-          ),
-        }
-      : input.reasoning;
+  const discoveredEffort = input.reasoning &&
+    (input.reasoning.enabled || input.reasoning.effort === "none") &&
+    mainEffortProbe(input.provider, input.model) === undefined
+    ? resolvedMainEffort(input.provider, input.model, input.reasoning.effort) : undefined;
+  let emittedReasoning = input.reasoning;
+  if (!preserveCodexEffort && input.reasoning && acceptedEfforts.length > 0) {
+    emittedReasoning = {
+      ...input.reasoning,
+      effort: clampEffortToRoute(input.reasoning.effort, acceptedEfforts),
+    };
+  }
+  if (discoveredEffort && input.reasoning) {
+    emittedReasoning = { ...input.reasoning, enabled: discoveredEffort !== "none", effort: discoveredEffort };
+  }
 
   const decisions: RequestPlanArtifactDecision[] = [];
   const replayedArtifactParts: string[] = [];

@@ -28,8 +28,6 @@ vi.mock("../../src/store/keys.js", async (importOriginal) => {
 
 const messages: ChatMessage[] = [{ role: "user", content: "hi" }];
 
-const FULL_SCALE = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
-
 function ok(): Response {
   return jsonResponse({
     choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
@@ -87,7 +85,7 @@ describe("session effort preflight on the request path", () => {
     expect(probe.tools).toBeUndefined();
     expect(sentEffort(probe)).toBe("max");
     expect(sentEffort(sends[1]!.body)).toBe("max");
-    expect(displayReasoningEfforts("bynara", "glm-5.3")).toEqual(FULL_SCALE);
+    expect(displayReasoningEfforts("bynara", "glm-5.3")).toEqual(["max"]);
   });
 
   it("does not probe again once the route has settled", async () => {
@@ -112,7 +110,7 @@ describe("session effort preflight on the request path", () => {
       model: "glm-5.3",
       messages,
       purpose: "turn",
-      thinking: { enabled: true, effort: "high" },
+      thinking: { enabled: true, effort: "max" },
     });
 
     expect(chatSends(transport.generations).length - before).toBe(1);
@@ -140,13 +138,7 @@ describe("session effort preflight on the request path", () => {
     });
     expect(first.text).toBe("ok");
     expect(calls).toBe(4);
-    expect(displayReasoningEfforts("bynara", "glm-5.3")).toEqual([
-      "none",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-    ]);
+    expect(displayReasoningEfforts("bynara", "glm-5.3")).toEqual(["high"]);
     expect(sentEffort(realBody)).toBe("high");
   });
 

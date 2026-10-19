@@ -19,6 +19,7 @@ import {
 import { cacheAffinityKey, sessionCacheAffinityKey } from "../cache-affinity.js";
 import { cachePolicyFields } from "../cache-policy-fields.js";
 import { customProfileSpecFor } from "../custom-profile-resolver.js";
+import { mainEffortProbe } from "../main-effort-discovery.js";
 import { currentSessionAffinity } from "../session-affinity.js";
 import { responsesComplete } from "../responses-complete.js";
 import { isResponsesEmptyOutput } from "../responses-empty-output.js";
@@ -210,6 +211,7 @@ async function runResponsesFirst(
   stream?: StreamBridgeOptions,
 ): Promise<OpenAiCompatibleResult | undefined> {
   if (!responsesFirstCandidate(options.providerId)) return undefined;
+  if (options.wireApi !== "responses" && mainEffortProbe(options.providerId, options.model) !== undefined) return undefined;
   const configFor = (extras: ExtrasLevel): ResponsesDialectConfig =>
     genericResponsesConfig(options.providerId, options.provider, options.baseUrl, options.headers, extras);
   const auth: ProviderAuth = { apiKey: options.apiKey };

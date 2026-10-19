@@ -8,12 +8,23 @@ import {
   displayReasoningEfforts,
   isReasoningUnsupported,
   learnModelReasoningSupport,
+  markReasoningUnsupported,
   modelCatalogFacts,
   modelSupportsThinking,
+  modelReasoningEfforts,
   registerWireRejectionEfforts,
   scopedRuntimeReasoningEffortsKnown,
 } from "../capabilities.js";
 import { WIRE_EFFORT_SCALE } from "../reasoning-controls.js";
+import { catalogEffortList } from "../catalog-facts.js";
+import { resolveBuiltInProfile } from "../provider-profiles.js";
+import {
+  hasMainEffortKnowledge,
+  isEffortControlDialect,
+  rememberMainEffort,
+  resetMainEffortKnowledge,
+  resolvedMainEffort,
+} from "../main-effort-discovery.js";
 import { currentSessionAffinity } from "../session-affinity.js";
 
 export const PREFLIGHT_MESSAGES: ChatMessage[] = [
@@ -22,7 +33,8 @@ export const PREFLIGHT_MESSAGES: ChatMessage[] = [
 
 export const PREFLIGHT_MAX_TOKENS = 16;
 
-export type EffortProbeOutcome = "accepted" | "unsupported" | "abort";
+export type EffortProbeOutcome = "accepted" | "unsupported" | "abort" |
+  { readonly acceptedEfforts: readonly string[] };
 
 export interface EffortPreflightRoute {
   providerId: ProviderId;
@@ -30,6 +42,7 @@ export interface EffortPreflightRoute {
   endpoint?: string | undefined;
   requested: ReasoningEffort;
   purpose?: CompletionRequestPurpose | undefined;
+  rejectedEffort?: ReasoningEffort | undefined;
 }
 
 const SUBAGENT_ORDER: readonly ReasoningEffort[] = [
@@ -86,9 +99,19 @@ export function needsEffortPreflight(route: EffortPreflightRoute): boolean {
   if (scopedKnown !== undefined && probeOutcomes.has(key)) {
     return probeOutcomes.get(key) !== undefined && !scopedKnown;
   }
-  if (probedKeys.has(key)) return false;
+  if (!route.rejectedEffort && probedKeys.has(key)) return false;
   if (isReasoningUnsupported(route.providerId, route.model)) return false;
-  if (!modelSupportsThinking(route.providerId, route.model)) return false;
+  if (!isSubagentProbe(route)) {
+    const { providerId, model, requested } = route;
+    const profile = resolveBuiltInProfile({ provider: providerId, model });
+    if (!isEffortControlDialect(profile.reasoning.control.dialect)) return false;
+    if (modelCatalogFacts(providerId, model)?.reasoning?.supported === false) return false;
+    if (route.rejectedEffort) return true;
+    if (catalogEffortList(modelCatalogFacts(providerId, model)?.reasoning?.supportedEfforts)?.length) return false;
+    if (hasMainEffortKnowledge(providerId, model)) {
+      return resolvedMainEffort(providerId, model, requested) === undefined;
+    }
+  } else if (!modelSupportsThinking(route.providerId, route.model)) return false;
   if (
     route.providerId === "cline" &&
     modelCatalogFacts("cline", route.model)?.reasoning?.supported !== undefined
@@ -97,7 +120,18 @@ export function needsEffortPreflight(route: EffortPreflightRoute): boolean {
 }
 
 function probeOrder(route: EffortPreflightRoute): readonly ReasoningEffort[] {
-  return isSubagentProbe(route) ? SUBAGENT_ORDER : TURN_ORDER;
+  if (isSubagentProbe(route)) return SUBAGENT_ORDER;
+  if (route.rejectedEffort) {
+    const declared = hasMainEffortKnowledge(route.providerId, route.model)
+      ? undefined : modelReasoningEfforts(route.providerId, route.model);
+    return TURN_ORDER.filter((effort) =>
+      rankOf(effort) < rankOf(route.rejectedEffort!) && (!declared?.length || declared.includes(effort)),
+    );
+  }
+  if (route.requested === "none") return ["none"];
+  return hasMainEffortKnowledge(route.providerId, route.model)
+    ? TURN_ORDER.filter((effort) => rankOf(effort) <= rankOf(route.requested))
+    : TURN_ORDER;
 }
 
 function settleProbedEfforts(
@@ -108,7 +142,7 @@ function settleProbedEfforts(
   if (index < 0) return;
   const observed = isSubagentProbe(route)
     ? WIRE_EFFORT_SCALE.slice(index)
-    : WIRE_EFFORT_SCALE.slice(0, index + 1);
+    : rememberMainEffort(route.providerId, route.model, route.requested, accepted);
   registerWireRejectionEfforts(route.providerId, route.model, observed);
   if (accepted !== "none") {
     learnModelReasoningSupport(route.providerId, route.model);
@@ -136,13 +170,28 @@ async function probeEffortLadder(
   key: string,
 ): Promise<ReasoningEffort | undefined> {
   let accepted: ReasoningEffort | undefined;
+  let exhausted = true;
   for (const effort of probeOrder(route)) {
     const outcome = await probe(effort);
-    if (outcome === "abort") break;
+    if (typeof outcome === "object" && !isSubagentProbe(route)) {
+      accepted = probeOrder(route).find((candidate) =>
+        rankOf(candidate) < rankOf(effort) && outcome.acceptedEfforts.includes(candidate),
+      );
+      if (accepted) rememberMainEffort(route.providerId, route.model, route.requested, accepted, outcome.acceptedEfforts);
+      exhausted = false;
+      break;
+    }
+    if (outcome === "abort") {
+      exhausted = false;
+      break;
+    }
     if (outcome === "accepted") {
       accepted = effort;
       break;
     }
+  }
+  if (exhausted && !accepted && !isSubagentProbe(route)) {
+    markReasoningUnsupported(route.providerId, route.model);
   }
   rememberProbeOutcome(key, accepted);
   return accepted;
@@ -182,6 +231,7 @@ export async function runEffortPreflight(
 }
 
 export function resetEffortPreflightForTesting(): void {
+  resetMainEffortKnowledge();
   probedKeys.clear();
   probeOutcomes.clear();
   pendingProbes.clear();
