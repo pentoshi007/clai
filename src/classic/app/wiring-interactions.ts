@@ -15,7 +15,7 @@ import { handleTranscriptMouse } from "./wiring-selection.js";
 import { handleDisclosureMouse } from "./wiring-disclosure.js";
 import { handleComposerMouse } from "./wiring-composer-pointer.js";
 import { handleJumpToLatestMouse } from "./wiring-jump-to-latest.js";
-import type { WiringHost } from "./wiring-types.js";
+import type { AnimationDemand, WiringHost } from "./wiring-types.js";
 
 export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
   const window = feed.window;
@@ -472,12 +472,15 @@ export function needsCadence(host: WiringHost): boolean {
   );
 }
 
-export function needsAnimation(host: WiringHost): boolean {
+export const CARET_BLINK_IDLE_MS = 10_000;
+
+export function animationDemand(host: WiringHost): AnimationDemand {
   const state = host.services.session.getState();
-  return (
-    state.running ||
-    state.compacting ||
-    host.services.toast.getToasts().length > 0 ||
-    host.services.focus.activeContext() === "composer"
-  );
+  const now = host.now();
+  if (state.running || state.compacting || host.services.toast.getToasts().length > 0) {
+    host.caretAwakeAt = now;
+    return "frames";
+  }
+  if (host.services.focus.activeContext() !== "composer") return "none";
+  return now - host.caretAwakeAt < CARET_BLINK_IDLE_MS ? "caret" : "none";
 }
