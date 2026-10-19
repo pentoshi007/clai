@@ -134,6 +134,7 @@ export class PagerSourceController {
     this.deps.publish({
       ...snapshot,
       pagerBody: page.body,
+      pagerPageOffset: page.offset,
       pager: {
         ...snapshot.pager,
         caret,
@@ -205,6 +206,7 @@ export class PagerSourceController {
         this.deps.publish({
           ...snapshot,
           pagerBody: page.body,
+          pagerPageOffset: page.offset,
           pager: {
             ...snapshot.pager,
             caret: follow ? maxCaret : Math.min(snapshot.pager.caret, maxCaret),

@@ -24,7 +24,9 @@ import type { InkTheme } from "../render/ink-theme.js";
 import { isPrintable } from "./picker-panel.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, unhandled, type PanelKeyResult } from "./panel-effect.js";
-import { diffPagerLines, type PagerDiffOptions } from "./pager-diff.js";
+import { diffPagerLines } from "./pager-diff.js";
+import { regionPagerLines } from "./pager-region-paint.js";
+import { pagerRegionsForPage, type PagerBodyRegions } from "../../ui-core/rendering/pager-regions.js";
 
 export type PagerFormat = "formatted" | "raw";
 export type PagerMarkdownMode = "auto" | "force" | "plain";
@@ -92,6 +94,20 @@ function logicalPagerLines(
   return (subagentPaint ? styleSubagentBody(body, subagentPaint) : body).replace(/\r\n?/g, "\n").split("\n");
 }
 
+export interface PagerPaintOptions {
+  readonly path?: string | undefined;
+  readonly ink?: InkTheme | undefined;
+  readonly regions?: PagerBodyRegions | undefined;
+}
+
+function rawPaintedLines(logical: readonly string[], width: number, paint: PagerPaintOptions): readonly string[] | undefined {
+  const { path, ink, regions } = paint;
+  const diff = path ? diffPagerLines(logical, width, ink ? { path, ink } : { path }) : undefined;
+  if (diff) return diff;
+  if (!regions || !ink || ink.colorMode === "none") return undefined;
+  return regionPagerLines(logical, width, regions, path, ink);
+}
+
 export function pagerLines(
   body: string,
   columns: number,
@@ -99,14 +115,14 @@ export function pagerLines(
   format: PagerFormat = "formatted",
   ansiBody = false,
   appearance?: Partial<Pick<InkTheme, "theme" | "colorMode">> & { readonly quotePrefix?: string | undefined; readonly literalQuotes?: boolean | undefined; readonly lineChangeColors?: boolean | undefined },
-  diff?: PagerDiffOptions,
+  paint?: PagerPaintOptions,
   subagentPaint?: SubagentSpanPaint,
 ): readonly string[] {
   const width = panelBodyWidth(columns);
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
   const logical = logicalPagerLines(body, textWidth, format, appearance, subagentPaint).map((line) => expandTabs(line));
-  if (diff && format === "raw" && !ansiBody) {
-    const painted = diffPagerLines(logical, textWidth, diff);
+  if (paint && format === "raw" && !ansiBody) {
+    const painted = rawPaintedLines(logical, textWidth, paint);
     if (painted) return painted.length === 0 ? [" "] : painted;
   }
   const lines = logical.flatMap((line) =>
@@ -126,12 +142,20 @@ export interface PagerViewModel {
   readonly searchLines: readonly string[];
 }
 
-export function pagerDiffOptions(
+export function pagerPaintOptions(
   overlay: OverlayState,
   ink?: InkTheme,
-): PagerDiffOptions | undefined {
-  if (overlay.kind !== "pager" || !overlay.highlightPath) return undefined;
-  return ink ? { path: overlay.highlightPath, ink } : { path: overlay.highlightPath };
+  pageOffset = 0,
+): PagerPaintOptions | undefined {
+  if (overlay.kind !== "pager") return undefined;
+  const path = overlay.highlightPath || undefined;
+  const regions = pagerRegionsForPage(overlay.regions, pageOffset);
+  if (!path && !regions) return undefined;
+  return { ...(path ? { path } : {}), ...(ink ? { ink } : {}), ...(regions ? { regions } : {}) };
+}
+
+function regionsKey(regions: PagerBodyRegions | undefined): string {
+  return regions ? `${regions.inputEnd ?? ""}:${regions.codeStart ?? ""}:${regions.codeEnd ?? ""}` : "";
 }
 
 const unpaintSubagentSpan: SubagentSpanPaint = (span) => span.text;
@@ -157,6 +181,7 @@ interface PagerCacheEntry {
   readonly appearance: Pick<InkTheme, "theme" | "colorMode"> | undefined;
   readonly diffPath: string | undefined;
   readonly diffInk: InkTheme | undefined;
+  readonly regions: string;
   readonly subagentPaint: SubagentSpanPaint | undefined;
   readonly quotePrefix: string | undefined;
   readonly literalQuotes: boolean | undefined;
@@ -184,14 +209,15 @@ export function pagerViewModel(
   format: PagerFormat = "formatted",
   ansiBody = false,
   appearance?: Pick<InkTheme, "theme" | "colorMode">,
-  diff?: PagerDiffOptions,
+  paint?: PagerPaintOptions,
   subagentPaint?: SubagentSpanPaint,
   quotePrefix?: string,
   literalQuotes?: boolean,
   lineChangeColors?: boolean,
 ): PagerViewModel {
-  const diffPath = diff?.path;
-  const diffInk = diff?.ink;
+  const diffPath = paint?.path;
+  const diffInk = paint?.ink;
+  const regions = regionsKey(paint?.regions);
   const index = pagerCache.findIndex(
     (entry) =>
       entry.body === body &&
@@ -202,6 +228,7 @@ export function pagerViewModel(
       entry.appearance === appearance &&
       entry.diffPath === diffPath &&
       entry.diffInk === diffInk &&
+      entry.regions === regions &&
       entry.subagentPaint === subagentPaint &&
       entry.quotePrefix === quotePrefix &&
       entry.literalQuotes === literalQuotes &&
@@ -216,9 +243,9 @@ export function pagerViewModel(
     return hit.view;
   }
   const markdownAppearance = { ...appearance, quotePrefix, literalQuotes, lineChangeColors };
-  const lines = pagerLines(body, columns, rows, format, ansiBody, markdownAppearance, diff, subagentPaint);
+  const lines = pagerLines(body, columns, rows, format, ansiBody, markdownAppearance, paint, subagentPaint);
   const view: PagerViewModel = { lines, searchLines: pagerSearchLines(lines) };
-  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, subagentPaint, quotePrefix, literalQuotes, lineChangeColors, view });
+  pagerCache.unshift({ body, columns, rows, format, ansiBody, appearance, diffPath, diffInk, regions, subagentPaint, quotePrefix, literalQuotes, lineChangeColors, view });
   if (pagerCache.length > PAGER_CACHE_SIZE) pagerCache.length = PAGER_CACHE_SIZE;
   return view;
 }
