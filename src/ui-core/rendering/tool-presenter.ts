@@ -10,6 +10,7 @@ import { sanitizeDisplayText } from "./sanitize-display.js";
 import { MAX_FS_READ_FILES } from "../../tools/fs/read-input.js";
 import { restoredTerminalArgs } from "../../agent/parser/terminal-args.js";
 import { terminalOutputView } from "./terminal-output.js";
+import { wrapPagerLine } from "./pager-chrome.js";
 
 const STATUS_GLYPH: Record<ToolStatus, string> = {
   queued: "○",
@@ -75,6 +76,41 @@ export function clampArgsDisplay(raw: string | undefined): string | undefined {
     kept.push(`··· +${hidden} more line${hidden === 1 ? "" : "s"} · click for full ···`);
   }
   return kept.join("\n");
+}
+
+const ARGS_MORE_MARKER = /^··· \+(\d+) more lines? · click for full ···$/;
+
+export function boundArgsRows(
+  argsDisplay: string,
+  width: number,
+  maxRows = ARGS_PREVIEW_MAX_LINES,
+): string {
+  const lines = argsDisplay.split("\n");
+  const marker = ARGS_MORE_MARKER.exec(lines.at(-1) ?? "");
+  const logical = marker ? lines.slice(0, -1) : lines;
+  let hidden = marker ? Number(marker[1]) : 0;
+  let clipped = false;
+  const rows: string[] = [];
+  for (let index = 0; index < logical.length; index += 1) {
+    if (rows.length >= maxRows) {
+      hidden += logical.length - index;
+      break;
+    }
+    const wrapped = wrapPagerLine(logical[index]!, Math.max(1, width));
+    const room = maxRows - rows.length;
+    rows.push(...wrapped.slice(0, room));
+    if (wrapped.length > room) {
+      clipped = true;
+      hidden += logical.length - index - 1;
+      break;
+    }
+  }
+  if (hidden > 0) {
+    rows.push(`··· +${hidden} more line${hidden === 1 ? "" : "s"} · click for full ···`);
+  } else if (clipped) {
+    rows.push("··· click for full ···");
+  }
+  return rows.join("\n");
 }
 
 export interface FsReadArgsPresentation {

@@ -5,6 +5,7 @@ import {
   highlightLineForPath,
   type SyntaxSpan,
 } from "../../../ui-core/rendering/syntax-highlight.js";
+import type { PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
 import type { preparePagerDisplay } from "../../rendering/pager-markdown.js";
 import { parseDiffLine } from "./pager-line.js";
 
@@ -22,34 +23,6 @@ export interface PagerRow {
   readonly tone?: "input" | undefined;
 }
 
-const TOOL_HEADER = /^(command|file|path|query): /;
-
-interface ToolBodyRegions {
-  readonly commandInputEnd: number;
-  readonly codeStart: number;
-  readonly codeEnd: number;
-}
-
-function toolBodyRegions(lines: readonly string[], highlightPath: string): ToolBodyRegions {
-  const header = TOOL_HEADER.exec(lines[0] ?? "");
-  let headerEnd = 0;
-  if (header) {
-    const blank = lines.findIndex((line, index) => index > 0 && line.length === 0);
-    headerEnd = blank < 0 ? lines.length : blank;
-  }
-  const commandInputEnd = header?.[1] === "command" && highlightPath === "" ? headerEnd : 0;
-  const codeStart = header ? Math.min(lines.length, headerEnd + 1) : 0;
-  let codeEnd = lines.length;
-  for (let index = codeStart; index < lines.length; index += 1) {
-    if (lines[index]!.startsWith("──")) {
-      codeEnd = index;
-      break;
-    }
-  }
-  while (codeEnd > codeStart && lines[codeEnd - 1] === "") codeEnd -= 1;
-  return { commandInputEnd, codeStart, codeEnd };
-}
-
 export interface LineSearch {
   readonly matches: readonly PagerMatch[];
   readonly active: number;
@@ -65,11 +38,15 @@ export function buildPagerRows(input: {
   readonly isSubagent: boolean;
   readonly highlightPath: string;
   readonly wrapRows?: boolean | undefined;
+  readonly regions?: PagerBodyRegions | undefined;
 }): PagerRow[] {
   const { display, lines, contentCols, useDiffGutters, isSubagent, highlightPath } = input;
   const rows: PagerRow[] = [];
   const carry = emptyCarry();
-  const regions = display.mode === "plain" ? toolBodyRegions(lines, highlightPath) : undefined;
+  const regions = display.mode === "plain" ? input.regions : undefined;
+  const inputEnd = regions?.inputEnd ?? 0;
+  const codeStart = highlightPath ? regions?.codeStart : undefined;
+  const codeEnd = regions?.codeEnd ?? lines.length;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
     if (display.mode === "markdown") {
@@ -113,12 +90,12 @@ export function buildPagerRows(input: {
       });
       continue;
     }
-    const tone = regions && index < regions.commandInputEnd ? "input" : undefined;
-    const highlightCode =
-      regions !== undefined &&
-      highlightPath !== "" &&
-      index >= regions.codeStart &&
-      index < regions.codeEnd;
+    const tone = index < inputEnd ? "input" : undefined;
+    const spans =
+      codeStart !== undefined && index >= codeStart && index < codeEnd
+        ? highlightLineForPath(line, highlightPath, carry)
+        : undefined;
+    let spanOffset = 0;
     wrapPagerLine(line, contentCols, { preserveWhitespace: true }).forEach((chunk, part) => {
       rows.push({
         key: `${index}-${part}`,
@@ -126,8 +103,9 @@ export function buildPagerRows(input: {
         line: chunk,
         kind: "plain",
         ...(tone ? { tone } : {}),
-        ...(highlightCode ? { spans: highlightLineForPath(chunk, highlightPath, carry) } : {}),
+        ...(spans ? { spans: slicePagerSpans(spans, spanOffset, chunk.length) } : {}),
       });
+      spanOffset += chunk.length;
     });
   }
   return rows;

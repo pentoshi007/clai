@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  boundArgsRows,
   clampArgsDisplay,
   presentTool,
 } from "../../../src/ui-core/rendering/tool-presenter.js";
@@ -65,5 +66,26 @@ describe("scrollbar segments do not overlap", () => {
     const segments = scrollbarSegments({ top: 8, size: 9 }, 10);
     expect(segments.thumb).toBe(2);
     expect(segments.above + segments.thumb + segments.below).toBe(10);
+  });
+});
+
+describe("inline shell.exec input is bounded to three visual rows", () => {
+  it("wraps a single very long command into at most three rows plus a pager hint", () => {
+    const rows = boundArgsRows(`python3 -c '${"x = 1; ".repeat(400)}'`, 40).split("\n");
+    expect(rows).toHaveLength(4);
+    for (const row of rows.slice(0, 3)) expect(row.length).toBeLessThanOrEqual(40);
+    expect(rows[3]).toBe("··· click for full ···");
+  });
+
+  it("counts lines hidden by wrapping into the existing more-lines hint", () => {
+    const presented = clampArgsDisplay(["a".repeat(100), "second", "third", "fourth", "fifth"].join("\n"))!;
+    const rows = boundArgsRows(presented, 40).split("\n");
+    expect(rows).toHaveLength(4);
+    expect(rows[3]).toBe("··· +4 more lines · click for full ···");
+  });
+
+  it("leaves short commands untouched", () => {
+    expect(boundArgsRows("npm run build", 40)).toBe("npm run build");
+    expect(boundArgsRows("a\nb\nc", 40)).toBe("a\nb\nc");
   });
 });
