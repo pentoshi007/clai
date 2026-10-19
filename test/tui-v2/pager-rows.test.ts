@@ -24,6 +24,41 @@ describe("continuous pager rows", () => {
     }
   });
 
+  it("marks the shell.exec command block as input and leaves output untoned", () => {
+    const lines = ["command: for f in *; do", "  echo $f", "done", "", "file1.txt", "file2.txt"];
+    const rows = buildPagerRows({
+      display: { mode: "plain", lines: lines.map((plain) => ({ plain })) },
+      lines, contentCols: 80, useDiffGutters: false, isSubagent: false, highlightPath: "",
+    });
+    const toneByIndex = new Map(rows.map((row) => [row.index, row.tone]));
+    expect(toneByIndex.get(0)).toBe("input");
+    expect(toneByIndex.get(1)).toBe("input");
+    expect(toneByIndex.get(2)).toBe("input");
+    expect(toneByIndex.get(4)).toBeUndefined();
+    expect(toneByIndex.get(5)).toBeUndefined();
+    expect(rows.every((row) => row.spans === undefined)).toBe(true);
+  });
+
+  it("syntax-highlights fs.read file body but not its header or trailing note", () => {
+    const lines = [
+      "file: /tmp/sample.ts", "", "const answer = 42;", "function greet() {}", "",
+      "── full file ──", "/tmp/sample.ts",
+    ];
+    const rows = buildPagerRows({
+      display: { mode: "plain", lines: lines.map((plain) => ({ plain })) },
+      lines, contentCols: 80, useDiffGutters: true, isSubagent: false, highlightPath: "/tmp/sample.ts",
+    });
+    const byIndex = (index: number) => rows.find((row) => row.index === index)!;
+    const codeSpans = byIndex(2).spans;
+    expect(codeSpans?.some((span) => span.kind === "keyword")).toBe(true);
+    expect(codeSpans?.some((span) => span.kind === "number")).toBe(true);
+    expect(byIndex(3).spans?.some((span) => span.kind === "keyword")).toBe(true);
+    expect(byIndex(0).spans).toBeUndefined();
+    expect(byIndex(5).spans).toBeUndefined();
+    expect(byIndex(6).spans).toBeUndefined();
+    expect(rows.every((row) => row.tone === undefined)).toBe(true);
+  });
+
   it("bounds mounting at every scroll position and clamps a shrinking transcript", () => {
     for (const top of [0, 500, 100_000]) {
       const window = pagerRowWindow(100_000, top, 30);

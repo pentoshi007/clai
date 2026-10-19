@@ -19,6 +19,35 @@ export interface PagerRow {
   readonly kind: PagerRowKind;
   readonly textOffset?: number | undefined;
   readonly spans?: readonly SyntaxSpan[] | undefined;
+  readonly tone?: "input" | undefined;
+}
+
+const TOOL_HEADER = /^(command|file|path|query): /;
+
+interface ToolBodyRegions {
+  readonly commandInputEnd: number;
+  readonly codeStart: number;
+  readonly codeEnd: number;
+}
+
+function toolBodyRegions(lines: readonly string[], highlightPath: string): ToolBodyRegions {
+  const header = TOOL_HEADER.exec(lines[0] ?? "");
+  let headerEnd = 0;
+  if (header) {
+    const blank = lines.findIndex((line, index) => index > 0 && line.length === 0);
+    headerEnd = blank < 0 ? lines.length : blank;
+  }
+  const commandInputEnd = header?.[1] === "command" && highlightPath === "" ? headerEnd : 0;
+  const codeStart = header ? Math.min(lines.length, headerEnd + 1) : 0;
+  let codeEnd = lines.length;
+  for (let index = codeStart; index < lines.length; index += 1) {
+    if (lines[index]!.startsWith("──")) {
+      codeEnd = index;
+      break;
+    }
+  }
+  while (codeEnd > codeStart && lines[codeEnd - 1] === "") codeEnd -= 1;
+  return { commandInputEnd, codeStart, codeEnd };
 }
 
 export interface LineSearch {
@@ -40,6 +69,7 @@ export function buildPagerRows(input: {
   const { display, lines, contentCols, useDiffGutters, isSubagent, highlightPath } = input;
   const rows: PagerRow[] = [];
   const carry = emptyCarry();
+  const regions = display.mode === "plain" ? toolBodyRegions(lines, highlightPath) : undefined;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
     if (display.mode === "markdown") {
@@ -83,8 +113,21 @@ export function buildPagerRows(input: {
       });
       continue;
     }
+    const tone = regions && index < regions.commandInputEnd ? "input" : undefined;
+    const highlightCode =
+      regions !== undefined &&
+      highlightPath !== "" &&
+      index >= regions.codeStart &&
+      index < regions.codeEnd;
     wrapPagerLine(line, contentCols, { preserveWhitespace: true }).forEach((chunk, part) => {
-      rows.push({ key: `${index}-${part}`, index, line: chunk, kind: "plain" });
+      rows.push({
+        key: `${index}-${part}`,
+        index,
+        line: chunk,
+        kind: "plain",
+        ...(tone ? { tone } : {}),
+        ...(highlightCode ? { spans: highlightLineForPath(chunk, highlightPath, carry) } : {}),
+      });
     });
   }
   return rows;
