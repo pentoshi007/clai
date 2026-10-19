@@ -5,7 +5,7 @@ import { ClassicApp } from "../../../src/classic/app/ClassicApp.js";
 import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
 import { hydrateFromClassicTranscript } from "../../../src/ui-core/state/transcript-hydrate.js";
 import { createHarness } from "./harness.js";
-import { savedChanges, savedChangeTranscript } from "../../fixtures/session-changes.js";
+import { diffedChangeTranscript, savedChanges, savedChangeTranscript } from "../../fixtures/session-changes.js";
 
 describe("Classic session changes", () => {
   it.each([120, 80, 40])("renders saved run totals and /changes at %s columns", async (columns) => {
@@ -40,6 +40,32 @@ describe("Classic session changes", () => {
       h.wiring.handleData("\r");
       await expect.poll(frame).toContain("No line changes recorded in this session.");
       expect(frame()).not.toContain("+218 -436");
+    } finally { view.unmount(); h.dispose(); }
+  });
+
+  it.each([120, 60])("lists each changed file's counts and full diff below the summary at %s columns", async (columns) => {
+    const h = createHarness({ columns, rows: 40, commands: true });
+    h.services.session.loadHistory([], { sessionId: `diffed-change-${columns}`, transcript: diffedChangeTranscript });
+    h.services.transcript.hydrate(hydrateFromClassicTranscript(diffedChangeTranscript).state);
+    const view = render(createElement(ServicesProvider, {
+      services: h.services, children: createElement(ClassicApp, { wiring: h.wiring }),
+    }));
+    const frame = () => view.lastFrame()?.replace(/[│║]/g, "").replace(/\s+/g, " ") ?? "";
+    try {
+      h.wiring.composer.setText("/changes");
+      h.wiring.handleData("\r");
+      await expect.poll(frame).toContain("Session changes");
+      await expect.poll(frame).toContain("+1 -1 /repo/src/answer.ts");
+      await expect.poll(frame).toContain("+2 -0 /repo/tools/run.py");
+      const pager = h.services.overlay.getState();
+      expect(pager.kind === "pager" && pager.source?.diffLines).toBe(true);
+      h.wiring.handleData("\x1b[F");
+      await expect.poll(frame).toContain("edit · /repo/src/answer.ts");
+      await expect.poll(frame).toContain("7 - const v6 = 6;");
+      await expect.poll(frame).toContain("7 + const answer = 42;");
+      await expect.poll(frame).toContain("create · /repo/tools/run.py");
+      await expect.poll(frame).toContain("1 + def run():");
+      expect(frame()).not.toContain("diff not kept");
     } finally { view.unmount(); h.dispose(); }
   });
 });
