@@ -46,6 +46,22 @@ afterEach(async () => {
   vi.resetModules();
 });
 
+async function inFakeTime<T>(work: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  try {
+    let settled = false;
+    const result = work().finally(() => { settled = true; });
+    result.catch(() => undefined);
+    while (!settled) {
+      await new Promise((resolve) => setImmediate(resolve));
+      await vi.advanceTimersByTimeAsync(250);
+    }
+    return await result;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 function deadPid(): number {
   for (let pid = 4_000_000; pid < 4_100_000; pid += 1) {
     try {
@@ -83,11 +99,11 @@ describe("jsonl write lock", () => {
       `${process.pid}-${Date.now()}-live`,
     );
 
-    await expect(acquireJsonlWriteLock()).rejects.toThrow(
+    await expect(inFakeTime(() => acquireJsonlWriteLock())).rejects.toThrow(
       "timed out waiting for history write lock",
     );
     await first();
-  }, 60_000);
+  });
 });
 
 describe("jsonl write lock ownership evidence", () => {
@@ -150,12 +166,12 @@ describe("jsonl write lock ownership evidence", () => {
     const { acquireStorageWriteLock } = await import("../src/store/history/jsonl-lock.js");
     const held = await acquireStorageWriteLock(join(dataDir, "journal.lock"), "prompt journal");
     try {
-      await expect(acquireStorageWriteLock(join(dataDir, "journal.lock"), "prompt journal"))
+      await expect(inFakeTime(() => acquireStorageWriteLock(join(dataDir, "journal.lock"), "prompt journal")))
         .rejects.toThrow("timed out waiting for prompt journal write lock");
     } finally {
       await held();
     }
-  }, 60_000);
+  });
 });
 
 describe("queued history writes", () => {
@@ -168,13 +184,13 @@ describe("queued history writes", () => {
       "../src/store/history/jsonl-backend.js"
     );
 
-    const outcome = await queueJsonlWrite(
+    const outcome = await inFakeTime(() => queueJsonlWrite(
       async () => "written",
       () => "fallback",
-    );
+    ));
     expect(outcome).toBe("fallback");
     await first();
-  }, 60_000);
+  });
 });
 
 describe("clearAllHistory", () => {
@@ -187,9 +203,9 @@ describe("clearAllHistory", () => {
       "../src/store/history/lifecycle.js"
     );
 
-    const result = await clearAllHistory();
+    const result = await inFakeTime(() => clearAllHistory());
     expect(result.cleared).toBe(true);
     expect(result.detail).toContain("timed out waiting for history write lock");
     await first();
-  }, 60_000);
+  });
 });
