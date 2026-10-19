@@ -12,6 +12,8 @@ import type {
   SaveSessionOptions,
 } from "../ports/persistence-port.js";
 
+export { mintSessionId } from "./session-id.js";
+
 export function hasPersistableHistory(
   messages: readonly ChatMessage[],
 ): boolean {
@@ -109,10 +111,6 @@ export class SessionPersistenceQueue {
       this.writing = false;
     }
   }
-}
-
-export function mintSessionId(): string {
-  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function pathBackedMessages(messages: readonly ChatMessage[]): ChatMessage[] {

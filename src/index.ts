@@ -5,30 +5,8 @@ import { fileURLToPath } from "node:url";
 import type { Mode, ProviderId } from "./types.js";
 
 const CLAI_ENTRY = fileURLToPath(import.meta.url);
-import { resolveTurnInput } from "./attachments/service.js";
-import { startNoninteractive } from "./noninteractive/start-noninteractive.js";
 import { readStdinText } from "./noninteractive/read-stdin.js";
-import {
-  providerSwitcher,
-  printProviderKeys,
-  setProviderKey,
-  unsetProviderKey,
-  useProvider,
-  ensureProviderConfigured,
-  authCline,
-  authOmnirush,
-  authCodex,
-  authCopilot,
-  authKiro,
-  authFreebuff,
-  authQoder,
-} from "./commands/providers.js";
-import { runDoctor } from "./commands/doctor.js";
-import {
-  runUpdate,
-  checkForUpdateSilent,
-  getCurrentVersion,
-} from "./commands/update.js";
+import { getCurrentVersion } from "./commands/current-version.js";
 import {
   getConfig,
   getConfigPath,
@@ -39,7 +17,6 @@ import {
 } from "./store/config.js";
 import { assertProvider } from "./llm/provider.js";
 import { parsePermissionMode, permissionModeLabel } from "./safety/permission-mode.js";
-import { listSessionSummaries, getSession } from "./store/history.js";
 import { canUseTui } from "./ui-core/bootstrap/can-use-tui.js";
 import {
   isBunRuntime,
@@ -51,12 +28,10 @@ import {
   UI_FLAG_CHOICES,
   resolveUiChoice,
 } from "./ui-core/bootstrap/ui-selection.js";
-import { resolveResumeOption, type ResumeTarget } from "./ui-core/bootstrap/session-resume.js";
-import { resumeCommand } from "./ui-core/rendering/exit-summary.js";
+import { resolveResumeOption, type ResumeTarget } from "./ui-core/bootstrap/resume-option.js";
 import { warnOnce } from "./ui/warn-once.js";
 import { tryRunDurableInteractive } from "./session-runtime/client.js";
-import { runRuntimeHostFromEnvironment } from "./session-runtime/host.js";
-import { isIndependentRuntimeChild, runtimeChildSessionId } from "./session-runtime/launch.js";
+import { RUNTIME_HOST_ENV, isIndependentRuntimeChild, runtimeChildSessionId } from "./session-runtime/launch.js";
 import { listLiveSessionRuntimes } from "./session-runtime/discovery.js";
 
 interface GlobalOptions {
@@ -203,6 +178,7 @@ async function oneShot(
     );
   }
 
+  const { resolveTurnInput } = await import("./attachments/service.js");
   const resolved = resolveTurnInput({
     prompt,
     mode,
@@ -215,6 +191,7 @@ async function oneShot(
   for (const issue of resolved.imageIssues) {
     console.error(chalk.yellow(`  ${issue}`));
   }
+  const { startNoninteractive } = await import("./noninteractive/start-noninteractive.js");
   const result = await startNoninteractive({
     prompt: resolved.prompt,
     historyPrompt: prompt,
@@ -239,7 +216,10 @@ function printError(error: unknown): void {
 }
 
 async function main(): Promise<void> {
-  if (await runRuntimeHostFromEnvironment()) return;
+  if (process.env[RUNTIME_HOST_ENV]) {
+    const { runRuntimeHostFromEnvironment } = await import("./session-runtime/host.js");
+    if (await runRuntimeHostFromEnvironment()) return;
+  }
   const program = new Command();
 
   program
@@ -404,6 +384,7 @@ async function main(): Promise<void> {
           skipPing?: boolean | undefined;
         },
       ) => {
+        const { setProviderKey } = await import("./commands/providers.js");
         await setProviderKey(provider, apiKey, options);
       },
     );
@@ -414,6 +395,7 @@ async function main(): Promise<void> {
     .argument("<provider>", "provider id")
     .option("--url", "remove the stored endpoint URLs instead of the keys")
     .action(async (provider: string, options: { url?: boolean | undefined }) => {
+      const { unsetProviderKey } = await import("./commands/providers.js");
       await unsetProviderKey(provider, options);
     });
 
@@ -421,6 +403,7 @@ async function main(): Promise<void> {
     .command("keys")
     .description("list configured providers with masked keys")
     .action(async () => {
+      const { printProviderKeys } = await import("./commands/providers.js");
       await printProviderKeys();
     });
 
@@ -429,6 +412,7 @@ async function main(): Promise<void> {
     .description("set the active default provider")
     .argument("<provider>", "provider id")
     .action(async (provider: string) => {
+      const { useProvider } = await import("./commands/providers.js");
       await useProvider(provider);
     });
 
@@ -437,6 +421,7 @@ async function main(): Promise<void> {
     .description("switch provider or open interactive provider picker")
     .argument("[provider]", "provider id")
     .action(async (provider?: string) => {
+      const { providerSwitcher } = await import("./commands/providers.js");
       await providerSwitcher(provider);
     });
 
@@ -475,6 +460,7 @@ async function main(): Promise<void> {
     .command("doctor")
     .description("check dependencies and provider configuration")
     .action(async () => {
+      const { runDoctor } = await import("./commands/doctor.js");
       await runDoctor();
     });
 
@@ -498,6 +484,8 @@ async function main(): Promise<void> {
           pat?: boolean | undefined;
         },
       ) => {
+        const { authCline, authCodex, authCopilot, authFreebuff, authKiro, authOmnirush, authQoder } =
+          await import("./commands/providers.js");
         const id = provider.trim().toLowerCase();
         if (
           id === "codex" ||
@@ -567,6 +555,8 @@ async function main(): Promise<void> {
     .description("list saved sessions")
     .option("--show <sessionId>", "print a saved session")
     .action(async (options: { show?: string | undefined }) => {
+      const { getSession, listSessionSummaries } = await import("./store/history.js");
+      const { resumeCommand } = await import("./ui-core/rendering/exit-summary.js");
       if (options.show) {
         const session = await getSession(options.show);
         if (!session) throw new Error(`No session found: ${options.show}`);
@@ -610,6 +600,7 @@ async function main(): Promise<void> {
     .command("update")
     .description("update the active installation and verify the result")
     .action(async () => {
+      const { runUpdate } = await import("./commands/update.js");
       await runUpdate();
     });
 

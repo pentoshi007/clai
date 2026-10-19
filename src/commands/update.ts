@@ -1,9 +1,6 @@
 import chalk from "chalk";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { getConfig, updateConfig } from "../store/config.js";
-import { VERSION as GENERATED_VERSION } from "../version.generated.js";
+import { getCurrentVersion } from "./current-version.js";
 import {
   detectInstallMethod,
   performUpdate,
@@ -15,47 +12,17 @@ import {
 } from "./update-install.js";
 
 import { fetchLatestRelease } from "./update/metadata.js";
-import { compareVersions, releaseVersion } from "./update/verification.js";
+import { compareVersions } from "./update/verification.js";
 
-/**
- * Version resolution order:
- * 1. package.json (dev / npm install) — always matches the checkout
- * 2. src/version.generated.ts — baked into bun --compile binaries
- *
- * Humans only edit package.json; run `npm run sync-version` (also via
- * build/pretest) to refresh the generated constant and install manifests.
- */
-function resolvePackageVersion(): string {
-  try {
-    let dir = dirname(fileURLToPath(import.meta.url));
-    for (let i = 0; i < 6; i += 1) {
-      try {
-        const pkg: unknown = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-        if (pkg && typeof pkg === "object" && "name" in pkg && pkg.name === "@pentoshi/clai" && "version" in pkg) {
-          const version = releaseVersion(pkg.version);
-          if (version) return version;
-        }
-      } catch {
-      }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  } catch {
-  }
-  return GENERATED_VERSION;
-}
+export { getCurrentVersion };
 
-const CURRENT_VERSION = resolvePackageVersion();
+const CURRENT_VERSION = getCurrentVersion();
+
 export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = UPDATE_CHECK_INTERVAL_MS;
 
 function isNewer(remote: string, local: string): boolean {
   return compareVersions(remote, local) > 0;
-}
-
-export function getCurrentVersion(): string {
-  return CURRENT_VERSION;
 }
 
 export async function fetchLatestVersion(signal?: AbortSignal): Promise<string | undefined> {
