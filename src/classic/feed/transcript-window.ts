@@ -121,12 +121,16 @@ function sliceRows(
   return rows;
 }
 
-function measureFromBottom(blocks: readonly FeedBlock[], rows: number): void {
+function measureFromBottom(blocks: readonly FeedBlock[], below: number, viewportRows: number): void {
+  const rows = below + viewportRows;
   let covered = 0;
   for (let index = blocks.length - 1; index >= 0 && covered < rows; index -= 1) {
     const block = blocks[index]!;
-    const rows = block.layoutPending && block.measure ? block.measure() : blockRows(block);
-    covered += rows + gapAfter(blocks, index);
+    let height = blockRows(block);
+    if (block.layoutPending) {
+      height = covered >= below || !block.measure ? block.lines.length : block.measure();
+    }
+    covered += height + gapAfter(blocks, index);
   }
 }
 
@@ -144,7 +148,7 @@ export function planTranscriptWindow(
 ): TranscriptWindow {
   const viewportRows = Math.max(0, Math.floor(budget));
   const requestedOffset = Math.max(0, Math.floor(offsetFromBottom));
-  measureFromBottom(blocks, Math.min(Number.MAX_SAFE_INTEGER, requestedOffset + viewportRows));
+  measureFromBottom(blocks, requestedOffset, viewportRows);
   const index = transcriptIndex(blocks);
   const totalRows = index.totalRows;
   const maxOffset = Math.max(0, totalRows - viewportRows);
