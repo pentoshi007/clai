@@ -167,7 +167,7 @@ describe('compaction sees the end of the session', () => {
     const prompt = buildCompactionUserPrompt({ messageTranscript: 'x' });
 
     expect(prompt).toContain('RECENCY');
-    expect(prompt).toMatch(/NEVER list completed work under Remaining work/);
+    expect(prompt).toMatch(/NEVER list completed work under Next steps/);
     expect(prompt).toMatch(/reverted, replaced, or abandoned/);
   });
 });

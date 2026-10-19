@@ -16,8 +16,8 @@ function expectSubagentIdentity(prompt: string): void {
   expect(prompt).toContain("status");
   expect(prompt).toContain("result");
   expect(prompt).toContain("pending");
-  expect(prompt).toContain("subagent.read");
-  expect(prompt).toContain("subagent.list");
+  expect(prompt).toContain("recoverable later by id and attempt");
+  expect(prompt).not.toMatch(/\bsubagent\.(?:read|list)\b/);
   expect(prompt).toContain("separately");
   expect(prompt).not.toContain("- Delegated work:");
 }
