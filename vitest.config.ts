@@ -3,7 +3,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    maxWorkers: Math.min(4, availableParallelism()),
+    maxWorkers: process.env.CI ? Math.min(4, availableParallelism()) : Math.max(1, availableParallelism() - 1),
     // Nested agent worktrees are ignored project artifacts, not part of this
     // checkout's test matrix. Without this exclusion Vitest discovers stale
     // copies with independently generated version metadata.
