@@ -3,6 +3,7 @@ import {
   TOAST_BOX_HEIGHT,
   TOAST_HIDDEN_TOP,
   TOAST_REST_TOP,
+  nextToastFrameDelay,
   toastAnimAt,
 } from "../../src/tui-v2/components/toast/toast-anim.js";
 import { easeInCubic, easeOutCubic } from "../../src/ui-core/motion/ease.js";
@@ -60,5 +61,25 @@ describe("toast animation", () => {
 
   it("box height matches hidden offset", () => {
     expect(TOAST_HIDDEN_TOP).toBe(-TOAST_BOX_HEIGHT);
+  });
+});
+
+describe("toast frame scheduling", () => {
+  const frame = 33;
+
+  it("animates entry and exit at frame rate and sleeps through the hold", () => {
+    const item = { createdAt: 0, durationMs: 2000 };
+    expect(nextToastFrameDelay([item], 50, frame)).toBe(frame);
+    expect(nextToastFrameDelay([item], TOAST_ENTER_MS + 100, frame)).toBe(2000 - 100);
+    expect(nextToastFrameDelay([item], TOAST_ENTER_MS + 2000 + 10, frame)).toBe(frame);
+    expect(nextToastFrameDelay([item], TOAST_ENTER_MS + 2000 + TOAST_EXIT_MS, frame)).toBeUndefined();
+  });
+
+  it("never wakes for a settled sticky toast and follows the soonest of several", () => {
+    const sticky = { createdAt: 0, durationMs: 2000, sticky: true };
+    expect(nextToastFrameDelay([sticky], TOAST_ENTER_MS + 5000, frame)).toBeUndefined();
+    const entering = { createdAt: TOAST_ENTER_MS + 4990, durationMs: 1000 };
+    expect(nextToastFrameDelay([sticky, entering], TOAST_ENTER_MS + 5000, frame)).toBe(frame);
+    expect(nextToastFrameDelay([], 0, frame)).toBeUndefined();
   });
 });
