@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { FREEBUFF_API_BASE_URL } from "./freebuff-auth.js";
+import {
+  freebuffDeviceHeaders,
+  freebuffForgetDeviceKeyRegistration,
+  isFreebuffDeviceKeyError,
+} from "./freebuff-device-key.js";
+import {
+  FREEBUFF_CATALOG_FETCH_HEADER,
+  FREEBUFF_CATALOG_PROTOCOL,
+  FREEBUFF_CATALOG_PROTOCOL_HEADER,
+} from "./freebuff-models.js";
+import { freebuffClientHeaders, freebuffPlainHeaders } from "./freebuff-wire.js";
 import { ProviderError } from "./http.js";
 
 export const FREEBUFF_CLI_CLAIM_PREFIX = "cli:";
@@ -23,8 +34,6 @@ export function freebuffHeartbeatRetryDelay(failures: number, retryAfterMs?: num
 const SESSION_FETCH_TIMEOUT_MS = 20_000;
 
 const HEADER = {
-  timezone: "x-fb-timezone",
-  firstTabDiscount: "x-freebuff-first-tab-discount",
   multiSession: "x-freebuff-multi-session",
   purchaseContinuity: "x-freebuff-purchase-continuity",
   desktopAttempt: "x-freebuff-desktop-attempt-id",
@@ -105,14 +114,6 @@ export function freebuffSessionMetadata(instanceId: string): Record<string, stri
   };
 }
 
-function timezoneHeader(): Record<string, string> {
-  try {
-    return { [HEADER.timezone]: Intl.DateTimeFormat().resolvedOptions().timeZone };
-  } catch {
-    return {};
-  }
-}
-
 function sessionFetchSignal(signal: AbortSignal | undefined): AbortSignal {
   const timeout = AbortSignal.timeout(SESSION_FETCH_TIMEOUT_MS);
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -129,23 +130,24 @@ function parseRetryAfterMs(value: string | null, nowMs = Date.now()): number | u
 export interface FreebuffSessionCallOptions {
   readonly instanceId?: string | undefined;
   readonly model?: string | undefined;
-  readonly walletSpendLimit?: number | undefined;
   readonly compact?: boolean | undefined;
   readonly heartbeat?: boolean | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly baseUrl?: string | undefined;
   readonly fetch?: typeof fetch | undefined;
+  readonly catalog?: { readonly fetchId?: string | undefined } | undefined;
 }
 
-function admissionHeaders(
+async function admissionHeaders(
   method: FreebuffSessionMethod,
   token: string,
+  url: string,
   opts: FreebuffSessionCallOptions,
-): Record<string, string> {
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${token}`,
-    ...timezoneHeader(),
-    [HEADER.firstTabDiscount]: "0",
+    ...freebuffClientHeaders(),
+    ...freebuffPlainHeaders(),
   };
   const attemptId = freebuffCliAttemptId(opts.instanceId);
   const multiSession = Boolean(attemptId);
@@ -164,7 +166,20 @@ function admissionHeaders(
   if (method === "GET" && opts.compact) headers[HEADER.compactSession] = "1";
   if (method === "POST") {
     if (opts.model) headers[HEADER.model] = opts.model;
-    headers[HEADER.walletSpendLimit] = String(opts.walletSpendLimit ?? 0);
+    headers[HEADER.walletSpendLimit] = "session";
+  }
+  if (opts.catalog) {
+    headers[FREEBUFF_CATALOG_PROTOCOL_HEADER] = FREEBUFF_CATALOG_PROTOCOL;
+    if (opts.catalog.fetchId) headers[FREEBUFF_CATALOG_FETCH_HEADER] = opts.catalog.fetchId;
+    Object.assign(
+      headers,
+      await freebuffDeviceHeaders({
+        token,
+        method,
+        url,
+        ...(opts.catalog.fetchId !== undefined ? { fetchId: opts.catalog.fetchId } : {}),
+      }),
+    );
   }
   return headers;
 }
@@ -205,9 +220,10 @@ export async function callFreebuffSession(
 ): Promise<FreebuffSessionResponse> {
   const fetchImpl = opts.fetch ?? fetch;
   const base = opts.baseUrl ?? FREEBUFF_API_BASE_URL;
-  const response = await fetchImpl(endpointFor(method, base, opts.instanceId), {
+  const url = endpointFor(method, base, opts.instanceId);
+  const response = await fetchImpl(url, {
     method,
-    headers: admissionHeaders(method, token, opts),
+    headers: await admissionHeaders(method, token, url, opts),
     signal: sessionFetchSignal(opts.signal),
   });
   if (method === "POST" && (response.status === 404 || response.status === 405)) {
@@ -230,13 +246,16 @@ export async function callFreebuffSession(
     return parsed;
   }
   if (!response.ok) {
+    const errorCode =
+      typeof (parsed as unknown as { error?: unknown })?.error === "string"
+        ? (parsed as unknown as { error: string }).error
+        : undefined;
+    if (isFreebuffDeviceKeyError(errorCode)) freebuffForgetDeviceKeyRegistration(token, url);
     throw new FreebuffSessionRequestError(
       `Freebuff session ${method} failed (${response.status}).`,
       response.status,
       parseRetryAfterMs(response.headers.get("retry-after")),
-      typeof (parsed as unknown as { error?: unknown })?.error === "string"
-        ? (parsed as unknown as { error: string }).error
-        : undefined,
+      errorCode,
     );
   }
   throw new ProviderError(`Freebuff session ${method} returned an unrecognized response.`);

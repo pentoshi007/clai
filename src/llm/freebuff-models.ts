@@ -1,9 +1,20 @@
 import { createHash } from "node:crypto";
-import { callFreebuffSession, type FreebuffSessionResponse } from "./freebuff-session-api.js";
+import { FREEBUFF_API_BASE_URL } from "./freebuff-auth.js";
+import {
+  freebuffDeviceHeaders,
+  freebuffForgetDeviceKeyRegistration,
+  isFreebuffDeviceKeyError,
+} from "./freebuff-device-key.js";
 
-export const FREEBUFF_CATALOG_VERSION = 1;
+const CATALOG_PATH = "/api/v1/freebuff/models";
+export const FREEBUFF_CATALOG_PROTOCOL = "1";
+export const FREEBUFF_CATALOG_PROTOCOL_HEADER = "x-freebuff-catalog-protocol";
+export const FREEBUFF_CATALOG_FETCH_HEADER = "x-freebuff-catalog-fetch";
+export const FREEBUFF_CATALOG_CLIENT = "cli";
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const CATALOG_TIMEOUT_MS = 20_000;
+const MAX_CACHED_ACCOUNTS = 10;
 
 export const FREEBUFF_STATIC_MODEL_IDS: readonly string[] = [
   "anthropic/claude-fable-5.1",
@@ -70,46 +81,188 @@ export const FREEBUFF_STATIC_MODEL_IDS: readonly string[] = [
   "z-ai/glm-5.3-prime",
 ];
 
-function collectKeys(value: unknown, into: Set<string>): void {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return;
-  for (const key of Object.keys(value as Record<string, unknown>)) {
-    if (key.trim()) into.add(key.trim());
-  }
+export interface FreebuffCatalogRow {
+  readonly key: string;
+  readonly handle: string;
+  readonly access: string | undefined;
+  readonly opensAt: number | undefined;
 }
 
-function planRequiredIds(freebucks: unknown): Set<string> {
-  const required = new Set<string>();
-  const ids = (freebucks as { planRequiredModelIds?: unknown } | null | undefined)?.planRequiredModelIds;
-  if (Array.isArray(ids)) {
-    for (const id of ids) {
-      if (typeof id === "string" && id.trim()) required.add(id.trim());
-    }
-  }
-  return required;
+export interface FreebuffCatalogSnapshot {
+  readonly version: string | undefined;
+  readonly fetchId: string | undefined;
+  readonly rows: readonly FreebuffCatalogRow[];
 }
 
-function zeroPriceIds(freebucks: unknown): Set<string> {
-  const free = new Set<string>();
-  const prices = (freebucks as { prices?: unknown } | null | undefined)?.prices;
-  if (!prices || typeof prices !== "object" || Array.isArray(prices)) return free;
-  for (const [id, price] of Object.entries(prices as Record<string, unknown>)) {
-    if (id.trim() && price === 0) free.add(id.trim());
-  }
-  return free;
+interface CachedCatalog {
+  readonly snapshot: FreebuffCatalogSnapshot;
+  readonly fetchedAt: number;
 }
 
-export function visibleFreebuffModelIds(response: FreebuffSessionResponse): string[] {
-  const record = response as {
-    readonly model?: unknown;
-    readonly rateLimitsByModel?: unknown;
-    readonly freebucks?: unknown;
+export interface FreebuffCatalogDeps {
+  readonly fetch?: typeof fetch | undefined;
+  readonly baseUrl?: string | undefined;
+  readonly now?: (() => number) | undefined;
+}
+
+const cached = new Map<string, CachedCatalog>();
+const requestsInFlight = new Map<string, Promise<FreebuffCatalogSnapshot | null>>();
+
+function tokenCacheKey(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function catalogUrl(base: string): string {
+  return `${base.replace(/\/$/, "")}${CATALOG_PATH}`;
+}
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function parseSnapshot(payload: unknown): FreebuffCatalogSnapshot | null {
+  const record = recordOf(payload);
+  if (!record || record.protocol !== 1 || !Array.isArray(record.rows)) return null;
+  const rows: FreebuffCatalogRow[] = [];
+  for (const raw of record.rows) {
+    const row = recordOf(raw);
+    const key = row?.key;
+    const handle = row?.handle;
+    if (typeof key !== "string" || !key.trim() || typeof handle !== "string" || !handle.trim()) continue;
+    rows.push({
+      key: key.trim(),
+      handle: handle.trim(),
+      access: typeof row?.access === "string" ? row.access : undefined,
+      opensAt: typeof row?.opensAt === "number" && Number.isFinite(row.opensAt) ? row.opensAt : undefined,
+    });
+  }
+  return {
+    version: typeof record.version === "string" ? record.version : undefined,
+    fetchId: typeof record.fetchId === "string" ? record.fetchId : undefined,
+    rows,
   };
-  const blocked = planRequiredIds(record.freebucks);
+}
+
+function cacheSnapshot(tokenHash: string, snapshot: FreebuffCatalogSnapshot, fetchedAt: number): void {
+  cached.delete(tokenHash);
+  cached.set(tokenHash, { snapshot, fetchedAt });
+  if (cached.size > MAX_CACHED_ACCOUNTS) {
+    const oldest = cached.keys().next().value;
+    if (oldest) cached.delete(oldest);
+  }
+}
+
+function pruneStaleEntries(now: number): void {
+  for (const [key, entry] of cached) {
+    if (now - entry.fetchedAt >= CACHE_TTL_MS) cached.delete(key);
+  }
+}
+
+async function requestCatalog(
+  token: string,
+  deps: FreebuffCatalogDeps,
+  signal: AbortSignal | undefined,
+  register: boolean,
+): Promise<FreebuffCatalogSnapshot | null> {
+  const url = catalogUrl(deps.baseUrl ?? FREEBUFF_API_BASE_URL);
+  const timeout = AbortSignal.timeout(CATALOG_TIMEOUT_MS);
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token}`,
+    [FREEBUFF_CATALOG_PROTOCOL_HEADER]: FREEBUFF_CATALOG_PROTOCOL,
+    "x-freebuff-client": FREEBUFF_CATALOG_CLIENT,
+    "user-agent": "Bun/1.3.14",
+    accept: "*/*",
+    "accept-encoding": "gzip, deflate, br",
+  };
+  const current = cached.get(tokenCacheKey(token))?.snapshot;
+  Object.assign(
+    headers,
+    await freebuffDeviceHeaders({
+      token,
+      method: "GET",
+      url,
+      ...(current?.fetchId !== undefined ? { fetchId: current.fetchId } : {}),
+      register,
+    }),
+  );
+  const response = await (deps.fetch ?? fetch)(url, { method: "GET", headers, signal: combined });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as unknown;
+    const error = (recordOf(payload)?.error);
+    if (typeof error === "string") {
+      if (isFreebuffDeviceKeyError(error)) freebuffForgetDeviceKeyRegistration(token, url);
+    }
+    return null;
+  }
+  return parseSnapshot(await response.json().catch(() => null));
+}
+
+async function loadCatalog(
+  token: string,
+  deps: FreebuffCatalogDeps,
+  signal: AbortSignal | undefined,
+  force: boolean,
+): Promise<FreebuffCatalogSnapshot | null> {
+  const tokenHash = tokenCacheKey(token);
+  const now = deps.now?.() ?? Date.now();
+  pruneStaleEntries(now);
+  const previous = cached.get(tokenHash);
+  if (!force && previous && now - previous.fetchedAt < CACHE_TTL_MS) return previous.snapshot;
+  const inflight = requestsInFlight.get(tokenHash);
+  if (inflight) return inflight;
+  const request = (async (): Promise<FreebuffCatalogSnapshot | null> => {
+    try {
+      const snapshot = await requestCatalog(token, deps, signal, Boolean(previous));
+      if (snapshot) cacheSnapshot(tokenHash, snapshot, deps.now?.() ?? Date.now());
+      return snapshot ?? previous?.snapshot ?? null;
+    } catch {
+      return previous?.snapshot ?? null;
+    }
+  })();
+  requestsInFlight.set(tokenHash, request);
+  try {
+    return await request;
+  } finally {
+    if (requestsInFlight.get(tokenHash) === request) requestsInFlight.delete(tokenHash);
+  }
+}
+
+export function freebuffCatalogSnapshot(
+  token: string,
+  deps: FreebuffCatalogDeps = {},
+): FreebuffCatalogSnapshot | undefined {
+  const now = deps.now?.() ?? Date.now();
+  pruneStaleEntries(now);
+  return cached.get(tokenCacheKey(token))?.snapshot;
+}
+
+export function freebuffCatalogHandle(
+  token: string,
+  model: string,
+  deps: FreebuffCatalogDeps = {},
+): string | undefined {
+  const snapshot = freebuffCatalogSnapshot(token, deps);
+  return snapshot?.rows.find((row) => row.key === model)?.handle;
+}
+
+export function refreshFreebuffCatalog(
+  token: string,
+  signal?: AbortSignal,
+  deps: FreebuffCatalogDeps = {},
+): Promise<FreebuffCatalogSnapshot | null> {
+  return loadCatalog(token, deps, signal, true);
+}
+
+export function visibleFreebuffCatalogModelIds(snapshot: FreebuffCatalogSnapshot, now = Date.now()): string[] {
   const ids = new Set<string>();
-  if (typeof record.model === "string" && record.model.trim()) ids.add(record.model.trim());
-  collectKeys(record.rateLimitsByModel, ids);
-  for (const id of zeroPriceIds(record.freebucks)) ids.add(id);
-  for (const id of blocked) ids.delete(id);
+  for (const row of snapshot.rows) {
+    if (row.access === "locked") continue;
+    if (row.opensAt !== undefined && row.opensAt > now) continue;
+    ids.add(row.key);
+  }
   return [...ids];
 }
 
@@ -122,70 +275,21 @@ export function mergeFreebuffModelIds(visible: readonly string[]): string[] {
   return [...merged].sort((a, b) => a.localeCompare(b));
 }
 
-interface CachedCatalog {
-  readonly tokenHash: string;
-  readonly modelIds: readonly string[];
-  readonly fetchedAt: number;
+export function freebuffStaticModelIds(): string[] {
+  return mergeFreebuffModelIds([]);
 }
-
-const cached = new Map<string, CachedCatalog>();
-const requestsInFlight = new Map<string, Promise<string[]>>();
-const MAX_CACHED_ACCOUNTS = 10;
 
 export function resetFreebuffCatalogCache(): void {
   cached.clear();
   requestsInFlight.clear();
 }
 
-function tokenCacheKey(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-function cacheCatalog(tokenHash: string, modelIds: readonly string[], fetchedAt: number): void {
-  cached.delete(tokenHash);
-  cached.set(tokenHash, { tokenHash, modelIds, fetchedAt });
-  if (cached.size > MAX_CACHED_ACCOUNTS) {
-    const oldest = cached.keys().next().value;
-    if (oldest) cached.delete(oldest);
-  }
-}
-
 export async function fetchFreebuffModelIds(
   token: string,
   signal?: AbortSignal,
+  deps: FreebuffCatalogDeps = {},
 ): Promise<string[]> {
-  const tokenHash = tokenCacheKey(token);
-  const now = Date.now();
-  const previous = cached.get(tokenHash);
-  if (previous && now - previous.fetchedAt < CACHE_TTL_MS) {
-    cached.delete(tokenHash);
-    cached.set(tokenHash, previous);
-    return [...previous.modelIds];
-  }
-  const inFlight = requestsInFlight.get(tokenHash);
-  if (inFlight) return [...(await inFlight)];
-
-  const request = (async (): Promise<string[]> => {
-    try {
-      const response = await callFreebuffSession("GET", token, { signal });
-      const visible = visibleFreebuffModelIds(response).sort((a, b) => a.localeCompare(b));
-      const modelIds = visible.length > 0 ? visible : freebuffStaticModelIds();
-      cacheCatalog(tokenHash, modelIds, Date.now());
-      return modelIds;
-    } catch {
-      return previous ? [...previous.modelIds] : freebuffStaticModelIds();
-    }
-  })();
-  requestsInFlight.set(tokenHash, request);
-  try {
-    return [...(await request)];
-  } finally {
-    if (requestsInFlight.get(tokenHash) === request) {
-      requestsInFlight.delete(tokenHash);
-    }
-  }
-}
-
-export function freebuffStaticModelIds(): string[] {
-  return mergeFreebuffModelIds([]);
+  const snapshot = await loadCatalog(token, deps, signal, false);
+  const ids = snapshot ? visibleFreebuffCatalogModelIds(snapshot).sort((a, b) => a.localeCompare(b)) : [];
+  return ids.length > 0 ? ids : freebuffStaticModelIds();
 }

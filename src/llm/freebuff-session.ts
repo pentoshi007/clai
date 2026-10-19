@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { freebuffCatalogHandle, freebuffCatalogSnapshot, refreshFreebuffCatalog } from "./freebuff-models.js";
 import { ProviderError } from "./http.js";
 import { settleWithin } from "../os/settle-within.js";
 import {
@@ -29,6 +30,17 @@ interface ActiveClaim {
 }
 
 type SessionDeps = Pick<FreebuffSessionCallOptions, "baseUrl" | "fetch">;
+
+const SESSION_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  session_superseded: "This Freebuff session has ended. Start a new session to try again.",
+  session_expired: "This Freebuff session has ended. Start a new session to try again.",
+  session_model_mismatch: "The active Freebuff session is locked to another model. End it before switching.",
+  session_limit_reached: "Your Freebuff concurrent-session limit is reached; end another session and retry.",
+  waiting_room_required: "Freebuff is holding this model behind a waiting room right now; retry shortly.",
+  waiting_room_queued: "Freebuff queued this request behind other users; retry shortly.",
+  model_at_capacity: "This Freebuff model is at capacity right now; retry shortly or pick another model.",
+  model_unavailable: "This Freebuff model is unavailable right now.",
+};
 
 function refusalMessage(response: FreebuffSessionResponse): string {
   switch (response.status) {
@@ -150,6 +162,48 @@ export class FreebuffSessionManager {
     return attempt;
   }
 
+  private catalog(token: string): { fetchId?: string | undefined } | undefined {
+    const snapshot = freebuffCatalogSnapshot(token);
+    return snapshot ? { fetchId: snapshot.fetchId } : undefined;
+  }
+
+  private admit(
+    token: string,
+    instanceId: string,
+    model: string,
+    signal: AbortSignal | undefined,
+  ): Promise<FreebuffSessionResponse> {
+    const catalog = this.catalog(token);
+    return callFreebuffSession("POST", token, {
+      ...this.deps,
+      instanceId,
+      model: freebuffCatalogHandle(token, model) ?? model,
+      ...(catalog ? { catalog } : {}),
+      signal,
+    });
+  }
+
+  private admissionError(error: unknown): unknown {
+    if (!(error instanceof FreebuffSessionRequestError)) return error;
+    const detail = (error.errorCode ? SESSION_ERROR_MESSAGES[error.errorCode] : undefined) ?? error.message;
+    return new ProviderError(
+      `Freebuff session admission failed (${error.statusCode}). ${detail}`,
+      error.statusCode,
+      undefined,
+      error.retryAfterMs ? Math.ceil(error.retryAfterMs / 1_000) : undefined,
+    );
+  }
+
+  private async releaseAttempt(token: string, instanceId: string, signal?: AbortSignal): Promise<void> {
+    const catalog = this.catalog(token);
+    await callFreebuffSession("DELETE", token, {
+      ...this.deps,
+      instanceId,
+      ...(catalog ? { catalog } : {}),
+      ...(signal ? { signal } : {}),
+    }).catch(() => undefined);
+  }
+
   private async claim(
     key: string,
     token: string,
@@ -162,51 +216,26 @@ export class FreebuffSessionManager {
     const instanceId = newFreebuffCliInstanceId();
     let response: FreebuffSessionResponse;
     try {
-      response = await callFreebuffSession("POST", token, {
-        ...this.deps,
-        instanceId,
-        model,
-        walletSpendLimit: 0,
-        signal,
-      });
+      response = await this.admit(token, instanceId, model, signal);
     } catch (error) {
-      if (error instanceof FreebuffSessionRequestError && error.errorCode === "session_superseded") {
-        response = await callFreebuffSession("POST", token, {
-          ...this.deps,
-          instanceId,
-          model,
-          walletSpendLimit: 0,
-          signal,
-        }).catch(async (retryError: unknown) => {
-          await callFreebuffSession("DELETE", token, { ...this.deps, instanceId }).catch(() => undefined);
-          if (retryError instanceof FreebuffSessionRequestError) {
-            throw new ProviderError(
-              `Freebuff session admission failed (${retryError.statusCode}). ${retryError.message}`,
-              retryError.statusCode,
-              undefined,
-              retryError.retryAfterMs ? Math.ceil(retryError.retryAfterMs / 1_000) : undefined,
-            );
-          }
-          throw retryError;
+      if (error instanceof FreebuffSessionRequestError && error.errorCode === "freebuff_catalog_stale") {
+        await refreshFreebuffCatalog(token, signal, this.deps).catch(() => null);
+        response = await this.admit(token, instanceId, model, signal).catch(async (retryError: unknown) => {
+          await this.releaseAttempt(token, instanceId, signal);
+          throw this.admissionError(retryError);
+        });
+      } else if (error instanceof FreebuffSessionRequestError && error.errorCode === "session_superseded") {
+        response = await this.admit(token, instanceId, model, signal).catch(async (retryError: unknown) => {
+          await this.releaseAttempt(token, instanceId, signal);
+          throw this.admissionError(retryError);
         });
       } else {
-        await callFreebuffSession("DELETE", token, {
-          ...this.deps,
-          instanceId,
-        }).catch(() => undefined);
-        if (error instanceof FreebuffSessionRequestError) {
-          throw new ProviderError(
-            `Freebuff session admission failed (${error.statusCode}). ${error.message}`,
-            error.statusCode,
-            undefined,
-            error.retryAfterMs ? Math.ceil(error.retryAfterMs / 1_000) : undefined,
-          );
-        }
-        throw error;
+        await this.releaseAttempt(token, instanceId, signal);
+        throw this.admissionError(error);
       }
     }
     if (response.status !== "active") {
-      await callFreebuffSession("DELETE", token, { ...this.deps, instanceId }).catch(() => undefined);
+      await this.releaseAttempt(token, instanceId, signal);
       throw new ProviderError(refusalMessage(response), admissionStatusCode(response));
     }
     const activeInstance = response.instanceId || instanceId;
@@ -245,11 +274,13 @@ export class FreebuffSessionManager {
   private async beat(key: string, token: string, claim: ActiveClaim): Promise<void> {
     if (this.claims.get(key) !== claim) return;
     try {
+      const catalog = this.catalog(token);
       const response = await callFreebuffSession("GET", token, {
         ...this.deps,
         instanceId: claim.instanceId,
         heartbeat: true,
         compact: true,
+        ...(catalog ? { catalog } : {}),
       });
       if (this.claims.get(key) !== claim) return;
       if (response.status === "active") {
@@ -277,9 +308,11 @@ export class FreebuffSessionManager {
     const claim = this.claims.get(key);
     if (!claim) return;
     this.clearClaim(key, claim);
+    const catalog = this.catalog(token);
     await callFreebuffSession("DELETE", token, {
       ...this.deps,
       instanceId: claim.instanceId,
+      ...(catalog ? { catalog } : {}),
       ...(signal ? { signal } : {}),
     }).catch(() => undefined);
   }
@@ -290,6 +323,21 @@ export class FreebuffSessionManager {
     await this.inflight.get(key)?.catch(() => undefined);
     if (model && this.claims.get(key)?.model !== model) return;
     await this.releaseKey(key, token, signal);
+  }
+
+  discard(token: string, model?: string): boolean {
+    const key = this.scope(token);
+    const claim = this.claims.get(key);
+    if (!claim) return false;
+    if (model && claim.model !== model) return false;
+    this.clearClaim(key, claim);
+    const catalog = this.catalog(token);
+    void callFreebuffSession("DELETE", token, {
+      ...this.deps,
+      instanceId: claim.instanceId,
+      ...(catalog ? { catalog } : {}),
+    }).catch(() => undefined);
+    return true;
   }
 
   async dispose(): Promise<void> {
@@ -304,9 +352,11 @@ export class FreebuffSessionManager {
       await Promise.all(
         claims.map(async (claim) => {
           if (claim.heartbeat) clearTimeout(claim.heartbeat);
+          const catalog = this.catalog(claim.token);
           await callFreebuffSession("DELETE", claim.token, {
             ...this.deps,
             instanceId: claim.instanceId,
+            ...(catalog ? { catalog } : {}),
           }).catch(() => undefined);
         }),
       );

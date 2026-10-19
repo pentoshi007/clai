@@ -1,21 +1,4 @@
-const FIXED_PROVIDER_MODELS = new Set([
-  "gpt-4.1-2025-04-14", "gpt-4o-2024-11-20", "gpt-4o-mini-2024-07-18",
-  "o3-mini-2025-01-31", "o3-2025-04-16", "o3-pro-2025-06-10", "o4-mini-2025-04-16",
-  "ft:gpt-4o-2024-08-06:manifold-markets:generate-patch-batch2:AKYtDIhk",
-  "anthropic/claude-sonnet-4.5", "anthropic/claude-4-sonnet-20250522",
-  "anthropic/claude-opus-4.1", "anthropic/claude-3.5-haiku-20241022",
-  "anthropic/claude-3.5-sonnet-20240620", "openai/gpt-4o-2024-11-20",
-  "openai/gpt-5.1", "openai/gpt-5.1-chat", "openai/gpt-4o-mini-2024-07-18",
-  "openai/gpt-4.1-nano", "openai/o3-mini-2025-01-31", "google/gemini-2.5-pro",
-  "google/gemini-2.5-flash", "google/gemini-2.5-flash-preview:thinking", "x-ai/grok-4-07-09",
-  "deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro", "deepseek/deepseek-v4-pro",
-  "deepseek-v4-flash", "deepseek/deepseek-v4-flash", "mimo-v2.5", "mimo/mimo-v2.5",
-  "mimo-v2.5-pro", "mimo/mimo-v2.5-pro", "mimo-v2.6-flash", "mimo-v2.6-pro",
-  "mimo/mimo-v2.6-pro", "minimax/minimax-m3",
-  "196166068534771712", "8493203957034778624", "2589952415784501248",
-  "3676445825887633408", "2672143108984012800", "1694861989844615168",
-  "3808739064941641728", "6231675664466968576", "1502192368286171136",
-]);
+import { freebuffEnvProfile } from "./freebuff-env-profile.js";
 
 const PROVIDER_ORDER: Readonly<Record<string, readonly string[]>> = {
   "anthropic/claude-4-sonnet-20250522": ["Google", "Anthropic", "Amazon Bedrock"],
@@ -25,7 +8,7 @@ const PROVIDER_ORDER: Readonly<Record<string, readonly string[]>> = {
 
 export function freebuffProviderRouting(model: string): Record<string, unknown> {
   const order = PROVIDER_ORDER[model];
-  return { ...(order ? { order } : {}), allow_fallbacks: !FIXED_PROVIDER_MODELS.has(model) };
+  return { data_collection: "deny", ...(order ? { order } : {}) };
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -77,5 +60,52 @@ export function freebuffMessages(messages: Array<Record<string, unknown>>): Arra
 }
 
 export function freebuffUserAgent(): string {
-  return `ai-sdk/openai-compatible/0.0.0-test/codebuff ai-sdk/provider-utils/0.0.0-test runtime/node.js/${process.version}`;
+  return "ai-sdk/openai-compatible/0.0.0-test/codebuff ai-sdk/provider-utils/3.0.25 runtime/browser";
+}
+
+export const FREEBUFF_CLI_VERSION = "0.2.29";
+
+export function freebuffTimezoneHeader(): Record<string, string> {
+  try {
+    return { "x-fb-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone };
+  } catch {
+    return {};
+  }
+}
+
+let envHeaderValue: string | undefined;
+
+export function freebuffEnvHeaderValue(): string {
+  if (envHeaderValue === undefined) envHeaderValue = freebuffEnvProfile();
+  return envHeaderValue;
+}
+
+export function resetFreebuffEnvHeaderValue(): void {
+  envHeaderValue = undefined;
+}
+
+export function freebuffClientHeaders(): Record<string, string> {
+  return {
+    ...freebuffTimezoneHeader(),
+    "x-freebuff-env": freebuffEnvHeaderValue(),
+    "x-freebuff-client-version": FREEBUFF_CLI_VERSION,
+  };
+}
+
+export function freebuffPlainHeaders(): Record<string, string> {
+  return {
+    "user-agent": "Bun/1.3.14",
+    accept: "*/*",
+    "accept-encoding": "gzip, deflate, br",
+  };
+}
+
+let actingUserId: string | undefined;
+
+export function setFreebuffActingUserId(userId: string | undefined): void {
+  actingUserId = userId;
+}
+
+export function freebuffActingUserHeaders(): Record<string, string> {
+  return actingUserId ? { "x-freebuff-acting-user-id": actingUserId } : {};
 }

@@ -66,8 +66,11 @@ describe("installed Freebuff CLI transport parity", () => {
     expect(body).not.toHaveProperty("max_tokens");
     expect(body).not.toHaveProperty("max_completion_tokens");
     expect(body).not.toHaveProperty("stream");
-    expect(body.messages).toEqual([{ role: "user", content: [{ type: "text", text: "hello", cache_control: { type: "ephemeral" } }] }]);
-    expect(body.provider).toEqual({ allow_fallbacks: false });
+    const wire = body.messages as Array<Record<string, unknown>>;
+    expect(wire[0]!.role).toBe("system");
+    expect(String(wire[0]!.content)).toContain("You are Buffy, the coding agent behind Codebuff.");
+    expect(wire.at(-1)).toEqual({ role: "user", content: [{ type: "text", text: "hello", cache_control: { type: "ephemeral" } }] });
+    expect(body.provider).toEqual({ data_collection: "deny" });
     await freebuffProvider.stream!(request({ model: "openai/gpt-5.6-luna", maxTokens: 2048, temperature: 0.7 }), { apiKey: TOKEN }, () => {});
     const streamed = chats(calls)[1]!.body;
     expect(streamed.max_tokens).toBe(2048);
@@ -118,8 +121,9 @@ describe("installed Freebuff CLI transport parity", () => {
     }), { apiKey: TOKEN });
     expect(second.text).toBe("done");
     const history = chats(calls)[1]!.body.messages as Array<Record<string, unknown>>;
-    expect(history[1]).toMatchObject({ role: "assistant", reasoning_content: "inspect", tool_calls: [{ id: "call-1" }] });
-    expect(history[2]).toMatchObject({ role: "tool", tool_call_id: "call-1", content: "file content" });
+    expect(history[0]).toMatchObject({ role: "system" });
+    expect(history[2]).toMatchObject({ role: "assistant", reasoning_content: "inspect", tool_calls: [{ id: "call-1" }] });
+    expect(history[3]).toMatchObject({ role: "tool", tool_call_id: "call-1", content: "file content" });
     expect(calls.filter((call) => call.url.endsWith("/session/admission"))).toHaveLength(1);
   });
 

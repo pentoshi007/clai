@@ -10,11 +10,13 @@ import {
   startFreebuffDeviceAuth,
   validateFreebuffToken,
 } from "../src/llm/freebuff-auth.js";
+import { freebuffActingUserHeaders, setFreebuffActingUserId } from "../src/llm/freebuff-wire.js";
 
 const roots: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  setFreebuffActingUserId(undefined);
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -90,6 +92,42 @@ describe("Freebuff authentication protocol", () => {
     expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).has("authorization")).toBe(false);
   });
 
+  it("defaults the login challenge fingerprint to the machine identity", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        loginUrl: "https://freebuff.com/login?code=abc",
+        fingerprintHash: "hash",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      }),
+    );
+    const result = await startFreebuffDeviceAuth({}, { fetch: fetchMock });
+    expect(result.fingerprintId).toMatch(/^(enhanced-[A-Za-z0-9_-]{43}|codebuff-cli-[A-Za-z0-9_-]{8})$/);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toEqual({
+      fingerprintId: result.fingerprintId,
+    });
+  });
+
+  it("caches the acting user id from identity checks and login polling", async () => {
+    const identityFetch = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id: "user-9" }));
+    await validateFreebuffToken("opaque-token-value", {}, { fetch: identityFetch });
+    expect(freebuffActingUserHeaders()).toEqual({ "x-freebuff-acting-user-id": "user-9" });
+
+    const pollFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ user: { id: "user-poll", authToken: "opaque-token-value" } }));
+    await pollFreebuffDeviceAuth(
+      {
+        loginUrl: "https://freebuff.com/login",
+        fingerprintId: "codebuff-cli-fixture",
+        fingerprintHash: "hash",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      },
+      {},
+      { fetch: pollFetch, sleep: async () => undefined, now: () => 0 },
+    );
+    expect(freebuffActingUserHeaders()).toEqual({ "x-freebuff-acting-user-id": "user-poll" });
+  });
+
   it("validates tokens against the identity endpoint", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id: "u1" }));
     await validateFreebuffToken("opaque-token-value", {}, { fetch: fetchMock });
@@ -126,11 +164,12 @@ describe("Freebuff authentication protocol", () => {
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, "credentials.json"),
-      JSON.stringify({ default: { authToken: "credential-token", email: "user@example.com" } }),
+      JSON.stringify({ default: { id: "user-import", authToken: "credential-token", email: "user@example.com" } }),
     );
     const imported = await importExistingFreebuffToken({ env: {}, homeDir: root });
     expect(imported?.token).toBe("credential-token");
     expect(imported?.source).toBe(join(dir, "credentials.json"));
+    expect(freebuffActingUserHeaders()).toEqual({ "x-freebuff-acting-user-id": "user-import" });
   });
 
   it("detects remote/headless terminals and emits upstream fingerprint format", () => {
