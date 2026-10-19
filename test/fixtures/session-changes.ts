@@ -29,3 +29,13 @@ export const diffedChangeTranscript: readonly TranscriptItem[] = [
   { kind: "tool", id: "diff-create", name: "fs.write", argsDisplay: "/repo/tools/run.py", output: "", status: "ok", fileChanges: [diffedChanges[1]!], done: true },
   { kind: "turn-summary", id: "diff-summary", durationMs: 3_000, status: "completed", changes: { added: 3, removed: 1 }, done: true },
 ];
+
+export function largeChangeTranscript(files: number): TranscriptItem[] {
+  return Array.from({ length: files }, (_, index): TranscriptItem => ({
+    kind: "tool", id: `large-${index}`, name: "fs.write", argsDisplay: `/repo/gen/file${index}.ts`, output: "", status: "ok", done: true,
+    fileChanges: [buildFileChange({
+      path: `/repo/gen/file${index}.ts`, before: "", kind: "create",
+      after: Array.from({ length: 60 }, (_, line) => `export const FILE_${index}_LINE_${line} = ${line};`).join("\n") + "\n",
+    })],
+  }));
+}

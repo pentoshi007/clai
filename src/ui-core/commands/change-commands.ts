@@ -1,7 +1,7 @@
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { FileLineChanges, SessionChangesReport } from "../../app/controllers/session-changes.js";
 import type { FileChange } from "../../tools/file-diff.js";
-import { createTextPagerSource, type ArtifactPagerSource } from "../rendering/artifact-pager-source.js";
+import type { ArtifactPage, ArtifactPagerSource } from "../rendering/artifact-pager-source.js";
 import { sessionChangeDiff } from "../rendering/session-change-diff.js";
 
 const EMPTY_CHANGES = "# Session changes\n\nNo line changes recorded in this session.\n";
@@ -47,10 +47,11 @@ export function formatSessionChanges(report: SessionChangesReport): string {
   return body;
 }
 
-export async function handleChanges(services: AppServices): Promise<void> {
+const CHANGES_STYLE = { quotePrefix: "", literalQuotes: true, lineChangeColors: true, diffLines: true } as const;
+
+export function handleChanges(services: AppServices): void {
   const source = createSessionChangesPagerSource(services);
-  const page = await source.readPage(0);
-  services.overlay.openPager("Session changes", page.body, source, undefined, "force");
+  services.overlay.openPager("Session changes", formatSessionChanges(services.session.changesReport()), source, undefined, "force");
 }
 
 function createSessionChangesPagerSource(services: AppServices): ArtifactPagerSource {
@@ -58,7 +59,6 @@ function createSessionChangesPagerSource(services: AppServices): ArtifactPagerSo
   const path = `memory://session-changes/${sessionId}`;
   let report = services.session.changesReport();
   let body = formatSessionChanges(report);
-  let source = createTextPagerSource(body, path);
   let disposed = false;
   const listeners = new Set<() => void>();
   const unsubscribe = services.session.subscribe(() => {
@@ -69,18 +69,21 @@ function createSessionChangesPagerSource(services: AppServices): ArtifactPagerSo
     const next = formatSessionChanges(report);
     if (next === body) return;
     body = next;
-    source.dispose();
-    source = createTextPagerSource(body, path);
     for (const listener of listeners) listener();
   });
+  const page = async (): Promise<ArtifactPage> => {
+    if (disposed) throw new Error("session changes pager is closed");
+    const totalBytes = Buffer.byteLength(body, "utf8");
+    return { body, offset: 0, nextOffset: totalBytes, totalBytes, pageNumber: 1, pageCount: 1 };
+  };
   return {
-    path, pageBytes: source.pageBytes, quotePrefix: "", literalQuotes: true, lineChangeColors: true, diffLines: true,
-    readPage: (offset) => source.readPage(offset),
-    readTail: () => source.readTail!(),
-    readAll: () => source.readAll(),
-    search: (query, offset, reverse) => source.search(query, offset, reverse),
+    path, pageBytes: Number.MAX_SAFE_INTEGER, layout: "continuous", ...CHANGES_STYLE,
+    readPage: page,
+    readTail: page,
+    readAll: async () => (await page()).body,
+    search: async (query) => (query && body.includes(query) ? page() : undefined),
     isGrowing: () => services.session.sessionId === sessionId && services.session.getState().running,
     watch(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    dispose() { disposed = true; unsubscribe(); listeners.clear(); source.dispose(); },
+    dispose() { disposed = true; unsubscribe(); listeners.clear(); },
   };
 }

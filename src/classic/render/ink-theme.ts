@@ -5,7 +5,7 @@ import type { ThemeHint } from "../../ui-core/bootstrap/capabilities.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 import { themeFor } from "../../ui-core/rendering/theme.js";
 import { type Glyphs, glyphsFor } from "./glyphs.js";
-import { nearestAnsi16, nearestAnsi256 } from "./palette.js";
+import { nearestAnsi16, nearestAnsi256 } from "../../ui-core/rendering/ansi-palette.js";
 import { padToWidth, reopenAfterResets, sealStyle } from "./ansi-text.js";
 
 export type ThemeToken = {
