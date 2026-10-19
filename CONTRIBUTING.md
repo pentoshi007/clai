@@ -91,7 +91,7 @@ Distribution manifests under `manifests/` are templates. The release workflow ge
 
 For behavior changes, add or update meaningful regression coverage and run the focused tests first. Run the relevant typecheck, build, deterministic suite, terminal checks, and release validation before submitting. UI changes should cover both renderers; process and privilege changes need the platform coverage defined in CI. Run native performance checks without competing build or full-suite workloads.
 
-For documentation-only changes, check examples against current CLI help, validate links and formatting, and check any issue-template YAML. A full local application suite is unnecessary unless the change affects code, runtime prompts, or generated artifacts.
+For documentation-only changes, check examples against current CLI help, validate links and formatting, and check any issue-template YAML. The README preview `.github/assets/clai-opentui.svg` is rendered from the real OpenTUI interface; regenerate it with `bun run scripts/render-readme-preview.ts` after visible UI changes. A full local application suite is unnecessary unless the change affects code, runtime prompts, or generated artifacts.
 
 CI currently covers Node 22 and 24 on Linux, Bun OpenTUI conformance, Classic on macOS, and process/privilege and MCP behavior on macOS and Windows. The [workflow](.github/workflows/ci.yml) is the source of truth for required checks. All relevant remote checks must pass.
 
