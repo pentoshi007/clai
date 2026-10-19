@@ -692,6 +692,7 @@ export function Pager(props: PagerProps): ReactNode {
             diffGutters={row.kind === "plain" || row.kind === "subagent" ? false : undefined}
             subagent={row.kind === "diff" ? undefined : row.kind === "subagent" || isSubagent}
             subagentSpans={continuous && spans ? slicePagerSpans(spans, offset, row.line.length) : spans}
+            tone={row.tone}
           />
         );
         return continuous ? <box key={row.key} style={{ height: 1, flexShrink: 0, width: "100%" }}>{line}</box> : line;
