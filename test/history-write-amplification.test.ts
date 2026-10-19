@@ -95,7 +95,7 @@ describe("history write amplification", () => {
       "../src/store/history.js"
     );
 
-    const bulk = "c".repeat(400_000);
+    const bulk = "c".repeat(2_100_000);
     for (let turn = 1; turn <= 5; turn += 1) {
       await upsertSession("fat-session", [
         { role: "user", content: bulk },
@@ -106,6 +106,22 @@ describe("history write amplification", () => {
     const path = getHistoryPath();
     expect(countLines(path)).toBe(1);
     const restored = await getSession("fat-session");
+    expect(restored?.messages[1]?.content).toBe("revision 5");
+  });
+
+  it("amortizes compaction instead of rewriting a large session on every save", async () => {
+    const { upsertSession, getHistoryPath, getSession } = await import(
+      "../src/store/history.js"
+    );
+    const bulk = "d".repeat(400_000);
+    for (let turn = 1; turn <= 5; turn += 1) {
+      await upsertSession("amortized-session", [
+        { role: "user", content: bulk },
+        { role: "assistant", content: `revision ${turn}` },
+      ]);
+    }
+    expect(countLines(getHistoryPath())).toBe(5);
+    const restored = await getSession("amortized-session");
     expect(restored?.messages[1]?.content).toBe("revision 5");
   });
 });
