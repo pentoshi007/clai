@@ -15,6 +15,7 @@ export interface HistorySummary {
   hasImages: boolean;
   workspaceFolder?: string | undefined;
   workspaceCode?: string | undefined;
+  pendingMerge?: true | undefined;
 }
 
 export interface HistoryIndexEntry {
@@ -47,6 +48,7 @@ interface HistoryRecordShape {
   transcript?: unknown[] | undefined;
   workspaceFolder?: string | undefined;
   workspaceCode?: string | undefined;
+  pendingMerge?: true | undefined;
 }
 
 export function historySummary(record: HistoryRecordShape): HistorySummary {
@@ -73,6 +75,7 @@ export function historySummary(record: HistoryRecordShape): HistorySummary {
       ? { workspaceFolder: record.workspaceFolder }
       : {}),
     ...(record.workspaceCode ? { workspaceCode: record.workspaceCode } : {}),
+    ...(record.pendingMerge === true ? { pendingMerge: true as const } : {}),
   };
 }
 
