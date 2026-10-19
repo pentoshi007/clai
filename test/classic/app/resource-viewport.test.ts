@@ -79,12 +79,10 @@ it("keeps the paused item and row when offscreen artifact resources are released
   const resources = latest!.context.spool;
   if (!(resources instanceof TranscriptResources)) throw new Error("expected transcript resources");
   await prepare.call(resources, harness.services.transcript.getState(), [tools[0]!.id, tools[1]!.id]);
-  await vi.waitFor(() => {
-    expect(latest!.window.totalRows).toBeGreaterThan(400);
-    expect(harness!.wiring.maxLiveOffset).toBe(latest!.window.maxOffset);
-  });
+  await vi.waitFor(() => expect(harness!.wiring.maxLiveOffset).toBe(latest!.window.maxOffset));
   harness.wiring.scrollFeed(215);
   await vi.waitFor(() => expect(latest!.window.offset).toBe(215));
+  expect(latest!.window.totalRows).toBeGreaterThan(400);
   const anchor = latest!.window.rows[0]!.key;
   expect(latest!.window.firstItemId).toBe("t0");
   expect(latest!.window.rows[0]!.lineIndex).toBeGreaterThan(100);

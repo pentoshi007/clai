@@ -1,5 +1,4 @@
-import stringWidth from "string-width";
-import { renderColumns } from "../../ui-core/rendering/text-width.js";
+import { renderColumns, terminalWidth } from "../../ui-core/rendering/text-width.js";
 
 // biome-ignore lint: ANSI escape sequences are intentional.
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
@@ -14,7 +13,7 @@ export function layoutWidth(text: string): number {
 
 export function displayWidth(text: string): number {
   const plain = stripAnsi(text);
-  return plain.length === 0 ? 0 : stringWidth(plain);
+  return plain.length === 0 ? 0 : terminalWidth(plain);
 }
 
 export function contentWidth(columns: number): number {

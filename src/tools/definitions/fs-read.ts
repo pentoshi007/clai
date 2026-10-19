@@ -14,6 +14,10 @@ const FILE_PROPERTIES = {
   maxBytes: { type: "integer", minimum: 1, description: "Maximum content bytes for this file, including range/pattern reads. Multi-file calls share a 256 KiB content budget; narrow filters to read more." },
 };
 
+const ENTRY_PROPERTIES = Object.fromEntries(
+  Object.entries(FILE_PROPERTIES).map(([name, { description: _description, ...schema }]) => [name, schema]),
+);
+
 export const FS_READ_DESCRIPTION = [
   "Read one text file or list one directory with {path,...options}.",
   `Only when several known files are needed together, use {files:[{path,...options},...]} with 1–${MAX_FS_READ_FILES} entries; single-file reads remain preferred when sufficient.`,
@@ -32,10 +36,10 @@ export const FS_READ_PARAMETERS: ToolDefinition["parameters"] = {
       type: "array",
       minItems: 1,
       maxItems: MAX_FS_READ_FILES,
-      description: `Optional alternative to path: 1–${MAX_FS_READ_FILES} relevant file objects, each with its own path and filters. Omit top-level path and filters when using files.`,
+      description: `Optional alternative to path: 1–${MAX_FS_READ_FILES} relevant file objects, each with its own path and the top-level filter fields. Omit top-level path and filters when using files.`,
       items: {
         type: "object",
-        properties: FILE_PROPERTIES,
+        properties: ENTRY_PROPERTIES,
         required: ["path"],
         additionalProperties: false,
       },

@@ -81,6 +81,7 @@ export interface WiringHost {
   liveOffsetValue: number;
   feedNavigationVersion: number;
   maxLiveOffset: number;
+  feedLayoutPending: boolean;
   feedViewportRows: number;
   selectedFeedItemId: string | undefined;
   scrollAboveValue: number;
