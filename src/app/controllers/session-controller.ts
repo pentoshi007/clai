@@ -103,6 +103,7 @@ import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
 import { SessionPromptStore, type SessionPromptInput } from "../../store/session-prompts.js";
 import { legacySessionPrompts } from "./session-prompt-history.js";
 import { SessionChanges, type FileLineChanges, type SessionChangesReport } from "./session-changes.js";
+import { SessionLateWork } from "./session-late-work.js";
 import { isInternalChatMessage } from "../../types.js";
 
 export interface SubagentsRuntimeState {
@@ -150,6 +151,8 @@ export interface SessionControllerDeps {
   readonly mintTurnId?: (() => TurnId) | undefined;
   
   readonly getTranscriptSnapshot?: (() => ClassicTranscriptItem[] | undefined) | undefined;
+  readonly absorbPersistedTranscript?: ((incoming: readonly ClassicTranscriptItem[]) => readonly ClassicTranscriptItem[]) | undefined;
+  readonly lateWorkPollMs?: number | undefined;
   readonly noHistory?: boolean | undefined;
   readonly notifyResponderDelivery?: ((summary: string) => void) | undefined;
   readonly titleCompleter?: ((messages: ChatMessage[]) => Promise<string>) | undefined;
@@ -197,6 +200,7 @@ export class SessionController implements Disposable {
   private lastContextCompactionId: string | undefined;
   private readonly usageLedger = new SessionUsageLedger();
   private readonly changeLedger = new SessionChanges();
+  private readonly lateWork: SessionLateWork;
   private lifecycleGeneration = 0;
   private lastTurnResult: TurnResult | undefined;
   private restoredPreviousTurn: PreviousTurnSignal | undefined;
@@ -211,6 +215,17 @@ export class SessionController implements Disposable {
     this.sessionIdValue = asSessionId(deps.sessionId ?? mintSessionId());
     this.promptHistoryValue = new SessionPromptStore(this.sessionIdValue);
     this.persistence = new SessionPersistenceQueue(deps.persistence);
+    this.lateWork = new SessionLateWork({
+      persistence: this.persistence,
+      sessionId: () => this.sessionIdValue,
+      ready: () => this.canAbsorbLateWork(),
+      absorb: deps.absorbPersistedTranscript,
+      absorbed: () => {
+        this.notifyState();
+        void this.persistNow().catch(() => undefined);
+      },
+      pollMs: deps.lateWorkPollMs,
+    });
     this.provider = deps.provider;
     this.model = deps.model;
     this.mode = deps.mode ?? "agent";
@@ -573,6 +588,7 @@ export class SessionController implements Disposable {
       model?: string | undefined;
       transcript?: readonly ClassicTranscriptItem[] | undefined;
       changes?: readonly FileLineChanges[] | undefined;
+      unsyncedItemIds?: readonly string[] | undefined;
     } = {},
   ): void {
     this.beginLifecycleGeneration();
@@ -611,6 +627,7 @@ export class SessionController implements Disposable {
     }
     this.resetPromptHistory();
     this.changeLedger.restore(options.changes, options.transcript);
+    this.lateWork.restore(options.unsyncedItemIds, options.transcript);
     if (this.isPromptHistoryEnabled()) {
       const generation = this.lifecycleGeneration;
       this.legacyPromptSource = () => legacySessionPrompts(messages, options.transcript);
@@ -714,6 +731,7 @@ export class SessionController implements Disposable {
     }
     this.resetPromptHistory();
     this.changeLedger.restore();
+    this.lateWork.clear();
     this.policy = createSessionPolicy(this.sessionIdValue);
     this.replaceSubagents();
     this.notifyState();
@@ -920,6 +938,7 @@ export class SessionController implements Disposable {
     const persistedHistory = projectToolHistory(this.history).messages;
     const workspace = getActiveSessionWorkspace();
     const changes = this.changeLedger.snapshot().files;
+    const unsyncedItemIds = this.lateWork.unsyncedIds;
     const saved = this.persistence.save(persistedHistory, {
       sessionId: this.sessionIdValue,
       name: name ?? this.sessionTitle,
@@ -934,9 +953,17 @@ export class SessionController implements Disposable {
         ...(workspace ? { workspaceFolder: workspace.folderName, workspaceCode: workspace.code } : {}),
       },
       ...(contextUsage ? { contextUsage } : {}),
+      ...(unsyncedItemIds.length > 0 ? { unsyncedItemIds } : {}),
     });
-    await Promise.all([saved, this.promptHistoryValue.flush().catch(() => undefined)]);
-    if (generation === this.lifecycleGeneration) this.settlePersistedResponderResults();
+    const [merge] = await Promise.all([saved, this.promptHistoryValue.flush().catch(() => undefined)]);
+    if (generation !== this.lifecycleGeneration) return;
+    this.settlePersistedResponderResults();
+    this.lateWork.accept(merge);
+  }
+
+  private canAbsorbLateWork(): boolean {
+    return !this.closing && !this.turn.running && !this.compactingFlag && !this.deps.noHistory &&
+      !getConfig().privateMode && hasPersistableHistory(this.history);
   }
 
   estimateContext(): { messages: number; tokens: number } {
@@ -1076,7 +1103,14 @@ export class SessionController implements Disposable {
     });
     if (built.fallbackReason) this.notice("info", built.fallbackReason);
     for (const issue of built.imageIssues) this.notice("warn", issue);
-    const request = built.request;
+    const lateWorkNote = this.lateWork.takeNote();
+    const request = lateWorkNote
+      ? {
+          ...built.request,
+          prompt: `${lateWorkNote}\n\n${built.request.prompt}`,
+          displayPrompt: built.request.displayPrompt !== undefined ? built.request.displayPrompt : built.request.prompt,
+        }
+      : built.request;
     const turnGeneration = this.lifecycleGeneration;
     const userPrompt = opts?.displayPrompt ?? prompt;
     if (this.isPromptHistoryEnabled() && opts?.displayPrompt !== null && !opts?.internal &&
@@ -1217,6 +1251,7 @@ export class SessionController implements Disposable {
     this.fenceInteractiveOwner(this.sessionIdValue);
     this.turnEndListeners.clear();
     this.stateListeners.clear();
+    this.lateWork.dispose();
     this.disposables.dispose();
   }
 

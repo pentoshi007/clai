@@ -152,6 +152,7 @@ function serializeSessionPayload(record: HistoryRecord): string {
     ...(record.changes ? { changes: record.changes } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
+    ...(record.unsyncedItemIds?.length ? { unsyncedItemIds: record.unsyncedItemIds } : {}),
     ...sessionModelFields(record),
     ...(record.workspaceFolder
       ? {
@@ -239,6 +240,7 @@ export function rowToSession(row: unknown): HistoryRecord {
         changes?: HistoryRecord["changes"];
         contextUsage?: PersistedContextUsage;
         previousTurn?: PreviousTurnSignal;
+        unsyncedItemIds?: string[];
         provider?: ProviderId;
         model?: string;
         thinking?: ReasoningPreference;
@@ -270,6 +272,7 @@ export function rowToSession(row: unknown): HistoryRecord {
     changes: payload.changes,
     contextUsage: payload.contextUsage,
     previousTurn: payload.previousTurn,
+    ...(Array.isArray(payload.unsyncedItemIds) && payload.unsyncedItemIds.length ? { unsyncedItemIds: payload.unsyncedItemIds } : {}),
     provider: payload.provider,
     model: payload.model,
     thinking: payload.thinking,

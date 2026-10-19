@@ -7,6 +7,7 @@ import {
   type ContextSnapshotV1,
 } from "../../llm/context-snapshot.js";
 import type {
+  PersistedSessionMerge,
   PersistencePort,
   SaveSessionOptions,
 } from "../ports/persistence-port.js";
@@ -29,8 +30,8 @@ function mintWriterGeneration(): string {
 interface PendingSave {
   messages: readonly ChatMessage[];
   options: SaveSessionOptions;
-  readonly promise: Promise<void>;
-  readonly resolve: () => void;
+  readonly promise: Promise<PersistedSessionMerge | void>;
+  readonly resolve: (merge: PersistedSessionMerge | void) => void;
   readonly reject: (error: unknown) => void;
 }
 
@@ -52,10 +53,18 @@ export class SessionPersistenceQueue {
     this.revision = 0;
   }
 
+  get detectsMerges(): boolean {
+    return this.port.pendingSessionMerge !== undefined;
+  }
+
+  async pendingMerge(sessionId: string): Promise<PersistedSessionMerge | undefined> {
+    return this.port.pendingSessionMerge?.(sessionId);
+  }
+
   save(
     messages: readonly ChatMessage[],
     options: Omit<SaveSessionOptions, "revision">,
-  ): Promise<void> {
+  ): Promise<PersistedSessionMerge | void> {
     const snapshot = messages.map((message) => ({ ...message }));
     const savedOptions: SaveSessionOptions = {
       ...options,
@@ -73,9 +82,9 @@ export class SessionPersistenceQueue {
       latest.options = { ...savedOptions, name: savedOptions.name ?? latest.options.name };
       return latest.promise;
     }
-    let resolve!: () => void;
+    let resolve!: (merge: PersistedSessionMerge | void) => void;
     let reject!: (error: unknown) => void;
-    const promise = new Promise<void>((onResolve, onReject) => {
+    const promise = new Promise<PersistedSessionMerge | void>((onResolve, onReject) => {
       resolve = onResolve;
       reject = onReject;
     });
@@ -91,8 +100,7 @@ export class SessionPersistenceQueue {
       while (this.pending.length > 0) {
         const next = this.pending.shift()!;
         try {
-          await this.port.saveSession(next.messages, next.options);
-          next.resolve();
+          next.resolve(await this.port.saveSession(next.messages, next.options));
         } catch (error) {
           next.reject(error);
         }
