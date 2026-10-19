@@ -53,6 +53,12 @@ import {
 import { useNativeSelectionCopy } from "./use-native-selection-copy.js";
 import { useTranscriptSelection } from "./use-transcript-selection.js";
 import { transcriptFollowKey } from "../../../ui-core/state/transcript-follow-key.js";
+import {
+  applyTranscriptWindowJump,
+  captureTranscriptAnchor,
+  settleTranscriptLayout,
+  type TranscriptWindowJump,
+} from "./transcript-anchor.js";
 export interface TranscriptViewProps {
   readonly services: AppServices;
   readonly theme: Theme;
@@ -146,9 +152,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     { scrollTop: number; scrollHeight: number; viewportHeight: number } | undefined
   >(undefined);
   const windowShiftPending = useRef(false);
-  const pendingWindowJump = useRef<
-    { itemId?: string; edge?: "top" | "bottom" } | undefined
-  >(undefined);
+  const pendingWindowJump = useRef<TranscriptWindowJump | undefined>(undefined);
 
   const followKey = useTranscriptFollowKey(state, sessionRunning);
 
@@ -364,7 +368,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
     );
     if (mountWindow.start !== tail.start) {
-      pendingWindowJump.current = { edge: "bottom" };
+      pendingWindowJump.current = { kind: "edge", edge: "bottom" };
       windowShiftPending.current = true;
     } else {
       pendingWindowJump.current = undefined;
@@ -378,10 +382,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     setFollowing(atLiveBottom && mountWindow.newerCount === 0);
   }
 
-  function changeWindow(
-    nextStart: number,
-    jump: { itemId?: string; edge?: "top" | "bottom" },
-  ): boolean {
+  function changeWindow(nextStart: number, jump: TranscriptWindowJump): boolean {
     const resolved = resolveTranscriptMountWindow(
       itemCount,
       nextStart,
@@ -395,7 +396,18 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     return true;
   }
 
-  function showOlderWindow(): boolean {
+  function anchoredJump(
+    sb: ScrollBoxRenderable,
+    candidates: readonly string[],
+    delta: number,
+    fallback: TranscriptWindowJump,
+  ): TranscriptWindowJump {
+    settleTranscriptLayout(renderer);
+    const anchor = captureTranscriptAnchor(sb, candidates);
+    return anchor ? { kind: "anchor", anchor, delta } : fallback;
+  }
+
+  function showOlderWindow(sb: ScrollBoxRenderable, delta: number): boolean {
     if (mountWindow.olderCount === 0 || windowShiftPending.current) return false;
     const next = shiftTranscriptWindowStart(
       itemCount,
@@ -403,11 +415,11 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       "older",
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
     );
-    const itemId = mountedItems[0]?.id;
-    return changeWindow(next, itemId ? { itemId } : { edge: "bottom" });
+    const ids = mountedItems.map((item) => item.id);
+    return changeWindow(next, anchoredJump(sb, ids, delta, { kind: "edge", edge: "bottom" }));
   }
 
-  function showNewerWindow(): boolean {
+  function showNewerWindow(sb: ScrollBoxRenderable, delta: number): boolean {
     if (mountWindow.newerCount === 0 || windowShiftPending.current) return false;
     const next = shiftTranscriptWindowStart(
       itemCount,
@@ -415,8 +427,8 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       "newer",
       DEFAULT_TRANSCRIPT_MOUNT_ROWS,
     );
-    const itemId = mountedItems.at(-1)?.id;
-    return changeWindow(next, itemId ? { itemId } : { edge: "top" });
+    const ids = mountedItems.map((item) => item.id).reverse();
+    return changeWindow(next, anchoredJump(sb, ids, delta, { kind: "edge", edge: "top" }));
   }
 
   useLayoutEffect(() => {
@@ -425,9 +437,8 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     const frame = requestAnimationFrame(() => {
       const sb = scrollRef.current;
       if (sb) {
-        if (jump.itemId) sb.scrollChildIntoView(jump.itemId);
-        else if (jump.edge === "top") sb.scrollTo(0);
-        else if (jump.edge === "bottom") sb.scrollTo(maxScrollTop(sb));
+        settleTranscriptLayout(renderer);
+        applyTranscriptWindowJump(sb, pendingWindowJump.current ?? jump);
         publishScrollRemainder(sb, mountWindow.newerCount > 0);
       }
       pendingWindowJump.current = undefined;
@@ -499,13 +510,18 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     clearNativeSelection();
     const sb = scrollRef.current;
     if (!sb) return;
+    const pending = pendingWindowJump.current;
+    if (windowShiftPending.current && pending?.kind === "anchor") {
+      pendingWindowJump.current = { ...pending, delta: pending.delta + dy };
+      return;
+    }
     const intent = resolveTranscriptScrollIntent(
       sb.scrollTop,
       maxScrollTop(sb),
       dy,
     );
-    if (intent.reachedOlderEdge && showOlderWindow()) return;
-    if (intent.reachedNewerEdge && showNewerWindow()) return;
+    if (intent.reachedOlderEdge && showOlderWindow(sb, dy)) return;
+    if (intent.reachedNewerEdge && showNewerWindow(sb, dy)) return;
     sb.scrollTo(intent.nextScrollTop);
     if (!intent.leaveTail) updateFollowingFromPosition(intent.atBottom);
     publishScrollRemainder(sb, mountWindow.newerCount > 0);
@@ -520,7 +536,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       () => {
         clearNativeSelection();
         if (mountWindow.start > 0) {
-          changeWindow(0, { edge: "top" });
+          changeWindow(0, { kind: "edge", edge: "top" });
           return;
         }
         const sb = scrollRef.current;
@@ -627,7 +643,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         itemIndex,
         DEFAULT_TRANSCRIPT_MOUNT_ROWS,
       );
-      if (changeWindow(start, { itemId: match.itemId })) return;
+      if (changeWindow(start, { kind: "item", itemId: match.itemId })) return;
     }
     queueMicrotask(() => {
       scrollRef.current?.scrollChildIntoView(match.itemId);
@@ -819,7 +835,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         key.preventDefault();
         clearNativeSelection();
         if (mountWindow.start > 0) {
-          changeWindow(0, { edge: "top" });
+          changeWindow(0, { kind: "edge", edge: "top" });
           return;
         }
         setFollowing(false);

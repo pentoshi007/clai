@@ -54,6 +54,26 @@ function body(node: Renderable): TextRenderable | undefined {
   }
   return undefined;
 }
+function markerRows(): Map<string, number> {
+  const rows = new Map<string, number>();
+  setup.captureCharFrame().split("\n").forEach((line, index) => {
+    const marker = /ITEM_\d+_ROW_\d+/.exec(line)?.[0];
+    if (marker) rows.set(marker, index);
+  });
+  return rows;
+}
+async function crossWindowEdge(scroll: ScrollBoxRenderable, step: number, park: () => void, revealedId: string): Promise<void> {
+  assert.equal(setup.renderer.root.findDescendantById(revealedId), undefined);
+  await settle(park);
+  for (let index = 0; index < 3; index += 1) {
+    const before = [...markerRows()];
+    const [marker, row] = step < 0 ? before[0]! : before.at(-1)!;
+    await settle(() => transcriptScrollPort.scrollBy(step));
+    await settle();
+    assert.equal(markerRows().get(marker), row - step, `${marker} moved by exactly ${step} rows`);
+  }
+  assert.ok(setup.renderer.root.findDescendantById(revealedId), revealedId);
+}
 const metrics: Record<string, number | boolean> = {};
 try {
   await settle();
@@ -64,6 +84,9 @@ try {
   assert.ok(metrics.nodes < 800, String(metrics.nodes));
   assert.equal(services.transcript.getState().order.length, count);
   assert.equal(setup.renderer.root.findDescendantById("long-0"), undefined);
+  await crossWindowEdge(scroll, -3, () => scroll.scrollTo(4), `long-${count - 60}`);
+  await settle(() => transcriptScrollPort.scrollToTop());
+  await crossWindowEdge(scroll, 3, () => scroll.scrollTo(scroll.scrollHeight - scroll.viewport.height - 4), "long-60");
   await settle(() => transcriptScrollPort.scrollToTop());
   const first = setup.renderer.root.findDescendantById("long-0");
   assert.ok(first);
