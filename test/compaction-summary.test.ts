@@ -80,10 +80,12 @@ describe("compaction-summary prompts", () => {
       durableState: "ACTIVE PLAN: t1 done",
     });
     expect(p).toContain("## User goals");
-    expect(p).toContain("## Remaining work");
-    expect(p).toContain("## Key facts and environment");
-    expect(p).toContain("## In flight / blocked");
-    expect(p).toContain("## Relevant files");
+    const headings = p.split("\n").filter((line) => line.startsWith("## "));
+    expect(headings).toEqual([
+      "## Latest conversation", "## User goals", "## User instructions still in force", "## Facts, decisions and constraints",
+      "## Work completed", "## Current state and open risks", "## Next steps", "## Relevant files",
+    ]);
+    expect(p).not.toMatch(/\b(?:subagent\.(?:read|list)|instructions\.record)\b/);
     expect(p).toMatch(/mechanism-level/i);
     expect(p).toMatch(/before→after/i);
     expect(p).toContain("DURABLE STATE");

@@ -206,7 +206,7 @@ function subagentLines(
   const shown = subagents.slice(-MAX_LIST_ENTRIES);
   const omitted = omittedNote(subagents.length, shown.length, "runs");
   lines.push(
-    'Subagents (subagent.read {id, view:"summary"} recovers a result; view:"report" pages the full report):',
+    'Subagents (each result stays recoverable by id as a summary or a paged full report):',
     ...(omitted ? [`- ${omitted}`] : []),
     ...shown.map((run) => {
       const digest = run.digest ? ` — ${clip(run.digest, SUBAGENT_DIGEST_CHARS)}` : "";

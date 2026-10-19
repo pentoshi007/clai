@@ -70,7 +70,8 @@ describe("phase 9 — context manager", () => {
     }));
     const result = await compactMessagesWithSummary(msgs, async (prompt) => {
       expect(prompt).toContain("nmap -sT localhost");
-      expect(prompt).toMatch(/Commands\/tools and results|## Commands\/tools/);
+      expect(prompt).toContain("## Work completed");
+      expect(prompt).toMatch(/verification evidence or reusable command/);
       expect(prompt).toContain("OLDER MODEL TURNS");
       expect(prompt).toContain("message-0-");
       expect(prompt).toContain("## User goals");
