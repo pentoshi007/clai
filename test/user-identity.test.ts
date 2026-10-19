@@ -1,14 +1,26 @@
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ command: vi.fn() }));
+const fixture = vi.hoisted(() => ({ command: vi.fn(), loginuid: undefined as string | undefined, tty: undefined as number | undefined }));
+vi.mock("node:tty", async (load) => ({ ...await load<typeof import("node:tty")>(), isatty: (fd: number) => fixture.tty !== undefined && fd === 0 }));
 vi.mock("node:child_process", async (load) => ({ ...await load<typeof import("node:child_process")>(), execFileSync: fixture.command }));
 const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
 const uid = Object.getOwnPropertyDescriptor(process, "getuid");
 const actualUser = { uid: 1001, gid: 1001, username: "operator", homedir: "/home/operator" };
 vi.mock("node:fs", async (load) => {
   const actual = await load<typeof import("node:fs")>();
-  return { ...actual, readFileSync: (...args: Parameters<typeof actual.readFileSync>) => args[0] === "/etc/passwd" ? "operator:x:1001:1001::/home/operator:/bin/bash\n" : actual.readFileSync(...args) };
+  return {
+    ...actual,
+    readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
+      if (args[0] === "/etc/passwd") return "root:x:0:0::/root:/bin/sh\noperator:x:1001:1001::/home/operator:/bin/bash\n";
+      if (args[0] === "/proc/self/loginuid") {
+        if (fixture.loginuid === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return fixture.loginuid;
+      }
+      return actual.readFileSync(...args);
+    },
+    fstatSync: (...args: Parameters<typeof actual.fstatSync>) => fixture.tty !== undefined && args[0] === 0 ? { uid: fixture.tty } as never : actual.fstatSync(...args),
+  };
 });
 
 function identity(os: string, userId: number): void {
@@ -19,6 +31,8 @@ function identity(os: string, userId: number): void {
 beforeEach(() => {
   vi.resetModules();
   fixture.command.mockReset();
+  fixture.loginuid = undefined;
+  fixture.tty = undefined;
   vi.stubEnv("SUDO_UID", String(actualUser.uid));
   vi.stubEnv("SUDO_USER", actualUser.username);
   vi.stubEnv("HOME", "/root");
@@ -74,6 +88,61 @@ describe("invoking user storage identity", () => {
     const elevated = runtimeSocketPath("same-session");
     identity("linux", actualUser.uid);
     expect(runtimeSocketPath("same-session")).toBe(elevated);
+  });
+
+  it("maps pkexec and doas elevation to the invoking account", async () => {
+    identity("linux", 0);
+    vi.stubEnv("SUDO_UID", "");
+    vi.stubEnv("PKEXEC_UID", String(actualUser.uid));
+    let module = await import("../src/os/user-identity.js");
+    expect(module.getUserHome()).toBe(actualUser.homedir);
+    vi.resetModules();
+    vi.stubEnv("PKEXEC_UID", "");
+    vi.stubEnv("DOAS_USER", actualUser.username);
+    module = await import("../src/os/user-identity.js");
+    expect(module.getInvokingUser()).toMatchObject({ uid: actualUser.uid, username: actualUser.username });
+    vi.resetModules();
+    vi.stubEnv("DOAS_USER", "missing-user");
+    module = await import("../src/os/user-identity.js");
+    fixture.command.mockReturnValue("");
+    expect(() => module.getInvokingUser()).toThrow(/refusing to create a separate root history store/);
+  });
+
+  it("maps su sessions through the Linux login uid and falls back to the terminal owner", async () => {
+    identity("linux", 0);
+    vi.stubEnv("SUDO_UID", "");
+    fixture.loginuid = String(actualUser.uid);
+    let module = await import("../src/os/user-identity.js");
+    expect(module.getStorageUid()).toBe(actualUser.uid);
+    vi.resetModules();
+    fixture.loginuid = "4294967295";
+    fixture.tty = actualUser.uid;
+    module = await import("../src/os/user-identity.js");
+    expect(module.getUserHome()).toBe(actualUser.homedir);
+  });
+
+  it("keeps a genuine root login on root storage without failing", async () => {
+    identity("linux", 0);
+    vi.stubEnv("SUDO_UID", "");
+    fixture.loginuid = "0";
+    fixture.tty = 0;
+    let module = await import("../src/os/user-identity.js");
+    expect(module.getInvokingUser()).toBeUndefined();
+    vi.resetModules();
+    fixture.loginuid = "4242";
+    fixture.command.mockReturnValue("");
+    module = await import("../src/os/user-identity.js");
+    expect(module.getInvokingUser()).toBeUndefined();
+  });
+
+  it("resolves a macOS sudo user from the uid when SUDO_USER is missing", async () => {
+    identity("darwin", 0);
+    vi.stubEnv("SUDO_USER", "");
+    fixture.command.mockImplementation((_file: string, args: string[]) => args[1] === "-search"
+      ? `operator\t\tUniqueID = (\n    ${actualUser.uid}\n)\n`
+      : `NFSHomeDirectory: /Users/operator\nUniqueID: ${actualUser.uid}\nPrimaryGroupID: ${actualUser.gid}\n`);
+    const { getUserHome } = await import("../src/os/user-identity.js");
+    expect(getUserHome()).toBe("/Users/operator");
   });
 
   it("normalizes home before configuration and provider modules initialize", async () => {
