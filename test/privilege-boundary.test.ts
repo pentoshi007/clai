@@ -37,6 +37,19 @@ describe("universal managed privilege boundary", () => {
   });
 });
 
+describe("windows managed privilege boundary", () => {
+  const originalPlatform = process.platform;
+  afterEach(() => Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true }));
+
+  it("guides to run without elevation instead of leaking a password prompt", async () => {
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    const result = await runToolCall({ name: "shell.exec", args: { command: "sudo whoami", background: "never" } });
+    expect(result).toMatchObject({ ok: false, exitCode: 1 });
+    expect(result.output).toMatch(/secure password modal|run without elevation/);
+    expect(result.output).not.toMatch(/Password:/);
+  });
+});
+
 describe("sudo stdin privilege boundary", () => {
   it("does not let bare sudo -S bypass the managed password prompt", async () => {
     const result = await runToolCall({
