@@ -106,6 +106,7 @@ describe("SessionController parity helpers (V2-080)", () => {
   it("notice emits a typed notice AppEvent", () => {
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (e) => events.push(e),
@@ -120,6 +121,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
   it("allow/disallow mutate the session allow set", () => {
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
@@ -132,6 +134,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
   it("reset clears history, queue, and spool", async () => {
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
@@ -147,6 +150,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
   it("reset({ mintNewId: true }) changes the session id", () => {
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
@@ -159,6 +163,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
   it("estimateContext reports message count and only provider-reported tokens", async () => {
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
@@ -193,6 +198,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     };
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent,
       persistence: fakePersistence(),
       emit: () => {},
@@ -262,6 +268,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       observedAt: 1,
     });
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence,
       emit: () => {},
@@ -294,6 +301,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(saved[0]?.options?.contextUsage?.exact).toBe(false);
 
     const reopened = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence,
       emit: () => {},
@@ -333,6 +341,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       precision: "provider-exact",
     });
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence,
       emit: () => {},
@@ -365,6 +374,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     await session.persistNow();
     const reopened = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence,
       emit: () => {},
@@ -385,6 +395,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
   it("shows only the resolved window before provider telemetry arrives", () => {
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
@@ -400,6 +411,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
   it("setPlanApproved is readable via isPlanApproved", () => {
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: () => {},
@@ -422,6 +434,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     };
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent,
       persistence: fakePersistence(),
       emit: () => {},
@@ -446,6 +459,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (e) => events.push(e),
@@ -534,6 +548,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (event) => events.push(event),
@@ -598,6 +613,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (event) => events.push(event),
@@ -642,6 +658,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (event) => events.push(event),
@@ -686,6 +703,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (event) => events.push(event),
@@ -744,6 +762,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       async deletePlan() {},
     };
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence,
       emit: () => {},
@@ -785,6 +804,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: fakePersistence(),
       emit: (event) => events.push(event),
@@ -872,6 +892,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       { kind: "user", id: "u-old", text: "resumed task", done: true },
     ];
     const session = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence,
       emit: (event) => {
@@ -977,6 +998,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
 
     const older = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: persistence(identitiesA),
       emit: () => {},
@@ -987,6 +1009,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       persistenceRevision: 7,
     });
     const newer = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: fakeAgent(),
       persistence: persistence(identitiesB),
       emit: () => {},
@@ -1012,6 +1035,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     const snapshots: SaveSessionOptions[] = [];
     let release!: () => void;
     const first = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: {
         async runTurn(_request, handlers) {
           handlers.onMessages?.([{ role: "user", content: "continue the audit" }]);
@@ -1052,6 +1076,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     let resumedRequest: Parameters<AgentPort["runTurn"]>[0] | undefined;
     const resumed = new SessionController({
+      titleCompleter: async () => "parity session",
       agent: {
         async runTurn(request) {
           resumedRequest = request;
