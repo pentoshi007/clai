@@ -105,8 +105,8 @@ jobs:
           - label: base
             ref: 655dca0d0295e1562bd67ca83db1113293ddbd0c
           - os: windows-latest
-            label: storage-commit
-            ref: 7b0957d83b7183435e72155fa5b8f26b0d46e3ea
+            label: first-ci-commit
+            ref: 556a4d15a03c61323581e1eb17c076e16f0fa2a8
     steps:
       - uses: actions/checkout@v5
         with:
