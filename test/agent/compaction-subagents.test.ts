@@ -4,40 +4,34 @@ import {
   buildCompactionReducePrompt,
   buildCompactionUserPrompt,
   buildDirectCompactionPrompt,
-  COMPACTION_SYSTEM_PROMPT,
 } from "../../src/agent/compaction-summary.js";
 
 function expectSubagentIdentity(prompt: string): void {
-  expect(prompt).toContain('"subagents"');
-  expect(prompt).toContain("## Subagents");
-  expect(prompt).toContain("id");
-  expect(prompt).toContain("attempt");
-  expect(prompt).toContain("title");
-  expect(prompt).toContain("status");
-  expect(prompt).toContain("result");
-  expect(prompt).toContain("pending");
-  expect(prompt).toContain("recoverable later by id and attempt");
+  expect(prompt).toContain("Delegated workers are subagents");
+  expect(prompt).toContain("id and attempt");
+  expect(prompt).toContain("whether its result was read");
+  expect(prompt).toContain("recoverable by id and attempt");
+  expect(prompt).toContain("Keep background jobs and Responder tasks separate from subagents");
   expect(prompt).not.toMatch(/\bsubagent\.(?:read|list)\b/);
-  expect(prompt).toContain("separately");
-  expect(prompt).not.toContain("- Delegated work:");
+}
+
+function expectRegionSubagents(prompt: string): void {
+  expect(prompt).toContain("tool, web and subagent findings");
+  expect(prompt).not.toMatch(/\bsubagent\.(?:read|list)\b/);
 }
 
 describe("explicit subagent identity during compaction", () => {
-  it("requires explicit identity in the shared summarizer system prompt", () => {
-    expectSubagentIdentity(COMPACTION_SYSTEM_PROMPT);
-  });
-
   it.each(["default", "plan-implement"] as const)(
     "preserves subagents in every %s compaction strategy",
     (purpose) => {
       const durableState = "Subagents: [child-1] Inspect source (completed, attempt 2, result read)";
       expectSubagentIdentity(buildCompactionUserPrompt({
         purpose,
-        messageTranscript: "Subagent child-1 verified the source.",
+        source: { kind: "transcript", text: "Subagent child-1 verified the source." },
         durableState,
       }));
-      expectSubagentIdentity(buildDirectCompactionPrompt({ purpose, durableState }));
-      expectSubagentIdentity(buildCompactionChunkPrompt({
+      expectSubagentIdentity(buildDirectCompactionPrompt({ purpose, durableState, messages: [] }));
+      expectRegionSubagents(buildCompactionChunkPrompt({
         purpose,
         chunk: "Subagent child-1 verified the source.",
         index: 0,

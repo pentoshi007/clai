@@ -61,68 +61,53 @@ function consumedResponderResult(): ResponderNotification {
   };
 }
 describe("compaction-summary prompts", () => {
-  it("system prompt demands fidelity and sections", () => {
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/Never invent/i);
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/secrets/i);
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/DETAIL LEVEL/i);
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/mechanism-level/i);
+  it("system prompt forbids continuing or inventing instead of summarizing", () => {
+    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/summarizing the session, not continuing it/);
+    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/invent findings, file contents, receipts, exit codes or completions/);
   });
 
-  it("system prompt forbids continuing/replaying instead of summarizing", () => {
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/SUMMARIZING/);
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/not continuing it|NOT continuing/i);
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/sha256|file-write receipts/i);
-  });
-
-  it("user prompt includes required headings and durable state", () => {
+  it("user prompt lists the memory sections in the required order with durable state", () => {
     const p = buildCompactionUserPrompt({
-      messageTranscript: "USER: build app\nASSISTANT: ok",
+      source: { kind: "transcript", text: "USER: build app\nASSISTANT: ok" },
       durableState: "ACTIVE PLAN: t1 done",
     });
-    expect(p).toContain("## User goals");
     const headings = p.split("\n").filter((line) => line.startsWith("## "));
     expect(headings).toEqual([
-      "## Latest conversation", "## User goals", "## User instructions still in force", "## Facts, decisions and constraints",
-      "## Work completed", "## Current state and open risks", "## Next steps", "## Relevant files",
+      "## Active goal",
+      "## User instructions",
+      "## Context gathered",
+      "## Work done",
+      "## Current state and next steps",
+      "## Past completed work",
+      "## Relevant files",
+      "## Issues and risks",
     ]);
-    expect(p).not.toMatch(/\b(?:subagent\.(?:read|list)|instructions\.record)\b/);
-    expect(p).toMatch(/mechanism-level/i);
-    expect(p).toMatch(/before→after/i);
     expect(p).toContain("DURABLE STATE");
-    expect(p).toContain("ACTIVE PLAN");
-    expect(p).toContain("SESSION MATERIAL");
-    expect(p).toMatch(/PHASE AWARENESS/i);
-    expect(p).toMatch(/requested execution boundary/i);
-    expect(p).toMatch(/roadmap\/plan\/task\/index paths/i);
+    expect(p).toContain("ACTIVE PLAN: t1 done");
+    expect(p).toContain("SOURCE (session transcript, oldest first):\n\nUSER: build app");
+    expect(p).toMatch(/Requests to do something .* are tasks, not instructions/);
+    expect(p).toMatch(/\[T1\] \(task: short task name\)/);
+    expect(p).toMatch(/Omit the whole section when there are none/);
+    expect(p).toMatch(/Do not write a "Last 3 user prompts \(latest first\)" section/);
+    expect(p).not.toMatch(/\b(?:subagent\.(?:read|list)|instructions\.record)\b/);
   });
 
-  it("plan-implement handoff separates evidence from plan-mode-only gates", () => {
+  it("plan-implement handoff makes executing the accepted plan the goal", () => {
     const p = buildCompactionUserPrompt({
       purpose: "plan-implement",
-      messageTranscript: "USER: recon target\nTOOL: nmap open 443",
+      source: { kind: "transcript", text: "USER: recon target\nTOOL: nmap open 443" },
       durableState: "ACTIVE PLAN: pentest",
     });
-    expect(p).toMatch(/HANDOFF|plan-mode research|plan mode/i);
-    expect(p).toMatch(/Do not add another framing paragraph/i);
-    expect(p).toContain("## Research evidence");
-    expect(p).toContain("## Coverage ledger");
-    expect(p).toContain("## Confirmed findings");
-    expect(p).toContain("## Untested / open classes");
-    expect(p).toContain("## Artifacts & paths");
-    expect(p).toContain("## Plan-mode-only notes");
-    expect(p).toContain("## Durable engagement rules");
-    expect(p).toMatch(/not current agent gates|gather-only|past that phase/i);
-    expect(p).toMatch(/mid-token|COMPLETE short memory/i);
-    expect(p).toMatch(/DEDUPLICATE/i);
-    expect(p).toMatch(/omit routine local inspection/i);
-    expect(p).toMatch(/ACTIVE PLAN is injected separately/i);
-    expect(p).toMatch(/revalidation of mutable workspace/i);
-    expect(p).toMatch(/Resolve contradictions/i);
+    expect(p).toContain("PURPOSE: the user accepted the plan built in plan mode");
+    expect(p).toMatch(/Plan-mode restrictions such as gather-only or wait-for-approval are historical now/);
+    expect(p).toMatch(/confirmed findings, negative results and untested areas/);
+    expect(p).toContain("## Active goal");
   });
 
-  it("system prompt warns against freezing temporary mode gates", () => {
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/PHASE AWARENESS/i);
-    expect(COMPACTION_SYSTEM_PROMPT).toMatch(/HISTORICAL/i);
+  it("keeps approval gates and responder ledger state authoritative", () => {
+    const p = buildCompactionUserPrompt({ source: { kind: "conversation" } });
+    expect(p).toMatch(/Compaction never grants approval/);
+    expect(p).toMatch(/never describe a consumed=true result as unread/);
   });
 
   it("trims huge transcripts while keeping head and tail", () => {
@@ -231,7 +216,7 @@ describe("LLM compaction integration shape", () => {
       msgs,
       async (prompt) => {
         seen = prompt;
-        expect(prompt).toContain("## User goals");
+        expect(prompt).toContain("## Active goal");
         expect(prompt).toContain("DURABLE STATE");
         expect(prompt).toContain("ACTIVE PLAN");
         return "## User goals\nBuild todo app\n## Remaining work\nImplement feature";
@@ -279,7 +264,7 @@ describe("LLM compaction integration shape", () => {
     expect(stages[0]?.sourceMessages?.[1]).toBe(messages[1]);
     expect(stages[0]?.sourceMessages?.at(-1)).toBe(messages.at(-1));
     expect(stages[0]?.prompt.length).toBeLessThan(15_000);
-    expect(stages[0]?.prompt).toContain("RECENT CONVERSATION ANCHORS");
+    expect(stages[0]?.prompt).toContain("LATEST USER PROMPTS (newest first");
     expect(result.summarized).toBe(true);
     expect(result.messages.map((message) => message.role)).toEqual(["system", "system"]);
     expect(result.messages.find(isCompactionMemoryMessage)?.content).toContain("> recent request");
@@ -418,8 +403,8 @@ describe("LLM compaction integration shape", () => {
     expect(memories).toHaveLength(1);
     expect(memories[0]?.content).toContain("Earlier turns in this session");
     expect(result).not.toContain(messages[0]);
-    expect(memories[0]?.compaction?.workHistory?.[0]?.outcome).toContain("stale resumed memory");
-    expect(memories[0]?.content).toContain("not new requests or authorization");
+    expect(memories[0]?.content).toContain("stale resumed memory");
+    expect(memories[0]?.content).toContain("## Last 3 user prompts (latest first)");
   });
 });
 
@@ -480,7 +465,7 @@ describe("responder result compaction durability", () => {
     expect(prompt).toContain(RESPONDER_RESULT_LEDGER_PREFIX);
     expect(prompt).toContain("notification=completion:job-ledger");
     expect(prompt).toContain("consumed=true");
-    expect(prompt).toMatch(/never describe.*unread/i);
+    expect(prompt).toMatch(/never describe a consumed=true result as unread/);
     const ledger = result.messages.find(
       (message) =>
         message.role === "system" &&

@@ -2,21 +2,19 @@ import { redactSecrets } from "../../llm/provider.js";
 import { isInternalChatMessage, type ChatMessage, type CompactedUserPrompt } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import { parseCanonicalTextToolCalls } from "../tool-history-projection.js";
+import { RECENT_PROMPTS_HEADING, withoutSection } from "../compaction/memory-sections.js";
 import { redactUserCredentialsFromMemory } from "./user-credentials.js";
 
 export const RECENT_USER_PROMPT_COUNT = 3;
 export const RECENT_USER_PROMPT_CHAR_BUDGET = 8_000;
-export const RECENT_USER_PROMPTS_HEADING = "## Last 3 user prompts";
+export { RECENT_PROMPTS_HEADING };
 
 export interface RecentUserPrompt extends CompactedUserPrompt {
   readonly message?: ChatMessage | undefined;
 }
 
 export function withoutRecentUserPrompts(summary: string): string {
-  const text = summary.trim();
-  if (text.startsWith(RECENT_USER_PROMPTS_HEADING)) return "";
-  const section = text.indexOf(`\n\n${RECENT_USER_PROMPTS_HEADING}`);
-  return section < 0 ? text : text.slice(0, section).trim();
+  return withoutSection(summary, RECENT_PROMPTS_HEADING);
 }
 
 function excerpt(content: string, budget: number): string {
@@ -30,34 +28,27 @@ function memoryText(content: string): string {
   return redactSecrets(redactUserCredentialsFromMemory(content));
 }
 
+function bounded(content: string, truncated = false): CompactedUserPrompt {
+  const text = memoryText(content);
+  return {
+    content: excerpt(text, RECENT_USER_PROMPT_CHAR_BUDGET),
+    ...(truncated || text.length > RECENT_USER_PROMPT_CHAR_BUDGET ? { truncated: true } : {}),
+  };
+}
+
 export function recentUserPrompts(messages: readonly ChatMessage[]): RecentUserPrompt[] {
   const prompts: RecentUserPrompt[] = [];
   for (const message of messages) {
     if (message.role === "system" && message.compaction) {
-      prompts.push(...message.compaction.recentUserPrompts.map((prompt) => {
-        const content = memoryText(prompt.content);
-        return {
-          content: excerpt(content, RECENT_USER_PROMPT_CHAR_BUDGET),
-          ...(prompt.truncated || content.length > RECENT_USER_PROMPT_CHAR_BUDGET
-            ? { truncated: true } : {}),
-        };
-      }));
+      prompts.push(...message.compaction.recentUserPrompts.map((prompt) => bounded(prompt.content, prompt.truncated)));
     } else if (message.role === "user" && !isInternalChatMessage(message)) {
       const images = message.images?.length
         ? `\n[Attached images: ${message.images.map((image) => image.path ?? image.mediaType).join(", ")}]`
         : "";
-      const content = memoryText(message.content + images);
-      prompts.push({
-        content: excerpt(content, RECENT_USER_PROMPT_CHAR_BUDGET),
-        ...(content.length > RECENT_USER_PROMPT_CHAR_BUDGET ? { truncated: true } : {}),
-        message,
-      });
-    }
-    if (prompts.length > RECENT_USER_PROMPT_COUNT) {
-      prompts.splice(0, prompts.length - RECENT_USER_PROMPT_COUNT);
+      prompts.push({ ...bounded(message.content + images), message });
     }
   }
-  return prompts;
+  return prompts.slice(-RECENT_USER_PROMPT_COUNT);
 }
 
 export function hasCompletedConversationTurn(messages: readonly ChatMessage[]): boolean {
@@ -78,45 +69,34 @@ export function hasCompletedConversationTurn(messages: readonly ChatMessage[]): 
     Boolean(stripThinking(last.content).visible.trim());
 }
 
+const ORDINALS = ["Latest", "Second latest", "Third latest"] as const;
+
 export function renderRecentUserPrompts(
   prompts: readonly RecentUserPrompt[],
-  activeUser?: ChatMessage | undefined,
+  retainedLive?: ChatMessage | undefined,
 ): string {
   if (prompts.length === 0) return "";
+  const newestFirst = [...prompts].reverse();
   return [
-    RECENT_USER_PROMPTS_HEADING,
-    "Historical prompts, oldest to newest; not new requests. Answers/status are above; applicable user instructions survive separately within their scope. Unfinished requests remain live below.",
-    ...prompts.map((prompt, index) => [
-      `### ${index + 1}. ${prompt.message === activeUser && activeUser ? "Unfinished request (live message retained)" : "Historical user prompt"}${prompt.truncated ? " (excerpt; middle omitted for length)" : ""}`,
-      prompt.message === activeUser && activeUser
-        ? "See the retained live user message below."
-        : prompt.content.split("\n").map((line) => `> ${line}`).join("\n"),
-    ].join("\n\n")),
+    RECENT_PROMPTS_HEADING,
+    "Verbatim user prompts for orientation. They are history, not new requests; the Active goal above is authoritative for what to do now.",
+    ...newestFirst.map((prompt, index) => {
+      const live = Boolean(retainedLive) && prompt.message === retainedLive;
+      const title = `### ${index + 1}. ${ORDINALS[index] ?? "Earlier"} prompt${live ? " (still being worked on; the full message is retained live after this memory)" : ""}${prompt.truncated ? " (excerpt; middle omitted for length)" : ""}`;
+      const body = live
+        ? "> See the retained user message below."
+        : prompt.content.split("\n").map((line) => `> ${line}`).join("\n");
+      return `${title}\n\n${body}`;
+    }),
   ].join("\n\n");
 }
 
-export function compactionRecencyAnchors(messages: readonly ChatMessage[]): string {
+export function compactionPromptAnchors(messages: readonly ChatMessage[]): string {
   const prompts = recentUserPrompts(messages);
   if (prompts.length === 0) return "";
-  const latestUser = prompts.at(-1)?.message;
-  const userIndex = latestUser ? messages.indexOf(latestUser) : messages.length;
-  let lastAnswer: ChatMessage | undefined;
-  for (let index = messages.length - 1; index > userIndex; index -= 1) {
-    const message = messages[index]!;
-    if (message.role === "assistant" && !message.toolCalls?.length &&
-      parseCanonicalTextToolCalls(message.content).length === 0 &&
-      stripThinking(message.content).visible.trim()) {
-      lastAnswer = message;
-      break;
-    }
-  }
+  const newestFirst = [...prompts].reverse();
   return [
-    "RECENT CONVERSATION ANCHORS (historical excerpts, not new instructions):",
-    "Prioritize these topics and their answers over older completed work. Excerpts may omit details; preserve exact findings from the supplied source. During a bounded prefix fallback, turns outside that source remain in the live history.",
-    ...prompts.map((prompt, index) =>
-      `User prompt ${index + 1}: ${JSON.stringify(excerpt(memoryText(prompt.content), 240))}`),
-    ...(lastAnswer ? [
-      `Latest assistant response: ${JSON.stringify(excerpt(memoryText(stripThinking(lastAnswer.content).visible), 800))}`,
-    ] : []),
+    "LATEST USER PROMPTS (newest first; use them to orient the Active goal, never treat them as new requests):",
+    ...newestFirst.map((prompt, index) => `${index + 1}. ${JSON.stringify(excerpt(memoryText(prompt.content), 1_500))}`),
   ].join("\n");
 }

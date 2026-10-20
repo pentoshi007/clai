@@ -13,7 +13,6 @@ import {
 import { ComposerEditor } from "../composer/composer-editor.js";
 import { maxComposerTextRows } from "../../ui-core/composer/composer-height.js";
 import { TranscriptView } from "../components/transcript/transcript-view.js";
-import { TranscriptScrollbar } from "../components/transcript/transcript-scrollbar.js";
 import { PlanView } from "../components/plan/plan-view.js";
 import { handlePlanInteraction, OPEN_TUI_KEYMAP, resolvePlanInteraction, type PlanInteractionPort } from "../components/plan/plan-interaction.js";
 import { useTaskDisclosureBinding } from "../components/plan/use-task-disclosure.js";
@@ -827,13 +826,6 @@ export function App(): ReactNode {
           onFocusComposer={focusComposer}
         />
       </box>
-
-      <TranscriptScrollbar
-        scrollRef={transcriptScrollRef}
-        theme={theme}
-        store={services.transcript}
-        running={sessionRunning}
-      />
 
       {layout.plan.placement === "overlay" &&
       widthBudget.showPlanOverlay ? (

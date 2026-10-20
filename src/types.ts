@@ -201,19 +201,13 @@ export interface ChatMessage {
   compaction?: {
     readonly recentUserPrompts: readonly CompactedUserPrompt[];
     readonly userInstructions?: readonly CompactedUserInstruction[] | undefined;
-    readonly workHistory?: readonly CompactedWorkstream[] | undefined;
   } | undefined;
-}
-
-export interface CompactedWorkstream {
-  readonly request: string;
-  readonly outcome?: string | undefined;
-  readonly evidence?: string | undefined;
 }
 
 export interface CompactedUserInstruction {
   readonly id: string;
-  readonly scope: "session" | "task" | "turn";
+  readonly scope: "session" | "task";
+  readonly task?: string | undefined;
   readonly text: string;
 }
 

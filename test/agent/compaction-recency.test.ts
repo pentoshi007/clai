@@ -164,10 +164,10 @@ describe('compaction sees the end of the session', () => {
   });
 
   it('instructs the summarizer never to report completed work as remaining', () => {
-    const prompt = buildCompactionUserPrompt({ messageTranscript: 'x' });
+    const prompt = buildCompactionUserPrompt({ source: { kind: 'transcript', text: 'x' } });
 
-    expect(prompt).toContain('RECENCY');
-    expect(prompt).toMatch(/NEVER list completed work under Next steps/);
-    expect(prompt).toMatch(/reverted, replaced, or abandoned/);
+    expect(prompt).toMatch(/Read the source to the very end/);
+    expect(prompt).toMatch(/Never list completed work as a next step/);
+    expect(prompt).toMatch(/replaced or reverted are superseded/);
   });
 });

@@ -4,7 +4,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getActiveProjectRoot, setActiveProjectRoot } from "../src/agent/project-root.js";
-import { USER_INSTRUCTION_COMPACTION_GUIDANCE } from "../src/agent/context/compaction-user-instructions.js";
+import { buildCompactionUserPrompt } from "../src/agent/compaction-summary.js";
 import { invalidateInstructionCache, loadAgentInstructions } from "../src/instructions/load.js";
 import { RECORDED_INSTRUCTIONS_TEMPLATE } from "../src/instructions/record.js";
 import { TOOL_DEFINITIONS } from "../src/tools/definitions/aggregate.js";
@@ -133,7 +133,7 @@ describe("instruction scope contracts", () => {
   });
 
   it("keeps task instructions in scoped memory rather than project files", () => {
-    expect(USER_INSTRUCTION_COMPACTION_GUIDANCE).toMatch(/not persist.*task/i);
+    expect(buildCompactionUserPrompt({ source: { kind: "conversation" } })).toMatch(/never persist session or task rules into those files/);
     expect(RECORDED_INSTRUCTIONS_TEMPLATE).toMatch(/project-wide/i);
     const prompt = readFileSync(new URL("../src/prompts/system.agent.md", import.meta.url), "utf8");
     expect(prompt.includes("# PERSISTENT PROJECT INSTRUCTIONS")).toBe(true);

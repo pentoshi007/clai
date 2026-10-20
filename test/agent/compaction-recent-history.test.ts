@@ -12,16 +12,20 @@ import {
   recentUserPrompts,
 } from "../../src/agent/context/compaction-recent-history.js";
 import { assertValidToolProtocol } from "../../src/agent/tool-history.js";
+import { canonicalMemoryLayout } from "../../src/agent/compaction/memory-sections.js";
 
 const SUMMARY = [
-  "ORIENTATION: Compaction design research is answered; no implementation is pending.",
-  "## Latest conversation",
+  "## Active goal",
+  "No active task. The compaction design research was answered; wait for the next request.",
+  "## Context gathered",
   "- A completed turn can use summary-only history; unfinished requests and tool groups need live messages.",
   "- Replay the successful request prefix and append compaction instructions to preserve cache eligibility.",
-  "## Work completed",
+  "## Work done",
+  "Nothing yet.",
+  "## Current state and next steps",
+  "Research answered; nothing remains.",
+  "## Past completed work",
   "- Earlier RTK fixes were verified.",
-  "## Remaining work",
-  "- None requested.",
 ].join("\n");
 
 function researchHistory(): ChatMessage[] {
@@ -54,18 +58,21 @@ describe("recent conversation memory", () => {
 
     expect(source).toEqual(original);
     expect(source?.every((message, index) => message === history[index])).toBe(true);
-    expect(instruction).toContain("## Latest conversation");
-    expect(instruction).toContain("An answered question does not authorize implementation");
-    expect(instruction).toContain("completed plan does not determine the current conversation topic");
-    expect(instruction).toContain("Is the bounded recent-message tail necessary?");
-    expect(instruction).toContain("At a completed-turn boundary, summary-only raw history is fine");
+    expect(instruction).toContain("## Active goal");
+    expect(instruction).toContain("an answered question never authorizes new work");
+    expect(instruction).toContain("The latest turn ended with a final answer");
+    expect(instruction).toContain("An earlier compaction memory appears in the source");
+    expect(instruction.indexOf("Is the bounded recent-message tail necessary?")).toBeLessThan(instruction.indexOf("How does compaction work? Research only."));
     expect(result.messages.map((message) => message.role)).toEqual(["system", "system"]);
     const memory = result.messages.find(isCompactionMemoryMessage)!;
-    expect(memory.content).toContain(SUMMARY);
-    expect(memory.content).toContain("## Last 3 user prompts");
-    expect(memory.content).toContain("> How does compaction work? Research only.");
-    expect(memory.content).toContain("> Does reasoning effort affect the cache?");
-    expect(memory.content).toContain("> Is the bounded recent-message tail necessary?");
+    expect(memory.content).toContain(canonicalMemoryLayout(SUMMARY));
+    expect(memory.content).toContain("## Last 3 user prompts (latest first)");
+    const latest = memory.content.indexOf("### 1. Latest prompt\n\n> Is the bounded recent-message tail necessary?");
+    const second = memory.content.indexOf("### 2. Second latest prompt\n\n> Does reasoning effort affect the cache?");
+    const third = memory.content.indexOf("### 3. Third latest prompt\n\n> How does compaction work? Research only.");
+    expect(latest).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(latest);
+    expect(third).toBeGreaterThan(second);
     expect(memory.compaction?.recentUserPrompts).toHaveLength(3);
     expect(history).toEqual(original);
     assertValidToolProtocol(result.messages);
@@ -101,7 +108,7 @@ describe("recent conversation memory", () => {
     const result = await compactMessagesWithSummary(history, async () => SUMMARY);
 
     expect(result.messages.slice(-3)).toEqual(history.slice(-3));
-    expect(result.messages.find(isCompactionMemoryMessage)?.content).toContain("Unfinished request (live message retained)");
+    expect(result.messages.find(isCompactionMemoryMessage)?.content).toContain("### 1. Latest prompt (still being worked on; the full message is retained live after this memory)");
     expect(result.messages.find(isCompactionMemoryMessage)?.compaction?.recentUserPrompts).toHaveLength(2);
     assertValidToolProtocol(result.messages);
     const continued = [...result.messages, { role: "assistant" as const, content: "Research is answered." }];
@@ -145,7 +152,7 @@ describe("recent conversation memory", () => {
     const memory = result.messages.find(isCompactionMemoryMessage)!;
 
     expect(memory.content.match(/> Explain caching/g)).toHaveLength(1);
-    expect(memory.content).toContain("See the retained live user message below.");
+    expect(memory.content).toContain("> See the retained user message below.");
     expect(recentUserPrompts(result.messages).map(({ content }) => content)).toEqual(["Explain caching", "Explain caching"]);
     expect(memory.content).not.toContain("> You wrote a message");
     expect(result.messages.some((message) => message === history[2])).toBe(true);
@@ -200,7 +207,7 @@ describe("recent conversation memory", () => {
   });
 
   it("does not let quoted prompts make an inadequate model summary pass quality checks", () => {
-    const summaryBody = "ok\n\n## Last 3 user prompts\n\n> " + "historical question ".repeat(100);
+    const summaryBody = "ok\n\n## Last 3 user prompts (latest first)\n\n> " + "historical question ".repeat(100);
     const input = {
       summarized: true,
       summaryBody,

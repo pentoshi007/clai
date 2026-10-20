@@ -70,11 +70,12 @@ describe("phase 9 — context manager", () => {
     }));
     const result = await compactMessagesWithSummary(msgs, async (prompt) => {
       expect(prompt).toContain("nmap -sT localhost");
-      expect(prompt).toContain("## Work completed");
-      expect(prompt).toMatch(/verification evidence or reusable command/);
+      expect(prompt).toContain("## Work done");
+      expect(prompt).toContain("## Current state and next steps");
       expect(prompt).toContain("OLDER MODEL TURNS");
       expect(prompt).toContain("message-0-");
-      expect(prompt).toContain("## User goals");
+      expect(prompt).toContain("## Active goal");
+      expect(prompt).toContain("The agent was in the middle of the latest user request");
       return "The user selected PostgreSQL and implementation remains pending.";
     }, { keepRecent: 8, preserveActiveTurn: true }, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
     expect(result.summarized).toBe(true);
