@@ -3,6 +3,7 @@ import type { SelectionState } from "../../../src/ui-core/controllers/selection-
 import type { FeedBlock } from "../../../src/classic/feed/feed-blocks.js";
 import {
   anchorAtTranscriptPointer,
+  cellAtTranscriptPointer,
   classicTranscriptDocument,
   selectionSpanForRow,
 } from "../../../src/classic/feed/transcript-selection.js";
@@ -65,5 +66,20 @@ describe("classic transcript selection", () => {
     expect(selectionSpanForRow(rows[1]!, document, selection)).toEqual({ text: "bravo", start: 0, end: 5 });
     expect(selectionSpanForRow(rows[2]!, document, selection)).toBeUndefined();
     expect(selectionSpanForRow(rows[3]!, document, selection)).toEqual({ text: "charlie", start: 0, end: 3 });
+  });
+
+  it("reports the cell under the pointer, clamping past the line end and spanning wide glyphs", () => {
+    const blocks = [block("0:a", "a", ["A界B"])];
+    const window = planTranscriptWindow(blocks, 1, 0);
+    const geometry = { left: 0, top: 0 };
+    const offsets = (x: number) => {
+      const cell = cellAtTranscriptPointer(window, x, 0, geometry)!;
+      return [cell.start.offset, cell.end.offset];
+    };
+    expect(offsets(0)).toEqual([0, 1]);
+    expect(offsets(1)).toEqual([1, 2]);
+    expect(offsets(2)).toEqual([1, 2]);
+    expect(offsets(3)).toEqual([2, 3]);
+    expect(offsets(9)).toEqual([3, 3]);
   });
 });

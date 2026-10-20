@@ -15,7 +15,7 @@ import type { KeyEvent } from "../input/key-event.js";
 import type { PanelController, PanelSnapshot } from "../panels/panel-controller.js";
 import type { FeedSnapshot } from "./use-feed.js";
 import type { FeedBlock } from "../feed/feed-blocks.js";
-import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
+import type { SemanticAnchor, SemanticCell, SemanticDocument } from "../../ui-core/state/semantic-document.js";
 import type { TranscriptPointerGeometry } from "../feed/transcript-selection.js";
 import type { PaintPacing } from "./paint-pacing.js";
 import type { ContextLimitHitRegion } from "../chrome/context-limit-editor.js";
@@ -115,7 +115,7 @@ export interface WiringHost {
   tickTimer: ReturnType<typeof setInterval> | undefined;
   animationTimer: ReturnType<typeof setInterval> | undefined;
   searchFocusRelease: (() => void) | undefined;
-  selectionPointerAnchor: SemanticAnchor | undefined;
+  selectionPointerCell: SemanticCell | undefined;
   selectionPointerMoved: boolean;
   selectionPointerX: number;
   selectionPointerY: number;

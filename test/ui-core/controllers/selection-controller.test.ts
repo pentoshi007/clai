@@ -208,3 +208,34 @@ describe("SelectionController (V2-060..064)", () => {
     expect(clipboard.text).toBe("CHAT");
   });
 });
+
+describe("SelectionController.dragCellTo", () => {
+  const at = (offset: number) => ({ blockId: "chat-a", offset });
+  const cell = (offset: number) => ({ start: at(offset), end: at(offset + 1) });
+
+  it("includes both the pressed cell and the cell under the pointer when dragging forward", () => {
+    const { selection } = configured();
+    selection.beginDrag("transcript", at(0));
+    expect(selection.dragCellTo("transcript", cell(0), cell(18))).toBe(true);
+    expect(selection.selectedText()).toBe("CHAT-FIRST-SENTINEL");
+  });
+
+  it("includes the pressed cell when dragging backward", () => {
+    const { selection } = configured();
+    selection.beginDrag("transcript", at(18));
+    selection.dragCellTo("transcript", cell(18), cell(11));
+    expect(selection.selectedText()).toBe("SENTINEL");
+  });
+
+  it("keeps a drag that never leaves the pressed cell empty", () => {
+    const { selection } = configured();
+    selection.beginDrag("transcript", at(4));
+    selection.dragCellTo("transcript", cell(4), cell(4));
+    expect(selection.hasSelection()).toBe(false);
+  });
+
+  it("ignores cell drags before a drag begins", () => {
+    const { selection } = configured();
+    expect(selection.dragCellTo("transcript", cell(0), cell(5))).toBe(false);
+  });
+});

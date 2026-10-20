@@ -1,6 +1,6 @@
 import { notify } from "../../ui-core/notify.js";
 import type { MouseEvent } from "../input/key-event.js";
-import { anchorAtTranscriptPointer } from "../feed/transcript-selection.js";
+import { cellAtTranscriptPointer } from "../feed/transcript-selection.js";
 import { WHEEL_SCROLL_ROWS } from "./wiring-interactions.js";
 import type { WiringHost } from "./wiring-types.js";
 
@@ -11,9 +11,9 @@ function stopAutoScroll(host: WiringHost): void {
 }
 
 export function cancelTranscriptPointer(host: WiringHost): void {
-  if (!host.selectionPointerAnchor) return;
+  if (!host.selectionPointerCell) return;
   stopAutoScroll(host);
-  host.selectionPointerAnchor = undefined;
+  host.selectionPointerCell = undefined;
   host.selectionPointerMoved = false;
   host.services.selection.finishDrag();
   host.services.focus.focusRegion("composer");
@@ -21,20 +21,20 @@ export function cancelTranscriptPointer(host: WiringHost): void {
 
 function updateAutoScroll(host: WiringHost): void {
   const window = host.selectionWindow;
-  if (!window || !host.selectionPointerAnchor || !host.selectionPointerMoved) return;
+  if (!window || !host.selectionPointerCell || !host.selectionPointerMoved) return;
   const relativeY = host.selectionPointerY - host.selectionGeometry.top;
   if (relativeY <= 0) host.scrollFeed(WHEEL_SCROLL_ROWS);
   else if (relativeY >= window.viewportRows) host.scrollFeed(-WHEEL_SCROLL_ROWS);
   else return;
-  const anchor = anchorAtTranscriptPointer(
+  const cell = cellAtTranscriptPointer(
     window,
     host.selectionPointerX,
     host.selectionPointerY,
     host.selectionGeometry,
     true,
   );
-  if (!anchor) return;
-  host.services.selection.dragTo("transcript", anchor, {
+  if (!cell) return;
+  host.services.selection.dragCellTo("transcript", host.selectionPointerCell, cell, {
     x: host.selectionPointerX,
     y: host.selectionPointerY,
   });
@@ -82,42 +82,45 @@ export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void
   }
   host.selectionPointerX = event.x;
   host.selectionPointerY = event.y;
-  const anchor = anchorAtTranscriptPointer(
+  const cell = cellAtTranscriptPointer(
     window,
     event.x,
     event.y,
     host.selectionGeometry,
-    host.selectionPointerAnchor !== undefined,
+    host.selectionPointerCell !== undefined,
   );
   if (event.release) {
-    const shouldCopy = host.selectionPointerAnchor !== undefined && host.selectionPointerMoved;
-    if (host.selectionPointerAnchor && anchor) {
-      if (host.selectionPointerMoved) host.services.selection.dragTo("transcript", anchor, event);
+    const shouldCopy = host.selectionPointerCell !== undefined && host.selectionPointerMoved;
+    if (host.selectionPointerCell && cell) {
+      if (host.selectionPointerMoved) {
+        host.services.selection.dragCellTo("transcript", host.selectionPointerCell, cell, event);
+      }
       host.services.selection.finishDrag();
     }
     stopAutoScroll(host);
-    host.selectionPointerAnchor = undefined;
+    host.selectionPointerCell = undefined;
     host.selectionPointerMoved = false;
     if (shouldCopy && host.services.selection.hasSelection()) void copySelection(host);
     if (shouldCopy) host.services.focus.focusRegion("composer");
     host.schedulePaint();
     return;
   }
-  if (event.button !== "left" || !anchor) return;
+  if (event.button !== "left" || !cell) return;
   host.services.focus.focusRegion("composer");
   if (!event.drag) {
     stopAutoScroll(host);
-    host.selectionPointerAnchor = anchor;
+    host.selectionPointerCell = cell;
     host.selectionPointerMoved = false;
-    host.services.selection.click("transcript", anchor);
+    host.services.selection.click("transcript", cell.start);
     host.schedulePaint();
     return;
   }
-  if (!host.selectionPointerAnchor) return;
+  const pressed = host.selectionPointerCell;
+  if (!pressed) return;
   if (!host.selectionPointerMoved) {
-    host.services.selection.beginDrag("transcript", host.selectionPointerAnchor, event);
+    host.services.selection.beginDrag("transcript", pressed.start, event);
   }
-  host.services.selection.dragTo("transcript", anchor, event);
+  host.services.selection.dragCellTo("transcript", pressed, cell, event);
   host.selectionPointerMoved = true;
   ensureAutoScroll(host);
   updateAutoScroll(host);

@@ -15,7 +15,7 @@ import { InputPipeline } from "../input/input-pipeline.js";
 import { PasteBurstAssembler } from "../input/paste-burst.js";
 import { RawDecoder } from "../input/raw-decoder.js";
 import type { KeyEvent } from "../input/key-event.js";
-import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
+import type { SemanticAnchor, SemanticCell, SemanticDocument } from "../../ui-core/state/semantic-document.js";
 import type { FeedBlock } from "../feed/feed-blocks.js";
 import {
   anchorAtTranscriptPointer,
@@ -103,7 +103,7 @@ export class ClassicAppWiring implements WiringHost {
   tickTimer: ReturnType<typeof setInterval> | undefined;
   animationTimer: ReturnType<typeof setInterval> | undefined;
   searchFocusRelease: (() => void) | undefined;
-  selectionPointerAnchor: SemanticAnchor | undefined;
+  selectionPointerCell: SemanticCell | undefined;
   selectionPointerMoved = false;
   selectionPointerX = 0;
   selectionPointerY = 0;
