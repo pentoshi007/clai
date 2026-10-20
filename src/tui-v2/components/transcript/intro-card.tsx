@@ -2,11 +2,10 @@
 
 import { useMemo, type ReactNode } from "react";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
-import { homedir } from "node:os";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { ansiToStyledText } from "../../rendering/ansi-to-styled.js";
-import { renderIntroHeaderLines } from "../../../ui-core/rendering/intro-header.js";
+import { displayWorkdir, renderIntroHeaderLines } from "../../../ui-core/rendering/intro-header.js";
 import { getCurrentVersion } from "../../../commands/update.js";
 import { getConfig, getProviderModel } from "../../../store/config.js";
 import { effectiveThinkingEffort } from "../../../llm/capabilities.js";
@@ -19,13 +18,8 @@ export interface IntroCardProps {
   readonly width?: number | undefined;
 }
 
-function displayWorkdir(workdir: string): string {
-  const home = homedir();
-  return workdir.startsWith(home) ? `~${workdir.slice(home.length)}` : workdir;
-}
-
 export function IntroCard(props: IntroCardProps): ReactNode {
-  const { services, width: widthProp } = props;
+  const { services, theme, width: widthProp } = props;
   const { width: termWidth } = useTerminalDimensionsContext();
   const width = widthProp ?? Math.max(56, termWidth - 4);
 
@@ -50,8 +44,10 @@ export function IntroCard(props: IntroCardProps): ReactNode {
         permissions,
         workdir,
         variant,
+        theme,
       }).map((line) => ansiToStyledText(line.length === 0 ? " " : line)),
     [
+      theme,
       width,
       version,
       session.mode,
@@ -69,7 +65,7 @@ export function IntroCard(props: IntroCardProps): ReactNode {
       style={{ flexDirection: "column", width: "100%", marginBottom: 1 }}
     >
       {lines.map((content, i) => (
-        <text key={i} content={content} selectable={false} />
+        <text key={i} content={content} selectable />
       ))}
     </box>
   );

@@ -1,21 +1,25 @@
 import chalk from "chalk";
+import { homedir } from "node:os";
+import { sep } from "node:path";
 import { normalizeProvider } from "../../llm/provider.js";
 import { getProvider } from "../../llm/router.js";
 import { renderWordmark, wordmarkWidth } from "./wordmark.js";
 import { DEFAULT_PERMISSION_MODE, permissionModeLabel } from "../../safety/permission-mode.js";
 import { CARD_BORDER_HEX, CARD_INSET_COLUMNS } from "./card-style.js";
+import { middleClipText, terminalWidth } from "./text-width.js";
+import { themeFor, type Theme } from "./theme.js";
 
 const cardBorder = chalk.hex(CARD_BORDER_HEX);
 
-function truncateMiddle(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  if (text.length <= maxWidth) return text;
-  if (maxWidth <= 1) return "…";
-  const keep = maxWidth - 1;
-  const head = Math.ceil(keep * 0.6);
-  const tail = Math.floor(keep * 0.4);
-  return `${text.slice(0, head)}…${text.slice(Math.max(0, text.length - tail))}`;
-}
+const SGR = /\x1b\[[0-9;]*m/g;
+
+const CHIP_BG = "#334155";
+
+const PERMISSION_BG: Record<string, string> = {
+  default: "#166534",
+  "allow-all": "#1D4ED8",
+  "full-access": "#9F1239",
+};
 
 export interface IntroHeaderOptions {
   width: number;
@@ -27,41 +31,35 @@ export interface IntroHeaderOptions {
   workdir: string;
   variant?: string | undefined;
   paintBorder?: ((text: string) => string) | undefined;
+  theme?: Theme | undefined;
 }
 
-function stripAnsiLen(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+export function displayWorkdir(workdir: string, home: string = homedir()): string {
+  if (!home) return workdir;
+  if (workdir === home) return "~";
+  const next = workdir.charAt(home.length);
+  return workdir.startsWith(home) && (next === "/" || next === sep) ? `~${workdir.slice(home.length)}` : workdir;
 }
 
-function padCell(content: string, width: number): string {
-  const len = stripAnsiLen(content);
-  if (len > width) {
-    const plain = content.replace(/\x1b\[[0-9;]*m/g, "");
-    return truncateMiddle(plain, width);
-  }
-  if (len === width) return content;
-  return content + " ".repeat(width - len);
+function visibleWidth(text: string): number {
+  return terminalWidth(text.replace(SGR, ""));
 }
 
-function centerCell(content: string, width: number): string {
-  const len = stripAnsiLen(content);
-  if (len > width) {
-    const plain = content.replace(/\x1b\[[0-9;]*m/g, "");
-    return truncateMiddle(plain, width);
-  }
-  if (len === width) return content;
+function fitCell(content: string, width: number, align: "left" | "center" = "left"): string {
+  const len = visibleWidth(content);
+  if (len > width) return middleClipText(content.replace(SGR, ""), width);
   const total = width - len;
+  if (align === "left") return content + " ".repeat(total);
   const left = Math.floor(total / 2);
   return " ".repeat(left) + content + " ".repeat(total - left);
 }
 
-function defaultInk(text: string): string {
+function plain(text: string): string {
   return text;
 }
 
-function displayModel(model: string, variant?: string): string {
-  if (!variant || variant === "off") return model;
-  return `${model}(${variant})`;
+function effortOf(variant: string | undefined): string | undefined {
+  return variant && variant !== "off" ? variant : undefined;
 }
 
 export function renderIntroHeaderLines(opts: IntroHeaderOptions): string[] {
@@ -75,44 +73,113 @@ export function renderIntroHeaderLines(opts: IntroHeaderOptions): string[] {
   }
 }
 
-function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
-  const version = opts.version || "0.0.0";
-  const mode = opts.mode || "agent";
+interface CardModel {
+  readonly version: string;
+  readonly mode: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly rawPermissions: string;
+  readonly permissions: string;
+  readonly effort: string | undefined;
+  readonly cwd: string;
+  readonly theme: Theme;
+  readonly paintBorder: (text: string) => string;
+}
+
+function resolveCard(opts: IntroHeaderOptions): CardModel {
   const providerId = normalizeProvider(opts.provider || "openai");
-  const provider = providerId ? getProvider(providerId).displayName : opts.provider || "openai";
-  const model = displayModel(opts.model || "gpt-4", opts.variant);
   const rawPermissions = opts.permissions || DEFAULT_PERMISSION_MODE;
-  const permissions = permissionModeLabel(rawPermissions);
-  const variant = opts.variant;
-  const cwd = opts.workdir;
-  const paintBorder = opts.paintBorder ?? cardBorder;
+  return {
+    version: opts.version || "0.0.0",
+    mode: (opts.mode || "agent").toLowerCase(),
+    provider: providerId ? getProvider(providerId).displayName : opts.provider || "openai",
+    model: opts.model || "gpt-4",
+    rawPermissions,
+    permissions: permissionModeLabel(rawPermissions),
+    effort: effortOf(opts.variant),
+    cwd: opts.workdir,
+    theme: opts.theme ?? themeFor("dark"),
+    paintBorder: opts.paintBorder ?? cardBorder,
+  };
+}
+
+function modeBadge(card: CardModel): string {
+  const bg =
+    card.mode === "ask" ? card.theme.chipTeal : card.mode === "plan" ? card.theme.chipIndigo : card.theme.mode;
+  return chalk.bgHex(bg).whiteBright.bold(` ${card.mode.toUpperCase()} MODE `);
+}
+
+function permissionBadge(card: CardModel, withLabel: boolean): string {
+  const bg = PERMISSION_BG[card.rawPermissions] ?? CHIP_BG;
+  const value = chalk.bgHex(bg).whiteBright.bold(` ${card.permissions.toUpperCase()} `);
+  return withLabel ? chalk.bgHex(CHIP_BG).whiteBright(" PERMS ") + value : value;
+}
+
+function badgeRows(card: CardModel, width: number): string[] {
+  const mode = modeBadge(card);
+  const labelled = permissionBadge(card, true);
+  if (visibleWidth(mode) + 2 + visibleWidth(labelled) <= width) return [`${mode}  ${labelled}`];
+  const perm = visibleWidth(labelled) <= width ? labelled : permissionBadge(card, false);
+  return [mode, perm];
+}
+
+function infoRows(card: CardModel, width: number): string[] {
+  const t = card.theme;
+  const rows: [string, string, string, (s: string) => string][] = [
+    ["workdir", "dir", card.cwd, plain],
+    ["model", "model", card.model, chalk.hex(t.cyan)],
+    ["provider", "prov", card.provider, chalk.hex(t.success)],
+  ];
+  if (card.effort) rows.push(["effort", "eff", card.effort, chalk.hex(t.magenta)]);
+
+  const useShort = width < 30;
+  const labelWidth = Math.max(...rows.map(([full, short]) => (useShort ? short : full).length));
+  return rows.map(([full, short, value, ink]) => {
+    const label = (useShort ? short : full).padEnd(labelWidth);
+    const chip = chalk.bgHex(CHIP_BG).whiteBright.bold(` ${label} `);
+    const room = Math.max(2, width - labelWidth - 3);
+    return `${chip} ${ink(middleClipText(value, room))}`;
+  });
+}
+
+function hintText(card: CardModel, entries: readonly [string, string][]): string {
+  return entries
+    .map(([key, label]) => chalk.hex(card.theme.cyan)(key) + (label ? chalk.hex(card.theme.muted)(` ${label}`) : ""))
+    .join(chalk.hex(card.theme.hint)(" · "));
+}
+
+function welcomeLine(card: CardModel, budget: number): string {
+  const greetings = [`Welcome to clai v${card.version}!`, `clai v${card.version}`];
+  const candidates: [string, string][][] = [
+    [["/help", "commands"], ["/history", "past chats"], ["shift+tab", "switch mode"]],
+    [["/help", "commands"], ["/history", "past chats"]],
+    [["/help", ""], ["/history", ""]],
+    [["/help", ""]],
+    [],
+  ];
+  for (const greeting of greetings) {
+    for (const entries of candidates) {
+      const hints = hintText(card, entries);
+      const total = greeting.length + (entries.length > 0 ? 2 + visibleWidth(hints) : 0);
+      if (total <= budget) {
+        return chalk.hex(card.theme.success).bold(greeting) + (entries.length > 0 ? `  ${hints}` : "");
+      }
+    }
+  }
+  return chalk.hex(card.theme.success).bold(middleClipText(greetings[1]!, Math.max(1, budget)));
+}
+
+function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
+  const card = resolveCard(opts);
+  const { paintBorder } = card;
   const lead = " ".repeat(CARD_INSET_COLUMNS);
 
-  const pane = Math.max(24, opts.width);
-  const totalWidth = Math.max(20, pane);
-
-  const LEAD = CARD_INSET_COLUMNS;
+  const totalWidth = Math.max(24, opts.width);
   const OVERHEAD = 7;
-  const wmWidth = wordmarkWidth("clai");
+  const available = Math.max(12, totalWidth - CARD_INSET_COLUMNS - OVERHEAD);
 
-  const available = Math.max(12, totalWidth - LEAD - OVERHEAD);
-
-  const minSideBySide = Math.max(wmWidth * 2, 36);
-  if (available < minSideBySide) {
-    return renderCompactCard({
-      totalWidth,
-      paintBorder,
-      version,
-      mode,
-      provider,
-      model,
-      permissions,
-      rawPermissions,
-      variant,
-      cwd,
-      wmLines: renderWordmark("clai", { indent: "" }).split("\n"),
-    });
-  }
+  const minSideBySide = Math.max(wordmarkWidth("clai") * 2, 36);
+  if (available < minSideBySide) return renderCompactCard(card, totalWidth);
 
   const leftWidth = Math.floor(available / 2);
   const rightWidth = available - leftWidth;
@@ -122,93 +189,40 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     size: leftWidth >= wordmarkWidth("clai", "large") ? "large" : "compact",
   }).split("\n");
 
-  const CHIP_LABEL = Math.min(8, Math.max(4, rightWidth - 10));
-  const chip = (label: string): string =>
-    chalk.bgHex("#334155").whiteBright.bold(` ${label.padEnd(CHIP_LABEL).slice(0, CHIP_LABEL)} `);
-  const CHIP_WIDTH = CHIP_LABEL + 2;
-
-  const infoRow = (label: string, value: string, colorFn: (s: string) => string): string => {
-    const room = Math.max(2, rightWidth - CHIP_WIDTH - 1);
-    const shownValue = value.length > room ? truncateMiddle(value, room) : value;
-    return chip(label) + " " + colorFn(shownValue);
-  };
-
-  const modeBanner = chalk.bgHex("#B45309").whiteBright.bold(
-    `  ${mode.toUpperCase()} MODE  `,
-  );
-
-  const permBgColor = rawPermissions === "allow-all" ? "#15803d" : "#334155";
-  const permissionsBanner = chalk.bgHex(permBgColor).whiteBright.bold(
-    `  ${permissions.toUpperCase()}  `,
-  );
-  const permLabelText = rightWidth >= permissions.length + 16 ? "PERMISSION" : "PERM";
-  const permLabel = chalk.bgHex("#334155").whiteBright.bold(` ${permLabelText} `);
-
   const rightRows: string[] = [
     "",
-    infoRow("workdir", cwd, defaultInk),
-    infoRow("model", model, chalk.cyan),
-    infoRow("provider", provider, chalk.green),
-    ...(variant ? [infoRow("effort", variant, chalk.magenta)] : []),
-    infoRow("version", version, defaultInk),
+    ...infoRows(card, rightWidth),
     "",
-    modeBanner,
-    "",
-    `${permLabel} ${permissionsBanner}`,
+    ...badgeRows(card, rightWidth),
     "",
   ];
-  const rowCount = Math.max(wmLines.length, rightRows.length);
+  const rowCount = Math.max(wmLines.length + 2, rightRows.length);
 
-  const top =
-    lead +
-    paintBorder(
-      `╭${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}╮`,
-    );
-  const bottom =
-    lead +
-    paintBorder(
-      `╰${"─".repeat(leftWidth + 2)}┴${"─".repeat(rightWidth + 2)}╯`,
-    );
+  const top = lead + paintBorder(`╭${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}╮`);
+  const bottom = lead + paintBorder(`╰${"─".repeat(leftWidth + 2)}┴${"─".repeat(rightWidth + 2)}╯`);
+
+  const wmPadTop = Math.floor((rowCount - wmLines.length) / 2);
+  const paddedWm = [...Array<string>(wmPadTop).fill(""), ...wmLines];
+  const rightPadTop = Math.floor((rowCount - rightRows.length) / 2);
+  const paddedRight = [...Array<string>(rightPadTop).fill(""), ...rightRows];
 
   const middle: string[] = [];
-  const wmPadTop = Math.floor((rowCount - wmLines.length) / 2);
-  const wmPadBot = rowCount - wmLines.length - wmPadTop;
-  const paddedWm = [
-    ...Array<string>(wmPadTop).fill(""),
-    ...wmLines,
-    ...Array<string>(wmPadBot).fill(""),
-  ];
   for (let i = 0; i < rowCount; i++) {
-    const leftCell = centerCell(paddedWm[i] ?? "", leftWidth);
-    const rightCell = padCell(rightRows[i] ?? "", rightWidth);
+    const leftCell = fitCell(paddedWm[i] ?? "", leftWidth, "center");
+    const rightCell = fitCell(paddedRight[i] ?? "", rightWidth);
     middle.push(
-      lead +
-        paintBorder("│") +
-        ` ${leftCell} ` +
-        paintBorder("│") +
-        ` ${rightCell} ` +
-        paintBorder("│"),
+      lead + paintBorder("│") + ` ${leftCell} ` + paintBorder("│") + ` ${rightCell} ` + paintBorder("│"),
     );
   }
 
-  const boxOuterWidth = LEAD + leftWidth + rightWidth + OVERHEAD;
+  const boxOuterWidth = CARD_INSET_COLUMNS + leftWidth + rightWidth + OVERHEAD;
+  const centered = (text: string): string =>
+    " ".repeat(Math.max(0, Math.floor((boxOuterWidth - visibleWidth(text)) / 2))) + text;
 
-  const centerIndent = (plainLen: number): string => {
-    const indent = Math.max(0, Math.floor((boxOuterWidth - plainLen) / 2));
-    return " ".repeat(indent);
-  };
-
-  const taglineBudget = Math.max(12, boxOuterWidth);
   const tagline =
-    available >= 60
-      ? "AI-powered terminal assistant · ask & agent modes for shell, files & security workflows"
-      : "AI terminal assistant · ask & agent modes";
-  const welcome = `Welcome to clai v${version}! `;
-  const welcomeHint =
-    available >= 52
-      ? "/history past chats · /help commands"
-      : "/history · /help";
-  const welcomeFull = welcome + welcomeHint;
+    available >= 64
+      ? "AI coding & security agent for the terminal · ask, plan & agent modes"
+      : "AI coding & security agent";
 
   return [
     "",
@@ -216,77 +230,31 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     ...middle,
     bottom,
     "",
-    centerIndent(Math.min(tagline.length, taglineBudget)) +
-      defaultInk(truncateMiddle(tagline, taglineBudget)),
-    centerIndent(Math.min(welcomeFull.length, taglineBudget)) +
-      chalk.green.bold(truncateMiddle(welcome, Math.max(8, taglineBudget - welcomeHint.length))) +
-      chalk.cyan(welcomeHint.length + welcome.length <= taglineBudget ? welcomeHint : ""),
+    centered(middleClipText(tagline, boxOuterWidth)),
+    centered(welcomeLine(card, boxOuterWidth)),
   ];
 }
 
-function renderCompactCard(args: {
-  totalWidth: number;
-  paintBorder: (text: string) => string;
-  version: string;
-  mode: string;
-  provider: string;
-  model: string;
-  permissions: string;
-  rawPermissions: string;
-  variant?: string | undefined;
-  cwd: string;
-  wmLines: string[];
-}): string[] {
-  const { totalWidth, paintBorder, version, mode, provider, model, permissions, rawPermissions, variant, cwd, wmLines } = args;
+function renderCompactCard(card: CardModel, totalWidth: number): string[] {
+  const { paintBorder } = card;
   const lead = " ".repeat(CARD_INSET_COLUMNS);
   const rule = Math.max(8, totalWidth - CARD_INSET_COLUMNS - 2);
   const inner = Math.max(6, rule - 2);
-  const top = lead + paintBorder(`╭${"─".repeat(rule)}╮`);
-  const bottom = lead + paintBorder(`╰${"─".repeat(rule)}╯`);
-  const row = (content: string): string =>
-    lead + paintBorder("│") + ` ${padCell(content, inner)} ` + paintBorder("│");
+  const row = (content: string, align: "left" | "center" = "left"): string =>
+    lead + paintBorder("│") + ` ${fitCell(content, inner, align)} ` + paintBorder("│");
 
-  const chip = (label: string, value: string, colorFn: (s: string) => string): string => {
-    const shortLabel = label.slice(0, Math.min(label.length, 4));
-    const labelPart = chalk.bgHex("#334155").whiteBright.bold(` ${shortLabel} `);
-    const room = Math.max(2, inner - stripAnsiLen(` ${shortLabel} `) - 1);
-    return labelPart + " " + colorFn(truncateMiddle(value, room));
-  };
-
-  const modeBanner = chalk.bgHex("#B45309").whiteBright.bold(
-    truncateMiddle(` ${mode.toUpperCase()} MODE `, inner),
-  );
-  const permBg = rawPermissions === "allow-all" ? "#15803d" : "#334155";
-  const permBanner = chalk.bgHex(permBg).whiteBright.bold(
-    truncateMiddle(` ${permissions.toUpperCase()} `, inner),
-  );
-
-  const welcomePlain = `Welcome to clai v${version}! /history · /help`;
-  const greeting = `Welcome to clai v${version}!`;
-  const hint = ["/history · /help", "/help", ""].find(
-    (candidate) => candidate === "" || 2 + greeting.length + 1 + candidate.length <= totalWidth,
-  ) ?? "";
-  const greetingBudget = Math.max(8, totalWidth - 2 - (hint === "" ? 0 : hint.length + 1));
-  const welcome =
-    "  " +
-    chalk.green.bold(truncateMiddle(greeting, greetingBudget)) +
-    (hint === "" ? "" : ` ${chalk.cyan(hint)}`);
-
-  const lines: string[] = ["", top];
-  for (const wm of wmLines) {
-    lines.push(row(centerCell(wm, inner)));
-  }
+  const wmLines =
+    inner >= wordmarkWidth("clai")
+      ? renderWordmark("clai", { indent: "" }).split("\n")
+      : [chalk.hex(CARD_BORDER_HEX).bold("clai")];
+  const lines: string[] = ["", lead + paintBorder(`╭${"─".repeat(rule)}╮`)];
+  for (const wm of wmLines) lines.push(row(wm, "center"));
   lines.push(row(""));
-  lines.push(row(chip("workdir", cwd, defaultInk)));
-  lines.push(row(chip("model", model, chalk.cyan)));
-  lines.push(row(chip("provider", provider, chalk.green)));
-  if (variant) lines.push(row(chip("effort", variant, chalk.magenta)));
-  lines.push(row(chip("version", version, defaultInk)));
+  for (const info of infoRows(card, inner)) lines.push(row(info));
   lines.push(row(""));
-  lines.push(row(modeBanner));
-  lines.push(row(permBanner));
-  lines.push(bottom);
+  for (const badge of badgeRows(card, inner)) lines.push(row(badge));
+  lines.push(lead + paintBorder(`╰${"─".repeat(rule)}╯`));
   lines.push("");
-  lines.push(welcome.length > 0 ? welcome : "  " + chalk.green(truncateMiddle(welcomePlain, totalWidth)));
+  lines.push(lead + welcomeLine(card, Math.max(1, totalWidth - CARD_INSET_COLUMNS)));
   return lines;
 }

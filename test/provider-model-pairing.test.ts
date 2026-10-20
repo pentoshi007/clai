@@ -10,6 +10,7 @@ const root = join(fileURLToPath(new URL("..", import.meta.url)));
 const PAIR_SENSITIVE_FILES = [
   "src/tui-v2/composer/composer-editor.tsx",
   "src/tui-v2/components/transcript/intro-card.tsx",
+  "src/classic/app/use-feed.ts",
   "src/app/controllers/session-controller.ts",
 ];
 

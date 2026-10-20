@@ -1,8 +1,8 @@
-import { homedir } from "node:os";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getCurrentVersion } from "../../commands/update.js";
 import { safeCwd } from "../../os/cwd.js";
-import { getConfig } from "../../store/config.js";
+import { getConfig, getProviderModel } from "../../store/config.js";
+import { displayWorkdir } from "../../ui-core/rendering/intro-header.js";
 import { DEFAULT_PERMISSION_MODE } from "../../safety/permission-mode.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
@@ -27,27 +27,19 @@ export interface FeedSnapshot {
   readonly requestedOffset: number;
 }
 
-function displayWorkdir(workdir: string): string {
-  const home = homedir();
-  return workdir.startsWith(home) ? `~${workdir.slice(home.length)}` : workdir;
-}
-
 export function introInputFor(services: AppServices): IntroBlockInput {
   const session = services.session.getState();
   const cfg = getConfig();
+  const provider = session.provider ?? cfg.defaultProvider;
+  const model = session.model ?? getProviderModel(provider);
   return {
     version: getCurrentVersion(),
     mode: session.mode,
-    provider: session.provider ?? cfg.defaultProvider,
-    model: session.model ?? cfg.defaultModel,
+    provider,
+    model,
     permissions: cfg.permissions ?? DEFAULT_PERMISSION_MODE,
     workdir: displayWorkdir(safeCwd()),
-    variant:
-      effectiveThinkingEffort(
-        session.provider ?? cfg.defaultProvider,
-        session.model ?? cfg.defaultModel,
-        cfg.thinking,
-      ) ?? "off",
+    variant: effectiveThinkingEffort(provider, model, cfg.thinking) ?? "off",
   };
 }
 

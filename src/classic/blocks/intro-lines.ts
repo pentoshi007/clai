@@ -25,6 +25,7 @@ export function buildIntroLines(ctx: BlockContext, input: IntroBlockInput): stri
     workdir: input.workdir,
     variant: input.variant,
     paintBorder: (text) => ctx.ink.hex(CARD_BORDER_HEX, text),
+    theme: ctx.ink.theme,
   });
   const plain = ctx.ink.colorMode === "none";
   return rendered.map((line) =>
