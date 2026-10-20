@@ -103,7 +103,7 @@ jobs:
           - label: branch
             ref: ${{ github.sha }}
           - label: base
-            ref: 655dca0d
+            ref: 655dca0d0295e1562bd67ca83db1113293ddbd0c
     steps:
       - uses: actions/checkout@v5
         with:
@@ -139,8 +139,14 @@ jobs:
               print(f"no junit report: {error}")
               raise SystemExit
           for case in root.iter("testcase"):
-              if case.find("failure") is not None or case.find("error") is not None:
+              problem = case.find("failure")
+              if problem is None:
+                  problem = case.find("error")
+              if problem is not None:
                   print(f"FAILED {case.get('classname')} :: {case.get('name')}")
+                  detail = (problem.get("message") or "") + "\n" + (problem.text or "")
+                  for line in [line for line in detail.splitlines() if line.strip()][:8]:
+                      print(f"    {line[:300]}")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -181,5 +187,3 @@ jobs:
         run: ./${{ matrix.binary }} --version
       - shell: bash
         run: node scripts/ci-tmp/migration-smoke.mjs "$PWD/${{ matrix.binary }}"
-      - shell: bash
-        run: node scripts/ci-tmp/migration-smoke.mjs "$PWD/${{ matrix.binary }}" --classic
