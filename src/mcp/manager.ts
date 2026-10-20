@@ -95,6 +95,7 @@ async function runBounded<T>(
 
 export class McpManager {
   private readonly connections = new Map<string, ConnectionState>();
+  private readonly sessionServers = new Map<string, McpServerDefinition>();
   private readonly authProviders = new Map<string, McpAuthProvider>();
   private readonly authSignatures = new Map<string, string>();
   private readonly stopped = new Set<string>();
@@ -240,9 +241,28 @@ export class McpManager {
     return this.enqueue(() => this.refreshConnections(options));
   }
 
+  registerSessionServer(definition: McpServerDefinition): Promise<McpSnapshot> {
+    return this.enqueue(async () => {
+      if (this.closed) throw new McpTransportError("closed", "MCP manager closed.");
+      const configured = discoverMcpServers(this.options.discovery ?? {});
+      if (configured.servers.some((server) => server.name === definition.name) ||
+          configured.invalid.some((server) => server.name === definition.name)) {
+        throw new Error(`MCP server name "${definition.name}" is already configured; rename it before using the managed integration.`);
+      }
+      this.sessionServers.set(definition.name, definition);
+      this.stopped.delete(definition.name);
+      return this.refreshConnections({});
+    });
+  }
+
   private async refreshConnections(options: { force?: boolean }): Promise<McpSnapshot> {
     if (this.closed) return this.snapshot();
-    this.discovery = discoverMcpServers(this.options.discovery ?? {});
+    const discovered = discoverMcpServers(this.options.discovery ?? {});
+    const claimed = new Set([...discovered.servers, ...discovered.invalid].map((server) => server.name));
+    this.discovery = {
+      ...discovered,
+      servers: [...discovered.servers, ...[...this.sessionServers.values()].filter((server) => !claimed.has(server.name))],
+    };
     const next = new Map<string, McpServerDefinition>();
     for (const definition of this.discovery.servers) next.set(definition.name, definition);
 

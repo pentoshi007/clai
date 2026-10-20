@@ -25,6 +25,7 @@ export const RUNNER_META_TOOL_NAMES = new Set([
 ]);
 
 export const MCP_CONTROL_TOOL_NAMES = new Set([
+  "rea.manage",
   "mcp.list",
   "mcp.tools",
   "mcp.enable",
@@ -39,7 +40,7 @@ export const MCP_AGENT_TOOL_NAMES = new Set([
 ]);
 
 export function mcpAgentToolNames(askMode: boolean): string[] {
-  const readOnly = ["mcp.list", "mcp.tools", "mcp.call"];
+  const readOnly = ["rea.manage", "mcp.list", "mcp.tools", "mcp.call"];
   return askMode
     ? readOnly
     : [...readOnly, "mcp.enable", "mcp.connect", "mcp.login", "mcp.add"];

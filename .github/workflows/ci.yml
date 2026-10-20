@@ -151,6 +151,8 @@ jobs:
         run: npx vitest run test/session-runtime/startup.test.ts test/session-runtime/startup-identity.test.ts test/session-runtime/startup.integration.test.ts test/session-runtime/metadata-write.test.ts test/session-runtime/store.test.ts test/session-runtime/cli-pipe.integration.test.ts test/session-runtime/launch.test.ts test/os/process-identity.test.ts test/interactive-session/pipe-process.test.ts --reporter=dot
       - name: RTK portable installation, updates and archive integrity
         run: npx vitest run test/rtk-install.test.ts test/rtk-maintenance-windows.test.ts test/rtk-windows-binary-fallback.test.ts test/rtk-windows-portable.test.ts test/rtk-archive.test.ts test/rtk-binary-selection.test.ts test/rtk-command.test.ts --reporter=dot
+      - name: REA installation, lifecycle, composer and cache contracts
+        run: node scripts/run-tests.mjs test/rea test/agent/stable-catalog-cache-continuity.test.ts --reporter=dot
       - name: MCP transports, authentication, and storage
         run: npx vitest run test/mcp --reporter=dot
       - if: runner.os != 'Windows'

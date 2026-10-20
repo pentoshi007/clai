@@ -1,5 +1,6 @@
 import { SyntaxStyle, type TextareaRenderable } from "@opentui/core";
 import { findMcpMentions } from "../../mcp/mentions.js";
+import { findReaMentions } from "../../rea/workflow.js";
 import { findSkillMentions } from "../../skills/mentions.js";
 
 export type MentionKind = "skill" | "mcp" | "paste";
@@ -106,7 +107,7 @@ export function paintDraftMentions(input: {
     },
     {
       kind: "mcp",
-      ranges: findMcpMentions(input.text, input.servers),
+      ranges: [...findMcpMentions(input.text, input.servers), ...findReaMentions(input.text)],
       color: input.serverColor,
     },
     {

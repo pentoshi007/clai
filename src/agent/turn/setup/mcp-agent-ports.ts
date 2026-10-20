@@ -8,6 +8,8 @@ import { restoreInteractiveStdin } from "../../../noninteractive/readline-prompt
 
 export interface McpAgentPortsInput {
   readonly askMode: boolean;
+  readonly planMode?: boolean;
+  readonly signal?: AbortSignal | undefined;
   readonly autoConfirm: boolean;
   readonly session: SessionPolicy;
   readonly confirmPort: ConfirmPort;
@@ -32,6 +34,8 @@ export interface McpAgentPortsInput {
 
 export const buildMcpAgentToolPorts = (input: McpAgentPortsInput) => ({
   askMode: input.askMode,
+  ...(input.planMode !== undefined ? { planMode: input.planMode } : {}),
+  signal: input.signal,
   showCall: (toolEventId: string, call: ToolCall): void => {
     if (input.isPrinted(toolEventId)) return;
     input.writeToolCall(toolEventId, call);

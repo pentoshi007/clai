@@ -33,6 +33,7 @@ const sectionKind = (content: string): AgentPromptSection["kind"] =>
 const MANDATORY_PREFIXES = [
   "ACTIVE PLAN",
   "MCP TOOL CONTEXT",
+  "REA WORKFLOW",
   "ENGAGEMENT SCOPE",
   "REQUEST ENVIRONMENT",
   "ORCHESTRATION:",

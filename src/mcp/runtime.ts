@@ -21,7 +21,7 @@ import {
 import { registerExternalToolDispatcher } from "../tools/external-tools.js";
 import { McpTransportError } from "./transport.js";
 import type { OAuthConsentInfo } from "./auth/provider.js";
-import type { McpNormalizedResult, McpSnapshot, McpToolMetadata } from "./types.js";
+import type { McpNormalizedResult, McpServerDefinition, McpSnapshot, McpToolMetadata } from "./types.js";
 
 export type McpRuntimeSelection =
   | { readonly mode: "all" }
@@ -344,6 +344,15 @@ export class McpRuntime {
     } finally {
       if (this.refreshPromise === promise) this.refreshPromise = undefined;
     }
+  }
+
+  async registerSessionServer(definition: McpServerDefinition): Promise<McpRuntimeState> {
+    if (this.closed) throw new Error("MCP runtime is closed.");
+    if (this.refreshPromise) await this.refreshPromise;
+    const snapshot = await this.manager.registerSessionServer(definition);
+    this.started = true;
+    const collision = this.registerSnapshotTools(snapshot);
+    return this.publish({ snapshot, refreshing: false, ...(collision ? { error: collision } : {}) });
   }
 
   async reconnect(serverName: string): Promise<McpRuntimeState> {

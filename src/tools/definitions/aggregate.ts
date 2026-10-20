@@ -270,6 +270,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   ),
   def(
+    "rea.manage",
+    "REA (Reverse Engineer Anything): use for shipped binaries/packages, decompilation, JavaScript/Electron, .NET, Android, firmware, saved captures and requested runtime evidence; skip ordinary source-repository analysis. Status/guide are read-only and lazy. Install/setup/update privately bootstrap Node/npm if absent on macOS/Linux/Windows. Enable starts its session-only MCP server; discover focused schemas with mcp.tools server=clai-rea, then mcp.call. Reuse active sessions, prefer summaries and retained Evidence. Guide returns compact workflow plus version-matched references. No other agents are configured. Reconnect discards the current analysis connection; use only to repair an observed fault or adopt an update. Normal approval applies to state changes.",
+    {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["status", "install", "setup", "update", "enable", "disable", "reconnect", "guide"] },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    },
+    { mutates: true, askMode: true },
+  ),
+  def(
     "mcp.list",
     "List configured MCP servers, their live connection status, and the current per-session selection. Read-only. Use this to discover what MCP capability is available before enabling or calling a server.",
     emptyObject,

@@ -1,0 +1,33 @@
+name: REA portable integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/rea/**"
+      - "src/mcp/**"
+      - "scripts/rea-smoke.ts"
+      - ".github/workflows/rea.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Portable installer and lifecycle fixtures
+        run: node scripts/run-tests.mjs test/rea --reporter=dot
+      - name: Force private Node bootstrap and analyze a real artifact
+        run: node --import tsx scripts/rea-smoke.ts

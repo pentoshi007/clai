@@ -20,6 +20,11 @@ export const slashCommands: SlashCommand[] = [
     description: "inspect live subagents or stop/restart an assignment",
   },
   {
+    command: "/rea",
+    usage: "[install|setup|update|use|on|off|status|reconnect|guide|<task>]",
+    description: "reverse engineer anything · install, update or attach REA · prompt-cache safe",
+  },
+  {
     command: "/rtk",
     usage: "[on|off|status|install|update]",
     description: "compress shell output with rtk to save tokens, prompt-cache safe",
