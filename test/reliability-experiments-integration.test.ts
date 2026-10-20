@@ -61,7 +61,10 @@ describe("reliability experiment integration", () => {
   });
 
   it("compact + native still works under slim policy flag", () => {
-    const p = renderCompactAgentSystemPrompt("fs.read", { nativeTools: true });
+    const p = renderCompactAgentSystemPrompt("fs.read", {
+      nativeTools: true,
+      stableEnvironment: true,
+    });
     expect(p.length).toBeLessThan(5_000);
     expect(p).not.toContain("```tool");
   });
