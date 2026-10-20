@@ -104,6 +104,9 @@ jobs:
             ref: ${{ github.sha }}
           - label: base
             ref: 655dca0d0295e1562bd67ca83db1113293ddbd0c
+          - os: windows-latest
+            label: storage-commit
+            ref: 7b0957d83b7183435e72155fa5b8f26b0d46e3ea
     steps:
       - uses: actions/checkout@v5
         with:
