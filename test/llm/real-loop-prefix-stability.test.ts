@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { TurnOutcomeStatus } from "../../src/agent/turn-outcome.js";
 import { runAgentTurn } from "../../src/agent/runner.js";
 import { createSessionPolicy } from "../../src/agent/session-policy.js";
 import { updateConfig } from "../../src/store/config.js";
@@ -122,8 +123,9 @@ function lowercaseHeaders(raw: HeadersInit | undefined): Record<string, string> 
   return headers;
 }
 
-async function runSession(provider: ProviderId, model: string, reasoning: boolean, steer = false): Promise<{ sessionId: string; requests: WireRequest[] }> {
+async function runSession(provider: ProviderId, model: string, reasoning: boolean, steer = false): Promise<{ sessionId: string; requests: WireRequest[]; statuses: TurnOutcomeStatus[] }> {
   const requests: WireRequest[] = [];
+  const statuses: TurnOutcomeStatus[] = [];
   let turn = 0;
   let round = 0;
   vi.stubGlobal(
@@ -166,7 +168,7 @@ async function runSession(provider: ProviderId, model: string, reasoning: boolea
     turn = index;
     round = 0;
     controller = new AbortController();
-    await runAgentTurn(prompt, {
+    const outcome = await runAgentTurn(prompt, {
       signal: controller.signal,
       provider,
       model,
@@ -180,8 +182,9 @@ async function runSession(provider: ProviderId, model: string, reasoning: boolea
         history = messages;
       },
     });
+    statuses.push(outcome.status);
   }
-  return { sessionId, requests };
+  return { sessionId, requests, statuses };
 }
 
 function firstDivergence(previous: WireRequest, next: WireRequest): string {
@@ -221,7 +224,8 @@ describe.each(ROUTES)("%s keeps its wire prefix across rounds and turns", (provi
   );
 
   it("keeps the prefix when a follow-up prompt steers an in-flight turn", async () => {
-    const { requests } = await runSession(provider, model, true, true);
+    const { requests, statuses } = await runSession(provider, model, true, true);
+    expect(statuses[1]).toBe("aborted");
     expect(requests.length).toBeGreaterThanOrEqual(6);
     for (let index = 1; index < requests.length; index += 1) {
       expect(firstDivergence(requests[index - 1]!, requests[index]!)).toBe("none");

@@ -184,7 +184,7 @@ export function reconcileCompactionUserInstructions(summary: string, messages: r
   for (const instruction of inherited) {
     if (retired.has(instruction.id)) continue;
     const proposed = proposedById.get(instruction.id);
-    if (proposed) kept.push({ id: instruction.id, ...proposed });
+    if (proposed) kept.push({ ...instruction, text: proposed.text });
     else if (instruction.scope === "session") kept.push(instruction);
   }
   for (const entry of entries) {

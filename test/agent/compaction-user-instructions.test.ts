@@ -65,6 +65,14 @@ describe("user instruction continuity across compactions", () => {
     expect(result.summary).not.toContain("composer width");
   });
 
+  it("keeps an inherited rule's scope when the model rewrites it", () => {
+    const result = reconcileCompactionUserInstructions(
+      `${story("Implement /creds.")}\n## User instructions\n- [S2] (task: UI fixes) No source file may exceed 300 lines.`,
+      [memory([STYLE, LINES]), { role: "user", content: "Implement /creds." }],
+    );
+    expect(result.instructions).toEqual([STYLE, LINES]);
+  });
+
   it("retires a session rule only with a quote from a newer user message", () => {
     const messages: ChatMessage[] = [
       memory([STYLE, LINES]),
@@ -192,6 +200,9 @@ describe("user instruction continuity across compactions", () => {
     ];
     const result = compactMessages(messages, { budgetTokens: 0, keepRecent: 2 });
     expect(carriedUserInstructions(result)).toEqual([STYLE, WIDTH]);
+    const memoryText = result.find(isCompactionMemoryMessage)!.content;
+    expect(memoryText).not.toContain("still being worked on");
+    expect(memoryText).toContain("> recent request");
   });
 
   it("puts inherited instructions in direct and reduce prompts", () => {

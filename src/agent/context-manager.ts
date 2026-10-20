@@ -12,7 +12,7 @@ import {
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { AGENT_INSTRUCTIONS_PREFIX, latestKeyedBlock, upsertAgentInstructionsMessage } from "./injected-blocks.js";
 import { latestUserMessage } from "./context/latest-user-message.js";
-import { recentUserPrompts, renderRecentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
+import { hasCompletedConversationTurn, recentUserPrompts, renderRecentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
 import { carriedUserInstructions, renderUserInstructions, withoutUserInstructionSection } from "./context/compaction-user-instructions.js";
 import {
   estimateImageTokens,
@@ -101,7 +101,7 @@ export function compactMessages(
     role: "system",
     content:
       `${MECHANICAL_MEMORY_PREFIX} to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
-      [renderUserInstructions(userInstructions), bullets.join("\n"), renderRecentUserPrompts(recentUserPrompts(messages), latestUser)].filter(Boolean).join("\n\n"),
+      [renderUserInstructions(userInstructions), bullets.join("\n"), renderRecentUserPrompts(recentUserPrompts(messages), hasCompletedConversationTurn(messages) ? undefined : latestUser)].filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentUserPrompts(messages)
         .filter((prompt) => !prompt.message || (!tail.includes(prompt.message) && prompt.message !== latestUser))
