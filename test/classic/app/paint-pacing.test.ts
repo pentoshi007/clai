@@ -30,7 +30,12 @@ describe("paint pacing", () => {
   });
 
   it("scales interaction pacing with the measured cost between its bounds", () => {
-    expect(paintIntervalMs({ costMs: 12, intervalMs: 48 }, true)).toBe(24);
+    expect(paintIntervalMs({ costMs: 20, intervalMs: 80 }, true)).toBe(25);
+  });
+
+  it("keeps interaction at the full frame rate while a frame fits the frame budget", () => {
+    expect(paintIntervalMs({ costMs: 12, intervalMs: 48 }, true)).toBe(PAINT_MIN_INTERVAL_MS);
+    expect(paintIntervalMs({ costMs: 13, intervalMs: 52 }, true)).toBe(PAINT_MIN_INTERVAL_MS);
   });
 
   it("slows the cadence in proportion to a sustained frame cost", () => {

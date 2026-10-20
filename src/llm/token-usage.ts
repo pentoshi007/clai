@@ -169,10 +169,15 @@ export {
   providerContextOverrideTokens,
 } from "./context-windows.js";
 
+function groupThousands(value: number): string {
+  if (!Number.isSafeInteger(value)) return value.toLocaleString("en-US");
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 export function formatTokenCount(n: number, compact = false): string {
   const v = Math.max(0, Math.floor(n));
-  if (!compact) return v.toLocaleString("en-US");
-  if (v < 10_000) return v.toLocaleString("en-US");
+  if (!compact) return groupThousands(v);
+  if (v < 10_000) return groupThousands(v);
   if (v < 1_000_000) {
     const k = v / 1000;
     const s = k >= 100 ? k.toFixed(0) : k >= 10 ? k.toFixed(1) : k.toFixed(1);

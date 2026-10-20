@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md)
 
-`clai config` prints the configuration and its location. Use `clai mode`, `clai model`, and `clai use` to change defaults. History, prompt journals, logs, and runtime data normally live under `~/.clai/`; saved chat records include `history.jsonl`. Large outputs may also use per-session temporary directories.
+`clai config` prints the configuration and its location. Use `clai mode`, `clai model`, and `clai use` to change defaults. History, prompt journals, logs, and runtime data normally live under `~/.clai/`; each saved session is stored in its own append-only log under `~/.clai/sessions/`, and an older `history.jsonl` is imported automatically and left in place. Large outputs may also use per-session temporary directories.
 
 ```sh
 clai privacy status

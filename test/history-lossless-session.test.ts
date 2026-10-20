@@ -47,10 +47,10 @@ describe("lossless durable long sessions", () => {
 
   it("rejects failed disk writes, preserves the previous durable version and permits retry", async () => {
     const history = await import("../src/store/history.js");
-    const index = await import("../src/store/history-index.js");
+    const log = await import("../src/store/history/session-log.js");
     await history.upsertSession("retry", [{ role: "user", content: "durable first" }]);
     const failure = Object.assign(new Error("disk full"), { code: "ENOSPC" });
-    const write = vi.spyOn(index, "appendIndexedHistoryRecord").mockRejectedValueOnce(failure);
+    const write = vi.spyOn(log, "appendSessionFrame").mockRejectedValueOnce(failure);
     await expect(history.upsertSession("retry", [{ role: "user", content: "retained retry" }])).rejects.toBe(failure);
     expect(write).toHaveBeenCalledTimes(1);
     expect((await history.getSession("retry"))?.messages[0]?.content).toBe("durable first");

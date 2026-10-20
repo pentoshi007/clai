@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { commandAvailable, detectPackageManager } from '../os/pkgmgr.js';
 import { detectSystem } from '../os/detect.js';
 import { getConfig, getConfigPath } from '../store/config.js';
-import { getHistoryPath } from '../store/history.js';
+import { getHistoryPath, getSessionsDir } from '../store/history.js';
 import { getFallbackKeysPath, probeKeychain } from '../store/keys.js';
 import { loadScope, isScopeActive, getScopePath } from '../store/scope.js';
 import { canUseTui } from '../ui-core/bootstrap/can-use-tui.js';
@@ -36,6 +36,7 @@ export async function runDoctor(): Promise<void> {
   console.log(`CWD: ${system.cwd}`);
   console.log(`Config: ${getConfigPath()}`);
   console.log(`History: ${getHistoryPath()}`);
+  console.log(`Sessions: ${getSessionsDir()}`);
   const tuiGate = canUseTui();
   const probe = currentPlatformProbe();
   const selection = explainUiChoice({}, process.env, probe);

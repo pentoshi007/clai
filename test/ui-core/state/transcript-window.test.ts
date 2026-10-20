@@ -4,6 +4,8 @@ import {
   DEFAULT_TRANSCRIPT_WINDOW_OVERLAP,
   resolveTranscriptMountWindow,
   shiftTranscriptWindowStart,
+  TRANSCRIPT_PREFETCH_VIEWPORTS,
+  transcriptPrefetchDirection,
   transcriptWindowStartForItem,
 } from "../../../src/ui-core/state/transcript-window.js";
 
@@ -69,5 +71,28 @@ describe("transcript mount windows", () => {
     expect(transcriptWindowStartForItem(1_000, 999)).toBe(1_000 - DEFAULT_TRANSCRIPT_MOUNT_ROWS);
     expect(transcriptWindowStartForItem(20, 10)).toBe(0);
     expect(transcriptWindowStartForItem(0, 10)).toBe(0);
+  });
+});
+
+describe("transcript window prefetch", () => {
+  const base = { maxScrollTop: 1_000, viewportRows: 30, olderCount: 10, newerCount: 10 };
+  const margin = 30 * TRANSCRIPT_PREFETCH_VIEWPORTS;
+
+  it("mounts older items before an upward scroll reaches the mounted edge", () => {
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: margin, delta: -3 })).toBe("older");
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: margin + 1, delta: -3 })).toBeUndefined();
+  });
+
+  it("mounts newer items before a downward scroll reaches the mounted edge", () => {
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: 1_000 - margin, delta: 3 })).toBe("newer");
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: 1_000 - margin - 1, delta: 3 })).toBeUndefined();
+  });
+
+  it("only prefetches in the scroll direction and when items exist past the edge", () => {
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: 0, delta: 3 })).toBeUndefined();
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: 1_000, delta: -3 })).toBeUndefined();
+    expect(transcriptPrefetchDirection({ ...base, olderCount: 0, scrollTop: 0, delta: -3 })).toBeUndefined();
+    expect(transcriptPrefetchDirection({ ...base, newerCount: 0, scrollTop: 1_000, delta: 3 })).toBeUndefined();
+    expect(transcriptPrefetchDirection({ ...base, scrollTop: 0, delta: 0 })).toBeUndefined();
   });
 });

@@ -30,6 +30,7 @@ import {
   resolveTranscriptMountWindow,
   resolveTranscriptScrollIntent,
   shiftTranscriptWindowStart,
+  transcriptPrefetchDirection,
   transcriptWindowStartForItem,
   shouldPinTranscriptBottom,
 } from "../../../ui-core/state/transcript-window.js";
@@ -534,6 +535,21 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     sb.scrollTo(intent.nextScrollTop);
     if (!intent.leaveTail) updateFollowingFromPosition(intent.atBottom);
     publishScrollRemainder(sb, mountWindow.newerCount > 0);
+    prefetchWindow(sb, dy);
+  }
+
+  function prefetchWindow(sb: ScrollBoxRenderable, dy: number): void {
+    if (windowShiftPending.current) return;
+    const direction = transcriptPrefetchDirection({
+      scrollTop: sb.scrollTop,
+      maxScrollTop: maxScrollTop(sb),
+      viewportRows: sb.viewport?.height ?? 0,
+      delta: dy,
+      olderCount: mountWindow.olderCount,
+      newerCount: mountWindow.newerCount,
+    });
+    if (direction === "older") showOlderWindow(sb, 0);
+    else if (direction === "newer") showNewerWindow(sb, 0);
   }
 
   useEffect(() => {

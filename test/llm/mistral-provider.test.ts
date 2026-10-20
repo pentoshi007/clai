@@ -20,7 +20,7 @@ import {
 import { tryCompleteOnce } from "../../src/llm/routing/attempt-complete.js";
 import { tryStreamOnce } from "../../src/llm/routing/attempt-stream.js";
 import {
-  getHistoryPath,
+  getSessionLogPath,
   getSession,
   upsertSession,
 } from "../../src/store/history.js";
@@ -438,7 +438,7 @@ describe("Mistral native requests", () => {
     );
   });
 
-  it("persists and replays full thinking chunks through history.jsonl", async () => {
+  it("persists and replays full thinking chunks through the session log", async () => {
     const { generations } = transport(() => completion());
     const first = await mistralProvider.complete(REQUEST, { apiKey });
     const messages: ChatMessage[] = [
@@ -452,7 +452,7 @@ describe("Mistral native requests", () => {
       { role: "user", content: "continue" },
     ];
     await upsertSession("mistral-persisted-history", messages);
-    const serialized = readFileSync(getHistoryPath(), "utf8");
+    const serialized = readFileSync(getSessionLogPath("mistral-persisted-history"), "utf8");
     expect(serialized).toContain("opaque-signature");
     const restored = await getSession("mistral-persisted-history");
     expect(restored?.messages[2]?.reasoningArtifacts?.[0]?.raw).toEqual(

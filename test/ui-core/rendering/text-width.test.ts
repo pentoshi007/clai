@@ -1,12 +1,14 @@
 import fc from "fast-check";
 import stringWidth from "string-width";
 import { describe, expect, it } from "vitest";
-import { renderColumns, terminalWidth } from "../../../src/ui-core/rendering/text-width.js";
+import widestLine from "widest-line";
+import { renderColumns, terminalWidth, widestLineWidth } from "../../../src/ui-core/rendering/text-width.js";
 
 const fragments = [
   "a", " ", "1", "#", "*", "日", "🧪", "\u0301", "\u200d", "\uFE0F", "\u20E3", "👍", "🏽",
   "\x1b[1m", "\x1b[0m", "\x1b[38;2;1;2;3m", "\x1b]8;;https://example.test\x07", "\t", "é", "한", "🇺", "🇸", "Ａ",
   "\x1b]0;window title, with spaces\x07", "\u009b31m", "\u0085", "\u0600", "\u0D4E", "\u{110BD}", "\r", "\n",
+  "\x1b[", "m", ";", "0", "\x1b[m", "\x1b[;m", "\x1b[12345m", "\x1b[39;49m", "\x1b[2;3", "\x1b\\", "\u009c", "│", "✓", "─",
 ];
 
 describe("terminal width fast path", () => {
@@ -31,5 +33,15 @@ describe("terminal width fast path", () => {
     expect(renderColumns("\x1b[1mabc\x1b[0m")).toBe(3);
     expect(renderColumns("日本")).toBe(4);
     expect(renderColumns("e\u0301")).toBe(2);
+  });
+
+  it("measures the widest line exactly like widest-line", () => {
+    for (const text of ["", "\n", "a\nbb", "\x1b[2m│\x1b[22m 日本\n✓ ok\n", "x\n\n日本語🧪"]) {
+      expect(widestLineWidth(text)).toBe(widestLine(text));
+    }
+    fc.assert(fc.property(fc.array(fc.oneof(fc.constantFrom(...fragments), fc.string()), { maxLength: 30 }), (parts) => {
+      const text = parts.join("");
+      expect(widestLineWidth(text)).toBe(widestLine(text));
+    }), { numRuns: 2000 });
   });
 });

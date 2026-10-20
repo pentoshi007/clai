@@ -395,34 +395,6 @@ async function copyEntryRanges(
   return copied;
 }
 
-export async function appendIndexedRanges(
-  sourcePath: string,
-  destinationPath: string,
-  entries: readonly HistoryIndexEntry[],
-): Promise<void> {
-  if (entries.length === 0) return;
-  const destination = await open(destinationPath, "a", 0o600);
-  try {
-    const { size } = await destination.stat();
-    await copyEntryRanges(sourcePath, destination, entries, size);
-    await destination.sync().catch(() => undefined);
-  } finally {
-    await destination.close();
-  }
-}
-
-export async function rewriteIndexedJsonl(
-  jsonlPath: string,
-  indexPath: string,
-  entries: readonly HistoryIndexEntry[],
-): Promise<void> {
-  await rewriteIndexedHistorySources(
-    jsonlPath,
-    indexPath,
-    entries.map((entry) => ({ path: jsonlPath, entry })),
-  );
-}
-
 export async function rewriteIndexedHistorySources(
   jsonlPath: string,
   indexPath: string,

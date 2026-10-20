@@ -45,12 +45,13 @@ describe("independent session storage", () => {
   });
 
   it("serves valid summaries without rescanning transcript payloads", async () => {
-    const { upsertSession, listSessionSummaries, getHistoryPath } = await import("../src/store/history.js");
+    const { upsertSession, listSessionSummaries, getSessionLogPath } = await import("../src/store/history.js");
     await upsertSession("indexed-fast-path", [{ role: "user", content: "x".repeat(100_000) }]);
     vi.mocked(fs.open).mockClear();
-    await listSessionSummaries(10, { recovery: "blocking" });
+    const summaries = await listSessionSummaries(10, { recovery: "blocking" });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const reads = vi.mocked(fs.open).mock.calls.filter(([path, mode]) => path === getHistoryPath() && mode === "r");
+    expect(summaries.map((summary) => summary.id)).toEqual(["indexed-fast-path"]);
+    const reads = vi.mocked(fs.open).mock.calls.filter(([path]) => path === getSessionLogPath("indexed-fast-path"));
     expect(reads).toHaveLength(0);
   });
 

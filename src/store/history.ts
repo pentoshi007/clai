@@ -17,11 +17,12 @@ import { knownSecretsRevision } from "../security/known-secrets.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
 import { getActiveSessionWorkspace } from "./session-workspace.js";
-import { historySummary, readValidatedHistoryIndex, type HistorySummary } from "./history-index.js";
-import { HistoryRecord, PersistedContextUsage, backupDirPath, compareHistoryFreshness, dedupeHistoryById, historyRevision, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, sortHistoryByUpdatedDesc } from "./history/recovery.js";
+import { readValidatedHistoryIndex } from "./history-index.js";
+import { HistoryRecord, PersistedContextUsage, backupDirPath, compareHistoryFreshness, dedupeHistoryById, ensureHistoryRecovered, historyRevision, invalidateSessionListCache, jsonlFilePath, jsonlIndexFilePath, sortHistoryByUpdatedDesc } from "./history/recovery.js";
 import { SessionModelSelection, archiveFilePath, enforceSqliteRetention, loadDatabase, sessionModelFields, upsertSqlite } from "./history/sqlite-backend.js";
-import { upsertJsonl } from "./history/jsonl-backend.js";
 import { getSession } from "./history/session-queries.js";
+import { readSessionHead, sessionMergeProbe, upsertSessionRecord } from "./history/session-store.js";
+import { sessionLogPath, sessionsDirPath } from "./history/session-paths.js";
 export { clearAllHistory, deleteSession, purgeSession } from "./history/lifecycle.js";
 export { listSessionSummaries, listSessions } from "./history/session-queries.js";
 export { getSession };
@@ -105,28 +106,63 @@ function scrubArguments(args: Record<string, unknown>): Record<string, unknown> 
   return Object.fromEntries(Object.entries(args).map(([key, value]) => [key, scrubArgument(value)]));
 }
 
+interface ScrubbedMessage {
+  readonly fields: Readonly<Record<string, unknown>>;
+  readonly scrubbed: ChatMessage;
+}
+
+const SCRUBBED_SESSION_LIMIT = 8;
+const scrubbedSessions = new Map<string, readonly ScrubbedMessage[]>();
+let scrubbedSessionsRevision = knownSecretsRevision();
+
+function sameFields(left: Readonly<Record<string, unknown>>, right: Readonly<Record<string, unknown>>): boolean {
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => Object.hasOwn(right, key) && left[key] === right[key]);
+}
+
+function scrubMessagesFor(sessionId: string, messages: ChatMessage[]): ChatMessage[] {
+  if (scrubbedSessionsRevision !== knownSecretsRevision()) {
+    scrubbedSessions.clear();
+    scrubbedSessionsRevision = knownSecretsRevision();
+  }
+  const previous = scrubbedSessions.get(sessionId) ?? [];
+  const next = messages.map((source, index): ScrubbedMessage => {
+    const fields = source as unknown as Readonly<Record<string, unknown>>;
+    const known = previous[index];
+    if (known && sameFields(known.fields, fields)) return known;
+    return { fields: { ...fields }, scrubbed: scrubMessage(source) };
+  });
+  scrubbedSessions.delete(sessionId);
+  scrubbedSessions.set(sessionId, next);
+  if (scrubbedSessions.size > SCRUBBED_SESSION_LIMIT) scrubbedSessions.delete(scrubbedSessions.keys().next().value!);
+  return next.map((entry) => entry.scrubbed);
+}
+
 function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((source) => {
-    const message = restoreResponsesReplay(source);
-    const { images, ...rest } = message;
-    const persistedImages = images?.flatMap((image): ChatImage[] =>
-      image.path
-        ? [{ mediaType: image.mediaType, dataBase64: "", path: image.path }]
-        : [],
-    );
-    return canonicalizeChatMessageReasoningArtifacts({
-      ...rest,
-      content: redactSecretsCached(message.content),
-      ...(message.toolCalls ? { toolCalls: message.toolCalls.map((call) => ({
-        ...call,
-        args: scrubArguments(call.args),
-        ...(call.rawArguments ? { rawArguments: redactSecretsCached(call.rawArguments) } : {}),
-      })) } : {}),
-      ...(message.responsesReplay ? {
-        responsesReplay: redactResponsesReplay(message.responsesReplay, redactSecretsCached),
-      } : {}),
-      ...(persistedImages?.length ? { images: persistedImages } : {}),
-    });
+  return messages.map(scrubMessage);
+}
+
+function scrubMessage(source: ChatMessage): ChatMessage {
+  const message = restoreResponsesReplay(source);
+  const { images, ...rest } = message;
+  const persistedImages = images?.flatMap((image): ChatImage[] =>
+    image.path
+      ? [{ mediaType: image.mediaType, dataBase64: "", path: image.path }]
+      : [],
+  );
+  return canonicalizeChatMessageReasoningArtifacts({
+    ...rest,
+    content: redactSecretsCached(message.content),
+    ...(message.toolCalls ? { toolCalls: message.toolCalls.map((call) => ({
+      ...call,
+      args: scrubArguments(call.args),
+      ...(call.rawArguments ? { rawArguments: redactSecretsCached(call.rawArguments) } : {}),
+    })) } : {}),
+    ...(message.responsesReplay ? {
+      responsesReplay: redactResponsesReplay(message.responsesReplay, redactSecretsCached),
+    } : {}),
+    ...(persistedImages?.length ? { images: persistedImages } : {}),
   });
 }
 
@@ -270,10 +306,15 @@ export async function saveSession(
 
   if (getConfig().privateMode) return record;
 
+  return await persistRecord(record);
+}
+
+async function persistRecord(record: HistoryRecord): Promise<HistoryRecord> {
   invalidateSessionListCache();
   const db = await loadDatabase();
-
-  const canonical = await upsertJsonl(record);
+  await ensureHistoryRecovered();
+  const canonical = await upsertSessionRecord(record);
+  invalidateSessionListCache();
   if (db) {
     upsertSqlite(db, canonical);
     await enforceSqliteRetention(db);
@@ -282,33 +323,9 @@ export async function saveSession(
   return canonical;
 }
 
-interface WrittenHeader {
-  readonly fingerprint: string;
-  readonly header: HistoryRecord;
-}
-
-const writtenHeaders = new Map<string, WrittenHeader>();
-
-function summaryFingerprint(summary: HistorySummary): string {
-  return `${summary.writerGeneration ?? ""}\u0000${summary.revision ?? ""}\u0000${summary.updatedAt}`;
-}
-
-function rememberWrittenHeader(record: HistoryRecord): void {
-  const { transcript: _transcript, ...header } = record;
-  writtenHeaders.set(record.id, {
-    fingerprint: summaryFingerprint(historySummary(record)),
-    header: { ...header, messages: [] },
-  });
-}
-
 async function existingSessionHeader(id: string): Promise<HistoryRecord | undefined> {
-  const written = writtenHeaders.get(id);
-  if (written) {
-    const entries = await readValidatedHistoryIndex(jsonlFilePath(), jsonlIndexFilePath());
-    const entry = entries?.find((candidate) => candidate.id === id);
-    if (entry && summaryFingerprint(entry.summary) === written.fingerprint) return written.header;
-    writtenHeaders.delete(id);
-  }
+  const head = await readSessionHead(id);
+  if (head) return { ...head, messages: [] };
   return getSession(id);
 }
 
@@ -348,7 +365,7 @@ export async function upsertSession(
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     cwd: location?.cwd ?? safeCwd(),
-    messages: scrubMessages(messages),
+    messages: scrubMessagesFor(id, messages),
     transcript: scrubTranscript(transcript),
     ...(changes ? { changes } : existing?.changes ? { changes: existing.changes } : {}),
     ...(contextUsage
@@ -367,24 +384,19 @@ export async function upsertSession(
   };
 
   if (getConfig().privateMode) return record;
-
-  invalidateSessionListCache();
-  const db = await loadDatabase();
-  const canonical = await upsertJsonl(record);
-  if (db) {
-    upsertSqlite(db, canonical);
-    await enforceSqliteRetention(db);
-    invalidateSessionListCache();
-  }
-  if (canonical === record) rememberWrittenHeader(canonical);
-  else writtenHeaders.delete(id);
-  return canonical;
+  return await persistRecord(record);
 }
 
 const mergeProbes = new Map<string, string>();
 
 export async function pendingSessionMerge(id: string): Promise<HistoryRecord | undefined> {
   if (getConfig().privateMode) return undefined;
+  const probe = await sessionMergeProbe(id);
+  if (probe !== "absent") {
+    if (probe === "unchanged" || probe.pendingMerge !== true) return undefined;
+    const record = await getSession(id);
+    return record?.pendingMerge === true ? record : undefined;
+  }
   const info = await stat(jsonlFilePath()).catch(() => undefined);
   if (!info) return undefined;
   const stamp = `${info.size}:${info.mtimeMs}`;
@@ -443,4 +455,12 @@ export function getHistoryArchivePath(): string {
 
 export function getHistoryBackupDir(): string {
   return backupDirPath();
+}
+
+export function getSessionsDir(): string {
+  return sessionsDirPath();
+}
+
+export function getSessionLogPath(sessionId: string): string {
+  return sessionLogPath(sessionId);
 }

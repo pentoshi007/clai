@@ -65,6 +65,22 @@ export function shiftTranscriptWindowStart(
   ).start;
 }
 
+export const TRANSCRIPT_PREFETCH_VIEWPORTS = 2;
+
+export function transcriptPrefetchDirection(input: {
+  readonly scrollTop: number;
+  readonly maxScrollTop: number;
+  readonly viewportRows: number;
+  readonly delta: number;
+  readonly olderCount: number;
+  readonly newerCount: number;
+}): "older" | "newer" | undefined {
+  const margin = Math.max(1, Math.floor(input.viewportRows)) * TRANSCRIPT_PREFETCH_VIEWPORTS;
+  if (input.delta < 0 && input.olderCount > 0 && input.scrollTop <= margin) return "older";
+  if (input.delta > 0 && input.newerCount > 0 && input.maxScrollTop - input.scrollTop <= margin) return "newer";
+  return undefined;
+}
+
 export interface TranscriptScrollIntent {
   readonly nextScrollTop: number;
   readonly leaveTail: boolean;
