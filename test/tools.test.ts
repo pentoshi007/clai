@@ -62,45 +62,19 @@ describe("tools – http.fetch", () => {
     expect(result.output).toMatch(/Unsupported HTTP method/);
   });
 
-  it("blocks loopback by default", async () => {
-    const result = await httpFetch("http://127.0.0.1/");
-    expect(result.ok).toBe(false);
-    expect(result.output).toMatch(/private\/loopback\/metadata/);
-  });
-
-  it("blocks RFC1918 private addresses by default", async () => {
-    const a = await httpFetch("http://192.168.0.1/");
-    expect(a.ok).toBe(false);
-    const b = await httpFetch("http://10.0.0.1/");
-    expect(b.ok).toBe(false);
-    const c = await httpFetch("http://172.16.0.1/");
-    expect(c.ok).toBe(false);
-  });
-
-  it("blocks cloud metadata endpoint by default", async () => {
-    const result = await httpFetch("http://169.254.169.254/latest/meta-data/");
-    expect(result.ok).toBe(false);
-    expect(result.output).toMatch(/private\/loopback\/metadata/);
-  });
-
-  it("blocks localhost hostname by default", async () => {
-    const result = await httpFetch("http://localhost:8080/");
-    expect(result.ok).toBe(false);
-    expect(result.output).toMatch(/private\/loopback\/metadata/);
-  });
-
-  it("blocks IPv6 loopback by default", async () => {
-    const result = await httpFetch("http://[::1]/");
-    expect(result.ok).toBe(false);
-    expect(result.output).toMatch(/private\/loopback\/metadata/);
-  });
-
-  it("allows private addresses with iOwnThis=true", async () => {
-    globalThis.fetch = vi.fn(
-      async () => new Response("hi", { status: 200 }),
-    ) as unknown as typeof fetch;
-    const result = await httpFetch("http://127.0.0.1/", { iOwnThis: true });
+  it.each([
+    "http://127.0.0.1/",
+    "http://localhost:8080/",
+    "http://[::1]/",
+    "http://192.168.0.1/",
+    "http://10.49.164.152/",
+    "http://172.16.0.1/",
+    "http://100.64.0.1/",
+    "http://169.254.169.254/latest/meta-data/",
+  ])("fetches %s without an ownership override", async (url) => {
+    const result = await httpFetch(url);
     expect(result.ok).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalled();
   });
 
   it("drops the body for HEAD requests", async () => {

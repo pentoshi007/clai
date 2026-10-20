@@ -2,7 +2,6 @@ import type { ToolResult } from "../../types.js";
 import { selectOutput } from "../output-selection.js";
 import type { OutputSelection, ResponsePart } from "../output-selection.js";
 import { decodeTextBody } from "../web/decode.js";
-import { isBlockedAddress } from "../web/ssrf-guard.js";
 import { closeAgents, createPinnedAgent, getInsecureTlsAgent } from "./agents.js";
 import { formatHttpEvidence, RedirectHop, snapshotHeaders } from "./evidence-format.js";
 import { createHash } from "node:crypto";
@@ -153,19 +152,12 @@ export async function httpFetch(
   const ownedLoopback = Boolean(options.iOwnThis && isLoopbackHost(startHost));
   const authorizedAddresses = new Map<string, string[]>();
 
-  // SSRF and engagement-policy checks run for the initial destination and
+  // Engagement-policy checks run for the initial destination and
   const authorizeDestination = async (destination: URL): Promise<string | undefined> => {
     const hostname = destination.hostname.replace(/^\[|\]$/g, "");
     const resolvedAddresses = await resolveHosts(hostname);
     authorizedAddresses.set(hostname.toLowerCase(), resolvedAddresses);
-    const blocked = isBlockedAddress(hostname) || resolvedAddresses.some(isBlockedAddress);
-    const destLoopback = isLoopbackHost(hostname);
-    if (blocked && !options.iOwnThis) {
-      return `Refusing to fetch private/loopback/metadata address ${hostname}. Pass iOwnThis=true to override.`;
-    }
-    if (options.iOwnThis && destLoopback) {
-      return undefined;
-    }
+    if (options.iOwnThis && isLoopbackHost(hostname)) return undefined;
     if (options.authorizeHop) {
       const decision = await options.authorizeHop(destination.toString(), resolvedAddresses);
       if (!decision.allowed) return `Blocked network destination ${destination.toString()}: ${decision.reason}`;
@@ -271,7 +263,6 @@ export async function httpFetch(
               const dispatcher = createPinnedAgent(
                 pinned,
                 insecureTls && hopUrl.protocol === "https:",
-                options.iOwnThis === true,
               );
               pinnedAgents.push(dispatcher);
               hopInit.dispatcher = dispatcher;
