@@ -1,6 +1,7 @@
 import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
 import { requestTokenCalibration } from "../llm/token-estimate-calibration.js";
 import type { ProviderId } from "../types.js";
+import { DSML_ANY_RE } from "./parser/dsml.js";
 
 export {
   buildCompactionChunkPrompt,
@@ -158,7 +159,7 @@ export function looksLikeTranscriptReplay(summary: string): boolean {
     /[\ue000\ue001]/,
     /<\|tool_(?:calls_section|call|call_argument)_(?:begin|end)\|>/i,
     /<[|｜]+tool[_▁](?:calls?[_▁](?:begin|end)|sep)[|｜]+>/i,
-    /<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b/i,
+    DSML_ANY_RE,
     /<[|｜]+(?:open|close|sep)[|｜]+>/i,
     /\bbytes\s*=\s*\d+\s+lines\s*=\s*\d+/i,
   ];

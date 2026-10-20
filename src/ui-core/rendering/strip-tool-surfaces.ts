@@ -1,4 +1,12 @@
 import { extractBalancedJson } from "../../agent/parser/xml-protocol.js";
+import {
+  DSML_COMPLETE_CONTAINER_SRC,
+  DSML_COMPLETE_INVOKE_SRC,
+  DSML_COMPLETE_PARAMETER_SRC,
+  DSML_PARTIAL_TAIL_RE,
+  DSML_STRAY_TAG_RE,
+  DSML_TRAILING_RE,
+} from "../../agent/parser/dsml.js";
 
 const COMPLETE_TOOL_FENCE =
   /```(?:tool|json\s*tool)\b[^\n]*\n[\s\S]*?```/gi;
@@ -11,15 +19,9 @@ const COMPLETE_TOOL_ID_CALL =
   /<tool_call:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_call:\1>/gi;
 const TRAILING_TOOL_ID = /<tool_calls?:[A-Za-z0-9_-]+>[\s\S]*$/i;
 const STRAY_TOOL_ID = /<\/?tool_calls?:[A-Za-z0-9_-]+>/gi;
-const COMPLETE_TOOL_DSML =
-  /<[|｜]+DSML[|｜]+tool_calls\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+tool_calls>/gi;
-const COMPLETE_TOOL_DSML_INVOKE =
-  /<[|｜]+DSML[|｜]+invoke\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+invoke>/gi;
-const COMPLETE_TOOL_DSML_PARAMETER =
-  /<[|｜]+DSML[|｜]+parameter\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+parameter>/gi;
-const TRAILING_TOOL_DSML =
-  /<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b[\s\S]*$/i;
-const STRAY_TOOL_DSML = /<\/?[|｜]+DSML[|｜]+[A-Za-z0-9_]*\b[^>]*>/gi;
+const COMPLETE_TOOL_DSML = new RegExp(DSML_COMPLETE_CONTAINER_SRC, "gi");
+const COMPLETE_TOOL_DSML_INVOKE = new RegExp(DSML_COMPLETE_INVOKE_SRC, "gi");
+const COMPLETE_TOOL_DSML_PARAMETER = new RegExp(DSML_COMPLETE_PARAMETER_SRC, "gi");
 const COMPLETE_TOOL_DEEPSEEK =
   /<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*?<[|｜]+tool[_▁]calls[_▁]end[|｜]+>/gi;
 const COMPLETE_TOOL_DEEPSEEK_CALL =
@@ -65,8 +67,8 @@ export function stripToolCallSurfaces(text: string): string {
   s = s.replace(COMPLETE_TOOL_DSML, "");
   s = s.replace(COMPLETE_TOOL_DSML_INVOKE, "");
   s = s.replace(COMPLETE_TOOL_DSML_PARAMETER, "");
-  s = s.replace(TRAILING_TOOL_DSML, "");
-  s = s.replace(STRAY_TOOL_DSML, "");
+  s = s.replace(DSML_TRAILING_RE, "");
+  s = s.replace(DSML_STRAY_TAG_RE, "");
   s = s.replace(COMPLETE_TOOL_DEEPSEEK, "");
   s = s.replace(COMPLETE_TOOL_DEEPSEEK_CALL, "");
   s = s.replace(TRAILING_TOOL_DEEPSEEK, "");
@@ -82,6 +84,7 @@ export function stripToolCallSurfaces(text: string): string {
   s = s.replace(COMPLETE_TOOL_FUNCTION, "\n");
   s = s.replace(TRAILING_TOOL_FUNCTION, "");
   s = s.replace(TRAILING_PARTIAL_TAG, "");
+  s = s.replace(DSML_PARTIAL_TAIL_RE, "");
   s = stripBracketedToolCalls(s);
   s = stripToCodeToolCalls(s);
   s = stripBareJsonToolCalls(s);

@@ -7,9 +7,16 @@ import {
 } from "../../tool-call-parser.js";
 import { stripThinking } from "../../../ui/thinking.js";
 import { toolNudge } from "../../../prompts/index.js";
+import { DSML_ANY_RE } from "../../parser/dsml.js";
+import { stripToolCallSurfaces } from "../../../ui-core/rendering/strip-tool-surfaces.js";
 
 const SENTINEL_TOOL_CALL =
-  /<\|tool_call(?:s_section)?_begin\|>|<\|tool_call_argument_begin\|>|<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b|<[|｜]+tool[_▁](?:calls?[_▁]begin|sep)[|｜]+>/i;
+  /<\|tool_call(?:s_section)?_begin\|>|<\|tool_call_argument_begin\|>|<\s*[|｜]+\s*tool[_▁\s](?:calls?[_▁\s]begin|sep)\s*[|｜]+\s*>/i;
+
+const MAX_SENTINEL_RETRIES = 3;
+
+const hasSentinelMarkup = (text: string): boolean =>
+  SENTINEL_TOOL_CALL.test(text) || DSML_ANY_RE.test(text);
 
 const FENCED_CALL_SHAPE = /```tool\s*\n[\s\S]*?"(?:name|args)"\s*:/i;
 
@@ -22,6 +29,7 @@ export interface ToolCallRecoveryState {
   bareToolJsonRetries: number;
   truncatedToolRetries: number;
   malformedFenceRetries: number;
+  sentinelToolRetries: number;
 }
 
 export interface ToolCallRecoveryPorts {
@@ -58,15 +66,17 @@ const bareArgsNudge = (ports: ToolCallRecoveryPorts): string => {
         "Choose the correct tool name for the task and include those args.";
 };
 
-const sentinelNudge = (ports: ToolCallRecoveryPorts): string =>
+const sentinelNudge = (ports: ToolCallRecoveryPorts, dsml: boolean): string =>
   ports.toolsAttached
-    ? "Your previous tool call was malformed or truncated. " +
+    ? "Your previous tool call was written as raw " +
+      (dsml ? "DSML (<｜DSML｜…>) " : "sentinel ") +
+      "markup that was malformed or truncated, so NOTHING ran. " +
       toolNudge(true) +
-      " Pass valid JSON arguments via the platform tool interface — do not use fence or sentinel markers."
-    : "Your previous tool call was malformed or truncated. " +
+      " Pass valid JSON arguments via the platform tool interface — do not write tool-call markup in your reply."
+    : "Your previous tool call was malformed or truncated, so NOTHING ran. " +
       "Reply with ONLY a fenced ```tool block containing valid JSON " +
       'of the form `{"name": "<tool>", "args": { ... }}`. ' +
-      "Do not use <|tool_call_begin|> markers.";
+      "Do not use <|tool_call_begin|> or <｜DSML｜…> markers.";
 
 const truncatedNudge = (ports: ToolCallRecoveryPorts): string =>
   ports.toolsAttached
@@ -164,14 +174,26 @@ const recoverBareArgs = (
 
 const recoverSentinel = (
   ports: ToolCallRecoveryPorts,
+  state: ToolCallRecoveryState,
   visible: string,
+  dsml: boolean,
 ): ToolCallRecoveryDecision => {
+  state.sentinelToolRetries += 1;
+  if (state.sentinelToolRetries > MAX_SENTINEL_RETRIES) {
+    ports.notify(
+      "warn",
+      "model kept emitting unparseable tool-call markup — it was hidden and the turn ended; try again or switch model",
+    );
+    return "proceed";
+  }
   ports.notify(
     "warn",
-    "tool call was malformed or cut off — asking the model to retry in JSON form",
+    dsml
+      ? "model emitted a malformed DSML tool call — asking it to retry with a valid call"
+      : "tool call was malformed or cut off — asking the model to retry in JSON form",
   );
   ports.commitAssistantRetry(visible);
-  ports.messages.push(ports.recoveryUserMessage(sentinelNudge(ports)));
+  ports.messages.push(ports.recoveryUserMessage(sentinelNudge(ports, dsml)));
   return "retry";
 };
 
@@ -234,13 +256,20 @@ const recoverMalformedFence = async (
 export const recoverMissingToolCall = async (
   ports: ToolCallRecoveryPorts,
   state: ToolCallRecoveryState,
-  input: { readonly visible: string; readonly bareArgsOnly: boolean },
+  input: {
+    readonly visible: string;
+    readonly thinking?: string | undefined;
+    readonly bareArgsOnly: boolean;
+  },
 ): Promise<ToolCallRecoveryDecision> => {
   if (input.bareArgsOnly) {
     if (recoverBareArgs(ports, state, input.visible) === "retry") return "retry";
   }
-  if (SENTINEL_TOOL_CALL.test(input.visible)) {
-    return recoverSentinel(ports, input.visible);
+  const thinkingOnlyCall =
+    !stripToolCallSurfaces(input.visible).trim() && Boolean(input.thinking && hasSentinelMarkup(input.thinking));
+  if (hasSentinelMarkup(input.visible) || thinkingOnlyCall) {
+    const dsml = DSML_ANY_RE.test(input.visible) || (thinkingOnlyCall && DSML_ANY_RE.test(input.thinking ?? ""));
+    return recoverSentinel(ports, state, input.visible, dsml);
   }
   if (looksLikeTruncatedToolCall(input.visible)) {
     const decision = await recoverTruncated(ports, state, input.visible);

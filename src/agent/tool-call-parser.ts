@@ -2,6 +2,7 @@ import type { ChatMessage, ToolCall } from "../types.js";
 import { projectToolHistory } from "./tool-history.js";
 import { preprocessJson } from "./parser/xml-protocol.js";
 import { salvageTruncatedWrite } from "./parser/salvage.js";
+import { DSML_CONTAINER_BLOCK_RE, DSML_INVOKE_BLOCK_RE, DSML_PARAMETER_BLOCK_RE, DSML_STRAY_TAG_RE, DSML_TRAILING_RE } from "./parser/dsml.js";
 export { isMutatingToolName, looksLikeTruncatedToolCall, parseAllToolCalls, parseToolCall, sameToolCall } from "./parser/parse-entry.js";
 export type { ParseToolCallOptions } from "./parser/parse-entry.js";
 export { inferToolFromArgs, recognizeBareToolJson } from "./parser/bare-recognition.js";
@@ -10,8 +11,6 @@ export { collapseRepeatedText } from "./parser/repetition.js";
 export { salvageTruncatedWrite };
 export type { SalvagedWrite } from "./parser/salvage.js";
 export { preprocessJson };
-
-const STRAY_DSML_TAG_RE = /<\/?[|｜]+DSML[|｜]+[A-Za-z0-9_]*\b[^>]*>/gi;
 
 export function stripSentinelTokens(text: string): string {
   return text
@@ -35,10 +34,10 @@ export function stripSentinelTokens(text: string): string {
     .replace(/<tool_calls:[A-Za-z0-9_-]+>[\s\S]*?(?:<\/tool_calls:[A-Za-z0-9_-]+>|$)/gi, "")
     .replace(/<tool_call:[A-Za-z0-9_-]+>[\s\S]*?(?:<\/tool_call:[A-Za-z0-9_-]+>|$)/gi, "")
     .replace(/<\/?tool_calls?:[A-Za-z0-9_-]+>/gi, "")
-    .replace(/<[|｜]+DSML[|｜]+tool_calls\b[^>]*>[\s\S]*?(?:<\/[|｜]+DSML[|｜]+tool_calls>|$)/gi, "")
-    .replace(/<[|｜]+DSML[|｜]+invoke\b[^>]*>[\s\S]*?(?:<\/[|｜]+DSML[|｜]+invoke>|$)/gi, "")
-    .replace(/<[|｜]+DSML[|｜]+parameter\b[^>]*>[\s\S]*?(?:<\/[|｜]+DSML[|｜]+parameter>|$)/gi, "")
-    .replace(STRAY_DSML_TAG_RE, "")
+    .replace(DSML_CONTAINER_BLOCK_RE, "")
+    .replace(DSML_INVOKE_BLOCK_RE, "")
+    .replace(DSML_PARAMETER_BLOCK_RE, "")
+    .replace(DSML_STRAY_TAG_RE, "")
     .replace(/<[|｜]+open[|｜]+>?tools\b[\s\S]*?(?:<[|｜]+close[|｜]+>?tools\s*>?|$)/gi, "")
     .replace(/<[|｜]+(?:open|close)[|｜]+>?[A-Za-z][\w-]*[^>|<]*>?/gi, "")
     .replace(/<[|｜]+sep[|｜]+>/gi, "")
@@ -121,9 +120,7 @@ export function textBeforeToolCall(text: string): string {
     /<tool_call>[\s\S]*$/i,
     /<tool_calls:[A-Za-z0-9_-]+>[\s\S]*$/i,
     /<tool_call:[A-Za-z0-9_-]+>[\s\S]*$/i,
-    /<[|｜]+DSML[|｜]+tool_calls\b[\s\S]*$/i,
-    /<[|｜]+DSML[|｜]+invoke\b[\s\S]*$/i,
-    /<[|｜]+DSML[|｜]+parameter\b[\s\S]*$/i,
+    DSML_TRAILING_RE,
     /<[|｜]+open[|｜]+>?tools\b[\s\S]*$/i,
     /<[|｜]+open[|｜]+>?call\b[\s\S]*$/i,
     /<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*$/i,

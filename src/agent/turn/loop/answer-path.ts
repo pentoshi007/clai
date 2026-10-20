@@ -40,6 +40,7 @@ export const resolveAnswerPath = async (
     bareToolJsonRetries: deps.counters.bareToolJsonRetries,
     truncatedToolRetries: deps.counters.truncatedToolRetries,
     malformedFenceRetries: deps.counters.malformedFenceRetries,
+    sentinelToolRetries: deps.counters.sentinelToolRetries,
   };
   const recoveryDecision = await recoverMissingToolCall(
     {
@@ -52,11 +53,12 @@ export const resolveAnswerPath = async (
       applySalvagedWrite: deps.applySalvagedWrite,
     },
     recoveryLadderState,
-    { visible: assistantText.visible, bareArgsOnly },
+    { visible: assistantText.visible, thinking: assistantText.thinkContent, bareArgsOnly },
   );
   deps.counters.bareToolJsonRetries = recoveryLadderState.bareToolJsonRetries;
   deps.counters.truncatedToolRetries = recoveryLadderState.truncatedToolRetries;
   deps.counters.malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
+  deps.counters.sentinelToolRetries = recoveryLadderState.sentinelToolRetries;
   if (recoveryDecision === "retry") return { kind: "continue" };
 
   const livePlanAtCompletion = await loadPlan(deps.session.sessionId);

@@ -12,6 +12,7 @@ export function liveThinkingTail(
   return `…\n${aligned}`;
 }
 
+import { DSML_ANY_RE } from "../../agent/parser/dsml.js";
 import { stripToolCallSurfaces } from "./strip-tool-surfaces.js";
 
 const SURFACE_OPENERS = [
@@ -30,11 +31,15 @@ const SURFACE_OPENERS = [
   "<｜tool▁sep｜>",
 ];
 
+function hasToolSurface(content: string): boolean {
+  return SURFACE_OPENERS.some((opener) => content.includes(opener)) || DSML_ANY_RE.test(content);
+}
+
 export function liveThinkingDisplay(
   content: string,
   limit = LIVE_THINKING_TAIL_CHARS,
 ): string {
-  if (!SURFACE_OPENERS.some((opener) => content.includes(opener))) {
+  if (!hasToolSurface(content)) {
     return liveThinkingTail(content, limit);
   }
   const stripped = stripToolCallSurfaces(content);
@@ -43,7 +48,7 @@ export function liveThinkingDisplay(
 }
 
 export function liveThinkingFull(content: string): string {
-  if (!SURFACE_OPENERS.some((opener) => content.includes(opener))) {
+  if (!hasToolSurface(content)) {
     return content;
   }
   const stripped = stripToolCallSurfaces(content);
