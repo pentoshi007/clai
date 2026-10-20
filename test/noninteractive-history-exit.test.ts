@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,13 @@ function cliArgs(extra: string[] = []): string[] {
   return ['--import', fixture, '--import', 'tsx', 'src/index.ts', '--provider', 'free', '--model', 'big-pickle', '--mode', 'ask', '--quiet', ...extra, 'Reply with ONE_SHOT_OK'];
 }
 
+async function sessionLogs(path: string): Promise<string> {
+  const sessions = join(path, 'sessions');
+  const names = await readdir(sessions, { withFileTypes: true });
+  const logs = await Promise.all(names.filter((entry) => entry.isDirectory()).map((entry) => readFile(join(sessions, entry.name, 'session.jsonl'), 'utf8')));
+  return logs.join('');
+}
+
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -43,8 +50,7 @@ describe('one-shot history shutdown', () => {
     const result = await run(process.execPath, cliArgs(), { cwd: root, env, timeout: 30_000 });
     expect(result.stdout).toContain('ONE_SHOT_OK');
     expect(result.stderr).not.toContain('heap');
-    const saved = await readFile(join(path, 'history.jsonl'), 'utf8');
-    expect(saved).toContain('ONE_SHOT_OK');
+    expect(await sessionLogs(path)).toContain('ONE_SHOT_OK');
   }, 35_000);
 
   it('honors --no-history without touching existing orphan snapshots', async () => {
@@ -74,9 +80,13 @@ describe('one-shot history shutdown', () => {
     const result = await run(process.execPath, ['--max-old-space-size=128', ...cliArgs()], { cwd: root, env, timeout: 60_000 });
     expect(result.stdout).toContain('ONE_SHOT_OK');
     expect(result.stderr).not.toContain('heap');
-    const index = JSON.parse(await readFile(join(path, 'history.index.json'), 'utf8')) as { entries: { id: string }[] };
-    expect(index.entries).toHaveLength(342);
-    expect(index.entries.some((entry) => entry.id === 'recovered')).toBe(true);
+    const legacy = JSON.parse(await readFile(join(path, 'history.index.json'), 'utf8')) as { entries: { id: string }[] };
+    expect(legacy.entries).toHaveLength(341);
+    expect(legacy.entries.some((entry) => entry.id === 'recovered')).toBe(true);
+    const sessions = JSON.parse(await readFile(join(path, 'sessions', 'index.json'), 'utf8')) as { entries: Record<string, unknown> };
+    expect(Object.keys(sessions.entries)).toHaveLength(342);
+    expect(sessions.entries).toHaveProperty('recovered');
+    expect(sessions.entries).toHaveProperty('old-339');
     await expect(stat(`${history}.99999.unfinished.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 65_000);
 });

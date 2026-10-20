@@ -9,6 +9,7 @@ function printableAscii(code: number): boolean {
 }
 
 const RUN_CACHE_LIMIT = 8192;
+const RUN_CACHE_MAX_LENGTH = 512;
 const runWidths = new Map<string, number>();
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const joinsFollowing = new Map<number, boolean>();
@@ -35,7 +36,7 @@ function runWidth(run: string): number {
   const cached = runWidths.get(run);
   if (cached !== undefined) return cached;
   const width = stringWidth(run);
-  if (run.length <= 64) {
+  if (run.length <= RUN_CACHE_MAX_LENGTH) {
     if (runWidths.size >= RUN_CACHE_LIMIT) runWidths.clear();
     runWidths.set(run, width);
   }
@@ -72,9 +73,27 @@ function plainWidth(plain: string): number {
   return width;
 }
 
+const SIMPLE_SGR = /\x1b\[(?:\d{1,3}(?:;\d{1,3})*)?m/g;
+
 export function terminalWidth(text: string): number {
   if (text.length === 0) return 0;
-  return CONTROL_SEQUENCE_START.test(text) ? stringWidth(text) : plainWidth(text);
+  if (!CONTROL_SEQUENCE_START.test(text)) return plainWidth(text);
+  const plain = text.replace(SIMPLE_SGR, "");
+  return CONTROL_SEQUENCE_START.test(plain) ? stringWidth(text) : plainWidth(plain);
+}
+
+export function widestLineWidth(text: string): number {
+  let widest = 0;
+  let start = 0;
+  while (start <= text.length) {
+    const end = text.indexOf("\n", start);
+    const stop = end === -1 ? text.length : end;
+    const width = terminalWidth(text.slice(start, stop));
+    if (width > widest) widest = width;
+    if (end === -1) break;
+    start = end + 1;
+  }
+  return widest;
 }
 
 export function renderColumns(text: string): number {

@@ -253,9 +253,15 @@ export async function recoverOrphanedHistory(): Promise<{
   }
 }
 
+async function recoverAndMigrateHistory(): Promise<void> {
+  await recoverOrphanedHistory().catch(() => undefined);
+  const { migrateLegacyHistory } = await import("./legacy-migration.js");
+  await migrateLegacyHistory();
+}
+
 export function startHistoryRecovery(): Promise<void> {
   if (!recoveryPromise) {
-    recoveryPromise = recoverOrphanedHistory()
+    recoveryPromise = recoverAndMigrateHistory()
       .then(
         () => undefined,
         () => undefined,

@@ -50,8 +50,10 @@ describe("store path roots", () => {
 
     expect(history.getJsonlHistoryPath()).toBe(join(root, "history", "history.jsonl"));
 
-    await history.saveSession([{ role: "user", content: "hello" }]);
-    expect(existsSync(join(root, "history", "history.jsonl"))).toBe(true);
+    const saved = await history.saveSession([{ role: "user", content: "hello" }]);
+    expect(history.getSessionsDir()).toBe(join(root, "history", "sessions"));
+    expect(existsSync(history.getSessionLogPath(saved.id))).toBe(true);
+    expect(history.getSessionLogPath(saved.id).startsWith(join(root, "history", "sessions"))).toBe(true);
 
     const sessionPlan = plan.createPlan({
       sessionId: "session-1",

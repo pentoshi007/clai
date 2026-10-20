@@ -560,7 +560,7 @@ async function main(): Promise<void> {
       if (options.show) {
         const session = await getSession(options.show);
         if (!session) throw new Error(`No session found: ${options.show}`);
-        console.log(JSON.stringify(session, null, 2));
+        process.stdout.write(`${JSON.stringify(session, null, 2)}\n`);
         return;
       }
       const [sessions, runtimes] = await Promise.all([
