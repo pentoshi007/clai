@@ -5,7 +5,7 @@ import type {
   ToolDefinition,
 } from "../../../types.js";
 import type { resolveToolDialect } from "../../../llm/capabilities.js";
-import { resolveBuiltInProfile } from "../../../llm/provider-profiles.js";
+import { routeOutputTokenLimit } from "../../../llm/provider-profiles.js";
 import {
   buildContextBreakdown,
   contextBreakdownAuditPayload,
@@ -89,36 +89,70 @@ export const assembleRequest = async (
   const estimatedInputTokens = ports.estimateRequestTokens(ports.messages);
   showFreeTierAdvisories(ports, state);
 
-  const routeOutputTokenLimit = resolveBuiltInProfile({
-    provider: ports.provider,
-    model: ports.model,
-  }).limits.outputTokens;
-  const requestedStepMaxTokens = resolveStepMaxTokens({
+  const routeOutputLimit = routeOutputTokenLimit(ports.provider, ports.model);
+  const stepBudgetInput = {
     nativeToolsActive: ports.nativeToolsActive,
     toolsAttached,
     truncationDepth: state.truncatedBudgetRounds,
     thinkingEnabled: Boolean(ports.thinking?.enabled),
     minimumTokens: state.continuationBudgetFloor,
-    ...(routeOutputTokenLimit !== undefined
-      ? { outputTokenLimit: routeOutputTokenLimit }
-      : {}),
+  };
+  const preferredStepMaxTokens = resolveStepMaxTokens({
+    ...stepBudgetInput,
+    outputTokenLimit: routeOutputLimit,
   });
+  const unknownLimitStepMaxTokens = resolveStepMaxTokens(stepBudgetInput);
   const contextLimit = resolveEffectiveContextLimit({
     provider: ports.provider,
     model: ports.model,
     contextLimitTokens: ports.contextLimitTokens,
   });
-  const stepMaxTokens =
+  const fallbackStepMaxTokens = Math.min(
+    unknownLimitStepMaxTokens,
+    routeOutputLimit ?? unknownLimitStepMaxTokens,
+  );
+  const minimumStepMaxTokens =
     contextLimit.limitTokens !== undefined &&
-    requestedStepMaxTokens +
+    fallbackStepMaxTokens +
       contextLimit.safetyMarginTokens +
       contextLimit.reservedOutputTokens >=
       contextLimit.limitTokens
       ? Math.max(
           1,
-          Math.min(requestedStepMaxTokens, contextLimit.reservedOutputTokens),
+          Math.min(fallbackStepMaxTokens, contextLimit.reservedOutputTokens),
         )
-      : requestedStepMaxTokens;
+      : fallbackStepMaxTokens;
+
+  repairToolProtocol(ports.messages);
+  assertValidToolProtocol(ports.messages);
+
+  const finalAccounting = accountAssembledRequest({
+    provider: ports.provider,
+    model: ports.model,
+    messages: ports.messages,
+    stream: true,
+    reservedOutputTokens: minimumStepMaxTokens,
+    reasoning: ports.thinking,
+    ...(toolsAttached && tools?.length
+      ? { tools, toolChoice: "auto" as const, parallelToolCalls: true }
+      : {}),
+    ...(ports.contextLimitTokens !== undefined
+      ? { contextLimitTokens: ports.contextLimitTokens }
+      : {}),
+  }).accounting;
+  const measuredTokens = ports.measureRequestTokens?.(estimatedInputTokens);
+  const requestTokens = measuredTokens ?? finalAccounting.requestTokens;
+  const freeOutputTokens =
+    contextLimit.limitTokens === undefined
+      ? preferredStepMaxTokens
+      : contextLimit.limitTokens - requestTokens - contextLimit.safetyMarginTokens;
+  const stepMaxTokens =
+    preferredStepMaxTokens > fallbackStepMaxTokens
+      ? Math.max(
+          minimumStepMaxTokens,
+          Math.min(preferredStepMaxTokens, freeOutputTokens),
+        )
+      : minimumStepMaxTokens;
 
   await ports.audit("agent.turn", {
     provider: ports.provider,
@@ -135,30 +169,11 @@ export const assembleRequest = async (
         : {}),
     }),
     maxTokensBudget: stepMaxTokens,
-    ...(routeOutputTokenLimit !== undefined
-      ? { outputTokenLimit: routeOutputTokenLimit }
+    ...(routeOutputLimit !== undefined
+      ? { outputTokenLimit: routeOutputLimit }
       : {}),
   });
 
-  repairToolProtocol(ports.messages);
-  assertValidToolProtocol(ports.messages);
-
-  const finalAccounting = accountAssembledRequest({
-    provider: ports.provider,
-    model: ports.model,
-    messages: ports.messages,
-    stream: true,
-    reservedOutputTokens: stepMaxTokens,
-    reasoning: ports.thinking,
-    ...(toolsAttached && tools?.length
-      ? { tools, toolChoice: "auto" as const, parallelToolCalls: true }
-      : {}),
-    ...(ports.contextLimitTokens !== undefined
-      ? { contextLimitTokens: ports.contextLimitTokens }
-      : {}),
-  }).accounting;
-  const measuredTokens = ports.measureRequestTokens?.(estimatedInputTokens);
-  const requestTokens = measuredTokens ?? finalAccounting.requestTokens;
   const effectiveSafeTokens = finalAccounting.limit.effectiveSafeTokens;
   if (effectiveSafeTokens !== undefined && requestTokens > effectiveSafeTokens) {
     await ports.audit("agent.request.over-limit-blocked", {

@@ -11,6 +11,7 @@ export const ADAPTIVE_MAX_TOKENS_LIGHT = 12_288;
 export const ADAPTIVE_MAX_TOKENS_FLOOR = 8_192;
 export const LEGACY_MAX_TOKENS = 32_768;
 export const MAX_STEP_COMPLETION_TOKENS = 65_536;
+export const REASONING_STEP_MAX_TOKENS = 131_072;
 export const MAX_OUTPUT_BUDGET_CONTINUATIONS = 1;
 
 export interface ReliabilityPolicy {
@@ -72,7 +73,8 @@ export function resolveStepMaxTokens(input: {
   policy?: ReliabilityPolicy | undefined;
 }): number {
   const policy = input.policy ?? getReliabilityPolicy();
-  const base = (() => {
+  const outputTokenLimit = positiveTokens(input.outputTokenLimit);
+  const adaptiveBase = (() => {
     if (!policy.adaptiveMaxTokens) return LEGACY_MAX_TOKENS;
     if (input.recoveryNudge) {
       return Math.max(ADAPTIVE_MAX_TOKENS_FLOOR, ADAPTIVE_MAX_TOKENS_LIGHT);
@@ -86,30 +88,29 @@ export function resolveStepMaxTokens(input: {
     }
     return adaptive;
   })();
-  const depth = input.truncationDepth ?? 0;
-  const expanded =
-    depth > 0
-      ? Math.min(MAX_STEP_COMPLETION_TOKENS, base * 2 ** depth)
-      : base;
-  const minimum =
-    typeof input.minimumTokens === "number" &&
-    Number.isFinite(input.minimumTokens) &&
-    input.minimumTokens > 0
-      ? Math.floor(input.minimumTokens)
-      : 0;
-  const withMinimum = Math.min(
+  const base =
+    input.thinkingEnabled && !input.recoveryNudge && outputTokenLimit !== undefined
+      ? Math.max(adaptiveBase, Math.min(outputTokenLimit, REASONING_STEP_MAX_TOKENS))
+      : adaptiveBase;
+  const ceiling = Math.max(
     MAX_STEP_COMPLETION_TOKENS,
-    Math.max(expanded, minimum),
+    base * 2 ** MAX_OUTPUT_BUDGET_CONTINUATIONS,
   );
-  const outputTokenLimit =
-    typeof input.outputTokenLimit === "number" &&
-    Number.isFinite(input.outputTokenLimit) &&
-    input.outputTokenLimit > 0
-      ? Math.floor(input.outputTokenLimit)
-      : undefined;
+  const depth = input.truncationDepth ?? 0;
+  const expanded = depth > 0 ? Math.min(ceiling, base * 2 ** depth) : base;
+  const withMinimum = Math.min(
+    ceiling,
+    Math.max(expanded, positiveTokens(input.minimumTokens) ?? 0),
+  );
   return outputTokenLimit === undefined
     ? withMinimum
     : Math.min(withMinimum, outputTokenLimit);
+}
+
+function positiveTokens(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
 }
 
 export function outputBudgetWasExhausted(input: {

@@ -1,6 +1,6 @@
 import type { ProviderId } from "../types.js";
 import { modelCatalogFacts } from "./capabilities.js";
-import { rememberedModelLimits } from "./model-limit-store.js";
+import { observedOutputCap, rememberedModelLimits } from "./model-limit-store.js";
 
 const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   pattern: RegExp;
@@ -183,6 +183,7 @@ export function modelMaxOutputTokens(
 ): number | undefined {
   if (!provider || !model) return profileOutputTokens;
   return (
+    observedOutputCap(provider, model) ??
     modelCatalogFacts(provider, model)?.maxOutputTokens ??
     rememberedModelLimits(provider, model)?.maxOutputTokens ??
     profileOutputTokens

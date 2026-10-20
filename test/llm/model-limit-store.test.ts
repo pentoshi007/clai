@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  observedOutputCap,
   reloadRememberedModelLimits,
   rememberModelLimits,
+  rememberObservedOutputCap,
   rememberedModelLimits,
 } from "../../src/llm/model-limit-store.js";
+import { routeOutputTokenLimit } from "../../src/llm/provider-profiles.js";
 import {
   registerModelCatalog,
   registerModelCatalogLimits,
@@ -96,6 +99,33 @@ describe("remembered model limits", () => {
     reloadRememberedModelLimits();
 
     expect(rememberedModelLimits("gemini", "m")).toBeUndefined();
+  });
+
+  it("resolves route output limits as observed, then catalog, then remembered, then documented", () => {
+    expect(routeOutputTokenLimit("river", "deepseek-ai/DeepSeek-V4.1-Flash")).toBe(384_000);
+    const model = "vendor/reasoner-9";
+    expect(routeOutputTokenLimit("tokenrouter", model)).toBeUndefined();
+    rememberModelLimits("tokenrouter", [{ model, contextTokens: 1_048_576, maxOutputTokens: 200_000 }]);
+    expect(routeOutputTokenLimit("tokenrouter", model)).toBe(200_000);
+    registerModelCatalog("tokenrouter", [{ id: model, facts: { id: model, maxOutputTokens: 300_000 } }]);
+    expect(routeOutputTokenLimit("tokenrouter", model)).toBe(300_000);
+    rememberObservedOutputCap("tokenrouter", model, 96_000);
+    expect(routeOutputTokenLimit("tokenrouter", model)).toBe(96_000);
+    expect(routeOutputTokenLimit("tokenrouter", "unlisted-model-xyz")).toBeUndefined();
+  });
+
+  it("persists observed output caps across restarts without disturbing context entries", () => {
+    rememberModelLimits("openrouter", [{ model: "vendor/a", contextTokens: 262_144 }]);
+    rememberObservedOutputCap("free", "free-1/Model-X", 32_000);
+    reloadRememberedModelLimits();
+
+    expect(observedOutputCap("free", "free-1/model-x")).toBe(32_000);
+    expect(modelMaxOutputTokens("free", "free-1/model-x")).toBe(32_000);
+    expect(rememberedModelLimits("openrouter", "vendor/a")?.contextTokens).toBe(262_144);
+    expect(JSON.parse(readFileSync(storePath(), "utf8"))).toMatchObject({
+      version: 1,
+      outputCaps: { "free:free-1/model-x": 32_000 },
+    });
   });
 
   it("falls back to the 200k default when nothing is known", () => {

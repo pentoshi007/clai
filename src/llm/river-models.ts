@@ -9,6 +9,10 @@ import {
 export const RIVER_DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash";
 export const RIVER_GLM_MODEL = "zai-org/GLM-5.3-Flash";
 
+export function isRiverDeepSeekModel(model: string): boolean {
+  return /deepseek/i.test(model);
+}
+
 export function documentedRiverModelFacts(model: string): CatalogFacts | undefined {
   const id = model.trim().toLowerCase();
   if (

@@ -3,7 +3,6 @@ import { PARALLEL_SAFE_TOOLS } from "../../../tools/registry.js";
 import { isReadOnlyShellCall } from "../../../tools/read-only-shell.js";
 import type { BoundCall } from "../contracts.js";
 import type { EmptyResponseState } from "./empty-response.js";
-import { MAX_STEP_COMPLETION_TOKENS } from "../../reliability-policy.js";
 import type { OutputBudgetState } from "./output-budget.js";
 import type { RecordedToolResult } from "./round-recorder.js";
 import type { ReplayedOccurrence } from "./wire-occurrences.js";
@@ -386,7 +385,6 @@ export const runTurnRounds = async (
             provider: deps.loop.provider,
             model: deps.loop.model,
             stepMaxTokens: deps.loop.stepMaxTokens,
-            maxStepCompletionTokens: MAX_STEP_COMPLETION_TOKENS,
             notify: deps.writeNotice,
             recoveryUserMessage: deps.recoveryUserMessage,
             pushAssistantHistory: (historyText) =>
