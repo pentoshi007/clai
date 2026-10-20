@@ -78,17 +78,28 @@ interface Arbitration {
   readonly forceBase: boolean;
 }
 
+function withoutStoredItems(record: HistoryRecord, storedTranscript: number | undefined): HistoryRecord {
+  const { pendingMerge: _pendingMerge, ...base } = record;
+  if (record.transcript?.length) return { ...base, transcript: [...record.transcript] };
+  return { ...base, transcript: storedTranscript === undefined ? undefined : [] };
+}
+
 async function arbitrate(
   record: HistoryRecord,
   existing: HistorySummary | undefined,
+  storedTranscript: number | undefined,
   loadStored: () => Promise<HistoryRecord | undefined>,
 ): Promise<Arbitration> {
   if (!existing) return { record, write: true, forceBase: false };
+  const incomingItems = record.transcript?.length ?? 0;
   const stale = compareHistoryFreshness(record, freshnessOf(existing)) <= 0;
   const changedWriter = existing.writerGeneration !== record.writerGeneration;
-  const mayLoseItems = existing.itemCount > (record.transcript?.length ?? 0);
+  const mayLoseItems = (storedTranscript ?? 0) > incomingItems;
   const pendingMerge = existing.pendingMerge === true;
-  if (!(stale || changedWriter || mayLoseItems || pendingMerge)) return { record, write: true, forceBase: false };
+  if (!(stale || changedWriter || mayLoseItems || pendingMerge)) {
+    if (existing.itemCount <= incomingItems) return { record, write: true, forceBase: false };
+    return { record: withoutStoredItems(record, storedTranscript), write: true, forceBase: false };
+  }
   const stored = await loadStored();
   if (!stored) return { record, write: true, forceBase: true };
   const winner = stale ? stored : record;
@@ -113,7 +124,7 @@ function shouldCompact(state: SessionLogState, stamp: LogStamp): boolean {
 async function writeUnderLock(incoming: HistoryRecord): Promise<{ record: HistoryRecord; summary?: HistorySummary; stamp?: LogStamp }> {
   const id = incoming.id;
   const current = await loadSessionStateForWrite(id);
-  const arbitration = await arbitrate(incoming, current.state?.summary, async () => {
+  const arbitration = await arbitrate(incoming, current.state?.summary, current.state?.transcriptDigests?.length, async () => {
     const loaded = current.loaded ?? await loadSessionLog(id);
     return loaded?.replayed.record;
   });

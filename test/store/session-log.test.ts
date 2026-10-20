@@ -6,12 +6,18 @@ import type { TranscriptItem } from "../../src/app/ports/transcript-item.js";
 import type { ChatMessage } from "../../src/types.js";
 import { useIsolatedHistory } from "../fixtures/isolated-history.js";
 
-const fsMode = vi.hoisted(() => ({ windowsAppendHandles: false }));
+const fsMode = vi.hoisted(() => ({ windowsAppendHandles: false, opened: [] as Array<{ path: string; flags: string }> }));
 vi.mock("node:fs/promises", async (load) => {
   const actual = await load<typeof import("node:fs/promises")>();
   const { withWindowsAppendHandles } = await import("../fixtures/windows-append-handles.js");
   const windows = withWindowsAppendHandles(actual);
-  return { ...actual, open: (...args: Parameters<typeof actual.open>) => (fsMode.windowsAppendHandles ? windows.open : actual.open)(...args) };
+  return {
+    ...actual,
+    open: (...args: Parameters<typeof actual.open>) => {
+      fsMode.opened.push({ path: String(args[0]), flags: String(args[1] ?? "r") });
+      return (fsMode.windowsAppendHandles ? windows.open : actual.open)(...args);
+    },
+  };
 });
 
 const { dir } = useIsolatedHistory("clai-session-log-");
@@ -76,6 +82,46 @@ describe("session log durability", () => {
     expect(restored?.messages).toHaveLength(4);
     expect(restored?.transcript?.map((entry) => entry.id)).toEqual(["item-0", "item-1", "item-2", "item-3"]);
     expect(readdirSync(dirname(path)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("keeps complete frames it cannot replay in a side file before repairing the log", async () => {
+    const { path } = await seeded(2);
+    const future = `${JSON.stringify({ v: 2, t: "delta", seq: 2, summary: { id: "logged" }, written: "by a newer build" })}\n`;
+    writeFileSync(path, readFileSync(path, "utf8") + future + "{\"v\":1,\"t\":\"del");
+    vi.resetModules();
+    const history = await import("../../src/store/history.js");
+    await history.upsertSession("logged", [user("turn 0"), user("turn 1"), user("turn 2")], "logged", [item("item-0", "answer 0"), item("item-1", "answer 1"), item("item-2", "answer 2")], undefined, 9, "0001-writer");
+    const kept = readdirSync(dirname(path)).filter((name) => name.includes(".rejected-"));
+    expect(kept).toHaveLength(1);
+    expect(readFileSync(join(dirname(path), kept[0]!), "utf8")).toBe(future + "{\"v\":1,\"t\":\"del");
+    expect(readFileSync(path, "utf8")).not.toContain("by a newer build");
+    expect((await history.getSession("logged"))?.messages).toHaveLength(3);
+  });
+
+  it("drops a torn trailing fragment without keeping a side file", async () => {
+    const { path } = await seeded(2);
+    writeFileSync(path, readFileSync(path, "utf8") + "{\"v\":1,\"t\":\"delta\",\"seq\":2");
+    vi.resetModules();
+    const history = await import("../../src/store/history.js");
+    await history.upsertSession("logged", [user("turn 0"), user("turn 1"), user("turn 2")], "logged", [item("item-0", "answer 0")], undefined, 9, "0001-writer");
+    expect(readdirSync(dirname(path)).filter((name) => name.includes(".rejected-"))).toEqual([]);
+    expect((await history.getSession("logged"))?.messages).toHaveLength(3);
+  });
+
+  it("does not re-read the log on every save of a session without transcript items", async () => {
+    const history = await import("../../src/store/history.js");
+    const messages: ChatMessage[] = [user("only messages")];
+    await history.upsertSession("messages-only", [...messages], "messages-only", undefined, undefined, 1, "0001-writer");
+    const path = history.getSessionLogPath("messages-only");
+    fsMode.opened.length = 0;
+    for (let revision = 2; revision <= 12; revision += 1) {
+      messages.push({ role: "assistant", content: `reply ${revision}` });
+      await history.upsertSession("messages-only", [...messages], "messages-only", undefined, undefined, revision, "0001-writer");
+    }
+    expect(fsMode.opened.filter((entry) => entry.path === path && entry.flags === "r")).toEqual([]);
+    const restored = await history.getSession("messages-only");
+    expect(restored?.messages).toHaveLength(12);
+    expect(restored?.transcript).toBeUndefined();
   });
 
   it("sets an unreadable log aside instead of appending to it", async () => {

@@ -170,6 +170,7 @@ export async function loadSessionStateForWrite(sessionId: string): Promise<{
     return { state: undefined, stamp: undefined };
   }
   if (loaded.validEnd < loaded.stamp.size) {
+    await preserveRejectedFrames(loaded.path, loaded.validEnd, loaded.stamp.size);
     await truncate(loaded.path, loaded.validEnd);
     const repaired = await statSessionLog(sessionId);
     if (!repaired) return { state: undefined, stamp: undefined };
@@ -180,6 +181,31 @@ export async function loadSessionStateForWrite(sessionId: string): Promise<{
   const state = stateFromReplay(loaded.replayed);
   rememberSessionState(sessionId, loaded.stamp, state);
   return { state, stamp: loaded.stamp, loaded };
+}
+
+async function preserveRejectedFrames(path: string, from: number, size: number): Promise<void> {
+  const tail = Buffer.allocUnsafe(size - from);
+  const source = await open(path, "r");
+  try {
+    let offset = 0;
+    while (offset < tail.length) {
+      const { bytesRead } = await source.read(tail, offset, tail.length - offset, from + offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+  } finally {
+    await source.close();
+  }
+  if (!tail.includes(0x0a)) return;
+  const kept = `${path}.rejected-${Date.now()}-${randomBytes(3).toString("hex")}`;
+  const handle = await open(kept, "wx", 0o600);
+  try {
+    await writeAll(handle, tail, 0);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await fixOwner(kept);
 }
 
 async function quarantineUnreadableLog(sessionId: string): Promise<void> {
