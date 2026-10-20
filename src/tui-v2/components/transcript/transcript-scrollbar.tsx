@@ -45,6 +45,16 @@ export function scrollbarSegments(
   return { above, thumb, below };
 }
 
+const SCROLLBAR_HIDE_DELAY_MS = 1000;
+
+export function sameThumbLayout(a: ScrollbarMetrics, b: ScrollbarMetrics): boolean {
+  if (a.viewportHeight !== b.viewportHeight || a.y !== b.y) return false;
+  const left = thumbRange(a);
+  const right = thumbRange(b);
+  if (left === null || right === null) return left === right;
+  return left.top === right.top && left.size === right.size;
+}
+
 const TRACK_GLYPH = "▓";
 const THUMB_GLYPH = "█";
 
@@ -70,13 +80,37 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
   const dragOffset = useRef<number | undefined>(undefined);
   const lastDragUpdate = useRef(0);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scrollingRef = useRef(false);
+  const lastActivityRef = useRef(0);
   const prevScrollTopRef = useRef<number>(0);
 
-  const triggerVisible = useCallback((): void => {
-    setIsScrolling(true);
-    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-    hideTimeoutRef.current = setTimeout(() => setIsScrolling(false), 1000);
+  const metricsRef = useRef(metrics);
+  const syncMetrics = useCallback((next: ScrollbarMetrics): void => {
+    if (sameThumbLayout(metricsRef.current, next)) return;
+    metricsRef.current = next;
+    setMetrics(next);
   }, []);
+
+  const scheduleHide = useCallback((delayMs: number): void => {
+    hideTimeoutRef.current = setTimeout(() => {
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (idleFor < SCROLLBAR_HIDE_DELAY_MS) {
+        scheduleHide(SCROLLBAR_HIDE_DELAY_MS - idleFor);
+        return;
+      }
+      hideTimeoutRef.current = undefined;
+      scrollingRef.current = false;
+      setIsScrolling(false);
+    }, delayMs);
+  }, []);
+
+  const triggerVisible = useCallback((): void => {
+    lastActivityRef.current = Date.now();
+    if (scrollingRef.current) return;
+    scrollingRef.current = true;
+    setIsScrolling(true);
+    if (!hideTimeoutRef.current) scheduleHide(SCROLLBAR_HIDE_DELAY_MS);
+  }, [scheduleHide]);
 
   const refresh = useCallback((): void => {
     const next = readMetrics(scrollRef.current);
@@ -84,18 +118,8 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
       prevScrollTopRef.current = next.scrollTop;
       triggerVisible();
     }
-    setMetrics((prev) => {
-      if (
-        prev.scrollTop === next.scrollTop &&
-        prev.scrollHeight === next.scrollHeight &&
-        prev.viewportHeight === next.viewportHeight &&
-        prev.y === next.y
-      ) {
-        return prev;
-      }
-      return next;
-    });
-  }, [scrollRef, triggerVisible]);
+    syncMetrics(next);
+  }, [scrollRef, syncMetrics, triggerVisible]);
 
   useLayoutEffect(() => {
     refresh();
@@ -187,10 +211,10 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
       const now = Date.now();
       if (now - lastDragUpdate.current > 40) {
         lastDragUpdate.current = now;
-        setMetrics(readMetrics(sb));
+        syncMetrics(readMetrics(sb));
       }
     },
-    [scrollRef, applyScroll, triggerVisible],
+    [scrollRef, syncMetrics, applyScroll, triggerVisible],
   );
 
   const endDrag = useCallback(
@@ -200,9 +224,9 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
       event.stopPropagation();
       draggingRef.current = false;
       setActive("idle");
-      setMetrics(readMetrics(scrollRef.current));
+      syncMetrics(readMetrics(scrollRef.current));
     },
-    [scrollRef],
+    [scrollRef, syncMetrics],
   );
 
   const onWheel = useCallback(
@@ -219,9 +243,9 @@ export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
       if (dy === 0) return;
       const max = sb.scrollHeight - (sb.viewport?.height ?? 0);
       sb.scrollTo(Math.max(0, Math.min(max, sb.scrollTop + dy)));
-      setMetrics(readMetrics(sb));
+      syncMetrics(readMetrics(sb));
     },
-    [scrollRef, triggerVisible],
+    [scrollRef, syncMetrics, triggerVisible],
   );
 
   const range = thumbRange(metrics);
