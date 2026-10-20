@@ -1,6 +1,9 @@
 import type { ToolCall } from "../../types.js";
 import { fromWireName } from "../../llm/tool-protocol.js";
 import { extractBalancedJson, lenientJsonParse, preprocessJson, tryParseCall } from "./xml-protocol.js";
+import { decodeDsmlText, dsmlAttribute, parseAllDsmlToolCalls, parseDsmlToolCall } from "./dsml.js";
+
+export { parseAllDsmlToolCalls, parseDsmlToolCall };
 
 export const KIMI_TOOL_CALL_RE =
   /<\|tool_call_begin\|>\s*(?:functions\.)?([A-Za-z][\w.]*?)(?::\d+)?\s*<\|tool_call_argument_begin\|>\s*(\{[\s\S]*?\})\s*<\|tool_call_end\|>/i;
@@ -21,111 +24,6 @@ export function parseDeepseekToolCall(text: string): ToolCall | undefined {
   return tryParseCall(
     JSON.stringify({ name: match[1]!, args: tryJson(match[2]!) ?? {} }),
   );
-}
-
-const DSML_INVOKE_OPEN_RE = /<[|｜]+DSML[|｜]+invoke\b([^>]*)>/gi;
-
-const DSML_PARAMETER_OPEN_RE = /<[|｜]+DSML[|｜]+parameter\b([^>]*)>/gi;
-
-const DSML_INVOKE_END_RES: RegExp[] = [
-  /<\/[|｜]+DSML[|｜]+invoke>/i,
-  /<[|｜]+DSML[|｜]+invoke\b/i,
-  /<\/[|｜]+DSML[|｜]+tool_calls>/i,
-];
-
-const DSML_PARAMETER_END_RES: RegExp[] = [
-  /<\/[|｜]+DSML[|｜]+parameter>/i,
-  /<[|｜]+DSML[|｜]+parameter\b/i,
-  /<\/[|｜]+DSML[|｜]+invoke>/i,
-  /<\/[|｜]+DSML[|｜]+tool_calls>/i,
-];
-
-function boundDsmlBlock(
-  after: string,
-  boundaries: RegExp[],
-): { body: string; terminated: boolean } {
-  let end = -1;
-  for (const re of boundaries) {
-    const match = re.exec(after);
-    if (match && (end < 0 || match.index < end)) end = match.index;
-  }
-  return end < 0
-    ? { body: after, terminated: false }
-    : { body: after.slice(0, end), terminated: true };
-}
-
-function dsmlAttribute(attrs: string, name: string): string | undefined {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(attrs);
-  return match?.[1] ?? match?.[2];
-}
-
-function decodeDsmlCodePoint(raw: string, radix: number, original: string): string {
-  const value = Number.parseInt(raw, radix);
-  return Number.isInteger(value) && value >= 0 && value <= 0x10ffff
-    ? String.fromCodePoint(value)
-    : original;
-}
-
-function decodeDsmlText(value: string): string {
-  return value
-    .replace(/&#x([0-9a-f]+);/gi, (original: string, hex: string) => decodeDsmlCodePoint(hex, 16, original))
-    .replace(/&#(\d+);/g, (original: string, decimal: string) => decodeDsmlCodePoint(decimal, 10, original))
-    .replace(/&quot;/gi, '"')
-    .replace(/&apos;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&amp;/gi, "&");
-}
-
-function dsmlParameterValue(attrs: string, raw: string): unknown {
-  const value = decodeDsmlText(raw.trim());
-  if (/\bstring\s*=\s*["']true["']/i.test(attrs)) return value;
-  if (/\bboolean\s*=\s*["']true["']/i.test(attrs)) return value.toLowerCase() === "true";
-  if (/\bnumber\s*=\s*["']true["']/i.test(attrs)) {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : value;
-  }
-  const parsed = lenientJsonParse(value);
-  return parsed === undefined ? value : parsed;
-}
-
-export function parseAllDsmlToolCalls(text: string): Array<{ index: number; call: ToolCall }> {
-  const found: Array<{ index: number; call: ToolCall }> = [];
-  const invokeRe = new RegExp(DSML_INVOKE_OPEN_RE.source, "gi");
-  let invoke: RegExpExecArray | null;
-  while ((invoke = invokeRe.exec(text)) !== null) {
-    const name = dsmlAttribute(invoke[1] ?? "", "name")?.replace(/^functions\./, "").trim();
-    const body = boundDsmlBlock(
-      text.slice(invoke.index + invoke[0].length),
-      DSML_INVOKE_END_RES,
-    );
-    if (!name || !body.terminated) continue;
-    const args: Record<string, unknown> = {};
-    const parameterRe = new RegExp(DSML_PARAMETER_OPEN_RE.source, "gi");
-    let parameter: RegExpExecArray | null;
-    let truncated = false;
-    while ((parameter = parameterRe.exec(body.body)) !== null) {
-      const parameterName = dsmlAttribute(parameter[1] ?? "", "name")?.trim();
-      const value = boundDsmlBlock(
-        body.body.slice(parameter.index + parameter[0].length),
-        DSML_PARAMETER_END_RES,
-      );
-      if (!value.terminated) {
-        truncated = true;
-        break;
-      }
-      if (!parameterName) continue;
-      args[parameterName] = dsmlParameterValue(parameter[1] ?? "", value.body);
-    }
-    if (truncated) continue;
-    found.push({ index: invoke.index, call: { name, args } });
-  }
-  return found;
-}
-
-export function parseDsmlToolCall(text: string): ToolCall | undefined {
-  return parseAllDsmlToolCalls(text)[0]?.call;
 }
 
 const OPEN_SEP_OPEN_RE = /<[|｜]+open[|｜]+>?([A-Za-z][\w-]*)\b/gi;
@@ -308,7 +206,7 @@ const BRACKETED_BLOCK_BOUNDARIES: RegExp[] = [
   /```tool/i,
   /<tool_call/i,
   /<\|tool_call/i,
-  /<[|｜]+(?:tool[_▁]|open[|｜]|DSML[|｜])/i,
+  /<\s*[|｜]+(?:tool[_▁]|open[|｜]|\s*DSML)/i,
 ];
 
 function boundBracketedBlock(after: string): string {
@@ -368,7 +266,7 @@ const TO_CODE_BLOCK_BOUNDARIES: RegExp[] = [
   /```tool/i,
   /<tool_call/i,
   /<\|tool_call/i,
-  /<[|｜]+(?:tool[_▁]|open[|｜]|DSML[|｜])/i,
+  /<\s*[|｜]+(?:tool[_▁]|open[|｜]|\s*DSML)/i,
 ];
 
 function boundToCodeBlock(after: string): string {
