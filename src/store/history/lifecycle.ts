@@ -10,6 +10,8 @@ import { open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { removeSessionPrompts } from "../session-prompts.js";
+import { forgetMigrationMarker, migrateUnderLegacyLock, refreshMigrationMarkerUnderLegacyLock } from "./legacy-migration.js";
+import { clearSessionStore, removeSessionStore } from "./session-store.js";
 
 export async function clearAllHistory(): Promise<{
   cleared: boolean;
@@ -36,9 +38,12 @@ export async function clearAllHistory(): Promise<{
   let releaseLock: (() => Promise<void>) | undefined;
   try {
     releaseLock = await acquireJsonlWriteLock();
+    await clearSessionStore();
+    forgetMigrationMarker();
     const names = await readdir(historyDirPath()).catch(() => [] as string[]);
     const removable = names.filter(
       (name) =>
+        name === "sessions" ||
         name === "history.jsonl" ||
         name === "history.index.json" ||
         name === "history-archive.jsonl" ||
@@ -242,6 +247,7 @@ async function removeSessionFromActiveHistory(
 export async function deleteSession(sessionId: string): Promise<{ deleted: boolean; detail: string }> {
   const id = sessionId.trim();
   if (!id) return { deleted: false, detail: "missing session id" };
+  let deletedFromStore = false;
   let deletedFromJsonl = false;
   let deletedFromArchive = false;
   let deletedFromBackup = false;
@@ -249,6 +255,8 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
   let deletedPrompts = false;
   let historyWriteFailed = false;
   await queueJsonlWrite(async () => {
+    await migrateUnderLegacyLock();
+    deletedFromStore = await removeSessionStore(id);
     deletedFromJsonl = await removeSessionFromActiveHistory(id);
     deletedFromArchive = await removeSessionFromHistoryFile(archiveFilePath(), id);
     const backupNames = (await readdir(backupDirPath()).catch(() => [] as string[]))
@@ -258,6 +266,7 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
         (await removeSessionFromHistoryFile(join(backupDirPath(), name), id)) ||
         deletedFromBackup;
     }
+    await refreshMigrationMarkerUnderLegacyLock();
   }, () => {
     historyWriteFailed = true;
   });
@@ -291,7 +300,7 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
     return { deleted: false, detail: `could not remove session prompt/subagent history: ${error instanceof Error ? error.message : String(error)}` };
   }
   invalidateSessionListCache();
-  if (!deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite && !deletedPrompts) {
+  if (!deletedFromStore && !deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite && !deletedPrompts) {
     const existing = await getSession(id);
     if (existing) return { deleted: false, detail: "failed to delete" };
     return { deleted: false, detail: "session not found" };

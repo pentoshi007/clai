@@ -88,8 +88,8 @@ describe("history autosave upsert", () => {
   });
 
   it("ignores malformed JSON lines in the JSONL history file gracefully", async () => {
-    const { getHistoryPath, listSessions, upsertSession } = await import("../src/store/history.js");
-    const { appendFile, mkdir } = await import("node:fs/promises");
+    const { getSessionLogPath, getSession, listSessions, upsertSession } = await import("../src/store/history.js");
+    const { appendFile, mkdir, readFile } = await import("node:fs/promises");
     const { dirname } = await import("node:path");
 
     // Pre-populate with a valid record
@@ -101,9 +101,10 @@ describe("history autosave upsert", () => {
     );
 
     // Append some malformed content directly to the JSONL file
-    const path = getHistoryPath();
+    const path = getSessionLogPath("sess-valid");
     await mkdir(dirname(path), { recursive: true });
     await appendFile(path, 'malformed_line_not_json_at_all\nkind":"thinking","id":"think-2","content":"corrupted JSONL"\n');
+    expect((await getSession("sess-valid"))?.transcript?.map((item) => item.id)).toEqual(["u1"]);
 
     // Add another valid record
     await upsertSession(
@@ -117,6 +118,15 @@ describe("history autosave upsert", () => {
     const sessions = await listSessions(10);
     expect(sessions).toHaveLength(2);
     expect(sessions.map((s) => s.id).sort()).toEqual(["sess-valid", "sess-valid-2"]);
+
+    await upsertSession(
+      "sess-valid",
+      [{ role: "user", content: "hello" }, { role: "assistant", content: "again" }],
+      undefined,
+      [{ kind: "user", id: "u1", text: "hello", done: true }, { kind: "assistant", id: "a1", text: "again", done: true }],
+    );
+    expect(await readFile(path, "utf8")).not.toContain("malformed_line_not_json_at_all");
+    expect((await getSession("sess-valid"))?.transcript?.map((item) => item.id)).toEqual(["u1", "a1"]);
   });
 
   it("names a session from the first user message on its very first write", async () => {

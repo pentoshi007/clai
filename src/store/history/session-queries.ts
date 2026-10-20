@@ -4,8 +4,23 @@ import type { HistorySummary } from "../history-index.js";
 import { historyDirPath } from "./jsonl-lock.js";
 import { cachedSessionList, dedupeHistoryById, ensureHistoryRecovered, HistoryRecord, hydrateHistoryRecord, jsonlFilePath, jsonlIndexFilePath, readJsonlRecordsFrom, sessionListGeneration, setCachedSessionList, sortHistoryByUpdatedDesc, startHistoryRecovery } from "./recovery.js";
 import { archiveFilePath, loadDatabase, rowToSession, rowToSummary } from "./sqlite-backend.js";
+import { compareHistoryFreshness } from "./freshness.js";
+import { legacyHistoryMigrated, syncLegacyHistoryIfChanged } from "./legacy-migration.js";
+import { listStoredSummaries, readSessionRecord } from "./session-store.js";
 
 const SESSION_LIST_CACHE_TTL_MS = 1_000;
+
+function mergeSummaries(
+  primary: readonly HistorySummary[],
+  secondary: readonly HistorySummary[],
+): HistorySummary[] {
+  const byId = new Map(primary.map((summary) => [summary.id, summary]));
+  for (const summary of secondary) {
+    const current = byId.get(summary.id);
+    if (!current || compareHistoryFreshness(summary, current) > 0) byId.set(summary.id, summary);
+  }
+  return [...byId.values()];
+}
 
 function sortSummaries(summaries: readonly HistorySummary[]): HistorySummary[] {
   return [...summaries].sort(
@@ -37,18 +52,15 @@ export async function listSessionSummaries(
   }
 
   const loadGeneration = sessionListGeneration;
-  let summaries: HistorySummary[] | undefined;
-  let coversAll = false;
-  const entries = await readValidatedHistoryIndex(
-    jsonlFilePath(),
-    jsonlIndexFilePath(),
-  );
-  if (entries) {
-    summaries = sortSummaries(entries.map((entry) => entry.summary));
-    coversAll = true;
+  let summaries = await listStoredSummaries().catch(() => [] as HistorySummary[]);
+  let coversAll = true;
+  if (!(await legacyHistoryMigrated())) {
+    const legacy = await readValidatedHistoryIndex(jsonlFilePath(), jsonlIndexFilePath()) ??
+      await rebuildHistoryIndex<HistoryRecord>(jsonlFilePath(), jsonlIndexFilePath());
+    summaries = mergeSummaries(summaries, legacy.map((entry) => entry.summary));
   }
 
-  if (!summaries) {
+  if (summaries.length === 0) {
     const db = await loadDatabase();
     if (db) {
       try {
@@ -63,19 +75,11 @@ export async function listSessionSummaries(
         summaries = rows.map(rowToSummary);
         coversAll = requestedLimit === 0 || rows.length < requestedLimit;
       } catch {
-        summaries = undefined;
+        summaries = [];
       }
     }
   }
-
-  if (!summaries || summaries.length === 0) {
-    const rebuilt = await rebuildHistoryIndex<HistoryRecord>(
-      jsonlFilePath(),
-      jsonlIndexFilePath(),
-    );
-    summaries = sortSummaries(rebuilt.map((entry) => entry.summary));
-    coversAll = true;
-  }
+  summaries = sortSummaries(summaries);
 
   if (sessionListGeneration === loadGeneration) {
     setCachedSessionList({
@@ -116,8 +120,9 @@ export async function listSessions(
   if (options.recovery === "background") void startHistoryRecovery();
   else await ensureHistoryRecovered();
 
-  const [fromJsonl, db] = await Promise.all([
-    listJsonlSessions(0),
+  const [stored, fromJsonl, db] = await Promise.all([
+    listStoredSessionRecords(),
+    (async () => (await legacyHistoryMigrated()) ? [] : listJsonlSessions(0))(),
     loadDatabase(),
   ]);
   let fromDb: HistoryRecord[] = [];
@@ -133,14 +138,24 @@ export async function listSessions(
       fromDb = [];
     }
   }
-  const merged = mergeSessionLists(fromJsonl, fromDb);
+  const merged = mergeSessionLists(stored, fromJsonl, fromDb);
   return !limit || limit <= 0 ? merged : merged.slice(0, limit);
+}
+
+async function listStoredSessionRecords(): Promise<HistoryRecord[]> {
+  const summaries = await listStoredSummaries().catch(() => [] as HistorySummary[]);
+  const records = await Promise.all(summaries.map((summary) => readSessionRecord(summary.id).catch(() => undefined)));
+  return records.filter((record): record is HistoryRecord => record !== undefined);
 }
 
 export async function getSession(
   sessionId: string,
 ): Promise<HistoryRecord | undefined> {
   void startHistoryRecovery();
+  await syncLegacyHistoryIfChanged().catch(() => undefined);
+
+  const stored = await readSessionRecord(sessionId).catch(() => undefined);
+  if (stored) return stored;
 
   const entries = await readValidatedHistoryIndex(
     jsonlFilePath(),

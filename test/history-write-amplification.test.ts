@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TranscriptItem } from "../src/app/ports/transcript-item.js";
+import type { ChatMessage } from "../src/types.js";
 
 const dataEnvKeys = [
   "CLAI_DATA_DIR",
@@ -53,75 +55,111 @@ afterEach(async () => {
   vi.resetModules();
 });
 
-function countLines(path: string): number {
-  return readFileSync(path, "utf8").split("\n").filter(Boolean).length;
+function frames(path: string): Array<{ t: string }> {
+  return readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as { t: string });
+}
+
+function fileStamp(path: string): string {
+  const info = statSync(path);
+  return `${info.ino}:${info.size}:${info.mtimeMs}`;
+}
+
+function turn(index: number): { messages: ChatMessage[]; items: TranscriptItem[] } {
+  const output = Array.from({ length: 30 }, (_, row) => `  ✓ case ${index}.${row} passes`).join("\n");
+  return {
+    messages: [
+      { role: "user", content: `task ${index}` },
+      { role: "assistant", content: "", toolCalls: [{ id: `call-${index}`, name: "shell.exec", args: { command: `npm test ${index}` } }] },
+      { role: "tool", toolCallId: `call-${index}`, content: output },
+      { role: "assistant", content: `## Result ${index}\n\nAll tests pass for module ${index}.` },
+    ],
+    items: [
+      { kind: "user", id: `u-${index}`, text: `task ${index}`, done: true },
+      { kind: "thinking", id: `th-${index}`, content: `checking module ${index}`, done: true },
+      { kind: "tool", id: `t-${index}`, name: "shell.exec", argsDisplay: `npm test ${index}`, output, status: "ok", done: true },
+      { kind: "assistant", id: `a-${index}`, text: `## Result ${index}\n\nAll tests pass for module ${index}.`, done: true },
+    ] as TranscriptItem[],
+  };
+}
+
+function conversation(turns: number): { messages: ChatMessage[]; transcript: TranscriptItem[] } {
+  const messages: ChatMessage[] = [{ role: "system", content: "system" }];
+  const transcript: TranscriptItem[] = [];
+  for (let index = 0; index < turns; index += 1) {
+    const next = turn(index);
+    messages.push(...next.messages);
+    transcript.push(...next.items);
+  }
+  return { messages, transcript };
 }
 
 describe("history write amplification", () => {
-  it("appends the changed session instead of rewriting other sessions", async () => {
-    const { upsertSession, listSessions, getHistoryPath, getSession } = await import(
-      "../src/store/history.js"
-    );
+  it("appends a small delta to only the saved session's file", async () => {
+    const { upsertSession, listSessions, getSession, getSessionLogPath } = await import("../src/store/history.js");
+    await upsertSession("big-session", [{ role: "user", content: "b".repeat(200_000) }]);
+    const big = getSessionLogPath("big-session");
+    const bigStamp = fileStamp(big);
 
-    const bulk = "b".repeat(200_000);
-    await upsertSession("big-session", [{ role: "user", content: bulk }]);
-    const path = getHistoryPath();
-    const afterBig = statSync(path).size;
-
-    for (let turn = 1; turn <= 4; turn += 1) {
-      await upsertSession("small-session", [
-        { role: "user", content: "hello" },
-        { role: "assistant", content: `answer ${turn}` },
-      ]);
+    await upsertSession("small-session", [{ role: "user", content: "hello" }, { role: "assistant", content: "answer 1" }]);
+    const small = getSessionLogPath("small-session");
+    const afterFirst = statSync(small).size;
+    for (let index = 2; index <= 4; index += 1) {
+      await upsertSession("small-session", [{ role: "user", content: "hello" }, { role: "assistant", content: `answer ${index}` }]);
     }
 
-    const size = statSync(path).size;
-    expect(size).toBeGreaterThan(afterBig);
-    // Four small appends must not cost four copies of the large session.
-    expect(size - afterBig).toBeLessThan(afterBig / 2);
-    expect(countLines(path)).toBeGreaterThan(2);
-
-    const sessions = await listSessions(10);
-    expect(sessions.map((session) => session.id).sort()).toEqual([
-      "big-session",
-      "small-session",
-    ]);
-    const restored = await getSession("small-session");
-    expect(restored?.messages[1]?.content).toBe("answer 4");
+    expect(fileStamp(big)).toBe(bigStamp);
+    expect(frames(small).map((frame) => frame.t)).toEqual(["base", "delta", "delta", "delta"]);
+    expect(statSync(small).size - afterFirst).toBeLessThan(3 * 2_048);
+    expect((await listSessions(10)).map((session) => session.id).sort()).toEqual(["big-session", "small-session"]);
+    expect((await getSession("small-session"))?.messages[1]?.content).toBe("answer 4");
   });
 
-  it("compacts once superseded lines dominate the active file", async () => {
-    const { upsertSession, getHistoryPath, getSession } = await import(
-      "../src/store/history.js"
-    );
-
-    const bulk = "c".repeat(2_100_000);
-    for (let turn = 1; turn <= 5; turn += 1) {
-      await upsertSession("fat-session", [
-        { role: "user", content: bulk },
-        { role: "assistant", content: `revision ${turn}` },
-      ]);
+  it("never rewrites another session's file", async () => {
+    const { upsertSession, getSessionLogPath } = await import("../src/store/history.js");
+    const ids = ["alpha", "beta", "gamma"];
+    for (const id of ids) await upsertSession(id, [{ role: "user", content: `${id} ${"x".repeat(50_000)}` }]);
+    for (let round = 0; round < 70; round += 1) {
+      const id = ids[round % ids.length]!;
+      const others = ids.filter((other) => other !== id).map((other) => [other, fileStamp(getSessionLogPath(other))] as const);
+      await upsertSession(id, [{ role: "user", content: `${id} ${"x".repeat(50_000)}` }, { role: "assistant", content: `round ${round}` }]);
+      for (const [other, stamp] of others) expect(fileStamp(getSessionLogPath(other))).toBe(stamp);
     }
-
-    const path = getHistoryPath();
-    expect(countLines(path)).toBe(1);
-    const restored = await getSession("fat-session");
-    expect(restored?.messages[1]?.content).toBe("revision 5");
   });
 
-  it("amortizes compaction instead of rewriting a large session on every save", async () => {
-    const { upsertSession, getHistoryPath, getSession } = await import(
-      "../src/store/history.js"
-    );
-    const bulk = "d".repeat(400_000);
-    for (let turn = 1; turn <= 5; turn += 1) {
-      await upsertSession("amortized-session", [
-        { role: "user", content: bulk },
-        { role: "assistant", content: `revision ${turn}` },
-      ]);
+  it("compacts a session once its deltas pile up", async () => {
+    const { upsertSession, getSession, getSessionLogPath } = await import("../src/store/history.js");
+    const bulk = "c".repeat(100_000);
+    for (let revision = 1; revision <= 70; revision += 1) {
+      await upsertSession("busy-session", [{ role: "user", content: bulk }, { role: "assistant", content: `revision ${revision}` }]);
     }
-    expect(countLines(getHistoryPath())).toBe(5);
-    const restored = await getSession("amortized-session");
-    expect(restored?.messages[1]?.content).toBe("revision 5");
+    const kinds = frames(getSessionLogPath("busy-session")).map((frame) => frame.t);
+    expect(kinds[0]).toBe("base");
+    expect(kinds.length).toBeLessThanOrEqual(65);
+    expect((await getSession("busy-session"))?.messages[1]?.content).toBe("revision 70");
   });
+
+  it("compacts when superseded bases dominate the file", async () => {
+    const { upsertSession, getSession, getSessionLogPath } = await import("../src/store/history.js");
+    for (let revision = 1; revision <= 6; revision += 1) {
+      await upsertSession("fat-session", [{ role: "user", content: String(revision).repeat(600_000) }]);
+    }
+    const path = getSessionLogPath("fat-session");
+    expect(statSync(path).size).toBeLessThan(3 * 600_000 + 1_100_000);
+    expect((await getSession("fat-session"))?.messages[0]?.content).toBe("6".repeat(600_000));
+  });
+
+  it("writes at most 64 KB when a 1,000-item session gains a turn", async () => {
+    const { upsertSession, getSession, getSessionLogPath } = await import("../src/store/history.js");
+    const { messages, transcript } = conversation(250);
+    expect(transcript).toHaveLength(1_000);
+    await upsertSession("long-session", messages, "long", transcript, undefined, 1, "0001-writer");
+    const path = getSessionLogPath("long-session");
+    const before = statSync(path).size;
+    const next = turn(250);
+    await upsertSession("long-session", [...messages, ...next.messages], "long", [...transcript, ...next.items], undefined, 2, "0001-writer");
+    expect(statSync(path).size - before).toBeLessThanOrEqual(64 * 1024);
+    const restored = await getSession("long-session");
+    expect(restored?.transcript).toHaveLength(1_004);
+    expect(restored?.messages.at(-1)?.content).toBe(next.messages.at(-1)?.content);
+  }, 20_000);
 });
