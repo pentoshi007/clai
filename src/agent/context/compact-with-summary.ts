@@ -4,27 +4,29 @@ import { hasReasoningMarker } from "../../llm/reasoning-marker.js";
 import { ACTIVE_SKILLS_PREFIX } from "../../skills/catalog.js";
 import { compactionSourcePrefixEnd } from "./compaction-source-prefix.js";
 import { latestUserMessage } from "./latest-user-message.js";
-import { archivedWorkHistory, collectWorkHistory, compactionWorkHistoryAnchors, reconcileWorkHistory, renderWorkHistory, withoutWorkHistory, WORK_HISTORY_INPUT_CHAR_BUDGET } from "./compaction-work-history.js";
 import {
-  compactionRecencyAnchors,
   hasCompletedConversationTurn,
   recentUserPrompts,
   renderRecentUserPrompts,
+  withoutRecentUserPrompts,
 } from "./compaction-recent-history.js";
-import {
-  carriedUserInstructions,
-  compactionInstructionAnchors,
-  reconcileCompactionUserInstructions,
-} from "./compaction-user-instructions.js";
+import { reconcileCompactionUserInstructions } from "./compaction-user-instructions.js";
 import { redactUserCredentialsFromMemory } from "./user-credentials.js";
+import {
+  canonicalMemoryLayout,
+  COMPACTION_MEMORY_PREFIX,
+  isCompactionMemoryMessage,
+  MECHANICAL_MEMORY_PREFIX,
+  PLAN_IMPLEMENT_MEMORY_PREFIX,
+} from "../compaction/memory-sections.js";
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import {
   buildCompactionChunkPrompt,
   buildCompactionReducePrompt,
   buildCompactionUserPrompt,
-  buildDirectCompactionPrompt,
   chunkTranscriptForCompaction,
+  compactionSituation,
   COMPACTION_CHUNK_CHAR_BUDGET,
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
   COMPACTION_MAX_COMPLETION_TOKENS,
@@ -85,27 +87,12 @@ export interface CompactResult {
 
 export const DEFAULT_KEEP_RECENT = 2;
 
-export const COMPACTION_MEMORY_PREFIX =
-  "Session memory from compacted earlier turns:";
-
-const LEGACY_PLAN_IMPLEMENT_MEMORY_PREFIX =
-  "Session memory from PLAN MODE research that was used to build the comprehensive detailed plan and tasks you are seeing now (handoff to agent implement — gather-only phase is over; execute approved tasks):";
-
-export const PLAN_IMPLEMENT_MEMORY_PREFIX =
-  "PLAN MODE HANDOFF: research memory for the accepted implementation phase. Gather-only/await-approval gates are historical; ACTIVE PLAN and SESSION STATE are authoritative:";
-
-export const MECHANICAL_MEMORY_PREFIX =
-  "Earlier turns in this session, summarized";
-
-export function isCompactionMemoryMessage(message: ChatMessage): boolean {
-  return (
-    message.role === "system" &&
-    (message.content.startsWith(COMPACTION_MEMORY_PREFIX) ||
-      message.content.startsWith(PLAN_IMPLEMENT_MEMORY_PREFIX) ||
-      message.content.startsWith(LEGACY_PLAN_IMPLEMENT_MEMORY_PREFIX) ||
-      message.content.startsWith(MECHANICAL_MEMORY_PREFIX))
-  );
-}
+export {
+  COMPACTION_MEMORY_PREFIX,
+  isCompactionMemoryMessage,
+  MECHANICAL_MEMORY_PREFIX,
+  PLAN_IMPLEMENT_MEMORY_PREFIX,
+};
 
 export function compactionMemoryPrefixForPurpose(
   purpose?: "default" | "plan-implement" | undefined,
@@ -140,9 +127,9 @@ export async function compactMessagesWithSummary(
   const completedTurn = options.preserveActiveTurn !== true &&
     hasCompletedConversationTurn(messages);
   const recentPrompts = recentUserPrompts(messages);
-  const recencyAnchors = compactionRecencyAnchors(messages);
-  const instructionAnchors = compactionInstructionAnchors(messages);
-  const workHistory = collectWorkHistory(messages);
+  const situation = compactionSituation(messages, {
+    turnInProgress: options.preserveActiveTurn === true || !hasCompletedConversationTurn(messages),
+  });
   const firstMessage = messages[0];
   const preserveSystemHead =
     firstMessage?.role === "system" &&
@@ -259,28 +246,11 @@ export async function compactMessagesWithSummary(
   const sourceHead = messages.slice(0, firstConversation < 0 ? messages.length : firstConversation);
   const serializedSource = sourceHead.length ? sourceHead : undefined;
   const singlePassInputBudget = Math.max(0, options.singlePassInputBudgetTokens ?? 0);
-  const fixedPrompt = buildCompactionUserPrompt({
-    messageTranscript: "",
-    recencyAnchors,
-    instructionAnchors,
-    ...(durableState ? { durableState } : {}),
-    ...(options.purpose ? { purpose: options.purpose } : {}),
-  });
-  const fixedInputTokens = estimateMessagesTokens([
-    ...(serializedSource ?? [{ role: "system" as const, content: COMPACTION_SYSTEM_PROMPT }]),
-    { role: "user", content: fixedPrompt },
-  ]);
-  const historyAnchorBudget = singlePassInputBudget > 0
-    ? Math.max(0, Math.min(WORK_HISTORY_INPUT_CHAR_BUDGET, Math.floor((singlePassInputBudget - fixedInputTokens - 128) * 3.3)))
-    : WORK_HISTORY_INPUT_CHAR_BUDGET;
-  const workHistoryAnchors = compactionWorkHistoryAnchors(workHistory, historyAnchorBudget);
-  const directPrompt = buildDirectCompactionPrompt({
-    messages,
-    workHistoryAnchors,
-    ...(options.durableEnvelope?.trim()
-      ? { durableState: options.durableEnvelope.trim() }
-      : {}),
-    ...(options.purpose ? { purpose: options.purpose } : {}),
+  const directPrompt = buildCompactionUserPrompt({
+    source: { kind: "conversation" },
+    situation,
+    durableState: options.durableEnvelope?.trim() || undefined,
+    purpose: options.purpose,
   });
   const directSourceMessages = visual ? undefined : messages;
   const directInputTokens = directSourceMessages
@@ -296,12 +266,11 @@ export async function compactMessagesWithSummary(
       (singlePassInputBudget > 0 &&
         directInputTokens <= singlePassInputBudget));
   const serializedPrompt = buildCompactionUserPrompt({
-    messageTranscript: "",
-    recencyAnchors,
-    instructionAnchors,
-    workHistoryAnchors,
-    ...(durableState ? { durableState } : {}),
-    ...(options.purpose ? { purpose: options.purpose } : {}),
+    source: { kind: "transcript", text: "" },
+    situation,
+    durableState: durableState || undefined,
+    purpose: options.purpose,
+    partialSource: true,
   });
   const fixedSinglePassInputTokens = estimateMessagesTokens([
     ...(serializedSource ?? [{ role: "system" as const, content: COMPACTION_SYSTEM_PROMPT }]),
@@ -376,13 +345,20 @@ export async function compactMessagesWithSummary(
   let modelSummary: string;
   let strategy: CompactionStrategy;
   let retainedMiddle: ChatMessage[] = [];
+  const slicePrompt = buildCompactionUserPrompt({
+    source: { kind: "conversation" },
+    situation,
+    durableState: options.durableEnvelope?.trim() || undefined,
+    purpose: options.purpose,
+    partialSource: true,
+  });
   const sourcePrefixEnd = options.singleAdmission && directSourceMessages
     ? compactionSourcePrefixEnd({
         messages: directSourceMessages,
         start,
         tailStart,
-        prompt: directPrompt,
-        budgetTokens: singlePassInputBudget,
+        prompt: slicePrompt,
+        budgetTokens: singlePassInputBudget - prefixSliceSafetyTokens(singlePassInputBudget),
       })
     : undefined;
   if (useDirectSinglePass && directSourceMessages) {
@@ -394,7 +370,7 @@ export async function compactMessagesWithSummary(
   } else if (sourcePrefixEnd !== undefined && directSourceMessages) {
     strategy = "emergency_prefix_slice";
     retainedMiddle = messages.slice(sourcePrefixEnd, tailStart);
-    modelSummary = await summarizeUsable(directPrompt, {
+    modelSummary = await summarizeUsable(slicePrompt, {
       phase: "single",
       sourceMessages: directSourceMessages.slice(0, sourcePrefixEnd),
     });
@@ -402,13 +378,10 @@ export async function compactMessagesWithSummary(
     strategy = "single";
     modelSummary = await summarizeUsable(
       buildCompactionUserPrompt({
-        visualTranscript: visual || undefined,
-        messageTranscript: visualCoversOlderHistory ? "" : messageTranscript,
+        source: { kind: "transcript", text: combinedTranscript },
+        situation,
         durableState: durableState || undefined,
         purpose: options.purpose,
-        recencyAnchors,
-        instructionAnchors,
-        workHistoryAnchors,
       }),
       { phase: "single", ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
     );
@@ -476,12 +449,11 @@ export async function compactMessagesWithSummary(
     );
     modelSummary = await summarizeUsable(
       buildCompactionUserPrompt({
-        messageTranscript: sliceTranscript,
+        source: { kind: "transcript", text: sliceTranscript },
+        situation,
         durableState: durableState || undefined,
         purpose: options.purpose,
-        recencyAnchors,
-        instructionAnchors,
-        workHistoryAnchors,
+        partialSource: retainedMiddle.length > 0,
       }),
       { phase: "single", ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
     );
@@ -510,11 +482,9 @@ export async function compactMessagesWithSummary(
     modelSummary = await summarizeUsable(
       buildCompactionReducePrompt({
         partials,
-        ...(durableState ? { durableState } : {}),
-        ...(options.purpose ? { purpose: options.purpose } : {}),
-        recencyAnchors,
-        instructionAnchors,
-        workHistoryAnchors,
+        situation,
+        durableState: durableState || undefined,
+        purpose: options.purpose,
       }),
       { phase: "reduce", total: chunks.length, ...(serializedSource ? { sourceMessages: serializedSource } : {}) },
     );
@@ -524,8 +494,8 @@ export async function compactMessagesWithSummary(
   const normalizedSummary = normalizeCompactionSummary(
     stripThinking(rawSummary).visible,
   );
-  const instructionMemory = reconcileCompactionUserInstructions(withoutWorkHistory(normalizedSummary), messages, options.durableEnvelope);
-  const summary = instructionMemory.summary;
+  const instructionMemory = reconcileCompactionUserInstructions(withoutRecentUserPrompts(normalizedSummary), messages);
+  const summary = canonicalMemoryLayout(instructionMemory.summary);
   if (!summary) {
     throw new Error("compaction failed: model returned an empty summary");
   }
@@ -566,17 +536,15 @@ export async function compactMessagesWithSummary(
       ? [...head, responderLedger]
       : head;
   const memoryPrefix = compactionMemoryPrefixForPurpose(options.purpose);
-  const reconciledHistory = reconcileWorkHistory(workHistory, carriedUserInstructions(messages), instructionMemory.instructions);
   const memoryMsg: ChatMessage = {
     role: "system",
-    content: [memoryPrefix, summary, renderWorkHistory(reconciledHistory), renderRecentUserPrompts(recentPrompts, protectedUser)]
+    content: [memoryPrefix, summary, renderRecentUserPrompts(recentPrompts, protectedUser)]
       .filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentPrompts
         .filter((prompt) => !prompt.message || !rawTail.includes(prompt.message))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
       userInstructions: instructionMemory.instructions,
-      workHistory: archivedWorkHistory(reconciledHistory, rawTail),
     },
   };
   const envelopeMsg: ChatMessage | undefined = options.durableEnvelope?.trim()
@@ -626,6 +594,10 @@ export async function compactMessagesWithSummary(
     summarized: true,
     strategy,
   };
+}
+
+function prefixSliceSafetyTokens(budgetTokens: number): number {
+  return Math.max(64, Math.ceil(budgetTokens * 0.01));
 }
 
 function buildLeanCompact(

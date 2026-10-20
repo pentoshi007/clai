@@ -499,7 +499,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       "follow-up after resume",
     );
     expect(request.messages?.at(-1)?.content).toContain(
-      "entire conversation above this instruction",
+      "SOURCE: the entire conversation above this message",
     );
     expect(session.messages).toHaveLength(1);
     expect(session.messages[0]?.compaction?.recentUserPrompts).toEqual([
@@ -833,8 +833,8 @@ describe("SessionController parity helpers (V2-080)", () => {
     const compactionInstruction = String(
       completeWithProvider.mock.calls.at(-1)?.[0]?.messages?.at(-1)?.content ?? "",
     );
-    expect(compactionInstruction).toMatch(/Do not add (?:another )?framing/);
-    expect(compactionInstruction).not.toContain("State clearly that this context");
+    expect(compactionInstruction).toContain("PURPOSE: the user accepted the plan built in plan mode");
+    expect(compactionInstruction).toContain("## Active goal");
     const compacted = events.find(
       (event) => event.type === "compaction-completed",
     );
@@ -842,8 +842,8 @@ describe("SessionController parity helpers (V2-080)", () => {
     if (compacted?.type === "compaction-completed") {
       expect(compacted.payload.summary).toContain("PLAN MODE HANDOFF");
       expect(compacted.payload.summary).toContain("Verified React project state");
-      expect(compacted.payload.summary).toContain("## Session work history (preserved)");
-      expect(compacted.payload.summary).toContain("not new requests or authorization");
+      expect(compacted.payload.summary).toContain("## Last 3 user prompts (latest first)");
+      expect(compacted.payload.summary).not.toContain("## Session work history");
       expect(compacted.payload.summary).not.toBe("Compacted context");
     }
     const memories = session.messages.filter(isCompactionMemoryMessage);

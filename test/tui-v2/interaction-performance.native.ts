@@ -65,7 +65,7 @@ try {
   assert.ok(!scroll.content.findDescendantById("perf-user-0"));
   assert.equal(setup.renderer.targetFps, 60);
   assert.equal(setup.renderer.maxFps, 60);
-  assert.ok(scroll.verticalScrollBar.listenerCount("change") >= 2);
+  assert.ok(scroll.verticalScrollBar.listenerCount("change") >= 1);
   const requestFrame = globalThis.requestAnimationFrame;
   let pendingPins = 0;
   let peakPins = 0;
@@ -168,7 +168,7 @@ try {
   await settle(() => transcriptScrollPort.scrollToBottom());
   assert.ok(setup.captureCharFrame().includes("STREAM_39"));
   await settle(() => services.focus.focusRegion("transcript"));
-  // One-shot timers (the scrollbar's 1s hide timer) can fire late under CI
+  // One-shot timers can fire late under CI
   // load; wait for the renderer to go quiet before measuring idle frames.
   let lastFrameAt = Date.now();
   const markFrame = (): void => { lastFrameAt = Date.now(); };

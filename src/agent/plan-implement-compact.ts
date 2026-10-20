@@ -2,7 +2,6 @@
 import type { ChatMessage } from "../types.js";
 import { hasOrphanToolMessages } from "./tool-history.js";
 import { withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
-import { withoutWorkHistory } from "./context/compaction-work-history.js";
 import {
   COMPACTION_MEMORY_PREFIX,
   PLAN_IMPLEMENT_MEMORY_PREFIX,
@@ -46,7 +45,7 @@ export function acceptPlanImplementCompaction(
     return { accept: false, reason: "compaction did not produce a summary" };
   }
 
-  const body = withoutWorkHistory(withoutRecentUserPrompts(summaryBodyText(input.summaryBody)));
+  const body = withoutRecentUserPrompts(summaryBodyText(input.summaryBody));
   if (!body) {
     return { accept: false, reason: "empty compaction summary" };
   }

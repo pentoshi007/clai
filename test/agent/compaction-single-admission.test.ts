@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
-import { compactionRecencyAnchors } from "../../src/agent/context/compaction-recent-history.js";
 import {
   installTransport,
   isResponsesProbe,
@@ -61,6 +60,7 @@ const { compactMessagesWithSummary, estimateMessagesTokens } = await import(
 );
 const {
   buildCompactionUserPrompt,
+  compactionSituation,
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
   COMPACTION_MAX_COMPLETION_TOKENS,
   COMPACTION_SYSTEM_PROMPT,
@@ -469,7 +469,7 @@ describe("single-admission chunking strategies", () => {
       largeHistory(),
       async (prompt, stage) => {
         stages.push(stage?.phase);
-        expect(prompt).toContain("continuation memory");
+        expect(prompt).toContain("CONTEXT COMPACTION");
         return USABLE_SUMMARY;
       },
       { budgetTokens: 0, keepRecent: 2, singleAdmission: true, singlePassInputBudgetTokens: 1_000_000 },
@@ -489,8 +489,7 @@ describe("single-admission chunking strategies", () => {
           phase: stage?.phase,
           hasSource: Boolean(stage?.sourceMessages?.length),
         });
-        // The direct prompt treats the conversation itself as the material.
-        expect(prompt).toContain("entire conversation above this instruction");
+        expect(prompt).toContain("SOURCE: the entire conversation above this message");
         return USABLE_SUMMARY;
       },
       {
@@ -546,8 +545,9 @@ describe("single-admission chunking strategies", () => {
       {
         role: "user",
         content: buildCompactionUserPrompt({
-          messageTranscript: "",
-          recencyAnchors: compactionRecencyAnchors(history),
+          source: { kind: "transcript", text: "" },
+          situation: compactionSituation(history),
+          partialSource: true,
         }),
       },
     ]);
