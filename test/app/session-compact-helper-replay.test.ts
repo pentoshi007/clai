@@ -99,7 +99,7 @@ describe("runSessionCompaction cache-preserving replay", () => {
     );
     const last = sent.messages.at(-1)!;
     expect(last.role).toBe("user");
-    expect(last.content).toContain("entire conversation above this instruction");
+    expect(last.content).toContain("SOURCE: the entire conversation above this message");
     expect(sent.temperature).toBe(0.7);
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
   });
@@ -121,11 +121,10 @@ describe("runSessionCompaction cache-preserving replay", () => {
     expect(sent.messages.slice(0, SNAPSHOT.messages.length)).toEqual(SNAPSHOT.messages);
     expect(sent.messages.slice(SNAPSHOT.messages.length, -1)).toEqual(history.slice(SNAPSHOT.messages.length));
     expect(sent.messages.at(-1)?.content).toContain("Research only.");
-    expect(sent.messages.at(-1)?.content).toContain("Summary-only history is fine");
     expect(sent.thinking).toEqual(SNAPSHOT.thinking);
     expect(committed[0]?.every((message) => message.role === "system")).toBe(true);
     const memory = committed[0]?.find(isCompactionMemoryMessage);
-    expect(memory?.content).toContain("## Last 3 user prompts");
+    expect(memory?.content).toContain("## Last 3 user prompts (latest first)");
     expect(memory?.content).toContain("> Is the raw recent-message tail necessary?");
     expect(memory?.compaction?.recentUserPrompts).toHaveLength(3);
   });

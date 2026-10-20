@@ -10,6 +10,7 @@ import {
   calibratedCompactionSinglePassInputBudget,
   COMPACTION_MAX_COMPLETION_TOKENS,
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
+  COMPACTION_SYSTEM_PROMPT,
 } from "../../agent/compaction-summary.js";
 import {
   executeCompactionSummary,
@@ -60,15 +61,10 @@ export async function summarizeForSessionCompact(
     opts.stage === "map"
       ? COMPACTION_MAP_MAX_COMPLETION_TOKENS
       : COMPACTION_MAX_COMPLETION_TOKENS;
-  const systemContent =
-    opts.purpose === "plan-implement"
-      ? "Write concise, non-redundant research memory for an agent executing an approved plan. Do not add framing: the PLAN MODE HANDOFF wrapper and active plan are injected separately. For coding target 600–1000 tokens; preserve only verified state, reusable research/artifacts, decisions, blockers, and risks. Security handoffs may be longer to preserve findings and coverage. Never invent or cut a fact mid-token. You are summarizing, not continuing: never emit tool calls or fabricate tool results, file receipts, or transcript lines."
-      : "You compress conversation history into accurate continuation memory. You are SUMMARIZING the past session, not continuing it: do not answer the user, do not perform the next task, and never emit tool calls or fabricate tool results, file-write receipts (bytes/lines/sha256), exit codes, or 'TOOL:'/'[tools: …]' transcript lines. Describe what already happened in your own words.";
-
   return executeCompactionSummary({
     provider: opts.provider,
     model: opts.model,
-    systemContent,
+    systemContent: COMPACTION_SYSTEM_PROMPT,
     prompt,
     maxTokens,
     signal: opts.signal,

@@ -12,9 +12,8 @@ import {
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { AGENT_INSTRUCTIONS_PREFIX, latestKeyedBlock, upsertAgentInstructionsMessage } from "./injected-blocks.js";
 import { latestUserMessage } from "./context/latest-user-message.js";
-import { recentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
-import { archivedWorkHistory, collectWorkHistory, reconcileWorkHistory, renderWorkHistory, withoutWorkHistory } from "./context/compaction-work-history.js";
-import { carriedUserInstructions, renderUserInstructions } from "./context/compaction-user-instructions.js";
+import { recentUserPrompts, renderRecentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
+import { carriedUserInstructions, renderUserInstructions, withoutUserInstructionSection } from "./context/compaction-user-instructions.js";
 import {
   estimateImageTokens,
   estimateMessagesTokens,
@@ -78,7 +77,10 @@ export function compactMessages(
   const bullets: string[] = [];
   for (const raw of middle) {
     const msg = assistantVisibleOnly(raw);
-    if (msg.role === "user") {
+    if (isCompactionMemoryMessage(msg)) {
+      const carried = earlierMemoryBody(msg.content);
+      if (carried) bullets.push(`- earlier memory:\n${carried}`);
+    } else if (msg.role === "user") {
       bullets.push(`- user asked: ${oneLine(msg.content, 200)}`);
     } else if (msg.role === "assistant") {
       const line = oneLine(msg.content, 200);
@@ -95,18 +97,16 @@ export function compactMessages(
 
   const userInstructions = carriedUserInstructions(messages);
   const latestUser = latestUserMessage(messages);
-  const workHistory = reconcileWorkHistory(collectWorkHistory(messages), userInstructions, userInstructions);
   const memo: ChatMessage = {
     role: "system",
     content:
       `${MECHANICAL_MEMORY_PREFIX} to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
-      [renderUserInstructions(userInstructions), bullets.join("\n"), renderWorkHistory(workHistory)].filter(Boolean).join("\n\n"),
+      [renderUserInstructions(userInstructions), bullets.join("\n"), renderRecentUserPrompts(recentUserPrompts(messages), latestUser)].filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentUserPrompts(messages)
         .filter((prompt) => !prompt.message || (!tail.includes(prompt.message) && prompt.message !== latestUser))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
       userInstructions,
-      workHistory: archivedWorkHistory(workHistory, latestUser ? [...tail, latestUser] : tail),
     },
   };
 
@@ -136,7 +136,7 @@ export function shouldApplyAutoCompact(input: {
   if (!input.summarized) return false;
   if (input.afterTokens >= input.beforeTokens) return false;
   if (hasOrphanToolMessages([...input.afterMessages])) return false;
-  const body = withoutWorkHistory(withoutRecentUserPrompts(input.summaryBody));
+  const body = withoutRecentUserPrompts(input.summaryBody);
   if (!body) return false;
   if (
     input.beforeTokens >= AUTO_COMPACT_STUB_BEFORE_TOKENS &&
@@ -145,6 +145,14 @@ export function shouldApplyAutoCompact(input: {
     return false;
   }
   return true;
+}
+
+const EARLIER_MEMORY_CHAR_BUDGET = 12_000;
+
+function earlierMemoryBody(content: string): string {
+  const body = withoutUserInstructionSection(withoutRecentUserPrompts(content.replace(/^[^\n]*\n+/, ""))).trim();
+  if (body.length <= EARLIER_MEMORY_CHAR_BUDGET) return body;
+  return `${body.slice(0, EARLIER_MEMORY_CHAR_BUDGET - 1)}…`;
 }
 
 function oneLine(text: string, maxChars: number): string {
