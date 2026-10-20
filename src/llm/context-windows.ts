@@ -67,9 +67,6 @@ export const MIN_CUSTOM_CONTEXT_LIMIT_TOKENS = 20_000;
 const PROVIDER_CONTEXT_OVERRIDES: Partial<
   Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
 > = {
-  free: [
-    { pattern: /^(?:free-1\/)?deepseek-v4\.1-flash-free$/i, tokens: 1_000_000 },
-  ],
   mimo: [
     { pattern: /-asr$/i, tokens: 32_768 },
     { pattern: /-tts/i, tokens: 32_768 },
@@ -90,11 +87,7 @@ export function modelContextWindow(
   model: string | undefined,
   provider?: ProviderId | undefined,
 ): number {
-  if (!model) return DEFAULT_CONTEXT_WINDOW;
-  return (
-    providerAdvertisedContextWindow(provider, model) ??
-    nominalModelContextWindow(model)
-  );
+  return resolveContextWindow({ provider, model }).tokens;
 }
 
 export function providerAdvertisedContextWindow(
@@ -102,8 +95,17 @@ export function providerAdvertisedContextWindow(
   model: string | undefined,
 ): number | undefined {
   if (!provider || !model) return undefined;
-  const override = providerContextOverrideTokens(provider, model);
-  if (override !== undefined) return override;
+  return (
+    providerContextOverrideTokens(provider, model) ??
+    discoveredContextWindowTokens(provider, model)
+  );
+}
+
+function isZenModel(provider: ProviderId | undefined, model: string): boolean {
+  return provider === "free" && !/^free-2\//i.test(model.trim());
+}
+
+function discoveredContextWindowTokens(provider: ProviderId, model: string): number | undefined {
   return (
     positiveTokens(modelCatalogFacts(provider, model)?.contextTokens) ??
     positiveTokens(rememberedModelLimits(provider, model)?.contextTokens)
@@ -147,7 +149,9 @@ export function resolveContextWindow(input: {
   if (!input.model) {
     return { tokens: DEFAULT_CONTEXT_WINDOW, source: "default", clampedToProvider: false };
   }
-  const tableTokens = tableContextWindow(input.model);
+  const tableTokens = isZenModel(input.provider, input.model)
+    ? undefined
+    : tableContextWindow(input.model);
   return tableTokens === undefined
     ? { tokens: DEFAULT_CONTEXT_WINDOW, source: "default", clampedToProvider: false }
     : { tokens: tableTokens, source: "model-table", clampedToProvider: false };
@@ -195,6 +199,9 @@ export function providerContextOverrideTokens(
   model: string | undefined,
 ): number | undefined {
   if (!model) return undefined;
+  if (isZenModel(provider, model)) {
+    return discoveredContextWindowTokens(provider, model) === 200_000 ? 250_000 : undefined;
+  }
   const overrides = PROVIDER_CONTEXT_OVERRIDES[provider];
   if (!overrides) return undefined;
   return overrides.find((rule) => rule.pattern.test(model))?.tokens;

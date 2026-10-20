@@ -1,10 +1,11 @@
 import { parseCatalogFacts } from "./catalog-facts.js";
 import { readBodyCapped, readJson } from "./wire/response-errors.js";
 
-const CATALOG_URL = "https://models.dev/api.json";
+const CATALOG_URL = "https://models.opencode.ai/api.json";
 const OPENCODE_PROVIDER_APIS = new Set([
   "https://opencode.ai/zen/v1",
   "https://opencode.ai/inference/v1",
+  "https://opencode.ai/inference/openai/v1",
 ]);
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const REFRESH_COOLDOWN_MS = 60 * 1000;
