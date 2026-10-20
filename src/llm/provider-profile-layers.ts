@@ -43,7 +43,8 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
     },
     cache: {
       kind: "automatic-prefix",
-      cacheAffectingFields: ["messages", "tools", "tool_choice", "reasoning_effort"],
+      affinityField: "prompt_cache_key",
+      cacheAffectingFields: ["messages", "tools", "tool_choice", "reasoning_effort", "prompt_cache_key"],
     },
     usage: {
       cachedInput: ["usage.prompt_tokens_details.cached_tokens"],

@@ -140,7 +140,7 @@ describe("River provider", () => {
       expect(generations[0]!.body).not.toContain(`"${field}"`);
   });
 
-  it("keeps tool definitions and completed history stable across turns without unsupported cache fields", async () => {
+  it("keeps tool definitions, history and the prompt cache key stable across turns without unsupported cache fields", async () => {
     const { generations } = transport();
     await withSessionAffinity("river-cache", async () => {
       await riverProvider.complete({ ...REQUEST, tools: [TOOL] }, { apiKey });
@@ -153,8 +153,11 @@ describe("River provider", () => {
       messages: [...REQUEST.messages, { role: "assistant", content: "Answer" }, { role: "user", content: "Next" }],
     });
     expect(first).toMatchObject({ messages: REQUEST.messages, tools: [{ type: "function", function: { name: "fs_read" } }] });
+    const cacheKeys = generations.map(({ body }) => (JSON.parse(body) as { prompt_cache_key?: unknown }).prompt_cache_key);
+    expect(typeof cacheKeys[0]).toBe("string");
+    expect(new Set(cacheKeys).size).toBe(1);
     for (const { body } of generations)
-      for (const field of ["cache_control", "prompt_cache_key", "session_id", "store", "previous_response_id"])
+      for (const field of ["cache_control", "session_id", "store", "previous_response_id"])
         expect(body).not.toContain(`"${field}"`);
   });
 
