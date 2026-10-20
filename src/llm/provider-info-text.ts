@@ -40,7 +40,8 @@ Docs: https://docs.constellationgate.ai/guides/openai-sdk/`,
   /effort follows the selected model's supported settings.
   DeepSeek V4 uses recommended sampling defaults; sustained exact repetition
   stops the stream rather than spending the remaining budget. Max effort is preserved.
-  Unchanged history prefixes can reuse River's automatic cache when available.
+  Unchanged history prefixes can reuse River's automatic cache when available;
+  clai sends a stable per-session prompt_cache_key for replica affinity.
   Cached input and reasoning tokens use API usage counters; hits are not guaranteed.
   Multiple keys, key rotation, local tools, subagents, images, and cancellation
   use the shared provider lifecycle. RIVER_BASE_URL or --url overrides the endpoint.

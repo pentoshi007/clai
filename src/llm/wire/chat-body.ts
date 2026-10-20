@@ -339,6 +339,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     options.providerId === "openai" ||
     options.providerId === "mistral" ||
     options.providerId === "explabs" ||
+    options.providerId === "river" ||
     options.providerId === "cline"
       ? affinitySession
         ? sessionCacheAffinityKey(affinitySession)
@@ -409,7 +410,8 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     ...((options.providerId === "openai" ||
       options.providerId === "mistral" ||
       options.providerId === "tokenrouter" ||
-      options.providerId === "explabs") &&
+      options.providerId === "explabs" ||
+      options.providerId === "river") &&
     affinityKey
       ? { prompt_cache_key: affinityKey }
       : {}),
