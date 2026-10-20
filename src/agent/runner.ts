@@ -1,5 +1,6 @@
 import type { McpRuntime, McpTurnLease } from "../mcp/runtime.js";
 import { hasMcpMentionSyntax } from "../mcp/mentions.js";
+import { findReaMentions, REA_WORKFLOW } from "../rea/workflow.js";
 import type {
   ChatMessage,
   ChatImage,
@@ -456,6 +457,7 @@ export async function runAgentTurn(
         getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
       });
     systemSections.push(orchestrationContext(session.subagents?.enabled ?? false));
+    if (findReaMentions(prompt).length > 0) systemSections.push(REA_WORKFLOW);
     const composeCurrentSystemPrompt = (native: boolean): string =>
       buildStableSystemContent(native);
     const composed = composeTurnMessages({
@@ -609,6 +611,8 @@ export async function runAgentTurn(
 
     const mcpAgentToolPorts = buildMcpAgentToolPorts({
       askMode: agentMode === "ask",
+      planMode: isPlanMode,
+      signal: options.signal,
       autoConfirm: Boolean(options.autoConfirm),
       session,
       confirmPort,

@@ -656,6 +656,26 @@ describe("classic command parity (W12)", () => {
     expect(getConfig().rtk).toBe(false);
   });
 
+  spec(["rea"], "/rea offers private setup and opens its workflow without starting analysis", async () => {
+    const { services } = open();
+    await run(services, "rea");
+    await vi.waitFor(() => {
+      const state = services.overlay.getState();
+      expect(state.kind).toBe("picker");
+      if (state.kind !== "picker") throw new Error("Expected REA picker");
+      expect(state.request.title).toBe("REA · Reverse Engineer Anything");
+      expect(state.request.options.map((option) => option.value)).toEqual(["refresh", "setup", "off", "guide"]);
+    });
+    services.overlay.selectPicker("guide");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("pager"));
+    const state = services.overlay.getState();
+    if (state.kind !== "pager") throw new Error("Expected REA workflow");
+    expect(state.title).toBe("REA · workflow");
+    expect(state.body).toContain("mcp.tools");
+    expect(services.mcp.getState().snapshot.statuses.some((server) => server.name === "clai-rea")).toBe(false);
+    services.overlay.close();
+  });
+
   spec(["creds"], "/creds opens the encrypted credential picker without revealing stored text", async () => {
     const { services } = open();
     await run(services, "creds");

@@ -15,6 +15,7 @@ Run `clai --help` for CLI flags and `clai <command> --help` for a subcommand. In
 | `/fallback [on\|off]`, `/freeonly [on\|off]` | Configure fallback. |
 | `/orchestrator`, `/subagents` | Manage delegation and inspect subagents. |
 | `/rtk [on\|off\|status\|install\|update]` | Manage shell output compression. |
+| `/rea [install\|setup\|update\|use\|on\|off\|status\|reconnect\|guide\|<task>]` | Install, update and use [Reverse Engineer Anything](../REA.md). |
 | `/skills [name\|list\|refresh]`, `/mcp` | Manage skills and MCP servers. |
 | `/search [provider]`, `/search-provider` | Select the web-search backend. |
 | `/scope [show\|new\|add\|clear]` | Configure this session's engagement scope. |
