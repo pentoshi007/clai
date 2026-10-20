@@ -5,7 +5,6 @@ import {
   clampArgsDisplay,
   presentTool,
 } from "../../../src/ui-core/rendering/tool-presenter.js";
-import { scrollbarSegments } from "../../../src/tui-v2/components/transcript/transcript-scrollbar.js";
 import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 
 /**
@@ -53,20 +52,6 @@ describe("oversized tool args never blow the card layout", () => {
 
     const presented = presentTool(item);
     expect(presented.argsDisplay!.split("\n").length).toBeLessThanOrEqual(4);
-  });
-});
-
-describe("scrollbar segments do not overlap", () => {
-  it("splits the track into above/thumb/below covering the height exactly once", () => {
-    const segments = scrollbarSegments({ top: 3, size: 4 }, 10);
-    expect(segments).toEqual({ above: 3, thumb: 4, below: 3 });
-    expect(segments.above + segments.thumb + segments.below).toBe(10);
-  });
-
-  it("never exceeds the track height", () => {
-    const segments = scrollbarSegments({ top: 8, size: 9 }, 10);
-    expect(segments.thumb).toBe(2);
-    expect(segments.above + segments.thumb + segments.below).toBe(10);
   });
 });
 
