@@ -60,6 +60,8 @@ const ROUTES: ReadonlyArray<readonly [ProviderId, string]> = [
   ["fireworks", "accounts/fireworks/models/kimi-k2p6"],
   ["tokenrouter", "moonshotai/kimi-k3"],
   ["merge-gateway", "openai/gpt-5.2"],
+  ["river", "deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+  ["explabs", "deepseek-v4.1-flash-1017"],
 ];
 
 function sse(payload: unknown): string {
@@ -120,7 +122,7 @@ function lowercaseHeaders(raw: HeadersInit | undefined): Record<string, string> 
   return headers;
 }
 
-async function runSession(provider: ProviderId, model: string, reasoning: boolean): Promise<{ sessionId: string; requests: WireRequest[] }> {
+async function runSession(provider: ProviderId, model: string, reasoning: boolean, steer = false): Promise<{ sessionId: string; requests: WireRequest[] }> {
   const requests: WireRequest[] = [];
   let turn = 0;
   let round = 0;
@@ -145,6 +147,7 @@ async function runSession(provider: ProviderId, model: string, reasoning: boolea
       const steps = TURNS[turn]!.steps;
       const step = steps[Math.min(round, steps.length - 1)]!;
       round += 1;
+      if (steer && turn === 1 && round === 1) controller.abort("steer");
       requests.push({
         headers,
         body,
@@ -158,10 +161,13 @@ async function runSession(provider: ProviderId, model: string, reasoning: boolea
   const sessionId = `prefix-guard-${provider}-${model}`;
   const session = createSessionPolicy(sessionId);
   let history: ChatMessage[] = [];
+  let controller = new AbortController();
   for (const [index, { prompt }] of TURNS.entries()) {
     turn = index;
     round = 0;
+    controller = new AbortController();
     await runAgentTurn(prompt, {
+      signal: controller.signal,
       provider,
       model,
       history,
@@ -194,7 +200,7 @@ function affinityValues(requests: readonly WireRequest[], read: (request: WireRe
 
 beforeAll(async () => {
   updateConfig({ disableKeychain: true });
-  for (const [provider] of ROUTES) await setProviderSecret(provider, "workos:prefix-guard-credential");
+  for (const [provider] of ROUTES) await setProviderSecret(provider, provider === "river" ? "rv_prefix_guard" : "workos:prefix-guard-credential");
 });
 
 afterEach(() => {
@@ -213,6 +219,14 @@ describe.each(ROUTES)("%s keeps its wire prefix across rounds and turns", (provi
     },
     60_000,
   );
+
+  it("keeps the prefix when a follow-up prompt steers an in-flight turn", async () => {
+    const { requests } = await runSession(provider, model, true, true);
+    expect(requests.length).toBeGreaterThanOrEqual(6);
+    for (let index = 1; index < requests.length; index += 1) {
+      expect(firstDivergence(requests[index - 1]!, requests[index]!)).toBe("none");
+    }
+  }, 60_000);
 
   it("sends one stable cache affinity for the whole session", async () => {
     const { requests } = await runSession(provider, model, false);
