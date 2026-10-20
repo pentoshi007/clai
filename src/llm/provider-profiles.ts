@@ -24,6 +24,7 @@ import {
   modelReasoningEfforts,
 } from "./capabilities.js";
 import { providerContextOverrideTokens } from "./token-usage.js";
+import { modelMaxOutputTokens } from "./context-windows.js";
 import { modelLayerFor } from "./provider-model-layers.js";
 import {
   FAMILY_LAYERS,
@@ -317,6 +318,17 @@ function effortProbeProfile(profile: ProviderProfile): ProviderProfile {
       control: { ...profile.reasoning.control, status: "supported" },
     },
   };
+}
+
+export function routeOutputTokenLimit(
+  provider: ProviderId,
+  model: string,
+): number | undefined {
+  return modelMaxOutputTokens(
+    provider,
+    model,
+    resolveBuiltInProfile({ provider, model }).limits.outputTokens,
+  );
 }
 
 export function resolveBuiltInProfile(input: {

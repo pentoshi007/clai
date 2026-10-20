@@ -1,5 +1,5 @@
 import type { ChatMessage, CompletionResult, ProviderId } from "../../../types.js";
-import { resolveBuiltInProfile } from "../../../llm/provider-profiles.js";
+import { routeOutputTokenLimit } from "../../../llm/provider-profiles.js";
 import { outputBudgetWasExhausted } from "../../reliability-policy.js";
 import {
   appendInterruptedReasoning,
@@ -22,7 +22,6 @@ export interface OutputBudgetPorts {
   readonly provider: ProviderId;
   readonly model: string;
   readonly stepMaxTokens: number;
-  readonly maxStepCompletionTokens: number;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly recoveryUserMessage: (content: string) => ChatMessage;
   readonly pushAssistantHistory: (text: string) => void;
@@ -44,10 +43,7 @@ export const routeCompletionBudget = (input: {
   readonly model: string;
   readonly stepMaxTokens: number;
 }): number => {
-  const limit = resolveBuiltInProfile({
-    provider: input.provider,
-    model: input.model,
-  }).limits.outputTokens;
+  const limit = routeOutputTokenLimit(input.provider, input.model);
   return limit === undefined
     ? input.stepMaxTokens
     : Math.min(input.stepMaxTokens, limit);
@@ -83,19 +79,11 @@ const preserveAndContinue = (
   input: OutputBudgetInput,
   completionBudget: number,
 ): OutputBudgetDecision => {
-  const profile = resolveBuiltInProfile({
-    provider: ports.provider,
-    model: ports.model,
-  });
+  const limit = routeOutputTokenLimit(ports.provider, ports.model);
   state.truncatedBudgetRounds += 1;
-  const desired = Math.min(
-    ports.maxStepCompletionTokens,
-    Math.max(completionBudget, completionBudget * 2),
-  );
+  const desired = completionBudget * 2;
   state.continuationBudgetFloor =
-    profile.limits.outputTokens === undefined
-      ? desired
-      : Math.min(desired, profile.limits.outputTokens);
+    limit === undefined ? desired : Math.min(desired, limit);
   if (input.hasThinking) {
     state.interruptedReasoning = appendInterruptedReasoning(
       state.interruptedReasoning,

@@ -186,3 +186,58 @@ describe("dispatch output headroom", () => {
     }));
   });
 });
+
+describe("reasoning output budget", () => {
+  const thinkingPorts = (
+    provider: "river" | "tokenrouter",
+    model: string,
+    inputTokens: number,
+    contextLimitTokens?: number,
+  ) => ({
+    messages: [{ role: "user" as const, content: "x".repeat(Math.ceil(inputTokens * 3.3)) }],
+    provider,
+    model,
+    dialect: "openai" as const,
+    nativeToolsActive: true,
+    thinking: { enabled: true, effort: "max" as const },
+    step: 1,
+    contextLimitTokens,
+    measureRequestTokens: () => inputTokens,
+    estimateRequestTokens: () => inputTokens,
+    selectTools: () => undefined,
+    notify: vi.fn(),
+    audit: vi.fn(async () => {}),
+  });
+  const state = {
+    freeTierConsecutiveFailures: 0,
+    truncatedBudgetRounds: 0,
+    continuationBudgetFloor: 0,
+    retryWithoutThinking: false,
+  };
+  const deepseek = "deepseek-ai/DeepSeek-V4.1-Flash";
+
+  it("reserves up to 128k for a known large output limit when the context has room", async () => {
+    await expect(assembleRequest(thinkingPorts("river", deepseek, 10_000), state))
+      .resolves.toMatchObject({ stepMaxTokens: 131_072 });
+  });
+
+  it("keeps 32k for a route whose output limit is unknown", async () => {
+    await expect(assembleRequest(thinkingPorts("tokenrouter", "unlisted-model-xyz", 10_000), state))
+      .resolves.toMatchObject({ stepMaxTokens: 32_768 });
+  });
+
+  it("shrinks the reasoning budget to the free context instead of blocking dispatch", async () => {
+    const ports = thinkingPorts("river", deepseek, 150_000, 200_000);
+    await expect(assembleRequest(ports, state)).resolves.toMatchObject({ stepMaxTokens: 47_952 });
+    expect(ports.audit).not.toHaveBeenCalledWith("agent.request.over-limit-blocked", expect.anything());
+  });
+
+  it("keeps the dispatch boundary of the unknown-limit budget", async () => {
+    await expect(assembleRequest(thinkingPorts("river", deepseek, 165_000, 200_000), state))
+      .resolves.toMatchObject({ stepMaxTokens: 32_952 });
+    await expect(assembleRequest(thinkingPorts("river", deepseek, 165_200, 200_000), state))
+      .rejects.toBeInstanceOf(RequestOverLimitError);
+    await expect(assembleRequest(thinkingPorts("tokenrouter", "unlisted-model-xyz", 165_200, 200_000), state))
+      .rejects.toBeInstanceOf(RequestOverLimitError);
+  });
+});

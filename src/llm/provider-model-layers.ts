@@ -14,6 +14,7 @@ import { modelCatalogFacts } from "./capabilities.js";
 import { constellationModelLayer } from "./constellation-profile.js";
 import { catalogEffortList } from "./catalog-facts.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
+import { isRiverDeepSeekModel } from "./river-models.js";
 import {
   AWS_MANTLE_ANTHROPIC_MODEL,
   LING_NO_REASONING,
@@ -253,6 +254,9 @@ export function modelLayerFor(
         disable: efforts.includes("none") ? "supported" : "unsupported",
         disableForm: efforts.includes("none") ? "effort-none" : "none-documented",
         ...(reasoning?.defaultEffort ? { defaultEffort: reasoning.defaultEffort } : {}),
+        ...(provider === "river" && isRiverDeepSeekModel(model)
+          ? { finalTurnPreservation: "required" as const }
+          : {}),
       },
     };
   }
