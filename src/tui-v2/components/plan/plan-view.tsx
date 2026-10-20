@@ -2,7 +2,12 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { countRender } from "../../perf/render-counters.js";
-import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type BoxRenderable, type MouseEvent, type Renderable, type ScrollBoxRenderable } from "@opentui/core";
+import { useRenderer } from "@opentui/react";
+import { startSnappedSelection } from "../transcript/selection-snap.js";
+import { patchOpenTuiSelection } from "../../bootstrap/patch-opentui-selection.js";
+
+patchOpenTuiSelection();
 import type { PlanTask, SessionPlan } from "../../../store/plan.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
@@ -96,6 +101,8 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
   const { theme, plan, services, width: widthProp, interactionRef } = props;
   const focused = props.focused ?? services.focus.activeContext() === "plan";
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const paneRef = useRef<BoxRenderable>(null);
+  const renderer = useRenderer();
   const activeId = plan ? activeTaskId(plan) : undefined;
   const paneWidth = widthProp ?? 36;
   const headerWidth = Math.max(1, paneWidth - 4);
@@ -129,11 +136,26 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
     services.focus.focusRegion("plan");
   }
 
+  function onPaneMouseDown(event: MouseEvent): void {
+    event.preventDefault();
+    const pane = paneRef.current;
+    if (!pane) return;
+    const scroll = scrollRef.current;
+    const regions = scroll
+      ? [
+          { root: pane.findDescendantById("plan-header") as Renderable | undefined },
+          { root: scroll as Renderable, viewport: scroll.viewport },
+        ]
+      : [{ root: pane as Renderable }];
+    startSnappedSelection<Renderable>(renderer, event, regions);
+  }
+
   return (
     <box
       id="plan-pane"
+      ref={paneRef}
       style={{ flexDirection: "column", flexGrow: 1, width: "100%", height: "100%", backgroundColor: theme.statusBackground }}
-      onMouseDown={(event: MouseEvent) => event.preventDefault()}
+      onMouseDown={onPaneMouseDown}
       onMouseScroll={trapWheel}
     >
       {plan ? (
@@ -163,16 +185,16 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
                 onToggle={toggleTask}
               />
             ))}
-            {displayTasks.length === 0 ? <text selectable={false} content="No tasks yet" style={{ fg: theme.muted, height: 1 }} /> : null}
+            {displayTasks.length === 0 ? <text selectable content="No tasks yet" style={{ fg: theme.muted, height: 1 }} /> : null}
           </scrollbox>
         </>
       ) : (
         <box style={{ flexDirection: "column", flexGrow: 1, justifyContent: "center", alignItems: "center", paddingLeft: 1, paddingRight: 1 }}>
           <text selectable={false} content="◇" style={{ fg: theme.magenta, height: 1, attributes: TextAttributes.BOLD }} />
-          <text selectable={false} content="No tasks yet" style={{ fg: theme.foreground, height: 1, attributes: TextAttributes.BOLD, marginTop: 1 }} />
-          <text selectable={false} content="Plan a multi-step job," style={{ fg: theme.muted, height: 1, marginTop: 1 }} />
-          <text selectable={false} content="then /implement." style={{ fg: theme.muted, height: 1 }} />
-          <text selectable={false} content="Ctrl+H toggle · Ctrl+P detail" style={{ fg: theme.cyan, height: 1, marginTop: 1 }} />
+          <text selectable content="No tasks yet" style={{ fg: theme.foreground, height: 1, attributes: TextAttributes.BOLD, marginTop: 1 }} />
+          <text selectable content="Plan a multi-step job," style={{ fg: theme.muted, height: 1, marginTop: 1 }} />
+          <text selectable content="then /implement." style={{ fg: theme.muted, height: 1 }} />
+          <text selectable content="Ctrl+H toggle · Ctrl+P detail" style={{ fg: theme.cyan, height: 1, marginTop: 1 }} />
         </box>
       )}
     </box>
@@ -207,15 +229,15 @@ function PlanHeader(props: {
   return (
     <box id="plan-header" style={{ flexDirection: "column", width: "100%", flexShrink: 0, paddingLeft: 1, paddingRight: 1, paddingTop: 1 }}>
       {wrapPlanText(plan.goal, width).map((line, index) => (
-        <text selectable={false} key={`goal-${index}`} content={line} style={{ fg: theme.foreground, height: 1, attributes: TextAttributes.BOLD }} />
+        <text selectable key={`goal-${index}`} content={line} style={{ fg: theme.foreground, height: 1, attributes: TextAttributes.BOLD }} />
       ))}
       <box style={{ flexDirection: "row", width: "100%", height: 1, marginTop: 1, flexShrink: 0, gap: 1 }}>
         <Chip label={planStatusChip(plan.status)} fg={plan.status === "draft" ? theme.white : theme.foreground} bg={statusBg} theme={theme} />
-        <text selectable={false} content={wrapPlanText(plan.kind || "general", Math.max(1, width - planStatusChip(plan.status).length - 3))[0] ?? ""} style={{ fg: theme.muted, height: 1, flexShrink: 1 }} />
+        <text selectable content={wrapPlanText(plan.kind || "general", Math.max(1, width - planStatusChip(plan.status).length - 3))[0] ?? ""} style={{ fg: theme.muted, height: 1, flexShrink: 1 }} />
       </box>
       <box id="plan-progress" style={{ flexDirection: "row", width: "100%", height: 1, marginTop: 1, alignItems: "center", flexShrink: 0, gap: 1 }}>
         <text selectable={false} content={progressBar(progress.done, progress.total, barWidth)} style={{ fg: progress.done === progress.total && progress.total > 0 ? theme.success : theme.cyan, height: 1, flexShrink: 0 }} />
-        <text selectable={false} content={countLabel} style={{ fg: statusFg, height: 1, flexShrink: 0, attributes: TextAttributes.BOLD }} />
+        <text selectable content={countLabel} style={{ fg: statusFg, height: 1, flexShrink: 0, attributes: TextAttributes.BOLD }} />
         {inline && controls ? <box style={{ flexGrow: 1 }} /> : null}
         {inline ? controls : null}
       </box>
@@ -296,7 +318,7 @@ const TaskRow = memo(function TaskRow(props: {
               const last = lineIndex === titleLines.length - 1;
               return (
                 <box key={`title-${lineIndex}`} style={{ flexDirection: "row", flexShrink: 0 }}>
-                  <text selectable={false}
+                  <text selectable
                     id={`plan-task-${task.id}-title-${last ? "end" : lineIndex}`}
                     wrapMode="none"
                     content={`${lineIndex === 0 ? taskGlyph(task) : " "} ${line}`}
@@ -325,7 +347,7 @@ function TaskDetails(props: { task: PlanTask; theme: Theme; width: number; bg: s
   const lines = useMemo(() => wrapPlanText(taskDetailText(task), width), [task, width]);
   return (
     <box id={`plan-task-${task.id}-details`} style={{ flexDirection: "column", flexShrink: 0, width: "100%" }}>
-      {lines.map((line, index) => <text selectable={false} key={`body-${index}`} content={line} style={{ fg: theme.muted, bg, height: 1, attributes: TextAttributes.DIM }} />)}
+      {lines.map((line, index) => <text selectable key={`body-${index}`} content={line} style={{ fg: theme.muted, bg, height: 1, attributes: TextAttributes.DIM }} />)}
     </box>
   );
 }

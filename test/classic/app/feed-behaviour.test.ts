@@ -282,8 +282,8 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
     const write = vi.spyOn(harness.services.ports.clipboard, "writeText");
 
     harness.wiring.handleMouse(mouse({ x: 3, y: 1 }));
-    harness.wiring.handleMouse(mouse({ x: 7, y: 1, drag: true }));
-    harness.wiring.handleMouse(mouse({ x: 7, y: 1, release: true }));
+    harness.wiring.handleMouse(mouse({ x: 6, y: 1, drag: true }));
+    harness.wiring.handleMouse(mouse({ x: 6, y: 1, release: true }));
     await vi.waitFor(() => expect(write).toHaveBeenCalledWith("lpha"));
     await vi.waitFor(() => expect(harness!.toastTexts()).toContain("Copied selection"));
     expect(harness.services.focus.activeContext()).toBe("composer");

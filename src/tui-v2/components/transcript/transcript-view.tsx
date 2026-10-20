@@ -12,7 +12,7 @@ import {
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { countRender } from "../../perf/render-counters.js";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
-import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
+import type { MouseEvent, Renderable, ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
@@ -51,6 +51,8 @@ import {
   registerTranscriptScrollPort,
 } from "./transcript-scroll-port.js";
 import { useNativeSelectionCopy } from "./use-native-selection-copy.js";
+import { pointInRect, startSnappedSelection } from "./selection-snap.js";
+import { patchOpenTuiSelection } from "../../bootstrap/patch-opentui-selection.js";
 import { useTranscriptSelection } from "./use-transcript-selection.js";
 import { transcriptFollowKey } from "../../../ui-core/state/transcript-follow-key.js";
 import {
@@ -59,6 +61,9 @@ import {
   settleTranscriptLayout,
   type TranscriptWindowJump,
 } from "./transcript-anchor.js";
+
+patchOpenTuiSelection();
+
 export interface TranscriptViewProps {
   readonly services: AppServices;
   readonly theme: Theme;
@@ -291,6 +296,10 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     pointerGestureActive.current = true;
     copySemanticOnRelease.current = false;
     selection.onMouseDown(event);
+    const sb = scrollRef.current;
+    if (sb && pointInRect(sb.viewport, event.x, event.y)) {
+      startSnappedSelection<Renderable>(renderer, event, [{ root: sb, viewport: sb.viewport }]);
+    }
     services.focus.focusRegion("transcript");
     setFollowing(false);
   }

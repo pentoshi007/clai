@@ -14,6 +14,7 @@ import {
   semanticRangeText,
   semanticWordRange,
   type SemanticAnchor,
+  type SemanticCell,
   type SemanticDocument,
   type SemanticMovement,
   type SemanticRange,
@@ -133,6 +134,37 @@ export class SelectionController {
     const focus = this.clamp(pane, requested);
     if (!focus) return false;
     this.setState({ ...this.state, range: { ...range, focus } });
+    return true;
+  }
+
+  dragCellTo(
+    pane: SelectionPane,
+    pressed: SemanticCell,
+    current: SemanticCell,
+    pointer?: PointerPosition,
+  ): boolean {
+    const range = this.state.range;
+    const activePane = this.state.activePane;
+    if (!range || !this.state.dragging || !activePane) return false;
+    if (pointer) this.updateAutoscroll(activePane, pointer);
+    if (pane !== activePane) return false;
+    const document = this.documents.get(pane);
+    if (!document) return false;
+
+    const pressedStart = this.clamp(pane, pressed.start);
+    const pressedEnd = this.clamp(pane, pressed.end);
+    const currentStart = this.clamp(pane, current.start);
+    const currentEnd = this.clamp(pane, current.end);
+    if (!pressedStart || !pressedEnd || !currentStart || !currentEnd) return false;
+
+    const direction = compareSemanticAnchors(document, currentStart, pressedStart);
+    const next =
+      direction > 0
+        ? { anchor: pressedStart, focus: currentEnd }
+        : direction < 0
+          ? { anchor: pressedEnd, focus: currentStart }
+          : { anchor: pressedStart, focus: pressedStart };
+    this.setState({ ...this.state, range: { pane, ...next } });
     return true;
   }
 

@@ -36,6 +36,11 @@ export interface SemanticRange {
   readonly focus: SemanticAnchor;
 }
 
+export interface SemanticCell {
+  readonly start: SemanticAnchor;
+  readonly end: SemanticAnchor;
+}
+
 export type SemanticMovement =
   | "left"
   | "right"

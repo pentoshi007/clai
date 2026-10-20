@@ -16,7 +16,7 @@ export function handleDisclosureMouse(host: WiringHost, event: MouseEvent): bool
   const target = disclosureAtPointer(host.selectionWindow, event.x, event.y, host.selectionGeometry);
   if (!target) return false;
   pressed.add(host);
-  host.selectionPointerAnchor = undefined;
+  host.selectionPointerCell = undefined;
   host.selectionPointerMoved = false;
   if (target.action === "output") {
     const item = host.services.transcript.getState().byId.get(target.itemId);

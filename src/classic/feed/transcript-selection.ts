@@ -3,6 +3,7 @@ import {
   compareSemanticAnchors,
   type SemanticAnchor,
   type SemanticBlock,
+  type SemanticCell,
   type SemanticDocument,
 } from "../../ui-core/state/semantic-document.js";
 import type { FeedBlock } from "./feed-blocks.js";
@@ -76,29 +77,47 @@ function lineStart(block: FeedBlock, lineIndex: number): number {
   return end + lineIndex - lineStarts.length;
 }
 
-function offsetAtColumn(text: string, column: number): number {
+function cellAtColumn(text: string, column: number): { start: number; end: number } {
   const target = Math.max(0, column);
   let width = 0;
   let offset = 0;
   for (const grapheme of graphemes(text)) {
     const next = width + layoutWidth(grapheme);
-    if (target < next) break;
+    if (target < next) return { start: offset, end: offset + grapheme.length };
     width = next;
     offset += grapheme.length;
   }
-  return offset;
+  return { start: offset, end: offset };
 }
 
-function anchorForRow(row: TranscriptWindowRow, column: number): SemanticAnchor {
+function cellForRow(row: TranscriptWindowRow, column: number): SemanticCell {
   const blockId = row.block.key ?? row.block.itemId;
   if (row.lineIndex === undefined) {
-    return { blockId, offset: blockText(row.block).length };
+    const end = { blockId, offset: blockText(row.block).length };
+    return { start: end, end };
   }
-  const text = displayLine(row.line);
+  const base = lineStart(row.block, row.lineIndex);
+  const cell = cellAtColumn(displayLine(row.line), column);
   return {
-    blockId,
-    offset: lineStart(row.block, row.lineIndex) + offsetAtColumn(text, column),
+    start: { blockId, offset: base + cell.start },
+    end: { blockId, offset: base + cell.end },
   };
+}
+
+export function cellAtTranscriptPointer(
+  window: TranscriptWindow,
+  x: number,
+  y: number,
+  geometry: TranscriptPointerGeometry,
+  clamp = false,
+): SemanticCell | undefined {
+  if (window.rows.length === 0) return undefined;
+  const relativeY = y - geometry.top;
+  if (!clamp && (relativeY < 0 || relativeY >= window.viewportRows)) return undefined;
+  const rowIndex = Math.max(0, Math.min(window.rows.length - 1, relativeY));
+  const row = window.rows[rowIndex];
+  if (!row) return undefined;
+  return cellForRow(row, x - geometry.left);
 }
 
 export function anchorAtTranscriptPointer(
@@ -108,13 +127,7 @@ export function anchorAtTranscriptPointer(
   geometry: TranscriptPointerGeometry,
   clamp = false,
 ): SemanticAnchor | undefined {
-  if (window.rows.length === 0) return undefined;
-  const relativeY = y - geometry.top;
-  if (!clamp && (relativeY < 0 || relativeY >= window.viewportRows)) return undefined;
-  const rowIndex = Math.max(0, Math.min(window.rows.length - 1, relativeY));
-  const row = window.rows[rowIndex];
-  if (!row) return undefined;
-  return anchorForRow(row, x - geometry.left);
+  return cellAtTranscriptPointer(window, x, y, geometry, clamp)?.start;
 }
 
 function orderedRange(
