@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseCatalogFacts } from "../../src/llm/catalog-facts.js";
 
-const CATALOG_URL = "https://models.dev/api.json";
+const CATALOG_URL = "https://models.opencode.ai/api.json";
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const KILO_BASE_URL = "https://api.kilo.ai/api/gateway";
 const START = 1_900_000_000_000;
@@ -19,17 +19,15 @@ function jsonResponse(payload: unknown): Response {
   });
 }
 
-const OPENCODE_CATALOG_URL = "https://models.opencode.ai/api.json";
-
-function openCodeCatalog(freeIds: string[]) {
-  const models = Object.fromEntries(
-    freeIds.map((id) => [id, { id, cost: { input: 0, output: 0 } }]),
-  );
-  return { opencode: { api: "https://opencode.ai/inference/v1", models } };
-}
-
-function catalog(models: Record<string, unknown>) {
-  return { opencode: { api: ZEN_BASE_URL, models } };
+function catalog(models: Record<string, Record<string, unknown>>) {
+  return {
+    opencode: {
+      api: "https://opencode.ai/inference/openai/v1",
+      models: Object.fromEntries(Object.entries(models).map(([id, model]) => [
+        id, { cost: { input: 0, output: 0 }, ...model },
+      ])),
+    },
+  };
 }
 
 beforeEach(async () => {
@@ -258,7 +256,6 @@ describe("Free model context discovery", () => {
     let added = false;
     vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
       const url = String(input);
-      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["existing-free", ...(added ? [addedId] : [])]));
       if (url === CATALOG_URL) return jsonResponse(catalog({
         "existing-free": { limit: { context: 262_144, output: 32_768 } },
         ...(added ? { [addedId]: { limit: { context: 1_572_864, output: 49_152 } } } : {}),
@@ -296,7 +293,6 @@ describe("Free model context discovery", () => {
     const bodies: Array<{ model: string; max_tokens: number }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
-      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["output-cap-free"]));
       if (url === CATALOG_URL) return jsonResponse(catalog({
         "output-cap-free": { limit: { context: 1_048_576, output: 65_536 } },
       }));
@@ -341,7 +337,7 @@ describe("Free model context discovery", () => {
       if (url === CATALOG_URL) return jsonResponse(catalog({
         "shared-free": { limit: { context: 1_048_576, output: 131_072 } },
         "mimo-v2.6-flash-free": { limit: { context: 200_000, output: 32_000 } },
-        "absent-free": { limit: { context: 4_000_000 } },
+        "absent-free": { status: "deprecated", limit: { context: 4_000_000 } },
       }));
       if (url === `${ZEN_BASE_URL}/models`) return jsonResponse({ data: [
         { id: "shared-free" }, { id: "mimo-v2.6-flash-free" },
@@ -354,10 +350,7 @@ describe("Free model context discovery", () => {
       ] });
       throw new Error(`Unexpected request: ${url}`);
     });
-    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
-      if (String(input) === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["shared-free", "mimo-v2.6-flash-free"]));
-      return fetchMock(input as never);
-    }));
+    vi.stubGlobal("fetch", fetchMock);
     const { freeProvider } = await import("../../src/llm/free.js");
     const { modelContextWindow, modelMaxOutputTokens, resolveContextWindow } = await import("../../src/llm/context-windows.js");
     const { clearModelCatalogFacts } = await import("../../src/llm/capabilities.js");
@@ -373,7 +366,7 @@ describe("Free model context discovery", () => {
     expect(modelContextWindow("free-1/shared-free", "free")).toBe(1_048_576);
     expect(modelContextWindow("free-2/shared-free", "free")).toBe(262_144);
     expect(modelMaxOutputTokens("free", "free-2/shared-free")).toBe(32_768);
-    expect(modelContextWindow("mimo-v2.6-flash-free", "free")).toBe(200_000);
+    expect(modelContextWindow("mimo-v2.6-flash-free", "free")).toBe(250_000);
     const metadataRequest = fetchMock.mock.calls.find(([url]) => url === CATALOG_URL)!;
     expect(JSON.stringify(metadataRequest)).not.toContain("private-source-credential");
     clearModelCatalogFacts();
@@ -385,14 +378,13 @@ describe("Free model context discovery", () => {
     expect(resolveContextWindow({ provider: "free", model: "unknown-free" })).toMatchObject({ tokens: 200_000, source: "default" });
   });
 
-  it("keeps the verified DeepSeek free window across discovery, refresh and offline reload", async () => {
+  it("follows live Zen limits across discovery, refresh and offline reload", async () => {
     dataDir = await mkdtemp(join(tmpdir(), "clai-free-deepseek-"));
     vi.stubEnv("CLAI_DATA_DIR", dataDir);
     const id = "deepseek-v4.1-flash-free";
     let publishedContext = 200_000;
     const fetchMock = vi.fn(async (input: unknown) => {
       const url = String(input);
-      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog([id]));
       if (url === CATALOG_URL) return jsonResponse(catalog({
         [id]: {
           limit: { context: publishedContext, output: 32_000 },
@@ -410,26 +402,31 @@ describe("Free model context discovery", () => {
     const { modelContextWindow, modelMaxOutputTokens, resolveContextWindow } = await import("../../src/llm/context-windows.js");
     const { clearModelCatalogFacts, displayReasoningEfforts, registerModelCatalogFacts } = await import("../../src/llm/capabilities.js");
     const { reloadRememberedModelLimits } = await import("../../src/llm/model-limit-store.js");
-    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(1_000_000);
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(200_000);
     await freeProvider.listModels!({});
-    expect(resolveContextWindow({ provider: "free", model: `free-1/${id}` }).tokens).toBe(1_000_000);
-    expect(modelContextWindow(id, "free")).toBe(1_000_000);
+    expect(resolveContextWindow({ provider: "free", model: `free-1/${id}` }).tokens).toBe(250_000);
+    expect(modelContextWindow(id, "free")).toBe(250_000);
     expect(modelContextWindow(`free-2/${id}`, "free")).toBe(262_144);
     expect(modelMaxOutputTokens("free", `free-1/${id}`)).toBe(32_000);
     expect(displayReasoningEfforts("free", `free-1/${id}`)).toEqual(["low", "high", "max"]);
+    clearModelCatalogFacts();
+    reloadRememberedModelLimits();
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(250_000);
+    expect(modelContextWindow(id, "free")).toBe(250_000);
     publishedContext = 400_000;
     vi.mocked(Date.now).mockReturnValue(START + 30 * 60_000);
     await freeProvider.listModels!({});
-    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(1_000_000);
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(400_000);
     clearModelCatalogFacts();
     reloadRememberedModelLimits();
     fetchMock.mockRejectedValue(new Error("offline"));
-    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(1_000_000);
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(400_000);
+    expect(modelContextWindow(id, "free")).toBe(400_000);
     expect(modelMaxOutputTokens("free", `free-1/${id}`)).toBe(32_000);
     registerModelCatalogFacts("openrouter", { id, contextTokens: 131_072 });
     registerModelCatalogFacts("free", { id: "free-1/deepseek-v4-flash-free", contextTokens: 200_000 });
     expect(modelContextWindow(id, "openrouter")).toBe(131_072);
-    expect(modelContextWindow("free-1/deepseek-v4-flash-free", "free")).toBe(200_000);
+    expect(modelContextWindow("free-1/deepseek-v4-flash-free", "free")).toBe(250_000);
   });
 
   it("applies catalog reasoning efforts to free-1 models", async () => {
@@ -437,19 +434,13 @@ describe("Free model context discovery", () => {
     vi.stubEnv("CLAI_DATA_DIR", dataDir);
     vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
       const url = String(input);
-      if (url === OPENCODE_CATALOG_URL) return jsonResponse(openCodeCatalog(["effort-free"]));
-      if (url === CATALOG_URL) return jsonResponse({
-        opencode: {
-          api: "https://opencode.ai/inference/v1",
-          models: {
-            "effort-free": {
-              limit: { context: 200_000, output: 32_000 },
-              reasoning: true,
-              reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
-            },
-          },
+      if (url === CATALOG_URL) return jsonResponse(catalog({
+        "effort-free": {
+          limit: { context: 200_000, output: 32_000 },
+          reasoning: true,
+          reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
         },
-      });
+      }));
       if (url === `${ZEN_BASE_URL}/models`) return jsonResponse({ data: [{ id: "effort-free" }] });
       if (url === `${KILO_BASE_URL}/models`) return jsonResponse({ data: [] });
       throw new Error(`Unexpected request: ${url}`);

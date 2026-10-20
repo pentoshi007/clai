@@ -22,21 +22,20 @@ vi.mock("../src/llm/zen-session.js", async (importOriginal) => ({
 
 const ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const KILO_MODELS_URL = "https://api.kilo.ai/api/gateway/models";
-const MODEL_LIMITS_URL = "https://models.dev/api.json";
 
 const OPENCODE_CATALOG_URL = "https://models.opencode.ai/api.json";
 const OPENCODE_FREE_IDS = ["big-pickle", "cat-jam-free", "muse-spark-1.3-contributor-free"];
 
 function openCodeCatalog(freeIds: string[]): Record<string, unknown> {
   const models = Object.fromEntries([
-    ...freeIds.map((id) => [id, { id, cost: { input: 0, output: 0 } }]),
+    ...freeIds.map((id) => [id, { id, cost: { input: 0, output: 0 }, limit: { context: 200_000, output: 32_000 } }]),
     ["paid-model", { id: "paid-model", cost: { input: 1, output: 2 } }],
   ]);
   return { opencode: { api: "https://opencode.ai/inference/v1", models } };
 }
 
-function zenListedModels(liveIds: string[]): string[] {
-  return liveIds.filter((id) => OPENCODE_FREE_IDS.includes(id.replace(/^free-1\//, ""))).sort();
+function zenListedModels(): string[] {
+  return OPENCODE_FREE_IDS.map((id) => `free-1/${id}`).sort();
 }
 let isolatedDataDir: string | undefined;
 
@@ -46,16 +45,6 @@ function catalogFetchMock(
 ) {
   return vi.fn(async (input: unknown) => {
     const url = String(input);
-    if (url === MODEL_LIMITS_URL) {
-      return new Response(JSON.stringify({
-        opencode: {
-          api: "https://opencode.ai/zen/v1",
-          models: Object.fromEntries(zenIds.map((id) => [id, {
-            id, limit: { context: 200_000, output: 32_000 },
-          }])),
-        },
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    }
     if (url === OPENCODE_CATALOG_URL) {
       return new Response(JSON.stringify(openCodeCatalog(OPENCODE_FREE_IDS)), {
         status: 200,
@@ -159,10 +148,7 @@ describe("free provider (zen + kilo)", () => {
 
       const result = await freeProvider.listModels!({});
       expect(result).toEqual([
-        ...zenListedModels([
-          "free-1/deepseek-v4-flash-free",
-          "free-1/hy3-free",
-        ]),
+        ...zenListedModels(),
         "free-2/kilo-auto/free",
       ]);
 
@@ -193,10 +179,7 @@ describe("free provider (zen + kilo)", () => {
 
       const result = await freeProvider.listModels!({});
       expect(result).toEqual([
-        ...zenListedModels([
-          "free-1/deepseek-v4-flash-free",
-          "free-1/mimo-v2.5-free",
-        ]),
+        ...zenListedModels(),
         "free-2/openrouter/free",
         "free-2/stepfun/step-3.7-flash:free",
       ]);
@@ -261,7 +244,7 @@ describe("free provider (zen + kilo)", () => {
       await freeProvider.listModels!({ apiKey: "zen-key-123" });
       for (const call of fetchMock.mock.calls) {
         const options = call[1] as RequestInit;
-        if (String(call[0]) === MODEL_LIMITS_URL || String(call[0]) === OPENCODE_CATALOG_URL) {
+        if (String(call[0]) === OPENCODE_CATALOG_URL) {
           expect(options.headers).not.toHaveProperty("authorization");
           continue;
         }
@@ -283,15 +266,15 @@ describe("free provider (zen + kilo)", () => {
       const time = baseTime + 5 * 60 * 60 * 1000;
       vi.spyOn(Date, "now").mockReturnValue(time);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
 
       vi.spyOn(Date, "now").mockReturnValue(time + 10_000);
       const result = await freeProvider.listModels!({});
       expect(result).toEqual([
-        ...zenListedModels(["free-1/hy3-free"]),
+        ...zenListedModels(),
         "free-2/kilo-auto/free",
       ]);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
     it("refetches once the catalog cache passes 30 minutes", async () => {
@@ -304,15 +287,15 @@ describe("free provider (zen + kilo)", () => {
       const time = baseTime + 6 * 60 * 60 * 1000;
       vi.spyOn(Date, "now").mockReturnValue(time);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
 
       vi.spyOn(Date, "now").mockReturnValue(time + 29 * 60 * 1000);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
 
       vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(6);
+      expect(fetchMock).toHaveBeenCalledTimes(8);
     });
 
     it("lists only zero-cost catalog models that Zen serves, with no stale or paid ids", async () => {

@@ -227,19 +227,12 @@ function sourceScopedEntry(source: FreeSource, entry: unknown): unknown {
   return entry && typeof entry === "object" ? { ...entry, id } : id;
 }
 
-const ZEN_ROUTED_OUTSIDE_MODELS_LIST: readonly string[] = ["nemotron-3-ultra-free"];
-
-function servedByCatalog(
+function zenCatalogEntries(
   entries: readonly unknown[],
   catalogFreeIds: readonly string[],
 ): readonly unknown[] {
-  const free = new Set(catalogFreeIds.map((id) => id.toLowerCase()));
-  const served = entries.filter((entry) => free.has(catalogEntryId(entry).toLowerCase()));
-  const listed = new Set(served.map((entry) => catalogEntryId(entry).toLowerCase()));
-  const extras = ZEN_ROUTED_OUTSIDE_MODELS_LIST.filter(
-    (id) => free.has(id) && !listed.has(id),
-  ).map((id) => ({ id }));
-  return [...served, ...extras];
+  const listed = new Map(entries.map((entry) => [catalogEntryId(entry).toLowerCase(), entry]));
+  return catalogFreeIds.map((id) => listed.get(id.toLowerCase()) ?? { id });
 }
 
 async function listSourceEntries(
@@ -419,7 +412,7 @@ export const freeProvider: LlmProvider = {
         const fetched = await listSourceEntries(source, key);
         const served =
           source.id === "free-1"
-            ? servedByCatalog(fetched, (await listFreeZenCatalogIds()) ?? [])
+            ? zenCatalogEntries(fetched, (await listFreeZenCatalogIds()) ?? [])
             : fetched;
         const enriched =
           source.id === "free-1"
