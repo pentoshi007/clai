@@ -283,6 +283,28 @@ describe("Ghidra installation", () => {
     expect(await readdir(engineRoots(root).ghidra)).toEqual(["12.1.4", "my-own-notes"]);
   });
 
+  it("clears the leftovers of a crashed install before it starts", async () => {
+    const root = await reaRoot();
+    const folder = engineRoots(root).ghidra;
+    for (const name of [".s-deadbeef", ".staging-0b0e4f0e-8c6c-4a0c-9d57-2f1b5e0d9a11"]) {
+      await mkdir(join(folder, name, "t"), { recursive: true });
+      await writeFile(join(folder, name, "t", "partial"), "x");
+    }
+    const archive = ghidraArchive("12.1.4", { decompilers: ["linux_x86_64"] });
+    expect(await installGhidra({ root, release: releaseFor(archive), host: LINUX, fetch: serve(archive) })).toMatchObject({ ok: true });
+    expect(await readdir(folder)).toEqual(["12.1.4"]);
+  });
+
+  it("tells a Windows user whose data folder is too deep to move it, before downloading anything", async () => {
+    const root = join(await workspace(), "a".repeat(160), "tools", "rea");
+    const archive = ghidraArchive("12.1.4", { decompilers: ["linux_x86_64"] });
+    const calls: string[] = [];
+    const result = await installGhidra({ root, release: releaseFor(archive), host: { platform: "win32", arch: "x64" }, fetch: serve(archive, calls) });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/too deep for Windows.*CLAI_DATA_DIR/) });
+    expect(calls).toEqual([]);
+    await expect(readdir(engineRoots(root).ghidra)).rejects.toThrow();
+  });
+
   it("stops without leaving files when cancelled", async () => {
     const root = await reaRoot();
     const archive = ghidraArchive("12.1.4", { decompilers: ["linux_x86_64"] });
