@@ -45,7 +45,7 @@ const compactExecutionContract = `# EXECUTION CONTRACT
 - Questions/reviews/analysis need answers; read as needed, implement only when directed. An earlier build request is not permission to mutate for a later question.
 - Search via shell.exec (cwd) + rg -n -- 'pattern' . (-F literal, -P lookaround, -g quoted glob); grep -R -n -E / PowerShell Select-String fallback. Exit 1: no matches. fs.read: directories/hit windows. Quote args, narrow paths, batch independent lookups.
 - Reuse evidence; batch only independent work. Resolve decision-changing unknowns with bounded searches/reads. A truncated result is not empty: continue from its cursor instead of rerunning.
-- Preserve installed versions/conventions; consult current authoritative docs when uncertain; do not upgrade unrelated dependencies.
+- Preserve installed versions/conventions; check current authoritative docs when unsure; do not upgrade unrelated dependencies.
 - Commands are never automatically backgrounded. shell.exec default/auto is foreground; background:"always" or responder:true delegates, background:"never" wins. timeoutMs: foreground-only milliseconds (1000–1800000; default 60000), ignored for background and Responder jobs. Finite: foreground/shell.wait. Servers: shell.tail + readiness probe; shell.stop cleanup. Responder finite only: analyze delivery, job.read, never poll. Batch missing CLI path/version checks before OS installs.
 - Debug with reproduction + falsifiable hypothesis; verify original failure and regressions; do not weaken checks. If attempts add no evidence, change approach.
 - Track material security surfaces/trust boundaries as tested, untested or blocked. Distinguish suspicions from reproduced findings; use negative controls. Report evidence, impact, remediation and gaps. No finite assessment proves all vulnerabilities were found.
@@ -84,6 +84,7 @@ After a tool result, next call or concise final answer. Emit independent read-on
 # WORKING RULES
 
 - Inspect state before changing it. Preserve existing stack/style. Absolute paths for user projects; never write app source into the agent package tree.
+- FILE PLACEMENT: deliverables (projects, source, scripts, reports, docs) go to the user's location, else cwd if it is the task folder, else a new named folder; never scratch, which holds only disposable intermediates. New work never adopts an existing same/similarly-named folder or file unless the user points at it or cwd is inside it.
 - Match the deliverable (feature ≠ scaffold; fix ≠ diagnosis-only; pentest finding ≠ open port alone).
 - Multi-step: create working tasks → implement → automated checks (typecheck/build/tests when applicable) → live verify. Local apps: shell.exec background:"always" with a name, leave running, report URL + job id.
 - Task cycle: in_progress → work → read results → done only when that task's outcome holds → next. Never mark done on hope after firing a command.
@@ -93,7 +94,7 @@ After a tool result, next call or concise final answer. Emit independent read-on
 - Side effects: emit the tool; clai handles confirmation. Never bypass denials.
 - Background long-lived work; web.search/web.fetch for current facts; cite tool URLs.
 - Fail → understand → fix → retry. Report blockers plainly.
-- Stay in scope; OS-correct commands for {{os}} / {{shell}}. Scratch under {{scratch}} only.
+- Stay in scope; OS-correct commands for {{os}} / {{shell}}. Scratch under {{scratch}} only for disposable files.
 `
 
 function sectionFrom(template: string, header: string): string {
@@ -201,11 +202,12 @@ Structured tools are attached by the API. Call them natively — no fenced tool 
 # WORKING RULES
 
 - Inspect before mutate; preserve stack. Use tools + clai confirmation for side effects.
+- Deliverables: user's location, else task-folder cwd, else a new named folder; never scratch. New work never adopts an existing same/similarly-named folder unless the user points at it.
 - fs.read: path-only if enough; {files:[...]} for related files; follow hasMore offsets, use pattern/rg, never invent unread lines.
 - Files: complete fs.write; fs.edit for targeted changes; fs.append literal ordered chunks beyond output limits, awaiting receipts and using after_bytes.
 - Substantial work: tasks → implement → applicable typecheck/build/tests → live verification. Set in_progress before work, done only after reading proof, then next task.
-- Debug: fix + reverify. Pentest: adapt tests to target evidence/impact, verify findings, state residual risk; no local server for remote targets.
-- web.search for current facts; stay in scope for {{os}}/{{shell}}.
+- Pentest: adapt tests to target evidence/impact, verify findings, state residual risk; no local server for remote targets.
+- web.search for current facts; stay in scope.
 `;
 
 
@@ -245,6 +247,23 @@ function render(template: string, values: Record<string, string>): string {
     (current, [key, value]) => current.replaceAll(`{{${key}}}`, value),
     template,
   );
+}
+
+const STABLE_ENVIRONMENT_LINE_RE =
+  /^Environment: (?:[A-Za-z]+ see REQUEST ENVIRONMENT(?: \| |$))+$/gm;
+
+function renderPromptTemplate(
+  template: string,
+  values: Record<string, string>,
+  stableEnvironment: boolean,
+): string {
+  const rendered = render(template, values);
+  return stableEnvironment
+    ? rendered.replace(
+        STABLE_ENVIRONMENT_LINE_RE,
+        "Environment: see REQUEST ENVIRONMENT",
+      )
+    : rendered;
 }
 
 export function applyImageViewAvailability(
@@ -365,10 +384,12 @@ export function renderAskSystemPrompt(options?: {
   stableEnvironment?: boolean;
   imageView?: boolean;
 }): string {
-  const rendered = render(options?.nativeTools ? askPromptNative : askPrompt, {
-    ...promptEnvironmentValues(Boolean(options?.stableEnvironment)),
-    tool_list: "none",
-  });
+  const stableEnvironment = Boolean(options?.stableEnvironment);
+  const rendered = renderPromptTemplate(
+    options?.nativeTools ? askPromptNative : askPrompt,
+    { ...promptEnvironmentValues(stableEnvironment), tool_list: "none" },
+    stableEnvironment,
+  );
   return applyImageViewAvailability(rendered, options?.imageView !== false);
 }
 
@@ -397,10 +418,12 @@ export function renderAgentSystemPrompt(
     );
   }
   template = withPentestMethodology(template, options?.pentest === true);
-  const rendered = render(template, {
-    ...promptEnvironmentValues(Boolean(options?.stableEnvironment)),
-    tool_list: toolList,
-  });
+  const stableEnvironment = Boolean(options?.stableEnvironment);
+  const rendered = renderPromptTemplate(
+    template,
+    { ...promptEnvironmentValues(stableEnvironment), tool_list: toolList },
+    stableEnvironment,
+  );
   const stablePrompt = applyImageViewAvailability(
     rendered,
     options?.imageView !== false,
@@ -417,12 +440,11 @@ export function renderCompactAgentSystemPrompt(
     imageView?: boolean;
   },
 ): string {
-  const rendered = render(
+  const stableEnvironment = Boolean(options?.stableEnvironment);
+  const rendered = renderPromptTemplate(
     options?.nativeTools ? compactAgentPromptNative : compactAgentPrompt,
-    {
-      ...promptEnvironmentValues(Boolean(options?.stableEnvironment)),
-      tool_list: toolList,
-    },
+    { ...promptEnvironmentValues(stableEnvironment), tool_list: toolList },
+    stableEnvironment,
   );
   const stablePrompt = applyImageViewAvailability(
     rendered,

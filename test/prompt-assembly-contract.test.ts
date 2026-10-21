@@ -136,6 +136,21 @@ describe("prompt assembly contract", () => {
     expect(renderRequestEnvironmentContext()).toContain("Working directory:");
   });
 
+  it("collapses the stable environment line to a single pointer", () => {
+    for (const prompt of [
+      renderAgentSystemPrompt("shell.exec", { nativeTools: true, stableEnvironment: true }),
+      renderCompactAgentSystemPrompt("shell.exec", { nativeTools: true, stableEnvironment: true }),
+      renderCompactAgentSystemPrompt("shell.exec", { stableEnvironment: true }),
+    ]) {
+      const lines = prompt.split("\n").filter((line) => line.startsWith("Environment:"));
+      expect(lines).toEqual(["Environment: see REQUEST ENVIRONMENT"]);
+    }
+    const live = renderCompactAgentSystemPrompt("shell.exec")
+      .split("\n")
+      .find((line) => line.startsWith("Environment:"));
+    expect(live).toMatch(/^Environment: OS .+ \| shell .+ \| cwd .+ \| scratch .+ \| now .+ISO hour:/);
+  });
+
   it("datetime floor is hour-stable across minutes", () => {
     const a = floorToLocalHour(new Date("2026-07-18T10:05:00"));
     const b = floorToLocalHour(new Date("2026-07-18T10:55:00"));
