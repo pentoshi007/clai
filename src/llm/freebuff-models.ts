@@ -5,6 +5,7 @@ import {
   freebuffForgetDeviceKeyRegistration,
   isFreebuffDeviceKeyError,
 } from "./freebuff-device-key.js";
+import { fallbackModelList, MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
 
 const CATALOG_PATH = "/api/v1/freebuff/models";
 export const FREEBUFF_CATALOG_PROTOCOL = "1";
@@ -13,6 +14,11 @@ export const FREEBUFF_CATALOG_FETCH_HEADER = "x-freebuff-catalog-fetch";
 export const FREEBUFF_CATALOG_CLIENT = "cli";
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
+let refreshListing = false;
+
+onModelListInvalidated("freebuff", () => {
+  refreshListing = true;
+});
 const CATALOG_TIMEOUT_MS = 20_000;
 const MAX_CACHED_ACCOUNTS = 10;
 
@@ -289,7 +295,11 @@ export async function fetchFreebuffModelIds(
   signal?: AbortSignal,
   deps: FreebuffCatalogDeps = {},
 ): Promise<string[]> {
-  const snapshot = await loadCatalog(token, deps, signal, false);
+  const previous = cached.get(tokenCacheKey(token));
+  const age = previous ? (deps.now?.() ?? Date.now()) - previous.fetchedAt : Number.POSITIVE_INFINITY;
+  const force = refreshListing || age >= MODEL_LIST_TTL_MS;
+  refreshListing = false;
+  const snapshot = await loadCatalog(token, deps, signal, force);
   const ids = snapshot ? visibleFreebuffCatalogModelIds(snapshot).sort((a, b) => a.localeCompare(b)) : [];
-  return ids.length > 0 ? ids : freebuffStaticModelIds();
+  return ids.length > 0 ? ids : fallbackModelList(freebuffStaticModelIds());
 }

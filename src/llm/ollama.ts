@@ -23,6 +23,7 @@ import { compileRequestPlan } from "./request-plan.js";
 import { OLLAMA_STREAM_TERMINAL, PartialStreamError } from "./stream-terminal.js";
 import type { TokenUsage } from "../types.js";
 import { OLLAMA_MAX_NUM_CTX, registerOllamaModelLimits } from "./ollama-model-limits.js";
+import { onModelListInvalidated } from "./model-list-cache.js";
 
 const OLLAMA_DEFAULT_NUM_PREDICT = 4_096;
 const OLLAMA_KEEP_ALIVE = "5m";
@@ -96,6 +97,10 @@ let cachedOllamaModels: string[] | null = null;
 let cachedOllamaBase = "";
 let lastOllamaFetchTime = 0;
 const OLLAMA_CACHE_TTL_MS = 60 * 1000;
+
+onModelListInvalidated("ollama", () => {
+  lastOllamaFetchTime = 0;
+});
 
 export const ollamaProvider: LlmProvider = {
   id: "ollama",

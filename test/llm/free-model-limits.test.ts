@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseCatalogFacts } from "../../src/llm/catalog-facts.js";
+import { MODEL_LIST_TTL_MS } from "../../src/llm/model-list-cache.js";
 
 const CATALOG_URL = "https://models.opencode.ai/api.json";
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
@@ -277,9 +278,9 @@ describe("Free model context discovery", () => {
     expect(nominalModelContextWindow(addedId)).toBe(200_000);
     await freeProvider.listModels!({});
     added = true;
-    vi.mocked(Date.now).mockReturnValue(START + 30 * 60_000 - 1);
+    vi.mocked(Date.now).mockReturnValue(START + MODEL_LIST_TTL_MS - 1);
     expect(await freeProvider.listModels!({})).not.toContain(`free-1/${addedId}`);
-    vi.mocked(Date.now).mockReturnValue(START + 30 * 60_000);
+    vi.mocked(Date.now).mockReturnValue(START + MODEL_LIST_TTL_MS);
     const models = await freeProvider.listModels!({});
     expect(models).toContain(`free-1/${addedId}`);
     expect(models).toContain(`free-2/${addedId}`);

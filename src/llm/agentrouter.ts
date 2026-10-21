@@ -15,6 +15,7 @@ import {
   ingestOpenAiModelCatalog,
 } from "./http.js";
 import { bareModelId } from "./model-families.js";
+import { modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://agentrouter.org/v1";
 
@@ -39,9 +40,7 @@ function headersForIndex(index: number): Record<string, string> {
   return { "User-Agent": AUTHORIZED_USER_AGENTS[index]! };
 }
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("agentrouter");
 
 function isUnauthorizedClientError(error: unknown): boolean {
   const status = error instanceof ProviderError ? error.status : undefined;
@@ -103,10 +102,8 @@ export const agentrouterProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("AgentRouter API key is required");
     const apiKey = auth.apiKey;
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     const models = await withAuthorizedClient(async (headers) => {
       const response = await fetch(`${baseUrl}/models`, {
         headers: {
@@ -117,10 +114,7 @@ export const agentrouterProvider: LlmProvider = {
       const data = await readJson<{ data?: Array<{ id: string }> }>(response);
       return ingestOpenAiModelCatalog("agentrouter", data);
     });
-    if (models.length > 0) {
-      cachedModels = models;
-      lastFetchTime = now;
-    }
+    modelCache.store(models);
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {

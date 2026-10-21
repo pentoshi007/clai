@@ -12,6 +12,7 @@ import {
 import { credentialFor, withCodexCredential } from "./codex-credential.js";
 import { catalogEntriesFromPayload } from "./catalog-facts.js";
 import { ingestModelCatalogEntries, readJson } from "./http.js";
+import { isModelListFresh, MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
 
 export const codexFallbackModels: readonly string[] = [
   "gpt-6.1-sol",
@@ -45,10 +46,14 @@ interface CatalogCache {
   readonly etag?: string | undefined;
 }
 
-const CACHE_TTL_MS = 5 * 60_000;
 const catalogs = new Map<string, CatalogCache>();
 const pending = new Map<string, Promise<string[]>>();
 let readDiskCache = true;
+
+onModelListInvalidated("codex", () => {
+  for (const [key, catalog] of catalogs) catalogs.set(key, { ...catalog, fetchedAt: 0 });
+  pending.clear();
+});
 
 function catalogKey(credential: CodexCredential): string {
   return createHash("sha256")
@@ -130,7 +135,11 @@ export function codexModelMetadata(
   };
 }
 
-async function fetchCatalog(auth: ProviderAuth, key: string): Promise<string[]> {
+async function fetchCatalog(
+  auth: ProviderAuth,
+  key: string,
+  maxAgeMs: number,
+): Promise<string[]> {
   const path = join(getDataDir(), "codex-models", `${key}.json`);
   let cached = catalogs.get(key);
   if (!cached && readDiskCache) {
@@ -142,7 +151,7 @@ async function fetchCatalog(auth: ProviderAuth, key: string): Promise<string[]> 
       }
     } catch {}
   }
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return activateCatalog(cached);
+  if (cached && isModelListFresh(cached.fetchedAt, maxAgeMs)) return activateCatalog(cached);
   try {
     const updated = await withCodexCredential(auth, async (credential): Promise<CatalogCache> => {
       const response = await fetch(`${CODEX_API_BASE_URL}/models?client_version=${CODEX_CLIENT_VERSION}`, {
@@ -174,13 +183,16 @@ async function fetchCatalog(auth: ProviderAuth, key: string): Promise<string[]> 
   }
 }
 
-export async function listCodexModels(auth: ProviderAuth): Promise<string[]> {
+export async function listCodexModels(
+  auth: ProviderAuth,
+  maxAgeMs: number = MODEL_LIST_TTL_MS,
+): Promise<string[]> {
   const key = catalogKey(credentialFor(auth));
   const cached = catalogs.get(key);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return activateCatalog(cached);
+  if (cached && isModelListFresh(cached.fetchedAt, maxAgeMs)) return activateCatalog(cached);
   const existing = pending.get(key);
   if (existing) return existing;
-  const task = fetchCatalog(auth, key);
+  const task = fetchCatalog(auth, key, maxAgeMs);
   pending.set(key, task);
   try {
     return await task;

@@ -19,13 +19,13 @@ import {
   responsesStream,
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
+import { modelListCache } from "./model-list-cache.js";
 
 export { parseResponsesUsage as parseMetaUsage } from "./responses-dialect.js";
 
 const baseUrl = "https://api.meta.ai/v1";
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("meta");
 
 function metaReasoningPayload(
   reasoning: ReasoningPreference | undefined,
@@ -78,11 +78,8 @@ export const metaProvider: LlmProvider = {
   validateKey: (key: string) => /^[A-Za-z0-9_.-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const cacheKey = auth.apiKey ?? "";
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-      return cached.models;
-    }
+    const cached = modelCache.fresh(cacheKey);
+    if (cached) return cached;
     try {
       const headers: Record<string, string> = {};
       if (auth.apiKey) headers["authorization"] = `Bearer ${auth.apiKey}`;
@@ -94,9 +91,7 @@ export const metaProvider: LlmProvider = {
           ...metaAcceptedEfforts(model),
         ]);
       }
-      if (models.length > 0) {
-        modelCache.set(cacheKey, { models, fetchedAt: now });
-      }
+      modelCache.store(models, cacheKey);
       return models;
     } catch {
       return [];

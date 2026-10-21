@@ -12,6 +12,7 @@ import {
   readJson,
   toCompletionResult,
 } from "./http.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://api.fireworks.ai/inference/v1";
 
@@ -25,9 +26,7 @@ export const fireworksFallbackModels = [
   "accounts/fireworks/models/llama4-maverick-instruct-basic",
 ];
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("fireworks");
 
 export const fireworksProvider: LlmProvider = {
   id: "fireworks",
@@ -37,9 +36,9 @@ export const fireworksProvider: LlmProvider = {
   envVar: "FIREWORKS_API_KEY",
   validateKey: (key: string) => key.trim().length >= 8,
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    if (!auth.apiKey) return fireworksFallbackModels;
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
+    if (!auth.apiKey) return fallbackModelList(fireworksFallbackModels);
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     try {
       const response = await fetch(`${baseUrl}/models`, {
         headers: { authorization: `Bearer ${auth.apiKey}` },
@@ -48,13 +47,12 @@ export const fireworksProvider: LlmProvider = {
       const data = await readJson<{ data?: Array<{ id: string }> }>(response);
       const models = ingestOpenAiModelCatalog("fireworks", data);
       if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
+        modelCache.store(models);
         return models;
       }
-      return fireworksFallbackModels;
+      return fallbackModelList(fireworksFallbackModels);
     } catch {
-      return fireworksFallbackModels;
+      return fallbackModelList(fireworksFallbackModels);
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

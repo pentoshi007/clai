@@ -11,11 +11,17 @@ import {
   toCompletionResult,
 } from "./http.js";
 import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
+import { onModelListInvalidated } from "./model-list-cache.js";
 
 const DEFAULT_BASE_URL = "https://gateway.constellationgate.ai/v1";
 const CATALOG_TTL_MS = 60_000;
 const catalogs = new Map<string, { expiresAt: number; models: CatalogModel[] }>();
 const pendingCatalogs = new Map<string, Promise<CatalogModel[]>>();
+
+onModelListInvalidated("constellation", () => {
+  catalogs.clear();
+  pendingCatalogs.clear();
+});
 
 function catalogKey(auth: ProviderAuth): string {
   return createHash("sha256").update(`${auth.baseUrl ?? ""}\u0000${auth.apiKey ?? ""}`).digest("hex");

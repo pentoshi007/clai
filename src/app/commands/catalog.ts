@@ -26,13 +26,13 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/model",
-    usage: "[name|#]",
-    description: "open picker or switch model",
+    usage: "[name|#|refresh]",
+    description: "open picker or switch model; refresh re-fetches instead of using the 2-minute cache",
   },
   {
     command: "/models",
-    usage: "[filter]",
-    description: "browse all models across providers",
+    usage: "[refresh] [filter]",
+    description: "browse all models across providers; refresh re-fetches instead of using the 2-minute cache",
   },
   {
     command: "/provider",

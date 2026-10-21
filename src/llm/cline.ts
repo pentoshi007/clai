@@ -26,11 +26,11 @@ import { registerModelCatalog } from "./capabilities.js";
 import { catalogEffortList } from "./catalog-facts.js";
 import { discoverClineModelFacts } from "./cline-model-catalog.js";
 import { readBodyCapped } from "./wire/response-errors.js";
+import { MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
 
 const baseUrl = CLINE_API_BASE_URL;
 const headers = CLINE_REQUEST_HEADERS;
 
-const CACHE_TTL_MS = 30 * 60 * 1000;
 const REFRESH_COOLDOWN_MS = 60 * 1000;
 const modelCatalogs = new Map<string, { entries: readonly unknown[]; nextFetchAt: number }>();
 const modelFetches = new Map<string, Promise<readonly unknown[]>>();
@@ -43,6 +43,8 @@ export function resetClineModelCache(): void {
   modelCatalogs.clear();
   modelFetches.clear();
 }
+
+onModelListInvalidated("cline", resetClineModelCache);
 
 function requireKey(auth: ProviderAuth): string {
   if (!auth.apiKey) {
@@ -230,7 +232,7 @@ async function clineCatalogEntries(auth: ProviderAuth): Promise<readonly unknown
       const entries = auth.apiKey
         ? await withClineCredential(auth, fetchClineModels)
         : await fetchClineModels();
-      const next = { entries, nextFetchAt: Date.now() + CACHE_TTL_MS };
+      const next = { entries, nextFetchAt: Date.now() + MODEL_LIST_TTL_MS };
       modelCatalogs.delete(key);
       modelCatalogs.set(modelCatalogKey(auth), next);
       while (modelCatalogs.size > 16) {

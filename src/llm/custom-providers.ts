@@ -118,10 +118,21 @@ function responsesConfig(
   };
 }
 
-export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
+const customModelCaches = new Map<string, ModelListCache<string[]>>();
+
+function customModelCache(id: string): ModelListCache<string[]> {
+  const existing = customModelCaches.get(id);
+  if (existing) return existing;
+  const created = modelListCache(id);
+  customModelCaches.set(id, created);
+  return created;
+}
+
+export function buildCustomProvider(
+  def: CustomProviderDef,
+  modelCache: ModelListCache<string[]> = customModelCache(def.id),
+): LlmProvider {
   const providerId = def.id as ProviderId;
-  const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-  const CACHE_TTL_MS = 30 * 60 * 1000;
   const keyless =
     def.profile?.authType === "none-keyless" ||
     def.profile?.authType === "custom-headers";
@@ -147,9 +158,8 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
     async listModels(auth: ProviderAuth): Promise<string[]> {
       const baseUrl = resolveBaseUrl(def, auth);
       const cacheKey = `${baseUrl}|${auth.apiKey ?? ""}`;
-      const now = Date.now();
-      const cached = modelCache.get(cacheKey);
-      if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+      const cached = modelCache.fresh(cacheKey);
+      if (cached) return cached;
       const signal = AbortSignal.timeout(15_000);
       const headers = def.api === "anthropic-messages"
         ? {
@@ -170,7 +180,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
               signal,
             ),
           );
-      if (models.length > 0) modelCache.set(cacheKey, { models, fetchedAt: now });
+      modelCache.store(models, cacheKey);
       return models;
     },
     async ping(auth: ProviderAuth): Promise<void> {
@@ -322,6 +332,7 @@ export async function getCustomProvider(id: string): Promise<LlmProvider | undef
 }
 
 import { getCustomProviders } from "../store/config.js";
+import { modelListCache, type ModelListCache } from "./model-list-cache.js";
 
 export function getCustomProviderSync(id: string): LlmProvider | undefined {
   const cached = providerCache.get(id);
@@ -339,7 +350,7 @@ export function invalidateCustomProviderCache(id?: string): void {
 }
 
 export function materializeCustomProvider(def: CustomProviderDef): LlmProvider {
-  return buildCustomProvider(def);
+  return buildCustomProvider(def, modelListCache(def.id, { detached: true }));
 }
 
 export function normalizeCustomProviderId(raw: string, existing: readonly string[]): string {

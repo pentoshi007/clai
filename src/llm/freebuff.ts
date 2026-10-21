@@ -21,6 +21,7 @@ import {
   freebuffUserAgent,
 } from "./freebuff-wire.js";
 import { currentSessionAffinity } from "./session-affinity.js";
+import { fallbackModelList } from "./model-list-cache.js";
 
 const CHAT_BASE_URL = `${FREEBUFF_API_BASE_URL}/api/v1`;
 const FALLBACK_CLIENT_ID = randomUUID();
@@ -180,7 +181,7 @@ export const freebuffProvider: LlmProvider = {
   envVar: "FREEBUFF_API_KEY",
   validateKey: (key: string) => isFreebuffToken(key.trim()),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    if (!auth.apiKey) return freebuffStaticModelIds();
+    if (!auth.apiKey) return fallbackModelList(freebuffStaticModelIds());
     return fetchFreebuffModelIds(requireKey(auth));
   },
   async ping(auth: ProviderAuth): Promise<void> {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copilotProvider } from "../src/llm/copilot.js";
+import { copilotFallbackModels, copilotProvider } from "../src/llm/copilot.js";
+import { isFallbackModelList, MODEL_LIST_TTL_MS } from "../src/llm/model-list-cache.js";
 import {
   invalidateCopilotApiToken,
   parseCopilotCredentialFile,
@@ -77,7 +78,7 @@ describe("Copilot provider", () => {
     );
   });
 
-  it("caches the model list for an hour", async () => {
+  it("caches the model list for two minutes", async () => {
     const fetchMock = installFetch();
     vi.stubGlobal("fetch", fetchMock);
     const time = baseTime + 5 * 60 * 60 * 1000;
@@ -86,10 +87,39 @@ describe("Copilot provider", () => {
     const firstCount = fetchMock.mock.calls.length;
     expect(firstCount).toBeGreaterThan(0);
 
-    vi.spyOn(Date, "now").mockReturnValue(time + 10_000);
+    vi.spyOn(Date, "now").mockReturnValue(time + MODEL_LIST_TTL_MS - 1_000);
     const result = await copilotProvider.listModels!({ apiKey: GITHUB_TOKEN });
     expect(result.length).toBeGreaterThan(0);
     expect(fetchMock.mock.calls.length).toBe(firstCount);
+
+    vi.spyOn(Date, "now").mockReturnValue(time + MODEL_LIST_TTL_MS + 1_000);
+    await copilotProvider.listModels!({ apiKey: GITHUB_TOKEN });
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(firstCount);
+  });
+
+  it("does not keep serving the shipped list after an empty catalog once the catalog returns", async () => {
+    let empty = true;
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes("/copilot_internal/v2/token")) return tokenExchangeResponse();
+      if (url.includes("/models")) {
+        return empty
+          ? new Response(JSON.stringify({ object: "list", data: [] }), { status: 200, headers: { "content-type": "application/json" } })
+          : catalogResponse();
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(baseTime + 7 * 60 * 60 * 1000);
+
+    const shipped = await copilotProvider.listModels!({ apiKey: GITHUB_TOKEN });
+    expect(isFallbackModelList(shipped)).toBe(true);
+    expect(shipped).toEqual([...copilotFallbackModels]);
+
+    empty = false;
+    const live = await copilotProvider.listModels!({ apiKey: GITHUB_TOKEN });
+    expect(isFallbackModelList(live)).toBe(false);
+    expect(live).toEqual(["claude-sonnet-4.5", "gpt-4o", "gpt-4o-mini"]);
   });
 
   it("ping verifies the credential via /models", async () => {

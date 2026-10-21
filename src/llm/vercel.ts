@@ -14,13 +14,13 @@ import {
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
 import type { StreamTerminalPolicy } from "./stream-terminal.js";
+import { fallbackModelList, modelListCache, onModelListInvalidated } from "./model-list-cache.js";
 
 const baseUrl = "https://ai-gateway.vercel.sh/v1";
 const VERCEL_STREAM_TERMINAL: StreamTerminalPolicy = {
   proofs: ["response-completed", "response-incomplete"],
   naturalEofAccepted: false,
 };
-const CACHE_TTL_MS = 30 * 60 * 1000;
 const NON_TEXT_MODEL =
   /embed|embedding|image-generation|imagen|dall-e|tts|whisper|video|moderation|rerank|transcrib/i;
 
@@ -109,15 +109,17 @@ export const VERCEL_RESPONSES_CONFIG: ResponsesDialectConfig = {
   },
 };
 
-let cachedModels: string[] | undefined;
-let cachedAt = 0;
+const modelCache = modelListCache("vercel");
 let catalogPending: Promise<string[]> | undefined;
 
 export function resetVercelGatewayCatalogCache(): void {
-  cachedModels = undefined;
-  cachedAt = 0;
+  modelCache.clear();
   catalogPending = undefined;
 }
+
+onModelListInvalidated("vercel", () => {
+  catalogPending = undefined;
+});
 
 async function fetchModels(apiKey?: string): Promise<string[]> {
   const response = await fetch(`${baseUrl}/models`, {
@@ -132,20 +134,19 @@ async function fetchModels(apiKey?: string): Promise<string[]> {
 }
 
 async function loadModels(apiKey?: string): Promise<string[]> {
-  const now = Date.now();
-  if (cachedModels && now - cachedAt < CACHE_TTL_MS) return cachedModels;
+  const cached = modelCache.fresh();
+  if (cached) return cached;
   if (catalogPending) return catalogPending;
   let pending: Promise<string[]>;
   pending = fetchModels(apiKey)
     .then((models) => {
       if (models.length > 0) {
-        cachedModels = models;
-        cachedAt = Date.now();
+        modelCache.store(models);
         return models;
       }
-      return cachedModels ?? vercelGatewayFallbackModels;
+      return modelCache.stale() ?? fallbackModelList(vercelGatewayFallbackModels);
     })
-    .catch(() => cachedModels ?? vercelGatewayFallbackModels)
+    .catch(() => modelCache.stale() ?? fallbackModelList(vercelGatewayFallbackModels))
     .finally(() => {
       if (catalogPending === pending) catalogPending = undefined;
     });

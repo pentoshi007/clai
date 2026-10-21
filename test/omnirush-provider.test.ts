@@ -182,6 +182,29 @@ describe("Omnirush provider", () => {
     expect(models).toContain("gpt-6-astra");
     expect(models).toContain("gpt-6-sol");
     expect(models).toContain("gpt-5.6-sol");
+    const { isFallbackModelList } = await import("../src/llm/model-list-cache.js");
+    expect(isFallbackModelList(models)).toBe(true);
+  });
+
+  it("serves the live catalog as soon as the gateway recovers instead of the cached shipped list", async () => {
+    let reachable = false;
+    const fetchMock = vi.fn(async () => {
+      if (!reachable) throw new Error("network down");
+      return catalogResponse();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { omnirushProvider } = await import("../src/llm/omnirush.js");
+    const { isFallbackModelList } = await import("../src/llm/model-list-cache.js");
+    const offline = await omnirushProvider.listModels!({ apiKey: "omnirush-access-1" });
+    expect(isFallbackModelList(offline)).toBe(true);
+
+    reachable = true;
+    const online = await omnirushProvider.listModels!({ apiKey: "omnirush-access-1" });
+    expect(isFallbackModelList(online)).toBe(false);
+    expect(online).toEqual(["gpt-6-astra", "gpt-6-sol"]);
+    expect(await omnirushProvider.listModels!({ apiKey: "omnirush-access-1" })).toBe(online);
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/models"))).toHaveLength(2);
   });
 
   it("streams through /responses with store:false and the omnirush user agent", async () => {

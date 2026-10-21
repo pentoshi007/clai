@@ -14,6 +14,7 @@ import {
   readJson,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://integrate.api.nvidia.com/v1";
 
@@ -50,8 +51,7 @@ export const nvidiaFallbackModels = [
   "sarvamai/sarvam-m",
 ];
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("nvidia");
 
 export function resetNvidiaModelCatalogCache(): void {
   modelCache.clear();
@@ -67,11 +67,10 @@ export const nvidiaProvider: LlmProvider = {
   envVar: "NVIDIA_API_KEY",
   validateKey: (key: string) => /^nvapi-[A-Za-z0-9_-]{16,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    if (!auth.apiKey) return nvidiaFallbackModels;
+    if (!auth.apiKey) return fallbackModelList(nvidiaFallbackModels);
     const cacheKey = createHash("sha256").update(auth.apiKey).digest("hex");
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+    const cached = modelCache.fresh(cacheKey);
+    if (cached) return cached;
     try {
       const response = await fetch(`${baseUrl}/models`, {
         headers: { authorization: `Bearer ${auth.apiKey}` },
@@ -79,12 +78,12 @@ export const nvidiaProvider: LlmProvider = {
       if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
       const models = ingestOpenAiModelCatalog("nvidia", await readJson<unknown>(response));
       if (models.length > 0) {
-        modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
+        modelCache.store(models, cacheKey);
         return models;
       }
-      return nvidiaFallbackModels;
+      return fallbackModelList(nvidiaFallbackModels);
     } catch {
-      return modelCache.get(cacheKey)?.models ?? nvidiaFallbackModels;
+      return modelCache.stale(cacheKey) ?? fallbackModelList(nvidiaFallbackModels);
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

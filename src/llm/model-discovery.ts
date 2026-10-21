@@ -8,6 +8,7 @@ import { getProviderKeys } from "../store/keys.js";
 import type { ProviderId } from "../types.js";
 import { ProviderError } from "./http.js";
 import { buildKeyAttemptPlan, isKeyRotatableError } from "./key-rotation.js";
+import { invalidateModelLists } from "./model-list-cache.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 import { isRetriableError, sleep } from "./routing/error-classification.js";
 import { authForSlot } from "./routing/provider-selection.js";
@@ -83,13 +84,21 @@ async function fetchModelRoutes(
   throw lastError;
 }
 
-export async function listProviderModels(provider: ProviderId): Promise<string[]> {
+export interface ListProviderModelsOptions {
+  readonly refresh?: boolean | undefined;
+}
+
+export async function listProviderModels(
+  provider: ProviderId,
+  options: ListProviderModelsOptions = {},
+): Promise<string[]> {
   const impl = getProvider(provider);
   const method = impl.listModels;
   if (!method) return [];
+  if (options.refresh) invalidateModelLists(provider);
   const routes = await discoveryRoutes(provider);
   const key = createHash("sha256").update(JSON.stringify([provider, routes])).digest("hex");
-  const pending = inFlight.get(key);
+  const pending = options.refresh ? undefined : inFlight.get(key);
   if (pending && pending.method === method) return pending.promise;
   const task = fetchModelRoutes(provider, routes, method.bind(impl));
   inFlight.set(key, { method, promise: task });

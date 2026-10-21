@@ -14,15 +14,21 @@ import { defaultModels, normalizeEndpointUrl } from "./provider.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 import { mistralModelCatalog } from "./wire/mistral-model-catalog.js";
 import { withModelCatalogFacts } from "./catalog-context.js";
+import { isModelListFresh, MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
 
 const DEFAULT_BASE_URL = "https://api.mistral.ai/v1";
-const CATALOG_TTL_MS = 30 * 60 * 1000;
+const REQUEST_CATALOG_TTL_MS = 30 * 60 * 1000;
 const MAX_CATALOG_ROUTES = 32;
 const catalogs = new Map<
   string,
-  { expiresAt: number; models: CatalogModel[] }
+  { fetchedAt: number; models: CatalogModel[] }
 >();
 const pendingCatalogs = new Map<string, Promise<CatalogModel[]>>();
+
+onModelListInvalidated("mistral", () => {
+  catalogs.clear();
+  pendingCatalogs.clear();
+});
 
 function credentials(auth: ProviderAuth): { apiKey: string; baseUrl: string } {
   if (!auth.apiKey) throw new Error("Mistral API key is required");
@@ -34,13 +40,16 @@ function credentials(auth: ProviderAuth): { apiKey: string; baseUrl: string } {
   };
 }
 
-async function loadCatalog(auth: ProviderAuth): Promise<CatalogModel[]> {
+async function loadCatalog(
+  auth: ProviderAuth,
+  maxAgeMs: number = REQUEST_CATALOG_TTL_MS,
+): Promise<CatalogModel[]> {
   const { apiKey, baseUrl } = credentials(auth);
   const key = createHash("sha256")
     .update(JSON.stringify([baseUrl, apiKey]))
     .digest("hex");
   const cached = catalogs.get(key);
-  if (cached && Date.now() < cached.expiresAt) {
+  if (cached && isModelListFresh(cached.fetchedAt, maxAgeMs)) {
     catalogs.delete(key);
     catalogs.set(key, cached);
     return cached.models;
@@ -53,7 +62,7 @@ async function loadCatalog(auth: ProviderAuth): Promise<CatalogModel[]> {
       signal: AbortSignal.timeout(15_000),
     });
     const models = mistralModelCatalog(await readJson<unknown>(response));
-    catalogs.set(key, { expiresAt: Date.now() + CATALOG_TTL_MS, models });
+    catalogs.set(key, { fetchedAt: Date.now(), models });
     while (catalogs.size > MAX_CATALOG_ROUTES)
       catalogs.delete(catalogs.keys().next().value!);
     return models;
@@ -124,7 +133,7 @@ export const mistralProvider: LlmProvider = {
   reasoningStyle: "openai",
   validateKey: (key) => /^[A-Za-z0-9_-]{16,}$/.test(key),
   async listModels(auth) {
-    const models = await loadCatalog(auth);
+    const models = await loadCatalog(auth, MODEL_LIST_TTL_MS);
     registerModelCatalog("mistral", models);
     return models.map((model) => model.id);
   },

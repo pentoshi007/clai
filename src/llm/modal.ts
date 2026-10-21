@@ -19,6 +19,7 @@ import {
   readJson,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { modelListCache } from "./model-list-cache.js";
 
 /**
  * Modal Endpoints (https://modal.com/docs/guide/endpoints) serve the OpenAI
@@ -118,8 +119,7 @@ function modalHeaders(token: ModalToken): Record<string, string> {
   };
 }
 
-let cachedModels: { baseUrl: string; models: string[]; fetchedAt: number } | undefined;
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const modelCache = modelListCache("modal");
 
 export const modalProvider: LlmProvider = {
   id: "modal",
@@ -132,23 +132,15 @@ export const modalProvider: LlmProvider = {
     const token = parseModalToken(auth.apiKey);
     const baseUrl = normalizeEndpointUrl(auth.baseUrl ?? "");
     if (!token || !baseUrl) return [];
-    const now = Date.now();
-    if (
-      cachedModels &&
-      cachedModels.baseUrl === baseUrl &&
-      now - cachedModels.fetchedAt < CACHE_TTL_MS
-    ) {
-      return cachedModels.models;
-    }
+    const cached = modelCache.fresh(baseUrl);
+    if (cached) return cached;
     try {
       const response = await fetch(`${baseUrl}/models`, {
         headers: modalHeaders(token),
       });
       const data = await readJson<{ data?: Array<{ id: string }> }>(response);
       const models = ingestOpenAiModelCatalog("modal", data);
-      if (models.length > 0) {
-        cachedModels = { baseUrl, models, fetchedAt: now };
-      }
+      modelCache.store(models, baseUrl);
       return models;
     } catch {
       return [];

@@ -17,6 +17,7 @@ import {
   enrichOrcaRouterModelEntries,
   resetOrcaRouterModelMetadataCache,
 } from "./wire/orcarouter-model-catalog.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://api.orcarouter.ai/v1";
 
@@ -71,13 +72,10 @@ function chatModelsFromCatalog(payload: unknown): unknown[] {
   });
 }
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("orcarouter");
 
 export function resetOrcaRouterModelCatalogCache(): void {
-  cachedModels = null;
-  lastFetchTime = 0;
+  modelCache.clear();
   resetOrcaRouterModelMetadataCache();
 }
 
@@ -89,10 +87,8 @@ export const orcarouterProvider: LlmProvider = {
   envVar: "ORCAROUTER_API_KEY",
   validateKey: (key: string) => /^sk-[A-Za-z0-9_-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     try {
       const reqHeaders: Record<string, string> = {};
       if (auth.apiKey) reqHeaders["authorization"] = `Bearer ${auth.apiKey}`;
@@ -104,13 +100,12 @@ export const orcarouterProvider: LlmProvider = {
       const entries = await enrichOrcaRouterModelEntries(chatModelsFromCatalog(data));
       const models = ingestOpenAiModelCatalog("orcarouter", entries);
       if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
+        modelCache.store(models);
         return models;
       }
-      return cachedModels ?? orcarouterFallbackModels;
+      return modelCache.stale() ?? fallbackModelList(orcarouterFallbackModels);
     } catch {
-      return cachedModels ?? orcarouterFallbackModels;
+      return modelCache.stale() ?? fallbackModelList(orcarouterFallbackModels);
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {
