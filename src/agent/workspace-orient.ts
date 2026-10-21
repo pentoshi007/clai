@@ -205,12 +205,40 @@ export function snapshotDir(path: string, maxNames = 36): DirSnapshot {
   };
 }
 
-function formatSnapshot(label: string, snap: DirSnapshot): string {
+export type WorkIntent = "new" | "existing" | "unspecified";
+
+const EXISTING_WORK_REFERENCE_RE =
+  /\b(?:existing|(?:this|that|the\s+same)\s+(?:project|app|application|repo|repository|codebase|site|website|script|report|code|work))\b|\b(?:make|get)\s+(?:it|this|that)\b/i;
+
+const EXISTING_WORK_VERB_RE =
+  /\b(?:fix|debug|continue|resume|update|modify|edit|improve|refactor|extend|enhance|upgrade|migrate|repair|finish|polish|review|add|change|rename|remove|delete|optimi[sz]e|convert|port|deploy|run|test)\b/i;
+
+const NEW_WORK_RE =
+  /\b(?:create|build|make|scaffold|generate|bootstrap|init|initiali[sz]e|set\s*up|develop|write|design|spin\s+up|new|fresh|from\s+scratch)\b/i;
+
+export function classifyWorkIntent(text: string): WorkIntent {
+  if (EXISTING_WORK_REFERENCE_RE.test(text)) return "existing";
+  const existingAt = text.search(EXISTING_WORK_VERB_RE);
+  const newAt = text.search(NEW_WORK_RE);
+  if (newAt < 0) return existingAt < 0 ? "unspecified" : "existing";
+  return existingAt < 0 || newAt < existingAt ? "new" : "existing";
+}
+
+const UNTARGETED_WORK_STATUS =
+  "EXISTING WORK — not the target of this new request; leave it untouched and create the new work in a separate, non-colliding folder";
+
+function formatSnapshot(
+  label: string,
+  snap: DirSnapshot,
+  untargeted = false,
+): string {
   if (!snap.exists) {
     return `- ${label}: ${snap.path}\n  status: DOES NOT EXIST (safe to create as new project path)`;
   }
   if (!snap.isDir) {
-    return `- ${label}: ${snap.path}\n  status: exists but is a FILE, not a directory`;
+    return untargeted
+      ? `- ${label}: ${snap.path}\n  status: existing FILE — not the target of this new request; do not overwrite it`
+      : `- ${label}: ${snap.path}\n  status: exists but is a FILE, not a directory`;
   }
   const markerLine =
     snap.markers.length > 0
@@ -223,7 +251,9 @@ function formatSnapshot(label: string, snap: DirSnapshot): string {
           ? `, … (+${snap.entryCount - snap.entries.length} more)`
           : "")
       : "(empty)";
-  const kind = snap.isProject
+  const kind = untargeted && !snap.emptyOrMissing
+    ? UNTARGETED_WORK_STATUS
+    : snap.isProject
     ? "EXISTING PROJECT — do NOT re-scaffold into this directory; continue / implement inside it"
     : snap.emptyOrMissing
       ? "empty or only junk files — OK for a new scaffold into a subfolder here"
@@ -245,7 +275,9 @@ export interface WorkspaceOrientationInput {
   cwd?: string;
   destinationHint?: string;
   candidateProject?: string;
+  namesakePath?: string;
   extraPaths?: string[];
+  intent?: WorkIntent;
 }
 
 export function guessProjectFolderName(text: string): string | undefined {
@@ -295,25 +327,25 @@ export function buildWorkspaceOrientation(
   input: WorkspaceOrientationInput,
 ): string {
   const cwd = resolve(input.cwd?.trim() || safeCwd());
-  const paths = new Map<string, string>();
+  const newWork = input.intent === "new";
+  const paths = new Map<string, { label: string; untargeted: boolean }>();
+  const addPath = (raw: string | undefined, label: string, untargeted = false) => {
+    if (!raw?.trim()) return;
+    const path = resolve(raw.trim());
+    if (!paths.has(path)) paths.set(path, { label, untargeted });
+  };
 
-  paths.set(cwd, "agent process cwd (NOT necessarily the user project)");
-
-  if (input.destinationHint?.trim()) {
-    const d = resolve(input.destinationHint.trim());
-    if (!paths.has(d)) paths.set(d, "user destination (from prompt)");
-  }
-
-  if (input.candidateProject?.trim()) {
-    const c = resolve(input.candidateProject.trim());
-    if (!paths.has(c)) paths.set(c, "candidate project path (from plan/prompt)");
-  }
-
-  for (const extra of input.extraPaths ?? []) {
-    if (!extra?.trim()) continue;
-    const p = resolve(extra.trim());
-    if (!paths.has(p)) paths.set(p, "related path");
-  }
+  addPath(cwd, "agent process cwd (NOT necessarily the user project)");
+  addPath(input.destinationHint, "user destination (from prompt)");
+  addPath(input.candidateProject, "candidate project path (from plan/prompt)");
+  addPath(
+    input.namesakePath,
+    newWork
+      ? "existing path with the requested name"
+      : "candidate project path (from requested name)",
+    newWork,
+  );
+  for (const extra of input.extraPaths ?? []) addPath(extra, "related path");
 
   const dest = input.destinationHint?.trim()
     ? resolve(input.destinationHint.trim())
@@ -322,35 +354,70 @@ export function buildWorkspaceOrientation(
     dest ?? (isBareParentDirectory(cwd) ? cwd : undefined);
   if (discoveryParent) {
     for (const project of discoverImmediateProjectRoots(discoveryParent)) {
-      if (!paths.has(project)) {
-        paths.set(project, "discovered existing project under destination");
-      }
+      addPath(project, "discovered existing project under destination", newWork);
     }
     for (const guess of ["todo-app", "app", "my-app", "project"]) {
       const p = join(discoveryParent, guess);
-      if (!paths.has(p) && existsSync(p)) {
-        paths.set(p, `existing subfolder under destination ("${guess}")`);
+      if (existsSync(p)) {
+        addPath(p, `existing subfolder under destination ("${guess}")`, newWork);
       }
     }
   }
 
   const lines = [
     "WORKSPACE STATUS (runtime pre-check — treat as EXPLORE step 1; still inspect deeper directories with fs.read as needed):",
+    ...intentLines(input.intent),
+    `Process cwd role: ${describeCwdRole(cwd)}`,
     "Rules derived from this snapshot:",
-    "1. Process cwd may be the agent package tree — never write user app source there unless the user asked to modify this agent.",
-    "2. If a target project path ALREADY EXISTS with project markers, CONTINUE that project (edit feature files). Do NOT re-run a scaffolder into it (scaffolders cancel on non-empty dirs).",
-    "3. If creating new, scaffold into a NEW empty subfolder under the destination (not into a non-empty dir).",
-    "4. Prefer absolute paths under the real project root for all fs/shell work.",
-    "5. If you choose plan.create, its detail must distinguish what already exists from what you will create.",
+    "1. Deliverables (projects, source, scripts, reports, docs the user keeps) go where the user said; otherwise into the cwd when it is the task folder; otherwise into a new, well-named folder under the destination or cwd. Session scratch holds only disposable intermediates, never deliverables.",
+    "2. Process cwd may be the agent package tree — never write user app source there unless the user asked to modify this agent.",
+    "3. A request for NEW work never adopts an existing folder or file just because its name is the same or related: leave it untouched and choose a non-colliding name, unless the user explicitly points at it or the cwd is inside it.",
+    "4. If the task targets a project that ALREADY EXISTS with project markers, CONTINUE that project (edit feature files). Do NOT re-run a scaffolder into it (scaffolders cancel on non-empty dirs).",
+    "5. If creating new, scaffold into a NEW empty subfolder under the destination (not into a non-empty dir).",
+    "6. Prefer absolute paths under the real project root for all fs/shell work.",
+    "7. If you choose plan.create, its detail must distinguish what already exists from what you will create.",
     "",
   ];
 
-  for (const [path, label] of paths) {
-    lines.push(formatSnapshot(label, snapshotDir(path)));
+  for (const [path, { label, untargeted }] of paths) {
+    lines.push(formatSnapshot(label, snapshotDir(path), untargeted));
     lines.push("");
   }
 
   return lines.join("\n").trimEnd();
+}
+
+function intentLines(intent: WorkIntent | undefined): string[] {
+  if (intent === "new") {
+    return [
+      "Request intent: NEW work. Existing folders/files with the same or a related name are someone else's finished work, not this task's target.",
+    ];
+  }
+  if (intent === "existing") {
+    return [
+      "Request intent: work on EXISTING code or files. Locate the exact target the user means before editing.",
+    ];
+  }
+  return [];
+}
+
+const METADATA_ONLY_ENTRIES = new Set([".clai", ".DS_Store", "Thumbs.db"]);
+
+function describeCwdRole(cwd: string): string {
+  if (isBareParentDirectory(cwd)) {
+    return "general parent folder — give new work its own named subfolder; never scatter files directly into it.";
+  }
+  const snap = snapshotDir(cwd);
+  const holdsOnlyMetadata =
+    snap.entryCount === snap.entries.length &&
+    snap.entries.every((name) => METADATA_ONLY_ENTRIES.has(name));
+  if (snap.isDir && holdsOnlyMetadata) {
+    return "empty folder — it is the task folder; build directly here unless the user named another destination.";
+  }
+  if (snap.isProject) {
+    return "inside existing work — work here when the request concerns it; put unrelated new work in a separate folder.";
+  }
+  return "non-empty folder without project markers — decide from the request whether it is the task folder before writing.";
 }
 
 export function extractScaffoldTargetName(command: string): string | undefined {

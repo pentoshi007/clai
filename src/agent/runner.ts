@@ -408,11 +408,12 @@ export async function runAgentTurn(
     }
     suppressOutcomeDiagnostics ||= !session.planApproved.value;
 
-    const { destinationHint, instructionScanInput } = orientTurnWorkspace({
-      prompt,
-      plan: activePlan,
-      cwd: safeCwd(),
-    });
+    const { destinationHint, workIntent, instructionScanInput } =
+      orientTurnWorkspace({
+        prompt,
+        plan: activePlan,
+        cwd: safeCwd(),
+      });
     const turnInstructions = await loadTurnInstructions({
       prompt,
       scanInput: instructionScanInput,
@@ -438,6 +439,7 @@ export async function runAgentTurn(
         sessionId: session.sessionId,
         projectContext,
         destinationHint,
+        workIntent,
         isPlanMode,
         executionRulesInSystem: buildStableSystemContent(nativeToolsActive).includes(
           "Professional execution method — applies to every domain",
@@ -659,6 +661,7 @@ export async function runAgentTurn(
       imageOcrEnabled,
       narrowNmapOperation,
       destinationHint,
+      workIntent,
       scratchDir: scratchDirFor(safeCwd()),
       loopGuard,
       mcpRuntime,

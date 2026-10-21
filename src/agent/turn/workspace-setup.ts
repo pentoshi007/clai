@@ -1,9 +1,11 @@
 import { join } from "node:path";
 import type { SessionPlan } from "../../store/plan.js";
 import {
+  classifyWorkIntent,
   discoverImmediateProjectRoots,
   guessProjectFolderName,
   isBareParentDirectory,
+  type WorkIntent,
 } from "../workspace-orient.js";
 import { resolveUserDestinationHint } from "../task-evidence.js";
 import {
@@ -21,56 +23,81 @@ import type { LoadedSkill } from "../../skills/types.js";
 
 export interface TurnOrientation {
   readonly destinationHint: string | undefined;
+  readonly workIntent: WorkIntent;
   readonly instructionScanInput: { cwd: string; projectRoot?: string };
 }
 
-export const orientTurnWorkspace = (input: {
+export const resolveTurnWorkIntent = (
+  prompt: string,
+  plan: SessionPlan | undefined,
+): WorkIntent => {
+  const fromPrompt = classifyWorkIntent(prompt);
+  if (fromPrompt !== "unspecified" || !plan?.goal) return fromPrompt;
+  return classifyWorkIntent(plan.goal);
+};
+
+interface TurnOrientationInput {
   readonly prompt: string;
   readonly plan: SessionPlan | undefined;
   readonly cwd: string;
-}): TurnOrientation => {
-  const destinationHint = resolveUserDestinationHint(input.prompt);
-  const orientationSourceText = [
-    input.prompt,
-    input.plan?.goal,
-    input.plan?.detail,
-    input.plan?.tasks.map((task) => task.title).join(" "),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const fromPlan = extractProjectRootFromPlan(input.plan);
-  const fromPrompt = extractProjectRootFromText(input.prompt);
-  const guessedName = guessProjectFolderName(orientationSourceText);
-  const orientationParent =
-    destinationHint ??
-    (isBareParentDirectory(input.cwd) ? input.cwd : undefined);
-  const guessedProject =
-    orientationParent && guessedName
-      ? join(orientationParent, guessedName)
-      : undefined;
+}
 
-  let pinnedProject = false;
-  for (const candidate of [fromPlan, fromPrompt, guessedProject]) {
-    if (setActiveProjectRootIfValid(candidate)) {
-      pinnedProject = true;
-      break;
-    }
-  }
-  if (!pinnedProject) {
-    const discovered = orientationParent
-      ? discoverImmediateProjectRoots(orientationParent)
-      : [];
-    if (discovered.length === 1) setActiveProjectRootIfValid(discovered[0]);
+export const orientTurnWorkspace = (
+  input: TurnOrientationInput,
+): TurnOrientation => {
+  const destinationHint = resolveUserDestinationHint(input.prompt);
+  const workIntent = resolveTurnWorkIntent(input.prompt, input.plan);
+  const explicitRoots = [
+    extractProjectRootFromPlan(input.plan),
+    extractProjectRootFromText(input.prompt),
+  ];
+  const pinnedExplicitly = pinFirstValidRoot(explicitRoots);
+  if (!pinnedExplicitly && workIntent !== "new") {
+    pinInferredProject(input, destinationHint);
   }
 
   const projectRoot = getActiveProjectRoot();
   return {
     destinationHint,
+    workIntent,
     instructionScanInput: {
       cwd: input.cwd,
       ...(projectRoot ? { projectRoot } : {}),
     },
   };
+};
+
+const pinFirstValidRoot = (candidates: readonly (string | undefined)[]): boolean => {
+  for (const candidate of candidates) {
+    if (setActiveProjectRootIfValid(candidate)) return true;
+  }
+  return false;
+};
+
+const pinInferredProject = (
+  input: TurnOrientationInput,
+  destinationHint: string | undefined,
+): void => {
+  const orientationParent =
+    destinationHint ??
+    (isBareParentDirectory(input.cwd) ? input.cwd : undefined);
+  if (!orientationParent) return;
+  const guessedName = guessProjectFolderName(
+    [
+      input.prompt,
+      input.plan?.goal,
+      input.plan?.detail,
+      input.plan?.tasks.map((task) => task.title).join(" "),
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  const guessedProject = guessedName
+    ? join(orientationParent, guessedName)
+    : undefined;
+  if (pinFirstValidRoot([guessedProject])) return;
+  const discovered = discoverImmediateProjectRoots(orientationParent);
+  if (discovered.length === 1) setActiveProjectRootIfValid(discovered[0]);
 };
 
 export interface TurnInstructions {

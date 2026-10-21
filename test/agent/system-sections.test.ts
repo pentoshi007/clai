@@ -28,6 +28,7 @@ const input = (
   sessionId: "session-1",
   projectContext: undefined,
   destinationHint: undefined,
+  workIntent: "unspecified",
   isPlanMode: false,
   buildLikeTurn: false,
   informationalQuery: true,
@@ -81,6 +82,28 @@ describe("system sections", () => {
     expect(
       withHint.sections.find((s) => s.startsWith("USER DESTINATION:")),
     ).toContain('"/hint" (parent folder)');
+  });
+
+  it("directs new work into its own folder under the destination", async () => {
+    const { sections } = await buildSystemSections(
+      input({ destinationHint: "/hint", workIntent: "new" }),
+    );
+    expect(sections.find((s) => s.startsWith("USER DESTINATION:"))).toBe(
+      'USER DESTINATION: create the new work in its own new folder under "/hint" (parent folder). Pick or detect a project subfolder; do not scaffold into the agent working tree unless the user asked for that.',
+    );
+  });
+
+  it("carries the request intent into the workspace status", async () => {
+    const { sections } = await buildSystemSections(
+      input({
+        buildLikeTurn: true,
+        informationalQuery: false,
+        workIntent: "new",
+      }),
+    );
+    expect(
+      sections.find((s) => s.startsWith("WORKSPACE STATUS")),
+    ).toContain("Request intent: NEW work");
   });
 
   it("suppresses workspace, continuation, and analysis blocks for informational turns", async () => {
