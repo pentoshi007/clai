@@ -13,6 +13,7 @@ import {
   readJson,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { modelListCache } from "./model-list-cache.js";
 
 export const LIGHTNING_DEFAULT_BASE_URL = "https://lightning.ai/api/v1";
 
@@ -21,8 +22,7 @@ function resolveBaseUrl(auth: ProviderAuth): string {
   return override || LIGHTNING_DEFAULT_BASE_URL;
 }
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("lightning");
 
 export const lightningProvider: LlmProvider = {
   id: "lightning",
@@ -33,20 +33,15 @@ export const lightningProvider: LlmProvider = {
   validateKey: (key: string) => /^[A-Za-z0-9_.-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const baseUrl = resolveBaseUrl(auth);
-    const now = Date.now();
-    const cached = modelCache.get(baseUrl);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-      return cached.models;
-    }
+    const cached = modelCache.fresh(baseUrl);
+    if (cached) return cached;
     try {
       const headers: Record<string, string> = {};
       if (auth.apiKey) headers["authorization"] = `Bearer ${auth.apiKey}`;
       const response = await fetch(`${baseUrl}/models`, { headers });
       const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
       const models = ingestOpenAiModelCatalog("lightning", data);
-      if (models.length > 0) {
-        modelCache.set(baseUrl, { models, fetchedAt: now });
-      }
+      modelCache.store(models, baseUrl);
       return models;
     } catch {
       return [];

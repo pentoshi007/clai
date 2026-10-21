@@ -14,6 +14,7 @@ import {
   readJson,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { modelListCache } from "./model-list-cache.js";
 
 export const TOKENROUTER_DEFAULT_BASE_URL = "https://api.tokenrouter.com/v1";
 
@@ -22,8 +23,7 @@ function resolveBaseUrl(auth: ProviderAuth): string {
   return override || TOKENROUTER_DEFAULT_BASE_URL;
 }
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("tokenrouter");
 
 const CHAT_ENDPOINT_TYPES = new Set([
   "openai",
@@ -75,11 +75,9 @@ export const tokenrouterProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const baseUrl = resolveBaseUrl(auth);
     const cacheKey = `${baseUrl}|${auth.apiKey ?? ""}`;
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-      return cached.models;
-    }
+    const fresh = modelCache.fresh(cacheKey);
+    if (fresh) return fresh;
+    const previous = modelCache.stale(cacheKey);
     try {
       const headers: Record<string, string> = {};
       if (auth.apiKey) headers["authorization"] = `Bearer ${auth.apiKey}`;
@@ -91,13 +89,10 @@ export const tokenrouterProvider: LlmProvider = {
         "tokenrouter",
         chatCapableCatalog(data),
       );
-      if (models.length > 0) {
-        modelCache.set(cacheKey, { models, fetchedAt: now });
-        return models;
-      }
-      return cached?.models ?? models;
+      modelCache.store(models, cacheKey);
+      return models.length > 0 ? models : previous ?? models;
     } catch (err) {
-      if (cached?.models && cached.models.length > 0) return cached.models;
+      if (previous) return previous;
       throw err;
     }
   },

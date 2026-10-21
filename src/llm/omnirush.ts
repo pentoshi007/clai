@@ -20,6 +20,7 @@ import {
 import { cacheAffinityKey, sessionCacheAffinityKey } from "./cache-affinity.js";
 import { currentSessionAffinity } from "./session-affinity.js";
 import { getProviderKeys, replaceProviderKey } from "../store/keys.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 export const omnirushFallbackModels: readonly string[] = [
   "gpt-6-astra",
@@ -31,13 +32,10 @@ export const omnirushFallbackModels: readonly string[] = [
   "muse-spark-1.2-contributor",
 ];
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("omnirush");
 
 export function resetOmnirushModelCache(): void {
-  cachedModels = null;
-  lastFetchTime = 0;
+  modelCache.clear();
 }
 
 function requireKey(auth: ProviderAuth): string {
@@ -233,8 +231,8 @@ export const omnirushProvider: LlmProvider = {
   envVar: "OMNIRUSH_API_KEY",
   validateKey: (key: string) => key.trim().length >= 16,
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     const baseUrl = gatewayBase(auth);
     let models: string[] = [];
     try {
@@ -244,12 +242,9 @@ export const omnirushProvider: LlmProvider = {
     } catch {
       models = [];
     }
-    const result = models.length > 0 ? models : [...omnirushFallbackModels];
-    if (result.length > 0) {
-      cachedModels = result;
-      lastFetchTime = now;
-    }
-    return result;
+    if (models.length === 0) return fallbackModelList(omnirushFallbackModels);
+    modelCache.store(models);
+    return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {
     const baseUrl = gatewayBase(auth);

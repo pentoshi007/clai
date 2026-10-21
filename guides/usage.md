@@ -36,7 +36,7 @@ clai can assist with reconnaissance, enumeration, scoped testing, and reporting 
 
 ## Models, rotation, and usage
 
-- `/provider` selects a provider; `/model` selects its model; `/models` browses models across providers.
+- `/provider` selects a provider; `/model` selects its model; `/models` browses models across providers. A fetched model list is reused for two minutes. `/model refresh` and `/models refresh` fetch it again right away, and a list that could not be fetched is never reused: when a provider is unreachable clai shows its built-in list marked as not live, and the next `/model` tries the provider again.
 - `/set` manages up to 10 credentials per provider, including disabled keys and the active key. Applicable authentication, quota, rate-limit, and server failures can trigger rotation.
 - `/fallback on` enables cross-provider fallback; it is off by default. `/freeonly on` filters fallback using clai's provider categories. Check the selected model and account's billing terms when controlling spending.
 - `/effort` configures reasoning where supported. Qoder uses the selected effort, including `xhigh`, and displays thinking when returned by the model.

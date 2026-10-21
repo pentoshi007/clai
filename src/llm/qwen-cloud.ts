@@ -14,10 +14,10 @@ import {
   ingestModelCatalogEntries,
 } from "./http.js";
 import { fetchDashScopeModelCatalog } from "./wire/dashscope-model-catalog.js";
+import { modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("qwen-cloud");
 
 function modelId(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -61,9 +61,8 @@ export const qwenCloudProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
     const cacheKey = createHash("sha256").update(auth.apiKey).digest("hex");
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+    const cached = modelCache.fresh(cacheKey);
+    if (cached) return cached;
     const response = await fetch(`${baseUrl}/models`, {
       headers: { authorization: `Bearer ${auth.apiKey}` },
     });
@@ -78,9 +77,7 @@ export const qwenCloudProvider: LlmProvider = {
       "qwen-cloud",
       mergeModelMetadata(listedModels, metadata),
     );
-    if (models.length > 0) {
-      modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
-    }
+    modelCache.store(models, cacheKey);
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {

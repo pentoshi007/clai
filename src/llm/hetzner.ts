@@ -12,6 +12,7 @@ import {
   readJson,
   toCompletionResult,
 } from "./http.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://inference.hetzner.com/api/v1";
 
@@ -20,9 +21,7 @@ export const hetznerFallbackModels = [
   "Qwen/Qwen3.6-35B-A3B",
 ];
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("hetzner");
 
 export const hetznerProvider: LlmProvider = {
   id: "hetzner",
@@ -32,9 +31,9 @@ export const hetznerProvider: LlmProvider = {
   envVar: "HETZNER_API_KEY",
   validateKey: (key: string) => key.trim().length >= 8,
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    if (!auth.apiKey) return hetznerFallbackModels;
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
+    if (!auth.apiKey) return fallbackModelList(hetznerFallbackModels);
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     try {
       const response = await fetch(`${baseUrl}/models`, {
         headers: { authorization: `Bearer ${auth.apiKey}` },
@@ -43,13 +42,12 @@ export const hetznerProvider: LlmProvider = {
       const data = await readJson<{ data?: Array<{ id: string }> }>(response);
       const models = ingestOpenAiModelCatalog("hetzner", data);
       if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
+        modelCache.store(models);
         return models;
       }
-      return hetznerFallbackModels;
+      return fallbackModelList(hetznerFallbackModels);
     } catch {
-      return hetznerFallbackModels;
+      return fallbackModelList(hetznerFallbackModels);
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

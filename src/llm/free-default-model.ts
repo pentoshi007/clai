@@ -1,8 +1,8 @@
 import { defaultModels } from "./provider.js";
 import { freeProvider } from "./free.js";
+import { isFallbackModelList, isModelListFresh, onModelListInvalidated } from "./model-list-cache.js";
 
 const CATALOG_TIMEOUT_MS = 2_500;
-const DEFAULT_PICK_TTL_MS = 30 * 60 * 1000;
 
 export interface FreeDefaultModelDeps {
   readonly listModels?: (() => Promise<string[]>) | undefined;
@@ -45,13 +45,15 @@ export function resetFreeDefaultModelCache(): void {
   cachedPick = undefined;
 }
 
+onModelListInvalidated("free", resetFreeDefaultModelCache);
+
 export async function resolveFreeDefaultModel(
   deps: FreeDefaultModelDeps = {},
 ): Promise<string> {
   if (
     cachedPick !== undefined &&
     deps.listModels === undefined &&
-    Date.now() - cachedPick.pickedAt < DEFAULT_PICK_TTL_MS
+    isModelListFresh(cachedPick.pickedAt)
   ) {
     return cachedPick.value;
   }
@@ -63,7 +65,8 @@ export async function resolveFreeDefaultModel(
     deps.timeoutMs ?? CATALOG_TIMEOUT_MS,
   );
   const picked = pickFreeModel(catalog ?? []);
-  if (deps.listModels === undefined) {
+  const live = catalog !== undefined && catalog.length > 0 && !isFallbackModelList(catalog);
+  if (deps.listModels === undefined && live) {
     cachedPick = { value: picked, pickedAt: Date.now() };
   }
   return picked;

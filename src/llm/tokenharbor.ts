@@ -17,6 +17,7 @@ import {
 } from "./http.js";
 import { catalogEntriesFromPayload } from "./catalog-facts.js";
 import { tokenHarborBreakpointMode } from "./tokenharbor-cache.js";
+import { modelListCache } from "./model-list-cache.js";
 
 export const TOKENHARBOR_DEFAULT_BASE_URL = "https://tokenharbor.ai/v1";
 export const TOKENHARBOR_CACHE_CONTROL_HEADER = "X-TH-Cache-Control";
@@ -25,11 +26,10 @@ const GATEWAY_HEADERS: Readonly<Record<string, string>> = {
   [TOKENHARBOR_CACHE_CONTROL_HEADER]: "bypass",
 };
 
-const CATALOG_TTL_MS = 30 * 60 * 1000;
 const NON_CHAT_MODEL_ID =
   /embed|(?:^|[-/.])image(?:[-/.]|$)|imagen|dall-e|(?:^|[-/])tts(?:[-/]|$)|whisper|transcribe|moderation|rerank|(?:^|[-/])video(?:[-/]|$)/i;
 
-const catalogCache = new Map<string, { models: string[]; fetchedAt: number }>();
+const catalogCache = modelListCache("tokenharbor");
 
 export function resetTokenHarborModelCache(): void {
   catalogCache.clear();
@@ -141,9 +141,9 @@ export const tokenharborProvider: LlmProvider = {
     const apiKey = requireKey(auth);
     const baseUrl = resolveBaseUrl(auth);
     const cacheKey = catalogCacheKey(baseUrl, apiKey);
-    const now = Date.now();
-    const cached = catalogCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CATALOG_TTL_MS) return cached.models;
+    const fresh = catalogCache.fresh(cacheKey);
+    if (fresh) return fresh;
+    const previous = catalogCache.stale(cacheKey);
     try {
       const response = await fetch(`${baseUrl}/models`, {
         headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
@@ -153,13 +153,10 @@ export const tokenharborProvider: LlmProvider = {
         "tokenharbor",
         chatCapableCatalog(payload),
       );
-      if (models.length > 0) {
-        catalogCache.set(cacheKey, { models, fetchedAt: now });
-        return models;
-      }
-      return cached?.models ?? models;
+      catalogCache.store(models, cacheKey);
+      return models.length > 0 ? models : previous ?? models;
     } catch (error) {
-      if (cached && cached.models.length > 0) return cached.models;
+      if (previous) return previous;
       throw error;
     }
   },

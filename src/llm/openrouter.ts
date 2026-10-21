@@ -12,6 +12,7 @@ import {
   readJson,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://openrouter.ai/api/v1";
 const headers = {
@@ -19,9 +20,7 @@ const headers = {
   "X-Title": "clai",
 };
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("openrouter");
 
 export const openrouterProvider: LlmProvider = {
   id: "openrouter",
@@ -31,10 +30,8 @@ export const openrouterProvider: LlmProvider = {
   envVar: "OPENROUTER_API_KEY",
   validateKey: (key: string) => /^(sk-or-|or-)[A-Za-z0-9_-]{12,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     const reqHeaders: Record<string, string> = { ...headers };
     if (auth.apiKey) {
       reqHeaders["authorization"] = `Bearer ${auth.apiKey}`;
@@ -44,10 +41,7 @@ export const openrouterProvider: LlmProvider = {
     });
     const data = await readJson<{ data?: Array<{ id: string }> }>(response);
     const models = ingestOpenAiModelCatalog("openrouter", data);
-    if (models.length > 0) {
-      cachedModels = models;
-      lastFetchTime = now;
-    }
+    modelCache.store(models);
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {

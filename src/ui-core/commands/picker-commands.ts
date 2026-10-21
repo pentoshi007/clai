@@ -1,6 +1,7 @@
 
 import { getProvider } from "../../llm/router.js";
 import { listProviderModels } from "../../llm/model-discovery.js";
+import { isFallbackModelList } from "../../llm/model-list-cache.js";
 import { defaultModels, normalizeEndpointUrl, redactSecrets } from "../../llm/provider.js";
 import { assertProvider } from "../../llm/provider.js";
 import { providerIds, type ProviderId } from "../../types.js";
@@ -22,17 +23,28 @@ export { handleReasoning, handleSearch } from "./pickers/search-reasoning.js";
 export { handleOutput, handlePermissions, handlePlanPager } from "./pickers/output-pager.js";
 export { handleHistory } from "./pickers/history.js";
 
+const FALLBACK_LIST_ERROR = "the provider did not return a live list";
+const REFRESH_ARGUMENT = "refresh";
+
 export async function resolveModelsForProvider(
   provider: ProviderId,
   currentModel?: string | undefined,
+  options: { readonly refresh?: boolean | undefined } = {},
 ): Promise<{ models: string[]; source: "live" | "known"; error?: string }> {
   const providerImpl = getProvider(provider);
   let models: string[] = [];
+  let builtIn: string[] = [];
   let error: string | undefined;
 
   if (providerImpl.listModels) {
     try {
-      models = await listProviderModels(provider);
+      const listed = await listProviderModels(provider, { refresh: options.refresh });
+      if (isFallbackModelList(listed)) {
+        builtIn = listed;
+        error = FALLBACK_LIST_ERROR;
+      } else {
+        models = listed;
+      }
     } catch (err) {
       error = redactSecrets(err instanceof Error ? err.message : String(err));
     }
@@ -40,7 +52,7 @@ export async function resolveModelsForProvider(
 
   let source: "live" | "known" = "live";
   if (models.length === 0) {
-    models = getKnownModels(provider);
+    models = builtIn.length > 0 ? builtIn : getKnownModels(provider);
     source = "known";
   }
   if (providerImpl.sortModels && models.length > 0) {
@@ -63,18 +75,19 @@ export async function handleModel(
   const state = services.session.getState();
   const provider = state.provider ?? getConfig().defaultProvider;
   const arg = invocation.args.trim();
-  if (arg && arg !== "list" && arg !== "ls") {
+  const refresh = arg.toLowerCase() === REFRESH_ARGUMENT;
+  if (arg && !refresh && arg !== "list" && arg !== "ls") {
     applyModel(services, provider, arg);
     return;
   }
 
   const currentModel = state.model ?? getProviderModel(provider);
   const label = getProvider(provider).displayName;
-  const fetchingToastId = services.toast.info(`fetching ${label} models…`, {
+  const fetchingToastId = services.toast.info(`${refresh ? "refreshing" : "fetching"} ${label} models…`, {
     key: "model-fetch",
     sticky: true,
   });
-  const { models, source, error } = await resolveModelsForProvider(provider, currentModel);
+  const { models, source, error } = await resolveModelsForProvider(provider, currentModel, { refresh });
   services.toast.dismiss(fetchingToastId);
   if (error) {
     services.session.notice(
@@ -87,7 +100,7 @@ export async function handleModel(
       `${label} model list empty from API · showing known models`,
     );
   } else if (source === "live") {
-    services.session.notice("info", `${label} · ${models.length} models (live)`);
+    services.session.notice("info", `${label} · ${models.length} models (live${refresh ? ", refreshed" : ""})`);
   }
 
   if (models.length === 0) {
@@ -141,7 +154,9 @@ async function configuredProviderIds(): Promise<ProviderId[]> {
   return configured.filter((provider): provider is ProviderId => Boolean(provider));
 }
 
-export async function collectAllModels(): Promise<{
+export async function collectAllModels(
+  options: { readonly refresh?: boolean | undefined } = {},
+): Promise<{
   entries: CatalogEntry[];
   providers: number;
   liveProviders: number;
@@ -151,7 +166,7 @@ export async function collectAllModels(): Promise<{
   const results = await Promise.all(
     providers.map(async (provider) => {
       try {
-        const resolved = await resolveModelsForProvider(provider);
+        const resolved = await resolveModelsForProvider(provider, undefined, options);
         return { provider, ...resolved };
       } catch (error) {
         return {
@@ -222,11 +237,14 @@ export async function handleModels(
   services: AppServices,
   invocation: CommandInvocation,
 ): Promise<void> {
-  const fetching = services.toast.info("collecting models from all providers…", {
-    key: "models-fetch",
-    sticky: true,
-  });
-  const { entries, providers, liveProviders, failed } = await collectAllModels();
+  const request = invocation.args.trim();
+  const refreshPrefix = new RegExp(`^${REFRESH_ARGUMENT}(?:\\s+|$)`, "i").exec(request);
+  const refresh = refreshPrefix !== null;
+  const fetching = services.toast.info(
+    refresh ? "refreshing models from all providers…" : "collecting models from all providers…",
+    { key: "models-fetch", sticky: true },
+  );
+  const { entries, providers, liveProviders, failed } = await collectAllModels({ refresh });
   services.toast.dismiss(fetching);
 
   if (entries.length === 0) {
@@ -236,7 +254,8 @@ export async function handleModels(
     );
   }
 
-  const filter = invocation.args.trim().toLowerCase();
+  const typedFilter = (refreshPrefix ? request.slice(refreshPrefix[0].length) : request).trim();
+  const filter = typedFilter.toLowerCase();
   if (filter) {
     const normalized = filter.replace(/\s+/g, "/");
     const matches = entries.filter((entry) => {
@@ -255,7 +274,7 @@ export async function handleModels(
       return;
     }
     if (matches.length === 0) {
-      services.session.notice("warn", `no model matches "${invocation.args.trim()}"`);
+      services.session.notice("warn", `no model matches "${typedFilter}"`);
       return;
     }
   }
@@ -270,7 +289,7 @@ export async function handleModels(
   }
   services.session.notice(
     "info",
-    `${entries.length} models · ${providers} provider${providers === 1 ? "" : "s"} configured · ${liveProviders} live`,
+    `${entries.length} models · ${providers} provider${providers === 1 ? "" : "s"} configured · ${liveProviders} live${refresh ? " · refreshed" : ""}`,
   );
 
   services.overlay.openPicker(

@@ -23,6 +23,7 @@ import {
 } from "./copilot-auth.js";
 import { currentRequestPurpose } from "./request-purpose.js";
 import { executeAnthropicComplete, executeAnthropicStream } from "./anthropic.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 export const copilotFallbackModels: readonly string[] = [
   "gpt-4o",
   "gpt-4o-mini",
@@ -32,13 +33,11 @@ export const copilotFallbackModels: readonly string[] = [
   "o3-mini",
 ];
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("copilot");
+const REQUEST_MODEL_LIST_TTL_MS = 30 * 60 * 1000;
 
 export function resetCopilotModelCache(): void {
-  cachedModels = null;
-  lastFetchTime = 0;
+  modelCache.clear();
 }
 
 function requireKey(auth: ProviderAuth): string {
@@ -102,10 +101,8 @@ export const copilotProvider: LlmProvider = {
   envVar: "COPILOT_API_KEY",
   validateKey: (key: string) => isCopilotOAuthToken(key.trim()),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     const githubToken = requireKey(auth);
     const api = await resolveCopilotApiToken(githubToken);
     const response = await fetch(`${api.baseUrl}/models`, {
@@ -119,12 +116,9 @@ export const copilotProvider: LlmProvider = {
     const entries = Array.isArray(payload.data) ? payload.data : [];
     const filtered = filterCopilotEntries(entries);
     const models = ingestModelCatalogEntries("copilot", filtered);
-    const result = models.length > 0 ? models : [...copilotFallbackModels];
-    if (result.length > 0) {
-      cachedModels = result;
-      lastFetchTime = now;
-    }
-    return result;
+    if (models.length === 0) return fallbackModelList(copilotFallbackModels);
+    modelCache.store(models);
+    return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {
     const githubToken = requireKey(auth);
@@ -242,11 +236,13 @@ async function resolveCopilotModel(
   auth: ProviderAuth,
   requestedModel?: string,
 ): Promise<string> {
-  let available: string[] = [];
-  try {
-    available = await copilotProvider.listModels!(auth);
-  } catch {
-    available = cachedModels ?? [...copilotFallbackModels];
+  let available = modelCache.fresh("", REQUEST_MODEL_LIST_TTL_MS) ?? [];
+  if (available.length === 0) {
+    try {
+      available = await copilotProvider.listModels!(auth);
+    } catch {
+      available = modelCache.stale() ?? [...copilotFallbackModels];
+    }
   }
   if (!available.length) {
     return requestedModel ?? defaultModels.copilot;

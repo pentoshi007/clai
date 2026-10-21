@@ -19,6 +19,8 @@ import {
 } from "./codex-auth.js";
 import { responsesStream } from "./responses-dialect.js";
 
+const REQUEST_MODEL_LIST_TTL_MS = 5 * 60_000;
+
 export { resetCodexModelCache, codexFallbackModels } from "./codex-models.js";
 
 export const codexProvider: LlmProvider = {
@@ -60,7 +62,7 @@ async function resolveCodexModel(
 ): Promise<string> {
   let available: string[] = [];
   try {
-    available = await codexProvider.listModels!(auth);
+    available = await listCodexModels(auth, REQUEST_MODEL_LIST_TTL_MS);
   } catch {
     return requestedModel ?? defaultModels.codex;
   }

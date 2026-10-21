@@ -30,6 +30,7 @@ import {
   fromWireName,
   type OpenAiToolCallAccumulator,
 } from "../tool-protocol.js";
+import { modelListCache } from "../model-list-cache.js";
 export { encodeQoderCredential, qoderCredentialFromImport, type QoderCredential } from "./qoder-credential.js";
 
 export const QODER_FREE_SUFFIX = ":free";
@@ -104,9 +105,7 @@ function qoderChatView(text: string, modelKey: string, reasoning: boolean) {
   };
 }
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("qoder");
 
 async function fetchQoderModels(credential: QoderCredential): Promise<string[]> {
   const signer = await QoderSigner.create({
@@ -337,13 +336,10 @@ export const qoderProvider: LlmProvider = {
   },
   async listModels(auth: ProviderAuth): Promise<string[]> {
     return withQoderCredential(auth, async (credential) => {
-      const now = Date.now();
-      if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) return cachedModels;
+      const cached = modelCache.fresh();
+      if (cached) return cached;
       const models = await fetchQoderModels(credential);
-      if (models.length > 0) {
-        cachedModels = models;
-        lastFetchTime = now;
-      }
+      modelCache.store(models);
       return models;
     });
   },

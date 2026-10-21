@@ -14,6 +14,7 @@ import {
   readJson,
   toCompletionResult,
 } from "./http.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const GATEWAY_ROOT = "https://api-gateway.merge.dev/v1";
 
@@ -230,8 +231,7 @@ export function mergeCatalogEntries(
   });
 }
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("merge-gateway");
 
 export function resetMergeGatewayCatalogCache(): void {
   modelCache.clear();
@@ -306,20 +306,19 @@ export const mergeGatewayProvider: LlmProvider = {
   envVar: "MERGE_GATEWAY_API_KEY",
   validateKey: (key: string) => /^mg_[A-Za-z0-9_-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
-    if (!auth.apiKey) return mergeGatewayFallbackModels;
+    if (!auth.apiKey) return fallbackModelList(mergeGatewayFallbackModels);
     const cacheKey = createHash("sha256").update(auth.apiKey).digest("hex");
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+    const cached = modelCache.fresh(cacheKey);
+    if (cached) return cached;
     try {
       const models = await fetchCatalog(auth.apiKey);
       if (models.length > 0) {
-        modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
+        modelCache.store(models, cacheKey);
         return models;
       }
-      return modelCache.get(cacheKey)?.models ?? mergeGatewayFallbackModels;
+      return modelCache.stale(cacheKey) ?? fallbackModelList(mergeGatewayFallbackModels);
     } catch {
-      return modelCache.get(cacheKey)?.models ?? mergeGatewayFallbackModels;
+      return modelCache.stale(cacheKey) ?? fallbackModelList(mergeGatewayFallbackModels);
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

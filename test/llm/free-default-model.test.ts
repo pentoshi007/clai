@@ -5,6 +5,7 @@ import {
   resolveFreeDefaultModel,
 } from "../../src/llm/free-default-model.js";
 import { defaultModels } from "../../src/llm/provider.js";
+import { MODEL_LIST_TTL_MS } from "../../src/llm/model-list-cache.js";
 
 describe("dynamic free default model", () => {
   afterEach(() => {
@@ -58,7 +59,7 @@ describe("dynamic free default model", () => {
     expect(picked).toBe(defaultModels.free);
   });
 
-  it("re-resolves the remembered pick once it is older than 30 minutes", async () => {
+  it("re-resolves the remembered pick once it is older than the model-list lifetime", async () => {
     const fetchMock = vi.fn(async (input: unknown) => {
       const url = String(input);
       if (url.includes("kilo.ai")) {
@@ -80,12 +81,35 @@ describe("dynamic free default model", () => {
     expect(first).toBe("free-2/stepfun/step-3.7-flash:free");
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    vi.spyOn(Date, "now").mockReturnValue(time + 10 * 60 * 1000);
+    vi.spyOn(Date, "now").mockReturnValue(time + MODEL_LIST_TTL_MS / 2);
     expect(await resolveFreeDefaultModel()).toBe(first);
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
+    vi.spyOn(Date, "now").mockReturnValue(time + MODEL_LIST_TTL_MS + 1_000);
     expect(await resolveFreeDefaultModel()).toBe(first);
     expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("does not remember the built-in default after a failed or empty catalog", async () => {
+    let calls = 0;
+    const listModels = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("network down");
+      return ["free-2/stepfun/step-3.7-flash:free"];
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      if (String(input).includes("kilo.ai")) {
+        calls += 1;
+        if (calls <= 1) throw new Error("network down");
+        return new Response(JSON.stringify({ data: [{ id: "stepfun/step-3.7-flash:free", isFree: true }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    expect(await resolveFreeDefaultModel({ listModels })).toBe(defaultModels.free);
+    expect(await resolveFreeDefaultModel({ listModels })).toBe("free-2/stepfun/step-3.7-flash:free");
+    expect(listModels).toHaveBeenCalledTimes(2);
   });
 });

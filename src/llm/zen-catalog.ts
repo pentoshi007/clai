@@ -1,3 +1,4 @@
+import { MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
 import { readBodyCapped } from "./wire/response-errors.js";
 
 const CATALOG_URL = "https://models.opencode.ai/api.json";
@@ -46,6 +47,11 @@ async function fetchCatalogPayload(): Promise<unknown> {
   return JSON.parse(await readBodyCapped(response, MAX_CATALOG_BYTES, signal));
 }
 
+onModelListInvalidated("free", () => {
+  snapshot = undefined;
+  nextAttemptAt = 0;
+});
+
 async function refreshSnapshot(): Promise<void> {
   nextAttemptAt = Date.now() + RETRY_COOLDOWN_MS;
   try {
@@ -55,9 +61,12 @@ async function refreshSnapshot(): Promise<void> {
   } catch {}
 }
 
-export async function listFreeZenCatalogIds(): Promise<readonly string[] | undefined> {
-  const fresh = snapshot !== undefined && Date.now() - snapshot.fetchedAt < CACHE_TTL_MS;
-  if (!fresh && Date.now() >= nextAttemptAt) {
+export async function listFreeZenCatalogIds(
+  options: { readonly forListing?: boolean } = {},
+): Promise<readonly string[] | undefined> {
+  const maxAge = options.forListing ? MODEL_LIST_TTL_MS : CACHE_TTL_MS;
+  const fresh = snapshot !== undefined && Date.now() - snapshot.fetchedAt < maxAge;
+  if (!fresh && (options.forListing || Date.now() >= nextAttemptAt)) {
     pending ??= refreshSnapshot().finally(() => {
       pending = undefined;
     });

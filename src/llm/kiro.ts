@@ -66,6 +66,7 @@ import {
 } from "./provider-context-usage.js";
 import { inBandBadRequestStatus } from "./reasoning-errors.js";
 import { replaceProviderKey } from "../store/keys.js";
+import { fallbackModelList, isModelListFresh, MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
 
 const KIRO_FALLBACK_BASE_MODELS: readonly string[] = [
   "auto",
@@ -979,11 +980,15 @@ function kiroCredentialId(credential: KiroCredential): string {
     .digest("hex");
 }
 
-function hasFreshKiroCatalog(credentialId: string): boolean {
+onModelListInvalidated("kiro", () => {
+  lastKiroModelFetch = 0;
+});
+
+function hasFreshKiroCatalog(credentialId: string, maxAgeMs: number = MODEL_CACHE_TTL_MS): boolean {
   return (
     cachedKiroCredentialId === credentialId &&
     cachedKiroModels !== null &&
-    Date.now() - lastKiroModelFetch < MODEL_CACHE_TTL_MS
+    isModelListFresh(lastKiroModelFetch, maxAgeMs)
   );
 }
 
@@ -997,9 +1002,12 @@ function kiroCatalogLimits(modelId: string, info: KiroModelInfo): CatalogFacts[]
   }];
 }
 
-async function ensureKiroModelCatalog(credential: KiroCredential): Promise<void> {
+async function ensureKiroModelCatalog(
+  credential: KiroCredential,
+  maxAgeMs: number = MODEL_CACHE_TTL_MS,
+): Promise<void> {
   const credentialId = kiroCredentialId(credential);
-  if (hasFreshKiroCatalog(credentialId)) return;
+  if (hasFreshKiroCatalog(credentialId, maxAgeMs)) return;
   const catalog = await discoverKiroModelsDetailed(credential);
   cachedKiroCredentialId = credentialId;
   cachedKiroModelInfo = catalog.models;
@@ -1071,15 +1079,11 @@ export const kiroProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const credential = resolveKiroCredential(auth);
     const credentialId = kiroCredentialId(credential);
-    const cacheIsFresh =
-      cachedKiroCredentialId === credentialId &&
-      cachedKiroModels !== null &&
-      Date.now() - lastKiroModelFetch < MODEL_CACHE_TTL_MS;
-    if (cacheIsFresh) return cachedKiroModels!;
+    if (hasFreshKiroCatalog(credentialId, MODEL_LIST_TTL_MS)) return cachedKiroModels!;
 
     try {
       const refreshedId = await withKiroCredential(auth, async (current) => {
-        await ensureKiroModelCatalog(current);
+        await ensureKiroModelCatalog(current, MODEL_LIST_TTL_MS);
         return kiroCredentialId(current);
       });
       if (
@@ -1091,7 +1095,7 @@ export const kiroProvider: LlmProvider = {
       }
     } catch {}
 
-    return [...kiroFallbackModels];
+    return fallbackModelList(kiroFallbackModels);
   },
 
   async ping(auth: ProviderAuth): Promise<void> {

@@ -18,6 +18,7 @@ import {
 } from "./http.js";
 import { sleep } from "./routing/error-classification.js";
 import { streamAlreadyEmitted } from "./stream-progress.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const API_ROOT = "https://api.experientiallabs.ai";
 
@@ -226,8 +227,7 @@ export function explabsCatalogIndex(rows: readonly unknown[]): ExplabsCatalogInd
   return { entries, excluded };
 }
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("explabs");
 
 export function resetExplabsCatalogCache(): void {
   modelCache.clear();
@@ -383,18 +383,17 @@ export const explabsProvider: LlmProvider = {
   validateKey: (key: string) => /^xpl_[0-9a-f]{40,}$/i.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const cacheKey = createHash("sha256").update(auth.apiKey ?? "").digest("hex");
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+    const cached = modelCache.fresh(cacheKey);
+    if (cached) return cached;
     try {
       const models = await fetchModels(auth.apiKey);
       if (models.length > 0) {
-        modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
+        modelCache.store(models, cacheKey);
         return models;
       }
-      return modelCache.get(cacheKey)?.models ?? explabsFallbackModels;
+      return modelCache.stale(cacheKey) ?? fallbackModelList(explabsFallbackModels);
     } catch {
-      return modelCache.get(cacheKey)?.models ?? explabsFallbackModels;
+      return modelCache.stale(cacheKey) ?? fallbackModelList(explabsFallbackModels);
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {

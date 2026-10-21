@@ -38,6 +38,7 @@ import {
   responsesStream,
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
+import { fallbackModelList, modelListCache } from "./model-list-cache.js";
 
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const ZEN_REQUEST_BASE_URL = "https://opencode.ai/inference/v1";
@@ -211,16 +212,11 @@ const ZEN_RESPONSES_CONFIG: ResponsesDialectConfig = {
   }),
 };
 
-interface ModelCache {
-  entries: readonly unknown[];
-  fetchedAt: number;
-}
-const modelCache = new Map<string, ModelCache>();
+const modelCache = modelListCache<readonly unknown[]>("free");
 
 export function resetFreeModelCacheForTesting(): void {
   modelCache.clear();
 }
-const CACHE_TTL_MS = 30 * 60 * 1000;
 
 function sourceScopedEntry(source: FreeSource, entry: unknown): unknown {
   const id = `${source.id}/${catalogEntryId(entry)}`;
@@ -235,16 +231,18 @@ function zenCatalogEntries(
   return catalogFreeIds.map((id) => listed.get(id.toLowerCase()) ?? { id });
 }
 
+interface SourceEntries {
+  readonly entries: readonly unknown[];
+  readonly live: boolean;
+}
+
 async function listSourceEntries(
   source: FreeSource,
   key: string,
-): Promise<readonly unknown[]> {
+): Promise<SourceEntries> {
   const cacheKey = `${source.id}:${key}`;
-  const now = Date.now();
-  const cached = modelCache.get(cacheKey);
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-    return cached.entries;
-  }
+  const cached = modelCache.fresh(cacheKey);
+  if (cached) return { entries: cached, live: true };
   try {
     const identity = source.keylessApiKey || key;
     const resp = await fetch(`${source.baseUrl}/models`, {
@@ -255,12 +253,12 @@ async function listSourceEntries(
       .catalogFreeEntries(data)
       .filter((entry) => catalogEntryId(entry).length > 0);
     if (entries.length > 0) {
-      modelCache.set(cacheKey, { entries, fetchedAt: now });
-      return entries;
+      modelCache.store(entries, cacheKey);
+      return { entries, live: true };
     }
   } catch {
   }
-  return source.fallbackModels();
+  return { entries: source.fallbackModels(), live: false };
 }
 
 function withFreeModelCatalog<T>(
@@ -412,24 +410,27 @@ export const freeProvider: LlmProvider = {
         const fetched = await listSourceEntries(source, key);
         const served =
           source.id === "free-1"
-            ? zenCatalogEntries(fetched, (await listFreeZenCatalogIds()) ?? [])
-            : fetched;
+            ? zenCatalogEntries(fetched.entries, (await listFreeZenCatalogIds({ forListing: true })) ?? [])
+            : fetched.entries;
         const enriched =
           source.id === "free-1"
             ? await supplementZenModelLimits(served)
             : served;
-        return enriched.map((entry) => sourceScopedEntry(source, entry));
+        return {
+          live: fetched.live,
+          entries: enriched.map((entry) => sourceScopedEntry(source, entry)),
+        };
       }),
     );
-    const models = ingestModelCatalogEntries("free", perSource.flat());
+    const models = ingestModelCatalogEntries("free", perSource.flatMap((source) => source.entries));
     registerModelCatalogLimits(
       "free",
-      (perSource[0] ?? []).flatMap((entry) => {
+      (perSource[0]?.entries ?? []).flatMap((entry) => {
         const facts = parseCatalogFacts(entry);
         return facts ? [{ ...facts, id: facts.id.slice("free-1/".length) }] : [];
       }),
     );
-    return models;
+    return perSource.some((source) => source.live) ? models : fallbackModelList(models);
   },
   async ping(auth: ProviderAuth): Promise<void> {
     const key = auth.apiKey ?? "";

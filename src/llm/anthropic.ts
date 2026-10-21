@@ -47,6 +47,7 @@ import {
 } from "./reasoning-artifacts.js";
 import { compileRequestPlan } from "./request-plan.js";
 import type { AnthropicThinkingBlock } from "./adapters/anthropic-tools.js";
+import { modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://api.anthropic.com/v1";
 const anthropicVersion = "2023-06-01";
@@ -194,8 +195,7 @@ export function buildAnthropicBody(
   });
 }
 
-const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("anthropic");
 
 export function resetAnthropicModelCatalogCache(): void {
   modelCache.clear();
@@ -213,15 +213,14 @@ export const anthropicProvider: LlmProvider = {
     const cacheKey = createHash("sha256")
       .update(`${endpoint}\0${auth.apiKey}`)
       .digest("hex");
-    const now = Date.now();
-    const cached = modelCache.get(cacheKey);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
+    const cached = modelCache.fresh(cacheKey);
+    if (cached) return cached;
     const entries = await fetchAnthropicModelEntries(endpoint, {
       "x-api-key": auth.apiKey,
       "anthropic-version": anthropicVersion,
     });
     const models = ingestModelCatalogEntries("anthropic", entries);
-    if (models.length > 0) modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
+    modelCache.store(models, cacheKey);
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {

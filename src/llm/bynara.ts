@@ -19,17 +19,13 @@ import {
   THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS,
   type ReasoningStyle,
 } from "./http.js";
+import { modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://router.bynara.id/v1";
 
 const BYNARA_REASONING_STYLE: ReasoningStyle = "bynara";
 
-interface ModelCache {
-  models: string[];
-  fetchedAt: number;
-}
-const modelCache = new Map<string, ModelCache>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("bynara");
 
 export const bynaraProvider: LlmProvider = {
   id: "bynara",
@@ -40,20 +36,15 @@ export const bynaraProvider: LlmProvider = {
   validateKey: (key: string) => /^[A-Za-z0-9_-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const key = auth.apiKey ?? "";
-    const now = Date.now();
-    const cached = modelCache.get(key);
-    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
-      return cached.models;
-    }
+    const cached = modelCache.fresh(key);
+    if (cached) return cached;
     try {
       const resp = await fetch(`${baseUrl}/models`, {
         headers: key ? { authorization: `Bearer ${key}` } : {},
       });
       const data = await readJson<{ data?: Array<{ id: string }> }>(resp);
       const models = ingestOpenAiModelCatalog("bynara", data);
-      if (models.length > 0) {
-        modelCache.set(key, { models, fetchedAt: now });
-      }
+      modelCache.store(models, key);
       return models;
     } catch {
       return [];

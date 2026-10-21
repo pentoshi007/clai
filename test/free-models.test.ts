@@ -9,6 +9,7 @@ import {
   resolveFreeSource,
 } from "../src/llm/free.js";
 import { resetZenCatalogForTesting } from "../src/llm/zen-catalog.js";
+import { MODEL_LIST_TTL_MS } from "../src/llm/model-list-cache.js";
 import { ProviderError } from "../src/llm/http.js";
 import { modelContextWindow } from "../src/llm/context-windows.js";
 import { modelCatalogFacts } from "../src/llm/capabilities.js";
@@ -277,7 +278,7 @@ describe("free provider (zen + kilo)", () => {
       expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
-    it("refetches once the catalog cache passes 30 minutes", async () => {
+    it("refetches once the catalog cache passes the model-list lifetime", async () => {
       const fetchMock = catalogFetchMock(
         ["mimo-v2.5-free"],
         [{ id: "kilo-auto/free", isFree: true }],
@@ -289,13 +290,13 @@ describe("free provider (zen + kilo)", () => {
       await freeProvider.listModels!({});
       expect(fetchMock).toHaveBeenCalledTimes(4);
 
-      vi.spyOn(Date, "now").mockReturnValue(time + 29 * 60 * 1000);
+      vi.spyOn(Date, "now").mockReturnValue(time + MODEL_LIST_TTL_MS - 1_000);
       await freeProvider.listModels!({});
       expect(fetchMock).toHaveBeenCalledTimes(4);
 
-      vi.spyOn(Date, "now").mockReturnValue(time + 31 * 60 * 1000);
+      vi.spyOn(Date, "now").mockReturnValue(time + MODEL_LIST_TTL_MS + 1_000);
       await freeProvider.listModels!({});
-      expect(fetchMock).toHaveBeenCalledTimes(8);
+      expect(fetchMock).toHaveBeenCalledTimes(7);
     });
 
     it("lists only zero-cost catalog models that Zen serves, with no stale or paid ids", async () => {

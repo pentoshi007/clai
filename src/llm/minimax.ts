@@ -12,12 +12,11 @@ import {
   readJson,
   ingestOpenAiModelCatalog,
 } from "./http.js";
+import { modelListCache } from "./model-list-cache.js";
 
 const baseUrl = "https://api.minimaxi.chat/v1";
 
-let cachedModels: string[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const modelCache = modelListCache("minimax");
 
 export const minimaxProvider: LlmProvider = {
   id: "minimax",
@@ -28,19 +27,14 @@ export const minimaxProvider: LlmProvider = {
   validateKey: (key: string) => /^[A-Za-z0-9._-]{16,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("MiniMax API key is required");
-    const now = Date.now();
-    if (cachedModels && now - lastFetchTime < CACHE_TTL_MS) {
-      return cachedModels;
-    }
+    const cached = modelCache.fresh();
+    if (cached) return cached;
     const response = await fetch(`${baseUrl}/models`, {
       headers: { authorization: `Bearer ${auth.apiKey}` },
     });
     const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
     const models = ingestOpenAiModelCatalog("minimax", data);
-    if (models.length > 0) {
-      cachedModels = models;
-      lastFetchTime = now;
-    }
+    modelCache.store(models);
     return models;
   },
   async ping(auth: ProviderAuth): Promise<void> {
