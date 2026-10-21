@@ -17,6 +17,7 @@ export interface ModelLimitObservation {
 }
 
 const remembered = new Map<string, RememberedModelLimits>();
+const observedOutputCaps = new Map<string, number>();
 let loaded = false;
 
 function storeFile(): string {
@@ -57,20 +58,28 @@ function load(): void {
     const parsed = JSON.parse(readFileSync(storeFile(), "utf8")) as {
       version?: unknown;
       entries?: unknown;
+      outputCaps?: unknown;
     };
     if (parsed.version !== STORE_VERSION) return;
-    if (!parsed.entries || typeof parsed.entries !== "object") return;
-    for (const [key, value] of Object.entries(parsed.entries)) {
-      const entry = parseEntry(value);
-      if (entry) remembered.set(key, entry);
+    if (parsed.entries && typeof parsed.entries === "object") {
+      for (const [key, value] of Object.entries(parsed.entries)) {
+        const entry = parseEntry(value);
+        if (entry) remembered.set(key, entry);
+      }
+    }
+    if (parsed.outputCaps && typeof parsed.outputCaps === "object") {
+      for (const [key, value] of Object.entries(parsed.outputCaps)) {
+        const cap = positiveInteger(value);
+        if (cap !== undefined) observedOutputCaps.set(key, cap);
+      }
     }
   } catch {}
 }
 
-function trimToCapacity(): void {
-  const excess = remembered.size - MAX_REMEMBERED_ROUTES;
+function trimToCapacity(routes: Map<string, unknown>): void {
+  const excess = routes.size - MAX_REMEMBERED_ROUTES;
   if (excess <= 0) return;
-  for (const key of [...remembered.keys()].slice(0, excess)) remembered.delete(key);
+  for (const key of [...routes.keys()].slice(0, excess)) routes.delete(key);
 }
 
 function persist(): void {
@@ -79,7 +88,10 @@ function persist(): void {
   try {
     mkdirSync(getDataDir(), { recursive: true });
     const entries = Object.fromEntries(remembered);
-    writeFileSync(temp, `${JSON.stringify({ version: STORE_VERSION, entries })}\n`, {
+    const store = observedOutputCaps.size
+      ? { version: STORE_VERSION, entries, outputCaps: Object.fromEntries(observedOutputCaps) }
+      : { version: STORE_VERSION, entries };
+    writeFileSync(temp, `${JSON.stringify(store)}\n`, {
       encoding: "utf8",
       mode: 0o600,
     });
@@ -114,8 +126,33 @@ export function rememberModelLimits(
     changed = true;
   }
   if (!changed) return;
-  trimToCapacity();
+  trimToCapacity(remembered);
   persist();
+}
+
+export function rememberObservedOutputCap(
+  provider: string,
+  model: string,
+  maxOutputTokens: number,
+): void {
+  const cap = positiveInteger(maxOutputTokens);
+  if (cap === undefined || !model.trim()) return;
+  load();
+  const key = routeKey(provider, model);
+  if (observedOutputCaps.get(key) === cap) return;
+  observedOutputCaps.delete(key);
+  observedOutputCaps.set(key, cap);
+  trimToCapacity(observedOutputCaps);
+  persist();
+}
+
+export function observedOutputCap(
+  provider: string,
+  model: string,
+): number | undefined {
+  if (!model.trim()) return undefined;
+  load();
+  return observedOutputCaps.get(routeKey(provider, model));
 }
 
 export function rememberedModelLimits(
@@ -129,6 +166,7 @@ export function rememberedModelLimits(
 
 export function reloadRememberedModelLimits(): void {
   remembered.clear();
+  observedOutputCaps.clear();
   loaded = false;
 }
 
@@ -136,6 +174,7 @@ export function resetRememberedModelLimits(options?: {
   readonly removePersisted?: boolean | undefined;
 }): void {
   remembered.clear();
+  observedOutputCaps.clear();
   loaded = true;
   if (!options?.removePersisted) return;
   try {

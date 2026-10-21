@@ -42,6 +42,7 @@ import { providerWireApi, resolveBuiltInProfile } from "./provider-profiles.js";
 import { clampEffortToRoute } from "./route-dialect-registry.js";
 import { mainEffortProbe, resolvedMainEffort } from "./main-effort-discovery.js";
 import { customProviderProfileFor } from "./custom-provider-profile.js";
+import { modelMaxOutputTokens } from "./context-windows.js";
 
 
 export const REQUEST_PLAN_VERSION = 1 as const;
@@ -474,12 +475,17 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     });
   });
 
+  const outputTokenLimit = modelMaxOutputTokens(
+    input.provider,
+    input.model,
+    profile.limits.outputTokens,
+  );
   const requestedMaxTokens =
     input.maxTokens === undefined
       ? undefined
-      : profile.limits.outputTokens === undefined
+      : outputTokenLimit === undefined
         ? input.maxTokens
-        : Math.min(input.maxTokens, profile.limits.outputTokens);
+        : Math.min(input.maxTokens, outputTokenLimit);
 
   return Object.freeze({
     version: REQUEST_PLAN_VERSION,

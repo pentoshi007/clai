@@ -14,6 +14,7 @@ import {
   DEFAULT_FS_PASSTHROUGH_CAP_CHARS,
   LEGACY_MAX_TOKENS,
   MAX_STEP_COMPLETION_TOKENS,
+  REASONING_STEP_MAX_TOKENS,
   dedupeToolContextOutput,
   freeTierGuardNotices,
   getReliabilityPolicy,
@@ -179,6 +180,28 @@ describe("reliability policy (E1–E6)", () => {
         truncationDepth: 1,
       }),
     ).toBe(MAX_STEP_COMPLETION_TOKENS);
+  });
+
+  it("E3: thinking steps use the known route output limit up to 128k and keep 32k when it is unknown", () => {
+    const step = { nativeToolsActive: true, toolsAttached: true, thinkingEnabled: true };
+    expect(resolveStepMaxTokens(step)).toBe(LEGACY_MAX_TOKENS);
+    expect(resolveStepMaxTokens({ ...step, outputTokenLimit: 384_000 })).toBe(REASONING_STEP_MAX_TOKENS);
+    expect(resolveStepMaxTokens({ ...step, outputTokenLimit: 64_000 })).toBe(64_000);
+    expect(resolveStepMaxTokens({ ...step, outputTokenLimit: 16_384 })).toBe(16_384);
+    expect(resolveStepMaxTokens({ ...step, outputTokenLimit: 384_000, recoveryNudge: true }))
+      .toBeLessThan(LEGACY_MAX_TOKENS);
+    expect(
+      resolveStepMaxTokens({ nativeToolsActive: true, toolsAttached: true, outputTokenLimit: 384_000 }),
+    ).toBe(ADAPTIVE_MAX_TOKENS_TOOL_STEP);
+  });
+
+  it("E3: a continuation doubles the step budget within the route limit", () => {
+    const step = { nativeToolsActive: true, toolsAttached: true, thinkingEnabled: true, truncationDepth: 1 };
+    expect(resolveStepMaxTokens({ ...step, outputTokenLimit: 384_000, minimumTokens: 262_144 }))
+      .toBe(262_144);
+    expect(resolveStepMaxTokens({ ...step, outputTokenLimit: 100_000, minimumTokens: 200_000 }))
+      .toBe(100_000);
+    expect(resolveStepMaxTokens({ ...step, minimumTokens: 65_536 })).toBe(MAX_STEP_COMPLETION_TOKENS);
   });
 
   it("E3: clamps continuation budgets to the route ceiling without shrinking their floor", () => {
