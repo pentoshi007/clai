@@ -1,5 +1,6 @@
 import type { ToolCall } from "../../../types.js";
-import { normalizeToolCall } from "../../../tools/registry.js";
+import { NON_REGISTRY_TOOL_NAMES } from "../../../tools/definitions.js";
+import { normalizeToolCall, toolRegistry } from "../../../tools/registry.js";
 import { stripSupersededElidedArgs } from "../../message-slim.js";
 
 export type ToolNameCanonicalizer = {
@@ -7,13 +8,18 @@ export type ToolNameCanonicalizer = {
   getTool?(name: string): { canonicalName: string; wireName: string } | undefined;
 };
 
+const clientOwned = (name: string): boolean =>
+  toolRegistry[name] !== undefined || NON_REGISTRY_TOOL_NAMES.has(name);
+
 export const canonicalizeTurnCall = (
   rawCall: ToolCall,
   mcpRuntime?: ToolNameCanonicalizer | undefined,
 ): ToolCall => {
   const normalized = normalizeToolCall(rawCall);
   if (normalized.name === "mcp.call") return unwrapMcpCall(normalized, mcpRuntime);
-  const canonicalMcpName = mcpRuntime?.canonicalizeToolName(normalized.name);
+  const canonicalMcpName = clientOwned(normalized.name)
+    ? undefined
+    : mcpRuntime?.canonicalizeToolName(normalized.name);
   const named =
     canonicalMcpName && canonicalMcpName !== normalized.name
       ? { ...normalized, name: canonicalMcpName }
@@ -37,7 +43,7 @@ const unwrapMcpCall = (
     return call;
   }
   const tool = mcpRuntime?.getTool?.(name);
-  if (!tool || (tool.canonicalName !== name && tool.wireName !== name)) return call;
+  if (!tool) return call;
   return {
     ...call,
     name: tool.canonicalName,

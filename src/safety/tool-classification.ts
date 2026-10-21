@@ -18,6 +18,13 @@ export function classifyToolCall(
   const external = externalToolRisk(call.name);
   if (external) return external;
 
+  if (call.name === "rea.manage") {
+    const action = stringArg(call.args, "action") ?? "status";
+    return action === "status" || action === "guide"
+      ? { level: "safe", reason: "Read-only REA status or workflow guidance" }
+      : { level: "confirm", reason: "REA installation or session state change" };
+  }
+
   if (
     call.name === "fs.read" ||
     call.name === "mcp.list" ||

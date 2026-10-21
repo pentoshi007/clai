@@ -1,5 +1,6 @@
 
 import { getMentionQuery, findFileSuggestions, type FileSuggestion } from "../../ui/mentions.js";
+import { REA_TOKEN } from "../../rea/workflow.js";
 import type { CommandRegistry } from "../../app/commands/registry.js";
 import type { CommandDefinition } from "../../app/commands/command.js";
 
@@ -57,6 +58,7 @@ export function mentionSuggestions(
 ): MentionMatch | undefined {
   const mention = getMentionQuery(value, cursorOffset);
   if (!mention) return undefined;
+  if (`@${mention.query}` === REA_TOKEN) return undefined;
   const suggestions = findFileSuggestions(mention.query, baseDir, limit);
   return { start: mention.start, query: mention.query, suggestions };
 }

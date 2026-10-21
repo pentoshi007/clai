@@ -6,6 +6,7 @@ import {
 } from "../llm/tool-protocol.js";
 import type { RiskDecision } from "../safety/classifier.js";
 import type { ToolDefinition, ToolResult } from "../types.js";
+import { argumentHint, isArgumentRejection } from "./argument-hint.js";
 import { redactSecrets } from "./format.js";
 import { coerceArgumentsForSchema } from "./coerce.js";
 import { writeProjectMcpServer } from "./config-file.js";
@@ -21,7 +22,7 @@ import {
 import { registerExternalToolDispatcher } from "../tools/external-tools.js";
 import { McpTransportError } from "./transport.js";
 import type { OAuthConsentInfo } from "./auth/provider.js";
-import type { McpNormalizedResult, McpSnapshot, McpToolMetadata } from "./types.js";
+import type { McpNormalizedResult, McpServerDefinition, McpSnapshot, McpToolMetadata } from "./types.js";
 
 export type McpRuntimeSelection =
   | { readonly mode: "all" }
@@ -187,6 +188,10 @@ function foldToolName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function bareSpellings(tool: McpToolMetadata): string[] {
+  return [foldToolName(`${tool.serverName}.${tool.toolName}`), foldToolName(tool.toolName)];
+}
+
 const ENABLED_TOOL_PREVIEW = 8;
 
 function widenSelection(
@@ -344,6 +349,15 @@ export class McpRuntime {
     } finally {
       if (this.refreshPromise === promise) this.refreshPromise = undefined;
     }
+  }
+
+  async registerSessionServer(definition: McpServerDefinition): Promise<McpRuntimeState> {
+    if (this.closed) throw new Error("MCP runtime is closed.");
+    if (this.refreshPromise) await this.refreshPromise;
+    const snapshot = await this.manager.registerSessionServer(definition);
+    this.started = true;
+    const collision = this.registerSnapshotTools(snapshot);
+    return this.publish({ snapshot, refreshing: false, ...(collision ? { error: collision } : {}) });
   }
 
   async reconnect(serverName: string): Promise<McpRuntimeState> {
@@ -529,10 +543,10 @@ export class McpRuntime {
     );
     if (exact.length === 1) return exact[0];
     if (exact.length > 1) return undefined;
-    const suffix = view.snapshot.tools.filter((tool) =>
-      folded.some((value) => foldToolName(tool.canonicalName).endsWith(value)),
+    const bare = view.snapshot.tools.filter((tool) =>
+      folded.some((value) => bareSpellings(tool).includes(value)),
     );
-    return suffix.length === 1 ? suffix[0] : undefined;
+    return bare.length === 1 ? bare[0] : undefined;
   }
 
   getTool(
@@ -653,6 +667,9 @@ export class McpRuntime {
       const normalized = this.normalizeResult(tool, result);
       if (coerced.length > 0 && !normalized.ok) {
         normalized.output = `${normalized.output}\n(note: clai coerced string argument(s) ${coerced.join(", ")} to the schema-declared type; the server still rejected the call — check the tool schema with mcp.tools.)`;
+      }
+      if (!normalized.ok && isArgumentRejection(normalized.output)) {
+        normalized.output = `${normalized.output}\n${argumentHint(tool)}`;
       }
       return normalized;
     } catch (error) {
