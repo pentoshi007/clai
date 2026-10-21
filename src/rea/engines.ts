@@ -110,9 +110,10 @@ export async function updateEngineSettings(
   }, signal);
 }
 
-function hasEnvironmentKey(env: NodeJS.ProcessEnv, key: string): boolean {
-  const wanted = process.platform === "win32" ? key.toLowerCase() : key;
-  return Object.entries(env).some(([name, value]) => (process.platform === "win32" ? name.toLowerCase() : name) === wanted && !!value);
+function environmentKey(env: NodeJS.ProcessEnv, key: string): string {
+  if (process.platform !== "win32") return key;
+  const wanted = key.toLowerCase();
+  return Object.keys(env).find((name) => name.toLowerCase() === wanted) ?? key;
 }
 
 export function engineEnvironment(settings: EngineSettings, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
@@ -125,7 +126,7 @@ export function engineEnvironment(settings: EngineSettings, base: NodeJS.Process
   ];
   const env: Record<string, string> = {};
   for (const [key, value] of wanted) {
-    if (value && !hasEnvironmentKey(base, key)) env[key] = value;
+    if (value) env[environmentKey(base, key)] = value;
   }
   return env;
 }

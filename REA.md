@@ -71,7 +71,7 @@ What `install ghidra` does:
 
 Ghidra also needs a JDK 21 or newer. `install ghidra` does not change your system Java: if REA reports that Java is missing or too old, clai offers `install java`, which puts Eclipse Temurin 21 (about 200 MB, SHA-256 verified) in `~/.clai/tools/jdk/` and uses it for REA's server only.
 
-Settings live in `~/.clai/tools/rea/engines.json` (mode 0600; `$CLAI_DATA_DIR/tools/rea` if set). They are passed to REA's server as `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `HOPPER_LAUNCHER_PATH`, `REA_IDA_MCP_CONFIG` and `REA_KUNA_COMMAND`; a variable already set in your environment always wins. Reconnect REA (`/rea reconnect`) after changing them yourself.
+Settings live in `~/.clai/tools/rea/engines.json` (mode 0600; `$CLAI_DATA_DIR/tools/rea` if set). They are passed to REA's server as `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `HOPPER_LAUNCHER_PATH`, `REA_IDA_MCP_CONFIG` and `REA_KUNA_COMMAND`; a choice made with `/rea engines` takes precedence over the same variable in your own environment, for REA's server only (your shell is untouched), and `/rea engines remove` hands control back to your environment. Variables you have not set through `/rea engines` are passed through unchanged. Reconnect REA (`/rea reconnect`) after changing them yourself.
 
 Ghidra and Kuna cannot open universal (fat) Mach-O files such as most system binaries on macOS. The agent is told to thin one slice into the session scratch directory with `lipo <file> -thin <arch> -output <scratch>/<name>-<arch>` (`llvm-lipo` when `lipo` is missing) and open that. Hopper opens universal files directly.
 
