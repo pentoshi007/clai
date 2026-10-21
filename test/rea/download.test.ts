@@ -2,11 +2,16 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import { allowedHost, downloadFile, fetchJsonValue, fetchText, type FetchFunction } from "../../src/rea/download.js";
 
 const HOSTS = ["github.com", "*.githubusercontent.com"];
 const directories: string[] = [];
+
+setFlagsFromString("--expose-gc");
+const collectGarbage = runInNewContext("gc") as () => void;
 
 afterEach(async () => {
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
@@ -63,9 +68,17 @@ describe("download memory", () => {
   it("does not keep the chunks it has already written", async () => {
     const root = await workspace();
     const megabytes = 128;
+    collectGarbage();
     const baseline = process.memoryUsage().arrayBuffers;
     let peak = 0;
-    const fetcher: FetchFunction = async () => new Response(megabyteStream(megabytes, () => { peak = Math.max(peak, process.memoryUsage().arrayBuffers); }), { headers: { "content-length": String(megabytes * 1024 * 1024) } });
+    let pulls = 0;
+    const sample = (): void => {
+      pulls += 1;
+      if (pulls % 8 !== 0) return;
+      collectGarbage();
+      peak = Math.max(peak, process.memoryUsage().arrayBuffers);
+    };
+    const fetcher: FetchFunction = async () => new Response(megabyteStream(megabytes, sample), { headers: { "content-length": String(megabytes * 1024 * 1024) } });
     const result = await downloadFile("https://github.com/big.bin", join(root, "big.bin"), { hosts: HOSTS, maxBytes: 200 * 1024 * 1024, sha256: undefined, fetch: fetcher });
     expect(result.bytes).toBe(megabytes * 1024 * 1024);
     expect((await stat(join(root, "big.bin"))).size).toBe(megabytes * 1024 * 1024);
