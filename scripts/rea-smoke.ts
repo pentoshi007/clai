@@ -29,7 +29,7 @@ try {
   if (!enabled.ok) throw new Error(enabled.output);
   const tools = reaTools(runtime);
   const index = enabled.output.slice(enabled.output.indexOf("REA TOOLS ("));
-  const unlisted = tools.filter((tool) => !new RegExp(`(?:^|[ :])${tool.toolName}(?=[ (!~\\n]|$)`).test(index));
+  const unlisted = tools.filter((tool) => !new RegExp(`(?:^|[ :])${tool.toolName}(?=[ (!~#^%\\n]|$)`).test(index));
   if (tools.length < 100 || unlisted.length > 0) throw new Error(`Tool index lists ${tools.length - unlisted.length} of ${tools.length} tools`);
   const catalog = await runtime.agentTools(REA_SERVER, { query: "inspect_go_binary" });
   const name = `mcp.${REA_SERVER}.inspect_go_binary`;
