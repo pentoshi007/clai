@@ -29,6 +29,8 @@ import {
 import {
   buildWorkspaceOrientation,
   guessProjectFolderName,
+  type WorkIntent,
+  type WorkspaceOrientationInput,
 } from "../workspace-orient.js";
 import { scopeContextMessage } from "../scope-context.js";
 
@@ -42,6 +44,7 @@ export interface SystemSectionInput {
   readonly sessionId: string;
   readonly projectContext: string | undefined;
   readonly destinationHint: string | undefined;
+  readonly workIntent: WorkIntent;
   readonly isPlanMode: boolean;
   readonly buildLikeTurn: boolean;
   readonly informationalQuery: boolean;
@@ -78,7 +81,11 @@ const locationSection = (
     return `ACTIVE PROJECT ROOT: ${projectRoot}\n${PROJECT_ROOT_RULES}`;
   }
   if (input.destinationHint) {
-    return `USER DESTINATION: create or continue work under "${input.destinationHint}" (parent folder). ${DESTINATION_RULES}`;
+    const action =
+      input.workIntent === "new"
+        ? "create the new work in its own new folder under"
+        : "create or continue work under";
+    return `USER DESTINATION: ${action} "${input.destinationHint}" (parent folder). ${DESTINATION_RULES}`;
   }
   return undefined;
 };
@@ -94,21 +101,18 @@ const workspaceSection = (input: SystemSectionInput): string => {
       .filter(Boolean)
       .join("\n"),
   );
-  const extraPaths: string[] = [];
-  if (input.destinationHint && guessedName) {
-    extraPaths.push(join(input.destinationHint, guessedName));
-  }
   const fromText =
     extractProjectRootFromPlan(input.plan) ??
     extractProjectRootFromText(input.prompt);
-  if (fromText) extraPaths.push(fromText);
-  const orientInput: {
-    cwd: string;
-    destinationHint?: string;
-    candidateProject?: string;
-    extraPaths: string[];
-  } = { cwd: safeCwd(), extraPaths };
+  const orientInput: WorkspaceOrientationInput = {
+    cwd: safeCwd(),
+    intent: input.workIntent,
+    extraPaths: fromText ? [fromText] : [],
+  };
   if (input.destinationHint) orientInput.destinationHint = input.destinationHint;
+  if (input.destinationHint && guessedName) {
+    orientInput.namesakePath = join(input.destinationHint, guessedName);
+  }
   const candidate = input.getProjectRoot() ?? fromText;
   if (candidate) orientInput.candidateProject = candidate;
   return buildWorkspaceOrientation(orientInput);

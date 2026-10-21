@@ -4,6 +4,7 @@ import { resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import {
   renderAgentSystemPrompt,
+  renderCompactAgentSystemPrompt,
   scratchDirFor,
   _AGENT_TEMPLATE,
 } from "../src/prompts/index.js";
@@ -59,8 +60,23 @@ describe("scratch directory transparency", () => {
   it("rendered agent prompt preserves the scratch-space guardrails", () => {
     const prompt = renderAgentSystemPrompt("shell.exec");
     expect(prompt).toContain("Scratch only under");
-    expect(prompt).toContain("Keep ALL temporary/engagement files there");
-    expect(prompt).toContain("never write into the current/project directory");
+    expect(prompt).toContain("only for disposable probes, captures and notes");
+    expect(prompt).toContain("never the temp root or a project");
+  });
+
+  it("keeps deliverables out of scratch and away from existing namesakes", () => {
+    for (const prompt of [
+      renderAgentSystemPrompt("shell.exec"),
+      renderCompactAgentSystemPrompt("shell.exec"),
+    ]) {
+      expect(prompt).toMatch(
+        /deliverables \(projects, source, scripts, reports, docs\) go to the user's location/i,
+      );
+      expect(prompt).toContain("else cwd if it is the task folder");
+      expect(prompt).toContain(
+        "New work never adopts an existing same/similarly-named folder or file",
+      );
+    }
   });
 
   it("_AGENT_TEMPLATE stays byte-identical to src/prompts/system.agent.md", () => {

@@ -90,6 +90,36 @@ describe("scaffold preflight", () => {
     );
   });
 
+  it("leaves existing namesake work untouched for a new request", () => {
+    conflict.mockReturnValue("target not empty");
+    resolveTarget.mockReturnValue("/work/app");
+    materialized.mockReturnValue(true);
+    const decision = decideScaffoldPreflight(
+      { name: "shell.exec", args: { command: scaffoldCommand } },
+      { workIntent: "new", activeProjectRoot: undefined },
+    );
+    expect(decision).toEqual({
+      skip: true,
+      target: "/work/app",
+      adoptTarget: false,
+      message:
+        "Scaffold skipped: the target at /work/app already holds existing work that this new request does not target. Leave it untouched and scaffold into a new, non-colliding folder.",
+    });
+    expect(materialized).not.toHaveBeenCalled();
+  });
+
+  it("continues the active project root even for a new request", () => {
+    conflict.mockReturnValue("target not empty");
+    resolveTarget.mockReturnValue("/work/app");
+    materialized.mockReturnValue(true);
+    const decision = decideScaffoldPreflight(
+      { name: "shell.exec", args: { command: scaffoldCommand } },
+      { workIntent: "new", activeProjectRoot: "/work/app" },
+    );
+    expect(decision.adoptTarget).toBe(true);
+    expect(decision.message).toMatch(/Continue that project directly/);
+  });
+
   it("omits the location when the target cannot be resolved", () => {
     conflict.mockReturnValue("target not empty");
     resolveTarget.mockReturnValue(undefined);
