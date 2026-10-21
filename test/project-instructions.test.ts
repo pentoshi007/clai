@@ -72,6 +72,13 @@ describe("scaffolding .clai", () => {
     expect(result!.created).toEqual([join(dir, ".clai", "INSTRUCTIONS.md")]);
   });
 
+  it("never scaffolds into a general parent folder such as Desktop", async () => {
+    const desktop = join(root, "Desktop");
+    mkdirSync(desktop, { recursive: true });
+    expect(await ensureProjectInstructionFiles({ cwd: desktop })).toBeUndefined();
+    expect(existsSync(join(desktop, ".clai"))).toBe(false);
+  });
+
   it("is idempotent on a second pass", async () => {
     const dir = project();
     await ensureProjectInstructionFiles({ cwd: dir });

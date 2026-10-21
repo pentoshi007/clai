@@ -401,12 +401,17 @@ function intentLines(intent: WorkIntent | undefined): string[] {
   return [];
 }
 
+const METADATA_ONLY_ENTRIES = new Set([".clai", ".DS_Store", "Thumbs.db"]);
+
 function describeCwdRole(cwd: string): string {
   if (isBareParentDirectory(cwd)) {
     return "general parent folder — give new work its own named subfolder; never scatter files directly into it.";
   }
   const snap = snapshotDir(cwd);
-  if (snap.isDir && snap.emptyOrMissing) {
+  const holdsOnlyMetadata =
+    snap.entryCount === snap.entries.length &&
+    snap.entries.every((name) => METADATA_ONLY_ENTRIES.has(name));
+  if (snap.isDir && holdsOnlyMetadata) {
     return "empty folder — it is the task folder; build directly here unless the user named another destination.";
   }
   if (snap.isProject) {
