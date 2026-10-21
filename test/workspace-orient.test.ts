@@ -189,6 +189,10 @@ describe("workspace orientation (stack-agnostic)", () => {
     expect(buildWorkspaceOrientation({ cwd: empty })).toMatch(
       /Process cwd role: empty folder — it is the task folder/,
     );
+    mkdirSync(join(empty, ".clai"));
+    expect(buildWorkspaceOrientation({ cwd: empty })).toMatch(
+      /Process cwd role: empty folder — it is the task folder/,
+    );
     const project = tmpProject(true);
     expect(buildWorkspaceOrientation({ cwd: project })).toMatch(
       /Process cwd role: inside existing work/,

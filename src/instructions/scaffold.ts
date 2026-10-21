@@ -8,6 +8,7 @@ import {
   scaffoldTargetDir,
 } from "./locations.js";
 import { RECORDED_INSTRUCTIONS_TEMPLATE } from "./record.js";
+import { isBareParentDirectory } from "../agent/workspace-orient.js";
 
 const CLAI_TEMPLATE = `# CLAI.md
 
@@ -56,7 +57,7 @@ export async function ensureProjectInstructionFiles(input: {
   readonly projectRoot?: string | undefined;
 }): Promise<ScaffoldResult | undefined> {
   const root = scaffoldTargetDir(input);
-  if (!root) return undefined;
+  if (!root || isBareParentDirectory(root)) return undefined;
   try {
     await access(root, constants.W_OK);
   } catch {
