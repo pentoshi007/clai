@@ -271,7 +271,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "rea.manage",
-    "REA (Reverse Engineer Anything): use for shipped binaries/packages, decompilation, JavaScript/Electron, .NET, Android, firmware, saved captures and requested runtime evidence; skip ordinary source-repository analysis. Status/guide are read-only and lazy. Install/setup/update privately bootstrap Node/npm if absent on macOS/Linux/Windows. Enable starts its session-only MCP server; discover focused schemas with mcp.tools server=clai-rea, then mcp.call. Reuse active sessions, prefer summaries and retained Evidence. Guide returns compact workflow plus version-matched references. No other agents are configured. Reconnect discards the current analysis connection; use only to repair an observed fault or adopt an update. Normal approval applies to state changes.",
+    "Reverse Engineer Anything (REA) for shipped artifacts: native binaries, Electron/JS apps, .NET, Android, firmware, captures, requested runtime evidence; never source repositories. status/guide are read-only; install/setup/update/enable/disable/reconnect change state. Flow: enable (setup if missing) returns the workflow and tool index, then mcp.call; mcp.tools server=clai-rea reads full schemas. reconnect resets the live analysis: only after a connection fault.",
     {
       type: "object",
       properties: {

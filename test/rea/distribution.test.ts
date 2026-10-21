@@ -62,6 +62,75 @@ describe("REA verified distribution", () => {
     expect(fetch.mock.calls[0]?.[1].redirect).toBe("error");
   });
 
+  it("streams exact-length downloads into one buffer and reports progress", async () => {
+    const payload = Buffer.alloc(600 * 1024, 7);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let offset = 0; offset < payload.length; offset += 200 * 1024) controller.enqueue(payload.subarray(offset, offset + 200 * 1024));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { headers: { "content-length": String(payload.length) } })));
+    const progress = vi.fn();
+    const bytes = await fetchBytes("https://nodejs.org/test", payload.length, undefined, progress);
+    expect(bytes.equals(payload)).toBe(true);
+    expect(progress).toHaveBeenLastCalledWith(payload.length, payload.length);
+  });
+
+  it("does not trust content-length on encoded responses", async () => {
+    const response = new Response("abcdef", { headers: { "content-length": "3", "content-encoding": "gzip" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    expect((await fetchBytes("https://nodejs.org/test", 10)).toString()).toBe("abcdef");
+  });
+
+  it("refuses a body that outgrows its declared length", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from("abc"));
+        controller.enqueue(Buffer.from("def"));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { headers: { "content-length": "4" } })));
+    await expect(fetchBytes("https://nodejs.org/test", 10)).rejects.toThrow(/declared length/);
+  });
+
+  it("aborts a download that stops producing data instead of enforcing a total deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("fetch", vi.fn(async (_url: URL, init: RequestInit) => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Buffer.from("partial"));
+          init.signal?.addEventListener("abort", () => controller.error(init.signal?.reason));
+        },
+      }))));
+      const outcome = fetchBytes("https://nodejs.org/test", 1024).then(() => "done", (error: Error) => error.message);
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await outcome).toMatch(/stalled: no data for 60s/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a slow but steady download alive past the old three-minute deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start: (c) => { controller = c; } }))));
+      const download = fetchBytes("https://nodejs.org/test", 1024);
+      for (let tick = 0; tick < 8; tick += 1) {
+        await vi.advanceTimersByTimeAsync(30_000);
+        controller.enqueue(Buffer.from("x"));
+      }
+      controller.close();
+      expect((await download).length).toBe(8);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("validates package identity and official tarball locations", async () => {
     const metadata = { name: "rea-agents", version: "6.7.0", dist: { tarball: "https://registry.npmjs.org/rea-agents/-/rea-agents-6.7.0.tgz", integrity: "sha512-YQ==" } };
     const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(metadata)));

@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findReaMentions } from "../../rea/workflow.js";
 
 const TEXT_EXTENSIONS = new Set([
   ".txt",
@@ -185,11 +186,13 @@ export function classifyPath(absPath: string): AttachmentKind {
 
 export function extractMentionTokens(line: string): string[] {
   const tokens: string[] = [];
+  const reaStarts = new Set(findReaMentions(line).map((range) => range.start));
   const mentionRe = /(^|\s)@(\S+)/g;
   let match: RegExpExecArray | null;
   while ((match = mentionRe.exec(line)) !== null) {
     const token = `@${match[2]}`;
     if (/^@mcp:/i.test(token)) continue;
+    if (reaStarts.has(match.index + (match[1]?.length ?? 0))) continue;
     tokens.push(token);
   }
 

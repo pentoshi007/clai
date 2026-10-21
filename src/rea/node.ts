@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, realpath, rm } from "node:fs/promises";
+import { access, chmod, mkdir, realpath } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { findExecutable } from "../os/command.js";
@@ -9,6 +9,8 @@ import { extractPackage, fetchBytes, fetchJson, jsonObject, npmRelease, verifyIn
 import type { ReaInstallOptions } from "./types.js";
 
 const execute = promisify(execFile);
+const NODE_EXECUTABLE = /(?:^|[\\/])node(?:\.exe)?$/i;
+const RUNTIME_GUIDANCE = "Install Node.js 22.19+, 24.15+ or 26+ with npm, then put it on PATH or set CLAI_REA_NODE to its node executable.";
 
 export interface ReaNode {
   readonly node: string;
@@ -47,8 +49,17 @@ export async function runReaNode(
   }
 }
 
+export function isNodeExecutable(path: string): boolean {
+  return NODE_EXECUTABLE.test(path);
+}
+
 async function existingNode(signal?: AbortSignal): Promise<ReaNode | undefined> {
-  const candidates = [...new Set([process.env.CLAI_REA_NODE, process.execPath, await findExecutable("node")])];
+  const configured = process.env.CLAI_REA_NODE;
+  const candidates = [...new Set([
+    configured,
+    isNodeExecutable(process.execPath) ? process.execPath : undefined,
+    await findExecutable("node"),
+  ])];
   for (const candidate of candidates) {
     if (!candidate) continue;
     try {
@@ -70,11 +81,11 @@ async function existingNode(signal?: AbortSignal): Promise<ReaNode | undefined> 
 }
 
 export function nodeTarget(platform: NodeJS.Platform, arch: string, musl = false): string {
-  if (arch !== "x64" && arch !== "arm64") throw new Error(`No supported portable Node runtime for ${platform}/${arch}`);
+  if (arch !== "x64" && arch !== "arm64") throw new Error(`No supported portable Node runtime for ${platform}/${arch}. ${RUNTIME_GUIDANCE}`);
   if (platform === "win32") return `win-${arch}`;
   if (platform === "darwin") return `darwin-${arch}`;
   if (platform === "linux") return `linux-${arch}${musl ? "-musl" : ""}`;
-  throw new Error(`No supported portable Node runtime for ${platform}/${arch}`);
+  throw new Error(`No supported portable Node runtime for ${platform}/${arch}. ${RUNTIME_GUIDANCE}`);
 }
 
 function isMusl(): boolean {
@@ -102,7 +113,7 @@ export async function downloadReaNode(
   const base = `https://nodejs.org/dist/${version}`;
   const sums = (await fetchBytes(`${base}/SHASUMS256.txt`, 512 * 1024, signal)).toString("utf8");
   const checksum = sums.split(/\r?\n/).find((line) => line.endsWith(`  ${file}`))?.split(/\s+/)[0];
-  if (!checksum || !/^[a-f0-9]{64}$/.test(checksum)) throw new Error(`Official Node LTS has no verified ${target} build`);
+  if (!checksum || !/^[a-f0-9]{64}$/.test(checksum)) throw new Error(`Official Node LTS has no verified ${target} build. ${RUNTIME_GUIDANCE}`);
   onProgress?.({ phase: "runtime", message: `Downloading private Node ${version} for ${target}` });
   const bytes = await fetchBytes(`${base}/${file}`, 128 * 1024 * 1024, signal, (receivedBytes, totalBytes) => {
     onProgress?.({ phase: "runtime", message: `Downloading private Node ${version}`, receivedBytes, ...(totalBytes ? { totalBytes } : {}) });
@@ -111,7 +122,6 @@ export async function downloadReaNode(
   await mkdir(directory, { recursive: true, mode: 0o700 });
   if (host.platform !== "win32") {
     await extractPackage(bytes, directory, `node-${version}-${target}`);
-    await rm(join(directory, ".download.tgz"), { force: true });
     const node = join(directory, "bin", "node");
     await chmod(node, 0o700);
     return { node, npm: join(directory, "lib", "node_modules", "npm", "bin", "npm-cli.js") };
@@ -123,7 +133,6 @@ export async function downloadReaNode(
   verifyIntegrity(npmBytes, npm.integrity);
   const npmDirectory = join(directory, "npm");
   await extractPackage(npmBytes, npmDirectory, "package");
-  await rm(join(npmDirectory, ".download.tgz"), { force: true });
   return { node, npm: join(npmDirectory, "bin", "npm-cli.js") };
 }
 

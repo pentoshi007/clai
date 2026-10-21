@@ -202,7 +202,7 @@ Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from
 | `/jobs`, `/output` | Background jobs and retained tool output |
 | `/subagents`, `/orchestrator` | Delegate work to subagents |
 | `/mcp`, `/skills` | MCP servers and Agent Skills |
-| `/rea` | Install, update and use Reverse Engineer Anything |
+| `/rea` | Install, update and use Reverse Engineer Anything; `@rea` attaches it to a prompt |
 | `/minimise` | Detach and keep the agent running |
 
 Type `/` for suggestions and `@` to mention files. `/help` lists everything and `/shortcuts` shows key bindings. See the [command reference](guides/commands.md).

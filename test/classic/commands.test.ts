@@ -670,7 +670,9 @@ describe("classic command parity (W12)", () => {
     await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("pager"));
     const state = services.overlay.getState();
     if (state.kind !== "pager") throw new Error("Expected REA workflow");
-    expect(state.title).toBe("REA · workflow");
+    expect(state.title).toBe("REA · Reverse Engineer Anything");
+    expect(state.markdown).toBe("force");
+    expect(state.body).toContain("## Troubleshooting");
     expect(state.body).toContain("mcp.tools");
     expect(services.mcp.getState().snapshot.statuses.some((server) => server.name === "clai-rea")).toBe(false);
     services.overlay.close();

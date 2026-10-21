@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
+import { McpTransportError } from "../mcp/transport.js";
 import { getDataDir } from "../store/paths.js";
 import { fetchBytes, jsonObject, npmRelease, verifyIntegrity } from "./distribution.js";
 import { resolveReaNode, runReaNode } from "./node.js";
@@ -13,9 +15,14 @@ interface Maintenance {
   progress?: ReaProgress;
 }
 
+const PRUNE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+const PUBLISH_ATTEMPTS = 8;
 const operations = new Map<string, Maintenance>();
 const listeners = new Set<(root: string, progress: ReaProgress) => void>();
 const describe = (error: unknown): string => error instanceof Error ? error.message : String(error);
+const failure = (error: unknown): string => error instanceof McpTransportError && error.kind === "timeout"
+  ? "Another clai session is installing or updating REA. Wait for it to finish, then check /rea status."
+  : describe(error);
 
 export const reaRoot = (): string => resolve(getDataDir(), "tools", "rea");
 
@@ -58,6 +65,32 @@ export async function detectRea(root = reaRoot(), verify = false): Promise<ReaSt
   } catch (error) {
     return { state: "broken", reason: `${describe(error)} · repair with /rea install` };
   }
+}
+
+async function publish(pointer: string, destination: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(pointer, destination);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const sharing = code === "EPERM" || code === "EACCES" || code === "EBUSY";
+      if (process.platform !== "win32" || !sharing || attempt >= PUBLISH_ATTEMPTS) throw error;
+      await delay(Math.min(25 * 2 ** attempt, 200));
+    }
+  }
+}
+
+async function pruneVersions(root: string, keep: readonly string[]): Promise<void> {
+  const versions = join(root, "versions");
+  const entries = await readdir(versions, { withFileTypes: true }).catch(() => []);
+  const cutoff = Date.now() - PRUNE_AFTER_MS;
+  await Promise.all(entries.map(async (entry) => {
+    const directory = join(versions, entry.name);
+    if (!entry.isDirectory() || keep.includes(directory)) return;
+    const info = await stat(directory).catch(() => undefined);
+    if (info && info.mtimeMs < cutoff) await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+  }));
 }
 
 async function verifyInstallation(installation: ReaInstallation, signal?: AbortSignal): Promise<void> {
@@ -115,9 +148,10 @@ async function install(action: ReaMaintenanceAction, root: string, options: ReaI
     await verifyInstallation(installation, signal);
     signal?.throwIfAborted();
     await writeFile(pointer, JSON.stringify(installation), { mode: 0o600, flag: "wx" });
-    await rename(pointer, join(root, "current.json"));
+    await publish(pointer, join(root, "current.json"));
     published = true;
     await rm(archive, { force: true }).catch(() => undefined);
+    await pruneVersions(root, [directory, ...(before.state === "ready" ? [before.installation.directory] : [])]);
     return { ok: true, installation, changed: true };
   } finally {
     await rm(pointer, { force: true }).catch(() => undefined);
@@ -136,7 +170,7 @@ export function runReaMaintenance(action: ReaMaintenanceAction, options: ReaInst
     for (const listener of listeners) listener(root, progress);
   };
   const promise = withMcpStorageLock(`rea:${root}`, () => install(action, root, { ...options, onProgress }), options.signal)
-    .catch((error: unknown): ReaMaintenanceResult => ({ ok: false, reason: describe(error) }))
+    .catch((error: unknown): ReaMaintenanceResult => ({ ok: false, reason: failure(error) }))
     .finally(() => { operations.delete(root); });
   operations.set(root, { action, promise });
   return promise;

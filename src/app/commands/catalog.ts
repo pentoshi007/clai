@@ -22,7 +22,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/rea",
     usage: "[install|setup|update|use|on|off|status|reconnect|guide|<task>]",
-    description: "reverse engineer anything · install, update or attach REA · prompt-cache safe",
+    description: "reverse engineer anything · install, update or attach @rea · prompt-cache safe",
   },
   {
     command: "/rtk",
