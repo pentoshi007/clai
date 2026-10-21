@@ -90,6 +90,42 @@ describe("REA tool index", () => {
     expect(trimmed.length).toBeLessThanOrEqual(8_000);
   });
 
+  it("marks tools that need an open binary, an engine or a missing prerequisite", () => {
+    const marks = { open: new Set(["inspect_macho", "search_procedures"]), deep: new Set(["search_procedures"]), blocked: new Set(["inspect_android_package"]) };
+    const catalog = [
+      tool({ name: "inspect_macho", properties: { detail: { enum: ["summary", "complete"] } } }),
+      tool({ name: "search_procedures", properties: { pattern: { type: "string" } }, required: ["pattern"] }),
+      tool({ name: "inspect_android_package", properties: { path: { type: "string" } }, required: ["path"] }),
+      tool({ name: "open_binary", properties: { path: { type: "string" } }, required: ["path"] }),
+    ];
+    const text = reaToolIndex(catalog, undefined, marks);
+    expect(text).toContain("inspect_macho~#");
+    expect(text).toContain("search_procedures(pattern)#^");
+    expect(text).toContain("inspect_android_package(path)%");
+    expect(text).toMatch(/open_binary\(path\)(?![#^%])/);
+    expect(text.split("\n")[0]).toContain("# acts on the binary opened by open_binary");
+    expect(text.split("\n")[0]).toContain("^ also needs an analysis engine");
+    expect(text.split("\n")[0]).toContain("% unavailable on this machine");
+  });
+
+  it("explains only the marks that appear and leaves the index unchanged without availability", () => {
+    const marks = { open: new Set(["inspect_macho"]), deep: new Set<string>(), blocked: new Set<string>() };
+    const header = reaToolIndex(CATALOG, undefined, marks).split("\n")[0]!;
+    expect(header).not.toContain("# acts on");
+    expect(reaToolIndex(CATALOG, undefined, { open: new Set(["list_documents"]), deep: new Set(), blocked: new Set() }).split("\n")[0]).toContain("# acts on");
+    expect(reaToolIndex(CATALOG, undefined, { open: new Set(), deep: new Set(), blocked: new Set() })).toBe(reaToolIndex(CATALOG));
+    expect(reaToolIndex(CATALOG, undefined, marks)).toBe(reaToolIndex(CATALOG));
+  });
+
+  it("stays deterministic and within the budget when every tool is marked", () => {
+    const names = Array.from({ length: 220 }, (_, index) => `scan_target_${String(index).padStart(3, "0")}`);
+    const catalog = names.map((name) => tool({ name, properties: { path: { type: "string" } }, required: ["path"] }));
+    const marks = { open: new Set(names), deep: new Set(names), blocked: new Set(names) };
+    const text = reaToolIndex(catalog, undefined, marks);
+    expect(text.length).toBeLessThanOrEqual(REA_INDEX_CHARS);
+    expect(reaToolIndex([...catalog].reverse(), undefined, marks)).toBe(text);
+  });
+
   it("truncates at a whole name and points at mcp.tools when even the names do not fit", () => {
     const huge = Array.from({ length: 2_000 }, (_, index) => tool({ name: `scan_target_${String(index).padStart(4, "0")}` }));
     const text = reaToolIndex(huge);

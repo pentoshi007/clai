@@ -45,6 +45,16 @@ describe("confirm rows", () => {
     expect(frame.hints).toEqual(["i/d/s/p", "esc dismiss"]);
   });
 
+  it("titles an engine install by what it does and offers the full plan", () => {
+    const prompt = ["Install Ghidra 12.1.4 for REA?", "• Download: 570 MB", "• Disk: 1.6 GB", "• Build once", "• No Java found", "• Nothing else changes", "• Extra line"].join("\n");
+    const { frame, rows } = render({ kind: "install", prompt, review: { title: "Install Ghidra 12.1.4 for REA", body: prompt } }, 14, 120);
+    expect(frame.title).toBe("⚠ Install engine");
+    expect(frame.title).not.toContain("Step limit");
+    expect(rows.join("\n")).toContain("y approve");
+    expect(rows.join("\n")).toContain("ctrl+o view full");
+    expect(frame.hints).toEqual(["y/n/ctrl+o", "esc deny"]);
+  });
+
   it("renders reset with a single confirm key", () => {
     const { rows, frame } = render({ kind: "reset", prompt: "Reset the session?" });
     expect(rows.join("\n")).toContain("r confirm");

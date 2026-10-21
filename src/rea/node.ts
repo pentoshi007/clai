@@ -35,12 +35,14 @@ export function reaEnvironment(node: string): NodeJS.ProcessEnv {
 }
 
 export async function runReaNode(
-  node: string, args: readonly string[], options: { cwd?: string; signal?: AbortSignal; timeout?: number } = {},
+  node: string, args: readonly string[],
+  options: { cwd?: string; signal?: AbortSignal; timeout?: number; env?: Readonly<Record<string, string>>; maxBuffer?: number } = {},
 ): Promise<string> {
+  const { env, maxBuffer, ...rest } = options;
   try {
     const result = await execute(node, [...args], {
-      ...options, env: reaEnvironment(node), windowsHide: true,
-      timeout: options.timeout ?? 30_000, maxBuffer: 2 * 1024 * 1024,
+      ...rest, env: { ...reaEnvironment(node), ...env }, windowsHide: true,
+      timeout: options.timeout ?? 30_000, maxBuffer: maxBuffer ?? 2 * 1024 * 1024,
     });
     return result.stdout.trim();
   } catch (error) {

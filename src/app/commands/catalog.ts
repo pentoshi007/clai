@@ -21,8 +21,8 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/rea",
-    usage: "[install|setup|update|use|on|off|status|reconnect|guide|<task>]",
-    description: "reverse engineer anything · install, update or attach @rea · prompt-cache safe",
+    usage: "[install|setup|update|use|on|off|status|reconnect|guide|engines|<task>]",
+    description: "reverse engineer anything · install, update or attach @rea · engines installs Ghidra on request · prompt-cache safe",
   },
   {
     command: "/rtk",

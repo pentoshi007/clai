@@ -5,7 +5,7 @@ import type { ArtifactPagerSource } from "../rendering/artifact-pager-source.js"
 import type { PagerBodyRegions } from "../rendering/pager-regions.js";
 import type { OperationReview } from "../../app/operation-review.js";
 
-export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch" | "mcp-oauth";
+export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch" | "mcp-oauth" | "install";
 
 export type PlanConfirmResult = "implement" | "discard" | "suggest" | "dismiss";
 

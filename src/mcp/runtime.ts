@@ -6,7 +6,7 @@ import {
 } from "../llm/tool-protocol.js";
 import type { RiskDecision } from "../safety/classifier.js";
 import type { ToolDefinition, ToolResult } from "../types.js";
-import { argumentHint, isArgumentRejection } from "./argument-hint.js";
+import { argumentHint, isArgumentRejection, type McpFailureHint } from "./argument-hint.js";
 import { redactSecrets } from "./format.js";
 import { coerceArgumentsForSchema } from "./coerce.js";
 import { writeProjectMcpServer } from "./config-file.js";
@@ -216,6 +216,7 @@ export class McpRuntime {
   private state: McpRuntimeState;
   private base: McpBaseSelection = { mode: "off" };
   private readonly leases: McpLeaseView[] = [];
+  private readonly failureHints = new Map<string, McpFailureHint>();
   private readonly unregisterDispatcher: () => void;
   private readonly unsubscribeManager: () => void;
 
@@ -244,6 +245,11 @@ export class McpRuntime {
       isParallelSafe: (name) => this.isParallelSafe(name),
       unavailableToolMessage: (name) => this.unavailableToolMessage(name),
     });
+  }
+
+  setFailureHint(serverName: string, hint: McpFailureHint | undefined): void {
+    if (hint) this.failureHints.set(serverName, hint);
+    else this.failureHints.delete(serverName);
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -668,8 +674,10 @@ export class McpRuntime {
       if (coerced.length > 0 && !normalized.ok) {
         normalized.output = `${normalized.output}\n(note: clai coerced string argument(s) ${coerced.join(", ")} to the schema-declared type; the server still rejected the call — check the tool schema with mcp.tools.)`;
       }
-      if (!normalized.ok && isArgumentRejection(normalized.output)) {
-        normalized.output = `${normalized.output}\n${argumentHint(tool)}`;
+      if (!normalized.ok) {
+        const custom = this.failureHints.get(tool.serverName)?.({ tool, args: coercedArgs, output: normalized.output });
+        if (custom !== undefined) normalized.output = custom;
+        else if (isArgumentRejection(normalized.output)) normalized.output = `${normalized.output}\n${argumentHint(tool)}`;
       }
       return normalized;
     } catch (error) {

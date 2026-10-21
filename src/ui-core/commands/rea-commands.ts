@@ -2,17 +2,24 @@ import type { CommandInvocation } from "../../app/commands/command.js";
 import { reaConnection } from "../../rea/connection.js";
 import { reaUserGuide } from "../../rea/guide.js";
 import { detectRea, reaMaintenance, reaRoot, subscribeReaProgress } from "../../rea/install.js";
-import { manageRea, type ReaAction } from "../../rea/runtime.js";
+import { readyEngines } from "../../rea/availability.js";
+import { manageRea, reaAvailability, type ReaAction } from "../../rea/runtime.js";
 import { REA_TOKEN } from "../../rea/workflow.js";
 import type { ReaStatus } from "../../rea/types.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import { composerActionPort } from "../composer/composer-action-port.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
+import { handleEngineCommand, isEnginesCommand, openEnginesPicker } from "./rea-engines-commands.js";
 
 const ACTIONS: Readonly<Record<string, ReaAction>> = {
   install: "install", setup: "setup", update: "update", use: "enable", on: "enable", enable: "enable",
   off: "disable", disable: "disable", reconnect: "reconnect", status: "status", guide: "guide", help: "guide",
 };
+
+function engineNote(services: AppServices): string {
+  const known = reaAvailability(services.mcp);
+  return known && known.engines.length > 0 && readyEngines(known).length === 0 ? " · no analysis engine yet: /rea engines" : "";
+}
 
 function attach(services: AppServices): void {
   if (composerActionPort.insert(`${REA_TOKEN} `)) services.focus.focusRegion("composer");
@@ -72,9 +79,9 @@ async function runAction(services: AppServices, command: string, action: ReaActi
     if (services.session.sessionId !== sessionId) return;
     if (result.ok && action === "enable") {
       if (command === "use") attach(services);
-      else services.session.notice("info", `REA enabled · agent can now use its tools · /rea use attaches ${REA_TOKEN} to your draft`);
+      else services.session.notice("info", `REA enabled · agent can now use its tools · /rea use attaches ${REA_TOKEN} to your draft${engineNote(services)}`);
     } else if (result.ok && (action === "setup" || action === "reconnect")) {
-      services.session.notice("info", `REA connected · /rea use attaches ${REA_TOKEN} to a prompt · the agent can also select it automatically`);
+      services.session.notice("info", `REA connected · /rea use attaches ${REA_TOKEN} to a prompt · the agent can also select it automatically${engineNote(services)}`);
     } else services.session.notice(result.ok ? "info" : "warn", result.output);
   } catch (error) {
     services.session.notice("warn", `REA failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -98,6 +105,7 @@ function options(services: AppServices, status?: ReaStatus): PickerOption[] {
         { value: "use", label: "Use REA in composer", icon: "●", tone: "success" as const, active: enabled, description: `attach ${REA_TOKEN} to your draft · keep the current analysis if already connected` },
         { value: "update", label: "Update to latest version", icon: "↻", tone: "accent" as const, description: "stage and verify the latest release · active analysis is not interrupted" },
         { value: "reconnect", label: "Reconnect REA", icon: "⟳", description: "repair an observed connection error or adopt an update · resets the current analysis" },
+        { value: "engines", label: "Analysis engines", icon: "⚙", description: "native decompilation needs Ghidra, Hopper, IDA or Kuna · check, install Ghidra, or point to your own" },
       ] : []),
     ]),
     { value: "off", label: "Disable REA", icon: "○", active: !enabled, description: "stop its managed server for this session · leave other MCP servers alone" },
@@ -122,6 +130,7 @@ function openPicker(services: AppServices): void {
   const onSelect = (value: string): void => {
     if (value === "refresh") { refresh(); return; }
     services.overlay.close();
+    if (value === "engines") { openEnginesPicker(services); return; }
     const action = ACTIONS[value];
     if (action) void runAction(services, value, action);
   };
@@ -135,6 +144,7 @@ function openPicker(services: AppServices): void {
 export async function handleRea(services: AppServices, invocation: CommandInvocation): Promise<void> {
   const args = invocation.args.trim();
   if (!args) { openPicker(services); return; }
+  if (isEnginesCommand(args)) { await handleEngineCommand(services, args); return; }
   const action = ACTIONS[args.toLowerCase()];
   if (action) { void runAction(services, args.toLowerCase(), action); return; }
   const prompt = `${REA_TOKEN} ${args}`;

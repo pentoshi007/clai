@@ -1,4 +1,5 @@
 import type { McpToolMetadata } from "../mcp/types.js";
+import type { ReaAvailability } from "./availability.js";
 
 export const REA_INDEX_CHARS = 10_000;
 
@@ -15,6 +16,7 @@ const SHORT_TYPES: Readonly<Record<string, string>> = {
 };
 
 type IndexedTool = Pick<McpToolMetadata, "toolName" | "inputSchema" | "destructive">;
+type IndexMarks = Pick<ReaAvailability, "open" | "deep" | "blocked">;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,7 +43,12 @@ function typeSuffix(schema: unknown): string {
   return `:${types.map((type) => SHORT_TYPES[type] ?? type).join("|")}`;
 }
 
-function entry(tool: IndexedTool, withArguments: boolean): string {
+function marks(name: string, available: IndexMarks | undefined): string {
+  if (!available) return "";
+  return `${available.open.has(name) ? "#" : ""}${available.deep.has(name) ? "^" : ""}${available.blocked.has(name) ? "%" : ""}`;
+}
+
+function entry(tool: IndexedTool, withArguments: boolean, available: IndexMarks | undefined): string {
   const properties = isRecord(tool.inputSchema.properties) ? tool.inputSchema.properties : {};
   const required = Array.isArray(tool.inputSchema.required)
     ? tool.inputSchema.required.filter((name): name is string => typeof name === "string")
@@ -49,7 +56,7 @@ function entry(tool: IndexedTool, withArguments: boolean): string {
   const args = withArguments && required.length > 0
     ? `(${required.map((name) => (SAFE_IDENTIFIER.test(name) ? `${name}${typeSuffix(properties[name])}` : "*")).join(",")})`
     : "";
-  const flags = `${tool.destructive ? "!" : ""}${Object.hasOwn(properties, "detail") ? "~" : ""}`;
+  const flags = `${tool.destructive ? "!" : ""}${Object.hasOwn(properties, "detail") ? "~" : ""}${marks(tool.toolName, available)}`;
   return `${tool.toolName}${args}${flags}`;
 }
 
@@ -58,13 +65,13 @@ function family(name: string): string {
   return separator > 0 ? name.slice(0, separator) : "";
 }
 
-function lines(tools: readonly IndexedTool[], withArguments: boolean): string[] {
+function lines(tools: readonly IndexedTool[], withArguments: boolean, available: IndexMarks | undefined): string[] {
   const groups = new Map<string, string[]>();
   for (const tool of [...tools].sort((left, right) => byName(left.toolName, right.toolName))) {
     const key = family(tool.toolName);
     const bucket = groups.get(key);
-    if (bucket) bucket.push(entry(tool, withArguments));
-    else groups.set(key, [entry(tool, withArguments)]);
+    if (bucket) bucket.push(entry(tool, withArguments, available));
+    else groups.set(key, [entry(tool, withArguments, available)]);
   }
   const named: Array<[string, string[]]> = [];
   const rest: string[] = [];
@@ -78,15 +85,29 @@ function lines(tools: readonly IndexedTool[], withArguments: boolean): string[] 
   return output;
 }
 
-export function reaToolIndex(catalog: readonly IndexedTool[], limit = REA_INDEX_CHARS): string {
+function legend(tools: readonly IndexedTool[], available: IndexMarks | undefined): string {
+  if (!available) return "";
+  const present = (set: ReadonlySet<string>): boolean => tools.some((tool) => set.has(tool.toolName));
+  return [
+    present(available.open) ? "; # acts on the binary opened by open_binary (open it first, pass no path)" : "",
+    present(available.deep) ? "; ^ also needs an analysis engine" : "",
+    present(available.blocked) ? "; % unavailable on this machine (missing prerequisite)" : "",
+  ].join("");
+}
+
+export function reaToolIndex(
+  catalog: readonly IndexedTool[],
+  limit = REA_INDEX_CHARS,
+  available?: IndexMarks,
+): string {
   const tools = catalog.filter((tool) => SAFE_IDENTIFIER.test(tool.toolName));
   if (tools.length === 0) return "";
-  const header = `REA TOOLS (${tools.length}; mcp.call name=mcp.clai-rea.<name>): (x,y)=required arguments, strings unless typed; obj, arr, * and enum need the schema from mcp.tools; ~ accepts detail; ! changes state or the target`;
+  const header = `REA TOOLS (${tools.length}; mcp.call name=mcp.clai-rea.<name>): (x,y)=required arguments, strings unless typed; obj, arr, * and enum need the schema from mcp.tools; ~ accepts detail; ! changes state or the target${legend(tools, available)}`;
   for (const withArguments of [true, false]) {
-    const body = lines(tools, withArguments).join("\n");
+    const body = lines(tools, withArguments, available).join("\n");
     if (header.length + body.length + 1 <= limit) return `${header}\n${body}`;
   }
-  const names = lines(tools, false).join("\n");
+  const names = lines(tools, false, available).join("\n");
   const room = Math.max(0, limit - header.length - 64);
   const cut = names.lastIndexOf(" ", room);
   return `${header}\n${names.slice(0, cut > 0 ? cut : room)} …more tools: use mcp.tools server="clai-rea" without a query`;

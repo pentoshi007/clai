@@ -67,7 +67,7 @@ export async function detectRea(root = reaRoot(), verify = false): Promise<ReaSt
   }
 }
 
-async function publish(pointer: string, destination: string): Promise<void> {
+export async function publish(pointer: string, destination: string): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       await rename(pointer, destination);
