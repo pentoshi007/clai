@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { rename, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { publish } from "./install.js";
 
 const MAX_REDIRECTS = 5;
 const STALL_TIMEOUT_MS = 60_000;
@@ -196,7 +197,7 @@ export async function downloadFile(url: string, destination: string, options: Do
     const digest = hash.digest("hex");
     if (expected !== undefined && digest !== expected) throw new Error("Downloaded file checksum mismatch");
     options.onProgress?.(received, total);
-    await rename(partial, destination);
+    await publish(partial, destination);
     return { bytes: received, sha256: digest };
   } catch (error) {
     await rm(partial, { force: true }).catch(() => undefined);

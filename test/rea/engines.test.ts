@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { engineEnvironment, engineRoots, parseEngineSettings, readEngineSettings, updateEngineSettings } from "../../src/rea/engines.js";
+import { clearStaging, engineEnvironment, engineRoots, parseEngineSettings, readEngineSettings, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "../../src/rea/engines.js";
 
 const directories: string[] = [];
 
@@ -99,3 +99,46 @@ describe("REA engine settings", () => {
     expect(engineEnvironment(settings, { ghidra_install_dir: "/mine" })).toEqual({ GHIDRA_INSTALL_DIR: dir });
   });
 });
+
+describe("staging and removal helpers", () => {
+  it("names staging folders short enough for Windows and unique per run", () => {
+    const names = new Set(Array.from({ length: 50 }, () => stagingName()));
+    expect(names.size).toBe(50);
+    for (const name of names) expect(name).toMatch(/^\.s-[0-9a-f]{8}$/);
+  });
+
+  it("clears only leftovers of crashed installs, old and new style, never installed versions", async () => {
+    const base = await mkdtemp(join(tmpdir(), "clai-staging-"));
+    directories.push(base);
+    const leftovers = [".staging-0b0e4f0e-8c6c-4a0c-9d57-2f1b5e0d9a11", ".s-deadbeef"];
+    const keep = ["12.1.4", ".s-zzzz", "my-notes", ".staging-notes"];
+    for (const name of [...leftovers, ...keep]) {
+      await mkdir(join(base, name, "inner"), { recursive: true });
+      await writeFile(join(base, name, "inner", "file"), "x");
+    }
+    await writeFile(join(base, ".s-feedface"), "a file, not a directory");
+    await clearStaging(base);
+    expect((await readdir(base)).sort()).toEqual([...keep, ".s-feedface"].sort());
+    await expect(clearStaging(join(base, "missing"))).resolves.toBeUndefined();
+  });
+
+  it("removes a tree, and a missing one is not an error", async () => {
+    const base = await mkdtemp(join(tmpdir(), "clai-remove-"));
+    directories.push(base);
+    await mkdir(join(base, "a", "b"), { recursive: true });
+    await writeFile(join(base, "a", "b", "file"), "x");
+    await removeTree(join(base, "a"));
+    await removeTree(join(base, "a"));
+    expect(await readdir(base)).toEqual([]);
+  });
+
+  it("refuses a Windows location whose deepest file would pass the path limit, and only there", () => {
+    const shallow = "C:\\Users\\me\\.clai\\tools\\ghidra";
+    const deep = `C:\\Users\\a-person-with-a-rather-long-name\\AppData\\Local\\Some Company\\Some Product\\clai-data-folder\\tools\\ghidra`;
+    expect(windowsPathProblem("win32", shallow, 140)).toBeUndefined();
+    expect(windowsPathProblem("win32", deep, 140)).toMatch(/too deep for Windows.*CLAI_DATA_DIR/);
+    expect(windowsPathProblem("linux", deep, 140)).toBeUndefined();
+    expect(windowsPathProblem("darwin", deep, 140)).toBeUndefined();
+  });
+});
+

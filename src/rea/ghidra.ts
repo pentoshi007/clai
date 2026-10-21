@@ -1,13 +1,12 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { availableParallelism } from "node:os";
-import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
 import { findExecutable } from "../os/command.js";
 import { downloadFile, fetchJsonValue, type FetchFunction } from "./download.js";
-import { engineRoots, updateEngineSettings } from "./engines.js";
-import { reaRoot } from "./install.js";
+import { clearStaging, engineRoots, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "./engines.js";
+import { publish, reaRoot } from "./install.js";
 import { ensureFreeSpace, extractZip } from "./zip.js";
 
 export const GHIDRA_SERIES = "12.1";
@@ -22,6 +21,7 @@ const BUILD_TAIL_CHARS = 6_000;
 const CPP_DIRECTORY = ["Ghidra", "Features", "Decompiler", "src", "decompile", "cpp"] as const;
 const EXTRACTED_BYTES = 1_000_000_000;
 export const GHIDRA_INSTALLED_BYTES = 900_000_000;
+const DEEPEST_ENTRY_CHARS = 140;
 
 export interface EngineHost {
   readonly platform: NodeJS.Platform;
@@ -289,9 +289,12 @@ async function install(release: GhidraRelease, options: InstallGhidraOptions, ro
     await updateEngineSettings((current) => ({ ...current, ghidra: { dir: target, managed: true, version: release.version } }), root, signal);
     return { ok: true, dir: target, version: release.version, built: false, changed: false };
   }
+  const tooDeep = windowsPathProblem(host.platform, roots.ghidra, DEEPEST_ENTRY_CHARS);
+  if (tooDeep) throw new Error(tooDeep);
   await mkdir(roots.ghidra, { recursive: true, mode: 0o700 });
+  await clearStaging(roots.ghidra);
   await ensureFreeSpace(roots.ghidra, ghidraDiskBytes(release));
-  const staging = join(roots.ghidra, `.staging-${randomUUID()}`);
+  const staging = join(roots.ghidra, stagingName());
   await mkdir(staging, { mode: 0o700 });
   try {
     const archive = join(staging, "ghidra.zip");
@@ -300,7 +303,7 @@ async function install(release: GhidraRelease, options: InstallGhidraOptions, ro
       hosts: DOWNLOAD_HOSTS, maxBytes: MAX_ARCHIVE_BYTES, sha256: release.sha256, bytes: release.bytes, signal, fetch: options.fetch,
       onProgress: (receivedBytes, totalBytes) => onProgress?.({ phase: "downloading", message: `Downloading Ghidra ${release.version}`, receivedBytes, totalBytes: totalBytes ?? release.bytes }),
     });
-    const tree = join(staging, "tree");
+    const tree = join(staging, "t");
     onProgress?.({ phase: "extracting", message: `Extracting Ghidra ${release.version}` });
     await extractZip(archive, tree, {
       strip: 1, signal,
@@ -317,16 +320,16 @@ async function install(release: GhidraRelease, options: InstallGhidraOptions, ro
       if (!inspection.ok || !inspection.decompiler) throw new Error("The native decompiler is still missing after the build");
     }
     signal?.throwIfAborted();
-    await rm(target, { recursive: true, force: true });
-    await rename(tree, target);
+    await removeTree(target);
+    await publish(tree, target);
     await updateEngineSettings((current) => ({ ...current, ghidra: { dir: target, managed: true, version: release.version } }), root, signal);
     const siblings = await readdir(roots.ghidra, { withFileTypes: true }).catch(() => []);
     await Promise.all(siblings
       .filter((entry) => entry.isDirectory() && entry.name !== release.version && VERSION_DIRECTORY.test(entry.name))
-      .map((entry) => rm(join(roots.ghidra, entry.name), { recursive: true, force: true }).catch(() => undefined)));
+      .map((entry) => removeTree(join(roots.ghidra, entry.name)).catch(() => undefined)));
     return { ok: true, dir: target, version: release.version, built, changed: true };
   } finally {
-    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    await removeTree(staging).catch(() => undefined);
   }
 }
 
