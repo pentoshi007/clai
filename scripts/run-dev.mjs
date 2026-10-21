@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-/**
- * Prefer Bun for `npm run dev` so OpenTUI's native FFI loads.
- * Falls back to tsx with a clear warning when Bun is missing.
- */
+
+ // Prefer Bun for `npm run dev` so OpenTUI's native FFI loads.
+ // Falls back to tsx with a clear warning when Bun is missing.
+ 
 import { spawnSync, spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join, dirname } from "node:path";
