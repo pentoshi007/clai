@@ -85,10 +85,11 @@ describe("REA engine settings", () => {
   });
 
   it("treats environment names case-insensitively on Windows only", () => {
-    const settings = parseEngineSettings(JSON.stringify({ ghidra: { dir: abs("g"), managed: true } }));
+    const dir = abs("g");
+    const settings = parseEngineSettings(JSON.stringify({ ghidra: { dir, managed: true } }));
     vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     expect(engineEnvironment(settings, { ghidra_install_dir: "C:\\mine" })).toEqual({});
     vi.spyOn(process, "platform", "get").mockReturnValue("linux");
-    expect(engineEnvironment(settings, { ghidra_install_dir: "/mine" })).toEqual({ GHIDRA_INSTALL_DIR: abs("g") });
+    expect(engineEnvironment(settings, { ghidra_install_dir: "/mine" })).toEqual({ GHIDRA_INSTALL_DIR: dir });
   });
 });
