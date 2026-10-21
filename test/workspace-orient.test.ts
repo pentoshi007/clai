@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   buildWorkspaceOrientation,
+  classifyWorkIntent,
   detectPackageManager,
   discoverImmediateProjectRoots,
   extractScaffoldTargetName,
@@ -135,6 +136,70 @@ describe("workspace orientation (stack-agnostic)", () => {
     writeFileSync(join(project, "go.mod"), "module example.com/real");
 
     expect(discoverImmediateProjectRoots(desktop, 1)).toEqual([project]);
+  });
+
+  it.each([
+    ["create a watch website on my desktop folder", "new"],
+    ["write a report on the scan results", "new"],
+    ["create a weather app that shows current temperature and updates live", "new"],
+    ["start a new project for a blog", "new"],
+    ["fix the watch website on my desktop", "existing"],
+    ["add a login page to my watch website", "existing"],
+    ["continue the watch-website project", "existing"],
+    ["create a new feature in this app", "existing"],
+    ["make it faster", "existing"],
+    ["explain the architecture", "unspecified"],
+    ["yes go ahead", "unspecified"],
+  ] as const)("classifies %j as %s work", (prompt, intent) => {
+    expect(classifyWorkIntent(prompt)).toBe(intent);
+  });
+
+  it("marks namesake and discovered work as untargeted for new requests", () => {
+    const root = mkdtempSync(join(tmpdir(), "clai-new-work-"));
+    temps.push(root);
+    const desktop = join(root, "Desktop");
+    const existing = join(desktop, "watch-website");
+    mkdirSync(existing, { recursive: true });
+    writeFileSync(join(existing, "index.html"), "<html></html>");
+
+    const fresh = buildWorkspaceOrientation({
+      cwd: root,
+      destinationHint: desktop,
+      namesakePath: existing,
+      intent: "new",
+    });
+    expect(fresh).toMatch(/Request intent: NEW work/);
+    expect(fresh).toContain(`existing path with the requested name: ${existing}`);
+    expect(fresh).toMatch(/EXISTING WORK — not the target of this new request/);
+    expect(fresh).not.toMatch(/EXISTING PROJECT — do NOT re-scaffold/);
+
+    const continuing = buildWorkspaceOrientation({
+      cwd: root,
+      destinationHint: desktop,
+      namesakePath: existing,
+      intent: "existing",
+    });
+    expect(continuing).toMatch(/Request intent: work on EXISTING/);
+    expect(continuing).toMatch(/EXISTING PROJECT — do NOT re-scaffold/);
+    expect(continuing).not.toMatch(/not the target of this new request/);
+  });
+
+  it("describes whether the cwd is the task folder", () => {
+    const empty = tmpProject(false);
+    expect(buildWorkspaceOrientation({ cwd: empty })).toMatch(
+      /Process cwd role: empty folder — it is the task folder/,
+    );
+    const project = tmpProject(true);
+    expect(buildWorkspaceOrientation({ cwd: project })).toMatch(
+      /Process cwd role: inside existing work/,
+    );
+    const parent = mkdtempSync(join(tmpdir(), "clai-role-"));
+    temps.push(parent);
+    const desktop = join(parent, "Desktop");
+    mkdirSync(desktop);
+    expect(buildWorkspaceOrientation({ cwd: desktop })).toMatch(
+      /Process cwd role: general parent folder/,
+    );
   });
 
   it("guesses todo-app and blogging-app from natural language", () => {

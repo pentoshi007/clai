@@ -4,6 +4,7 @@ import {
   resolveScaffoldTargetPath,
   scaffoldLooksMaterialized,
   scaffoldTargetConflictMessage,
+  type WorkIntent,
 } from "../workspace-orient.js";
 
 export interface ScaffoldPreflightDecision {
@@ -11,6 +12,11 @@ export interface ScaffoldPreflightDecision {
   readonly message: string;
   readonly target: string | undefined;
   readonly adoptTarget: boolean;
+}
+
+export interface ScaffoldPreflightContext {
+  readonly workIntent?: WorkIntent;
+  readonly activeProjectRoot?: string | undefined;
 }
 
 const NO_SKIP: ScaffoldPreflightDecision = {
@@ -22,6 +28,7 @@ const NO_SKIP: ScaffoldPreflightDecision = {
 
 export const decideScaffoldPreflight = (
   call: ToolCall,
+  context: ScaffoldPreflightContext = {},
 ): ScaffoldPreflightDecision => {
   if (call.name !== "shell.exec") return NO_SKIP;
   const command = call.args.command;
@@ -31,8 +38,16 @@ export const decideScaffoldPreflight = (
   const cwdArg = typeof call.args.cwd === "string" ? call.args.cwd : undefined;
   if (!scaffoldTargetConflictMessage(command, cwdArg)) return NO_SKIP;
   const target = resolveScaffoldTargetPath(command, cwdArg);
-  const materialized = scaffoldLooksMaterialized(target);
   const location = target ? ` at ${target}` : "";
+  if (context.workIntent === "new" && target !== context.activeProjectRoot) {
+    return {
+      skip: true,
+      message: `Scaffold skipped: the target${location} already holds existing work that this new request does not target. Leave it untouched and scaffold into a new, non-colliding folder.`,
+      target,
+      adoptTarget: false,
+    };
+  }
+  const materialized = scaffoldLooksMaterialized(target);
   return {
     skip: true,
     message: materialized

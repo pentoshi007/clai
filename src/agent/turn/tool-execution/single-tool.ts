@@ -347,7 +347,10 @@ export const runSingleTool = async (
     deps.destinationHint ?? getActiveProjectRoot(),
   );
 
-  const scaffoldPreflight = decideScaffoldPreflight(call);
+  const scaffoldPreflight = decideScaffoldPreflight(call, {
+    workIntent: deps.workIntent,
+    activeProjectRoot: getActiveProjectRoot(),
+  });
   if (scaffoldPreflight.skip) {
     if (
       scaffoldPreflight.adoptTarget &&

@@ -13,6 +13,7 @@ import type { LoopGuard } from "../../loop-guard.js";
 import type { WorkLedger } from "../../durable-envelope.js";
 import type { OutcomeEnvelope } from "../../outcomes.js";
 import type { LooseWorkReceipt } from "../../task-evidence.js";
+import type { WorkIntent } from "../../workspace-orient.js";
 import type { TurnState, TurnStateSnapshot } from "../../turn-state.js";
 import type { EngagementPolicyEngine } from "../../../safety/engagement-policy.js";
 import type { McpRuntime } from "../../../mcp/runtime.js";
@@ -42,6 +43,7 @@ export interface SingleToolDeps extends TurnWriters {
   readonly session: SessionPolicy;
   readonly emit: (event: AgentEvent) => void;
   readonly destinationHint: string | undefined;
+  readonly workIntent: WorkIntent;
   readonly options: SingleToolOptions;
   readonly messages: ChatMessage[];
   readonly prompt: string;

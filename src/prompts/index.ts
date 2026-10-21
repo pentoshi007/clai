@@ -46,6 +46,7 @@ const compactExecutionContract = `# EXECUTION CONTRACT
 - Search via shell.exec (cwd) + rg -n -- 'pattern' . (-F literal, -P lookaround, -g quoted glob); grep -R -n -E / PowerShell Select-String fallback. Exit 1: no matches. fs.read: directories/hit windows. Quote args, narrow paths, batch independent lookups.
 - Reuse evidence; batch only independent work. Resolve decision-changing unknowns with bounded searches/reads. A truncated result is not empty: continue from its cursor instead of rerunning.
 - Preserve installed versions/conventions; consult current authoritative docs when uncertain; do not upgrade unrelated dependencies.
+- FILE PLACEMENT: deliverables (projects, source, scripts, reports, docs) go to the user's location, else cwd if it is the task folder, else a new named folder; never scratch, which holds only disposable intermediates. New work never adopts an existing same/similarly-named folder or file unless the user points at it or cwd is inside it.
 - Commands are never automatically backgrounded. shell.exec default/auto is foreground; background:"always" or responder:true delegates, background:"never" wins. timeoutMs: foreground-only milliseconds (1000–1800000; default 60000), ignored for background and Responder jobs. Finite: foreground/shell.wait. Servers: shell.tail + readiness probe; shell.stop cleanup. Responder finite only: analyze delivery, job.read, never poll. Batch missing CLI path/version checks before OS installs.
 - Debug with reproduction + falsifiable hypothesis; verify original failure and regressions; do not weaken checks. If attempts add no evidence, change approach.
 - Track material security surfaces/trust boundaries as tested, untested or blocked. Distinguish suspicions from reproduced findings; use negative controls. Report evidence, impact, remediation and gaps. No finite assessment proves all vulnerabilities were found.
@@ -93,7 +94,7 @@ After a tool result, next call or concise final answer. Emit independent read-on
 - Side effects: emit the tool; clai handles confirmation. Never bypass denials.
 - Background long-lived work; web.search/web.fetch for current facts; cite tool URLs.
 - Fail → understand → fix → retry. Report blockers plainly.
-- Stay in scope; OS-correct commands for {{os}} / {{shell}}. Scratch under {{scratch}} only.
+- Stay in scope; OS-correct commands for {{os}} / {{shell}}. Scratch under {{scratch}} only for disposable files.
 `
 
 function sectionFrom(template: string, header: string): string {
