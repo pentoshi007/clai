@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { slashCommands } from "../../src/app/commands/catalog.js";
 import { reaUserGuide, type ReaGuideView } from "../../src/rea/guide.js";
@@ -34,8 +35,9 @@ describe("REA user guide", () => {
 
   it("shows installed reference paths only when an installation exists", () => {
     const ready = reaUserGuide(view());
-    expect(ready).toContain("skills/reverse-engineer-anything/SKILL.md");
-    expect(ready).toContain("references/native-and-artifacts.md");
+    const skill = join(installation.directory, "node_modules", "rea-agents", "skills", "reverse-engineer-anything");
+    expect(ready).toContain(join(skill, "SKILL.md"));
+    expect(ready).toContain(join(skill, "references", "native-and-artifacts.md"));
     expect(reaUserGuide(view({ status: { state: "missing" } }))).not.toContain("SKILL.md");
   });
 
