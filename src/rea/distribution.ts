@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { Unpack } from "tar";
 
 const ORIGINS = new Set(["https://nodejs.org", "https://registry.npmjs.org"]);
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -122,6 +121,7 @@ export function verifyIntegrity(bytes: Buffer, integrity: string): void {
 
 export async function extractPackage(bytes: Buffer, destination: string, archiveRoot: string): Promise<void> {
   await mkdir(destination, { recursive: true, mode: 0o700 });
+  const { Unpack } = await import("tar");
   let total = 0;
   let entries = 0;
   const unpack = new Unpack({
