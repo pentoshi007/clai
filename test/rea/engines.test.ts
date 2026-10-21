@@ -78,17 +78,23 @@ describe("REA engine settings", () => {
       GHIDRA_INSTALL_DIR: abs("g"), JAVA_HOME: abs("j"), HOPPER_LAUNCHER_PATH: abs("h"), REA_IDA_MCP_CONFIG: abs("i.json"), REA_KUNA_COMMAND: abs("k"),
     });
     expect(engineEnvironment(settings, { GHIDRA_INSTALL_DIR: "/mine", JAVA_HOME: "/my-jdk" })).toEqual({
-      HOPPER_LAUNCHER_PATH: abs("h"), REA_IDA_MCP_CONFIG: abs("i.json"), REA_KUNA_COMMAND: abs("k"),
+      GHIDRA_INSTALL_DIR: abs("g"), JAVA_HOME: abs("j"), HOPPER_LAUNCHER_PATH: abs("h"), REA_IDA_MCP_CONFIG: abs("i.json"), REA_KUNA_COMMAND: abs("k"),
     });
     expect(engineEnvironment(settings, { GHIDRA_INSTALL_DIR: "" }).GHIDRA_INSTALL_DIR).toBe(abs("g"));
     expect(engineEnvironment({}, {})).toEqual({});
   });
 
-  it("treats environment names case-insensitively on Windows only", () => {
+  it("lets a choice made with /rea engines beat a variable already in the environment, and leaves the rest alone", () => {
+    const settings = parseEngineSettings(JSON.stringify({ java: { home: abs("jdk21"), managed: true } }));
+    expect(engineEnvironment(settings, { JAVA_HOME: "/usr/lib/jvm/17", GHIDRA_INSTALL_DIR: "/mine" })).toEqual({ JAVA_HOME: abs("jdk21") });
+    expect(engineEnvironment({}, { JAVA_HOME: "/usr/lib/jvm/17" })).toEqual({});
+  });
+
+  it("reuses the spelling of an existing variable on Windows only, so the override replaces it", () => {
     const dir = abs("g");
     const settings = parseEngineSettings(JSON.stringify({ ghidra: { dir, managed: true } }));
     vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-    expect(engineEnvironment(settings, { ghidra_install_dir: "C:\\mine" })).toEqual({});
+    expect(engineEnvironment(settings, { ghidra_install_dir: "C:\\mine" })).toEqual({ ghidra_install_dir: dir });
     vi.spyOn(process, "platform", "get").mockReturnValue("linux");
     expect(engineEnvironment(settings, { ghidra_install_dir: "/mine" })).toEqual({ GHIDRA_INSTALL_DIR: dir });
   });
