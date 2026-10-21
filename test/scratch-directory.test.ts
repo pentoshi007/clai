@@ -77,6 +77,16 @@ describe("scratch directory transparency", () => {
         "New work never adopts an existing same/similarly-named folder or file",
       );
     }
+    const compactNative = renderCompactAgentSystemPrompt("shell.exec", {
+      nativeTools: true,
+      stableEnvironment: true,
+    });
+    expect(compactNative).toContain(
+      "Deliverables: user's location, else task-folder cwd, else a new named folder; never scratch.",
+    );
+    expect(compactNative).toContain(
+      "New work never adopts an existing same/similarly-named folder",
+    );
   });
 
   it("_AGENT_TEMPLATE stays byte-identical to src/prompts/system.agent.md", () => {
