@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { homedir } from "node:os";
 import {
   clearActiveProjectRoot,
@@ -14,9 +14,15 @@ import {
 import { safeCwd } from "../src/os/cwd.js";
 import { isOutsideWorkingDirectory } from "../src/tools/fs.js";
 
+const notTheTempDirectory = (): void => {
+  const elsewhere = join(parse(process.cwd()).root, "clai-not-the-temp-directory");
+  for (const name of ["TMPDIR", "TMP", "TEMP"]) vi.stubEnv(name, elsewhere);
+};
+
 describe("project root sticky paths", () => {
   afterEach(() => {
     clearActiveProjectRoot();
+    vi.unstubAllEnvs();
   });
 
   it("extracts Desktop/todo-app from plan-like text", () => {
@@ -62,6 +68,7 @@ describe("project root sticky paths", () => {
   });
 
   it("treats the pinned project as trusted for allow-all write decisions", () => {
+    notTheTempDirectory();
     const project = join(homedir(), "Desktop", "bloging-app");
     setActiveProjectRoot(project);
 
@@ -72,6 +79,7 @@ describe("project root sticky paths", () => {
   });
 
   it("forces confirmation when an in-project symlink escapes the project root", () => {
+    notTheTempDirectory();
     const base = mkdtempSync(join(homedir(), "clai-project-root-test-"));
     const project = join(base, "project");
     const sibling = join(base, "sibling");

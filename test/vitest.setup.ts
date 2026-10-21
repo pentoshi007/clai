@@ -34,6 +34,12 @@ for (const [key, sub] of Object.entries(defaultRoot)) {
   }
 }
 
+const userHome = join(root, "userhome");
+mkdirSync(userHome, { recursive: true });
+process.env.HOME = userHome;
+process.env.USERPROFILE = userHome;
+process.env.CLAI_DISABLE_KEYCHAIN = "1";
+
 const freebuffBase = process.env.CLAI_TEST_BASE_FREEBUFF_CONFIG_DIR ?? process.env.FREEBUFF_CONFIG_DIR;
 if (process.env.CI && freebuffBase) {
   process.env.CLAI_TEST_BASE_FREEBUFF_CONFIG_DIR = freebuffBase;
