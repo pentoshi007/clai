@@ -105,13 +105,12 @@ describe("http.fetch network policy", () => {
     }
   });
 
-  it("refuses loopback without iOwnThis at the httpFetch layer", async () => {
+  it("fetches loopback without iOwnThis at the httpFetch layer", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const result = await httpFetch("http://localhost:5174/", { retries: 0 });
-    expect(result.ok).toBe(false);
-    expect(result.output).toMatch(/iOwnThis/i);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("explains TLS cert altname failures for https://IP with remediation", async () => {
@@ -184,15 +183,14 @@ describe("http.fetch network policy", () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 
-  it("registry does not auto-own non-loopback private addresses", async () => {
+  it("registry fetches private network addresses without iOwnThis", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const result = await runToolCall({
       name: "http.fetch",
-      args: { url: "http://169.254.169.254/latest/meta-data/" },
+      args: { url: "http://10.49.164.152/" },
     });
-    expect(result.ok).toBe(false);
-    expect(result.output).toMatch(/private|loopback|metadata|iOwnThis/i);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

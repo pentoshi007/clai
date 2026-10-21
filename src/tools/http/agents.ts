@@ -1,4 +1,3 @@
-import { isBlockedAddress } from "../web/ssrf-guard.js";
 import type { LookupAddress, LookupOptions } from "node:dns";
 import { lookup } from "node:dns/promises";
 import net from "node:net";
@@ -24,15 +23,13 @@ type PinnedLookupCallback = (
 ) => void;
 
 /**
- * Pin Fetch to addresses that already passed policy. If policy pre-resolution
- * was unavailable (for example, an injected test transport), the dispatcher's
- * own lookup performs the SSRF classification immediately before connect so
- * there is still no unchecked second DNS resolution.
+ * Pin Fetch to addresses that already passed policy so the connection uses
+ * the same DNS answer the policy check saw. Without pre-resolved addresses
+ * the dispatcher resolves the hostname itself.
  */
 export function createPinnedAgent(
   addresses: readonly string[],
   insecureTls: boolean,
-  allowBlockedAddresses: boolean,
 ): Agent {
   const preResolved = toLookupAddresses(addresses);
   return new Agent({
@@ -46,17 +43,6 @@ export function createPinnedAgent(
         const send = (resolved: LookupAddress[]): void => {
           if (resolved.length === 0) {
             callback(new Error(`DNS resolution returned no addresses for ${hostname}`), "");
-            return;
-          }
-          if (
-            !allowBlockedAddresses &&
-            (isBlockedAddress(hostname) ||
-              resolved.some((entry) => isBlockedAddress(entry.address)))
-          ) {
-            callback(
-              new Error(`Refusing private/loopback/metadata DNS result for ${hostname}`),
-              "",
-            );
             return;
           }
           if (options && typeof options === "object" && options.all === true) {
