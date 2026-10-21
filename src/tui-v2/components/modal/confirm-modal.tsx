@@ -29,6 +29,7 @@ const TITLES: Record<ConfirmRequest["kind"], string> = {
   plan: "PLAN READY",
   switch: "CONFIRM SWITCH",
   "mcp-oauth": "MCP SIGN-IN",
+  install: "INSTALL ENGINE",
 };
 
 export function ConfirmModal(props: ConfirmModalProps): ReactNode {

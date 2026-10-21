@@ -13,6 +13,7 @@ const TITLES: Record<ConfirmRequest["kind"], string> = {
   plan: "Plan ready",
   switch: "Confirm switch",
   "mcp-oauth": "MCP sign-in",
+  install: "Install engine",
 };
 
 export interface ConfirmActionKey {

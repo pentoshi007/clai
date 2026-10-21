@@ -1,5 +1,13 @@
 import type { McpToolMetadata } from "./types.js";
 
+export interface McpFailureContext {
+  readonly tool: McpToolMetadata;
+  readonly args: Readonly<Record<string, unknown>>;
+  readonly output: string;
+}
+
+export type McpFailureHint = (context: McpFailureContext) => string | undefined;
+
 const MAX_LISTED_ARGUMENTS = 24;
 const ARGUMENT_REJECTION =
   /unrecognized keys?|unknown (?:argument|key|parameter|property)|additional propert|invalid arguments|input validation|invalid input|missing required|required property/i;

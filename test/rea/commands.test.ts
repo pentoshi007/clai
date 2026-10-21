@@ -2,14 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildDefaultCommandRegistry } from "../../src/app/commands/registry.js";
 import { handleRea } from "../../src/ui-core/commands/rea-commands.js";
 import { composerActionPort } from "../../src/ui-core/composer/composer-action-port.js";
-import { manageRea } from "../../src/rea/runtime.js";
+import { manageRea, reaAvailability } from "../../src/rea/runtime.js";
+import type { ReaAvailability } from "../../src/rea/availability.js";
 import { detectRea } from "../../src/rea/install.js";
 import { findReaMentions } from "../../src/rea/workflow.js";
 import { composerMentionSpans } from "../../src/classic/chrome/composer-mentions.js";
 import type { AppServices } from "../../src/ui-core/bootstrap/composition-root.js";
 import type { PickerOption } from "../../src/ui-core/rendering/picker-filter.js";
+import { handleEngineCommand, openEnginesPicker } from "../../src/ui-core/commands/rea-engines-commands.js";
 
-vi.mock("../../src/rea/runtime.js", () => ({ manageRea: vi.fn() }));
+vi.mock("../../src/rea/runtime.js", () => ({ manageRea: vi.fn(), reaAvailability: vi.fn(() => undefined) }));
+vi.mock("../../src/ui-core/commands/rea-engines-commands.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../src/ui-core/commands/rea-engines-commands.js")>(),
+  handleEngineCommand: vi.fn(async () => undefined),
+  openEnginesPicker: vi.fn(),
+}));
 vi.mock("../../src/rea/install.js", () => ({ detectRea: vi.fn(), reaMaintenance: vi.fn(), reaRoot: () => "/managed/rea", subscribeReaProgress: () => () => undefined }));
 
 const notice = vi.fn();
@@ -58,6 +65,28 @@ describe("/rea picker and composer", () => {
     await invoke();
     await vi.waitFor(() => expect(pickerOptions.some((option) => option.value === "setup")).toBe(true));
     expect(pickerOptions.find((option) => option.value === "setup")?.label).toContain("Install");
+    expect(manageRea).not.toHaveBeenCalled();
+  });
+
+  it("routes /rea engines to the engine commands but still treats other text as a task", async () => {
+    await invoke("engines install ghidra");
+    expect(handleEngineCommand).toHaveBeenCalledWith(services, "engines install ghidra");
+    expect(submit).not.toHaveBeenCalled();
+    await invoke("engines of this application are obfuscated");
+    expect(handleEngineCommand).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith("@rea engines of this application are obfuscated");
+  });
+
+  it("lists the engine options in the picker only once REA is installed and opens their picker", async () => {
+    await invoke();
+    await vi.waitFor(() => expect(pickerOptions.some((option) => option.value === "setup")).toBe(true));
+    expect(pickerOptions.map((option) => option.value)).not.toContain("engines");
+    vi.mocked(detectRea).mockResolvedValue({ state: "ready", installation: { node: "/node", entry: "/rea", version: "6.7.0", directory: "/managed" } });
+    await invoke();
+    await vi.waitFor(() => expect(pickerOptions.map((option) => option.value)).toContain("engines"));
+    expect(pickerOptions.find((option) => option.value === "engines")?.description).toContain("Ghidra");
+    selection!("engines");
+    expect(openEnginesPicker).toHaveBeenCalledWith(services);
     expect(manageRea).not.toHaveBeenCalled();
   });
 
@@ -131,6 +160,38 @@ describe("/rea picker and composer", () => {
     expect(manageRea).toHaveBeenCalledWith(services.mcp, "install", { signal: controller.signal });
     expect(interruptible.end).toHaveBeenCalledWith(controller);
     expect(notice).not.toHaveBeenCalledWith("warn", expect.anything());
+  });
+
+  describe("pointing at engines once connected", () => {
+    const engines = (...ready: boolean[]): ReaAvailability => ({
+      engines: ready.map((isReady, index) => ({ id: `engine${index}`, name: `Engine${index}`, ready: isReady, code: undefined, reason: undefined, failed: [], java: undefined })),
+      open: new Set(), deep: new Set(), blocked: new Set(), blockedGroups: [],
+    });
+    afterEach(() => { vi.mocked(reaAvailability).mockReturnValue(undefined); });
+
+    const connected = async (command: string): Promise<string> => {
+      vi.mocked(manageRea).mockResolvedValue({ ok: true, output: "REA ok" });
+      notice.mockClear();
+      await invoke(command);
+      await vi.waitFor(() => expect(notice).toHaveBeenCalled());
+      return String(notice.mock.calls.at(-1)![1]);
+    };
+
+    it("tells the user about /rea engines after setup when no engine is ready", async () => {
+      vi.mocked(reaAvailability).mockReturnValue(engines(false, false));
+      expect(await connected("setup")).toContain("no analysis engine yet: /rea engines");
+      expect(await connected("on")).toContain("no analysis engine yet: /rea engines");
+      expect(await connected("reconnect")).toContain("no analysis engine yet: /rea engines");
+    });
+
+    it("stays quiet when an engine is ready or the engines are not known", async () => {
+      vi.mocked(reaAvailability).mockReturnValue(engines(false, true));
+      expect(await connected("setup")).not.toContain("/rea engines");
+      vi.mocked(reaAvailability).mockReturnValue(undefined);
+      expect(await connected("setup")).not.toContain("/rea engines");
+      vi.mocked(reaAvailability).mockReturnValue(engines());
+      expect(await connected("setup")).not.toContain("/rea engines");
+    });
   });
 
   it("connects after setup installs using the same cancellation signal", async () => {

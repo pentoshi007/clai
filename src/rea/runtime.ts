@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { McpRuntime } from "../mcp/runtime.js";
+import { parseReaAvailability, readyEngines, type ReaAvailability } from "./availability.js";
 import { reaConnection, reaTools } from "./connection.js";
+import { engineEnvironment, readEngineSettings } from "./engines.js";
+import { reaFailureHint } from "./hints.js";
 import type { McpServerDefinition } from "../mcp/types.js";
 import type { ToolResult } from "../types.js";
 import { detectRea, reaMaintenance, reaRoot, runReaMaintenance } from "./install.js";
@@ -13,14 +16,52 @@ export const REA_ACTIONS = ["status", "install", "setup", "update", "enable", "d
 export type ReaAction = typeof REA_ACTIONS[number];
 const activations = new WeakMap<McpRuntime, Promise<ToolResult>>();
 const running = new WeakMap<McpRuntime, ReaInstallation>();
+const PROBE_TIMEOUT_MS = 30_000;
+const availabilities = new WeakMap<McpRuntime, Promise<ReaAvailability | undefined>>();
+const resolved = new WeakMap<McpRuntime, ReaAvailability | undefined>();
 const result = (ok: boolean, output: string): ToolResult => ({ ok, output, exitCode: ok ? 0 : 1 });
 
-export function reaServerDefinition(installation: ReaInstallation, root = reaRoot()): McpServerDefinition {
+export function reaAvailability(runtime: McpRuntime): ReaAvailability | undefined {
+  return resolved.get(runtime);
+}
+
+async function probeAvailability(runtime: McpRuntime, signal: AbortSignal | undefined): Promise<ReaAvailability | undefined> {
+  try {
+    const session = await runtime.callTool(`mcp.${REA_SERVER}.binary_session`, {}, { timeoutMs: PROBE_TIMEOUT_MS, ...(signal ? { signal } : {}) });
+    return session.ok ? parseReaAvailability(session.output) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function ensureAvailability(runtime: McpRuntime, signal: AbortSignal | undefined): Promise<ReaAvailability | undefined> {
+  const existing = availabilities.get(runtime);
+  if (existing) return existing;
+  const pending: Promise<ReaAvailability | undefined> = probeAvailability(runtime, signal).then((found) => {
+    if (availabilities.get(runtime) !== pending) return found;
+    if (found === undefined && signal?.aborted) {
+      availabilities.delete(runtime);
+      return found;
+    }
+    resolved.set(runtime, found);
+    runtime.setFailureHint(REA_SERVER, reaFailureHint(() => resolved.get(runtime)));
+    return found;
+  });
+  availabilities.set(runtime, pending);
+  return pending;
+}
+
+function forgetAvailability(runtime: McpRuntime): void {
+  availabilities.delete(runtime);
+  resolved.delete(runtime);
+}
+
+export function reaServerDefinition(installation: ReaInstallation, root = reaRoot(), engines: Readonly<Record<string, string>> = {}): McpServerDefinition {
   const env = reaEnvironment(installation.node);
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
   const config = {
     transport: "stdio" as const, command: installation.node, args: [installation.entry, "mcp"],
-    env: { [pathKey]: env[pathKey] ?? "", NODE_OPTIONS: "", NODE_PATH: "" },
+    env: { [pathKey]: env[pathKey] ?? "", NODE_OPTIONS: "", NODE_PATH: "", ...engines },
     connectTimeoutMs: 60_000, timeoutMs: 600_000,
   };
   return {
@@ -54,7 +95,8 @@ async function enable(runtime: McpRuntime, reconnect: boolean, options: ReaInsta
   const active = runtime.getState().snapshot.statuses.find((server) => server.name === REA_SERVER);
   if (active?.status === "ready" && !reconnect) {
     select(runtime);
-    return result(true, `REA is already connected as ${REA_SERVER} (${active.toolCount} tools); reuse the current analysis.\n${reaWorkflowContext(running.get(runtime), reaTools(runtime))}`);
+    const known = await ensureAvailability(runtime, options.signal);
+    return result(true, `REA is already connected as ${REA_SERVER} (${active.toolCount} tools); reuse the current analysis.\n${reaWorkflowContext(running.get(runtime), reaTools(runtime), known)}`);
   }
   const status = await detectRea(options.root);
   if (status.state !== "ready") return result(false, unavailable(status));
@@ -62,15 +104,18 @@ async function enable(runtime: McpRuntime, reconnect: boolean, options: ReaInsta
     await runtime.stopServer(REA_SERVER);
     running.delete(runtime);
   }
+  forgetAvailability(runtime);
   options.signal?.throwIfAborted();
-  const state = await runtime.registerSessionServer(reaServerDefinition(status.installation, options.root));
+  const engines = engineEnvironment(await readEngineSettings(options.root));
+  const state = await runtime.registerSessionServer(reaServerDefinition(status.installation, options.root, engines));
   const server = state.snapshot.statuses.find((entry) => entry.name === REA_SERVER);
   if (server?.status !== "ready") {
     return result(false, `REA did not connect: ${server?.detail ?? server?.status ?? state.error ?? "no server reported"}. Inspect this launch error; /rea reconnect retries the connection without reinstalling or changing other agents.`);
   }
   running.set(runtime, status.installation);
   select(runtime);
-  return result(true, `REA ${status.installation.version} connected as ${REA_SERVER} (${server.toolCount} tools); callable now via mcp.call.\n${reaWorkflowContext(status.installation, reaTools(runtime))}`);
+  const known = await ensureAvailability(runtime, options.signal);
+  return result(true, `REA ${status.installation.version} connected as ${REA_SERVER} (${server.toolCount} tools); callable now via mcp.call.\n${reaWorkflowContext(status.installation, reaTools(runtime), known)}`);
 }
 
 function untilAborted<T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
@@ -88,7 +133,7 @@ export async function reaMentionContext(runtime: McpRuntime, options: ReaInstall
   const connected = await untilAborted(manageRea(runtime, "enable", options), options.signal);
   options.signal?.throwIfAborted();
   if (!connected.ok) return `REA WORKFLOW\n${connected.output}`;
-  return reaWorkflowContext(running.get(runtime), reaTools(runtime));
+  return reaWorkflowContext(running.get(runtime), reaTools(runtime), await ensureAvailability(runtime, options.signal));
 }
 
 function activate(runtime: McpRuntime, options: ReaInstallOptions, reconnect = false): Promise<ToolResult> {
@@ -113,16 +158,19 @@ export async function manageRea(runtime: McpRuntime, action: string, options: Re
       const { server, selected } = reaConnection(runtime);
       const maintenance = reaMaintenance();
       const installation = status.state === "ready" ? `REA ${status.installation.version} installed` : status.state === "broken" ? `REA needs repair: ${status.reason}` : "REA not installed; /rea install bootstraps it without npm/npx";
-      return result(true, `${installation} · ${selected ? "enabled" : "inactive"}${server ? ` · ${server.status} (${server.toolCount} tools)${server.detail ? `: ${server.detail}` : ""}` : " · not started (lazy)"}${maintenance ? ` · ${maintenance.action} in progress` : ""}`);
+      const known = resolved.get(runtime);
+      const engine = known && known.engines.length > 0 ? ` · ${readyEngines(known).length > 0 ? `engine ready: ${readyEngines(known).map((entry) => entry.id).join(", ")}` : "no analysis engine ready: ask the user to run /rea engines"}` : "";
+      return result(true, `${installation} · ${selected ? "enabled" : "inactive"}${server ? ` · ${server.status} (${server.toolCount} tools)${server.detail ? `: ${server.detail}` : ""}` : " · not started (lazy)"}${engine}${maintenance ? ` · ${maintenance.action} in progress` : ""}`);
     }
     if (action === "guide") {
-      if (reaConnection(runtime).server?.status === "ready") return result(true, reaWorkflowContext(running.get(runtime), reaTools(runtime)));
+      if (reaConnection(runtime).server?.status === "ready") return result(true, reaWorkflowContext(running.get(runtime), reaTools(runtime), resolved.get(runtime)));
       const status = await detectRea(options.root);
       return result(true, `${reaWorkflowContext(status.state === "ready" ? status.installation : undefined)}\nThe REA TOOLS index is added once REA is connected: rea.manage action=enable.`);
     }
     if (action === "disable") {
       if (runtime.getState().snapshot.statuses.some((server) => server.name === REA_SERVER)) await runtime.stopServer(REA_SERVER);
       running.delete(runtime);
+      forgetAvailability(runtime);
       return result(true, "REA disabled and its managed server stopped for this session. Other MCP servers and installed files are unchanged.");
     }
     if (action === "enable" || action === "reconnect") return await activate(runtime, options, action === "reconnect");
