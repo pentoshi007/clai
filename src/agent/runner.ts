@@ -1,5 +1,7 @@
 import type { McpRuntime, McpTurnLease } from "../mcp/runtime.js";
 import { hasMcpMentionSyntax } from "../mcp/mentions.js";
+import { reaMentionContext } from "../rea/runtime.js";
+import { hasReaMention } from "../rea/workflow.js";
 import type {
   ChatMessage,
   ChatImage,
@@ -317,6 +319,9 @@ export async function runAgentTurn(
       await mcpRuntime.ensureReady();
     }
     if (mcpRuntime && mcpMentioned) mcpRuntime.commitMentionSelection(prompt);
+    const reaContext = mcpRuntime && hasReaMention(prompt)
+      ? await reaMentionContext(mcpRuntime, options.signal ? { signal: options.signal } : {})
+      : undefined;
     mcpLease = mcpRuntime?.beginTurn();
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;
@@ -456,6 +461,7 @@ export async function runAgentTurn(
         getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
       });
     systemSections.push(orchestrationContext(session.subagents?.enabled ?? false));
+    if (reaContext) systemSections.push(reaContext);
     const composeCurrentSystemPrompt = (native: boolean): string =>
       buildStableSystemContent(native);
     const composed = composeTurnMessages({
@@ -609,6 +615,8 @@ export async function runAgentTurn(
 
     const mcpAgentToolPorts = buildMcpAgentToolPorts({
       askMode: agentMode === "ask",
+      planMode: isPlanMode,
+      signal: options.signal,
       autoConfirm: Boolean(options.autoConfirm),
       session,
       confirmPort,

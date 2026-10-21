@@ -160,8 +160,9 @@ describe("MCP agent tool safety classification", () => {
 
 describe("MCP agent tool ask-mode filtering", () => {
   it("exposes only read-only tools in ask mode", () => {
-    expect(mcpAgentToolNames(true)).toEqual(["mcp.list", "mcp.tools", "mcp.call"]);
+    expect(mcpAgentToolNames(true)).toEqual(["rea.manage", "mcp.list", "mcp.tools", "mcp.call"]);
     expect(mcpAgentToolNames(false)).toEqual([
+      "rea.manage",
       "mcp.list",
       "mcp.tools",
       "mcp.call",
@@ -171,6 +172,7 @@ describe("MCP agent tool ask-mode filtering", () => {
       "mcp.add",
     ]);
     const askNames = new Set(getToolDefinitions({ askMode: true }).map((d) => d.name));
+    expect(askNames.has("rea.manage")).toBe(true);
     expect(askNames.has("mcp.list")).toBe(true);
     expect(askNames.has("mcp.tools")).toBe(true);
     expect(askNames.has("mcp.call")).toBe(true);
