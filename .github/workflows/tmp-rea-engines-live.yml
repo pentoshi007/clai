@@ -1,0 +1,96 @@
+name: tmp-rea-engines-live
+
+on:
+  push:
+    branches:
+      - feat/rea-engines-cross-os
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: live ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, label: linux-x64 }
+          - { os: ubuntu-24.04-arm, label: linux-arm64 }
+          - { os: windows-latest, label: windows-x64 }
+          - { os: macos-latest, label: macos-arm64 }
+          - { os: macos-15-intel, label: macos-x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install engines and analyze a real binary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TMP_LABEL: ${{ matrix.label }}
+        run: node --import tsx scripts/tmp-engines-smoke.ts
+
+  alpine:
+    name: platform report alpine (musl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: node:24-alpine
+    steps:
+      - uses: actions/checkout@v5
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx scripts/tmp-platform-report.ts
+
+  windows-arm:
+    name: platform report windows-arm64
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node --import tsx scripts/tmp-platform-report.ts
+
+  extra-tests:
+    name: extra tests ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Tests the Windows job of ci.yml does not select
+        run: node scripts/run-tests.mjs test/ui-core/rea-engines-commands.test.ts test/project-root.test.ts test/store/test-sandbox.test.ts test/app/session-lifecycle-generation.test.ts test/rea test/mcp --reporter=dot
+
+  compaction-loop:
+    name: compaction test x40 on Node 22
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Repeat the test that failed on Node 22
+        shell: bash
+        run: |
+          for i in $(seq 1 40); do
+            node scripts/run-tests.mjs test/app/session-lifecycle-generation.test.ts --reporter=dot > loop.log 2>&1 || { cat loop.log; echo "failed on run $i"; exit 1; }
+          done
+          echo "40 of 40 runs passed"
