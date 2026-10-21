@@ -76,6 +76,6 @@ describe("REA portable runtime without an OS package manager", () => {
 
   it("reports unsupported host builds rather than running a mismatched binary", async () => {
     serve("node-v24.22.0-linux-x64.tar.gz", Buffer.from("node"));
-    await expect(downloadReaNode(join(root, "runtime"), { platform: "linux", arch: "arm64", musl: true })).rejects.toThrow(/no verified linux-arm64-musl/);
+    await expect(downloadReaNode(join(root, "runtime"), { platform: "linux", arch: "arm64", musl: true })).rejects.toThrow(/no verified linux-arm64-musl build\. Install Node\.js .*CLAI_REA_NODE/);
   });
 });

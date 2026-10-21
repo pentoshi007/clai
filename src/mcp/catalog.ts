@@ -19,16 +19,16 @@ export function toolCatalogPage(
 ): ToolResult {
   const query = options.query?.trim().toLowerCase() ?? "";
   const words = query.split(/\s+/).filter(Boolean);
-  const exact = (tool: McpToolMetadata): number =>
+  const exact = (tool: McpToolMetadata): boolean =>
     query.length > 0 &&
     [tool.canonicalName, tool.toolName, tool.wireName, tool.title ?? ""]
-      .some((name) => name.toLowerCase() === query) ? 1 : 0;
-  const tools = catalog
-    .filter((tool) => {
-      const text = `${tool.canonicalName} ${tool.wireName} ${tool.title ?? ""} ${tool.description}`.toLowerCase();
-      return words.every((word) => text.includes(word));
-    })
-    .sort((left, right) => exact(right) - exact(left));
+      .some((name) => name.toLowerCase() === query);
+  const matches = catalog.filter((tool) => {
+    const text = `${tool.canonicalName} ${tool.wireName} ${tool.title ?? ""} ${tool.description}`.toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+  const named = matches.filter(exact);
+  const tools = named.length > 0 ? named : matches;
   const signature = createHash("sha256")
     .update(JSON.stringify([query, tools]))
     .digest("hex")

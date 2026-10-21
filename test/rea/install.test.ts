@@ -1,13 +1,19 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as storageLock from "../../src/mcp/storage-lock.js";
+import { McpTransportError } from "../../src/mcp/transport.js";
 import { detectRea, reaMaintenance, runReaMaintenance } from "../../src/rea/install.js";
 import { resolveReaNode, runReaNode } from "../../src/rea/node.js";
 import type { ReaInstallation } from "../../src/rea/types.js";
 
 vi.mock("../../src/rea/node.js", () => ({ resolveReaNode: vi.fn(), runReaNode: vi.fn() }));
+vi.mock("node:fs/promises", async (importActual) => {
+  const actual = await importActual<typeof import("node:fs/promises")>();
+  return { ...actual, rename: vi.fn(actual.rename) };
+});
 
 let root: string;
 let releaseVersion = "6.7.0";
@@ -20,6 +26,7 @@ beforeEach(async () => {
   releaseVersion = "6.7.0";
   vi.mocked(resolveReaNode).mockResolvedValue({ node: process.execPath, npm: join(root, "npm-cli.js") });
   node.mockReset();
+  vi.mocked(rename).mockClear();
   node.mockImplementation(async (_node, args, options) => {
     if (args[1] === "install" && options?.cwd) {
       const entry = join(options.cwd, "node_modules", "rea-agents", "scripts", "rea.mjs");
@@ -39,8 +46,19 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   await rm(root, { recursive: true, force: true });
 });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+async function version(name: string, ageDays: number): Promise<string> {
+  const directory = join(root, "versions", name);
+  await mkdir(directory, { recursive: true });
+  const stamp = new Date(Date.now() - ageDays * DAY_MS);
+  await utimes(directory, stamp, stamp);
+  return directory;
+}
 
 async function seed(version = "6.6.0"): Promise<ReaInstallation> {
   const directory = join(root, "versions", "previous");
@@ -115,6 +133,51 @@ describe("managed REA installation", () => {
     expect(status.state).toBe("ready");
     if (status.state === "ready") await rm(status.installation.entry);
     expect(await detectRea(root)).toMatchObject({ state: "broken" });
+  });
+
+  it("prunes releases older than the previous one once they are a week stale", async () => {
+    const previous = await seed();
+    await utimes(previous.directory, new Date(Date.now() - 30 * DAY_MS), new Date(Date.now() - 30 * DAY_MS));
+    const stale = await version("6.4.0-stale", 20);
+    const orphan = await version("6.5.0-crashed", 9);
+    const recent = await version("6.6.5-recent", 2);
+    node.mockImplementationOnce(async () => "6.6.0");
+    const result = await runReaMaintenance("update", { root });
+    expect(result).toMatchObject({ ok: true, changed: true });
+    const remaining = await readdir(join(root, "versions"));
+    expect(remaining).toContain("previous");
+    expect(remaining).toContain("6.6.5-recent");
+    expect(remaining).not.toContain("6.4.0-stale");
+    expect(remaining).not.toContain("6.5.0-crashed");
+    expect(remaining).toContain((await detectRea(root) as { installation: ReaInstallation }).installation.directory.split(/[\\/]/).pop());
+    await expect(access(stale)).rejects.toThrow();
+    await expect(access(orphan)).rejects.toThrow();
+    await expect(access(recent)).resolves.toBeUndefined();
+  });
+
+  it("retries publishing on Windows when another process briefly holds current.json", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    const busy = Object.assign(new Error("resource busy"), { code: "EBUSY" });
+    vi.mocked(rename).mockRejectedValueOnce(busy).mockRejectedValueOnce(Object.assign(new Error("denied"), { code: "EPERM" }));
+    expect(await runReaMaintenance("install", { root })).toMatchObject({ ok: true, changed: true });
+    expect(vi.mocked(rename)).toHaveBeenCalledTimes(3);
+    expect(await detectRea(root)).toMatchObject({ state: "ready" });
+  });
+
+  it("does not retry sharing errors on other platforms and leaves nothing behind", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    vi.mocked(rename).mockRejectedValueOnce(Object.assign(new Error("resource busy"), { code: "EBUSY" }));
+    expect(await runReaMaintenance("install", { root })).toMatchObject({ ok: false, reason: expect.stringContaining("resource busy") });
+    expect(vi.mocked(rename)).toHaveBeenCalledTimes(1);
+    expect(await readdir(join(root, "versions"))).toEqual([]);
+    expect((await readdir(root)).filter((entry) => entry.startsWith("current"))).toEqual([]);
+  });
+
+  it("explains that another session holds the installation lock", async () => {
+    vi.spyOn(storageLock, "withMcpStorageLock").mockRejectedValue(new McpTransportError("timeout", "Timed out waiting for another MCP storage operation to finish."));
+    const result = await runReaMaintenance("install", { root });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("Another clai session is installing or updating REA") });
+    expect(reaMaintenance(root)).toBeUndefined();
   });
 
   it("cancels without changing the current installation", async () => {

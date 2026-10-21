@@ -28,7 +28,7 @@ function paint(text: string) {
 
 describe("OpenTUI REA composer paint", () => {
   it("paints an editable REA token with the MCP style before the server exists", () => {
-    const editor = paint("inspect /rea this artifact");
+    const editor = paint("inspect @rea this artifact");
     expect(editor.clearAllHighlights).toHaveBeenCalledOnce();
     expect(editor.addHighlightByCharRange).toHaveBeenCalledExactlyOnceWith({
       start: 8, end: 12, styleId: 1, priority: 100,
@@ -39,8 +39,8 @@ describe("OpenTUI REA composer paint", () => {
   });
 
   it("does not paint paths and URLs and clears a removed token", () => {
-    paint("/rea inspect");
-    const editor = paint("read /rea/README.md or https://example.test/rea");
+    paint("@rea inspect");
+    const editor = paint("read @rea/README.md or https://example.test/@rea or /rea");
     expect(editor.addHighlightByCharRange).not.toHaveBeenCalled();
     const cleared = paint("ordinary source work");
     expect(cleared.clearAllHighlights).toHaveBeenCalledOnce();

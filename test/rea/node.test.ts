@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { nodeTarget, reaEnvironment, supportsReaNode } from "../../src/rea/node.js";
+import { isNodeExecutable, nodeTarget, reaEnvironment, supportsReaNode } from "../../src/rea/node.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -21,6 +21,16 @@ describe("REA runtime selection", () => {
     expect(nodeTarget("linux", "x64", true)).toBe("linux-x64-musl");
     expect(() => nodeTarget("linux", "riscv64")).toThrow(/supported portable/);
     expect(() => nodeTarget("freebsd", "x64")).toThrow(/supported portable/);
+  });
+  it("tells users how to supply their own Node when no portable runtime fits the host", () => {
+    expect(() => nodeTarget("linux", "riscv64")).toThrow(/CLAI_REA_NODE/);
+    expect(() => nodeTarget("freebsd", "x64")).toThrow(/Node\.js 22\.19\+, 24\.15\+ or 26\+/);
+  });
+  it.each(["/usr/local/bin/node", "C:\\Program Files\\nodejs\\node.exe", "/opt/NODE.EXE"])("probes %s as a Node executable", (path) => {
+    expect(isNodeExecutable(path)).toBe(true);
+  });
+  it.each(["/usr/local/bin/clai", "/Users/me/.bun/bin/bun", "C:\\clai\\clai.exe", "/usr/bin/nodemon", "/usr/bin/node24"])("never executes %s while looking for Node", (path) => {
+    expect(isNodeExecutable(path)).toBe(false);
   });
   it("uses the selected runtime in child processes and excludes hostile npm configuration", () => {
     vi.stubEnv("npm_config_registry", "https://untrusted.test");

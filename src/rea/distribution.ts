@@ -6,6 +6,8 @@ import { Unpack } from "tar";
 
 const ORIGINS = new Set(["https://nodejs.org", "https://registry.npmjs.org"]);
 const VERSION = /^\d+\.\d+\.\d+$/;
+const STALL_TIMEOUT_MS = 60_000;
+const PROGRESS_STEP_BYTES = 256 * 1024;
 
 export interface NpmRelease {
   readonly name: string;
@@ -28,41 +30,61 @@ export async function fetchBytes(
   signal?: AbortSignal,
   onProgress?: (received: number, total?: number) => void,
 ): Promise<Buffer> {
-  const deadline = AbortSignal.timeout(180_000);
-  const response = await fetch(officialUrl(url), {
-    redirect: "error",
-    signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
-    headers: { "User-Agent": "clai-rea-installer" },
-  });
-  if (!response.ok) throw new Error(`Download failed: HTTP ${response.status} (${url})`);
-  const length = Number(response.headers.get("content-length"));
-  if (length > limit) {
-    await response.body?.cancel();
-    throw new Error(`Download exceeds ${limit} bytes`);
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error(`Empty download: ${url}`);
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  let reported = 0;
+  const stall = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const watch = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(
+      () => stall.abort(new Error(`Download stalled: no data for ${STALL_TIMEOUT_MS / 1000}s (${url})`)),
+      STALL_TIMEOUT_MS,
+    );
+  };
+  watch();
   try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > limit) throw new Error(`Download exceeds ${limit} bytes`);
-      chunks.push(value);
-      if (received - reported >= 256 * 1024) {
-        reported = received;
-        onProgress?.(received, length > 0 ? length : undefined);
-      }
+    const response = await fetch(officialUrl(url), {
+      redirect: "error",
+      signal: signal ? AbortSignal.any([signal, stall.signal]) : stall.signal,
+      headers: { "User-Agent": "clai-rea-installer" },
+    });
+    if (!response.ok) throw new Error(`Download failed: HTTP ${response.status} (${url})`);
+    const encoding = response.headers.get("content-encoding")?.toLowerCase();
+    const declared = Number(response.headers.get("content-length"));
+    const length = encoding && encoding !== "identity" ? 0 : declared;
+    if (declared > limit) {
+      await response.body?.cancel();
+      throw new Error(`Download exceeds ${limit} bytes`);
     }
-    if (received === 0 || (length > 0 && received !== length)) throw new Error("Incomplete download");
-    onProgress?.(received, length > 0 ? length : undefined);
-    return Buffer.concat(chunks, received);
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error(`Empty download: ${url}`);
+    const exact = length > 0 ? Buffer.allocUnsafe(length) : undefined;
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    let reported = 0;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        watch();
+        if (received + value.byteLength > limit) throw new Error(`Download exceeds ${limit} bytes`);
+        if (exact) {
+          if (received + value.byteLength > exact.byteLength) throw new Error("Download exceeds its declared length");
+          exact.set(value, received);
+        } else chunks.push(value);
+        received += value.byteLength;
+        if (received - reported >= PROGRESS_STEP_BYTES) {
+          reported = received;
+          onProgress?.(received, length > 0 ? length : undefined);
+        }
+      }
+      if (received === 0 || (exact && received !== exact.byteLength)) throw new Error("Incomplete download");
+      onProgress?.(received, length > 0 ? length : undefined);
+      return exact ?? Buffer.concat(chunks, received);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
   } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
+    clearTimeout(timer);
   }
 }
 

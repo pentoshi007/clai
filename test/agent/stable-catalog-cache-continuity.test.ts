@@ -25,6 +25,7 @@ import type {
 import type { SkillMeta } from "../../src/skills/types.js";
 import type { CompletionRequest, CompletionResult } from "../../src/types.js";
 import * as reaInstaller from "../../src/rea/install.js";
+import { reaConnection } from "../../src/rea/connection.js";
 import { seedRea } from "../helpers/rea-runtime.js";
 
 const streamMock = vi.hoisted(() => vi.fn());
@@ -492,7 +493,7 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
         if (index > 0) expect(request.messages.slice(0, requests[index - 1]!.messages.length)).toEqual(requests[index - 1]!.messages);
       }
       const retained = structuredClone(history);
-      await runAgentTurn("Use /rea to continue reviewing the existing evidence without repeating analysis.", {
+      await runAgentTurn("Use @rea to continue reviewing the existing evidence without repeating analysis.", {
         mcp: runtime, provider: "openai", model: "gpt-4o-mini", session, history,
         maxSteps: 1, toolCalling, autoConfirm: true,
       });
@@ -501,9 +502,72 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
       expect(requests[10]!.messages[0]).toEqual(requests[0]!.messages[0]);
       expect(requests[10]!.messages.slice(1, retained.length + 1)).toEqual(retained);
       expect(requests[10]!.messages.some((message) => message.content.includes("REA WORKFLOW"))).toBe(true);
+      expect(reaConnection(runtime).selected).toBe(true);
+      const workflows = (messages: CompletionRequest["messages"]): number =>
+        messages.filter((message) => typeof message.content === "string" && message.content.includes("REA WORKFLOW")).length;
+      expect(workflows(requests[10]!.messages)).toBe(workflows(retained));
       expectWirePrefixes(requests);
     } finally {
       maintenance.mockRestore();
     }
+  });
+  it.each(["native", "text"] satisfies ToolCallingMode[])("connects an installed REA for @rea before the first request and sends its index once in %s mode", async (toolCalling) => {
+    seedRea();
+    const requests: CapturedRequest[] = [];
+    streamMock.mockImplementation(async (
+      request: CompletionRequest,
+      onToken: (token: string) => void,
+      options: { onSuccessfulRequest?: (snapshot: ReturnType<typeof successfulRequestSnapshot>) => void },
+    ): Promise<CompletionResult> => {
+      requests.push({ messages: structuredClone(request.messages), ...(request.tools ? { tools: structuredClone(request.tools) } : {}) });
+      options.onSuccessfulRequest?.(successfulRequestSnapshot("openai", "gpt-4o-mini", request));
+      onToken("done");
+      return { text: "done", provider: "openai", model: "gpt-4o-mini", finishReason: "stop" };
+    });
+    const session = createSessionPolicy(`rea-mention-${toolCalling}`);
+    let history: CompletionRequest["messages"] = [];
+    const turn = async (prompt: string): Promise<void> => {
+      await runAgentTurn(prompt, {
+        mcp: runtime, provider: "openai", model: "gpt-4o-mini", session, history,
+        maxSteps: 1, toolCalling, autoConfirm: true,
+        onMessages: (messages) => { history = messages; },
+      });
+    };
+    const carriers = (messages: CompletionRequest["messages"]): number =>
+      messages.filter((message) => typeof message.content === "string" && message.content.includes("REA TOOLS (")).length;
+
+    await turn("Summarise the project layout.");
+    expect(reaConnection(runtime).server).toBeUndefined();
+    await turn("@rea inspect the packaged artifact and keep the evidence.");
+    expect(reaConnection(runtime).selected).toBe(true);
+    expect(carriers(requests[1]!.messages)).toBe(1);
+    await turn("@rea compare it with the previous build.");
+    expect(carriers(requests[2]!.messages)).toBe(1);
+    await turn("Thanks, now explain the first finding without using REA again.");
+    expect(carriers(requests[3]!.messages)).toBe(1);
+
+    for (const [index, request] of requests.entries()) {
+      expect(request.tools).toEqual(requests[0]!.tools);
+      expect(request.messages[0]).toEqual(requests[0]!.messages[0]);
+      if (index > 0) expect(request.messages.slice(0, requests[index - 1]!.messages.length)).toEqual(requests[index - 1]!.messages);
+    }
+    expectWirePrefixes(requests);
+  });
+  it("starts nothing and gives a one-line setup directive when @rea is typed but REA is not installed", async () => {
+    rmSync(join(reaInstaller.reaRoot(), "current.json"), { force: true });
+    const requests: CapturedRequest[] = [];
+    streamMock.mockImplementation(async (request: CompletionRequest, onToken: (token: string) => void): Promise<CompletionResult> => {
+      requests.push({ messages: structuredClone(request.messages), ...(request.tools ? { tools: structuredClone(request.tools) } : {}) });
+      onToken("done");
+      return { text: "done", provider: "openai", model: "gpt-4o-mini", finishReason: "stop" };
+    });
+    await runAgentTurn("@rea look at this binary", {
+      mcp: runtime, provider: "openai", model: "gpt-4o-mini", session: createSessionPolicy("rea-missing"),
+      maxSteps: 1, toolCalling: "native", autoConfirm: true,
+    });
+    expect(reaConnection(runtime).server).toBeUndefined();
+    const context = requests[0]!.messages.filter((message) => typeof message.content === "string" && message.content.includes("rea.manage action=setup"));
+    expect(context).toHaveLength(1);
+    expect(requests[0]!.messages.some((message) => typeof message.content === "string" && message.content.includes("REA TOOLS ("))).toBe(false);
   });
 });
