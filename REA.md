@@ -50,11 +50,11 @@ REA activation never rewrites the stable system prompt, native tool schemas, or 
 
 Static JavaScript and Electron inspection, managed (.NET) assemblies, archives, Mach-O headers, plists, signatures and metadata need no engine. Native decompilation (procedures, pseudocode, strings, cross-references, assembly) needs one of Ghidra, Hopper, IDA or Kuna, and REA does not ship any of them.
 
-Engines are installed by you, never by the agent. `/rea engines` shows what is ready and what to run, and `/rea setup` points at it when it connects REA with no engine ready. `install` shows what it will download and where it will write (press `ctrl+o` for the full plan), asks for confirmation, shows progress and can be cancelled with Esc; `remove` asks before deleting anything clai installed. The agent's workflow tells it not to install or configure an engine and to send you to `/rea engines` instead, and `rea.manage` has no engine action. Only one engine operation runs at a time. If REA is connected and idle when an install finishes, clai reconnects it so the new engine is used straight away; the engine is verified with REA before the install is reported as done.
+Engines are installed by you, never by the agent. `/rea engines` shows what is ready and what to run, and `/rea setup` points at it when it connects REA with no engine ready. `install` shows what it will download and where it will write (press `ctrl+o` for the full plan), asks for confirmation, shows progress and can be cancelled with Esc; `remove` asks before deleting anything clai installed, reconnects REA first so nothing is still using the files, refuses while a turn is running with REA connected, and says so if a folder could not be deleted (on Windows a folder that REA's Ghidra has open can be neither moved nor removed). The agent's workflow tells it not to install or configure an engine and to send you to `/rea engines` instead, and `rea.manage` has no engine action. Only one engine operation runs at a time. If REA is connected and idle when an install finishes, clai reconnects it so the new engine is used straight away; the engine is verified with REA before the install is reported as done.
 
 | System | `install ghidra` | `install java` |
 | --- | --- | --- |
-| macOS arm64 and x64 | Yes. Ghidra does not ship a macOS decompiler, so clai builds it once (about a minute; needs the Xcode Command Line Tools). | Yes |
+| macOS arm64 and x64 | Yes. Ghidra does not ship a macOS decompiler, so clai builds it once (one to three minutes; needs the Xcode Command Line Tools). | Yes |
 | Linux x64 | Yes; the decompiler is in the download. | Yes (glibc) |
 | Linux arm64 | Yes; builds the decompiler once (needs make, g++ and bison). | Yes (glibc) |
 | Windows x64 | Yes; the decompiler is in the download. REA's Windows Ghidra support is experimental upstream. | Yes |
@@ -81,4 +81,16 @@ clai does not execute the target. On Linux, owned-process analysis needs a procp
 
 Portable archives and failure cases have deterministic cross-platform fixtures. The implementation was live-tested on Linux ARM64 with REA 6.7.0 and portable Node/npm, including a standalone compiled integration smoke with no system executables on PATH. That smoke bootstrapped Node 24.22.0, discovered 207 tools, performed a digest-bound static analysis and disabled the server without removing the installation.
 
-The engine installers were run for real on macOS arm64 only: Ghidra 12.1.4 with its decompiler build and a Temurin 21 JDK were installed, REA reported both ready, and a thinned Mach-O slice was decompiled. Measured there, the 543 MB Ghidra download and install peaked at about 260 MB of memory in clai's process with about 33 seconds of CPU (the rest was waiting for the network and the build), 900 MB on disk afterwards; the 200 MB JDK peaked at about 250 MB and used 336 MB on disk. Linux and Windows behavior of the installers is covered by unit tests and by CI, not by a live installation. Native Windows and macOS runtime execution of REA itself requires their CI or real hosts and is not inferred from Linux fixture tests.
+The engine installers were run for real on freshly provisioned GitHub-hosted machines: Linux x64 and arm64, Windows x64, macOS arm64 and macOS Intel. Each one already exported its own Java (17 on Linux and Windows, 21 on macOS) and had no engine. On each, the shipped code installed Temurin 21 and Ghidra 12.1.4, REA reported Ghidra ready, and `open_binary`, `list_procedures`, `search_procedures` and `procedure_pseudo_code` returned decompiled code for a real system binary (an ELF `ls`, Windows' `whoami.exe`, a thinned Mach-O `ls`). Timings on GitHub's network, where the 543 MB download is quick; on a home connection the download dominates:
+
+| Machine | JDK | Ghidra | Decompiler |
+| --- | --- | --- | --- |
+| Linux x64 | 4 s | 11 s | in the download |
+| Linux arm64 | 3 s | 53 s | built (make, g++ and bison were present) |
+| macOS arm64 | 5 s | 73 s | built |
+| macOS Intel | 10 s | 184 s | built |
+| Windows x64 | 5 s | 18 s | in the download |
+
+The JDK takes 310 to 345 MB on disk and Ghidra 864 to 877 MB. The whole check on each machine, REA's own installation included, stayed under 500 MB of memory in clai's process; measured on its own on macOS arm64, the Ghidra install peaked at about 260 MB and used about 33 seconds of CPU. An Alpine container and a Windows 11 ARM machine report themselves as unsupported with the reason; nothing is downloaded there.
+
+Not exercised live: Hopper, IDA and Kuna, the interactive install dialogs on Windows terminals (they run the same code as the macOS ones, which were driven through a pseudo-terminal), and the unauthenticated GitHub API limit (60 requests per hour per address, which clai explains when it is hit).
