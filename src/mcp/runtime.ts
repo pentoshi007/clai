@@ -20,6 +20,7 @@ import {
   compactToolSchema,
 } from "./schema-compact.js";
 import { registerExternalToolDispatcher } from "../tools/external-tools.js";
+import { isClientOwnedToolName } from "../tools/registry.js";
 import { McpTransportError } from "./transport.js";
 import type { OAuthConsentInfo } from "./auth/provider.js";
 import type { McpNormalizedResult, McpServerDefinition, McpSnapshot, McpToolMetadata } from "./types.js";
@@ -540,6 +541,7 @@ export class McpRuntime {
       view.snapshot.toolsByWireName.get(name) ??
       view.snapshot.toolsByWireName.get(mapped);
     if (direct) return direct;
+    if (isClientOwnedToolName(name) || isClientOwnedToolName(mapped)) return undefined;
     const folded = [foldToolName(name), foldToolName(mapped)].filter((value) => value.length > 0);
     if (folded.length === 0) return undefined;
     const exact = view.snapshot.tools.filter(
