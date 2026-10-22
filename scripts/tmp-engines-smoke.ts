@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { appendFileSync, writeSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, stat, statfs } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rename, stat, statfs } from "node:fs/promises";
 import { arch, availableParallelism, freemem, platform, tmpdir, totalmem } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { McpManager } from "../src/mcp/manager.js";
 import { McpRuntime } from "../src/mcp/runtime.js";
@@ -247,6 +247,7 @@ try {
   });
 
   if (enabled) {
+    const roots = engineRoots();
     let path: string;
     if (host.platform === "win32") path = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "whoami.exe");
     else if (host.platform === "darwin") {
@@ -289,29 +290,29 @@ try {
         }
       } else row("procedure-choice", false, "could not choose a procedure from list_procedures output");
 
-      const roots = engineRoots();
       note("processes-while-open", { list: await liveProcesses() });
-      const whileOpen = await bounded(120_000, () => removeTree(roots.ghidra));
-      const whileOpenResult = whileOpen.timedOut ? "TIMED OUT after 120s" : whileOpen.error ?? "removed";
-      note("remove-while-open", { result: whileOpenResult, ms: whileOpen.ms, remaining: await readdir(roots.ghidra).catch(() => ["(gone)"]) });
-      rows.push(`| remove ghidra while a binary is open | info | ${whileOpenResult.replace(/\|/g, "/")} in ${whileOpen.ms}ms |`);
+      const probes: Array<[string, string]> = [["ghidra root", roots.ghidra], ["ghidra version", join(roots.ghidra, "12.1.4")], ["jdk root", roots.java]];
+      for (const [name, path] of probes) {
+        const result = await bounded(30_000, () => rename(path, `${path}.probe`));
+        const outcome = result.timedOut ? "TIMED OUT after 30s" : result.error ?? "renamed";
+        if (!result.timedOut && !result.error) await rename(`${path}.probe`, path);
+        note("rename-while-open", { target: name, result: outcome, ms: result.ms });
+        rows.push(`| rename ${name} while a binary is open | info | ${outcome.replace(/\|/g, "/")} in ${result.ms}ms |`);
+      }
     }
     const disabled = await bounded(90_000, () => manageRea(runtime, "disable"));
     note("rea-disable", { ok: disabled.value?.ok ?? null, timedOut: disabled.timedOut, error: disabled.error ?? null, ms: disabled.ms });
     await sleep(5_000);
     note("processes-after-disable", { list: await liveProcesses() });
-    const afterStop = await bounded(180_000, () => removeTree(engineRoots().ghidra));
-    const afterStopResult = afterStop.timedOut ? "TIMED OUT after 180s" : afterStop.error ?? "removed";
-    note("remove-after-stop", { result: afterStopResult, ms: afterStop.ms, remaining: await readdir(engineRoots().ghidra).catch(() => ["(gone)"]) });
-    rows.push(`| remove ghidra after REA stopped | ${afterStopResult === "removed" ? "ok" : "FAILED"} | ${afterStopResult.replace(/\|/g, "/")} in ${afterStop.ms}ms |`);
-    if (afterStopResult !== "removed") {
-      failures.push(`remove after stop: ${afterStopResult}`);
-      if (process.platform === "win32") {
-        await run("taskkill", ["/F", "/IM", "java.exe", "/IM", "decompile.exe"], { timeout: 30_000, windowsHide: true }).catch(() => undefined);
-        await sleep(3_000);
-        const retried = await bounded(120_000, () => removeTree(engineRoots().ghidra));
-        note("remove-after-taskkill", { result: retried.timedOut ? "TIMED OUT" : retried.error ?? "removed", ms: retried.ms, processes: await liveProcesses() });
-      }
+    for (const [name, path] of [["ghidra", roots.ghidra], ["jdk", roots.java]] as const) {
+      const trash = join(dirname(path), `.s-trash-${name}`);
+      const moved = await bounded(30_000, () => rename(path, trash));
+      const movedResult = moved.timedOut ? "TIMED OUT after 30s" : moved.error ?? "renamed";
+      const cleared = movedResult === "renamed" ? await bounded(300_000, () => removeTree(trash)) : undefined;
+      const clearedResult = cleared ? (cleared.timedOut ? "TIMED OUT after 300s" : cleared.error ?? "removed") : "skipped";
+      note("discard-after-stop", { target: name, rename: movedResult, renameMs: moved.ms, removal: clearedResult, removalMs: cleared?.ms ?? null, remaining: await readdir(dirname(path)).catch(() => ["(gone)"]) });
+      rows.push(`| discard ${name} after REA stopped | ${movedResult === "renamed" && clearedResult === "removed" ? "ok" : "FAILED"} | rename ${movedResult} in ${moved.ms}ms, removal ${clearedResult} in ${cleared?.ms ?? 0}ms |`);
+      if (movedResult !== "renamed" || clearedResult !== "removed") failures.push(`discard ${name}: ${movedResult} / ${clearedResult}`);
     }
   }
 } finally {
