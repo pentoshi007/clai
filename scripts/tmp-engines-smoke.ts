@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { appendFileSync, writeSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rename, stat, statfs } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, stat, statfs } from "node:fs/promises";
 import { arch, availableParallelism, freemem, platform, tmpdir, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -8,7 +8,7 @@ import { McpManager } from "../src/mcp/manager.js";
 import { McpRuntime } from "../src/mcp/runtime.js";
 import { describeEngines } from "../src/rea/engine-report.js";
 import { collectEngineReport } from "../src/rea/engine-status.js";
-import { engineRoots, readEngineSettings, removeTree } from "../src/rea/engines.js";
+import { discardTree, engineRoots, readEngineSettings } from "../src/rea/engines.js";
 import { bundlesDecompiler, currentHost, decompilerBuildTarget, installGhidra, missingBuildTools, resolveGhidraRelease } from "../src/rea/ghidra.js";
 import { runReaMaintenance, reaRoot } from "../src/rea/install.js";
 import { installJdk, isMuslLinux, javaVersion, resolveJdkRelease } from "../src/rea/jdk.js";
@@ -291,28 +291,25 @@ try {
       } else row("procedure-choice", false, "could not choose a procedure from list_procedures output");
 
       note("processes-while-open", { list: await liveProcesses() });
-      const probes: Array<[string, string]> = [["ghidra root", roots.ghidra], ["ghidra version", join(roots.ghidra, "12.1.4")], ["jdk root", roots.java]];
-      for (const [name, path] of probes) {
-        const result = await bounded(30_000, () => rename(path, `${path}.probe`));
-        const outcome = result.timedOut ? "TIMED OUT after 30s" : result.error ?? "renamed";
-        if (!result.timedOut && !result.error) await rename(`${path}.probe`, path);
-        note("rename-while-open", { target: name, result: outcome, ms: result.ms });
-        rows.push(`| rename ${name} while a binary is open | info | ${outcome.replace(/\|/g, "/")} in ${result.ms}ms |`);
+      for (const [name, path] of [["ghidra", roots.ghidra], ["jdk", roots.java]] as const) {
+        const attempt = await bounded(60_000, () => discardTree(path, { attempts: 2, delayMs: 100 }));
+        const outcome = attempt.timedOut ? "TIMED OUT after 60s" : attempt.error ?? attempt.value ?? "unknown";
+        note("discard-while-open", { target: name, result: outcome, ms: attempt.ms });
+        const expected = process.platform === "win32" ? "busy" : "removed";
+        rows.push(`| discard ${name} while a binary is open | ${outcome === expected ? "ok" : "FAILED"} | ${outcome.replace(/\|/g, "/")} in ${attempt.ms}ms (expected ${expected}) |`);
+        if (outcome !== expected) failures.push(`discard ${name} while open: ${outcome}, expected ${expected}`);
       }
     }
     const disabled = await bounded(90_000, () => manageRea(runtime, "disable"));
     note("rea-disable", { ok: disabled.value?.ok ?? null, timedOut: disabled.timedOut, error: disabled.error ?? null, ms: disabled.ms });
-    await sleep(5_000);
+    await sleep(2_000);
     note("processes-after-disable", { list: await liveProcesses() });
     for (const [name, path] of [["ghidra", roots.ghidra], ["jdk", roots.java]] as const) {
-      const trash = join(dirname(path), `.s-trash-${name}`);
-      const moved = await bounded(30_000, () => rename(path, trash));
-      const movedResult = moved.timedOut ? "TIMED OUT after 30s" : moved.error ?? "renamed";
-      const cleared = movedResult === "renamed" ? await bounded(300_000, () => removeTree(trash)) : undefined;
-      const clearedResult = cleared ? (cleared.timedOut ? "TIMED OUT after 300s" : cleared.error ?? "removed") : "skipped";
-      note("discard-after-stop", { target: name, rename: movedResult, renameMs: moved.ms, removal: clearedResult, removalMs: cleared?.ms ?? null, remaining: await readdir(dirname(path)).catch(() => ["(gone)"]) });
-      rows.push(`| discard ${name} after REA stopped | ${movedResult === "renamed" && clearedResult === "removed" ? "ok" : "FAILED"} | rename ${movedResult} in ${moved.ms}ms, removal ${clearedResult} in ${cleared?.ms ?? 0}ms |`);
-      if (movedResult !== "renamed" || clearedResult !== "removed") failures.push(`discard ${name}: ${movedResult} / ${clearedResult}`);
+      const attempt = await bounded(300_000, () => discardTree(path));
+      const outcome = attempt.timedOut ? "TIMED OUT after 300s" : attempt.error ?? attempt.value ?? "unknown";
+      note("discard-after-stop", { target: name, result: outcome, ms: attempt.ms, remaining: await readdir(dirname(path)).catch(() => ["(gone)"]) });
+      rows.push(`| discard ${name} after REA stopped | ${outcome === "removed" ? "ok" : "FAILED"} | ${outcome.replace(/\|/g, "/")} in ${attempt.ms}ms |`);
+      if (outcome !== "removed") failures.push(`discard ${name} after stop: ${outcome}`);
     }
   }
 } finally {
