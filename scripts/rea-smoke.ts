@@ -48,6 +48,6 @@ try {
   await runtime.closeAll();
   if (previousData === undefined) delete process.env.CLAI_DATA_DIR;
   else process.env.CLAI_DATA_DIR = previousData;
-  if (process.env.CLAI_REA_SMOKE_KEEP !== "1") await rm(work, { recursive: true, force: true });
+  if (process.env.CLAI_REA_SMOKE_KEEP !== "1") await rm(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   else console.log(`Artifacts: ${work}`);
 }
