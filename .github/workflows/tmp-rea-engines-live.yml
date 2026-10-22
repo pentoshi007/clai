@@ -52,3 +52,27 @@ jobs:
       - run: npm ci
       - name: Tests the Windows job of ci.yml does not select
         run: node scripts/run-tests.mjs test/ui-core/rea-engines-commands.test.ts test/store/test-sandbox.test.ts test/app/session-lifecycle-generation.test.ts test/rea test/mcp --reporter=dot
+
+  alpine:
+    name: platform report alpine (musl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: node:24-alpine
+    steps:
+      - uses: actions/checkout@v5
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx scripts/tmp-platform-report.ts
+
+  windows-arm:
+    name: platform report windows-arm64
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node --import tsx scripts/tmp-platform-report.ts
+
