@@ -26,6 +26,7 @@ const DEEPEST_ENTRY_CHARS = 140;
 export interface EngineHost {
   readonly platform: NodeJS.Platform;
   readonly arch: string;
+  readonly musl?: boolean | undefined;
 }
 
 export interface EngineProgress {
@@ -81,12 +82,28 @@ const DECOMPILER_DIRECTORIES: Readonly<Record<string, string>> = {
 const BUNDLED_DECOMPILERS = new Set(["linux_x86_64", "win_x86_64"]);
 const VERSION_DIRECTORY = /^\d+(?:\.\d+){1,3}$/;
 
+export function isMuslLinux(): boolean {
+  if (process.platform !== "linux") return false;
+  const report = (process.report?.getReport?.() ?? undefined) as { header?: { glibcVersionRuntime?: unknown } } | undefined;
+  return report !== undefined && report.header !== undefined && report.header.glibcVersionRuntime === undefined;
+}
+
 export function currentHost(): EngineHost {
-  return { platform: process.platform, arch: process.arch };
+  return { platform: process.platform, arch: process.arch, musl: isMuslLinux() };
 }
 
 export function decompilerDirectory(host: EngineHost): string | undefined {
   return DECOMPILER_DIRECTORIES[`${host.platform}:${host.arch}`];
+}
+
+export function ghidraHostProblem(host: EngineHost): string | undefined {
+  if (!decompilerDirectory(host)) {
+    return `REA supports Ghidra on macOS (x64, arm64), Linux (x64, arm64) and Windows (x64); this machine is ${host.platform}/${host.arch}.`;
+  }
+  if (host.platform === "linux" && host.musl) {
+    return "Ghidra's native decompiler is built for glibc and this Linux uses musl (Alpine), so clai does not install Ghidra here.";
+  }
+  return undefined;
 }
 
 export function bundlesDecompiler(host: EngineHost): boolean {
@@ -289,6 +306,8 @@ async function install(release: GhidraRelease, options: InstallGhidraOptions, ro
     await updateEngineSettings((current) => ({ ...current, ghidra: { dir: target, managed: true, version: release.version } }), root, signal);
     return { ok: true, dir: target, version: release.version, built: false, changed: false };
   }
+  const unsupported = ghidraHostProblem(host);
+  if (unsupported) throw new Error(unsupported);
   const tooDeep = windowsPathProblem(host.platform, roots.ghidra, DEEPEST_ENTRY_CHARS);
   if (tooDeep) throw new Error(tooDeep);
   await mkdir(roots.ghidra, { recursive: true, mode: 0o700 });
