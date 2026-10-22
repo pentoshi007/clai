@@ -64,6 +64,10 @@ export function availableToolNames(): string[] {
   return Object.keys(toolRegistry);
 }
 
+export function isClientOwnedToolName(name: string): boolean {
+  return toolRegistry[name] !== undefined || NON_REGISTRY_TOOL_NAMES.has(name);
+}
+
 export function knownToolNames(): string[] {
   return [...Object.keys(toolRegistry), ...NON_REGISTRY_TOOL_NAMES].sort();
 }
