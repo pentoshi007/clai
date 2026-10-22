@@ -15,7 +15,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - { os: ubuntu-latest, label: linux-x64 }
+          - { os: ubuntu-24.04-arm, label: linux-arm64 }
           - { os: windows-latest, label: windows-x64 }
+          - { os: macos-latest, label: macos-arm64 }
+          - { os: macos-15-intel, label: macos-x64 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -31,18 +35,20 @@ jobs:
           TMP_LABEL: ${{ matrix.label }}
         run: node --import tsx scripts/tmp-engines-smoke.ts
 
-  base-project-root:
-    name: project-root test at the base commit on Windows
-    runs-on: windows-latest
-    timeout-minutes: 20
+  extra-tests:
+    name: extra tests ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: 1945c4d17b235d110120cccf241c886f28e9d9b6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: The same file before any of this branch's changes
-        run: node scripts/run-tests.mjs test/project-root.test.ts --reporter=default
+      - name: Tests the Windows job of ci.yml does not select
+        run: node scripts/run-tests.mjs test/ui-core/rea-engines-commands.test.ts test/store/test-sandbox.test.ts test/app/session-lifecycle-generation.test.ts test/rea test/mcp --reporter=dot
