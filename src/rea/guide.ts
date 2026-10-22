@@ -56,7 +56,7 @@ function filesSection(view: ReaGuideView): string[] {
     "",
     `- Everything lives in \`${view.root}\`: \`current.json\` (the active release), \`versions/\`, \`npm-cache/\` and \`engines.json\` (the engines you set up). Engines that clai installs live beside it in \`ghidra/\` and \`jdk/\`. \`CLAI_DATA_DIR\` moves them all.`,
     "- `CLAI_REA_NODE` selects the Node executable REA runs on. It must be set before installing; to switch an existing installation, delete `current.json` and run `/rea setup`.",
-    "- clai passes your environment to REA, so engine settings such as `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `HOPPER_LAUNCHER_PATH`, `REA_GHIDRA_STARTUP_TIMEOUT_MS`, `REA_TSHARK_COMMAND`, `REA_WABT_BIN_DIRECTORY`, `REA_KUNA_COMMAND` and `REA_JEB_MCP_URL` work when set before you start clai. A variable you set always wins over `engines.json`.",
+    "- clai passes your environment to REA, so engine settings such as `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `HOPPER_LAUNCHER_PATH`, `REA_GHIDRA_STARTUP_TIMEOUT_MS`, `REA_TSHARK_COMMAND`, `REA_WABT_BIN_DIRECTORY`, `REA_KUNA_COMMAND` and `REA_JEB_MCP_URL` work when set before you start clai. An engine you choose with `/rea engines` takes precedence over the same variable in your environment (for REA only); `/rea engines remove` hands control back.",
   ];
   if (view.status.state !== "ready") return lines;
   const skill = join(view.status.installation.directory, "node_modules", "rea-agents", "skills", "reverse-engineer-anything");

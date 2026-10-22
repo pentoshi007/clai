@@ -1,13 +1,12 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
 import { downloadFile, fetchJsonValue, type FetchFunction } from "./download.js";
-import { engineRoots, updateEngineSettings } from "./engines.js";
+import { clearStaging, discardTree, engineRoots, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "./engines.js";
 import { currentHost, type EngineHost, type EngineProgress } from "./ghidra.js";
-import { reaRoot } from "./install.js";
+import { publish, reaRoot } from "./install.js";
 import { ensureFreeSpace, extractZip } from "./zip.js";
 
 export const JDK_MAJOR = 21;
@@ -21,6 +20,7 @@ const MAX_EXTRACTED_BYTES = 1_500_000_000;
 const MAX_ENTRIES = 20_000;
 const EXTRACTED_BYTES = 450_000_000;
 const JDK_DIRECTORY = /^jdk-\d/;
+const DEEPEST_ENTRY_CHARS = 80;
 const run = promisify(execFile);
 
 export interface JdkRelease {
@@ -53,12 +53,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isMuslLinux(): boolean {
-  if (process.platform !== "linux") return false;
-  const report = (process.report?.getReport?.() ?? undefined) as { header?: { glibcVersionRuntime?: unknown } } | undefined;
-  return report !== undefined && report.header !== undefined && report.header.glibcVersionRuntime === undefined;
-}
-
 export function temurinQuery(host: EngineHost, musl = false): { os: string; architecture: string } | undefined {
   const architecture = host.arch === "x64" ? "x64" : host.arch === "arm64" ? "aarch64" : undefined;
   if (!architecture) return undefined;
@@ -87,7 +81,7 @@ export async function resolveJdkRelease(
   host: EngineHost = currentHost(),
   options: { signal?: AbortSignal | undefined; fetch?: FetchFunction | undefined; musl?: boolean } = {},
 ): Promise<JdkResolution> {
-  const query = temurinQuery(host, options.musl ?? isMuslLinux());
+  const query = temurinQuery(host, options.musl ?? host.musl ?? false);
   if (!query) {
     return { ok: false, reason: `No official portable JDK ${JDK_MAJOR} exists for ${host.platform}/${host.arch}${host.platform === "linux" ? " (musl libc is not covered)" : ""}. Install a 64-bit JDK ${JDK_MAJOR} or newer yourself and run /rea engines use java <JDK home>.` };
   }
@@ -151,9 +145,12 @@ async function install(options: InstallJdkOptions, root: string): Promise<Instal
     await updateEngineSettings((current) => ({ ...current, java: { home, managed: true, version: release.name } }), root, signal);
     return { ok: true, home, version: known, changed: false };
   }
+  const tooDeep = windowsPathProblem(host.platform, roots.java, DEEPEST_ENTRY_CHARS);
+  if (tooDeep) throw new Error(tooDeep);
   await mkdir(roots.java, { recursive: true, mode: 0o700 });
+  await clearStaging(roots.java);
   await ensureFreeSpace(roots.java, jdkDiskBytes(release));
-  const staging = join(roots.java, `.staging-${randomUUID()}`);
+  const staging = join(roots.java, stagingName());
   await mkdir(staging, { mode: 0o700 });
   try {
     const archive = join(staging, `jdk.${release.format}`);
@@ -162,7 +159,7 @@ async function install(options: InstallJdkOptions, root: string): Promise<Instal
       hosts: DOWNLOAD_HOSTS, maxBytes: MAX_ARCHIVE_BYTES, sha256: release.sha256, bytes: release.bytes, signal, fetch: options.fetch,
       onProgress: (receivedBytes, totalBytes) => onProgress?.({ phase: "downloading", message: `Downloading JDK ${release.name}`, receivedBytes, totalBytes: totalBytes ?? release.bytes }),
     });
-    const tree = join(staging, "tree");
+    const tree = join(staging, "t");
     onProgress?.({ phase: "extracting", message: `Extracting JDK ${release.name}` });
     if (release.format === "zip") await extractZip(archive, tree, { strip: 1, signal, limits: { totalBytes: MAX_EXTRACTED_BYTES, entries: MAX_ENTRIES } });
     else await extractTarball(archive, tree, signal);
@@ -171,16 +168,16 @@ async function install(options: InstallJdkOptions, root: string): Promise<Instal
     const version = await probe(javaHomeIn(tree, host.platform), host.platform);
     if (!version) throw new Error(`The downloaded JDK does not run on ${host.platform}/${host.arch}`);
     signal?.throwIfAborted();
-    await rm(target, { recursive: true, force: true });
-    await rename(tree, target);
+    if (await discardTree(target) === "busy") throw new Error(`${target} is in use by another program. Stop REA with /rea disable, then run the install again.`);
+    await publish(tree, target);
     await updateEngineSettings((current) => ({ ...current, java: { home, managed: true, version: release.name } }), root, signal);
     const siblings = await readdir(roots.java, { withFileTypes: true }).catch(() => []);
     await Promise.all(siblings
       .filter((entry) => entry.isDirectory() && entry.name !== release.name && JDK_DIRECTORY.test(entry.name))
-      .map((entry) => rm(join(roots.java, entry.name), { recursive: true, force: true }).catch(() => undefined)));
+      .map((entry) => discardTree(join(roots.java, entry.name)).catch(() => undefined)));
     return { ok: true, home, version, changed: true };
   } finally {
-    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    await removeTree(staging).catch(() => undefined);
   }
 }
 

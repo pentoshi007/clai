@@ -1,6 +1,6 @@
 import type { ReaBlockedGroup, ReaEngine } from "./availability.js";
 import type { EngineReport } from "./engine-status.js";
-import { bundlesDecompiler, GHIDRA_SERIES } from "./ghidra.js";
+import { bundlesDecompiler, ghidraHostProblem, GHIDRA_SERIES } from "./ghidra.js";
 
 const LABELS: Readonly<Record<string, string>> = { ghidra: "Ghidra", hopper: "Hopper", ida: "IDA", kuna: "Kuna" };
 const FALLBACK_ENGINES = ["ghidra", "hopper", "ida", "kuna"] as const;
@@ -18,7 +18,9 @@ function hint(engine: string, report: EngineReport): string[] {
       lines.push(`found ${existing.version} at ${code(existing.dir)}${existing.decompiler ? "" : " (no native decompiler for this machine)"}`);
       if (existing.decompiler) lines.push(code(`/rea engines use ghidra ${existing.dir}`));
     }
-    lines.push(`${code("/rea engines install ghidra")} official Ghidra ${GHIDRA_SERIES}.x from github.com, about 570 MB, checksum verified${bundlesDecompiler(host) ? "" : ", then builds its native decompiler once (needs make, a C++ compiler and bison)"}`);
+    const unsupported = ghidraHostProblem(host);
+    if (unsupported) lines.push(unsupported);
+    else lines.push(`${code("/rea engines install ghidra")} official Ghidra ${GHIDRA_SERIES}.x from github.com, about 570 MB, checksum verified${bundlesDecompiler(host) ? "" : ", then builds its native decompiler once (needs make, a C++ compiler and bison)"}`);
     lines.push(`${code("/rea engines use ghidra <folder>")} point at an extracted Ghidra you already have`);
     if (windows) lines.push("REA's Windows Ghidra support is experimental (x64 only)");
     return lines;

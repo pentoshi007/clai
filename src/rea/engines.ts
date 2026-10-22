@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
 import { publish, reaRoot } from "./install.js";
 
@@ -23,6 +24,9 @@ export interface EngineRoots {
 
 const MAX_PATH_CHARS = 1_024;
 const VERSION = /^[0-9A-Za-z._+-]{1,40}$/;
+const WINDOWS_PATH_LIMIT = 259;
+const IN_USE_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const STAGING_NAME = /^\.(?:staging-[0-9a-f-]{36}|s-[0-9a-f]{8})$/;
 
 export function engineRoots(root = reaRoot()): EngineRoots {
   const base = resolve(root);
@@ -31,6 +35,53 @@ export function engineRoots(root = reaRoot()): EngineRoots {
     ghidra: join(dirname(base), "ghidra"),
     java: join(dirname(base), "jdk"),
   };
+}
+
+export function stagingName(): string {
+  return `.s-${randomUUID().slice(0, 8)}`;
+}
+
+export async function clearStaging(directory: string): Promise<void> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && STAGING_NAME.test(entry.name))
+    .map((entry) => removeTree(join(directory, entry.name)).catch(() => undefined)));
+}
+
+export function removeTree(path: string): Promise<void> {
+  return rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+}
+
+export interface DiscardOptions {
+  readonly platform?: NodeJS.Platform | undefined;
+  readonly attempts?: number | undefined;
+  readonly delayMs?: number | undefined;
+}
+
+export async function discardTree(path: string, options: DiscardOptions = {}): Promise<"removed" | "busy"> {
+  const { platform = process.platform, attempts = 20, delayMs = 250 } = options;
+  const trash = join(dirname(path), stagingName());
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(path, trash);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (code === "ENOENT") return "removed";
+      if (platform !== "win32" || !IN_USE_CODES.has(code)) throw error;
+      if (attempt >= attempts) return "busy";
+      await delay(delayMs);
+    }
+  }
+  await removeTree(trash);
+  return "removed";
+}
+
+export function windowsPathProblem(platform: NodeJS.Platform, directory: string, deepestEntry: number): string | undefined {
+  if (platform !== "win32") return undefined;
+  const longest = join(directory, stagingName(), "t").length + 1 + deepestEntry;
+  if (longest <= WINDOWS_PATH_LIMIT) return undefined;
+  return `${directory} is too deep for Windows, whose path limit is ${WINDOWS_PATH_LIMIT + 1} characters (this install needs ${longest}). Move clai's data folder somewhere shorter by setting CLAI_DATA_DIR, for example C:\\clai, then run the command again.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,9 +161,10 @@ export async function updateEngineSettings(
   }, signal);
 }
 
-function hasEnvironmentKey(env: NodeJS.ProcessEnv, key: string): boolean {
-  const wanted = process.platform === "win32" ? key.toLowerCase() : key;
-  return Object.entries(env).some(([name, value]) => (process.platform === "win32" ? name.toLowerCase() : name) === wanted && !!value);
+function environmentKey(env: NodeJS.ProcessEnv, key: string): string {
+  if (process.platform !== "win32") return key;
+  const wanted = key.toLowerCase();
+  return Object.keys(env).find((name) => name.toLowerCase() === wanted) ?? key;
 }
 
 export function engineEnvironment(settings: EngineSettings, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
@@ -125,7 +177,7 @@ export function engineEnvironment(settings: EngineSettings, base: NodeJS.Process
   ];
   const env: Record<string, string> = {};
   for (const [key, value] of wanted) {
-    if (value && !hasEnvironmentKey(base, key)) env[key] = value;
+    if (value) env[environmentKey(base, key)] = value;
   }
   return env;
 }

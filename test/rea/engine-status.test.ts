@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectEngineReport, discoverGhidra, ghidraSearchPatterns } from "../../src/rea/engine-status.js";
 import { updateEngineSettings } from "../../src/rea/engines.js";
@@ -56,9 +56,9 @@ console.log(JSON.stringify({
 describe("engine discovery", () => {
   it("looks where each system usually puts Ghidra", () => {
     const mac = ghidraSearchPatterns({ platform: "darwin", arch: "arm64" }, "/Users/me");
-    expect(mac).toEqual(expect.arrayContaining([join("/Applications", "ghidra*"), join("/Users/me", "Downloads", "ghidra_*_PUBLIC"), join("/opt/homebrew/Caskroom/ghidra", "*", "ghidra_*_PUBLIC")]));
+    expect(mac).toEqual(expect.arrayContaining([posix.join("/Applications", "ghidra*"), posix.join("/Users/me", "Downloads", "ghidra_*_PUBLIC"), posix.join("/opt/homebrew/Caskroom/ghidra", "*", "ghidra_*_PUBLIC")]));
     const linux = ghidraSearchPatterns({ platform: "linux", arch: "x64" }, "/home/me");
-    expect(linux).toEqual(expect.arrayContaining([join("/opt", "ghidra*"), join("/home/me", "ghidra*"), join("/usr/share", "ghidra*")]));
+    expect(linux).toEqual(expect.arrayContaining([posix.join("/opt", "ghidra*"), posix.join("/home/me", "ghidra*"), posix.join("/usr/share", "ghidra*")]));
     const windows = ghidraSearchPatterns({ platform: "win32", arch: "x64" }, "C:\\Users\\me", { SystemDrive: "C:", ProgramFiles: "C:\\Program Files", LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" });
     expect(windows).toEqual(expect.arrayContaining(["C:\\ghidra*", "C:\\Program Files\\ghidra*", "C:\\Users\\me\\AppData\\Local\\Programs\\ghidra*", "C:\\Users\\me\\Downloads\\ghidra_*_PUBLIC"]));
   });
