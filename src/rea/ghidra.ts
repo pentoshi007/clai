@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
 import { findExecutable } from "../os/command.js";
 import { downloadFile, fetchJsonValue, type FetchFunction } from "./download.js";
-import { clearStaging, engineRoots, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "./engines.js";
+import { clearStaging, discardTree, engineRoots, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "./engines.js";
 import { publish, reaRoot } from "./install.js";
 import { ensureFreeSpace, extractZip } from "./zip.js";
 
@@ -320,13 +320,13 @@ async function install(release: GhidraRelease, options: InstallGhidraOptions, ro
       if (!inspection.ok || !inspection.decompiler) throw new Error("The native decompiler is still missing after the build");
     }
     signal?.throwIfAborted();
-    await removeTree(target);
+    if (await discardTree(target) === "busy") throw new Error(`${target} is in use by another program. Stop REA with /rea disable, then run the install again.`);
     await publish(tree, target);
     await updateEngineSettings((current) => ({ ...current, ghidra: { dir: target, managed: true, version: release.version } }), root, signal);
     const siblings = await readdir(roots.ghidra, { withFileTypes: true }).catch(() => []);
     await Promise.all(siblings
       .filter((entry) => entry.isDirectory() && entry.name !== release.version && VERSION_DIRECTORY.test(entry.name))
-      .map((entry) => removeTree(join(roots.ghidra, entry.name)).catch(() => undefined)));
+      .map((entry) => discardTree(join(roots.ghidra, entry.name)).catch(() => undefined)));
     return { ok: true, dir: target, version: release.version, built, changed: true };
   } finally {
     await removeTree(staging).catch(() => undefined);

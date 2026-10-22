@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
 import { downloadFile, fetchJsonValue, type FetchFunction } from "./download.js";
-import { clearStaging, engineRoots, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "./engines.js";
+import { clearStaging, discardTree, engineRoots, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "./engines.js";
 import { currentHost, type EngineHost, type EngineProgress } from "./ghidra.js";
 import { publish, reaRoot } from "./install.js";
 import { ensureFreeSpace, extractZip } from "./zip.js";
@@ -174,13 +174,13 @@ async function install(options: InstallJdkOptions, root: string): Promise<Instal
     const version = await probe(javaHomeIn(tree, host.platform), host.platform);
     if (!version) throw new Error(`The downloaded JDK does not run on ${host.platform}/${host.arch}`);
     signal?.throwIfAborted();
-    await removeTree(target);
+    if (await discardTree(target) === "busy") throw new Error(`${target} is in use by another program. Stop REA with /rea disable, then run the install again.`);
     await publish(tree, target);
     await updateEngineSettings((current) => ({ ...current, java: { home, managed: true, version: release.name } }), root, signal);
     const siblings = await readdir(roots.java, { withFileTypes: true }).catch(() => []);
     await Promise.all(siblings
       .filter((entry) => entry.isDirectory() && entry.name !== release.name && JDK_DIRECTORY.test(entry.name))
-      .map((entry) => removeTree(join(roots.java, entry.name)).catch(() => undefined)));
+      .map((entry) => discardTree(join(roots.java, entry.name)).catch(() => undefined)));
     return { ok: true, home, version, changed: true };
   } finally {
     await removeTree(staging).catch(() => undefined);

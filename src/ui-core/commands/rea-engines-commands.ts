@@ -1,10 +1,10 @@
-import { rm, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { readyEngines, type ReaEngine } from "../../rea/availability.js";
 import { describeEngines, engineSummary } from "../../rea/engine-report.js";
 import { collectEngineReport, type EngineReport } from "../../rea/engine-status.js";
-import { engineRoots, readEngineSettings, updateEngineSettings, type EngineId } from "../../rea/engines.js";
+import { discardTree, engineRoots, readEngineSettings, updateEngineSettings, type EngineId } from "../../rea/engines.js";
 import {
   buildToolsHelp, bundlesDecompiler, currentHost, decompilerDirectory, ghidraDiskBytes, GHIDRA_INSTALLED_BYTES, inspectGhidraDirectory,
   installGhidra, missingBuildTools, resolveGhidraRelease, GHIDRA_SERIES, type EngineHost, type EngineProgress,
@@ -29,6 +29,7 @@ export interface EngineCommandDeps {
   readonly installJdk: typeof installJdk;
   readonly missingTools: typeof missingBuildTools;
   readonly manage: typeof manageRea;
+  readonly discard: typeof discardTree;
   readonly host: () => EngineHost;
 }
 
@@ -40,6 +41,7 @@ export const defaultEngineDeps: EngineCommandDeps = {
   installJdk,
   missingTools: missingBuildTools,
   manage: manageRea,
+  discard: discardTree,
   host: currentHost,
 };
 
@@ -366,21 +368,36 @@ export async function removeEngine(services: AppServices, engine: EngineId | "ja
     }
     const managed = "managed" in entry && entry.managed;
     const location = engine === "ghidra" ? settings.ghidra?.dir : engine === "java" ? settings.java?.home : undefined;
-    if (managed && location) {
-      const roots = engineRoots(reaRoot());
-      const approved = await confirm(services, { kind: "reset", prompt: `Delete the ${engine} copy that clai installed?\n${engine === "ghidra" ? roots.ghidra : roots.java}\nREA loses native decompilation until you install or point to an engine again.` });
+    const folder = managed && location ? (engine === "ghidra" ? engineRoots(reaRoot()).ghidra : engineRoots(reaRoot()).java) : undefined;
+    if (folder) {
+      if (reaConnection(services.mcp).server && services.session.getState().running) {
+        services.session.notice("info", `REA is connected and a turn is running, so ${engine} may be in use. Run this again when the turn finishes · nothing was changed`);
+        return;
+      }
+      const approved = await confirm(services, { kind: "reset", prompt: `Delete the ${engine} copy that clai installed?\n${folder}\nREA loses native decompilation until you install or point to an engine again.` });
       if (!approved) {
         services.session.notice("info", `${engine} kept`);
         return;
       }
-      await rm(engine === "ghidra" ? roots.ghidra : roots.java, { recursive: true, force: true });
     }
     await updateEngineSettings((current) => {
       const { [engine]: _removed, ...rest } = current;
       return rest;
     }, undefined, signal);
     const adopted = await adoptChange(services, deps);
-    services.session.notice("info", `${engine} removed from REA's configuration. ${adopted}`);
+    if (!folder) {
+      services.session.notice("info", `${engine} removed from REA's configuration. ${adopted}`);
+      return;
+    }
+    const problem = await deps.discard(folder).then(
+      (state) => state === "busy" ? "another program is still using it" : undefined,
+      (error: unknown) => error instanceof Error ? error.message.split("\n")[0] : String(error),
+    );
+    if (problem) {
+      services.session.notice("warn", `${engine} removed from REA's configuration, but ${folder} was not deleted: ${problem}. Delete that folder yourself once nothing uses it (/rea disable stops REA). ${adopted}`);
+      return;
+    }
+    services.session.notice("info", `${engine} removed from REA's configuration and ${folder} deleted. ${adopted}`);
   });
 }
 
