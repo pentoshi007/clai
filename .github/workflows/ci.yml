@@ -20,6 +20,8 @@ jobs:
         node: [22, 24]
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       # `runner` context isn't available in job-level `env:` (GitHub Actions
       # only resolves it inside steps), so derive these from $RUNNER_TEMP here.
       - name: Set CI directories
@@ -81,6 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Set CI directories
         run: |
           echo "CLAI_CONFIG_DIR=${RUNNER_TEMP}/clai/config" >> "$GITHUB_ENV"
@@ -124,6 +128,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Set CI directories
         shell: bash
         run: |
@@ -172,6 +178,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Set CI directories
         shell: bash
         run: |
