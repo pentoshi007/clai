@@ -45,7 +45,7 @@ This release covers all changes since **v4.19.0**, including the REA integration
 - Recover from malformed DSML tool calls rather than terminating the turn.
 - Allow `http.fetch` to reach private, loopback, CGNAT, and metadata addresses while retaining engagement-scope enforcement.
 - Recover from asynchronous shell artifact open, write, and flush failures without crashing Bun or discarding bounded output. Surface actionable storage warnings and fatal-shutdown diagnostics.
-- Clean recognized session scratch folders after ten days of inactivity, checking at most daily across processes. Protect active sessions, recently modified files, and symlink targets; leave saved conversations and global/custom artifact retention unchanged.
+- Clean recognized session scratch folders after ten days of inactivity, checking at most daily across processes. Protect active sessions, recently modified files, and symlink targets; leave saved conversations and global/custom artifact retention unchanged. Compare expiry conservatively at millisecond precision so filesystem timestamp rounding cannot delete a folder at the exact ten-day boundary.
 
 ### Safer tools and agent guidance
 

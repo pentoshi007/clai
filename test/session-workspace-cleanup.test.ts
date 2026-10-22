@@ -34,7 +34,7 @@ async function age(path: string, at: number): Promise<void> {
   if (info.isDirectory() && !info.isSymbolicLink()) {
     for (const entry of await readdir(path)) await age(join(path, entry), at);
   }
-  const time = new Date(at);
+  const time = at / 1_000;
   if (info.isSymbolicLink()) await lutimes(path, time, time);
   else await utimes(path, time, time);
 }
@@ -65,6 +65,26 @@ describe("expired session scratch cleanup", () => {
     expect(await exists(old)).toBe(false);
     expect(await exists(collision)).toBe(false);
     for (const path of [boundary, recent, unrelated, malformed]) expect(await exists(path)).toBe(true);
+  });
+
+  it.each(["root", "nested output"])("preserves sub-millisecond cutoff rounding in %s", async (location) => {
+    const path = await workspace(20);
+    const cutoff = now - SESSION_SCRATCH_RETENTION_MS;
+    const target = location === "root" ? path : join(path, "temp", "output.txt");
+    await age(target, cutoff - 0.5);
+    const modified = (await lstat(target)).mtimeMs;
+    expect(modified).toBeLessThan(cutoff);
+    expect(modified).toBeGreaterThan(cutoff - 1);
+    expect(await cleanupSessionWorkspaces(parent, now)).toBe(0);
+    expect(await exists(path)).toBe(true);
+    expect(await readFile(join(path, "temp", "output.txt"), "utf8")).toBe("saved output");
+  });
+
+  it("removes workspaces beyond the millisecond cutoff guard", async () => {
+    const path = await workspace(20);
+    await age(path, now - SESSION_SCRATCH_RETENTION_MS - 2);
+    expect(await cleanupSessionWorkspaces(parent, now)).toBe(1);
+    expect(await exists(path)).toBe(false);
   });
 
   it("preserves an old folder when nested output was recently written", async () => {
