@@ -82,6 +82,7 @@ describe("portable JDK selection", () => {
     expect(unsupported).toMatchObject({ ok: false, reason: expect.stringContaining("/rea engines use java") });
     const musl = await resolveJdkRelease({ platform: "linux", arch: "x64" }, { fetch: fetcher, musl: true });
     expect(musl).toMatchObject({ ok: false, reason: expect.stringContaining("musl") });
+    expect(await resolveJdkRelease({ platform: "linux", arch: "x64", musl: true }, { fetch: fetcher })).toMatchObject({ ok: false, reason: expect.stringContaining("musl") });
     expect(seen).toHaveLength(1);
   });
 

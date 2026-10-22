@@ -198,6 +198,12 @@ describe("/rea engines install ghidra", () => {
   it("refuses unsupported systems, a missing REA and an engine that is already ready", async () => {
     await handleEngineCommand(services, "engines install ghidra", deps({ host: () => ({ platform: "freebsd", arch: "x64" }) }));
     expect(last()).toContain("freebsd/x64");
+    expect(last()).toContain("/rea engines use ghidra <folder>");
+    const alpine = deps({ host: () => ({ platform: "linux", arch: "x64", musl: true }) });
+    await handleEngineCommand(services, "engines install ghidra", alpine);
+    expect(last()).toContain("this Linux uses musl (Alpine)");
+    expect(alpine.report).not.toHaveBeenCalled();
+    expect(alpine.resolveGhidra).not.toHaveBeenCalled();
     await handleEngineCommand(services, "engines install ghidra", deps({ report: vi.fn(async () => report([], LINUX, false)) }));
     expect(last()).toContain("REA is not installed: run /rea setup first");
     const ready = deps({ report: vi.fn(async () => report([engine("ghidra", true)])) });

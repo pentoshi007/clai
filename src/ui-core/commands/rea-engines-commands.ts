@@ -6,7 +6,7 @@ import { describeEngines, engineSummary } from "../../rea/engine-report.js";
 import { collectEngineReport, type EngineReport } from "../../rea/engine-status.js";
 import { discardTree, engineRoots, readEngineSettings, updateEngineSettings, type EngineId } from "../../rea/engines.js";
 import {
-  buildToolsHelp, bundlesDecompiler, currentHost, decompilerDirectory, ghidraDiskBytes, GHIDRA_INSTALLED_BYTES, inspectGhidraDirectory,
+  buildToolsHelp, bundlesDecompiler, currentHost, ghidraDiskBytes, ghidraHostProblem, GHIDRA_INSTALLED_BYTES, inspectGhidraDirectory,
   installGhidra, missingBuildTools, resolveGhidraRelease, GHIDRA_SERIES, type EngineHost, type EngineProgress,
 } from "../../rea/ghidra.js";
 import { reaRoot } from "../../rea/install.js";
@@ -226,8 +226,9 @@ async function verify(services: AppServices, deps: EngineCommandDeps, signal: Ab
 export async function installGhidraFlow(services: AppServices, deps: EngineCommandDeps = defaultEngineDeps): Promise<void> {
   await guarded(services, "Ghidra install", async (signal) => {
     const host = deps.host();
-    if (!decompilerDirectory(host)) {
-      services.session.notice("warn", `REA supports Ghidra on macOS (x64, arm64), Linux (x64, arm64) and Windows (x64); this machine is ${host.platform}/${host.arch}.`);
+    const unsupported = ghidraHostProblem(host);
+    if (unsupported) {
+      services.session.notice("warn", `${unsupported} To use a Ghidra you already have, run \`/rea engines use ghidra <folder>\`.`);
       return;
     }
     const toast = progressToast(services);

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { engineRoots, readEngineSettings } from "../../src/rea/engines.js";
 import {
   buildGhidraDecompiler, buildToolsHelp, bundlesDecompiler, compareVersions, decompilerBuildTarget, decompilerDirectory,
-  inspectGhidraDirectory, installGhidra, selectGhidraRelease, supportedGhidraVersion, type EngineHost, type GhidraRelease,
+  ghidraHostProblem, inspectGhidraDirectory, installGhidra, selectGhidraRelease, supportedGhidraVersion, type EngineHost, type GhidraRelease,
 } from "../../src/rea/ghidra.js";
 import { zipArchive, type ArchiveEntry } from "../helpers/zip-archive.js";
 
@@ -92,6 +92,15 @@ describe("Ghidra platform rules", () => {
     for (const host of [{ platform: "win32", arch: "arm64" }, { platform: "linux", arch: "ia32" }, { platform: "freebsd", arch: "x64" }] as const) {
       expect(decompilerDirectory(host)).toBeUndefined();
       expect(decompilerBuildTarget(host)).toBeUndefined();
+    }
+  });
+
+  it("explains why a system is not offered Ghidra, and offers it everywhere else", () => {
+    expect(ghidraHostProblem({ platform: "win32", arch: "arm64" })).toBe("REA supports Ghidra on macOS (x64, arm64), Linux (x64, arm64) and Windows (x64); this machine is win32/arm64.");
+    expect(ghidraHostProblem({ platform: "linux", arch: "x64", musl: true })).toContain("this Linux uses musl (Alpine)");
+    expect(ghidraHostProblem({ platform: "linux", arch: "arm64", musl: true })).toContain("glibc");
+    for (const host of [LINUX, MAC, { platform: "linux", arch: "x64", musl: false }, { platform: "win32", arch: "x64" }, { platform: "darwin", arch: "x64", musl: true }] as const) {
+      expect(ghidraHostProblem(host)).toBeUndefined();
     }
   });
 
@@ -305,6 +314,16 @@ describe("Ghidra installation", () => {
     const archive = ghidraArchive("12.1.4", { decompilers: ["linux_x86_64"] });
     expect(await installGhidra({ root, release: releaseFor(archive), host: LINUX, fetch: serve(archive) })).toMatchObject({ ok: true });
     expect(await readdir(folder)).toEqual(["12.1.4"]);
+  });
+
+  it("refuses a musl Linux before downloading anything", async () => {
+    const root = await reaRoot();
+    const archive = ghidraArchive("12.1.4", { decompilers: ["linux_x86_64"] });
+    const calls: string[] = [];
+    const result = await installGhidra({ root, release: releaseFor(archive), host: { platform: "linux", arch: "x64", musl: true }, fetch: serve(archive, calls) });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("uses musl") });
+    expect(calls).toEqual([]);
+    await expect(readdir(engineRoots(root).ghidra)).rejects.toThrow();
   });
 
   it("tells a Windows user whose data folder is too deep to move it, before downloading anything", async () => {

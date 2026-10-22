@@ -8,13 +8,26 @@ import { ENGINE_HELP, parseEngineCommand } from "../../src/ui-core/commands/rea-
 
 const engine = (id: string): ReaEngine => ({ id, name: id, ready: false, code: "not_configured", reason: undefined, failed: [], java: undefined });
 const availability: ReaAvailability = { engines: ["ghidra", "hopper", "ida", "kuna"].map(engine), open: new Set(), deep: new Set(), blocked: new Set(), blockedGroups: [] };
-const report = (platform: NodeJS.Platform, arch: string): EngineReport => ({
+const report = (platform: NodeJS.Platform, arch: string, musl?: boolean): EngineReport => ({
   rea: { state: "ready", installation: { version: "6.7.0", node: "/n", entry: "/e", directory: "/d" } },
-  settings: {}, found: [], failure: undefined, host: { platform, arch }, availability,
+  settings: {}, found: [], failure: undefined, host: { platform, arch, musl }, availability,
 });
 
 const shown = (text: string): string => renderMarkdownLines(text, { width: 200 }).join("\n").replace(/\u001b\[[0-9;]*m/g, "");
 const placeholders = (text: string): string[] => [...new Set(text.match(/<[A-Za-z][A-Za-z| .]*>/g) ?? [])];
+
+describe("engine report on systems clai does not install Ghidra for", () => {
+  it("gives the reason instead of an install command", () => {
+    const alpine = describeEngines(report("linux", "x64", true));
+    expect(alpine).toContain("this Linux uses musl (Alpine)");
+    expect(alpine).not.toContain("`/rea engines install ghidra`");
+    expect(alpine).toContain("`/rea engines use ghidra <folder>`");
+    const windowsArm = describeEngines(report("win32", "arm64"));
+    expect(windowsArm).toContain("this machine is win32/arm64");
+    expect(windowsArm).not.toContain("`/rea engines install ghidra`");
+    expect(describeEngines(report("linux", "x64", false))).toContain("`/rea engines install ghidra`");
+  });
+});
 
 describe("engine texts shown in the markdown pager", () => {
   const texts: Array<[string, string]> = [

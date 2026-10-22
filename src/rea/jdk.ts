@@ -53,12 +53,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isMuslLinux(): boolean {
-  if (process.platform !== "linux") return false;
-  const report = (process.report?.getReport?.() ?? undefined) as { header?: { glibcVersionRuntime?: unknown } } | undefined;
-  return report !== undefined && report.header !== undefined && report.header.glibcVersionRuntime === undefined;
-}
-
 export function temurinQuery(host: EngineHost, musl = false): { os: string; architecture: string } | undefined {
   const architecture = host.arch === "x64" ? "x64" : host.arch === "arm64" ? "aarch64" : undefined;
   if (!architecture) return undefined;
@@ -87,7 +81,7 @@ export async function resolveJdkRelease(
   host: EngineHost = currentHost(),
   options: { signal?: AbortSignal | undefined; fetch?: FetchFunction | undefined; musl?: boolean } = {},
 ): Promise<JdkResolution> {
-  const query = temurinQuery(host, options.musl ?? isMuslLinux());
+  const query = temurinQuery(host, options.musl ?? host.musl ?? false);
   if (!query) {
     return { ok: false, reason: `No official portable JDK ${JDK_MAJOR} exists for ${host.platform}/${host.arch}${host.platform === "linux" ? " (musl libc is not covered)" : ""}. Install a 64-bit JDK ${JDK_MAJOR} or newer yourself and run /rea engines use java <JDK home>.` };
   }
