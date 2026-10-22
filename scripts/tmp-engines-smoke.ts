@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, writeSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, stat, statfs } from "node:fs/promises";
 import { arch, availableParallelism, freemem, platform, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
@@ -31,8 +31,46 @@ const authorized: FetchFunction = (input, init) => {
 
 function note(step: string, data: Record<string, unknown> = {}): void {
   const line = JSON.stringify({ label, step, s: Math.round((performance.now() - started) / 100) / 10, rssMb: Math.round(process.resourceUsage().maxRSS / 1024), ...data });
-  console.log(line);
+  writeSync(1, `${line}\n`);
 }
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function bounded<T>(ms: number, work: () => Promise<T>): Promise<{ value?: T; error?: string; timedOut: boolean; ms: number }> {
+  const begun = performance.now();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), ms);
+  });
+  try {
+    const outcome = await Promise.race([work(), timeout]);
+    const elapsed = Math.round(performance.now() - begun);
+    return outcome === "timeout" ? { timedOut: true, ms: elapsed } : { value: outcome, timedOut: false, ms: elapsed };
+  } catch (error) {
+    return { error: `${(error as NodeJS.ErrnoException).code ?? "error"}: ${(error as Error).message.slice(0, 240)}`, timedOut: false, ms: Math.round(performance.now() - begun) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function liveProcesses(): Promise<string> {
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await run("tasklist", ["/FO", "CSV", "/NH"], { timeout: 30_000, windowsHide: true });
+      const wanted = stdout.split(/\r?\n/).map((line) => line.split('","')).filter((cells) => /^"?(java|javaw|decompile|node)\.exe$/i.test(cells[0] ?? ""));
+      return wanted.map((cells) => `${(cells[0] ?? "").replace(/"/g, "")}#${cells[1] ?? ""}`).join(" ") || "none";
+    }
+    const { stdout } = await run("ps", ["-A", "-o", "pid=,comm="], { timeout: 30_000 });
+    return stdout.split("\n").filter((line) => /(java|decompile)/.test(line)).map((line) => line.trim()).join(" | ") || "none";
+  } catch (error) {
+    return `unavailable: ${(error as Error).message.slice(0, 120)}`;
+  }
+}
+
+setTimeout(() => {
+  note("watchdog", { message: "the script ran longer than 35 minutes and was stopped" });
+  process.exit(3);
+}, 35 * 60 * 1000).unref();
 
 function row(step: string, ok: boolean, detail: string): void {
   rows.push(`| ${step} | ${ok ? "ok" : "FAILED"} | ${detail.replace(/\|/g, "/").replace(/\n/g, " ").slice(0, 300)} |`);
@@ -252,29 +290,29 @@ try {
       } else row("procedure-choice", false, "could not choose a procedure from list_procedures output");
 
       const roots = engineRoots();
-      const begun = performance.now();
-      let whileOpen = "removed";
-      try {
-        await removeTree(roots.ghidra);
-      } catch (error) {
-        whileOpen = `${(error as NodeJS.ErrnoException).code ?? "error"}: ${(error as Error).message.slice(0, 200)}`;
+      note("processes-while-open", { list: await liveProcesses() });
+      const whileOpen = await bounded(120_000, () => removeTree(roots.ghidra));
+      const whileOpenResult = whileOpen.timedOut ? "TIMED OUT after 120s" : whileOpen.error ?? "removed";
+      note("remove-while-open", { result: whileOpenResult, ms: whileOpen.ms, remaining: await readdir(roots.ghidra).catch(() => ["(gone)"]) });
+      rows.push(`| remove ghidra while a binary is open | info | ${whileOpenResult.replace(/\|/g, "/")} in ${whileOpen.ms}ms |`);
+    }
+    const disabled = await bounded(90_000, () => manageRea(runtime, "disable"));
+    note("rea-disable", { ok: disabled.value?.ok ?? null, timedOut: disabled.timedOut, error: disabled.error ?? null, ms: disabled.ms });
+    await sleep(5_000);
+    note("processes-after-disable", { list: await liveProcesses() });
+    const afterStop = await bounded(180_000, () => removeTree(engineRoots().ghidra));
+    const afterStopResult = afterStop.timedOut ? "TIMED OUT after 180s" : afterStop.error ?? "removed";
+    note("remove-after-stop", { result: afterStopResult, ms: afterStop.ms, remaining: await readdir(engineRoots().ghidra).catch(() => ["(gone)"]) });
+    rows.push(`| remove ghidra after REA stopped | ${afterStopResult === "removed" ? "ok" : "FAILED"} | ${afterStopResult.replace(/\|/g, "/")} in ${afterStop.ms}ms |`);
+    if (afterStopResult !== "removed") {
+      failures.push(`remove after stop: ${afterStopResult}`);
+      if (process.platform === "win32") {
+        await run("taskkill", ["/F", "/IM", "java.exe", "/IM", "decompile.exe"], { timeout: 30_000, windowsHide: true }).catch(() => undefined);
+        await sleep(3_000);
+        const retried = await bounded(120_000, () => removeTree(engineRoots().ghidra));
+        note("remove-after-taskkill", { result: retried.timedOut ? "TIMED OUT" : retried.error ?? "removed", ms: retried.ms, processes: await liveProcesses() });
       }
-      note("remove-while-open", { result: whileOpen, ms: Math.round(performance.now() - begun) });
-      rows.push(`| remove ghidra while a binary is open | info | ${whileOpen.replace(/\|/g, "/")} |`);
     }
-    const disabled = await manageRea(runtime, "disable");
-    note("rea-disable", { ok: disabled.ok });
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const begun = performance.now();
-    let afterStop = "removed";
-    try {
-      await removeTree(engineRoots().ghidra);
-    } catch (error) {
-      afterStop = `${(error as NodeJS.ErrnoException).code ?? "error"}: ${(error as Error).message.slice(0, 200)}`;
-    }
-    note("remove-after-stop", { result: afterStop, ms: Math.round(performance.now() - begun) });
-    rows.push(`| remove ghidra after REA stopped | ${afterStop === "removed" ? "ok" : "FAILED"} | ${afterStop.replace(/\|/g, "/")} |`);
-    if (afterStop !== "removed") failures.push(`remove after stop: ${afterStop}`);
   }
 } finally {
   await runtime.closeAll().catch(() => undefined);
