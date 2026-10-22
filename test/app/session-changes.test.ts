@@ -87,6 +87,7 @@ describe("session line changes", () => {
             handlers.onEvent?.({ type: "tool-call", id: `fixture-${run}`, name: "fs.writeMany", argsDisplay: "recorded file edits" });
             handlers.onEvent?.({ type: "tool-result", id: `fixture-${run}`, ok: true, summary: "applied", fileChanges: changes });
           }
+          handlers.onEvent?.({ type: "generation-completed", metrics: run < 3 ? { outputTokens: run * 100, durationMs: run * 2_000 } : undefined });
           handlers.onEvent?.({ type: "assistant-message", text: "ok" });
           handlers.onMessages?.([...(request.history ?? []), { role: "user", content: request.prompt }, { role: "assistant", content: "ok" }]);
           handlers.onEvent?.({ type: "turn-end", outcome, finalAnswer: "ok", steps: 1 });
@@ -107,12 +108,16 @@ describe("session line changes", () => {
     ]);
     expect(record?.transcript?.filter((item) => item.kind === "turn-summary").map((item) => item.changes))
       .toEqual([{ added: 2, removed: 3 }, { added: 1, removed: 1 }, undefined]);
+    expect(record?.transcript?.filter((item) => item.kind === "turn-summary").map((item) => item.generation))
+      .toEqual([{ outputTokens: 100, durationMs: 2_000 }, { outputTokens: 200, durationMs: 4_000 }, undefined]);
     services.dispose();
     const resumed = make();
     await applySessionResume(resumed, record!);
     expect(resumed.session.changesReport().totals).toEqual({ added: 3, removed: 4 });
     expect([...resumed.transcript.getState().byId.values()].filter((item) => item.kind === "turn-summary").map((item) => item.changes))
       .toEqual([{ added: 2, removed: 3 }, { added: 1, removed: 1 }, undefined]);
+    expect([...resumed.transcript.getState().byId.values()].filter((item) => item.kind === "turn-summary").map((item) => item.generation))
+      .toEqual([{ outputTokens: 100, durationMs: 2_000 }, { outputTokens: 200, durationMs: 4_000 }, undefined]);
     await resumed.commands.dispatch({ name: "changes" });
     const pager = resumed.overlay.getState();
     expect(pager.kind).toBe("pager");

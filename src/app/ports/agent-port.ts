@@ -50,5 +50,6 @@ export interface RunTurnHandlers {
 }
 
 export interface AgentPort {
+  readonly reportsModelSubmission?: boolean;
   runTurn(request: RunTurnRequest, handlers: RunTurnHandlers): Promise<TurnOutcome>;
 }

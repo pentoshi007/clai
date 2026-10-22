@@ -43,7 +43,7 @@ function pushNotice(
 
 function appendTurnSummary(
   state: TranscriptState,
-  event: AnyAppEvent,
+  event: Extract<AnyAppEvent, { type: "turn-ended" | "turn-aborted" | "turn-error" }>,
   status: TurnSummaryItem["status"],
 ): TranscriptState {
   const startedAt = state.activeTurnStartedAt;
@@ -59,6 +59,7 @@ function appendTurnSummary(
     durationMs: Math.max(0, event.timestamp - startedAt),
     status,
     ...(changes ? { changes } : {}),
+    ...(event.payload.generation ? { generation: event.payload.generation } : {}),
   });
 }
 

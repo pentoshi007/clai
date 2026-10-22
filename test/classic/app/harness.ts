@@ -63,6 +63,8 @@ export interface HarnessOptions {
   readonly requestSessionSwitch?: (sessionId: string, closeCurrent: boolean) => boolean;
   readonly updates?: AppServices["ports"]["updates"];
   readonly agent?: AppServices["ports"]["agent"];
+  readonly jobs?: JobsPort;
+  readonly persistence?: PersistencePort;
 }
 
 export function createHarness(options: HarnessOptions = {}): Harness {
@@ -70,8 +72,8 @@ export function createHarness(options: HarnessOptions = {}): Harness {
   const rows = options.rows ?? 24;
   let emit: ((event: AnyAppEvent) => void) | undefined;
   const services = createCompositionRoot({
-    persistence: fakePersistence(),
-    jobs: stubJobsPort(),
+    persistence: options.persistence ?? fakePersistence(),
+    jobs: options.jobs ?? stubJobsPort(),
     agent: options.agent,
     requestExit: options.requestExit,
     requestMinimise: options.requestMinimise,

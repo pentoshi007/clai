@@ -9,11 +9,11 @@ export const savedChanges: readonly FileLineChanges[] = [
 
 export const savedChangeTranscript: readonly TranscriptItem[] = [
   { kind: "user", id: "prompt-1", text: "Edit the files", done: true },
-  { kind: "turn-summary", id: "summary-1", durationMs: 76_000, status: "completed", changes: { added: 213, removed: 435 }, done: true },
+  { kind: "turn-summary", id: "summary-1", durationMs: 76_000, status: "completed", changes: { added: 213, removed: 435 }, generation: { outputTokens: 420, durationMs: 10_000 }, done: true },
   { kind: "user", id: "prompt-2", text: "One more edit", done: true },
-  { kind: "turn-summary", id: "summary-2", durationMs: 5_000, status: "aborted", changes: { added: 5, removed: 1 }, done: true },
+  { kind: "turn-summary", id: "summary-2", durationMs: 5_000, status: "aborted", changes: { added: 5, removed: 1 }, generation: { outputTokens: 90, durationMs: 3_000 }, done: true },
   { kind: "user", id: "prompt-3", text: "Explain the result", done: true },
-  { kind: "turn-summary", id: "summary-3", durationMs: 2_000, status: "completed", done: true },
+  { kind: "turn-summary", id: "summary-3", durationMs: 2_000, status: "completed", generation: { outputTokens: 100, durationMs: 2_000 }, done: true },
 ];
 
 const answerBefore = Array.from({ length: 12 }, (_, index) => `const v${index} = ${index};`).join("\n") + "\n";

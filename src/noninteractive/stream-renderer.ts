@@ -93,6 +93,8 @@ export class StreamRenderer {
       case "assistant-delta":
       case "compaction-delta":
       case "tool-start":
+      case "generation-completed":
+      case "model-submitted":
       case "turn-end":
         return;
       case "thinking-block":

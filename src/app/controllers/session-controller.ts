@@ -256,6 +256,19 @@ export class SessionController implements Disposable {
       notifyState: () => this.notifyState(),
       notice: (text) => this.notice("info", text),
       runTurn: (prompt, options) => this.runTurn(prompt, options),
+      load: () => {
+        if (!this.isPromptHistoryEnabled()) return [];
+        try { return deps.persistence.loadQueuedPrompts?.(this.sessionIdValue) ?? []; }
+        catch (error) {
+          this.notice("warn", `could not restore queued prompts: ${error instanceof Error ? error.message : String(error)}`);
+          return [];
+        }
+      },
+      save: (prompts) => {
+        if (!this.isPromptHistoryEnabled()) return;
+        try { deps.persistence.saveQueuedPrompts?.(this.sessionIdValue, prompts); }
+        catch (error) { this.notice("warn", `could not save queued prompts: ${error instanceof Error ? error.message : String(error)}`); }
+      },
       lastTurnResult: () => this.lastTurnResult,
     });
     this.loopRecovery = new SessionLoopRecovery({
@@ -316,6 +329,7 @@ export class SessionController implements Disposable {
     } else {
       this.responder = undefined;
     }
+    this.prompts.rebind();
   }
 
   get workspace(): SessionWorkspace | undefined {
@@ -597,7 +611,7 @@ export class SessionController implements Disposable {
     repairToolProtocol(healed);
     this.history = healed;
     this.restoredPreviousTurn = options.previousTurn;
-    this.prompts.clear();
+    this.prompts.detach();
     this.spool.clear();
     this.sessionTitle = options.title;
     this.lastContextCompactionId = undefined;
@@ -625,6 +639,7 @@ export class SessionController implements Disposable {
       this.persistence.rebind(options.persistenceRevision);
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     }
+    this.prompts.rebind();
     this.resetPromptHistory();
     this.changeLedger.restore(options.changes, options.transcript);
     this.lateWork.restore(options.unsyncedItemIds, options.transcript);
@@ -711,7 +726,8 @@ export class SessionController implements Disposable {
     this.sequencer.rebind(this.sessionIdValue);
     this.history = [];
     this.restoredPreviousTurn = undefined;
-    this.prompts.clear();
+    if (options.mintNewId) this.prompts.detach();
+    else this.prompts.clear();
     this.sessionTitle = undefined;
     this.setContextSnapshot(undefined);
     this.lastContextCompactionId = undefined;
@@ -900,7 +916,7 @@ export class SessionController implements Disposable {
   async shutdown(): Promise<void> {
     this.closing = true;
     this.abort("session is closing");
-    this.prompts.clear();
+    this.prompts.detach();
     if (this.unsettledTurns > 0) {
       let finish: () => void = () => undefined;
       const settled = new Promise<void>((resolve) => { finish = resolve; });
@@ -1068,6 +1084,7 @@ export class SessionController implements Disposable {
       displayPrompt?: string | null | undefined;
       materializeHistoryImages?: boolean | undefined;
       onStarted?: (() => void) | undefined;
+      onSubmitted?: (() => void) | undefined;
       internal?: boolean | undefined;
     },
   ): Promise<TurnResult> {
@@ -1141,6 +1158,9 @@ export class SessionController implements Disposable {
           this.lastMainRequestSnapshot = snapshot;
         },
         onStarted: opts?.onStarted,
+        onSubmitted: () => {
+          if (turnGeneration === this.lifecycleGeneration) opts?.onSubmitted?.();
+        },
       });
       this.notifyState();
       const result = await pending;
@@ -1245,6 +1265,7 @@ export class SessionController implements Disposable {
 
   dispose(): void {
     this.beginLifecycleGeneration();
+    this.prompts.detach();
     this.namer.reset();
     this.subagentDelivery.dispose();
     this.subagentsValue.dispose();

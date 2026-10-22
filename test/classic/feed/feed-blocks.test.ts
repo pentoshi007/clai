@@ -26,8 +26,10 @@ describe("classic turn-summary colors", () => {
     const row = buildTurnSummaryLines(ctx, {
       id: "summary", sequence: 0, turnId: undefined, timestamp: 0, kind: "turn-summary",
       durationMs: 76_000, status: "completed", changes: { added: 213, removed: 435 },
+      generation: { outputTokens: 420, durationMs: 10_000 },
     })[0]!;
-    expect(stripAnsi(row)).toContain("Worked for 1m16s · +213 -435");
+    expect(stripAnsi(row)).toContain("Worked for 1m16s · +213 -435 · /changes · 42.0 tok/s");
+    expect(row).toContain(ctx.ink.fg("muted", " · /changes · 42.0 tok/s"));
     expect(row).toContain(ctx.ink.fg("success", "+213"));
     expect(row).toContain(ctx.ink.fg("diffDel", "-435"));
     if (colorMode === "none") expect(row).not.toContain("\x1b[");
@@ -399,5 +401,18 @@ describe("classic reasoning and compaction timers", () => {
 
     expect(stripAnsi(thinkingLines[0]!)).toContain("12s");
     expect(stripAnsi(compactedLines[0]!)).toContain("12s");
+  });
+});
+
+describe("turn-summary metadata wrapping", () => {
+  it.each([20, 40, 60, 120])("preserves the TPS suffix at %s columns", (columns) => {
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns, colorMode: "truecolor" }));
+    const rows = buildTurnSummaryLines(ctx, {
+      id: "metrics", sequence: 0, turnId: undefined, timestamp: 0, kind: "turn-summary",
+      durationMs: 76_000, status: "completed", changes: { added: 213, removed: 435 },
+      generation: { outputTokens: 420, durationMs: 10_000 },
+    });
+    expect(rows.map(stripAnsi).join(" ").replace(/\s+/g, " ")).toContain("Worked for 1m16s · +213 -435 · /changes · 42.0 tok/s");
+    expect(rows.every((row) => displayWidth(row) <= ctx.width)).toBe(true);
   });
 });

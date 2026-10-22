@@ -199,7 +199,7 @@ export function Pager(props: PagerProps): ReactNode {
     : { start: 0, end: rowModels.length };
 
   useEffect(() => {
-    setFollowing(startFollowing);
+    setFollowing(canFollow && (source?.isGrowing?.() ?? true));
     if (!source) {
       setDisplayBody(body);
       setArtifactPage(undefined);
@@ -216,7 +216,7 @@ export function Pager(props: PagerProps): ReactNode {
       if (active) setPagerError(error instanceof Error ? error.message : String(error));
     }).finally(() => { if (active) setPageBusy(false); });
     return () => { active = false; };
-  }, [body, source, canFollow, startFollowing]);
+  }, [body, source, canFollow]);
 
   const artifactOffset = useRef(0);
   const pendingPageScroll = useRef<"top" | "bottom" | undefined>(undefined);

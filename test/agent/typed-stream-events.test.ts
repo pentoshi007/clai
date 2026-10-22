@@ -163,4 +163,33 @@ describe("typed reasoning stream events through the agent runner", () => {
     expect(assistantMessage?.text).toBe("Fallback answer.");
     expect(getAllThinking()).toContain("reasoning from the result");
   });
+
+  it("emits one measured generation per model call before tool execution", async () => {
+    let round = 0;
+    const events = await driveAgent("session-typed-stream", (_req, onToken) => {
+      round += 1;
+      const text = round === 1 ? "Checking the file." : "The file is correct.";
+      onToken(text);
+      return {
+        text, provider: "nvidia", model: "test-model", generationDurationMs: round * 2_000,
+        usage: { promptTokens: 1_000, completionTokens: round * 100, reasoningTokens: 50, totalTokens: 1_000 + round * 100, exact: true },
+        ...(round === 1 ? { toolCalls: [{ id: "read-metrics", name: "fs.read", args: { path: "fixture.ts" } }], finishReason: "tool_calls" } : { finishReason: "stop" }),
+      };
+    });
+    expect(round).toBe(2);
+    expect(events.filter((event) => event.type === "model-submitted")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "generation-completed")).toEqual([
+      { type: "generation-completed", metrics: { outputTokens: 100, durationMs: 2_000 } },
+      { type: "generation-completed", metrics: { outputTokens: 200, durationMs: 4_000 } },
+    ]);
+    expect(events.findIndex((event) => event.type === "generation-completed")).toBeLessThan(events.findIndex((event) => event.type === "tool-start"));
+  });
+
+  it("reports a missing measurement instead of inventing throughput from streamed text", async () => {
+    const events = await driveAgent("session-typed-stream", (_req, onToken) => {
+      onToken("An answer without reported usage.");
+      return { text: "An answer without reported usage.", provider: "nvidia", model: "test-model", generationDurationMs: 1_000, finishReason: "stop" };
+    });
+    expect(events.filter((event) => event.type === "generation-completed")).toEqual([{ type: "generation-completed", metrics: undefined }]);
+  });
 });

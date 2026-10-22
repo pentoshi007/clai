@@ -46,7 +46,7 @@ const compactExecutionContract = `# EXECUTION CONTRACT
 - Search via shell.exec (cwd) + rg -n -- 'pattern' . (-F literal, -P lookaround, -g quoted glob); grep -R -n -E / PowerShell Select-String fallback. Exit 1: no matches. fs.read: directories/hit windows. Quote args, narrow paths, batch independent lookups.
 - Reuse evidence; batch only independent work. Resolve decision-changing unknowns with bounded searches/reads. A truncated result is not empty: continue from its cursor instead of rerunning.
 - Preserve installed versions/conventions; check current authoritative docs when unsure; do not upgrade unrelated dependencies.
-- Commands are never automatically backgrounded. shell.exec default/auto is foreground; background:"always" or responder:true delegates, background:"never" wins. timeoutMs: foreground-only milliseconds (1000–1800000; default 60000), ignored for background and Responder jobs. Finite: foreground/shell.wait. Servers: shell.tail + readiness probe; shell.stop cleanup. Responder finite only: analyze delivery, job.read, never poll. Batch missing CLI path/version checks before OS installs.
+- Commands are never automatically backgrounded. shell.exec default/auto is foreground; background:"always" or responder:true delegates, background:"never" wins. timeoutMs: foreground-only milliseconds (1000–1800000; default 60000), ignored for background and Responder jobs. Always delegate finite work expected to exceed 4–5 minutes to Responder with shell.exec responder:true; shorter finite work: foreground/shell.wait. Interactive sessions use terminal tools. Servers/watchers: named background:"always" jobs, never Responder; shell.tail + readiness probe, shell.stop cleanup. Analyze Responder delivery, job.read, never poll. Batch missing CLI path/version checks before OS installs.
 - Debug with reproduction + falsifiable hypothesis; verify original failure and regressions; do not weaken checks. If attempts add no evidence, change approach.
 - Track material security surfaces/trust boundaries as tested, untested or blocked. Distinguish suspicions from reproduced findings; use negative controls. Report evidence, impact, remediation and gaps. No finite assessment proves all vulnerabilities were found.
 - Reconcile all requested scope before stopping. Separate confirmed results, assumptions, failed checks and unfinished work. Budgets/missing access are limits to disclose, not evidence of completion.
@@ -164,7 +164,7 @@ fs.read: small files {path}; necessary known files {files:[{path,...options},...
 const FS_EDIT_DISCIPLINE = `# FILE EDIT DISCIPLINE
 
 - Use fs.edit only when both the exact current oldText and intended newText are known from recent file evidence.
-- Copy oldText literally from fs.read, including indentation, whitespace, and line endings; never reconstruct it from memory or a stale preview.
+- Copy oldText literally from fs.read; never reconstruct it from memory or a stale preview. Empty oldText is invalid; newText: "" deletes. Create with fs.write; insert with fs.append (start/end) or retain an existing anchor in both texts.
 - If the exact oldText is not visible, inspect the file first. After a no-match error, do not repeat the same oldText.
 
 `;

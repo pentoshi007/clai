@@ -19,6 +19,8 @@ import { NoticeRow } from "./notice-row.js";
 import { CompactedRow } from "./compacted-row.js";
 import { turnSummaryLabel } from "../../../ui-core/rendering/duration.js";
 import { lineChangeLabels } from "../../../ui-core/rendering/line-change-labels.js";
+import { wrapAnsiLine } from "../../../ui-core/rendering/markdown.js";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 
 export function TranscriptRowImpl(props: {
   item: TranscriptItem;
@@ -126,23 +128,9 @@ export function TranscriptRowImpl(props: {
     case "notice":
       body = <NoticeRow item={item} theme={theme} contentWidth={contentWidth} />;
       break;
-    case "turn-summary": {
-      const changes = lineChangeLabels(item.changes);
-      body = (
-        <text selectable style={{ fg: theme.muted }}>
-          {`✻ ${turnSummaryLabel(item.durationMs, item.status)}`}
-          {changes ? (
-            <>
-              {" · "}
-              <span style={{ fg: theme.success }}>{changes.added}</span>
-              {" "}
-              <span style={{ fg: theme.diffDel }}>{changes.removed}</span>
-            </>
-          ) : null}
-        </text>
-      );
+    case "turn-summary":
+      body = <TurnSummaryRow item={item} theme={theme} contentWidth={contentWidth} />;
       break;
-    }
     case "compacted":
       body = (
         <CompactedRow
@@ -187,3 +175,28 @@ export function TranscriptRowImpl(props: {
 }
 
 export const TranscriptRow = memo(TranscriptRowImpl);
+
+function TurnSummaryRow(props: {
+  item: Extract<TranscriptItem, { kind: "turn-summary" }>;
+  theme: Theme;
+  contentWidth: number | undefined;
+}): ReactNode {
+  const { item, theme } = props;
+  const { width } = useTerminalDimensionsContext();
+  const changes = lineChangeLabels(item.changes);
+  const label = `✻ ${turnSummaryLabel(item.durationMs, item.status, item.changes, item.generation)}`;
+  const lines = wrapAnsiLine(label, Math.max(1, props.contentWidth ?? width - 6));
+  return (
+    <box style={{ flexDirection: "column", width: "100%" }}>
+      {lines.map((line, index) => (
+        <text key={index} selectable wrapMode="none" style={{ fg: theme.muted }}>
+          {line.split(/([+-]\d+)/).map((part, partIndex) => {
+            if (part === changes?.added) return <span key={partIndex} style={{ fg: theme.success }}>{part}</span>;
+            if (part === changes?.removed) return <span key={partIndex} style={{ fg: theme.diffDel }}>{part}</span>;
+            return part;
+          })}
+        </text>
+      ))}
+    </box>
+  );
+}

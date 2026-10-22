@@ -1,4 +1,5 @@
 import type { ContextAttemptReference, ContextSnapshotScope } from "../llm/context-snapshot.js";
+import type { GenerationMetrics } from "../llm/generation-metrics.js";
 import type { SessionPlan } from "../store/plan.js";
 import type { ProviderId, TokenUsage } from "../types.js";
 import type { TurnOutcome } from "./turn-outcome.js";
@@ -9,6 +10,7 @@ export type AgentEvent =
       prompt: string;
       displayPrompt?: string | null;
     }
+  | { type: "model-submitted" }
   | { type: "status"; text: string }
   | { type: "thinking-delta"; text: string }
   | { type: "thinking-block"; content: string }
@@ -37,6 +39,7 @@ export type AgentEvent =
       kind: "tool" | "pentest" | "reset" | "continue" | "plan" | "switch";
       prompt: string;
     }
+  | { type: "generation-completed"; metrics?: GenerationMetrics | undefined }
   | { type: "turn-end"; outcome: TurnOutcome; finalAnswer: string; steps: number }
   | { type: "turn-aborted" }
   | { type: "turn-error"; message: string }

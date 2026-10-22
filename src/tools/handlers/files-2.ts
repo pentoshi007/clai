@@ -18,8 +18,8 @@ export const toolRegistry_FILES_2: Record<string, ToolHandler> = {
   async "fs.edit"(args, options) {
     return fsEdit(
       requireString(args, "path"),
-      requireString(args, "oldText"),
-      requireString(args, "newText"),
+      requireStringAllowEmpty(args, "oldText"),
+      requireStringAllowEmpty(args, "newText"),
       optionalNumber(args, "expectedReplacements"),
       { confirmed: options?.confirmed },
     );

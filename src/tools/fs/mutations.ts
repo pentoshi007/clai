@@ -164,7 +164,7 @@ export async function fsEdit(
     return {
       ok: false,
       output:
-        "fs.edit requires a non-empty oldText copied from current file evidence. Read or search the file before retrying.",
+        'fs.edit requires a non-empty oldText copied exactly from current file evidence. Use fs.read first. Use fs.write to create a file, fs.append for start/end insertion, or replace an existing anchor to insert within a file. To delete matched text, keep oldText non-empty and set newText to "".',
       exitCode: 1,
     };
   }

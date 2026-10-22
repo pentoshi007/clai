@@ -10,6 +10,7 @@ export function createCurrentAgentPort(
   options: CurrentAgentPortOptions = {},
 ): AgentPort {
   return {
+    reportsModelSubmission: true,
     runTurn(request, handlers) {
       return runAgentTurn(request.prompt, {
         ...(options.mcp ? { mcp: options.mcp } : {}),
