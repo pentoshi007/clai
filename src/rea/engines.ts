@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { withMcpStorageLock } from "../mcp/storage-lock.js";
 import { publish, reaRoot } from "./install.js";
 
@@ -24,6 +25,7 @@ export interface EngineRoots {
 const MAX_PATH_CHARS = 1_024;
 const VERSION = /^[0-9A-Za-z._+-]{1,40}$/;
 const WINDOWS_PATH_LIMIT = 259;
+const IN_USE_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
 const STAGING_NAME = /^\.(?:staging-[0-9a-f-]{36}|s-[0-9a-f]{8})$/;
 
 export function engineRoots(root = reaRoot()): EngineRoots {
@@ -48,6 +50,31 @@ export async function clearStaging(directory: string): Promise<void> {
 
 export function removeTree(path: string): Promise<void> {
   return rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
+}
+
+export interface DiscardOptions {
+  readonly platform?: NodeJS.Platform | undefined;
+  readonly attempts?: number | undefined;
+  readonly delayMs?: number | undefined;
+}
+
+export async function discardTree(path: string, options: DiscardOptions = {}): Promise<"removed" | "busy"> {
+  const { platform = process.platform, attempts = 20, delayMs = 250 } = options;
+  const trash = join(dirname(path), stagingName());
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(path, trash);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (code === "ENOENT") return "removed";
+      if (platform !== "win32" || !IN_USE_CODES.has(code)) throw error;
+      if (attempt >= attempts) return "busy";
+      await delay(delayMs);
+    }
+  }
+  await removeTree(trash);
+  return "removed";
 }
 
 export function windowsPathProblem(platform: NodeJS.Platform, directory: string, deepestEntry: number): string | undefined {

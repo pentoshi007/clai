@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { c } from "tar";
@@ -167,6 +167,18 @@ describe("portable JDK installation", () => {
       .toMatchObject({ ok: false, reason: expect.stringContaining("checksum mismatch") });
     expect(await readEngineSettings(root)).toEqual({});
     expect(await readdir(engineRoots(root).java)).toEqual([]);
+  });
+
+  it("replaces a damaged copy of the same version", async () => {
+    const root = await rootOf();
+    const damaged = join(engineRoots(root).java, "jdk-21.0.12.1+1");
+    await mkdir(join(damaged, "bin"), { recursive: true });
+    await writeFile(join(damaged, "half-extracted"), "x");
+    const archive = zipArchive([{ name: "jdk-21.0.12.1+1/bin/java", body: "x" }]);
+    expect(await installJdk({ root, release: releaseOf(archive, "zip"), host: { platform: "linux", arch: "x64" }, fetch: serve(archive), probe: async () => "21" })).toMatchObject({ ok: true, changed: true });
+    expect(await readdir(engineRoots(root).java)).toEqual(["jdk-21.0.12.1+1"]);
+    await expect(stat(join(damaged, "half-extracted"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(damaged, "bin", "java"), "utf8")).toBe("x");
   });
 
   it("clears the leftovers of a crashed install before it starts", async () => {

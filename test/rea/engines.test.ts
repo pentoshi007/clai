@@ -1,13 +1,19 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearStaging, engineEnvironment, engineRoots, parseEngineSettings, readEngineSettings, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "../../src/rea/engines.js";
+import { clearStaging, discardTree, engineEnvironment, engineRoots, parseEngineSettings, readEngineSettings, removeTree, stagingName, updateEngineSettings, windowsPathProblem } from "../../src/rea/engines.js";
+
+vi.mock("node:fs/promises", async (importActual) => {
+  const actual = await importActual<typeof import("node:fs/promises")>();
+  return { ...actual, rename: vi.fn(actual.rename) };
+});
 
 const directories: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.mocked(rename).mockClear();
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 
@@ -139,6 +145,55 @@ describe("staging and removal helpers", () => {
     expect(windowsPathProblem("win32", deep, 140)).toMatch(/too deep for Windows.*CLAI_DATA_DIR/);
     expect(windowsPathProblem("linux", deep, 140)).toBeUndefined();
     expect(windowsPathProblem("darwin", deep, 140)).toBeUndefined();
+  });
+});
+
+describe("discarding a tree", () => {
+  async function tree(): Promise<{ base: string; target: string }> {
+    const base = await mkdtemp(join(tmpdir(), "clai-discard-"));
+    directories.push(base);
+    const target = join(base, "ghidra");
+    await mkdir(join(target, "12.1.4", "lib"), { recursive: true });
+    await writeFile(join(target, "12.1.4", "lib", "a.jar"), "x");
+    return { base, target };
+  }
+  const inUse = (code = "EPERM"): Error => Object.assign(new Error(`${code}: operation not permitted`), { code });
+
+  it("removes the tree and leaves nothing behind", async () => {
+    const { base, target } = await tree();
+    expect(await discardTree(target)).toBe("removed");
+    expect(await readdir(base)).toEqual([]);
+  });
+
+  it("treats a tree that is already gone as removed", async () => {
+    const { target } = await tree();
+    await discardTree(target);
+    expect(await discardTree(target)).toBe("removed");
+  });
+
+  it("waits on Windows for whatever holds the tree to let go", async () => {
+    const { base, target } = await tree();
+    vi.mocked(rename).mockRejectedValueOnce(inUse()).mockRejectedValueOnce(inUse("EBUSY"));
+    expect(await discardTree(target, { platform: "win32", delayMs: 1 })).toBe("removed");
+    expect(vi.mocked(rename)).toHaveBeenCalledTimes(3);
+    expect(await readdir(base)).toEqual([]);
+  });
+
+  it("gives up on Windows with the tree untouched while something keeps using it", async () => {
+    const { base, target } = await tree();
+    for (let attempt = 0; attempt < 4; attempt += 1) vi.mocked(rename).mockRejectedValueOnce(inUse("EACCES"));
+    expect(await discardTree(target, { platform: "win32", attempts: 3, delayMs: 1 })).toBe("busy");
+    expect(vi.mocked(rename)).toHaveBeenCalledTimes(4);
+    expect(await readdir(base)).toEqual(["ghidra"]);
+  });
+
+  it("does not hide other errors, or retry sharing errors on systems that do not have them", async () => {
+    const { target } = await tree();
+    vi.mocked(rename).mockRejectedValueOnce(inUse());
+    await expect(discardTree(target, { platform: "linux", delayMs: 1 })).rejects.toMatchObject({ code: "EPERM" });
+    vi.mocked(rename).mockRejectedValueOnce(inUse("EIO"));
+    await expect(discardTree(target, { platform: "win32", delayMs: 1 })).rejects.toMatchObject({ code: "EIO" });
+    expect(vi.mocked(rename)).toHaveBeenCalledTimes(2);
   });
 });
 

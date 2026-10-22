@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReaAvailability, ReaEngine } from "../../src/rea/availability.js";
 import type { EngineReport } from "../../src/rea/engine-status.js";
-import { engineRoots, readEngineSettings, updateEngineSettings } from "../../src/rea/engines.js";
+import { discardTree, engineRoots, readEngineSettings, updateEngineSettings } from "../../src/rea/engines.js";
 import type { EngineHost, GhidraRelease } from "../../src/rea/ghidra.js";
 import { reaRoot } from "../../src/rea/install.js";
 import type { JdkRelease } from "../../src/rea/jdk.js";
@@ -68,6 +68,7 @@ function deps(overrides: Partial<EngineCommandDeps> = {}): EngineCommandDeps {
     installJdk: vi.fn(async () => ({ ok: true as const, home: "/tools/jdk", version: "21.0.12", changed: true })),
     missingTools: vi.fn(async () => []),
     manage: vi.fn(async () => ({ ok: true, output: "connected", exitCode: 0 })),
+    discard: discardTree,
     host: () => LINUX,
     ...overrides,
   } as EngineCommandDeps;
@@ -377,6 +378,64 @@ describe("/rea engines remove", () => {
     expect(requests.at(-1)).toMatchObject({ kind: "reset" });
     expect(await readEngineSettings()).toEqual({});
     await expect(stat(install)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  async function managedGhidra(): Promise<string> {
+    const install = join(engineRoots(reaRoot()).ghidra, "12.1.4");
+    await mkdir(install, { recursive: true });
+    await writeFile(join(install, "marker"), "x");
+    await updateEngineSettings((current) => ({ ...current, ghidra: { dir: install, managed: true, version: "12.1.4" } }));
+    return install;
+  }
+
+  it("stops REA's server before it deletes the files that server may be using", async () => {
+    const install = await managedGhidra();
+    const present: boolean[] = [];
+    const calls = deps({
+      manage: vi.fn(async () => {
+        present.push(await stat(install).then(() => true, () => false));
+        return { ok: true, output: "connected", exitCode: 0 };
+      }),
+    });
+    connected = true;
+    answers = [true];
+    await handleEngineCommand(services, "engines remove ghidra", calls);
+    expect(present).toEqual([true]);
+    expect(await readEngineSettings()).toEqual({});
+    await expect(stat(install)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(last()).toContain("deleted");
+  });
+
+  it("leaves a managed install alone while a turn is running with REA connected", async () => {
+    const install = await managedGhidra();
+    const calls = deps();
+    connected = true;
+    running = true;
+    await handleEngineCommand(services, "engines remove ghidra", calls);
+    expect(confirms).toEqual([]);
+    expect(calls.manage).not.toHaveBeenCalled();
+    expect((await readEngineSettings()).ghidra).toBeDefined();
+    expect((await stat(install)).isDirectory()).toBe(true);
+    expect(last()).toContain("a turn is running");
+  });
+
+  it("forgets the engine and says so when another program still uses its folder", async () => {
+    const install = await managedGhidra();
+    const calls = deps({ discard: vi.fn(async () => "busy" as const) });
+    answers = [true];
+    await handleEngineCommand(services, "engines remove ghidra", calls);
+    expect(await readEngineSettings()).toEqual({});
+    expect((await stat(install)).isDirectory()).toBe(true);
+    expect(notices.at(-1)).toEqual(["warn", expect.stringContaining(`${engineRoots(reaRoot()).ghidra} was not deleted: another program is still using it`)]);
+  });
+
+  it("reports a folder it could not delete without losing the removal", async () => {
+    await managedGhidra();
+    const calls = deps({ discard: vi.fn(async () => { throw new Error("EACCES: permission denied, rename"); }) });
+    answers = [true];
+    await handleEngineCommand(services, "engines remove ghidra", calls);
+    expect(await readEngineSettings()).toEqual({});
+    expect(notices.at(-1)).toEqual(["warn", expect.stringContaining("was not deleted: EACCES: permission denied, rename")]);
   });
 
   it("says so when nothing is configured", async () => {

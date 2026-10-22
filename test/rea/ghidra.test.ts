@@ -283,6 +283,18 @@ describe("Ghidra installation", () => {
     expect(await readdir(engineRoots(root).ghidra)).toEqual(["12.1.4", "my-own-notes"]);
   });
 
+  it("replaces a damaged copy of the same version", async () => {
+    const root = await reaRoot();
+    const damaged = join(engineRoots(root).ghidra, "12.1.4");
+    await mkdir(join(damaged, "Ghidra"), { recursive: true });
+    await writeFile(join(damaged, "half-extracted"), "x");
+    const archive = ghidraArchive("12.1.4", { decompilers: ["linux_x86_64"] });
+    expect(await installGhidra({ root, release: releaseFor(archive), host: LINUX, fetch: serve(archive) })).toMatchObject({ ok: true, changed: true });
+    expect(await readdir(engineRoots(root).ghidra)).toEqual(["12.1.4"]);
+    await expect(stat(join(damaged, "half-extracted"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(damaged, "Ghidra", "application.properties"), "utf8")).toContain("12.1.4");
+  });
+
   it("clears the leftovers of a crashed install before it starts", async () => {
     const root = await reaRoot();
     const folder = engineRoots(root).ghidra;
