@@ -97,13 +97,13 @@ describe("classic inline transcript disclosures", () => {
     expect(h!.services.transcript.getState().itemOverrides.has(item.id)).toBe(false);
   });
 
-  it("ignores drag/release/non-left clicks and still scrolls the wheel", () => {
+  it("ignores drag/release/non-left clicks and still scrolls the wheel", async () => {
     const { items, window } = setup({ rows: 8 });
     const p = point(window, items[1]!.id);
     for (const options of [{ drag: true }, { release: true }, { button: "right" as const }]) h!.wiring.handleMouse(mouse(p.x, p.y, options));
     expect(h!.services.transcript.getState().itemOverrides.size).toBe(0);
     h!.wiring.handleMouse(mouse(p.x, p.y, { scroll: "up" }));
-    expect(h!.wiring.liveOffsetValue).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(h!.wiring.liveOffsetValue).toBeGreaterThan(0));
   });
 
   it("suppresses selection drag after pressing an expansion control", () => {

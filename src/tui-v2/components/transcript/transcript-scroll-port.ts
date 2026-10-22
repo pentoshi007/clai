@@ -1,6 +1,10 @@
 
+import { WheelScroll } from "../../../ui-core/motion/wheel-scroll.js";
+
 export interface TranscriptScrollPort {
   scrollBy(dy: number): boolean;
+  wheel(notches: number): boolean;
+  stopWheel(): void;
   scrollToTop(): boolean;
   scrollToBottom(): boolean;
   updateAutoScroll(x: number, y: number): void;
@@ -34,6 +38,31 @@ let bottomHandler: JumpHandler | undefined;
 let autoScroll: AutoScrollHandler | undefined;
 let metrics: ScrollMetrics = EMPTY_SCROLL_METRICS;
 const metricListeners = new Set<(m: ScrollMetrics) => void>();
+const wheelMotion = new WheelScroll();
+let wheelFrame: number | undefined;
+
+function scheduleGlide(): void {
+  if (wheelFrame !== undefined || !wheelMotion.active) return;
+  wheelFrame = -1;
+  const frame = requestAnimationFrame(glideWheel);
+  if (wheelFrame === -1) wheelFrame = frame;
+}
+
+function glideWheel(): void {
+  wheelFrame = undefined;
+  if (!handler) {
+    wheelMotion.stop();
+    return;
+  }
+  handler(wheelMotion.step());
+  scheduleGlide();
+}
+
+function stopWheel(): void {
+  wheelMotion.stop();
+  if (wheelFrame !== undefined) cancelAnimationFrame(wheelFrame);
+  wheelFrame = undefined;
+}
 
 function publishMetrics(next: ScrollMetrics): void {
   if (
@@ -56,9 +85,17 @@ export const transcriptScrollPort: TranscriptScrollPort = {
   },
   scrollBy(dy: number): boolean {
     if (!handler || dy === 0) return false;
+    stopWheel();
     handler(dy);
     return true;
   },
+  wheel(notches: number): boolean {
+    if (!handler || notches === 0) return false;
+    wheelMotion.push(notches);
+    scheduleGlide();
+    return true;
+  },
+  stopWheel,
   scrollToTop(): boolean {
     if (!topHandler) return false;
     topHandler();

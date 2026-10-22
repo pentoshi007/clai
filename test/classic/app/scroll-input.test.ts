@@ -63,21 +63,54 @@ describe("classic scrolling and keyboard focus", () => {
     expect(h!.wiring.composer.text).toBe("x");
   });
 
-  it("coalesces wheel bursts without losing any scroll distance or transcript content", async () => {
+  it("glides a wheel burst across paints without losing scroll distance or transcript content", async () => {
     vi.useFakeTimers();
     setup();
     const order = h!.services.transcript.getState().order;
-    const publish = vi.fn();
-    h!.wiring.subscribe(publish);
+    const offsets: number[] = [];
+    h!.wiring.subscribe(() => offsets.push(h!.wiring.getSnapshot().liveOffset));
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
-    const expected = Math.min(h!.wiring.maxLiveOffset, 60);
-    expect(h!.wiring.liveOffsetValue).toBe(expected);
-    expect(publish).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(40);
-    expect(publish).toHaveBeenCalledTimes(1);
-    expect(h!.wiring.getSnapshot().liveOffset).toBe(expected);
+    expect(h!.wiring.liveOffsetValue).toBe(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    const expected = Math.min(h!.wiring.maxLiveOffset, 20);
+    const steps = offsets.map((offset, i) => offset - (offsets[i - 1] ?? 0));
+    expect(offsets.at(-1)).toBe(expected);
+    expect(steps.filter((step) => step > 0).length).toBeGreaterThan(3);
+    expect(steps.every((step) => step >= 0 && step <= 2)).toBe(true);
     expect(h!.services.transcript.getState().order).toBe(order);
     expect(h!.services.focus.activeContext()).toBe("composer");
+  });
+
+  it("reuses unchanged session state during wheel paints and refreshes on notifications", async () => {
+    vi.useFakeTimers();
+    setup();
+    await vi.advanceTimersByTimeAsync(100);
+    const read = vi.spyOn(h!.services.session, "getState");
+    const session = h!.wiring.getSnapshot().session;
+    for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(read).not.toHaveBeenCalled();
+    expect(h!.wiring.getSnapshot().session).toBe(session);
+    h!.services.session.enqueue("queued while scrolling");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(read).toHaveBeenCalled();
+    expect(h!.wiring.getSnapshot().session.queued).toHaveLength(1);
+    read.mockClear();
+    h!.services.transcript.toggleThinkingGlobal();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(read).toHaveBeenCalled();
+  });
+
+  it("cancels a wheel glide when the keyboard scrolls", async () => {
+    vi.useFakeTimers();
+    setup();
+    for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
+    await vi.advanceTimersByTimeAsync(20);
+    const glided = h!.wiring.liveOffsetValue;
+    expect(glided).toBeGreaterThan(0);
+    h!.wiring.scrollFeed(-1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h!.wiring.liveOffsetValue).toBe(glided - 1);
   });
 
   it("does not re-layout a long unchanged composer for scroll-only frames", async () => {

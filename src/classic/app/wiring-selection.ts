@@ -1,7 +1,7 @@
 import { notify } from "../../ui-core/notify.js";
 import type { MouseEvent } from "../input/key-event.js";
 import { cellAtTranscriptPointer } from "../feed/transcript-selection.js";
-import { WHEEL_SCROLL_ROWS } from "./wiring-interactions.js";
+import { WHEEL_SCROLL_ROWS } from "./wiring-feed-scroll.js";
 import type { WiringHost } from "./wiring-types.js";
 
 function stopAutoScroll(host: WiringHost): void {
@@ -65,16 +65,27 @@ async function copySelection(host: WiringHost): Promise<void> {
   }
 }
 
-export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void {
-  if (event.scroll === "up" || event.scroll === "down") {
-    if (host.panels.isOpen()) {
-      host.panels.handleWheel(event.scroll === "down" ? 1 : -1, WHEEL_SCROLL_ROWS);
-      host.schedulePaint();
-      return;
+function releaseTranscriptSelection(
+  host: WiringHost,
+  cell: WiringHost["selectionPointerCell"],
+  event: MouseEvent,
+): void {
+  const shouldCopy = host.selectionPointerCell !== undefined && host.selectionPointerMoved;
+  if (host.selectionPointerCell && cell) {
+    if (host.selectionPointerMoved) {
+      host.services.selection.dragCellTo("transcript", host.selectionPointerCell, cell, event);
     }
-    host.scrollFeed(event.scroll === "up" ? WHEEL_SCROLL_ROWS : -WHEEL_SCROLL_ROWS);
-    return;
+    host.services.selection.finishDrag();
   }
+  stopAutoScroll(host);
+  host.selectionPointerCell = undefined;
+  host.selectionPointerMoved = false;
+  if (shouldCopy && host.services.selection.hasSelection()) void copySelection(host);
+  if (shouldCopy) host.services.focus.focusRegion("composer");
+  host.schedulePaint();
+}
+
+function handleTranscriptSelection(host: WiringHost, event: MouseEvent): void {
   const window = host.selectionWindow;
   if (!window || host.panels.isOpen()) {
     stopAutoScroll(host);
@@ -90,19 +101,7 @@ export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void
     host.selectionPointerCell !== undefined,
   );
   if (event.release) {
-    const shouldCopy = host.selectionPointerCell !== undefined && host.selectionPointerMoved;
-    if (host.selectionPointerCell && cell) {
-      if (host.selectionPointerMoved) {
-        host.services.selection.dragCellTo("transcript", host.selectionPointerCell, cell, event);
-      }
-      host.services.selection.finishDrag();
-    }
-    stopAutoScroll(host);
-    host.selectionPointerCell = undefined;
-    host.selectionPointerMoved = false;
-    if (shouldCopy && host.services.selection.hasSelection()) void copySelection(host);
-    if (shouldCopy) host.services.focus.focusRegion("composer");
-    host.schedulePaint();
+    releaseTranscriptSelection(host, cell, event);
     return;
   }
   if (event.button !== "left" || !cell) return;
@@ -125,4 +124,18 @@ export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void
   ensureAutoScroll(host);
   updateAutoScroll(host);
   host.schedulePaint();
+}
+
+export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void {
+  if (event.scroll !== "up" && event.scroll !== "down") {
+    handleTranscriptSelection(host, event);
+    return;
+  }
+  if (host.panels.isOpen()) {
+    host.panels.handleWheel(event.scroll === "down" ? 1 : -1, WHEEL_SCROLL_ROWS);
+    host.schedulePaint();
+    return;
+  }
+  host.wheel.push(event.scroll === "up" ? 1 : -1);
+  host.schedulePaint(true);
 }

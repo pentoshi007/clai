@@ -13,6 +13,8 @@ const cases = [
   ["queue-panel", "Native queue panel passed"],
   ["toast-centered", "Native centered toasts passed"],
   ["tool-output-preview", "Native output previews passed"],
+  ["tool-card-reachability", "Native tool-card reachability passed"],
+  ["scroll-window-race", "Native scroll-window race passed"],
   ["tool-input-pager", "Native tool input pager passed"],
   ["pager-colors", "Native pager colors passed"],
   ["prompt-layout", "Native prompt layout passed"],

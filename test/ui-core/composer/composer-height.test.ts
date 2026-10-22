@@ -12,7 +12,7 @@ import {
   nextComposerScrollOffset,
   resolveComposerWheelTarget,
   tryScrollComposerDraft,
-  wheelChatDelta,
+  wheelNotches,
 } from "../../../src/tui-v2/composer/composer-wheel.js";
 
 describe("countComposerVisualLines", () => {
@@ -167,8 +167,9 @@ describe("composer wheel / draft scroll", () => {
         visibleRows: 5,
       }),
     ).toBe("draft");
-    expect(wheelChatDelta("down", 1)).toBe(3);
-    expect(wheelChatDelta("up", 1)).toBe(-3);
+    expect(wheelNotches("down", 1)).toBe(1);
+    expect(wheelNotches("up", 2)).toBe(-2);
+    expect(wheelNotches("left", 1)).toBe(0);
   });
 
   it("scrolls overflowing draft viewport and leaves single-line to chat", () => {

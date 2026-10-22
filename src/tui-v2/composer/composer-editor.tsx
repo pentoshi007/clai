@@ -70,7 +70,7 @@ import {
   composerDraftOverflows,
   composerOwnsWheel,
   measureComposerLines,
-  wheelChatDelta,
+  wheelNotches,
 } from "./composer-wheel.js";
 import { disableNativeTextareaScroll } from "./disable-native-textarea-scroll.js";
 
@@ -541,8 +541,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     event.stopPropagation();
     services.focus.focusRegion("transcript");
     editor?.blur();
-    const dy = wheelChatDelta(event.scroll.direction, event.scroll.delta);
-    if (dy !== 0) transcriptScrollPort.scrollBy(dy);
+    transcriptScrollPort.wheel(wheelNotches(event.scroll.direction, event.scroll.delta));
   }
 
   function handleMenuOrComposerKey(key: KeyEvent): void {

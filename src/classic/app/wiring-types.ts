@@ -18,6 +18,7 @@ import type { FeedBlock } from "../feed/feed-blocks.js";
 import type { SemanticAnchor, SemanticCell, SemanticDocument } from "../../ui-core/state/semantic-document.js";
 import type { TranscriptPointerGeometry } from "../feed/transcript-selection.js";
 import type { PaintPacing } from "./paint-pacing.js";
+import type { WheelScroll } from "../../ui-core/motion/wheel-scroll.js";
 import type { ContextLimitHitRegion } from "../chrome/context-limit-editor.js";
 import type { ComposerPointerView, ComposerPointerGeometry } from "../chrome/composer-pointer.js";
 
@@ -72,6 +73,7 @@ export interface WiringHost {
   readonly listeners: Set<() => void>;
   readonly disposers: Array<() => void>;
   snapshot: ClassicAppSnapshot;
+  sessionStateValue: ClassicAppSnapshot["session"] | undefined;
   columns: number;
   rows: number;
   planVisibleValue: boolean;
@@ -126,6 +128,7 @@ export interface WiringHost {
   selectionControllerDocumentValue: SemanticDocument | undefined;
   selectionDocumentBlocks: readonly FeedBlock[] | undefined;
   scrollToastShown: boolean;
+  readonly wheel: WheelScroll;
   disposed: boolean;
   schedulePaint(interactive?: boolean): void;
   scheduleEscapeExpiry(): void;

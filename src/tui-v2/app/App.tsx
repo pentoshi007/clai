@@ -47,6 +47,7 @@ import {
 } from "../components/plan/plan-pane-anim.js";
 import { usePanePresence } from "../components/plan/use-pane-presence.js";
 import { transcriptScrollPort } from "../components/transcript/transcript-scroll-port.js";
+import { wheelNotches } from "../composer/composer-wheel.js";
 import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { useHasDraft } from "../../ui-core/react/use-has-draft.js";
 import { formatShortcutsReference } from "../../ui-core/actions/format-shortcuts.js";
@@ -571,11 +572,7 @@ export function App(): ReactNode {
     event.preventDefault();
     event.stopPropagation();
     services.focus.focusRegion("transcript");
-    const { direction, delta } = event.scroll;
-    const step = Math.max(1, delta || 1) * 3;
-    const dy =
-      direction === "up" ? -step : direction === "down" ? step : 0;
-    if (dy !== 0) transcriptScrollPort.scrollBy(dy);
+    transcriptScrollPort.wheel(wheelNotches(event.scroll.direction, event.scroll.delta));
   }
 
   function onPlanWheel(event: MouseEvent): void {

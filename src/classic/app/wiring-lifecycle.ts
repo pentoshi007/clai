@@ -6,6 +6,7 @@ import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js
 import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-size.js";
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
 import { readBranchFromGitDir } from "./git-branch.js";
+import { stepWheelFeed } from "./wiring-feed-scroll.js";
 import { nextPaintPacing, paintIntervalMs } from "./paint-pacing.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
@@ -145,6 +146,7 @@ export function attachWiring(host: WiringHost): void {
 
 export function onSessionChange(host: WiringHost): void {
   const state = host.services.session.getState();
+  host.sessionStateValue = state;
   if (state.sessionId !== host.previousSessionId) {
     host.previousSessionId = state.sessionId;
     host.bumpFeedGeneration();
@@ -160,6 +162,7 @@ export function onSessionChange(host: WiringHost): void {
 }
 
 export function onTranscriptChange(host: WiringHost): void {
+  host.sessionStateValue = undefined;
   const state = host.services.transcript.getState();
   if (state.order !== host.previousOrder) {
     const prefixPreserved = host.previousOrder.every((id, index) => state.order[index] === id);
@@ -175,6 +178,7 @@ export function onTranscriptChange(host: WiringHost): void {
     }
     if (latestTurnId && latestTurnId !== host.activeTurnId) {
       host.activeTurnId = latestTurnId;
+      host.wheel.stop();
       host.liveOffsetValue = 0;
       host.feedNavigationVersion += 1;
       host.turnStartedAtValue ??= host.now();
@@ -191,8 +195,12 @@ export function onPlanChange(host: WiringHost): void {
   host.schedulePaint();
 }
 
+export function sessionSnapshot(host: WiringHost): ClassicAppSnapshot["session"] {
+  return host.sessionStateValue ??= host.services.session.getState();
+}
+
 export function buildSnapshot(host: WiringHost): ClassicAppSnapshot {
-  const session = host.services.session.getState();
+  const session = sessionSnapshot(host);
   const jobs = host.services.ports.jobs.recent?.(20, session.sessionId) ?? host.services.ports.jobs.running(session.sessionId);
   return {
     session,
@@ -238,8 +246,10 @@ export function schedulePaint(host: WiringHost, interactive = false): void {
     if (host.disposed) return;
     const startedAt = host.now();
     host.lastPaintAt = startedAt;
+    const gliding = stepWheelFeed(host);
     host.snapshot = buildSnapshot(host);
     for (const listener of host.listeners) listener();
+    if (gliding) host.schedulePaint(true);
     setImmediate(() => {
       if (!host.disposed) host.paintPacing = nextPaintPacing(host.paintPacing, host.now() - startedAt);
     });
