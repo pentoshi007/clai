@@ -76,6 +76,7 @@ try {
   };
   try {
     await settle(() => {
+      scroll.content.paddingBottom = 1;
       for (let index = 0; index < 8; index += 1) transcriptScrollPort.scrollToBottom();
     });
     assert.equal(peakPins, 1);
@@ -84,6 +85,7 @@ try {
   } finally {
     globalThis.requestAnimationFrame = requestFrame;
   }
+  await settle(() => { scroll.content.paddingBottom = 0; });
   setRenderCountersEnabled(true);
   resetRenderCounts();
   const scrollSamples: number[] = [];

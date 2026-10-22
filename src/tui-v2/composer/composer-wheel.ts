@@ -121,13 +121,13 @@ export function tryScrollComposerDraft(
   return true;
 }
 
-export function wheelChatDelta(
+export function wheelNotches(
   direction: "up" | "down" | string,
   delta?: number,
 ): number {
-  const step = Math.max(1, delta ?? 1) * 3;
-  if (direction === "up") return -step;
-  if (direction === "down") return step;
+  const notches = Math.max(1, delta ?? 1);
+  if (direction === "up") return -notches;
+  if (direction === "down") return notches;
   return 0;
 }
 

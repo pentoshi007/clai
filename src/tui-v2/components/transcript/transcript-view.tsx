@@ -12,11 +12,11 @@ import {
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { countRender } from "../../perf/render-counters.js";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
-import type { MouseEvent, Renderable, ScrollBoxRenderable } from "@opentui/core";
+import type { KeyEvent, MouseEvent, Renderable, ScrollAcceleration, ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
-import { wheelChatDelta } from "../../composer/composer-wheel.js";
+import { wheelNotches } from "../../composer/composer-wheel.js";
 import { useTranscriptState } from "../../../ui-core/react/use-transcript-store.js";
 import { useSessionField } from "../../../ui-core/react/use-transcript-meta.js";
 import type { SessionState } from "../../../app/controllers/session-controller.js";
@@ -50,6 +50,7 @@ import {
   registerTranscriptAutoScroll,
   registerTranscriptJumpHandlers,
   registerTranscriptScrollPort,
+  transcriptScrollPort,
 } from "./transcript-scroll-port.js";
 import { useNativeSelectionCopy } from "./use-native-selection-copy.js";
 import { pointInRect, startSnappedSelection } from "./selection-snap.js";
@@ -76,6 +77,10 @@ const HIDDEN_SCROLLBARS = {
   visible: false,
   showArrows: false,
 } as const;
+const NO_NATIVE_WHEEL: ScrollAcceleration = {
+  tick: () => 0,
+  reset: () => undefined,
+};
 function maxScrollTop(sb: ScrollBoxRenderable): number {
   const vh = sb.viewport?.height ?? 0;
   return Math.max(0, sb.scrollHeight - vh);
@@ -271,6 +276,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   useLayoutEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
+    sb.scrollAcceleration = NO_NATIVE_WHEEL;
     const current = {
       scrollTop: sb.scrollTop,
       scrollHeight: sb.scrollHeight,
@@ -293,6 +299,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     if (event.button !== 0) return;
     if (event.defaultPrevented) return;
     stopDragRefresh();
+    transcriptScrollPort.stopWheel();
     services.transcript.blurThinking();
     pointerGestureActive.current = true;
     copySemanticOnRelease.current = false;
@@ -331,7 +338,10 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     pinForced.current = false;
   }
 
-  useEffect(() => stopPinRefresh, []);
+  useEffect(() => () => {
+    stopPinRefresh();
+    transcriptScrollPort.stopWheel();
+  }, []);
 
   function pinToBottom(options?: { forced?: boolean }): void {
     pinForced.current ||= options?.forced === true;
@@ -354,6 +364,10 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     };
     go();
     if (pinFrame.current !== undefined) return;
+    if (!windowShiftPending.current && !renderer.root.getLayoutNode().isDirty()) {
+      pinForced.current = false;
+      return;
+    }
     pinFrame.current = requestAnimationFrame(() => {
       go();
       pinFrame.current = requestAnimationFrame(() => {
@@ -372,6 +386,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       setWindowStart((current) => current ?? mountWindow.start);
       return;
     }
+    transcriptScrollPort.stopWheel();
     const tail = resolveTranscriptMountWindow(
       itemCount,
       undefined,
@@ -552,24 +567,13 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     else if (direction === "newer") showNewerWindow(sb, 0);
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     return registerTranscriptScrollPort(scrollMainBy);
   }, [itemCount, mountWindow.start, mountWindow.end]);
 
   useEffect(() => {
     return registerTranscriptJumpHandlers(
-      () => {
-        clearNativeSelection();
-        if (mountWindow.start > 0) {
-          changeWindow(0, { kind: "edge", edge: "top" });
-          return;
-        }
-        const sb = scrollRef.current;
-        if (!sb) return;
-        setFollowing(false);
-        sb.scrollTo(0);
-        publishScrollRemainder(sb, mountWindow.newerCount > 0);
-      },
+      jumpToTop,
       () => {
         jumpToBottom();
         queueMicrotask(() => publishScrollRemainder(scrollRef.current, mountWindow.newerCount > 0));
@@ -617,6 +621,20 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     setFollowing(true, { forced: true });
   }
 
+  function jumpToTop(): void {
+    transcriptScrollPort.stopWheel();
+    clearNativeSelection();
+    if (mountWindow.start > 0) {
+      changeWindow(0, { kind: "edge", edge: "top" });
+      return;
+    }
+    const sb = scrollRef.current;
+    if (!sb) return;
+    setFollowing(false);
+    sb.scrollTo(0);
+    publishScrollRemainder(sb, mountWindow.newerCount > 0);
+  }
+
   function openSearch(): void {
     if (searchOpen) return;
     if (services.focus.hasOverlay() && services.focus.activeContext() !== "transcript-search") {
@@ -656,6 +674,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     setMatchIndex(index);
     const match = matches[index];
     if (!match) return;
+    transcriptScrollPort.stopWheel();
     clearNativeSelection();
     setFollowing(false);
     const itemIndex = state.order.indexOf(match.itemId);
@@ -717,128 +736,130 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     event.preventDefault();
     event.stopPropagation();
     services.focus.focusRegion("transcript");
-    scrollMainBy(wheelChatDelta(event.scroll.direction, event.scroll.delta));
+    transcriptScrollPort.wheel(wheelNotches(event.scroll.direction, event.scroll.delta));
+  }
+
+  function handleSearchKey(key: KeyEvent, chord: string): boolean {
+    if (searchOpen) {
+      if (chord === "escape") {
+        key.preventDefault();
+        clearSearch();
+      }
+      return true;
+    }
+    const overlayActive =
+      services.focus.hasOverlay() &&
+      services.focus.activeContext() !== "transcript-search";
+    if (overlayActive) return false;
+    if (chord === "ctrl+r") {
+      key.preventDefault();
+      openSearch();
+      return true;
+    }
+    if (!searchActive) return false;
+    switch (chord) {
+      case "escape":
+        clearSearch();
+        break;
+      case "n":
+        nextSearchMatch();
+        break;
+      case "shift+n":
+        prevSearchMatch();
+        break;
+      default:
+        return false;
+    }
+    key.preventDefault();
+    return true;
+  }
+
+  function handleThinkingCopy(key: KeyEvent, chord: string): boolean {
+    if (services.focus.activeContext() !== "transcript") return false;
+    if (services.router.resolve(chord, "transcript") !== "transcript.copy-thinking") return false;
+    if (state.focusedThinkingId === undefined) return false;
+    key.preventDefault();
+    void copyFocusedThinking(state, services.ports.clipboard).then((result) => {
+      if (result === "copied") {
+        services.transcript.blurThinking();
+        services.toast.success("Reasoning copied", {
+          key: "clipboard",
+          durationMs: 1600,
+        });
+        return;
+      }
+      if (result === "empty") {
+        services.toast.info("Nothing to copy", {
+          key: "clipboard",
+          durationMs: 1400,
+        });
+        return;
+      }
+      if (result === "failed") {
+        services.toast.error("Copy failed", {
+          key: "clipboard",
+          durationMs: 2200,
+        });
+      }
+    });
+    return true;
+  }
+
+  function handleTranscriptJump(key: KeyEvent, chord: string, sb: ScrollBoxRenderable): boolean {
+    if (chord === "home" || chord === "ctrl+u") {
+      key.preventDefault();
+      jumpToTop();
+      return true;
+    }
+    if (chord === "end" || chord === "ctrl+d") {
+      key.preventDefault();
+      jumpToBottom();
+      publishScrollRemainder(sb, mountWindow.newerCount > 0);
+      return true;
+    }
+    return false;
+  }
+
+  function handleTranscriptNavigation(key: KeyEvent, chord: string): void {
+    const sb = scrollRef.current;
+    if (!sb) return;
+    if (handleTranscriptJump(key, chord, sb)) return;
+    const page = sb.viewport.height || 10;
+    if (chord === "up" || chord === "k") {
+      key.preventDefault();
+      transcriptScrollPort.scrollBy(-1);
+      return;
+    }
+    if (chord === "down" || chord === "j") {
+      key.preventDefault();
+      transcriptScrollPort.scrollBy(1);
+      return;
+    }
+    if (chord === "pageup") {
+      key.preventDefault();
+      transcriptScrollPort.scrollBy(-page);
+      return;
+    }
+    if (chord === "pagedown") {
+      key.preventDefault();
+      transcriptScrollPort.scrollBy(page);
+    }
   }
 
   useKeyboard((key) => {
     if (key.eventType === "release") return;
     if (services.focus.inputCaptured) return;
     const chord = chordFromKeyEvent(key);
-
-    if (searchOpen) {
-      if (chord === "escape") {
-        key.preventDefault();
-        clearSearch();
-      }
-      return;
-    }
-
-    const overlayActive =
-      services.focus.hasOverlay() &&
-      services.focus.activeContext() !== "transcript-search";
-
-    if (searchActive && !overlayActive) {
-      if (chord === "escape") {
-        key.preventDefault();
-        clearSearch();
-        return;
-      }
-      if (chord === "n") {
-        key.preventDefault();
-        nextSearchMatch();
-        return;
-      }
-      if (chord === "shift+n") {
-        key.preventDefault();
-        prevSearchMatch();
-        return;
-      }
-      if (chord === "ctrl+r") {
-        key.preventDefault();
-        openSearch();
-        return;
-      }
-    }
-
-    if (chord === "ctrl+r" && !overlayActive) {
-      key.preventDefault();
-      openSearch();
-      return;
-    }
-
-    if (
-      services.focus.activeContext() === "transcript" &&
-      services.router.resolve(chord, "transcript") === "transcript.copy-thinking" &&
-      state.focusedThinkingId !== undefined
-    ) {
-      key.preventDefault();
-      void copyFocusedThinking(state, services.ports.clipboard).then((result) => {
-        if (result === "copied") {
-          services.transcript.blurThinking();
-          services.toast.success("Reasoning copied", {
-            key: "clipboard",
-            durationMs: 1600,
-          });
-          return;
-        }
-        if (result === "empty") {
-          services.toast.info("Nothing to copy", {
-            key: "clipboard",
-            durationMs: 1400,
-          });
-          return;
-        }
-        if (result === "failed") {
-          services.toast.error("Copy failed", {
-            key: "clipboard",
-            durationMs: 2200,
-          });
-        }
-      });
-      return;
-    }
-
+    if (handleSearchKey(key, chord)) return;
+    if (handleThinkingCopy(key, chord)) return;
     if (selection.handleKey(key, chord)) return;
     if (chord === "escape" && renderer.hasSelection) {
       key.preventDefault();
-      try {
-        renderer.clearSelection();
-      } catch {
-      }
+      clearNativeSelection();
       return;
     }
-
     if (services.focus.activeContext() === "transcript") {
-      const sb = scrollRef.current;
-      if (!sb) return;
-      const page = sb.viewport.height || 10;
-      if (chord === "up" || chord === "k") {
-        key.preventDefault();
-        scrollMainBy(-1);
-      } else if (chord === "down" || chord === "j") {
-        key.preventDefault();
-        scrollMainBy(1);
-      } else if (chord === "pageup") {
-        key.preventDefault();
-        scrollMainBy(-page);
-      } else if (chord === "pagedown") {
-        key.preventDefault();
-        scrollMainBy(page);
-      } else if (chord === "end" || chord === "ctrl+d") {
-        key.preventDefault();
-        jumpToBottom();
-        publishScrollRemainder(sb, mountWindow.newerCount > 0);
-      } else if (chord === "home" || chord === "ctrl+u") {
-        key.preventDefault();
-        clearNativeSelection();
-        if (mountWindow.start > 0) {
-          changeWindow(0, { kind: "edge", edge: "top" });
-          return;
-        }
-        setFollowing(false);
-        sb.scrollTo(0);
-        publishScrollRemainder(sb, mountWindow.newerCount > 0);
-      }
+      handleTranscriptNavigation(key, chord);
     }
   });
 

@@ -16,6 +16,7 @@ import { handleDisclosureMouse } from "./wiring-disclosure.js";
 import { handleComposerMouse } from "./wiring-composer-pointer.js";
 import { handleJumpToLatestMouse } from "./wiring-jump-to-latest.js";
 import type { AnimationDemand, WiringHost } from "./wiring-types.js";
+import { sessionSnapshot } from "./wiring-lifecycle.js";
 
 export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
   const window = feed.window;
@@ -289,38 +290,6 @@ export function closePanel(host: WiringHost): boolean {
   return false;
 }
 
-export const WHEEL_SCROLL_ROWS = 3;
-
-export function scrollFeed(host: WiringHost, delta: number): void {
-  const limit = host.feedLayoutPending && delta > 0 ? Number.MAX_SAFE_INTEGER : host.maxLiveOffset;
-  const next = Math.max(0, Math.min(limit, host.liveOffsetValue + delta));
-  host.feedNavigationVersion += 1;
-  if (next === host.liveOffsetValue) {
-    host.schedulePaint(true);
-    if (delta > 0 && !host.scrollToastShown) {
-      host.scrollToastShown = true;
-      notify(host.services, "transcript is already at the top · Ctrl+R to search", {
-        key: "transcript-scroll",
-        durationMs: 3200,
-      });
-    }
-    return;
-  }
-  host.liveOffsetValue = next;
-  host.schedulePaint(true);
-}
-
-export function showTranscriptTopHint(host: WiringHost): void {
-  host.liveOffsetValue = host.feedLayoutPending ? Number.MAX_SAFE_INTEGER : host.maxLiveOffset;
-  host.feedNavigationVersion += 1;
-  host.schedulePaint();
-  notify(
-    host.services,
-    "transcript top · Ctrl+D returns to the latest response",
-    { key: "transcript-top", durationMs: 2200 },
-  );
-}
-
 export function toggleSelectedItem(host: WiringHost): void {
   const itemId = host.selectedFeedItemId;
   if (!itemId || itemId === "intro") return;
@@ -446,6 +415,7 @@ export async function copyTranscript(host: WiringHost): Promise<void> {
 }
 
 export function bumpFeedGeneration(host: WiringHost): void {
+  host.wheel.stop();
   host.feedGenerationValue += 1;
   host.activeTurnId = undefined;
   host.liveOffsetValue = 0;
@@ -456,14 +426,15 @@ export function bumpFeedGeneration(host: WiringHost): void {
 }
 
 export function disarmEscapeIfIdle(host: WiringHost): void {
+  host.sessionStateValue = undefined;
   const busy =
-    host.services.session.getState().queued.length > 0 ||
+    sessionSnapshot(host).queued.length > 0 ||
     host.services.cancel.hasCancelableWork();
   if (!busy) host.ladder.disarmEscape();
 }
 
 export function needsCadence(host: WiringHost): boolean {
-  const state = host.services.session.getState();
+  const state = sessionSnapshot(host);
   return (
     state.running ||
     state.compacting ||
@@ -475,7 +446,7 @@ export function needsCadence(host: WiringHost): boolean {
 export const CARET_BLINK_IDLE_MS = 10_000;
 
 export function animationDemand(host: WiringHost): AnimationDemand {
-  const state = host.services.session.getState();
+  const state = sessionSnapshot(host);
   const now = host.now();
   if (state.running || state.compacting || host.services.toast.getToasts().length > 0) {
     host.caretAwakeAt = now;

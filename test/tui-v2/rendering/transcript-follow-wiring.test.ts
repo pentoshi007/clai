@@ -51,10 +51,13 @@ describe("transcript follow wiring", () => {
 
   it("copies the focused thinking card with `c` and then releases it", () => {
     const text = source(TRANSCRIPT_VIEW);
-    expect(text).toContain('=== "transcript.copy-thinking"');
-    // Only while the transcript owns the keyboard, so composer typing is safe.
-    expect(text).toContain('services.focus.activeContext() === "transcript"');
-    expect(text).toContain("state.focusedThinkingId !== undefined");
+    const copyKey = text.slice(
+      text.indexOf("function handleThinkingCopy("),
+      text.indexOf("function handleTranscriptJump("),
+    );
+    expect(copyKey).toContain('if (services.router.resolve(chord, "transcript") !== "transcript.copy-thinking") return false;');
+    expect(copyKey).toContain('if (services.focus.activeContext() !== "transcript") return false;');
+    expect(copyKey).toContain("if (state.focusedThinkingId === undefined) return false;");
     // Focus is released only after a successful copy.
     const handler = text.slice(
       text.indexOf("copyFocusedThinking(state"),

@@ -25,9 +25,11 @@ import {
 import { PanelController, type PanelSnapshot } from "../panels/panel-controller.js";
 import { ClassicActionHandlers, panelContextFor } from "./action-handlers.js";
 import * as interactions from "./wiring-interactions.js";
+import * as feedScroll from "./wiring-feed-scroll.js";
 import * as lifecycle from "./wiring-lifecycle.js";
 import { cancelTranscriptPointer } from "./wiring-selection.js";
 import { INITIAL_PAINT_PACING, type PaintPacing } from "./paint-pacing.js";
+import { WheelScroll } from "../../ui-core/motion/wheel-scroll.js";
 import type {
   ClassicAppSnapshot,
   ResizeSource,
@@ -59,6 +61,7 @@ export class ClassicAppWiring implements WiringHost {
   readonly listeners = new Set<() => void>();
   readonly disposers: Array<() => void> = [];
   snapshot: ClassicAppSnapshot;
+  sessionStateValue: ClassicAppSnapshot["session"] | undefined;
   columns: number;
   rows: number;
   planVisibleValue = false;
@@ -114,6 +117,7 @@ export class ClassicAppWiring implements WiringHost {
   selectionControllerDocumentValue: SemanticDocument | undefined;
   selectionDocumentBlocks: readonly FeedBlock[] | undefined;
   scrollToastShown = false;
+  readonly wheel = new WheelScroll();
   disposed = false;
 
   constructor(options: ClassicAppWiringOptions) {
@@ -393,11 +397,11 @@ export class ClassicAppWiring implements WiringHost {
   }
 
   scrollFeed(delta: number): void {
-    interactions.scrollFeed(this, delta);
+    feedScroll.scrollFeed(this, delta);
   }
 
   showTranscriptTopHint(): void {
-    interactions.showTranscriptTopHint(this);
+    feedScroll.showTranscriptTopHint(this);
   }
 
   toggleSelectedItem(): void {
