@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +10,12 @@ import { runReaNode } from "../src/rea/node.js";
 import { reaTools } from "../src/rea/connection.js";
 import { manageRea } from "../src/rea/runtime.js";
 import { REA_SERVER } from "../src/rea/workflow.js";
+
+async function sha256File(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
 
 const work = await mkdtemp(join(process.env.CLAI_REA_SMOKE_ROOT ?? tmpdir(), "clai-rea-smoke-"));
 const previousData = process.env.CLAI_DATA_DIR;
@@ -39,6 +47,7 @@ try {
   const analysis = await runtime.callTool(name, { path: installed.installation.node });
   await writeFile(join(work, "evidence.txt"), analysis.output);
   if (!analysis.ok) throw new Error(analysis.output);
+  if (!analysis.output.includes(await sha256File(installed.installation.node))) throw new Error("REA analysed a different file than the one requested");
   console.log(JSON.stringify({ phase: "analysis", tools: runtime.getState().activeToolCount, indexChars: index.length, contextChars: runtime.promptContext({ nativeTools: true })?.length, evidenceBytes: Buffer.byteLength(analysis.output), sample: analysis.output.slice(0, 350) }));
   const disabled = await manageRea(runtime, "disable");
   if (!disabled.ok || runtime.getState().activeToolCount !== 0) throw new Error("Disable did not stop REA");
