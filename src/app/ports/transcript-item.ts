@@ -1,6 +1,7 @@
 import type { SessionPlan } from "../../store/plan.js";
 import type { FileChange } from "../../tools/file-diff.js";
 import type { LineChangeTotals } from "../controllers/session-changes.js";
+import type { GenerationMetrics } from "../../llm/generation-metrics.js";
 
 export type ToolStatus = "running" | "ok" | "fail" | "blocked";
 
@@ -81,6 +82,7 @@ export interface TurnSummaryItem {
   durationMs: number;
   status: "completed" | "aborted" | "error";
   changes?: LineChangeTotals | undefined;
+  generation?: GenerationMetrics | undefined;
   timestamp?: number | undefined;
   done: boolean;
 }

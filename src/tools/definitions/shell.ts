@@ -5,7 +5,7 @@ import { def, emptyObject } from "./define.js";
 export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
   def(
     "shell.exec",
-    'Run a shell command in the foreground by default; commands are never automatically backgrounded. You choose execution mode and foreground timeoutMs in milliseconds. Foreground default is 60000; set a sufficient budget for builds, installs, scans and searches. background:"always" explicitly starts a durable pollable job; use shell.wait for finite jobs. Persistent servers, watchers, and listeners: background:"always" with a name; use shell.tail plus a readiness probe and shell.stop for cleanup. responder:true explicitly delegates finite work with automatic terminal delivery; do independent work instead of polling, then analyze the result and call job.read. background:"never" overrides responder. timeoutMs is ignored for background and Responder jobs; authorization expiry remains enforced. Pass cwd instead of cd.',
+    'Run a shell command in the foreground by default; commands are never automatically backgrounded. You choose execution mode and foreground timeoutMs in milliseconds. Foreground default is 60000; set a sufficient budget for builds, installs, scans and searches. background:"always" explicitly starts a durable pollable job; use shell.wait for finite jobs. Persistent servers, watchers, and listeners: background:"always" with a name; use shell.tail plus a readiness probe and shell.stop for cleanup. Always use responder:true for finite work expected to exceed 4–5 minutes; Responder delivers terminal results automatically. Do independent work or yield instead of polling, then analyze the result and call job.read. background:"never" overrides responder. timeoutMs is ignored for background and Responder jobs; authorization expiry remains enforced. Pass cwd instead of cd.',
     {
       type: "object",
       properties: {
@@ -28,7 +28,7 @@ export const TOOL_DEFINITIONS_SHELL: ToolDefinition[] = [
         responder: {
           type: "boolean",
           description:
-            'Execution ownership for finite work. true: Responder fire-and-continue with automatic terminal delivery. false or omitted: keep foreground execution unless background:"always" explicitly requests a normal pollable job.',
+            'Execution ownership for finite work. Set true whenever expected duration exceeds 4–5 minutes: fire-and-continue, analyze terminal delivery, then job.read. false or omitted: foreground unless background:"always" requests a pollable job. Never use Responder for servers/watchers or interactive sessions.',
         },
         parentTaskId: {
           type: "string",

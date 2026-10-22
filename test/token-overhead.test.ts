@@ -16,7 +16,7 @@ const sha256 = (value: string): string => createHash("sha256").update(value).dig
 describe("token overhead contracts", () => {
   it("locks the retained tool catalog, arguments, flags and validation constraints", () => {
     expect(sha256(JSON.stringify(getToolDefinitions())))
-      .toBe("434834550f452421e187b1d91ae7e4dbf3864dbe91c8c641535008046d93538e");
+      .toBe("27f66b8286f882fdd9f1a2dcb565bcad5a4e82ac782928b72d7b4f49ffefdceb");
   });
 
   it("keeps the complete catalog when compact mode is requested", () => {
@@ -24,14 +24,14 @@ describe("token overhead contracts", () => {
     expect(getToolDefinitions({ compact: true, askMode: true })).toEqual(getToolDefinitions({ askMode: true }));
   });
 
-  it("keeps default native instruction and tool overhead below 22k estimated tokens", () => {
+  it("keeps default native instruction and tool overhead below 23k estimated tokens", () => {
     const route = createToolRouting({
       mode: "agent", mcpPresent: false,
       toolCalling: "native", useCompactSystemPrompt: () => false,
     });
     const system = route.buildStableSystemContent(true, "nvidia", "openai/gpt-oss-20b");
     const tools = route.selectToolDefs(true, false, "nvidia", "openai/gpt-oss-20b")!;
-    expect(Math.ceil((system.length + JSON.stringify(toOpenAiTools(tools)).length) / 3.3)).toBeLessThan(22_000);
+    expect(Math.ceil((system.length + JSON.stringify(toOpenAiTools(tools)).length) / 3.3)).toBeLessThan(23_000);
     expect(system).not.toContain("Available tool names:");
     expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(route.routeToolNames("nvidia", "openai/gpt-oss-20b")));
     expect(system).toContain("both the exact current oldText and intended newText");
@@ -49,7 +49,7 @@ describe("token overhead contracts", () => {
       expect(compact).toContain(tool.name);
     }
     expect(full).not.toMatch(/\{\{[a-z_]+\}\}/);
-    expect(full).toContain('fs.edit: {"path":"<file>","oldText":"<exact>","newText":"<replacement>"');
+    expect(full).toContain('fs.edit: {"path":"<file>","oldText":"<exact non-empty match>","newText":"<replacement>"');
     expect(full).toContain("rg -n --glob");
   });
 

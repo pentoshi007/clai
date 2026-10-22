@@ -32,6 +32,7 @@ export interface TurnRunOptions {
     | ((snapshot: SuccessfulRequestSnapshot) => void)
     | undefined;
   readonly onStarted?: (() => void) | undefined;
+  readonly onSubmitted?: (() => void) | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -142,7 +143,16 @@ export class TurnController implements Disposable {
       () => this.abortReason,
     );
     adapter.setTurn(turnId);
-    const coalescer = new DeltaCoalescer((event) => adapter.ingest(event));
+    let submitted = false;
+    const acknowledge = (): void => {
+      if (submitted) return;
+      options.onSubmitted?.();
+      submitted = true;
+    };
+    const coalescer = new DeltaCoalescer((event) => {
+      if (event.type === "model-submitted") acknowledge();
+      adapter.ingest(event);
+    });
 
     const onExternalAbort = () => ac.abort();
     const external = options.signal;
@@ -163,6 +173,7 @@ export class TurnController implements Disposable {
         session: options.session,
       });
       coalescer.flush();
+      if (!this.deps.agent.reportsModelSubmission) acknowledge();
       return {
         status: "completed",
         turnId,

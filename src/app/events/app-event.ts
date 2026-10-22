@@ -1,4 +1,5 @@
 import type { ContextAttemptReference, ContextSnapshotScope } from "../../llm/context-snapshot.js";
+import type { GenerationMetrics } from "../../llm/generation-metrics.js";
 import type { SessionPlan } from "../../store/plan.js";
 import type { ProviderId, UsageCharge } from "../../types.js";
 
@@ -144,9 +145,9 @@ export interface AppEventPayloads {
     readonly attempt?: ContextAttemptReference | undefined;
     readonly auxiliary?: true | undefined;
   };
-  "turn-ended": { readonly finalAnswer: string; readonly steps: number };
-  "turn-aborted": { readonly reason?: string | undefined };
-  "turn-error": { readonly message: string };
+  "turn-ended": { readonly finalAnswer: string; readonly steps: number; readonly generation?: GenerationMetrics | undefined };
+  "turn-aborted": { readonly reason?: string | undefined; readonly generation?: GenerationMetrics | undefined };
+  "turn-error": { readonly message: string; readonly generation?: GenerationMetrics | undefined };
 }
 
 export type AppEventType = keyof AppEventPayloads;

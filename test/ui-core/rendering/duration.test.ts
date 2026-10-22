@@ -106,8 +106,8 @@ describe("toolElapsedLabel", () => {
 
 describe("turnSummaryLabel", () => {
   it("appends that run's line changes only when counts are available", () => {
-    expect(turnSummaryLabel(76_000, "completed", { added: 213, removed: 435 })).toBe("Worked for 1m16s · +213 -435");
-    expect(turnSummaryLabel(5_000, "aborted", { added: 0, removed: 2 })).toBe("Worked for 5.0s · aborted · +0 -2");
+    expect(turnSummaryLabel(76_000, "completed", { added: 213, removed: 435 })).toBe("Worked for 1m16s · +213 -435 · /changes");
+    expect(turnSummaryLabel(5_000, "aborted", { added: 0, removed: 2 })).toBe("Worked for 5.0s · aborted · +0 -2 · /changes");
     expect(turnSummaryLabel(76_000, "completed", { added: 0, removed: 0 })).toBe("Worked for 1m16s");
   });
   it("formats completed/aborted/error summaries", () => {
@@ -162,5 +162,21 @@ describe("thinkingElapsedLabel / compactionElapsedLabel", () => {
     expect(
       compactionElapsedLabel({ streaming: false, timestamp: 1_000 }, 99_000),
     ).toBeUndefined();
+  });
+});
+
+describe("turn throughput labels", () => {
+  const generation = { outputTokens: 420, durationMs: 10_000 };
+  it("orders time, changes, the changes command, and TPS", () => {
+    expect(turnSummaryLabel(76_000, "completed", { added: 213, removed: 435 }, generation))
+      .toBe("Worked for 1m16s · +213 -435 · /changes · 42.0 tok/s");
+    expect(turnSummaryLabel(2_000, "completed", undefined, generation)).toBe("Worked for 2.0s · 42.0 tok/s");
+    expect(turnSummaryLabel(5_000, "aborted", undefined, generation)).toBe("Worked for 5.0s · aborted · 42.0 tok/s");
+    expect(turnSummaryLabel(2_500, "error", { added: 0, removed: 0 }, generation)).toBe("Worked for 2.5s · error · 42.0 tok/s");
+  });
+  it("omits unavailable and zero-output throughput without dangling separators", () => {
+    expect(turnSummaryLabel(2_000, "completed", undefined, { outputTokens: 0, durationMs: 1_000 })).toBe("Worked for 2.0s");
+    expect(turnSummaryLabel(2_000, "completed", undefined, { outputTokens: 10, durationMs: 0 })).toBe("Worked for 2.0s");
+    expect(turnSummaryLabel(2_000, "completed", undefined, { outputTokens: 1, durationMs: 3_000 })).toBe("Worked for 2.0s · 0.3 tok/s");
   });
 });

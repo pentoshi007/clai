@@ -23,6 +23,7 @@ import { renderStyledStreamingMarkdown } from "../../rendering/styled-markdown.j
 import { liveCompactionHeadTail } from "../../../ui-core/rendering/thinking-tail.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 import { compactionElapsedLabel } from "../../../ui-core/rendering/duration.js";
+import { createCompactionPagerSource } from "../../../ui-core/rendering/compaction-pager-source.js";
 
 const PREVIEW_LINES = 4;
 
@@ -92,7 +93,8 @@ export function CompactedRow(props: {
       : tokenLabel
         ? `Compacted context · ${tokenLabel}`
         : "Compacted context";
-    services.overlay.openPager(title, fullSummary, undefined, undefined, "force");
+    const source = item.streaming ? createCompactionPagerSource(services, item) : undefined;
+    services.overlay.openPager(title, source ? "" : fullSummary, source, undefined, "force");
   };
 
   const click = useClickWithoutDrag(openPager);

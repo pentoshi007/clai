@@ -116,12 +116,6 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
     };
   }, [services.ports.jobs, services.session.sessionId, hasLiveJob]);
 
-  async function tail(job: BackgroundJob): Promise<void> {
-    const result = await services.ports.jobs.tail(job.id);
-    services.overlay.close();
-    services.overlay.openPager(`${job.command} · tail`, result.output);
-  }
-
   function viewLive(job: BackgroundJob): void {
     const source = createJobTailPagerSource({
       jobs: services.ports.jobs,
@@ -164,8 +158,6 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
         }
         break;
       case "jobs.tail":
-        if (job) void tail(job);
-        break;
       case "jobs.view-live":
         if (job) viewLive(job);
         break;
@@ -179,7 +171,7 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
 
   const titleLine = `Background jobs · session ${services.session.sessionId}`;
   const helpLine =
-    "up/down:select · enter/v:view live · t:snapshot · k:kill · q/esc:close";
+    "up/down:select · enter/v/t:live output · k:kill · q/esc:close";
   const notificationByJob = new Map(
     services.ports.jobs
       .pendingNotifications(services.session.sessionId)

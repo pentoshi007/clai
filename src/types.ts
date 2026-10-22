@@ -395,6 +395,7 @@ export interface CompletionResult {
   finishReason?: "stop" | "tool_calls" | "length" | "error" | string | undefined;
   rawAssistantMessage?: unknown | undefined;
   usage?: TokenUsage | undefined;
+  generationDurationMs?: number | undefined;
   operationUsage?: import("./llm/operation-usage.js").OperationUsageSnapshot | undefined;
   reasoningBlock?: ReasoningBlock | undefined;
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;

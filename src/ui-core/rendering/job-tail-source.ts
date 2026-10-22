@@ -1,3 +1,4 @@
+import { watchFile, unwatchFile } from "node:fs";
 import type { JobsPort } from "../../app/ports/jobs-port.js";
 import {
   createArtifactPagerSource,
@@ -34,6 +35,7 @@ export function createJobTailPagerSource(
   if (!initialPath) return undefined;
 
   let disposed = false;
+  const subscriptions = new Set<() => void>();
   const delegates = new Map<string, ArtifactPagerSource>();
   const delegateFor = (path: string): ArtifactPagerSource => {
     const existing = delegates.get(path);
@@ -69,14 +71,35 @@ export function createJobTailPagerSource(
     isGrowing,
     watch(onChange) {
       if (disposed) return () => undefined;
-      return jobs.subscribe((change) => {
+      let watchedPath: string | undefined;
+      const changed = (): void => { if (!disposed) onChange(); };
+      const watchPath = (): void => {
+        const path = currentPath() ?? initialPath;
+        if (path === watchedPath) return;
+        if (watchedPath) unwatchFile(watchedPath, changed);
+        watchedPath = path;
+        watchFile(path, { persistent: false, interval: 200 }, changed);
+      };
+      watchPath();
+      const unsubscribe = jobs.subscribe((change) => {
         if (change.jobId !== jobId) return;
-        onChange();
+        watchPath();
+        changed();
       });
+      const cleanup = (): void => {
+        unsubscribe();
+        if (watchedPath) unwatchFile(watchedPath, changed);
+        watchedPath = undefined;
+        subscriptions.delete(cleanup);
+      };
+      subscriptions.add(cleanup);
+      return cleanup;
     },
     dispose() {
       if (disposed) return;
       disposed = true;
+      for (const cleanup of subscriptions) cleanup();
+      subscriptions.clear();
       for (const delegate of delegates.values()) delegate.dispose();
       delegates.clear();
     },

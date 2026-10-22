@@ -5,6 +5,7 @@ import type { TranscriptItem as ClassicTranscriptItem } from "../../../app/ports
 import { EMPTY_TRANSCRIPT_STATE } from "../transcript-types.js";
 import { flattenTranscriptHistory } from "../transcript-history.js";
 import { validLineChangeTotals } from "../../../app/controllers/session-changes.js";
+import { validGenerationMetrics } from "../../../llm/generation-metrics.js";
 import type { AssistantItem, CompactedItem, ThinkingItem, ToolItem, ToolStatus, TranscriptItem, TranscriptState, TurnSummaryItem, UserItem } from "../transcript-types.js";
 
 export interface HydrateResult {
@@ -161,6 +162,7 @@ export function hydrateFromClassicTranscript(
             : {}),
           kind: "turn-summary",
           ...(validLineChangeTotals(raw.changes) ? { changes: { added: raw.changes.added, removed: raw.changes.removed } } : {}),
+          ...(validGenerationMetrics(raw.generation) ? { generation: { outputTokens: raw.generation.outputTokens, durationMs: raw.generation.durationMs } } : {}),
           durationMs:
             typeof rawDur === "number" && Number.isFinite(rawDur) ? rawDur : 0,
           status:

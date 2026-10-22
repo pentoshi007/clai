@@ -13,6 +13,8 @@ import type {
 import { fingerprintFinalRequest } from "./request-fingerprint.js";
 import { sessionCacheAffinityKey } from "./cache-affinity.js";
 import { currentSessionAffinity } from "./session-affinity.js";
+import { acknowledgeGenerationSubmission } from "./generation-submission.js";
+import { recordInterruptedGeneration } from "./generation-metrics.js";
 
 export type AttemptUsageValue =
   | { readonly kind: "known"; readonly value: TokenUsage }
@@ -217,6 +219,7 @@ interface GenerationAttemptContext {
   readonly input: GenerationAttemptInput;
   active?: GenerationAttemptHandle | undefined;
   admissions: number;
+  startedAt: number;
   streamUsage?: TokenUsage | undefined;
 }
 
@@ -287,7 +290,12 @@ export async function generationFetch(
     return fetch(input, init);
   }
   const context = generationAttemptContext.getStore();
-  if (!context?.request.attemptUsage) return fetch(input, init);
+  if (context) context.startedAt = performance.now();
+  if (!context?.request.attemptUsage) {
+    const response = await fetch(input, init);
+    if (response.ok) acknowledgeGenerationSubmission();
+    return response;
+  }
   if (context.active) {
     throw new Error("generation admission started before the prior admission settled");
   }
@@ -307,6 +315,8 @@ export async function generationFetch(
     const response = await fetch(input, init);
     if (!response.ok) {
       settleActiveAttempt(context, "failure", undefined, response.status);
+    } else {
+      acknowledgeGenerationSubmission();
     }
     return response;
   } catch (error) {
@@ -325,17 +335,23 @@ export async function runGenerationAttempt(
   input: GenerationAttemptInput,
   run: () => Promise<CompletionResult>,
 ): Promise<CompletionResult> {
-  const context: GenerationAttemptContext = { request, input, admissions: 0 };
+  const context: GenerationAttemptContext = { request, input, admissions: 0, startedAt: performance.now() };
   return generationAttemptContext.run(context, async () => {
     try {
       const result = await run();
+      acknowledgeGenerationSubmission();
+      const generationDurationMs = result.generationDurationMs ?? Math.max(0, performance.now() - context.startedAt);
       settleActiveAttempt(context, "success", result.usage);
-      return result;
+      return { ...result, generationDurationMs };
     } catch (error) {
+      const usage = failedAttemptUsage(context, error);
+      if (request.signal?.aborted) {
+        recordInterruptedGeneration(error, usage, performance.now() - context.startedAt);
+      }
       settleActiveAttempt(
         context,
         request.signal?.aborted ? "cancelled" : "failure",
-        failedAttemptUsage(context, error),
+        usage,
         statusCodeFromError(error),
       );
       throw error;

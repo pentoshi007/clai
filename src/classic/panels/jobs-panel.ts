@@ -66,7 +66,7 @@ export function jobsKey(input: JobsKeyInput): PanelKeyResult<JobsPanelState> {
   if (chord === "down") return move(1);
   if (chord === "pageup") return move(-height);
   if (chord === "pagedown") return move(height);
-  if (chord === "enter" || chord === "t") {
+  if (chord === "enter" || chord === "v" || chord === "t") {
     return selected
       ? handled(state, { kind: "job-tail", jobId: selected.id })
       : handled(state);

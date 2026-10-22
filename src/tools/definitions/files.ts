@@ -53,7 +53,7 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
   ),
   def(
     "fs.edit",
-    "Surgical in-place edit. Use only after reading or searching the current file and copying the exact oldText, including whitespace and line endings; if it is not known, use fs.read first. After a no-match error, do not retry unchanged oldText.",
+    'Read first; copy non-empty exact oldText, including whitespace/line endings. newText may be "" to delete. Create with fs.write; insert at start/end with fs.append, or keep an existing anchor in both texts. After no-match, re-read; never retry unchanged oldText.',
     {
       type: "object",
       properties: {
@@ -61,10 +61,10 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
         oldText: {
           type: "string",
           minLength: 1,
-          description: "Exact current text to replace, copied from the latest file evidence",
+          description: 'Non-empty exact match copied from the latest fs.read; never "".',
         },
-        newText: { type: "string", description: "Intended replacement text" },
-        expectedReplacements: { type: "integer" },
+        newText: { type: "string", description: 'Replacement string; "" to delete.' },
+        expectedReplacements: { type: "integer", description: "Exact match count (default 1); mismatch aborts." },
       },
       required: ["path", "oldText", "newText"],
       additionalProperties: false,

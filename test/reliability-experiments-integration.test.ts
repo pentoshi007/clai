@@ -60,12 +60,14 @@ describe("reliability experiment integration", () => {
     expect(p).not.toContain("```tool");
   });
 
-  it("compact + native still works under slim policy flag", () => {
+  it("keeps compact native policy bounded with required Responder guidance", () => {
     const p = renderCompactAgentSystemPrompt("fs.read", {
       nativeTools: true,
       stableEnvironment: true,
     });
-    expect(p.length).toBeLessThan(5_000);
+    expect(p.length).toBeLessThan(5_500);
+    expect(p).toContain("Always delegate finite work expected to exceed 4–5 minutes to Responder");
+    expect(p).toContain("job.read");
     expect(p).not.toContain("```tool");
   });
 

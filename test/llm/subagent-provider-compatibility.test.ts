@@ -64,7 +64,7 @@ describe.each(["complete", "stream"] as const)("%s provider option compatibility
       return result;
     });
     const input = { ...request, toolChoice };
-    await expect(run(mode, fakeProvider(attempt), input)).resolves.toEqual(result);
+    await expect(run(mode, fakeProvider(attempt), input)).resolves.toEqual({ ...result, generationDurationMs: expect.any(Number) });
     expect(attempt).toHaveBeenCalledTimes(2);
     expect(attempt.mock.calls[1]![0]).toMatchObject({ toolChoice: "auto", tools: request.tools, attemptReason: "adaptation" });
     expect(input.toolChoice).toEqual(toolChoice);
@@ -92,7 +92,7 @@ describe.each(["complete", "stream"] as const)("%s provider option compatibility
       return result;
     });
     const input = { ...request, parallelToolCalls: true, temperature: 0.2 };
-    await expect(run(mode, fakeProvider(attempt), input)).resolves.toEqual(result);
+    await expect(run(mode, fakeProvider(attempt), input)).resolves.toEqual({ ...result, generationDurationMs: expect.any(Number) });
     expect(attempt).toHaveBeenCalledTimes(3);
     expect(attempt.mock.calls[2]![0]).toMatchObject({ tools: request.tools, toolChoice: "auto", temperature: undefined, parallelToolCalls: undefined });
     expect(input).toMatchObject({ temperature: 0.2, parallelToolCalls: true });

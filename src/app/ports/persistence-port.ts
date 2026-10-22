@@ -21,12 +21,20 @@ export interface SaveSessionOptions {
   readonly unsyncedItemIds?: readonly string[] | undefined;
 }
 
+export interface PersistedQueuedPrompt {
+  readonly id: number;
+  readonly text: string;
+  readonly displayPrompt?: string | null | undefined;
+}
+
 export interface PersistedSessionMerge {
   readonly transcript: readonly TranscriptItem[];
 }
 
 
 export interface PersistencePort {
+  loadQueuedPrompts?(sessionId: string): readonly PersistedQueuedPrompt[];
+  saveQueuedPrompts?(sessionId: string, prompts: readonly PersistedQueuedPrompt[]): void;
   saveSession(
     messages: readonly ChatMessage[],
     options?: SaveSessionOptions,

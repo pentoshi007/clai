@@ -53,6 +53,25 @@ describe("native prompts", () => {
     expect(p).not.toContain("```tool");
   });
 
+  it("delegates long finite work to Responder in every agent prompt variant", () => {
+    const tools = "shell.exec, terminal.start, fs.edit";
+    const prompts = [
+      renderAgentSystemPrompt(tools),
+      renderAgentSystemPrompt(tools, { nativeTools: true }),
+      renderAgentSystemPrompt(tools, { nativeTools: true, slimNative: false }),
+      renderCompactAgentSystemPrompt(tools),
+      renderCompactAgentSystemPrompt(tools, { nativeTools: true }),
+    ];
+    for (const prompt of prompts) {
+      expect(prompt).toContain("Always delegate finite work expected to exceed 4–5 minutes to Responder");
+      expect(prompt).toContain("shell.exec responder:true");
+      expect(prompt).toContain("Interactive sessions use terminal tools");
+      expect(prompt).toContain('background:"always" jobs, never Responder');
+      expect(prompt).toContain("job.read");
+      expect(prompt).not.toContain("never the default for costly work");
+    }
+  });
+
   it("ask native removes fence teaching", () => {
     const p = renderAskSystemPrompt({ nativeTools: true });
     expect(p).not.toMatch(/emit a fenced block exactly like this/i);

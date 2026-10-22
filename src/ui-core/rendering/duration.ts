@@ -5,6 +5,7 @@ import type {
 } from "../state/transcript-types.js";
 import type { SubagentRun } from "../../agent/subagents/types.js";
 import { sumLineChanges, type LineChangeTotals } from "../../app/controllers/session-changes.js";
+import { generationTokensPerSecond, type GenerationMetrics } from "../../llm/generation-metrics.js";
 
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -86,8 +87,18 @@ export function turnSummaryLabel(
   durationMs: number,
   status: "completed" | "aborted" | "error",
   changes?: LineChangeTotals,
+  generation?: GenerationMetrics,
 ): string {
   const base = `Worked for ${formatDurationMs(durationMs)}`;
-  const label = status === "completed" ? base : `${base} · ${status}`;
-  return changes && sumLineChanges([changes]) ? `${label} · +${changes.added} -${changes.removed}` : label;
+  const statusLabel = status === "completed" ? base : `${base} · ${status}`;
+  const label = changes && sumLineChanges([changes])
+    ? `${statusLabel} · +${changes.added} -${changes.removed} · /changes`
+    : statusLabel;
+  const tps = tokensPerSecondLabel(generation);
+  return tps ? `${label} · ${tps}` : label;
+}
+
+export function tokensPerSecondLabel(generation: GenerationMetrics | undefined): string | undefined {
+  const rate = generationTokensPerSecond(generation);
+  return rate === undefined ? undefined : `${rate.toFixed(1)} tok/s`;
 }

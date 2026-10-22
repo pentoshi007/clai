@@ -2,6 +2,8 @@ import type { RequestAssemblyState } from "../../turn/loop/request-assembly.js";
 import type { StreamFailureState } from "../../turn/loop/stream-failure.js";
 import { operationUsageFromError } from "../../../llm/operation-ledger.js";
 import { streamWithProvider } from "../../../llm/router.js";
+import { completionGenerationMetrics, interruptedGenerationMetrics } from "../../../llm/generation-metrics.js";
+import { acknowledgeGenerationSubmission, withGenerationSubmission } from "../../../llm/generation-submission.js";
 import { streamAlreadyEmitted } from "../../../llm/stream-progress.js";
 import { auditLog } from "../../../store/logs.js";
 import { jobManager } from "../../../tools/jobs.js";
@@ -111,35 +113,48 @@ export const requestRound = async (
         `failed to record responder delivery attempt ${responderDelivery.id}`,
       );
     }
-    completion = await streamWithProvider(
-      buildStreamRequest({
-        provider: deps.loop.provider,
-        model: deps.loop.model,
-        messages: deps.messages,
-        allowModelFallback: deps.loop.allowModelFallback,
-        preferModelFallback: deps.loop.preferModelFallback,
-        maxTokens: deps.loop.stepMaxTokens,
-        signal: deps.options.signal,
-        thinking: deps.thinking,
-        toolsAttached,
-        tools: turnTools,
-        onToolCallDelta: streamSession.onToolCallDelta,
-      }),
-      streamSession.onToken,
-      {
-        onStatus: streamSession.onStatus,
-        onStreamEvent: streamSession.onStreamEvent,
-        onSuccessfulRequest: streamSession.onSuccessfulRequest,
-        retryRateLimits: false,
+    completion = await withGenerationSubmission(
+      () => deps.emit({ type: "model-submitted" }),
+      async () => {
+        const result = await streamWithProvider(
+          buildStreamRequest({
+            provider: deps.loop.provider,
+            model: deps.loop.model,
+            messages: deps.messages,
+            allowModelFallback: deps.loop.allowModelFallback,
+            preferModelFallback: deps.loop.preferModelFallback,
+            maxTokens: deps.loop.stepMaxTokens,
+            signal: deps.options.signal,
+            thinking: deps.thinking,
+            toolsAttached,
+            tools: turnTools,
+            onToolCallDelta: streamSession.onToolCallDelta,
+          }),
+          streamSession.onToken,
+          {
+            onStatus: streamSession.onStatus,
+            onStreamEvent: streamSession.onStreamEvent,
+            onSuccessfulRequest: streamSession.onSuccessfulRequest,
+            retryRateLimits: false,
+          },
+        );
+        acknowledgeGenerationSubmission();
+        return result;
       },
     );
+    deps.emit({ type: "generation-completed", metrics: completionGenerationMetrics(completion) });
     deps.loop.freeTierConsecutiveFailures = 0;
     resetStreamRecoveryState(deps.recoveryState);
     deps.loop.allowModelFallback = false;
     deps.loop.preferModelFallback = false;
     deps.loop.lowYieldResumptions = 0;
     } catch (streamError) {
-      if (deps.options.signal?.aborted) throw streamError;
+      if (deps.options.signal?.aborted) {
+        const metrics = interruptedGenerationMetrics(streamError);
+        if (metrics) deps.emit({ type: "generation-completed", metrics });
+        throw streamError;
+      }
+      if (!(streamError instanceof RequestOverLimitError)) deps.emit({ type: "generation-completed" });
       if (streamError instanceof RequestOverLimitError) {
         await recoverDispatchOverLimit(deps, streamError);
         return { kind: "continue" };

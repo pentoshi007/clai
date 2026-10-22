@@ -239,17 +239,17 @@
 <text x="125.2 133.6 142 150.4 158.8 167.2 175.6" y="275" fill="#4ade80" font-weight="700">Welcome</text>
 <text x="192.4 200.8" y="275" fill="#4ade80" font-weight="700">to</text>
 <text x="217.6 226 234.4 242.8" y="275" fill="#4ade80" font-weight="700">clai</text>
-<text x="259.6 268 276.4 284.8 293.2 301.6 310 318.4" y="275" fill="#4ade80" font-weight="700">v4.19.0!</text>
-<text x="343.6 352 360.4 368.8 377.2" y="275" fill="#67e8f9">/help</text>
-<text x="394 402.4 410.8 419.2 427.6 436 444.4 452.8" y="275" fill="#94a3b8">commands</text>
-<text x="469.6" y="275" fill="#6e7c91">·</text>
-<text x="486.4 494.8 503.2 511.6 520 528.4 536.8 545.2" y="275" fill="#67e8f9">/history</text>
-<text x="562 570.4 578.8 587.2" y="275" fill="#94a3b8">past</text>
-<text x="604 612.4 620.8 629.2 637.6" y="275" fill="#94a3b8">chats</text>
-<text x="654.4" y="275" fill="#6e7c91">·</text>
-<text x="671.2 679.6 688 696.4 704.8 713.2 721.6 730 738.4" y="275" fill="#67e8f9">shift+tab</text>
-<text x="755.2 763.6 772 780.4 788.8 797.2" y="275" fill="#94a3b8">switch</text>
-<text x="814 822.4 830.8 839.2" y="275" fill="#94a3b8">mode</text>
+<text x="259.6 268 276.4 284.8 293.2 301.6 310" y="275" fill="#4ade80" font-weight="700">v5.0.0!</text>
+<text x="335.2 343.6 352 360.4 368.8" y="275" fill="#67e8f9">/help</text>
+<text x="385.6 394 402.4 410.8 419.2 427.6 436 444.4" y="275" fill="#94a3b8">commands</text>
+<text x="461.2" y="275" fill="#6e7c91">·</text>
+<text x="478 486.4 494.8 503.2 511.6 520 528.4 536.8" y="275" fill="#67e8f9">/history</text>
+<text x="553.6 562 570.4 578.8" y="275" fill="#94a3b8">past</text>
+<text x="595.6 604 612.4 620.8 629.2" y="275" fill="#94a3b8">chats</text>
+<text x="646" y="275" fill="#6e7c91">·</text>
+<text x="662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730" y="275" fill="#67e8f9">shift+tab</text>
+<text x="746.8 755.2 763.6 772 780.4 788.8" y="275" fill="#94a3b8">switch</text>
+<text x="805.6 814 822.4 830.8" y="275" fill="#94a3b8">mode</text>
 <text x="41.2 49.6 58" y="329" fill="#ffffff" font-weight="700">YOU</text>
 <text x="83.2 91.6 100" y="329" fill="#f8fafc">Add</text>
 <text x="116.8" y="329" fill="#f8fafc">a</text>

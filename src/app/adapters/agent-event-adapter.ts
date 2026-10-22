@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../../agent/events.js";
+import { addGenerationMetrics, type GenerationMetrics } from "../../llm/generation-metrics.js";
 import {
   asPlanId,
   asToolCallId,
@@ -24,6 +25,7 @@ export class AgentEventAdapter {
   private turnId: TurnId | undefined;
   private reasoningSpan = 0;
   private reasoningSpanOpen = false;
+  private generation: GenerationMetrics | null | undefined;
   private readonly bufferedMetaTools = new Map<string, BufferedMetaTool>();
 
   constructor(
@@ -38,6 +40,7 @@ export class AgentEventAdapter {
       this.bufferedMetaTools.clear();
       this.reasoningSpan = 0;
       this.reasoningSpanOpen = false;
+      this.generation = undefined;
     }
     this.turnId = turnId;
   }
@@ -56,6 +59,8 @@ export class AgentEventAdapter {
 
   ingest(event: AgentEvent): void {
     switch (event.type) {
+      case "model-submitted":
+        return;
       case "turn-start":
         this.push("turn-started", {
           prompt: event.prompt,
@@ -281,19 +286,29 @@ export class AgentEventAdapter {
           afterTokens: event.afterTokens,
         });
         return;
+      case "generation-completed":
+        this.generation = addGenerationMetrics(this.generation, event.metrics);
+        return;
       case "turn-end":
         this.push("turn-ended", {
           finalAnswer: event.finalAnswer,
           steps: event.steps,
+          ...(this.generation ? { generation: this.generation } : {}),
         });
         return;
       case "turn-aborted": {
         const reason = this.getAbortReason?.();
-        this.push("turn-aborted", reason ? { reason } : {});
+        this.push("turn-aborted", {
+          ...(reason ? { reason } : {}),
+          ...(this.generation ? { generation: this.generation } : {}),
+        });
         return;
       }
       case "turn-error":
-        this.push("turn-error", { message: event.message });
+        this.push("turn-error", {
+          message: event.message,
+          ...(this.generation ? { generation: this.generation } : {}),
+        });
         return;
       default: {
         const unreachable: never = event;

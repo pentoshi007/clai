@@ -3,6 +3,7 @@ import type { ToolCallId, TurnId } from "../../app/events/app-event.js";
 import type { TranscriptItem as PersistedTranscriptItem } from "../../app/ports/transcript-item.js";
 import type { FileChange } from "../../tools/file-diff.js";
 import type { LineChangeTotals } from "../../app/controllers/session-changes.js";
+import type { GenerationMetrics } from "../../llm/generation-metrics.js";
 import type { StripStream } from "../rendering/incremental-strip.js";
 
 interface ItemBase {
@@ -114,6 +115,7 @@ export interface TurnSummaryItem extends ItemBase {
   readonly durationMs: number;
   readonly status: "completed" | "aborted" | "error";
   readonly changes?: LineChangeTotals | undefined;
+  readonly generation?: GenerationMetrics | undefined;
 }
 
 export type TranscriptItem =

@@ -16,6 +16,7 @@ import { defaultPagerMarkdownMode } from "./pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "./pager-source.js";
 import type { PagerBodyRegions } from "./pager-regions.js";
 import { presentFsReadArgs } from "./tool-presenter.js";
+import { createToolOutputPagerSource } from "./tool-output-pager-source.js";
 
 interface SearchHit {
   readonly title?: string | undefined;
@@ -223,10 +224,18 @@ export async function openToolOutputPager(
   services: AppServices,
   item: Pick<ToolItem, "toolCallId" | "name" | "argsDisplay" | "artifactPath"> & {
     readonly fileChanges?: ToolItem["fileChanges"];
+    readonly status?: ToolItem["status"];
   },
   options: OpenToolOutputOptions = {},
 ): Promise<void> {
   try {
+    if ((item.status === "running" || item.status === "queued") && options.bodyOverride === undefined && !options.fileChange) {
+      const label = cleanArgsLabel(item.name, item.argsDisplay);
+      const header = label ? `${item.name === "shell.exec" ? "command" : "query"}: ${label}\n\n` : "";
+      const source = createToolOutputPagerSource(services, item, (raw) => `${header}${formatToolPagerBody(raw) || "(no output yet)"}`);
+      services.overlay.openPager(options.titleOverride ?? toolPagerTitle(item.name, item.argsDisplay), "", source, undefined, "plain");
+      return;
+    }
     const fileChange =
       options.fileChange ??
       (item.fileChanges && item.fileChanges.length === 1

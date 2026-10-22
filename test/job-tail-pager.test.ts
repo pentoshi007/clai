@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { liveJob } from "./fixtures/live-pagers.js";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -108,6 +109,37 @@ describe("artifact source tail", () => {
 });
 
 describe("job tail source", () => {
+  it("observes writes after job events, rotations, and the final status, then releases its watchers", async () => {
+    const dir = workspace();
+    const path = join(dir, "job.log");
+    const rotated = `${path}.1`;
+    writeFileSync(path, "boot\n");
+    const job = liveJob(path);
+    const source = createJobTailPagerSource({ jobs: job.port, jobId: "job-1" })!;
+    let body = "";
+    const unwatch = source.watch!(() => {
+      void source.readTail!().then((page) => { body = page.body; }).catch(() => undefined);
+    });
+    try {
+      job.emit();
+      await expect.poll(() => body).toBe("boot\n");
+      appendFileSync(path, "delayed write\n");
+      await expect.poll(() => body).toContain("delayed write");
+      job.update({ artifacts: { stdout: receipt(path, [path, rotated]), stderr: receipt(join(dir, "job.err")) } });
+      writeFileSync(rotated, "rotated output\n");
+      await expect.poll(() => body).toBe("rotated output\n");
+      job.update({ status: "exited", exitCode: 0 });
+      expect(source.isGrowing?.()).toBe(false);
+      appendFileSync(rotated, "last flushed line\n");
+      await expect.poll(() => body).toContain("last flushed line");
+      source.dispose();
+      expect(job.listeners()).toBe(0);
+      expect(() => source.readTail!()).toThrow("disposed");
+      unwatch();
+      expect(job.listeners()).toBe(0);
+    } finally { source.dispose(); }
+  });
+
   it("follows a job artifact and reports growth", async () => {
     const dir = workspace();
     const target = job(dir);
