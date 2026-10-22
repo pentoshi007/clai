@@ -45,6 +45,9 @@ describe("Classic context chip", () => {
     const h = await mount(columns);
     const region = h.wiring.contextLimitHitRegion!;
     const frame = view!.lastFrame()!.split("\n");
+    const composerRight = frame.findLast((line) => line.includes("╮"))!.lastIndexOf("╮");
+    expect(region.left + region.width).toBe(composerRight);
+    expect(frame[region.top]?.trimEnd().length).toBe(composerRight);
     expect(frame[region.top]?.slice(region.left, region.left + region.width)).toMatch(/(?:ctx )?0(?:\/200k)?/);
     h.wiring.handleMouse(mouse(region.left, region.top));
     expect(h.wiring.contextLimitEditingValue).toBe(true);

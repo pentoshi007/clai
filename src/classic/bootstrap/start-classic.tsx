@@ -13,6 +13,8 @@ import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import { EXIT_SUMMARY_RESET } from "../../os/screen-sequences.js";
 import { writeTerminalAndWait } from "../../os/terminal-write.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
+import { reportFatalError } from "../../ui-core/bootstrap/fatal-diagnostics.js";
+import { formatRuntimeError } from "../../os/runtime-error.js";
 import { shutdownServices } from "../../ui-core/bootstrap/shutdown-services.js";
 import {
   applyResumeResolution,
@@ -191,9 +193,10 @@ export async function startClassic(
     },
     onError: (error) => {
       console.error(
-        `clai classic error: ${error instanceof Error ? error.message : String(error)}`,
+        `clai classic error: ${formatRuntimeError(error)}`,
       );
     },
+    onFatal: reportFatalError,
   });
   lifecycleRef.current = lifecycle;
   if (runtimeBridge) {

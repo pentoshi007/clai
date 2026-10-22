@@ -83,6 +83,7 @@ export function TranscriptRowImpl(props: {
         <ThinkingBlock
           item={item}
           theme={theme}
+          colorMode={services.capabilities.colorMode}
           expanded={expanded}
           contentWidth={contentWidth}
           focused={thinkingFocused ?? false}

@@ -45,6 +45,11 @@ if (bun && process.env.CLAI_FORCE_NODE !== "1") {
     cwd: root,
     env: process.env,
   });
+  if (result.error) {
+    console.error(`clai: could not start Bun: ${result.error.message}`);
+  } else if (result.signal && ["SIGSEGV", "SIGILL", "SIGBUS", "SIGABRT"].includes(result.signal)) {
+    console.error(`clai: Bun crashed (${result.signal}). Try bun run dev -- --classic and report the signal if it repeats.`);
+  }
   process.exit(result.status ?? 1);
 }
 
@@ -66,3 +71,7 @@ const child = spawn(
   },
 );
 child.on("exit", (code) => process.exit(code ?? 1));
+child.on("error", (error) => {
+  console.error(`clai: could not start the Node development runner: ${error.message}`);
+  process.exitCode = 1;
+});

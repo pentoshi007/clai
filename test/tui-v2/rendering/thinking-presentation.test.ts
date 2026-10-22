@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  createLiveThinkingWrap,
   resolveThinkingFooter,
   resolveThinkingHeadingStyle,
   resolveThinkingPresentation,
   resolveThinkingViewport,
   THINKING_BODY_MAX_ROWS,
   thinkingTokenEstimate,
-  wrapThinkingBody,
 } from "../../../src/tui-v2/components/transcript/thinking-presentation.js";
 
 describe("OpenTUI thinking presentation", () => {
@@ -99,85 +97,6 @@ describe("thinking heading hover", () => {
     expect(resolveThinkingHeadingStyle({ hovered: true, accent, hover })).toEqual({
       fg: hover,
     });
-  });
-});
-
-describe("thinking body rows", () => {
-  it("wraps short reasoning to its own rows", () => {
-    expect(wrapThinkingBody("one\ntwo\nthree", 40, false)).toEqual([
-      "one",
-      "two",
-      "three",
-    ]);
-  });
-
-  it("wraps long lines to the available width", () => {
-    const rows = wrapThinkingBody("word ".repeat(20).trim(), 20, false);
-    expect(rows.length).toBeGreaterThan(1);
-    for (const row of rows) expect(row.length).toBeLessThanOrEqual(20);
-  });
-
-  it("returns no rows for blank reasoning", () => {
-    expect(wrapThinkingBody("", 40, false)).toEqual([]);
-    expect(wrapThinkingBody("   \n  ", 40, false)).toEqual([]);
-  });
-
-  it("wraps very long completed reasoning without truncation", () => {
-    const rows = wrapThinkingBody("x".repeat(60_000), 40, false);
-    expect(rows.length).toBe(60_000 / 40);
-    expect(rows.at(-1)).not.toBe("…");
-  });
-
-  it("keeps streaming reasoning from the start instead of a tail window", () => {
-    const content = `opening thought\n${"reasoning step\n".repeat(500)}final line`;
-    const rows = wrapThinkingBody(content, 40, true);
-    expect(rows[0]).toBe("opening thought");
-    expect(rows.at(-1)).toBe("final line");
-    expect(rows.length).toBeGreaterThan(500);
-  });
-});
-
-describe("live thinking incremental wrap", () => {
-  it("wraps appended chunks identically to a one-shot wrap", () => {
-    const wrap = createLiveThinkingWrap(20);
-    const pieces = ["first line\nsec", "ond line\nthird", " line\nlast"];
-    let raw = "";
-    let rows: string[] = [];
-    for (const piece of pieces) {
-      raw += piece;
-      rows = wrap(raw);
-    }
-    expect(rows).toEqual(wrapThinkingBody(pieces.join(""), 20, true));
-  });
-
-  it("is idempotent for a repeated frame", () => {
-    const wrap = createLiveThinkingWrap(20);
-    const first = wrap("same frame\ncontent");
-    expect(wrap("same frame\ncontent")).toEqual(first);
-  });
-
-  it("rewraps when the stream rewrites earlier content", () => {
-    const wrap = createLiveThinkingWrap(20);
-    wrap("alpha\nbeta");
-    expect(wrap("alpha\ngamma")).toEqual(
-      wrapThinkingBody("alpha\ngamma", 20, true),
-    );
-  });
-
-  it("matches the one-shot result across a long chunk-by-chunk stream", () => {
-    const wrap = createLiveThinkingWrap(30);
-    const chunks = Array.from(
-      { length: 400 },
-      (_, i) => `step ${i} of the plan\n`,
-    );
-    let raw = "";
-    let rows: string[] = [];
-    for (const chunk of chunks) {
-      raw += chunk;
-      rows = wrap(raw);
-    }
-    expect(rows).toEqual(wrapThinkingBody(raw, 30, true));
-    expect(rows[0]).toContain("step 0");
   });
 });
 

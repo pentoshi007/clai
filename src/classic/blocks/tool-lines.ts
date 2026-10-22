@@ -39,7 +39,7 @@ export function toolSuffix(ctx: BlockContext, item: ToolItem, statusLabel: strin
   const label = item.status === "ok" ? undefined : toolStatusText(statusLabel);
   const token = item.status === "failed" || item.status === "blocked" ? "diffDel" : "hint";
   const elapsed = toolElapsed(ctx, item);
-  return joinMeta(ctx, [label ? ctx.ink.fg(token, label) : undefined, elapsed ? ctx.ink.fg("userBorder", elapsed) : undefined]);
+  return joinMeta(ctx, [label ? ctx.ink.fg(token, label) : undefined, elapsed ? ctx.ink.fg(TOOL_STATUS_TOKEN[item.status], elapsed) : undefined]);
 }
 
 export function hintRows(ctx: BlockContext, indent: string, text: string): string[] {

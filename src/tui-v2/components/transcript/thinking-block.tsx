@@ -13,38 +13,44 @@ import {
   type MouseEvent,
 } from "@opentui/core";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
+import type { ColorMode } from "../../../app/ports/terminal-port.js";
 import { renderColumns } from "../../../ui-core/rendering/text-width.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import { thinkingElapsedLabel } from "../../../ui-core/rendering/duration.js";
 import type { ThinkingItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { liveThinkingFull } from "../../../ui-core/rendering/thinking-tail.js";
 import {
-  createLiveThinkingWrap,
+  EMPTY_MARKDOWN_STREAM_CACHE,
+  type MarkdownStreamCache,
+} from "../../../ui-core/rendering/streaming-markdown.js";
+import {
+  renderStyledMarkdownLines,
+  renderStyledStreamingMarkdown,
+  styleAnsiLine,
+  styledLinesWeight,
+  type StyledLine,
+} from "../../rendering/styled-markdown.js";
+import {
   resolveThinkingFooter,
   resolveThinkingHeadingStyle,
   resolveThinkingPresentation,
   resolveThinkingViewport,
   THINKING_BODY_MAX_ROWS,
-  wrapThinkingBody,
 } from "./thinking-presentation.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
-import { ObjectRenderCache } from "../../../ui-core/rendering/object-render-cache.js";
+import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
 
 const WHEEL_ROWS = 3;
 
-const FINISHED_ROWS = new ObjectRenderCache<ThinkingItem, readonly string[]>(16 * 1024 * 1024);
-
-function rowsWeight(rows: readonly string[]): number {
-  let weight = 0;
-  for (const row of rows) weight += row.length * 2 + 32;
-  return weight;
-}
+const FINISHED_ROWS = new ObjectRenderCache<ThinkingItem, StyledLine[]>(16 * 1024 * 1024);
 const DRAG_SCROLL_ROWS = 2;
 const DRAG_SCROLL_MS = 45;
 
 export function ThinkingBlock(props: {
   item: ThinkingItem;
   theme: Theme;
+  colorMode: ColorMode;
   expanded: boolean;
   contentWidth?: number | undefined;
   onToggle: () => void;
@@ -55,6 +61,7 @@ export function ThinkingBlock(props: {
   const {
     item,
     theme,
+    colorMode,
     expanded,
     contentWidth,
     onToggle,
@@ -80,19 +87,35 @@ export function ThinkingBlock(props: {
     () => sanitizeDisplayText(item.content).replace(/\r\n/g, "\n"),
     [item.content],
   );
-  const liveWrap = useMemo(() => createLiveThinkingWrap(bodyWidth), [bodyWidth]);
-  const lines = useMemo(
-    () =>
-      item.streaming
-        ? liveWrap(content)
-        : FINISHED_ROWS.resolve(
-            item,
-            String(bodyWidth),
-            () => wrapThinkingBody(content, bodyWidth, false),
-            rowsWeight,
-          ),
-    [item, content, bodyWidth, liveWrap],
-  );
+  const markdownCache = useRef<MarkdownStreamCache>(EMPTY_MARKDOWN_STREAM_CACHE);
+  const bodyColor = focused ? theme.thinking : theme.thinkingDim;
+  const lines = useMemo(() => {
+    const options = {
+      width: bodyWidth + 2,
+      defaultFg: bodyColor,
+      stripOuterIndent: true,
+      theme,
+      colorMode,
+    };
+    if (!content.trim()) return [];
+    if (!item.streaming) {
+      markdownCache.current = EMPTY_MARKDOWN_STREAM_CACHE;
+      return FINISHED_ROWS.resolve(
+        item,
+        `${bodyWidth}|${bodyColor}|${colorMode}|${objectIdentity(theme)}`,
+        () => renderStyledMarkdownLines(content, options),
+        styledLinesWeight,
+      );
+    }
+    const rendered = renderStyledStreamingMarkdown({
+      text: liveThinkingFull(content),
+      streaming: true,
+      options,
+      cache: markdownCache.current,
+    });
+    markdownCache.current = rendered.cache;
+    return rendered.lines;
+  }, [item, content, bodyWidth, bodyColor, theme, colorMode]);
   const viewport = resolveThinkingViewport({
     lineCount: lines.length,
     offset: item.streaming && followTail.current
@@ -102,10 +125,8 @@ export function ThinkingBlock(props: {
   });
   const visibleRows = useMemo(
     () =>
-      lines
-        .slice(viewport.offset, viewport.offset + viewport.rows)
-        .map((row) => row + " ".repeat(Math.max(0, bodyWidth - renderColumns(row)))),
-    [lines, viewport.offset, viewport.rows, bodyWidth],
+      lines.slice(viewport.offset, viewport.offset + viewport.rows),
+    [lines, viewport.offset, viewport.rows],
   );
   offsetRef.current = viewport.offset;
   lineCountRef.current = lines.length;
@@ -298,7 +319,9 @@ export function ThinkingBlock(props: {
     );
   }
 
-  const bodyRows = visibleRows.length > 0 ? visibleRows : ["Waiting for reasoning…"];
+  const bodyRows = visibleRows.length > 0
+    ? visibleRows
+    : [styleAnsiLine("Waiting for reasoning…", bodyColor)];
   const scrollHint = resolveThinkingFooter({
     focused,
     hiddenAbove: viewport.hiddenAbove,
@@ -348,9 +371,8 @@ export function ThinkingBlock(props: {
             width: bodyWidth,
             height: 1,
             flexShrink: 0,
-            fg: focused ? theme.thinking : theme.thinkingDim,
+            fg: bodyColor,
             bg: theme.thinkingBg,
-            attributes: TextAttributes.ITALIC,
           }}
         />
       ))}

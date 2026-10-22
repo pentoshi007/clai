@@ -30,7 +30,13 @@ const HINT_LABELS: Readonly<Record<IdleHintId, string>> = {
 };
 
 
-export const STATUS_INSET_COLUMNS = 1;
+export const STATUS_INSET_COLUMNS = 0;
+const STATUS_RIGHT_INSET_COLUMNS = STATUS_INSET_COLUMNS + 1;
+
+export function insetRow(text: string): string {
+  const pad = " ".repeat(STATUS_INSET_COLUMNS);
+  return `${pad}${text}${pad}`;
+}
 
 export interface StatusViewInput {
   readonly ink: InkTheme;
@@ -97,11 +103,11 @@ export function contextLimitChipColumns(
 ): { readonly left: number; readonly width: number } | undefined {
   if (input.contextLimitEditing || input.allocatedRows <= 0) return undefined;
   const columns = Math.max(1, Math.floor(input.columns));
-  const contentWidth = Math.max(1, columns - STATUS_INSET_COLUMNS * 2);
+  const contentWidth = Math.max(1, columns - STATUS_INSET_COLUMNS - STATUS_RIGHT_INSET_COLUMNS);
   const chip = contextSegment(input, statusDensityForWidth(columns));
   const width = chip === undefined ? 0 : layoutWidth(chip);
   if (width === 0 || width + 2 > contentWidth) return undefined;
-  return { left: columns - STATUS_INSET_COLUMNS - width, width };
+  return { left: columns - STATUS_RIGHT_INSET_COLUMNS - width, width };
 }
 
 const MODE_PLATE: Readonly<Record<Mode, ThemeToken>> = {
@@ -111,10 +117,12 @@ const MODE_PLATE: Readonly<Record<Mode, ThemeToken>> = {
 };
 
 function modeBadge(input: StatusViewInput): string {
-  return input.ink.plate(
-    MODE_PLATE[input.mode],
-    ` ${modeIndicatorPresentation(input.mode).label} `,
-  );
+  const token = MODE_PLATE[input.mode];
+  const label = modeIndicatorPresentation(input.mode).label;
+  if (input.ink.unicode && input.ink.inkColor(token) !== undefined) {
+    return `${input.ink.fg(token, "▐")}${input.ink.plate(token, `${label} `)}`;
+  }
+  return input.ink.plate(token, ` ${label} `);
 }
 
 function separator(input: StatusViewInput): string {
@@ -191,21 +199,21 @@ export function statusRows(input: StatusViewInput): readonly string[] {
   const density = statusDensityForWidth(input.columns);
   const inset = STATUS_INSET_COLUMNS;
   const outer = Math.max(1, Math.floor(input.columns));
-  const width = Math.max(1, outer - inset * 2);
+  const width = Math.max(1, outer - inset - STATUS_RIGHT_INSET_COLUMNS);
   if (input.contextLimitEditing === true) {
     const editor = contextLimitEditorLabel(
       input.ink,
       { editing: true, draft: input.contextLimitDraft ?? "" },
       Math.max(1, width - 1),
     );
-    return [` ${clipToWidth(editor, Math.max(1, width - 1), input.ink.glyphs.ellipsis)} `];
+    return [insetRow(clipToWidth(editor, Math.max(1, width - 1), input.ink.glyphs.ellipsis))];
   }
 
   const busy = input.running || input.compacting;
   const right = contextSegment(input, density) ?? "";
 
   if (density === "xs") {
-    return [` ${alignEnds(modeBadge(input), right, width, input.ink.glyphs.ellipsis)} `];
+    return [insetRow(alignEnds(modeBadge(input), right, width, input.ink.glyphs.ellipsis))];
   }
 
   const sep = separator(input);
@@ -218,5 +226,5 @@ export function statusRows(input: StatusViewInput): readonly string[] {
     left === "" && right === ""
       ? ""
       : alignEnds(left, right, width, input.ink.glyphs.ellipsis);
-  return [` ${aligned} `];
+  return [insetRow(aligned)];
 }

@@ -1,9 +1,19 @@
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { thinkingElapsedLabel } from "../../ui-core/rendering/duration.js";
+import {
+  EMPTY_MARKDOWN_STREAM_CACHE,
+  renderStreamingMarkdown,
+  type MarkdownStreamCache,
+} from "../../ui-core/rendering/streaming-markdown.js";
 import { isItemExpanded, type ThinkingItem } from "../../ui-core/state/transcript-types.js";
 import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
 import { appendDisclosure } from "./disclosure-lines.js";
-import { logicalOutputLines, outputBodyRows } from "./output-lines.js";
+import { outputBodyRows } from "./output-lines.js";
+
+export interface ThinkingLinesResult {
+  readonly lines: string[];
+  readonly cache: MarkdownStreamCache;
+}
 
 function thinkingTokenLabel(content: string): string | undefined {
   if (!content.trim()) return undefined;
@@ -11,8 +21,12 @@ function thinkingTokenLabel(content: string): string | undefined {
 }
 
 export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): string[] {
+  return renderThinkingLines(ctx, item).lines;
+}
+
+export function renderThinkingLines(ctx: BlockContext, item: ThinkingItem): ThinkingLinesResult {
   const content = sanitizeDisplayText(item.content);
-  if (!content.trim() && !item.streaming) return [];
+  if (!content.trim() && !item.streaming) return { lines: [], cache: EMPTY_MARKDOWN_STREAM_CACHE };
   const expanded = isItemExpanded(ctx.state, item);
   const elapsed = thinkingElapsedLabel(item, ctx.now);
   const mark = ctx.ink.unicode ? "•" : "*";
@@ -25,9 +39,18 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
   ]);
   const lines = [clipRow(ctx, head)];
   appendDisclosure(ctx, lines, expanded, { chord: "Ctrl+T", inline: true });
-  if (expanded) {
-    const body = outputBodyRows(ctx, logicalOutputLines(content), true, { token: "thinking", branch: false });
-    lines.push(...body);
-  }
-  return lines;
+  if (!expanded) return { lines, cache: EMPTY_MARKDOWN_STREAM_CACHE };
+  const rendered = renderStreamingMarkdown({
+    text: content,
+    streaming: item.streaming,
+    options: {
+      width: Math.max(20, ctx.width - 2),
+      stripOuterIndent: true,
+      theme: ctx.ink.theme,
+      colorMode: ctx.ink.colorMode,
+    },
+    cache: ctx.markdownCache ?? EMPTY_MARKDOWN_STREAM_CACHE,
+  });
+  lines.push(...outputBodyRows(ctx, rendered.lines, true, { token: "thinking", branch: false }));
+  return { lines, cache: rendered.cache };
 }

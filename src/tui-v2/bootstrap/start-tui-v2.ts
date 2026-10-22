@@ -16,6 +16,8 @@ import {
 } from "../../ui-core/bootstrap/theme-mode-cache.js";
 import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
+import { reportFatalError } from "../../ui-core/bootstrap/fatal-diagnostics.js";
+import { formatRuntimeError } from "../../os/runtime-error.js";
 import { shutdownServices } from "../../ui-core/bootstrap/shutdown-services.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import {
@@ -235,9 +237,10 @@ export async function startTuiV2(
     },
     onError: (error) => {
       console.error(
-        `clai v2 error: ${error instanceof Error ? error.message : String(error)}`,
+        `clai v2 error: ${formatRuntimeError(error)}`,
       );
     },
+    onFatal: reportFatalError,
   });
   lifecycleRef.current = lifecycle;
 

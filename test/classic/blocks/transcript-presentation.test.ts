@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ColorMode } from "../../../src/app/ports/terminal-port.js";
-import { buildToolLines } from "../../../src/classic/blocks/tool-lines.js";
+import { buildToolLines, TOOL_STATUS_TOKEN } from "../../../src/classic/blocks/tool-lines.js";
 import { buildThinkingLines } from "../../../src/classic/blocks/thinking-lines.js";
 import { blockContextFor } from "../../../src/classic/feed/feed-blocks.js";
 import { createInkTheme } from "../../../src/classic/render/ink-theme.js";
@@ -19,12 +19,12 @@ function fixture(colorMode: ColorMode, expanded = false) {
 }
 
 describe("classic transcript presentation", () => {
-  it.each(modes)("uses the ctx color for tool durations and subdued disclosures in %s", (mode) => {
+  it.each(modes)("colors tool durations by status and keeps disclosures subdued in %s", (mode) => {
     const { turn, ctx } = fixture(mode);
     const item = transcriptItems(turn.state).find((entry): entry is ToolItem => entry.kind === "tool" && entry.name === "shell.exec")!;
     for (const status of ["running", "ok", "failed"] as const) {
       const rows = buildToolLines({ ...ctx, now: item.timestamp + 1200 }, { ...item, status, endedAt: item.timestamp + 1200 });
-      expect(rows[0]).toContain(ctx.ink.fg("userBorder", "1.2s"));
+      expect(rows[0]).toContain(ctx.ink.fg(TOOL_STATUS_TOKEN[status], "1.2s"));
       expect(rows.at(-1)).toContain(ctx.ink.fg("hint", "+ click to expand"));
       if (mode !== "none") expect(rows.at(-1)).not.toContain(ctx.ink.fg("inputBorder", "+ click to expand"));
     }

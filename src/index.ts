@@ -33,6 +33,7 @@ import { warnOnce } from "./ui/warn-once.js";
 import { tryRunDurableInteractive } from "./session-runtime/client.js";
 import { RUNTIME_HOST_ENV, isIndependentRuntimeChild, runtimeChildSessionId } from "./session-runtime/launch.js";
 import { listLiveSessionRuntimes } from "./session-runtime/discovery.js";
+import { formatRuntimeError } from "./os/runtime-error.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -211,7 +212,7 @@ async function oneShot(
 
 function printError(error: unknown): void {
   console.error(
-    chalk.red(error instanceof Error ? error.message : String(error)),
+    chalk.red(formatRuntimeError(error)),
   );
 }
 
@@ -869,10 +870,10 @@ main().catch((error) => {
 });
 
 process.on('uncaughtException', (err) => {
-  try { console.error(`clai: uncaught error: ${err?.message ?? err}`); } catch { }
+  try { console.error(`clai: uncaught error: ${formatRuntimeError(err)}`); } catch { }
   process.exitCode = 1;
 });
 process.on('unhandledRejection', (reason) => {
-  try { console.error(`clai: unhandled rejection: ${reason}`); } catch { }
+  try { console.error(`clai: unhandled rejection: ${formatRuntimeError(reason)}`); } catch { }
   process.exitCode = 1;
 });

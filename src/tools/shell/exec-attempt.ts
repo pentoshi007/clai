@@ -9,7 +9,6 @@ import {
   binarySuppressionNotice,
   DEFAULT_TIMEOUT_MS,
   launchErrorOutput,
-  redactArtifactInPlace,
 } from "./internals.js";
 import type { ShellExecArgs } from "../shell.js";
 import {
@@ -22,7 +21,6 @@ import {
   takeOverCookedStdin,
 } from "./capture.js";
 import { spawn } from "node:child_process";
-import type { WriteStream } from "node:fs";
 import { stat } from "node:fs/promises";
 
 export interface ShellExecAttemptResult extends ToolResult {
@@ -96,7 +94,7 @@ export async function shellExecAttempt(
     const shell = resolveShell();
     if (!shell) {
       restoreStdin();
-      if (artifact) artifact.stream.end();
+      artifact?.end();
       resolve({
         ok: false,
         exitCode: 127,
@@ -123,9 +121,7 @@ export async function shellExecAttempt(
       if (forceKill) clearTimeout(forceKill);
       args.signal?.removeEventListener("abort", abort);
       restoreStdin();
-      if (artifact) {
-        artifact.stream.end();
-      }
+      artifact?.end();
     };
 
     const append = (chunk: Buffer, stream: "stdout" | "stderr"): void => {
@@ -135,13 +131,13 @@ export async function shellExecAttempt(
       linesRead += text.split("\n").length - 1;
       if (artifact && !captureLimitHit) {
         if (bytesRead <= maxCaptureBytes) {
-          artifact.stream.write(text);
+          artifact.write(text);
         } else {
           const overflow = bytesRead - maxCaptureBytes;
           const allowed = text.length - overflow;
-          if (allowed > 0) artifact.stream.write(text.slice(0, allowed));
+          if (allowed > 0) artifact.write(text.slice(0, allowed));
           captureLimitHit = true;
-          artifact.stream.end();
+          artifact.end();
         }
       }
       if (head.length < halfModel) {
@@ -240,29 +236,17 @@ export async function shellExecAttempt(
       } else {
         const omittedBytes = bytesRead - inMemory;
         combined =
-          `${trimmedHead}\n... (${omittedBytes.toLocaleString()} bytes / ~${linesRead.toLocaleString()} lines truncated — full output in artifact) ...\n${trimmedTail}`.trim();
+          `${trimmedHead}\n... (${omittedBytes.toLocaleString()} bytes / ~${linesRead.toLocaleString()} lines truncated) ...\n${trimmedTail}`.trim();
       }
 
       // Always redact before exposing the bounded text to callers.
       const output = decoder.isBinary
-        ? binarySuppressionNotice(bytesRead, artifact?.path)
+        ? binarySuppressionNotice(bytesRead, undefined)
         : redactSecrets(combined);
 
-      // Redact the on-disk artifact too so `/output last` and any later
       const finalize = (result: ToolResult): void => {
         if (artifact) {
-          // Wait for the artifact write stream to flush, then redact in
-          const onFlushed = (): void => {
-            void redactArtifactInPlace(artifact.path).then(() =>
-              resolve(result),
-            );
-          };
-          if ((artifact.stream as WriteStream).writableFinished) {
-            onFlushed();
-          } else {
-            artifact.stream.once("finish", onFlushed);
-            artifact.stream.once("error", onFlushed);
-          }
+          void artifact.finalize(result).then(resolve);
         } else {
           resolve(result);
         }
@@ -274,7 +258,6 @@ export async function shellExecAttempt(
           output: output ? `${output}\nCommand aborted.` : "Command aborted.",
           exitCode: 130,
           runFailure: true,
-          ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: bytesRead > inMemory,
           stats,
         });
@@ -288,7 +271,6 @@ export async function shellExecAttempt(
             : "Command timed out.",
           exitCode: 124,
           runFailure: true,
-          ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: bytesRead > inMemory,
           stats,
         });
@@ -302,7 +284,6 @@ export async function shellExecAttempt(
             : "Command exceeded capture cap.",
           exitCode: 137,
           runFailure: true,
-          ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: true,
           stats,
         });
@@ -323,7 +304,6 @@ export async function shellExecAttempt(
           : output,
         exitCode: code ?? undefined,
         runFailure: false,
-        ...(artifact ? { outputPath: artifact.path } : {}),
         truncated: bytesRead > inMemory,
         stats,
       });

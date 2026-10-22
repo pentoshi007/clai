@@ -148,8 +148,8 @@ export function ContextLimitChip(props: {
         flexDirection: "row",
         flexShrink: 0,
         backgroundColor: shown ? theme.selection : theme.background,
-        paddingLeft: 1,
-        paddingRight: 1,
+        paddingLeft: 0,
+        paddingRight: 0,
       }}
     >
       <text

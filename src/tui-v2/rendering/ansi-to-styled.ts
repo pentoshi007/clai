@@ -3,8 +3,17 @@ import { RGBA, StyledText, TextAttributes } from "@opentui/core";
 import type { TextChunk } from "@opentui/core";
 import { copyString } from "../../os/copy-string.js";
 
-const BOLD = TextAttributes.BOLD;
-const DIM = TextAttributes.DIM;
+const SGR_ATTRIBUTES: Readonly<Record<number, readonly [number, boolean]>> = {
+  1: [TextAttributes.BOLD, true],
+  2: [TextAttributes.DIM, true],
+  3: [TextAttributes.ITALIC, true],
+  4: [TextAttributes.UNDERLINE, true],
+  9: [TextAttributes.STRIKETHROUGH, true],
+  22: [TextAttributes.BOLD | TextAttributes.DIM, false],
+  23: [TextAttributes.ITALIC, false],
+  24: [TextAttributes.UNDERLINE, false],
+  29: [TextAttributes.STRIKETHROUGH, false],
+};
 
 const BASIC_FG: Record<number, [number, number, number]> = {
   30: [0, 0, 0],
@@ -116,11 +125,8 @@ export function ansiToStyledText(
         clearBg: () => {
           bg = undefined;
         },
-        setBold: (on) => {
-          attributes = on ? attributes | BOLD : attributes & ~BOLD;
-        },
-        setDim: (on) => {
-          attributes = on ? attributes | DIM : attributes & ~DIM;
+        setAttribute: (mask, on) => {
+          attributes = on ? attributes | mask : attributes & ~mask;
         },
         reset: () => {
           fg = undefined;
@@ -146,8 +152,7 @@ interface SgrSink {
   setBg(c: RGBA): void;
   clearFg(): void;
   clearBg(): void;
-  setBold(on: boolean): void;
-  setDim(on: boolean): void;
+  setAttribute(mask: number, on: boolean): void;
   reset(): void;
 }
 
@@ -160,19 +165,9 @@ function applySgr(parts: number[], sink: SgrSink): void {
       i++;
       continue;
     }
-    if (code === 1) {
-      sink.setBold(true);
-      i++;
-      continue;
-    }
-    if (code === 2) {
-      sink.setDim(true);
-      i++;
-      continue;
-    }
-    if (code === 22) {
-      sink.setBold(false);
-      sink.setDim(false);
+    const attribute = SGR_ATTRIBUTES[code];
+    if (attribute) {
+      sink.setAttribute(...attribute);
       i++;
       continue;
     }

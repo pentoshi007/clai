@@ -74,13 +74,16 @@ describe("status rows", () => {
     for (const state of STATES) {
       it(`width=${width} · ${state.name} fits and matches its golden`, () => {
         const rows = statusRows(base(width, state.overrides));
-        for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(width);
+        for (const row of rows) {
+          expect(displayWidth(row)).toBeLessThanOrEqual(width);
+          expect(displayWidth(plainText(row).trimEnd())).toBe(width - 1);
+        }
         expect(rows.map(plainText)).toMatchSnapshot();
       });
     }
   }
 
-  it("keeps exactly one row at every width, badge left and context flush right", () => {
+  it("keeps exactly one row at every width, badge left and context inside the right border", () => {
     for (const width of WIDTHS) {
       const rows = statusRows(base(width));
       expect(rows).toHaveLength(1);

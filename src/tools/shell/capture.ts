@@ -1,12 +1,8 @@
-import { getArtifactDir } from "../../store/paths.js";
 import { looksInteractiveStdin } from "../shell.js";
 import { allowInteractiveStdinInherit } from "./internals.js";
-import { safeArtifactName } from "./artifact-name.js";
-import { createWriteStream } from "node:fs";
-import type { WriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+
+export { openArtifact } from "./artifact.js";
 
 export const DEFAULT_MAX_MODEL_BYTES = 12_000;
 
@@ -51,32 +47,6 @@ export function takeOverCookedStdin(): () => void {
     } catch {
     }
   };
-}
-
-export async function openArtifact(
-  command: string,
-  override?: string,
-): Promise<
-  | {
-      path: string;
-      stream: WriteStream;
-    }
-  | undefined
-> {
-  try {
-    const dir = override ? join(override, "..") : getArtifactDir();
-    await mkdir(dir, { recursive: true, mode: 0o700 });
-    const path =
-      override ??
-      join(
-        dir,
-        `${new Date().toISOString().replace(/[:.]/g, "-")}-${safeArtifactName(command)}.txt`,
-      );
-    const stream = createWriteStream(path, { flags: "w", mode: 0o600 });
-    return { path, stream };
-  } catch {
-    return undefined;
-  }
 }
 
 export class OutputDecoder {
