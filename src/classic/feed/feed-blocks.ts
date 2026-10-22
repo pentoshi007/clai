@@ -17,7 +17,7 @@ import { buildCompactedLines } from "../blocks/compacted-lines.js";
 import { buildDiffLines } from "../blocks/diff-lines.js";
 import { buildIntroLines, type IntroBlockInput } from "../blocks/intro-lines.js";
 import { buildNoticeLines } from "../blocks/notice-lines.js";
-import { buildThinkingLines } from "../blocks/thinking-lines.js";
+import { renderThinkingLines } from "../blocks/thinking-lines.js";
 import { buildToolLines } from "../blocks/tool-lines.js";
 import { buildTurnSummaryLines } from "../blocks/turn-summary-lines.js";
 import { buildUserLines } from "../blocks/user-lines.js";
@@ -119,8 +119,13 @@ function renderLines(
       );
       return { lines: result.lines, markdownCache: result.cache };
     }
-    case "thinking":
-      return { lines: buildThinkingLines(ctx, item as Extract<TranscriptItem, { kind: "thinking" }>), markdownCache };
+    case "thinking": {
+      const result = renderThinkingLines(
+        { ...ctx, markdownCache },
+        item as Extract<TranscriptItem, { kind: "thinking" }>,
+      );
+      return { lines: result.lines, markdownCache: result.cache };
+    }
     case "tool":
       return { lines: buildToolLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>), markdownCache };
     case "batch":
@@ -275,7 +280,7 @@ export class FeedBlockCache {
       : undefined;
     next.set(item.id, {
       inputs,
-      markdownCache: item.kind === "assistant" && item.streaming ? rendered.markdownCache : undefined,
+      markdownCache: (item.kind === "assistant" || item.kind === "thinking") && item.streaming ? rendered.markdownCache : undefined,
       block,
     });
     return block;

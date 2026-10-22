@@ -105,6 +105,7 @@ const emitToolResultEvent = (
     event.fileChanges = result.fileChanges;
   }
   emit(event);
+  if (result.warning) emitNotice(emit, "warn", result.warning);
 };
 
 const emitCompactionStarted = (

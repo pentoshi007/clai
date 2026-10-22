@@ -6,7 +6,6 @@ import type { ToolResult, ToolStats } from "../../types.js";
 import {
   benignNoMatchTool,
   DEFAULT_TIMEOUT_MS,
-  redactArtifactInPlace,
 } from "./internals.js";
 import {
   chooseStdio,
@@ -18,7 +17,6 @@ import {
   takeOverCookedStdin,
 } from "./capture.js";
 import { spawn } from "node:child_process";
-import type { WriteStream } from "node:fs";
 
 export interface SpawnArgvArgs {
   command: string;
@@ -89,7 +87,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       if (forceKill) clearTimeout(forceKill);
       args.signal?.removeEventListener("abort", abort);
       restoreStdin();
-      if (artifact) artifact.stream.end();
+      artifact?.end();
     };
 
     const append = (chunk: Buffer, stream: "stdout" | "stderr"): void => {
@@ -99,13 +97,13 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       linesRead += text.split("\n").length - 1;
       if (artifact && !captureLimitHit) {
         if (bytesRead <= maxCaptureBytes) {
-          artifact.stream.write(text);
+          artifact.write(text);
         } else {
           const overflow = bytesRead - maxCaptureBytes;
           const allowed = text.length - overflow;
-          if (allowed > 0) artifact.stream.write(text.slice(0, allowed));
+          if (allowed > 0) artifact.write(text.slice(0, allowed));
           captureLimitHit = true;
-          artifact.stream.end();
+          artifact.end();
         }
       }
       if (head.length < halfModel) {
@@ -190,22 +188,12 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       } else {
         const omittedBytes = bytesRead - inMemory;
         combined =
-          `${trimmedHead}\n... (${omittedBytes.toLocaleString()} bytes / ~${linesRead.toLocaleString()} lines truncated — full output in artifact) ...\n${trimmedTail}`.trim();
+          `${trimmedHead}\n... (${omittedBytes.toLocaleString()} bytes / ~${linesRead.toLocaleString()} lines truncated) ...\n${trimmedTail}`.trim();
       }
       const output = redactSecrets(`$ ${display}\n${combined}`.trimEnd());
       const finalize = (result: ToolResult): void => {
         if (artifact) {
-          const onFlushed = (): void => {
-            void redactArtifactInPlace(artifact.path).then(() =>
-              resolve(result),
-            );
-          };
-          if ((artifact.stream as WriteStream).writableFinished) {
-            onFlushed();
-          } else {
-            artifact.stream.once("finish", onFlushed);
-            artifact.stream.once("error", onFlushed);
-          }
+          void artifact.finalize(result).then(resolve);
         } else {
           resolve(result);
         }
@@ -215,7 +203,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
           ok: false,
           output: output ? `${output}\nCommand aborted.` : "Command aborted.",
           exitCode: 130,
-          ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: bytesRead > inMemory,
           stats,
         });
@@ -228,7 +215,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
             ? `${output}\nCommand timed out.`
             : "Command timed out.",
           exitCode: 124,
-          ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: bytesRead > inMemory,
           stats,
         });
@@ -241,7 +227,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
             ? `${output}\nCommand killed after exceeding capture cap of ${maxCaptureBytes.toLocaleString()} bytes.`
             : "Command exceeded capture cap.",
           exitCode: 137,
-          ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: true,
           stats,
         });
@@ -261,7 +246,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
           ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (${benignNote2}) — not an error]`
           : output,
         exitCode: code ?? undefined,
-        ...(artifact ? { outputPath: artifact.path } : {}),
         truncated: bytesRead > inMemory,
         stats,
       });

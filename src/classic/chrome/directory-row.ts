@@ -3,7 +3,7 @@ import { clipToWidth, middleClipPlain, padToWidth } from "../render/ansi-text.js
 import { jumpToLatestLabel } from "../../ui-core/rendering/jump-to-latest.js";
 import { layoutWidth } from "../render/measure.js";
 import type { InkTheme } from "../render/ink-theme.js";
-import { relativizeHome, STATUS_INSET_COLUMNS } from "./status-rows.js";
+import { insetRow, relativizeHome, STATUS_INSET_COLUMNS } from "./status-rows.js";
 import { queueStatusLabel } from "./queue-rows.js";
 
 interface DirectoryViewInput {
@@ -19,13 +19,13 @@ export function directoryRow(input: DirectoryViewInput): string {
   const icon = input.ink.unicode ? "\ue0a0" : "@";
   const branchText = input.branch === undefined ? "" : `${icon} ${input.branch}`;
   if (branchText === "") {
-    return ` ${input.ink.fg("muted", middleClipPlain(path, width, input.ink.glyphs.ellipsis))} `;
+    return insetRow(input.ink.fg("muted", middleClipPlain(path, width, input.ink.glyphs.ellipsis)));
   }
   const branchBudget = Math.min(layoutWidth(branchText), Math.max(0, width - 2));
   const pathBudget = Math.max(1, width - branchBudget - 2);
   const shownPath = middleClipPlain(path, pathBudget, input.ink.glyphs.ellipsis);
   const branch = clipToWidth(branchText, branchBudget, "");
-  return ` ${input.ink.fg("muted", shownPath)}  ${input.ink.fg("userBorder", branch)} `;
+  return insetRow(`${input.ink.fg("muted", shownPath)}  ${input.ink.fg("userBorder", branch)}`);
 }
 
 interface ComposerDirectoryViewInput extends DirectoryViewInput {
@@ -58,7 +58,7 @@ export function composerDirectoryRow(input: ComposerDirectoryViewInput): string 
   const hints = hasQueueHint && layoutWidth(full) > width ? contextHints(input, true) : full;
   const line = `${dir.trim()}   ${hints}`;
   const shown = layoutWidth(line) <= width ? line : clipToWidth(hints, width, input.ink.glyphs.ellipsis);
-  return clipToWidth(` ${shown} `, columns, input.ink.glyphs.ellipsis);
+  return clipToWidth(insetRow(shown), columns, input.ink.glyphs.ellipsis);
 }
 
 export function composerDirectoryView(input: ComposerDirectoryViewInput & {
@@ -69,7 +69,7 @@ export function composerDirectoryView(input: ComposerDirectoryViewInput & {
   const label = jumpToLatestLabel(Math.min(columns, Math.max(3, Math.floor(columns / 3))), input.ink.unicode);
   if (!label) return { line: composerDirectoryRow(input), jump: undefined };
   const width = layoutWidth(label);
-  const trailing = columns > width ? 1 : 0;
+  const trailing = columns > width ? STATUS_INSET_COLUMNS : 0;
   const left = columns - width - trailing;
   const prefixWidth = Math.max(0, left - 1);
   const prefix = clipToWidth(composerDirectoryRow({ ...input, columns: prefixWidth }), prefixWidth, "");

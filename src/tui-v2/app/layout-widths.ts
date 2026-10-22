@@ -7,6 +7,7 @@ import {
 
 const PREFERRED_CHAT_WIDTH = 24;
 const PLAN_CHAT_GAP = 1;
+const APP_HORIZONTAL_PADDING = 0;
 
 export interface AppWidthBudgetInput {
   readonly terminalWidth: number;
@@ -34,7 +35,7 @@ function boundedInteger(value: number): number {
 
 export function appWidthBudget(input: AppWidthBudgetInput): AppWidthBudget {
   const terminalWidth = boundedInteger(input.terminalWidth);
-  const horizontalPadding = terminalWidth >= 56 ? 2 : terminalWidth >= 28 ? 1 : 0;
+  const horizontalPadding = APP_HORIZONTAL_PADDING;
   const contentInnerWidth = Math.max(0, terminalWidth - horizontalPadding * 2);
   const preferredChatWidth = Math.min(PREFERRED_CHAT_WIDTH, contentInnerWidth);
 

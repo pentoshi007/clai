@@ -18,6 +18,7 @@ export interface LifecycleOptions {
   readonly process?: ProcessLike | undefined;
   readonly disposers?: readonly Disposer[] | undefined;
   readonly onError?: ((error: unknown) => void) | undefined;
+  readonly onFatal?: ((error: unknown) => void | Promise<void>) | undefined;
   readonly onSigint?: (() => void) | undefined;
   readonly epilogue?: (() => void | Promise<void>) | undefined;
 }
@@ -38,6 +39,7 @@ export class RendererLifecycle {
   private destroyed = false;
   private epilogueRan = false;
   private lastSigintAt = 0;
+  private fatalErrorHandled = false;
   private readonly listeners: Array<{
     event: string;
     fn: (...args: unknown[]) => void;
@@ -141,13 +143,32 @@ export class RendererLifecycle {
       });
     }
     this.addListener("uncaughtException", (error) => {
-      this.options.onError?.(error);
-      void this.shutdownAndExit(1);
+      this.handleFatalError(error);
     });
     this.addListener("unhandledRejection", (reason) => {
-      this.options.onError?.(reason);
-      void this.shutdownAndExit(1);
+      this.handleFatalError(reason);
     });
+  }
+
+  private handleFatalError(error: unknown): void {
+    if (this.fatalErrorHandled) return;
+    this.fatalErrorHandled = true;
+    try {
+      this.options.onError?.(error);
+    } catch {}
+    void this.shutdownAfterFatalError(error);
+  }
+
+  private async shutdownAfterFatalError(error: unknown): Promise<void> {
+    try {
+      await this.shutdown();
+    } catch {}
+    try {
+      await this.options.onFatal?.(error);
+    } catch {
+    } finally {
+      this.proc.exit(1);
+    }
   }
 
   private addListener(

@@ -7,421 +7,420 @@
 <rect x="503.2" y="82" width="84" height="18" fill="#334155"/>
 <rect x="503.2" y="100" width="84" height="18" fill="#334155"/>
 <rect x="503.2" y="118" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="136" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="154" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="190" width="117.6" height="18" fill="#b45309"/>
-<rect x="503.2" y="226" width="100.8" height="18" fill="#334155"/>
-<rect x="612.4" y="226" width="126" height="18" fill="#334155"/>
-<rect x="32.8" y="352" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="370" width="16.8" height="18" fill="#11151c"/>
-<rect x="49.6" y="370" width="42" height="18" fill="#b45309"/>
-<rect x="91.6" y="370" width="848.4" height="18" fill="#11151c"/>
-<rect x="32.8" y="388" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="424" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="442" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="460" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="478" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="496" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="532" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="550" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="568" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="586" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="604" width="16.8" height="18" fill="#11151c"/>
-<rect x="49.6" y="604" width="873.6" height="18" fill="#213a2b"/>
-<rect x="923.2" y="604" width="16.8" height="18" fill="#11151c"/>
-<rect x="32.8" y="622" width="16.8" height="18" fill="#11151c"/>
-<rect x="49.6" y="622" width="873.6" height="18" fill="#213a2b"/>
-<rect x="923.2" y="622" width="16.8" height="18" fill="#11151c"/>
-<rect x="32.8" y="640" width="16.8" height="18" fill="#11151c"/>
-<rect x="49.6" y="640" width="873.6" height="18" fill="#213a2b"/>
-<rect x="923.2" y="640" width="16.8" height="18" fill="#11151c"/>
-<rect x="32.8" y="658" width="16.8" height="18" fill="#11151c"/>
-<rect x="49.6" y="658" width="873.6" height="18" fill="#213a2b"/>
-<rect x="923.2" y="658" width="16.8" height="18" fill="#11151c"/>
-<rect x="32.8" y="676" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="694" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="712" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="748" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="766" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="784" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="802" width="16.8" height="18" fill="#11151c"/>
-<rect x="49.6" y="802" width="67.2" height="18" fill="#0e7490"/>
-<rect x="116.8" y="802" width="823.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="820" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="838" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="856" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="874" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="892" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="1090" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="1108" width="907.2" height="18" fill="#11151c"/>
-<rect x="32.8" y="1126" width="907.2" height="18" fill="#11151c"/>
-<rect x="41.2" y="1144" width="58.8" height="18" fill="#0e7490"/>
-<path d="M53.8 64V59.2Q53.8 55 58 55H58" fill="none" stroke="#29b8db" stroke-width="1.2"/>
-<rect x="58" y="54.4" width="428.4" height="1.2" fill="#29b8db"/>
+<rect x="503.2" y="154" width="100.8" height="18" fill="#b45309"/>
+<rect x="620.8" y="154" width="58.8" height="18" fill="#334155"/>
+<rect x="679.6" y="154" width="109.2" height="18" fill="#9f1239"/>
+<rect x="16" y="298" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="316" width="16.8" height="18" fill="#11151c"/>
+<rect x="32.8" y="316" width="42" height="18" fill="#b45309"/>
+<rect x="74.8" y="316" width="882" height="18" fill="#11151c"/>
+<rect x="16" y="334" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="370" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="388" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="406" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="424" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="442" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="478" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="496" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="514" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="532" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="550" width="16.8" height="18" fill="#11151c"/>
+<rect x="32.8" y="550" width="907.2" height="18" fill="#213a2b"/>
+<rect x="940" y="550" width="16.8" height="18" fill="#11151c"/>
+<rect x="16" y="568" width="16.8" height="18" fill="#11151c"/>
+<rect x="32.8" y="568" width="907.2" height="18" fill="#213a2b"/>
+<rect x="940" y="568" width="16.8" height="18" fill="#11151c"/>
+<rect x="16" y="586" width="16.8" height="18" fill="#11151c"/>
+<rect x="32.8" y="586" width="907.2" height="18" fill="#213a2b"/>
+<rect x="940" y="586" width="16.8" height="18" fill="#11151c"/>
+<rect x="16" y="604" width="16.8" height="18" fill="#11151c"/>
+<rect x="32.8" y="604" width="907.2" height="18" fill="#213a2b"/>
+<rect x="940" y="604" width="16.8" height="18" fill="#11151c"/>
+<rect x="16" y="622" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="640" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="658" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="694" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="712" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="730" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="748" width="16.8" height="18" fill="#11151c"/>
+<rect x="32.8" y="748" width="67.2" height="18" fill="#0e7490"/>
+<rect x="100" y="748" width="856.8" height="18" fill="#11151c"/>
+<rect x="16" y="766" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="784" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="802" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="820" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="838" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="1090" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="1108" width="940.8" height="18" fill="#11151c"/>
+<rect x="16" y="1126" width="940.8" height="18" fill="#11151c"/>
+<rect x="24.4" y="1144" width="50.4" height="18" fill="#0e7490"/>
+<path d="M37 64V59.2Q37 55 41.2 55H41.2" fill="none" stroke="#29b8db" stroke-width="1.2"/>
+<rect x="41.2" y="54.4" width="445.2" height="1.2" fill="#29b8db"/>
 <path d="M490 54.4h1.2V64.4h-1.2ZM486 54.4H491.2v1.2H486ZM490 54.4H495.2v1.2H490Z" fill="#29b8db"/>
-<rect x="494.8" y="54.4" width="436.8" height="1.2" fill="#29b8db"/>
-<path d="M935.8 64V59.2Q935.8 55 931.6 55H931.6" fill="none" stroke="#29b8db" stroke-width="1.2"/>
-<rect x="234.4" y="100" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="494.8" y="54.4" width="453.6" height="1.2" fill="#29b8db"/>
+<path d="M952.6 64V59.2Q952.6 55 948.4 55H948.4" fill="none" stroke="#29b8db" stroke-width="1.2"/>
+<rect x="226" y="82" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="234.4" y="82" width="8.9" height="18.5" fill="#24e7e7"/>
+<rect x="242.8" y="82" width="8.9" height="18.5" fill="#24e7e7"/>
+<rect x="360.4" y="82" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="368.8" y="82" width="8.9" height="18.5" fill="#8fefff"/>
+<rect x="377.2" y="82" width="8.9" height="18.5" fill="#8fefff"/>
+<rect x="142" y="109" width="8.9" height="9.5" fill="#12d9b0"/>
+<rect x="150.4" y="109" width="8.9" height="9.5" fill="#16dcbb"/>
+<rect x="158.8" y="109" width="8.9" height="9.5" fill="#16dcbb"/>
+<rect x="167.2" y="109" width="8.9" height="9.5" fill="#19dfc7"/>
+<rect x="175.6" y="109" width="8.9" height="9.5" fill="#19dfc7"/>
+<rect x="184" y="109" width="8.9" height="9.5" fill="#19dfc7"/>
+<rect x="192.4" y="109" width="8.9" height="9.5" fill="#1de2d2"/>
+<rect x="226" y="100" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="234.4" y="100" width="8.9" height="18.5" fill="#24e7e7"/>
 <rect x="242.8" y="100" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="251.2" y="100" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="368.8" y="100" width="8.9" height="18.5" fill="#75eeff"/>
-<rect x="377.2" y="100" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="385.6" y="100" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="150.4" y="127" width="8.9" height="9.5" fill="#12d9b0"/>
-<rect x="158.8" y="127" width="8.9" height="9.5" fill="#16dcbb"/>
-<rect x="167.2" y="127" width="8.9" height="9.5" fill="#16dcbb"/>
-<rect x="175.6" y="127" width="8.9" height="9.5" fill="#19dfc7"/>
-<rect x="184" y="127" width="8.9" height="9.5" fill="#19dfc7"/>
-<rect x="192.4" y="127" width="8.9" height="9.5" fill="#19dfc7"/>
-<rect x="200.8" y="127" width="8.9" height="9.5" fill="#1de2d2"/>
-<rect x="234.4" y="118" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="276.4" y="109" width="8.9" height="9.5" fill="#29e8f2"/>
+<rect x="284.8" y="109" width="8.9" height="9.5" fill="#2deafc"/>
+<rect x="293.2" y="109" width="8.9" height="9.5" fill="#2deafc"/>
+<rect x="301.6" y="109" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="310" y="109" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="318.4" y="109" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="326.8" y="109" width="8.9" height="9.5" fill="#5aedff"/>
+<rect x="133.6" y="118" width="8.9" height="18.5" fill="#12d9b0"/>
+<rect x="142" y="118" width="8.9" height="18.5" fill="#12d9b0"/>
+<rect x="150.4" y="118" width="8.9" height="18.5" fill="#16dcbb"/>
+<rect x="158.8" y="118" width="8.9" height="9.5" fill="#16dcbb"/>
+<rect x="167.2" y="118" width="8.9" height="9.5" fill="#19dfc7"/>
+<rect x="175.6" y="118" width="8.9" height="9.5" fill="#19dfc7"/>
+<rect x="184" y="118" width="8.9" height="9.5" fill="#19dfc7"/>
+<rect x="192.4" y="118" width="8.9" height="9.5" fill="#1de2d2"/>
+<rect x="200.8" y="118" width="8.9" height="9.5" fill="#1de2d2"/>
+<rect x="226" y="118" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="234.4" y="118" width="8.9" height="18.5" fill="#24e7e7"/>
 <rect x="242.8" y="118" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="251.2" y="118" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="284.8" y="127" width="8.9" height="9.5" fill="#29e8f2"/>
-<rect x="293.2" y="127" width="8.9" height="9.5" fill="#2deafc"/>
-<rect x="301.6" y="127" width="8.9" height="9.5" fill="#2deafc"/>
-<rect x="310" y="127" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="318.4" y="127" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="326.8" y="127" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="335.2" y="127" width="8.9" height="9.5" fill="#5aedff"/>
+<rect x="318.4" y="118" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="326.8" y="118" width="8.9" height="18.5" fill="#5aedff"/>
+<rect x="335.2" y="118" width="8.9" height="18.5" fill="#5aedff"/>
+<rect x="360.4" y="118" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="368.8" y="118" width="8.9" height="18.5" fill="#8fefff"/>
+<rect x="377.2" y="118" width="8.9" height="18.5" fill="#8fefff"/>
+<rect x="133.6" y="136" width="8.9" height="18.5" fill="#12d9b0"/>
 <rect x="142" y="136" width="8.9" height="18.5" fill="#12d9b0"/>
-<rect x="150.4" y="136" width="8.9" height="18.5" fill="#12d9b0"/>
-<rect x="158.8" y="136" width="8.9" height="18.5" fill="#16dcbb"/>
-<rect x="167.2" y="136" width="8.9" height="9.5" fill="#16dcbb"/>
-<rect x="175.6" y="136" width="8.9" height="9.5" fill="#19dfc7"/>
-<rect x="184" y="136" width="8.9" height="9.5" fill="#19dfc7"/>
-<rect x="192.4" y="136" width="8.9" height="9.5" fill="#19dfc7"/>
-<rect x="200.8" y="136" width="8.9" height="9.5" fill="#1de2d2"/>
-<rect x="209.2" y="136" width="8.9" height="9.5" fill="#1de2d2"/>
-<rect x="234.4" y="136" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="150.4" y="136" width="8.9" height="18.5" fill="#16dcbb"/>
+<rect x="226" y="136" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="234.4" y="136" width="8.9" height="18.5" fill="#24e7e7"/>
 <rect x="242.8" y="136" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="251.2" y="136" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="326.8" y="136" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="268" y="145" width="8.9" height="9.5" fill="#29e8f2"/>
+<rect x="276.4" y="136" width="8.9" height="18.5" fill="#29e8f2"/>
+<rect x="284.8" y="136" width="8.9" height="18.5" fill="#2deafc"/>
+<rect x="293.2" y="136" width="8.9" height="9.5" fill="#2deafc"/>
+<rect x="301.6" y="136" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="310" y="136" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="318.4" y="136" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="326.8" y="136" width="8.9" height="18.5" fill="#5aedff"/>
 <rect x="335.2" y="136" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="343.6" y="136" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="368.8" y="136" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="360.4" y="136" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="368.8" y="136" width="8.9" height="18.5" fill="#8fefff"/>
 <rect x="377.2" y="136" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="385.6" y="136" width="8.9" height="18.5" fill="#8fefff"/>
+<rect x="133.6" y="154" width="8.9" height="18.5" fill="#12d9b0"/>
 <rect x="142" y="154" width="8.9" height="18.5" fill="#12d9b0"/>
-<rect x="150.4" y="154" width="8.9" height="18.5" fill="#12d9b0"/>
-<rect x="158.8" y="154" width="8.9" height="18.5" fill="#16dcbb"/>
-<rect x="234.4" y="154" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="150.4" y="154" width="8.9" height="18.5" fill="#16dcbb"/>
+<rect x="226" y="154" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="234.4" y="154" width="8.9" height="18.5" fill="#24e7e7"/>
 <rect x="242.8" y="154" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="251.2" y="154" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="276.4" y="163" width="8.9" height="9.5" fill="#29e8f2"/>
-<rect x="284.8" y="154" width="8.9" height="18.5" fill="#29e8f2"/>
-<rect x="293.2" y="154" width="8.9" height="18.5" fill="#2deafc"/>
-<rect x="301.6" y="154" width="8.9" height="9.5" fill="#2deafc"/>
-<rect x="310" y="154" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="318.4" y="154" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="326.8" y="154" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="268" y="154" width="8.9" height="18.5" fill="#29e8f2"/>
+<rect x="276.4" y="154" width="8.9" height="18.5" fill="#29e8f2"/>
+<rect x="284.8" y="154" width="8.9" height="18.5" fill="#2deafc"/>
+<rect x="318.4" y="154" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="326.8" y="154" width="8.9" height="18.5" fill="#5aedff"/>
 <rect x="335.2" y="154" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="343.6" y="154" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="368.8" y="154" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="360.4" y="154" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="368.8" y="154" width="8.9" height="18.5" fill="#8fefff"/>
 <rect x="377.2" y="154" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="385.6" y="154" width="8.9" height="18.5" fill="#8fefff"/>
+<rect x="133.6" y="172" width="8.9" height="9.5" fill="#12d9b0"/>
 <rect x="142" y="172" width="8.9" height="18.5" fill="#12d9b0"/>
-<rect x="150.4" y="172" width="8.9" height="18.5" fill="#12d9b0"/>
+<rect x="150.4" y="172" width="8.9" height="18.5" fill="#16dcbb"/>
 <rect x="158.8" y="172" width="8.9" height="18.5" fill="#16dcbb"/>
-<rect x="234.4" y="172" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="167.2" y="172" width="8.9" height="18.5" fill="#19dfc7"/>
+<rect x="175.6" y="172" width="8.9" height="18.5" fill="#19dfc7"/>
+<rect x="184" y="172" width="8.9" height="18.5" fill="#19dfc7"/>
+<rect x="192.4" y="172" width="8.9" height="18.5" fill="#1de2d2"/>
+<rect x="200.8" y="172" width="8.9" height="9.5" fill="#1de2d2"/>
+<rect x="226" y="172" width="8.9" height="18.5" fill="#20e5dd"/>
+<rect x="234.4" y="172" width="8.9" height="18.5" fill="#24e7e7"/>
 <rect x="242.8" y="172" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="251.2" y="172" width="8.9" height="18.5" fill="#24e7e7"/>
+<rect x="268" y="172" width="8.9" height="9.5" fill="#29e8f2"/>
 <rect x="276.4" y="172" width="8.9" height="18.5" fill="#29e8f2"/>
-<rect x="284.8" y="172" width="8.9" height="18.5" fill="#29e8f2"/>
-<rect x="293.2" y="172" width="8.9" height="18.5" fill="#2deafc"/>
-<rect x="326.8" y="172" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="284.8" y="172" width="8.9" height="18.5" fill="#2deafc"/>
+<rect x="293.2" y="181" width="8.9" height="9.5" fill="#2deafc"/>
+<rect x="301.6" y="181" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="310" y="181" width="8.9" height="9.5" fill="#40ecff"/>
+<rect x="318.4" y="172" width="8.9" height="18.5" fill="#40ecff"/>
+<rect x="326.8" y="172" width="8.9" height="18.5" fill="#5aedff"/>
 <rect x="335.2" y="172" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="343.6" y="172" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="368.8" y="172" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="360.4" y="172" width="8.9" height="18.5" fill="#75eeff"/>
+<rect x="368.8" y="172" width="8.9" height="18.5" fill="#8fefff"/>
 <rect x="377.2" y="172" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="385.6" y="172" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="142" y="190" width="8.9" height="9.5" fill="#12d9b0"/>
-<rect x="150.4" y="190" width="8.9" height="18.5" fill="#12d9b0"/>
-<rect x="158.8" y="190" width="8.9" height="18.5" fill="#16dcbb"/>
-<rect x="167.2" y="190" width="8.9" height="18.5" fill="#16dcbb"/>
-<rect x="175.6" y="190" width="8.9" height="18.5" fill="#19dfc7"/>
-<rect x="184" y="190" width="8.9" height="18.5" fill="#19dfc7"/>
-<rect x="192.4" y="190" width="8.9" height="18.5" fill="#19dfc7"/>
-<rect x="200.8" y="190" width="8.9" height="18.5" fill="#1de2d2"/>
-<rect x="209.2" y="190" width="8.9" height="9.5" fill="#1de2d2"/>
-<rect x="234.4" y="190" width="8.9" height="18.5" fill="#20e5dd"/>
-<rect x="242.8" y="190" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="251.2" y="190" width="8.9" height="18.5" fill="#24e7e7"/>
-<rect x="276.4" y="190" width="8.9" height="9.5" fill="#29e8f2"/>
-<rect x="284.8" y="190" width="8.9" height="18.5" fill="#29e8f2"/>
-<rect x="293.2" y="190" width="8.9" height="18.5" fill="#2deafc"/>
-<rect x="301.6" y="199" width="8.9" height="9.5" fill="#2deafc"/>
-<rect x="310" y="199" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="318.4" y="199" width="8.9" height="9.5" fill="#40ecff"/>
-<rect x="326.8" y="190" width="8.9" height="18.5" fill="#40ecff"/>
-<rect x="335.2" y="190" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="343.6" y="190" width="8.9" height="18.5" fill="#5aedff"/>
-<rect x="368.8" y="190" width="8.9" height="18.5" fill="#75eeff"/>
-<rect x="377.2" y="190" width="8.9" height="18.5" fill="#8fefff"/>
-<rect x="385.6" y="190" width="8.9" height="18.5" fill="#8fefff"/>
-<path d="M53.8 262V266.8Q53.8 271 58 271H58" fill="none" stroke="#29b8db" stroke-width="1.2"/>
-<rect x="58" y="270.4" width="428.4" height="1.2" fill="#29b8db"/>
-<path d="M490 261.6h1.2V271.6h-1.2ZM486 270.4H491.2v1.2H486ZM490 270.4H495.2v1.2H490Z" fill="#29b8db"/>
-<rect x="494.8" y="270.4" width="436.8" height="1.2" fill="#29b8db"/>
-<path d="M935.8 262V266.8Q935.8 271 931.6 271H931.6" fill="none" stroke="#29b8db" stroke-width="1.2"/>
-<path d="M37 370V365.2Q37 361 41.2 361H41.2" fill="none" stroke="#f5b351" stroke-width="1.2"/>
-<rect x="41.2" y="360.4" width="890.4" height="1.2" fill="#f5b351"/>
-<path d="M935.8 370V365.2Q935.8 361 931.6 361H931.6" fill="none" stroke="#f5b351" stroke-width="1.2"/>
-<rect x="935.2" y="64" width="1.2" height="198" fill="#29b8db"/>
-<path d="M37 388V392.8Q37 397 41.2 397H41.2" fill="none" stroke="#f5b351" stroke-width="1.2"/>
-<rect x="41.2" y="396.4" width="890.4" height="1.2" fill="#f5b351"/>
-<path d="M935.8 388V392.8Q935.8 397 931.6 397H931.6" fill="none" stroke="#f5b351" stroke-width="1.2"/>
-<path d="M37 442V437.2Q37 433 41.2 433H41.2" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="41.2" y="432.4" width="890.4" height="1.2" fill="#4ade80"/>
-<path d="M935.8 442V437.2Q935.8 433 931.6 433H931.6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="36.4" y="370" width="1.2" height="18" fill="#f5b351"/>
-<rect x="935.2" y="370" width="1.2" height="18" fill="#f5b351"/>
-<path d="M37 496V500.8Q37 505 41.2 505H41.2" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="41.2" y="504.4" width="890.4" height="1.2" fill="#4ade80"/>
-<path d="M935.8 496V500.8Q935.8 505 931.6 505H931.6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<path d="M37 550V545.2Q37 541 41.2 541H41.2" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="41.2" y="540.4" width="890.4" height="1.2" fill="#4ade80"/>
-<path d="M935.8 550V545.2Q935.8 541 931.6 541H931.6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="36.4" y="442" width="1.2" height="54" fill="#4ade80"/>
-<rect x="935.2" y="442" width="1.2" height="54" fill="#4ade80"/>
-<path d="M37 712V716.8Q37 721 41.2 721H41.2" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="41.2" y="720.4" width="890.4" height="1.2" fill="#4ade80"/>
-<path d="M935.8 712V716.8Q935.8 721 931.6 721H931.6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<path d="M37 766V761.2Q37 757 41.2 757H41.2" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="41.2" y="756.4" width="890.4" height="1.2" fill="#4ade80"/>
-<path d="M935.8 766V761.2Q935.8 757 931.6 757H931.6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="36.4" y="550" width="1.2" height="162" fill="#4ade80"/>
-<rect x="935.2" y="550" width="1.2" height="162" fill="#4ade80"/>
-<rect x="53.2" y="64" width="1.2" height="198" fill="#29b8db"/>
-<path d="M37 892V896.8Q37 901 41.2 901H41.2" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<rect x="41.2" y="900.4" width="890.4" height="1.2" fill="#4ade80"/>
-<path d="M935.8 892V896.8Q935.8 901 931.6 901H931.6" fill="none" stroke="#4ade80" stroke-width="1.2"/>
-<path d="M35.8 1097.8h2.4V1108.4h-2.4ZM35.8 1097.8H41.6v2.4H35.8Z" fill="#2eebff"/>
-<rect x="41.2" y="1097.8" width="504" height="2.4" fill="#2eebff"/>
-<rect x="923.2" y="1097.8" width="8.4" height="2.4" fill="#2eebff"/>
-<path d="M934.6 1097.8h2.4V1108.4h-2.4ZM931.2 1097.8H937v2.4H931.2Z" fill="#2eebff"/>
-<rect x="36.4" y="766" width="1.2" height="126" fill="#4ade80"/>
-<rect x="935.2" y="766" width="1.2" height="126" fill="#4ade80"/>
-<path d="M35.8 1125.6h2.4V1136.2h-2.4ZM35.8 1133.8H41.6v2.4H35.8Z" fill="#2eebff"/>
-<rect x="41.2" y="1133.8" width="890.4" height="2.4" fill="#2eebff"/>
-<path d="M934.6 1125.6h2.4V1136.2h-2.4ZM931.2 1133.8H937v2.4H931.2Z" fill="#2eebff"/>
-<g fill="none" stroke="#f5b351" stroke-width="1.3" stroke-linecap="round"><path d="M766 1149.6V1155.4"/><path d="M770 1151.1C770 1154 766 1153 766 1155.4"/><circle cx="766" cy="1148.1" r="1.5"/><circle cx="766" cy="1156.9" r="1.5"/><circle cx="770" cy="1149.6" r="1.5"/></g>
-<rect x="490" y="64" width="1.2" height="198" fill="#29b8db"/>
-<rect x="70" y="586" width="1.2" height="108" fill="#64748b"/>
-<rect x="53.2" y="820" width="1.2" height="54" fill="#7dd3fc"/>
-<rect x="35.8" y="1108" width="2.4" height="18" fill="#2eebff"/>
-<rect x="934.6" y="1108" width="2.4" height="18" fill="#2eebff"/>
-<rect x="112" y="1144" width="1.2" height="18" fill="#94a3b8"/>
+<path d="M37 208V212.8Q37 217 41.2 217H41.2" fill="none" stroke="#29b8db" stroke-width="1.2"/>
+<rect x="41.2" y="216.4" width="445.2" height="1.2" fill="#29b8db"/>
+<path d="M490 207.6h1.2V217.6h-1.2ZM486 216.4H491.2v1.2H486ZM490 216.4H495.2v1.2H490Z" fill="#29b8db"/>
+<rect x="494.8" y="216.4" width="453.6" height="1.2" fill="#29b8db"/>
+<path d="M952.6 208V212.8Q952.6 217 948.4 217H948.4" fill="none" stroke="#29b8db" stroke-width="1.2"/>
+<path d="M20.2 316V311.2Q20.2 307 24.4 307H24.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
+<rect x="24.4" y="306.4" width="924" height="1.2" fill="#f5b351"/>
+<path d="M952.6 316V311.2Q952.6 307 948.4 307H948.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
+<rect x="952" y="64" width="1.2" height="144" fill="#29b8db"/>
+<path d="M20.2 334V338.8Q20.2 343 24.4 343H24.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
+<rect x="24.4" y="342.4" width="924" height="1.2" fill="#f5b351"/>
+<path d="M952.6 334V338.8Q952.6 343 948.4 343H948.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
+<path d="M20.2 388V383.2Q20.2 379 24.4 379H24.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="24.4" y="378.4" width="924" height="1.2" fill="#4ade80"/>
+<path d="M952.6 388V383.2Q952.6 379 948.4 379H948.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="19.6" y="316" width="1.2" height="18" fill="#f5b351"/>
+<rect x="952" y="316" width="1.2" height="18" fill="#f5b351"/>
+<path d="M20.2 442V446.8Q20.2 451 24.4 451H24.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="24.4" y="450.4" width="924" height="1.2" fill="#4ade80"/>
+<path d="M952.6 442V446.8Q952.6 451 948.4 451H948.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<path d="M20.2 496V491.2Q20.2 487 24.4 487H24.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="24.4" y="486.4" width="924" height="1.2" fill="#4ade80"/>
+<path d="M952.6 496V491.2Q952.6 487 948.4 487H948.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="19.6" y="388" width="1.2" height="54" fill="#4ade80"/>
+<rect x="952" y="388" width="1.2" height="54" fill="#4ade80"/>
+<path d="M20.2 658V662.8Q20.2 667 24.4 667H24.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="24.4" y="666.4" width="924" height="1.2" fill="#4ade80"/>
+<path d="M952.6 658V662.8Q952.6 667 948.4 667H948.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<path d="M20.2 712V707.2Q20.2 703 24.4 703H24.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="24.4" y="702.4" width="924" height="1.2" fill="#4ade80"/>
+<path d="M952.6 712V707.2Q952.6 703 948.4 703H948.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="19.6" y="496" width="1.2" height="162" fill="#4ade80"/>
+<rect x="952" y="496" width="1.2" height="162" fill="#4ade80"/>
+<rect x="36.4" y="64" width="1.2" height="144" fill="#29b8db"/>
+<path d="M20.2 838V842.8Q20.2 847 24.4 847H24.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<rect x="24.4" y="846.4" width="924" height="1.2" fill="#4ade80"/>
+<path d="M952.6 838V842.8Q952.6 847 948.4 847H948.4" fill="none" stroke="#4ade80" stroke-width="1.2"/>
+<path d="M19 1097.8h2.4V1108.4h-2.4ZM19 1097.8H24.8v2.4H19Z" fill="#2eebff"/>
+<rect x="24.4" y="1097.8" width="537.6" height="2.4" fill="#2eebff"/>
+<rect x="940" y="1097.8" width="8.4" height="2.4" fill="#2eebff"/>
+<path d="M951.4 1097.8h2.4V1108.4h-2.4ZM948 1097.8H953.8v2.4H948Z" fill="#2eebff"/>
+<rect x="19.6" y="712" width="1.2" height="126" fill="#4ade80"/>
+<rect x="952" y="712" width="1.2" height="126" fill="#4ade80"/>
+<path d="M19 1125.6h2.4V1136.2h-2.4ZM19 1133.8H24.8v2.4H19Z" fill="#2eebff"/>
+<rect x="24.4" y="1133.8" width="924" height="2.4" fill="#2eebff"/>
+<path d="M951.4 1125.6h2.4V1136.2h-2.4ZM948 1133.8H953.8v2.4H948Z" fill="#2eebff"/>
+<rect x="20.2" y="1144" width="4.7" height="18.5" fill="#0e7490"/>
+<g fill="none" stroke="#f5b351" stroke-width="1.3" stroke-linecap="round"><path d="M791.2 1149.6V1155.4"/><path d="M795.2 1151.1C795.2 1154 791.2 1153 791.2 1155.4"/><circle cx="791.2" cy="1148.1" r="1.5"/><circle cx="791.2" cy="1156.9" r="1.5"/><circle cx="795.2" cy="1149.6" r="1.5"/></g>
+<rect x="490" y="64" width="1.2" height="144" fill="#29b8db"/>
+<rect x="53.2" y="532" width="1.2" height="108" fill="#64748b"/>
+<rect x="36.4" y="766" width="1.2" height="54" fill="#7dd3fc"/>
+<rect x="19" y="1108" width="2.4" height="18" fill="#2eebff"/>
+<rect x="951.4" y="1108" width="2.4" height="18" fill="#2eebff"/>
+<rect x="86.8" y="1144" width="1.2" height="18" fill="#94a3b8"/>
 <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="14">
 <text x="511.6 520 528.4 536.8 545.2 553.6 562" y="95" fill="#ffffff" font-weight="700">workdir</text>
 <text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8" y="95" fill="#ffffff">~/projects/api</text>
 <text x="511.6 520 528.4 536.8 545.2" y="113" fill="#ffffff" font-weight="700">model</text>
-<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730" y="113" fill="#11a8cd">claude-sonnet-4-5</text>
+<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730" y="113" fill="#67e8f9">claude-sonnet-4-5</text>
 <text x="511.6 520 528.4 536.8 545.2 553.6 562 570.4" y="131" fill="#ffffff" font-weight="700">provider</text>
-<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8" y="131" fill="#0dbc79">Anthropic</text>
-<text x="511.6 520 528.4 536.8 545.2 553.6" y="149" fill="#ffffff" font-weight="700">effort</text>
-<text x="595.6 604 612.4" y="149" fill="#bc3fbc">off</text>
-<text x="511.6 520 528.4 536.8 545.2 553.6 562" y="167" fill="#ffffff" font-weight="700">version</text>
-<text x="595.6 604 612.4 620.8 629.2 637.6" y="167" fill="#ffffff">4.18.0</text>
-<text x="520 528.4 536.8 545.2 553.6" y="203" fill="#ffffff" font-weight="700">AGENT</text>
-<text x="570.4 578.8 587.2 595.6" y="203" fill="#ffffff" font-weight="700">MODE</text>
-<text x="511.6 520 528.4 536.8 545.2 553.6 562 570.4 578.8 587.2" y="239" fill="#ffffff" font-weight="700">PERMISSION</text>
-<text x="629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8 713.2" y="239" fill="#ffffff" font-weight="700">FULL-ACCESS</text>
-<text x="116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184 192.4" y="311" fill="#ffffff">AI-powered</text>
-<text x="209.2 217.6 226 234.4 242.8 251.2 259.6 268" y="311" fill="#ffffff">terminal</text>
-<text x="284.8 293.2 301.6 310 318.4 326.8 335.2 343.6 352" y="311" fill="#ffffff">assistant</text>
-<text x="368.8" y="311" fill="#ffffff">·</text>
-<text x="385.6 394 402.4" y="311" fill="#ffffff">ask</text>
-<text x="419.2" y="311" fill="#ffffff">&amp;</text>
-<text x="436 444.4 452.8 461.2 469.6" y="311" fill="#ffffff">agent</text>
-<text x="486.4 494.8 503.2 511.6 520" y="311" fill="#ffffff">modes</text>
-<text x="536.8 545.2 553.6" y="311" fill="#ffffff">for</text>
-<text x="570.4 578.8 587.2 595.6 604 612.4" y="311" fill="#ffffff">shell,</text>
-<text x="629.2 637.6 646 654.4 662.8" y="311" fill="#ffffff">files</text>
-<text x="679.6" y="311" fill="#ffffff">&amp;</text>
-<text x="696.4 704.8 713.2 721.6 730 738.4 746.8 755.2" y="311" fill="#ffffff">security</text>
-<text x="772 780.4 788.8 797.2 805.6 814 822.4 830.8 839.2" y="311" fill="#ffffff">workflows</text>
-<text x="226 234.4 242.8 251.2 259.6 268 276.4" y="329" fill="#0dbc79" font-weight="700">Welcome</text>
-<text x="293.2 301.6" y="329" fill="#0dbc79" font-weight="700">to</text>
-<text x="318.4 326.8 335.2 343.6" y="329" fill="#0dbc79" font-weight="700">clai</text>
-<text x="360.4 368.8 377.2 385.6 394 402.4 410.8 419.2" y="329" fill="#0dbc79" font-weight="700">v4.18.0!</text>
-<text x="436 444.4 452.8 461.2 469.6 478 486.4 494.8" y="329" fill="#11a8cd">/history</text>
-<text x="511.6 520 528.4 536.8" y="329" fill="#11a8cd">past</text>
-<text x="553.6 562 570.4 578.8 587.2" y="329" fill="#11a8cd">chats</text>
-<text x="604" y="329" fill="#11a8cd">·</text>
-<text x="620.8 629.2 637.6 646 654.4" y="329" fill="#11a8cd">/help</text>
-<text x="671.2 679.6 688 696.4 704.8 713.2 721.6 730" y="329" fill="#11a8cd">commands</text>
-<text x="58 66.4 74.8" y="383" fill="#ffffff" font-weight="700">YOU</text>
-<text x="100 108.4 116.8" y="383" fill="#f8fafc">Add</text>
-<text x="133.6" y="383" fill="#f8fafc">a</text>
-<text x="150.4 158.8 167.2 175.6 184 192.4 200.8" y="383" fill="#f8fafc">/health</text>
-<text x="217.6 226 234.4 242.8 251.2 259.6 268 276.4" y="383" fill="#f8fafc">endpoint</text>
-<text x="293.2 301.6" y="383" fill="#f8fafc">to</text>
-<text x="318.4 326.8 335.2" y="383" fill="#f8fafc">the</text>
-<text x="352 360.4 368.8" y="383" fill="#f8fafc">API</text>
-<text x="385.6 394 402.4" y="383" fill="#f8fafc">and</text>
-<text x="419.2 427.6 436" y="383" fill="#f8fafc">run</text>
-<text x="452.8 461.2 469.6" y="383" fill="#f8fafc">the</text>
-<text x="486.4 494.8 503.2 511.6 520" y="383" fill="#f8fafc">tests</text>
-<text x="49.6" y="455" fill="#4ade80" font-weight="700">✓</text>
-<text x="66.4 74.8 83.2 91.6 100 108.4 116.8" y="455" fill="#4ade80" font-weight="700">fs.read</text>
-<text x="49.6 58 66.4 74.8 83.2" y="473" fill="#94a3b8">file:</text>
-<text x="100 108.4 116.8" y="473" fill="#2eebff">src</text>
-<text x="125.2 133.6 142 150.4 158.8 167.2 175.6 184 192.4 200.8" y="473" fill="#5cc8ff">/server.ts</text>
-<text x="49.6" y="491" fill="#67e8f9">›</text>
-<text x="66.4 74.8 83.2 91.6 100" y="491" fill="#67e8f9">click</text>
-<text x="116.8 125.2" y="491" fill="#67e8f9">to</text>
-<text x="142 150.4 158.8 167.2" y="491" fill="#67e8f9">open</text>
-<text x="184 192.4 200.8 209.2 217.6" y="491" fill="#67e8f9">pager</text>
-<text x="49.6" y="563" fill="#4ade80" font-weight="700">✓</text>
-<text x="66.4 74.8 83.2 91.6 100 108.4" y="563" fill="#4ade80" font-weight="700">Edited</text>
-<text x="125.2 133.6 142 150.4 158.8 167.2 175.6 184 192.4" y="563" fill="#4ade80" font-weight="700">server.ts</text>
-<text x="662.8 671.2" y="563" fill="#4ade80" font-weight="700">+4</text>
-<text x="688 696.4" y="563" fill="#f87171" font-weight="700">-0</text>
-<text x="721.6 730 738.4 746.8 755.2 763.6 772 780.4" y="563" fill="#94a3b8">collapse</text>
-<text x="814 822.4 830.8 839.2 847.6 856 864.4 872.8" y="563" fill="#94a3b8">collapse</text>
-<text x="889.6 898 906.4" y="563" fill="#94a3b8">all</text>
-<text x="49.6 58 66.4 74.8" y="581" fill="#f8fafc" font-weight="700">file</text>
-<text x="100 108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184 192.4 200.8" y="581" fill="#f8fafc" font-weight="700">src/server.ts</text>
-<text x="49.6" y="599" fill="#64748b">4</text>
-<text x="49.6" y="617" fill="#64748b">5</text>
-<text x="83.2 91.6 100" y="617" fill="#f8fafc">app</text>
-<text x="108.4" y="617" fill="#94a3b8">.</text>
-<text x="116.8 125.2 133.6" y="617" fill="#569cd6">get</text>
-<text x="142" y="617" fill="#94a3b8">(</text>
-<text x="150.4 158.8 167.2 175.6 184 192.4 200.8 209.2 217.6" y="617" fill="#ce9178">"/health"</text>
-<text x="226" y="617" fill="#94a3b8">,</text>
-<text x="242.8" y="617" fill="#94a3b8">(</text>
-<text x="251.2 259.6 268 276.4" y="617" fill="#f8fafc">_req</text>
-<text x="284.8" y="617" fill="#94a3b8">,</text>
-<text x="301.6 310 318.4" y="617" fill="#f8fafc">res</text>
-<text x="326.8" y="617" fill="#94a3b8">)</text>
-<text x="343.6 352" y="617" fill="#d4d4d4">=&gt;</text>
-<text x="368.8" y="617" fill="#94a3b8">{</text>
-<text x="49.6" y="635" fill="#64748b">6</text>
-<text x="100 108.4 116.8" y="635" fill="#f8fafc">res</text>
-<text x="125.2" y="635" fill="#94a3b8">.</text>
-<text x="133.6 142 150.4 158.8" y="635" fill="#dcdcaa">json</text>
-<text x="167.2 175.6" y="635" fill="#94a3b8">({</text>
-<text x="192.4 200.8 209.2 217.6 226 234.4" y="635" fill="#f8fafc">status</text>
-<text x="242.8" y="635" fill="#d4d4d4">:</text>
-<text x="259.6 268 276.4 284.8" y="635" fill="#ce9178">"ok"</text>
-<text x="293.2" y="635" fill="#94a3b8">,</text>
-<text x="310 318.4 326.8 335.2 343.6 352" y="635" fill="#f8fafc">uptime</text>
-<text x="360.4" y="635" fill="#d4d4d4">:</text>
-<text x="377.2 385.6 394 402.4 410.8 419.2 427.6" y="635" fill="#f8fafc">process</text>
-<text x="436" y="635" fill="#94a3b8">.</text>
-<text x="444.4 452.8 461.2 469.6 478 486.4" y="635" fill="#dcdcaa">uptime</text>
-<text x="494.8 503.2" y="635" fill="#94a3b8">()</text>
-<text x="520 528.4 536.8" y="635" fill="#94a3b8">});</text>
-<text x="49.6" y="653" fill="#64748b">7</text>
-<text x="83.2 91.6 100" y="653" fill="#94a3b8">});</text>
-<text x="49.6" y="671" fill="#64748b">8</text>
-<text x="49.6" y="689" fill="#64748b">9</text>
-<text x="83.2 91.6 100" y="689" fill="#f8fafc">app</text>
-<text x="108.4" y="689" fill="#94a3b8">.</text>
-<text x="116.8 125.2 133.6" y="689" fill="#569cd6">get</text>
-<text x="142" y="689" fill="#94a3b8">(</text>
-<text x="150.4 158.8 167.2 175.6 184 192.4 200.8 209.2" y="689" fill="#ce9178">"/users"</text>
-<text x="217.6" y="689" fill="#94a3b8">,</text>
-<text x="234.4 242.8 251.2 259.6 268 276.4 284.8 293.2 301.6" y="689" fill="#f8fafc">listUsers</text>
-<text x="310 318.4" y="689" fill="#94a3b8">);</text>
-<text x="49.6" y="707" fill="#67e8f9">›</text>
-<text x="66.4 74.8 83.2 91.6 100" y="707" fill="#67e8f9">click</text>
-<text x="116.8 125.2 133.6 142" y="707" fill="#67e8f9">hunk</text>
-<text x="158.8" y="707" fill="#67e8f9">·</text>
-<text x="175.6 184 192.4 200.8" y="707" fill="#67e8f9">open</text>
-<text x="217.6 226 234.4 242.8" y="707" fill="#67e8f9">file</text>
-<text x="49.6" y="779" fill="#4ade80" font-weight="700">✓</text>
-<text x="66.4 74.8 83.2 91.6 100 108.4 116.8 125.2 133.6 142" y="779" fill="#4ade80" font-weight="700">shell.exec</text>
-<text x="158.8" y="779" fill="#94a3b8">·</text>
-<text x="175.6 184 192.4 200.8" y="779" fill="#94a3b8">2.1s</text>
-<text x="49.6 58 66.4 74.8 83.2 91.6 100 108.4" y="797" fill="#94a3b8">command:</text>
-<text x="125.2 133.6 142" y="797" fill="#2eebff">npm</text>
-<text x="158.8 167.2 175.6 184" y="797" fill="#2eebff">test</text>
-<text x="200.8 209.2" y="797" fill="#2eebff">--</text>
-<text x="226 234.4 242.8 251.2 259.6 268" y="797" fill="#2eebff">health</text>
-<text x="58 66.4 74.8 83.2 91.6 100" y="815" fill="#ffffff" font-weight="700">OUTPUT</text>
-<text x="66.4" y="833" fill="#7dd3fc">&gt;</text>
-<text x="83.2 91.6 100 108.4 116.8 125.2" y="833" fill="#7dd3fc">vitest</text>
-<text x="142 150.4 158.8" y="833" fill="#7dd3fc">run</text>
-<text x="175.6 184 192.4 200.8 209.2 217.6" y="833" fill="#7dd3fc">health</text>
-<text x="66.4" y="851" fill="#7dd3fc">✓</text>
-<text x="83.2 91.6 100 108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184 192.4 200.8 209.2 217.6 226 234.4" y="851" fill="#7dd3fc">test/health.test.ts</text>
-<text x="251.2 259.6" y="851" fill="#7dd3fc">(2</text>
-<text x="276.4 284.8 293.2 301.6 310 318.4" y="851" fill="#7dd3fc">tests)</text>
-<text x="335.2 343.6 352 360.4" y="851" fill="#7dd3fc">18ms</text>
-<text x="66.4 74.8 83.2 91.6 100" y="869" fill="#7dd3fc">Tests</text>
-<text x="125.2" y="869" fill="#7dd3fc">2</text>
-<text x="142 150.4 158.8 167.2 175.6 184" y="869" fill="#7dd3fc">passed</text>
-<text x="200.8 209.2 217.6" y="869" fill="#7dd3fc">(2)</text>
-<text x="49.6" y="887" fill="#67e8f9">›</text>
-<text x="66.4 74.8 83.2 91.6 100" y="887" fill="#67e8f9">click</text>
-<text x="116.8 125.2 133.6" y="887" fill="#67e8f9">for</text>
-<text x="150.4 158.8 167.2 175.6" y="887" fill="#67e8f9">full</text>
-<text x="192.4" y="887" fill="#67e8f9">·</text>
-<text x="209.2 217.6 226 234.4 242.8 251.2" y="887" fill="#67e8f9">Ctrl+O</text>
-<text x="268 276.4" y="887" fill="#67e8f9">to</text>
-<text x="293.2 301.6 310 318.4 326.8 335.2" y="887" fill="#67e8f9">expand</text>
-<text x="32.8" y="941" fill="#ff55ff" font-weight="700">◆</text>
-<text x="49.6 58 66.4 74.8 83.2 91.6 100 108.4" y="941" fill="#ff55ff" font-weight="700">Response</text>
-<text x="49.6 58 66.4 74.8 83.2" y="977" fill="#4ade80">Added</text>
-<text x="100 108.4 116.8" y="977" fill="#11a8cd">GET</text>
-<text x="133.6 142 150.4 158.8 167.2 175.6 184" y="977" fill="#11a8cd">/health</text>
-<text x="200.8 209.2" y="977" fill="#4ade80">in</text>
-<text x="226 234.4 242.8 251.2 259.6 268 276.4 284.8 293.2 301.6 310 318.4 326.8" y="977" fill="#11a8cd">src/server.ts</text>
-<text x="335.2" y="977" fill="#4ade80">.</text>
-<text x="352 360.4" y="977" fill="#4ade80">It</text>
-<text x="377.2 385.6 394 402.4 410.8 419.2 427.6" y="977" fill="#4ade80">returns</text>
-<text x="444.4 452.8 461.2" y="977" fill="#4ade80">the</text>
-<text x="478 486.4 494.8 503.2 511.6 520 528.4" y="977" fill="#4ade80">service</text>
-<text x="545.2 553.6 562 570.4 578.8 587.2" y="977" fill="#4ade80">status</text>
-<text x="604 612.4 620.8" y="977" fill="#4ade80">and</text>
-<text x="637.6 646 654.4 662.8 671.2 679.6 688" y="977" fill="#4ade80">process</text>
-<text x="704.8 713.2 721.6 730 738.4 746.8 755.2" y="977" fill="#4ade80">uptime.</text>
-<text x="49.6" y="1013" fill="#11a8cd">•</text>
-<text x="66.4 74.8 83.2 91.6 100 108.4" y="1013" fill="#4ade80" font-weight="700">Tests:</text>
-<text x="125.2 133.6 142" y="1013" fill="#11a8cd">npm</text>
-<text x="158.8 167.2 175.6 184" y="1013" fill="#11a8cd">test</text>
-<text x="200.8 209.2" y="1013" fill="#11a8cd">--</text>
-<text x="226 234.4 242.8 251.2 259.6 268" y="1013" fill="#11a8cd">health</text>
-<text x="284.8 293.2 301.6 310 318.4 326.8" y="1013" fill="#4ade80">passes</text>
-<text x="343.6 352" y="1013" fill="#4ade80">(2</text>
-<text x="368.8 377.2 385.6 394 402.4 410.8 419.2" y="1013" fill="#4ade80">tests).</text>
-<text x="49.6" y="1031" fill="#11a8cd">•</text>
-<text x="66.4 74.8 83.2 91.6 100" y="1031" fill="#4ade80" font-weight="700">Next:</text>
-<text x="116.8 125.2 133.6 142" y="1031" fill="#4ade80">wire</text>
-<text x="158.8 167.2" y="1031" fill="#4ade80">it</text>
-<text x="184 192.4 200.8 209.2" y="1031" fill="#4ade80">into</text>
-<text x="226 234.4 242.8 251.2" y="1031" fill="#4ade80">your</text>
-<text x="268 276.4 284.8 293.2" y="1031" fill="#4ade80">load</text>
-<text x="310 318.4 326.8 335.2 343.6 352 360.4 368.8 377.2 385.6" y="1031" fill="#4ade80">balancer's</text>
-<text x="402.4 410.8 419.2 427.6 436 444.4" y="1031" fill="#4ade80">health</text>
-<text x="461.2 469.6 478 486.4 494.8 503.2" y="1031" fill="#4ade80">check.</text>
-<text x="553.6 562 570.4 578.8 587.2 595.6 604 612.4 620.8" y="1103" fill="#94a3b8">anthropic</text>
-<text x="637.6" y="1103" fill="#94a3b8">·</text>
-<text x="654.4 662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730 738.4 746.8 755.2 763.6 772 780.4 788.8" y="1103" fill="#94a3b8">claude-sonnet-4-5</text>
-<text x="805.6" y="1103" fill="#94a3b8">·</text>
-<text x="822.4 830.8 839.2 847.6 856 864.4 872.8 881.2 889.6 898 906.4" y="1103" fill="#94a3b8">full-access</text>
-<text x="49.6" y="1121" fill="#2eebff" font-weight="700">❯</text>
-<text x="66.4 74.8 83.2" y="1121" fill="#94a3b8">ask</text>
-<text x="100 108.4 116.8 125.2 133.6 142 150.4 158.8" y="1121" fill="#94a3b8">anything</text>
-<text x="175.6" y="1121" fill="#94a3b8">·</text>
-<text x="192.4" y="1121" fill="#94a3b8">@</text>
-<text x="209.2 217.6 226 234.4" y="1121" fill="#94a3b8">file</text>
-<text x="251.2 259.6" y="1121" fill="#94a3b8">or</text>
-<text x="276.4 284.8 293.2 301.6 310 318.4" y="1121" fill="#94a3b8">folder</text>
-<text x="335.2" y="1121" fill="#94a3b8">·</text>
-<text x="352 360.4 368.8 377.2 385.6 394 402.4 410.8 419.2 427.6 436" y="1121" fill="#94a3b8">Shift+Enter</text>
-<text x="452.8 461.2 469.6 478 486.4 494.8 503.2" y="1121" fill="#94a3b8">newline</text>
-<text x="520" y="1121" fill="#94a3b8">·</text>
-<text x="536.8 545.2" y="1121" fill="#94a3b8">⇧⇥</text>
-<text x="562 570.4 578.8 587.2" y="1121" fill="#94a3b8">mode</text>
-<text x="49.6 58 66.4 74.8 83.2" y="1157" fill="#ffffff" font-weight="700">AGENT</text>
-<text x="133.6 142" y="1157" fill="#94a3b8">⇧⇥</text>
-<text x="637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730 738.4 746.8" y="1157" fill="#94a3b8">~/projects/api</text>
-<text x="780.4 788.8 797.2 805.6" y="1157" fill="#f5b351">main</text>
-<text x="839.2 847.6 856" y="1157" fill="#2eebff" font-weight="700">ctx</text>
-<text x="872.8 881.2 889.6 898 906.4 914.8" y="1157" fill="#2eebff" font-weight="700">0/200k</text>
+<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8" y="131" fill="#4ade80">Anthropic</text>
+<text x="511.6 520 528.4 536.8 545.2" y="167" fill="#ffffff" font-weight="700">AGENT</text>
+<text x="562 570.4 578.8 587.2" y="167" fill="#ffffff" font-weight="700">MODE</text>
+<text x="629.2 637.6 646 654.4 662.8" y="167" fill="#ffffff">PERMS</text>
+<text x="688 696.4 704.8 713.2 721.6 730 738.4 746.8 755.2 763.6 772" y="167" fill="#ffffff" font-weight="700">FULL-ACCESS</text>
+<text x="192.4 200.8" y="257" fill="#ffffff">AI</text>
+<text x="217.6 226 234.4 242.8 251.2 259.6" y="257" fill="#ffffff">coding</text>
+<text x="276.4" y="257" fill="#ffffff">&amp;</text>
+<text x="293.2 301.6 310 318.4 326.8 335.2 343.6 352" y="257" fill="#ffffff">security</text>
+<text x="368.8 377.2 385.6 394 402.4" y="257" fill="#ffffff">agent</text>
+<text x="419.2 427.6 436" y="257" fill="#ffffff">for</text>
+<text x="452.8 461.2 469.6" y="257" fill="#ffffff">the</text>
+<text x="486.4 494.8 503.2 511.6 520 528.4 536.8 545.2" y="257" fill="#ffffff">terminal</text>
+<text x="562" y="257" fill="#ffffff">·</text>
+<text x="578.8 587.2 595.6 604" y="257" fill="#ffffff">ask,</text>
+<text x="620.8 629.2 637.6 646" y="257" fill="#ffffff">plan</text>
+<text x="662.8" y="257" fill="#ffffff">&amp;</text>
+<text x="679.6 688 696.4 704.8 713.2" y="257" fill="#ffffff">agent</text>
+<text x="730 738.4 746.8 755.2 763.6" y="257" fill="#ffffff">modes</text>
+<text x="125.2 133.6 142 150.4 158.8 167.2 175.6" y="275" fill="#4ade80" font-weight="700">Welcome</text>
+<text x="192.4 200.8" y="275" fill="#4ade80" font-weight="700">to</text>
+<text x="217.6 226 234.4 242.8" y="275" fill="#4ade80" font-weight="700">clai</text>
+<text x="259.6 268 276.4 284.8 293.2 301.6 310 318.4" y="275" fill="#4ade80" font-weight="700">v4.19.0!</text>
+<text x="343.6 352 360.4 368.8 377.2" y="275" fill="#67e8f9">/help</text>
+<text x="394 402.4 410.8 419.2 427.6 436 444.4 452.8" y="275" fill="#94a3b8">commands</text>
+<text x="469.6" y="275" fill="#6e7c91">·</text>
+<text x="486.4 494.8 503.2 511.6 520 528.4 536.8 545.2" y="275" fill="#67e8f9">/history</text>
+<text x="562 570.4 578.8 587.2" y="275" fill="#94a3b8">past</text>
+<text x="604 612.4 620.8 629.2 637.6" y="275" fill="#94a3b8">chats</text>
+<text x="654.4" y="275" fill="#6e7c91">·</text>
+<text x="671.2 679.6 688 696.4 704.8 713.2 721.6 730 738.4" y="275" fill="#67e8f9">shift+tab</text>
+<text x="755.2 763.6 772 780.4 788.8 797.2" y="275" fill="#94a3b8">switch</text>
+<text x="814 822.4 830.8 839.2" y="275" fill="#94a3b8">mode</text>
+<text x="41.2 49.6 58" y="329" fill="#ffffff" font-weight="700">YOU</text>
+<text x="83.2 91.6 100" y="329" fill="#f8fafc">Add</text>
+<text x="116.8" y="329" fill="#f8fafc">a</text>
+<text x="133.6 142 150.4 158.8 167.2 175.6 184" y="329" fill="#f8fafc">/health</text>
+<text x="200.8 209.2 217.6 226 234.4 242.8 251.2 259.6" y="329" fill="#f8fafc">endpoint</text>
+<text x="276.4 284.8" y="329" fill="#f8fafc">to</text>
+<text x="301.6 310 318.4" y="329" fill="#f8fafc">the</text>
+<text x="335.2 343.6 352" y="329" fill="#f8fafc">API</text>
+<text x="368.8 377.2 385.6" y="329" fill="#f8fafc">and</text>
+<text x="402.4 410.8 419.2" y="329" fill="#f8fafc">run</text>
+<text x="436 444.4 452.8" y="329" fill="#f8fafc">the</text>
+<text x="469.6 478 486.4 494.8 503.2" y="329" fill="#f8fafc">tests</text>
+<text x="32.8" y="401" fill="#4ade80" font-weight="700">✓</text>
+<text x="49.6 58 66.4 74.8 83.2 91.6 100" y="401" fill="#4ade80" font-weight="700">fs.read</text>
+<text x="32.8 41.2 49.6 58 66.4" y="419" fill="#94a3b8">file:</text>
+<text x="83.2 91.6 100" y="419" fill="#2eebff">src</text>
+<text x="108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184" y="419" fill="#5cc8ff">/server.ts</text>
+<text x="32.8" y="437" fill="#67e8f9">›</text>
+<text x="49.6 58 66.4 74.8 83.2" y="437" fill="#67e8f9">click</text>
+<text x="100 108.4" y="437" fill="#67e8f9">to</text>
+<text x="125.2 133.6 142 150.4" y="437" fill="#67e8f9">open</text>
+<text x="167.2 175.6 184 192.4 200.8" y="437" fill="#67e8f9">pager</text>
+<text x="32.8" y="509" fill="#4ade80" font-weight="700">✓</text>
+<text x="49.6 58 66.4 74.8 83.2 91.6" y="509" fill="#4ade80" font-weight="700">Edited</text>
+<text x="108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6" y="509" fill="#4ade80" font-weight="700">server.ts</text>
+<text x="679.6 688" y="509" fill="#4ade80" font-weight="700">+4</text>
+<text x="704.8 713.2" y="509" fill="#f87171" font-weight="700">-0</text>
+<text x="738.4 746.8 755.2 763.6 772 780.4 788.8 797.2" y="509" fill="#94a3b8">collapse</text>
+<text x="830.8 839.2 847.6 856 864.4 872.8 881.2 889.6" y="509" fill="#94a3b8">collapse</text>
+<text x="906.4 914.8 923.2" y="509" fill="#94a3b8">all</text>
+<text x="32.8 41.2 49.6 58" y="527" fill="#f8fafc" font-weight="700">file</text>
+<text x="83.2 91.6 100 108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184" y="527" fill="#f8fafc" font-weight="700">src/server.ts</text>
+<text x="32.8" y="545" fill="#64748b">4</text>
+<text x="32.8" y="563" fill="#64748b">5</text>
+<text x="66.4 74.8 83.2" y="563" fill="#f8fafc">app</text>
+<text x="91.6" y="563" fill="#94a3b8">.</text>
+<text x="100 108.4 116.8" y="563" fill="#569cd6">get</text>
+<text x="125.2" y="563" fill="#94a3b8">(</text>
+<text x="133.6 142 150.4 158.8 167.2 175.6 184 192.4 200.8" y="563" fill="#ce9178">"/health"</text>
+<text x="209.2" y="563" fill="#94a3b8">,</text>
+<text x="226" y="563" fill="#94a3b8">(</text>
+<text x="234.4 242.8 251.2 259.6" y="563" fill="#f8fafc">_req</text>
+<text x="268" y="563" fill="#94a3b8">,</text>
+<text x="284.8 293.2 301.6" y="563" fill="#f8fafc">res</text>
+<text x="310" y="563" fill="#94a3b8">)</text>
+<text x="326.8 335.2" y="563" fill="#d4d4d4">=&gt;</text>
+<text x="352" y="563" fill="#94a3b8">{</text>
+<text x="32.8" y="581" fill="#64748b">6</text>
+<text x="83.2 91.6 100" y="581" fill="#f8fafc">res</text>
+<text x="108.4" y="581" fill="#94a3b8">.</text>
+<text x="116.8 125.2 133.6 142" y="581" fill="#dcdcaa">json</text>
+<text x="150.4 158.8" y="581" fill="#94a3b8">({</text>
+<text x="175.6 184 192.4 200.8 209.2 217.6" y="581" fill="#f8fafc">status</text>
+<text x="226" y="581" fill="#d4d4d4">:</text>
+<text x="242.8 251.2 259.6 268" y="581" fill="#ce9178">"ok"</text>
+<text x="276.4" y="581" fill="#94a3b8">,</text>
+<text x="293.2 301.6 310 318.4 326.8 335.2" y="581" fill="#f8fafc">uptime</text>
+<text x="343.6" y="581" fill="#d4d4d4">:</text>
+<text x="360.4 368.8 377.2 385.6 394 402.4 410.8" y="581" fill="#f8fafc">process</text>
+<text x="419.2" y="581" fill="#94a3b8">.</text>
+<text x="427.6 436 444.4 452.8 461.2 469.6" y="581" fill="#dcdcaa">uptime</text>
+<text x="478 486.4" y="581" fill="#94a3b8">()</text>
+<text x="503.2 511.6 520" y="581" fill="#94a3b8">});</text>
+<text x="32.8" y="599" fill="#64748b">7</text>
+<text x="66.4 74.8 83.2" y="599" fill="#94a3b8">});</text>
+<text x="32.8" y="617" fill="#64748b">8</text>
+<text x="32.8" y="635" fill="#64748b">9</text>
+<text x="66.4 74.8 83.2" y="635" fill="#f8fafc">app</text>
+<text x="91.6" y="635" fill="#94a3b8">.</text>
+<text x="100 108.4 116.8" y="635" fill="#569cd6">get</text>
+<text x="125.2" y="635" fill="#94a3b8">(</text>
+<text x="133.6 142 150.4 158.8 167.2 175.6 184 192.4" y="635" fill="#ce9178">"/users"</text>
+<text x="200.8" y="635" fill="#94a3b8">,</text>
+<text x="217.6 226 234.4 242.8 251.2 259.6 268 276.4 284.8" y="635" fill="#f8fafc">listUsers</text>
+<text x="293.2 301.6" y="635" fill="#94a3b8">);</text>
+<text x="32.8" y="653" fill="#67e8f9">›</text>
+<text x="49.6 58 66.4 74.8 83.2" y="653" fill="#67e8f9">click</text>
+<text x="100 108.4 116.8 125.2" y="653" fill="#67e8f9">hunk</text>
+<text x="142" y="653" fill="#67e8f9">·</text>
+<text x="158.8 167.2 175.6 184" y="653" fill="#67e8f9">open</text>
+<text x="200.8 209.2 217.6 226" y="653" fill="#67e8f9">file</text>
+<text x="32.8" y="725" fill="#4ade80" font-weight="700">✓</text>
+<text x="49.6 58 66.4 74.8 83.2 91.6 100 108.4 116.8 125.2" y="725" fill="#4ade80" font-weight="700">shell.exec</text>
+<text x="142" y="725" fill="#94a3b8">·</text>
+<text x="158.8 167.2 175.6 184" y="725" fill="#94a3b8">2.1s</text>
+<text x="32.8 41.2 49.6 58 66.4 74.8 83.2 91.6" y="743" fill="#94a3b8">command:</text>
+<text x="108.4 116.8 125.2" y="743" fill="#2eebff">npm</text>
+<text x="142 150.4 158.8 167.2" y="743" fill="#2eebff">test</text>
+<text x="184 192.4" y="743" fill="#2eebff">--</text>
+<text x="209.2 217.6 226 234.4 242.8 251.2" y="743" fill="#2eebff">health</text>
+<text x="41.2 49.6 58 66.4 74.8 83.2" y="761" fill="#ffffff" font-weight="700">OUTPUT</text>
+<text x="49.6" y="779" fill="#7dd3fc">&gt;</text>
+<text x="66.4 74.8 83.2 91.6 100 108.4" y="779" fill="#7dd3fc">vitest</text>
+<text x="125.2 133.6 142" y="779" fill="#7dd3fc">run</text>
+<text x="158.8 167.2 175.6 184 192.4 200.8" y="779" fill="#7dd3fc">health</text>
+<text x="49.6" y="797" fill="#7dd3fc">✓</text>
+<text x="66.4 74.8 83.2 91.6 100 108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184 192.4 200.8 209.2 217.6" y="797" fill="#7dd3fc">test/health.test.ts</text>
+<text x="234.4 242.8" y="797" fill="#7dd3fc">(2</text>
+<text x="259.6 268 276.4 284.8 293.2 301.6" y="797" fill="#7dd3fc">tests)</text>
+<text x="318.4 326.8 335.2 343.6" y="797" fill="#7dd3fc">18ms</text>
+<text x="49.6 58 66.4 74.8 83.2" y="815" fill="#7dd3fc">Tests</text>
+<text x="108.4" y="815" fill="#7dd3fc">2</text>
+<text x="125.2 133.6 142 150.4 158.8 167.2" y="815" fill="#7dd3fc">passed</text>
+<text x="184 192.4 200.8" y="815" fill="#7dd3fc">(2)</text>
+<text x="32.8" y="833" fill="#67e8f9">›</text>
+<text x="49.6 58 66.4 74.8 83.2" y="833" fill="#67e8f9">click</text>
+<text x="100 108.4 116.8" y="833" fill="#67e8f9">for</text>
+<text x="133.6 142 150.4 158.8" y="833" fill="#67e8f9">full</text>
+<text x="175.6" y="833" fill="#67e8f9">·</text>
+<text x="192.4 200.8 209.2 217.6 226 234.4" y="833" fill="#67e8f9">Ctrl+O</text>
+<text x="251.2 259.6" y="833" fill="#67e8f9">to</text>
+<text x="276.4 284.8 293.2 301.6 310 318.4" y="833" fill="#67e8f9">expand</text>
+<text x="16" y="887" fill="#ff55ff" font-weight="700">◆</text>
+<text x="32.8 41.2 49.6 58 66.4 74.8 83.2 91.6" y="887" fill="#ff55ff" font-weight="700">Response</text>
+<text x="32.8 41.2 49.6 58 66.4" y="923" fill="#4ade80">Added</text>
+<text x="83.2 91.6 100" y="923" fill="#11a8cd">GET</text>
+<text x="116.8 125.2 133.6 142 150.4 158.8 167.2" y="923" fill="#11a8cd">/health</text>
+<text x="184 192.4" y="923" fill="#4ade80">in</text>
+<text x="209.2 217.6 226 234.4 242.8 251.2 259.6 268 276.4 284.8 293.2 301.6 310" y="923" fill="#11a8cd">src/server.ts</text>
+<text x="318.4" y="923" fill="#4ade80">.</text>
+<text x="335.2 343.6" y="923" fill="#4ade80">It</text>
+<text x="360.4 368.8 377.2 385.6 394 402.4 410.8" y="923" fill="#4ade80">returns</text>
+<text x="427.6 436 444.4" y="923" fill="#4ade80">the</text>
+<text x="461.2 469.6 478 486.4 494.8 503.2 511.6" y="923" fill="#4ade80">service</text>
+<text x="528.4 536.8 545.2 553.6 562 570.4" y="923" fill="#4ade80">status</text>
+<text x="587.2 595.6 604" y="923" fill="#4ade80">and</text>
+<text x="620.8 629.2 637.6 646 654.4 662.8 671.2" y="923" fill="#4ade80">process</text>
+<text x="688 696.4 704.8 713.2 721.6 730 738.4" y="923" fill="#4ade80">uptime.</text>
+<text x="32.8" y="959" fill="#11a8cd">•</text>
+<text x="49.6 58 66.4 74.8 83.2 91.6" y="959" fill="#4ade80" font-weight="700">Tests:</text>
+<text x="108.4 116.8 125.2" y="959" fill="#11a8cd">npm</text>
+<text x="142 150.4 158.8 167.2" y="959" fill="#11a8cd">test</text>
+<text x="184 192.4" y="959" fill="#11a8cd">--</text>
+<text x="209.2 217.6 226 234.4 242.8 251.2" y="959" fill="#11a8cd">health</text>
+<text x="268 276.4 284.8 293.2 301.6 310" y="959" fill="#4ade80">passes</text>
+<text x="326.8 335.2" y="959" fill="#4ade80">(2</text>
+<text x="352 360.4 368.8 377.2 385.6 394 402.4" y="959" fill="#4ade80">tests).</text>
+<text x="32.8" y="977" fill="#11a8cd">•</text>
+<text x="49.6 58 66.4 74.8 83.2" y="977" fill="#4ade80" font-weight="700">Next:</text>
+<text x="100 108.4 116.8 125.2" y="977" fill="#4ade80">wire</text>
+<text x="142 150.4" y="977" fill="#4ade80">it</text>
+<text x="167.2 175.6 184 192.4" y="977" fill="#4ade80">into</text>
+<text x="209.2 217.6 226 234.4" y="977" fill="#4ade80">your</text>
+<text x="251.2 259.6 268 276.4" y="977" fill="#4ade80">load</text>
+<text x="293.2 301.6 310 318.4 326.8 335.2 343.6 352 360.4 368.8" y="977" fill="#4ade80">balancer's</text>
+<text x="385.6 394 402.4 410.8 419.2 427.6" y="977" fill="#4ade80">health</text>
+<text x="444.4 452.8 461.2 469.6 478 486.4" y="977" fill="#4ade80">check.</text>
+<text x="570.4 578.8 587.2 595.6 604 612.4 620.8 629.2 637.6" y="1103" fill="#94a3b8">anthropic</text>
+<text x="654.4" y="1103" fill="#94a3b8">·</text>
+<text x="671.2 679.6 688 696.4 704.8 713.2 721.6 730 738.4 746.8 755.2 763.6 772 780.4 788.8 797.2 805.6" y="1103" fill="#94a3b8">claude-sonnet-4-5</text>
+<text x="822.4" y="1103" fill="#94a3b8">·</text>
+<text x="839.2 847.6 856 864.4 872.8 881.2 889.6 898 906.4 914.8 923.2" y="1103" fill="#94a3b8">full-access</text>
+<text x="32.8" y="1121" fill="#2eebff" font-weight="700">❯</text>
+<text x="49.6 58 66.4" y="1121" fill="#94a3b8">ask</text>
+<text x="83.2 91.6 100 108.4 116.8 125.2 133.6 142" y="1121" fill="#94a3b8">anything</text>
+<text x="158.8" y="1121" fill="#94a3b8">·</text>
+<text x="175.6" y="1121" fill="#94a3b8">@</text>
+<text x="192.4 200.8 209.2 217.6" y="1121" fill="#94a3b8">file</text>
+<text x="234.4 242.8" y="1121" fill="#94a3b8">or</text>
+<text x="259.6 268 276.4 284.8 293.2 301.6" y="1121" fill="#94a3b8">folder</text>
+<text x="318.4" y="1121" fill="#94a3b8">·</text>
+<text x="335.2 343.6 352 360.4 368.8 377.2 385.6 394 402.4 410.8 419.2" y="1121" fill="#94a3b8">Shift+Enter</text>
+<text x="436 444.4 452.8 461.2 469.6 478 486.4" y="1121" fill="#94a3b8">newline</text>
+<text x="503.2" y="1121" fill="#94a3b8">·</text>
+<text x="520 528.4" y="1121" fill="#94a3b8">⇧⇥</text>
+<text x="545.2 553.6 562 570.4" y="1121" fill="#94a3b8">mode</text>
+<text x="24.4 32.8 41.2 49.6 58" y="1157" fill="#ffffff" font-weight="700">AGENT</text>
+<text x="108.4 116.8" y="1157" fill="#94a3b8">⇧⇥</text>
+<text x="662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730 738.4 746.8 755.2 763.6 772" y="1157" fill="#94a3b8">~/projects/api</text>
+<text x="805.6 814 822.4 830.8" y="1157" fill="#f5b351">main</text>
+<text x="864.4 872.8 881.2" y="1157" fill="#2eebff" font-weight="700">ctx</text>
+<text x="898 906.4 914.8 923.2 931.6 940" y="1157" fill="#2eebff" font-weight="700">0/200k</text>
 </g>
 </svg>

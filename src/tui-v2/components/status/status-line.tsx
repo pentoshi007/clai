@@ -244,16 +244,23 @@ function ModeBadge(props: {
         ? theme.chipIndigo
         : theme.chipTeal;
   return (
-    <text
-      selectable={false}
-      content={` ${label} `}
-      style={{
-        fg: theme.white,
-        bg,
-        attributes: TextAttributes.BOLD,
-        flexShrink: 0,
-      }}
-    />
+    <>
+      <text
+        selectable={false}
+        content="▐"
+        style={{ fg: bg, bg: theme.background, flexShrink: 0 }}
+      />
+      <text
+        selectable={false}
+        content={`${label} `}
+        style={{
+          fg: theme.white,
+          bg,
+          attributes: TextAttributes.BOLD,
+          flexShrink: 0,
+        }}
+      />
+    </>
   );
 }
 
@@ -371,6 +378,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
     exact: true,
   };
   const ctxChip = contextChipForDensity(contextUsage, density);
+  const contextGap = ctxChip ? 3 : 0;
   const idleHints = idleHintIds(density, hasDraft);
 
   if (busy) {
@@ -396,7 +404,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           alignItems: "center",
           justifyContent: "space-between",
           backgroundColor: theme.background,
-          paddingLeft: 1,
           paddingRight: 1,
         }}
       >
@@ -466,9 +473,10 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             flexGrow: 1,
             flexShrink: 1,
             flexBasis: 0,
-            minWidth: showJump ? renderColumns(jumpLabel) : 0,
+            minWidth: showJump ? renderColumns(jumpLabel) + contextGap : 0,
             overflow: "hidden",
             justifyContent: "flex-end",
+            paddingRight: contextGap,
           }}
         >
           {jumpControl}
@@ -486,7 +494,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
                 id="status-git-branch"
                 content={` \ue0a0 ${gitBranch}`}
                 wrapMode="none"
-                style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
+                style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1 }}
               />
             ) : null}
           </box>
@@ -516,7 +524,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
         alignItems: "center",
         justifyContent: "space-between",
         backgroundColor: theme.background,
-        paddingLeft: 1,
         paddingRight: 1,
       }}
     >
@@ -650,9 +657,10 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           flexGrow: 1,
           flexShrink: 1,
           flexBasis: 0,
-          minWidth: showJump ? renderColumns(jumpLabel) : 0,
+          minWidth: showJump ? renderColumns(jumpLabel) + contextGap : 0,
           overflow: "hidden",
           justifyContent: "flex-end",
+          paddingRight: contextGap,
         }}
       >
         {jumpControl}
@@ -670,7 +678,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
               id="status-git-branch"
               content={` \ue0a0 ${gitBranch}`}
               wrapMode="none"
-              style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1, paddingRight: 2 }}
+              style={{ fg: theme.userBorder, flexShrink: 1, minWidth: 0, height: 1 }}
             />
           ) : null}
         </box>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import chalk from "chalk";
+import { TextAttributes } from "@opentui/core";
 import { ansiToStyledText } from "../../../src/tui-v2/rendering/ansi-to-styled.js";
 import { renderIntroHeaderLines } from "../../../src/ui-core/rendering/intro-header.js";
 
@@ -8,6 +9,25 @@ describe("ansiToStyledText", () => {
     const st = ansiToStyledText("hello");
     expect(st.chunks).toHaveLength(1);
     expect(st.chunks[0]?.text).toBe("hello");
+  });
+
+  it.each([
+    [3, 23, TextAttributes.ITALIC],
+    [4, 24, TextAttributes.UNDERLINE],
+    [9, 29, TextAttributes.STRIKETHROUGH],
+  ])("preserves SGR %s and clears it with %s", (open, close, attribute) => {
+    const styled = ansiToStyledText(`plain\x1b[${open}mstyled\x1b[${close}mplain`);
+    expect(styled.chunks.map((chunk) => chunk.text)).toEqual(["plain", "styled", "plain"]);
+    expect(styled.chunks[1]?.attributes).toBe(attribute);
+    expect(styled.chunks[0]?.attributes ?? 0).toBe(0);
+    expect(styled.chunks[2]?.attributes ?? 0).toBe(0);
+  });
+
+  it("keeps bold active when nested emphasis ends", () => {
+    const styled = ansiToStyledText("\x1b[1;3mcombined\x1b[23mbold\x1b[22mplain");
+    expect(styled.chunks[0]?.attributes).toBe(TextAttributes.BOLD | TextAttributes.ITALIC);
+    expect(styled.chunks[1]?.attributes).toBe(TextAttributes.BOLD);
+    expect(styled.chunks[2]?.attributes ?? 0).toBe(0);
   });
 
   it("applies defaultFg when no SGR color is present", () => {

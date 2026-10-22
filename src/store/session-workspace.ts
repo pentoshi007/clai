@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fixOwnerSync } from "../os/permissions.js";
+import { clearSessionWorkspaceActivity, protectSessionWorkspace } from "./session-workspace-activity.js";
+import { scheduleSessionWorkspaceCleanup, stopSessionWorkspaceCleanup } from "./session-workspace-cleanup.js";
 
 export interface SessionWorkspace {
   readonly code: string;
@@ -154,6 +156,8 @@ export function getActiveSessionWorkspace(): SessionWorkspace | undefined {
 export function bindSessionWorkspace(ws: SessionWorkspace): SessionWorkspace {
   ensureSessionWorkspaceDirs(ws);
   active = ws;
+  protectSessionWorkspace(ws.rootDir);
+  scheduleSessionWorkspaceCleanup(getSessionWorkspaceParent());
   return ws;
 }
 
@@ -171,6 +175,8 @@ export function beginSessionWorkspace(existing?: {
 
 export function clearActiveSessionWorkspace(): void {
   active = undefined;
+  clearSessionWorkspaceActivity();
+  stopSessionWorkspaceCleanup();
 }
 
 export function removeSessionWorkspaceFolder(folderName: string): boolean {

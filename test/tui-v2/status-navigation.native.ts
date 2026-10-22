@@ -3,12 +3,14 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { act, createElement } from "react";
+import { act, createElement, createRef } from "react";
+import type { BoxRenderable, TextareaRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { themeFor } from "../../src/ui-core/rendering/theme.js";
 import { StatusLine } from "../../src/tui-v2/components/status/status-line.js";
+import { ComposerInputBox } from "../../src/tui-v2/components/composer/composer-input-box.js";
 import { publishTranscriptScrollMetrics } from "../../src/tui-v2/components/transcript/transcript-scroll-port.js";
 
 async function verify(width: number): Promise<void> {
@@ -32,28 +34,65 @@ async function verify(width: number): Promise<void> {
   services.session.enqueue("queued first");
   services.session.enqueue("queued second");
   const queued = services.session.getState().queued;
-  const setup = await testRender(createElement(StatusLine, {
+  const theme = themeFor("dark");
+  const composerRef = createRef<BoxRenderable>();
+  const noop = (): void => {};
+  const setup = await testRender(createElement("box", {
+    style: { width, flexDirection: "column" },
+  }, createElement(ComposerInputBox, {
+    theme,
+    boxRef: composerRef,
+    editorRef: createRef<TextareaRenderable>(),
+    focused: false,
+    width,
+    boxHeight: 3,
+    metaShown: "",
+    chromeFg: theme.inputBorder,
+    keyBindings: undefined as never,
+    onMouseDown: noop,
+    onMouseScroll: noop,
+    onSubmit: noop,
+    onContentChange: noop,
+    onCursorChange: noop,
+    onKeyDown: noop,
+  }), createElement(StatusLine, {
     session: services.session,
     mode: "agent",
-    theme: themeFor("dark"),
+    theme,
     activity: "checking status spacing",
     width,
     hasActivePlan: true,
     planVisible: false,
     onJumpBottom: () => { jumps += 1; publishTranscriptScrollMetrics({ linesAbove: 240, linesBelow: 0 }); },
     onFocusComposer: () => { focused += 1; },
-  }), { width, height: 3, useThread: false, useMouse: true });
+  })), { width, height: 5, useThread: false, useMouse: true });
   const settle = async (action: () => unknown = () => undefined): Promise<void> => {
-    await act(async () => { await action(); await setup.flush(); });
+    await act(async () => { await action(); });
+    await act(async () => { await setup.flush(); });
   };
   const button = () => setup.renderer.root.findDescendantById("jump-to-latest");
+  const assertFooterSpacing = (): { row: string; contextLeft: number } => {
+    const composer = composerRef.current;
+    assert.ok(composer, "the composer is mounted");
+    const row = setup.captureCharFrame().split("\n")[composer.y + composer.height]!;
+    assert.match(row, /AGENT/, row);
+    const context = /ctx \S+\s*$/.exec(row);
+    assert.ok(context, row);
+    assert.equal(context.index + context[0].trimEnd().length, composer.x + composer.width - 1, `context stays inside the composer border: ${row}`);
+    const beforeContext = row.slice(0, context.index);
+    const branchStart = beforeContext.indexOf("\ue0a0");
+    if (branchStart >= 0 && beforeContext.slice(branchStart + 1).trim() !== "") {
+      const gap = beforeContext.match(/ +$/)?.[0].length ?? 0;
+      assert.equal(gap, 3, `location/branch and context have a three-column gap: ${row}`);
+    }
+    return { row, contextLeft: context.index };
+  };
   const assertSpacing = (): void => {
+    const { row, contextLeft } = assertFooterSpacing();
     const target = button();
     assert.ok(target, "older content exposes the jump control");
-    const row = setup.captureCharFrame().split("\n")[target.y]!;
     assert.ok(target.x >= 0 && target.x + target.width <= width, row);
-    assert.match(row, /AGENT/, row);
-    assert.match(row, /ctx 0/, row);
+    assert.ok(target.x + target.width <= contextLeft - 3, `jump control stays clear of context: ${JSON.stringify({ width, x: target.x, jumpWidth: target.width, contextLeft, row })}`);
     if (width < 120) return;
     const before = Array.from(row).slice(0, target.x).join("");
     assert.match(before, /Tasks/, row);
@@ -67,18 +106,21 @@ async function verify(width: number): Promise<void> {
     if (width === 160) console.log(JSON.stringify({ running: services.session.getState().running, width, leftGap, rightGap, row }));
   };
   try {
-    await settle(() => publishTranscriptScrollMetrics({ linesAbove: 0, linesBelow: 240 }));
+    await settle();
     await act(async () => { await setup.waitFor(() => setup.renderer.root.findDescendantById("status-git-branch") !== undefined); });
     await settle();
-    await settle();
+    assertFooterSpacing();
+    await settle(() => publishTranscriptScrollMetrics({ linesAbove: 0, linesBelow: 240 }));
     assertSpacing();
     await settle(() => { active = services.session.submit("Keep the spacing test running"); });
     assert.equal(services.session.getState().running, true);
     assertSpacing();
     const target = button()!;
     await settle(() => setup.mockMouse.click(target.x + 1, target.y));
+    assert.equal(jumps, 1, JSON.stringify({ width, x: target.x, y: target.y, frame: setup.captureCharFrame() }));
     assert.equal(button(), undefined);
-    assert.equal(jumps, 1);
+    assert.doesNotMatch(setup.captureCharFrame(), /\[↓ (?:Latest|Jump to latest)\]/);
+    assertFooterSpacing();
     assert.equal(focused, 1);
     assert.deepEqual(services.session.getState().queued, queued);
   } finally {

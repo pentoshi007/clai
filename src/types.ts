@@ -447,6 +447,7 @@ export interface BackgroundJobReceipt {
 export interface ToolResult {
   ok: boolean;
   output: string;
+  warning?: string | undefined;
   exitCode?: number | undefined;
   runFailure?: boolean | undefined;
   outputPath?: string | undefined;

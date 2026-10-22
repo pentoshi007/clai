@@ -283,6 +283,72 @@ describe("RendererLifecycle concurrent quit", () => {
   });
 });
 
+describe("RendererLifecycle fatal diagnostics", () => {
+  it("reports the failure after releasing the terminal and before exiting", async () => {
+    const order: string[] = [];
+    const proc = new FakeProcess();
+    proc.exit = (code = 0) => { order.push(`exit:${code}`); };
+    const life = new RendererLifecycle({
+      handle: makeHandle(order),
+      process: proc,
+      disposers: [() => { order.push("restore-console"); }],
+      epilogue: () => { order.push("summary"); },
+      onError: () => { order.push("log-error"); },
+      onFatal: async () => { await Promise.resolve(); order.push("visible-error"); },
+    });
+    await life.start();
+    proc.emit("uncaughtException", new Error("EDQUOT"));
+    await flushUntil(() => order.includes("exit:1"));
+    expect(order).toEqual(["start", "log-error", "restore-console", "destroy", "summary", "visible-error", "exit:1"]);
+  });
+
+  it("shows one diagnostic for racing exception and rejection handlers", async () => {
+    const proc = new FakeProcess();
+    const onFatal = vi.fn();
+    const life = new RendererLifecycle({ handle: makeHandle([]), process: proc, onFatal });
+    await life.start();
+    const error = new Error("failed write");
+    proc.emit("uncaughtException", error);
+    proc.emit("unhandledRejection", error);
+    await flushUntil(() => proc.exitCalls.length > 0);
+    expect(onFatal).toHaveBeenCalledExactlyOnceWith(error);
+    expect(proc.exitCalls).toEqual([1]);
+  });
+
+  it("still restores the terminal and exits if diagnostics fail", async () => {
+    const proc = new FakeProcess();
+    const order: string[] = [];
+    const life = new RendererLifecycle({
+      handle: makeHandle(order),
+      process: proc,
+      onError: () => { throw new Error("logging failed"); },
+      onFatal: () => { throw new Error("terminal write failed"); },
+    });
+    await life.start();
+    proc.emit("unhandledRejection", new Error("failure"));
+    await flushUntil(() => proc.exitCalls.length > 0);
+    expect(order).toContain("destroy");
+    expect(proc.exitCalls).toEqual([1]);
+  });
+
+  it("attempts visible diagnostics even if cleanup and its error logger fail", async () => {
+    const proc = new FakeProcess();
+    const onFatal = vi.fn();
+    const life = new RendererLifecycle({
+      handle: { start() {}, destroy() { throw new Error("renderer failed"); } },
+      process: proc,
+      onError: () => { throw new Error("logging failed"); },
+      onFatal,
+    });
+    await life.start();
+    const error = new Error("fatal write");
+    proc.emit("uncaughtException", error);
+    await flushUntil(() => proc.exitCalls.length > 0);
+    expect(onFatal).toHaveBeenCalledExactlyOnceWith(error);
+    expect(proc.exitCalls).toEqual([1]);
+  });
+});
+
 describe("RendererLifecycle start failure", () => {
   it("tears down and rethrows when the renderer fails to start", async () => {
     const proc = new FakeProcess();

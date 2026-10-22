@@ -102,6 +102,19 @@ describe("createTurnEventEmitter", () => {
     ]);
   });
 
+  it("surfaces recoverable output-storage warnings as transcript notices", () => {
+    const { events, emitter } = setup();
+    emitter.emitToolResult("tool-1", {
+      ok: true,
+      output: "command completed",
+      warning: "Storage quota exceeded (EDQUOT). Only the bounded preview is available.",
+    }, "done");
+    expect(events).toEqual([
+      { type: "tool-result", id: "tool-1", ok: true, summary: "done" },
+      { type: "notice", level: "warn", text: "Storage quota exceeded (EDQUOT). Only the bounded preview is available." },
+    ]);
+  });
+
   it("filters empty compaction deltas and preserves compaction payloads", () => {
     const { events, emitter } = setup();
     emitter.writeCompactionStarted("compact-1", 100);
