@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { c } from "tar";
@@ -82,6 +82,7 @@ describe("portable JDK selection", () => {
     expect(unsupported).toMatchObject({ ok: false, reason: expect.stringContaining("/rea engines use java") });
     const musl = await resolveJdkRelease({ platform: "linux", arch: "x64" }, { fetch: fetcher, musl: true });
     expect(musl).toMatchObject({ ok: false, reason: expect.stringContaining("musl") });
+    expect(await resolveJdkRelease({ platform: "linux", arch: "x64", musl: true }, { fetch: fetcher })).toMatchObject({ ok: false, reason: expect.stringContaining("musl") });
     expect(seen).toHaveLength(1);
   });
 
@@ -129,7 +130,7 @@ describe("portable JDK installation", () => {
     const result = await installJdk({ root, release: releaseOf(archive, "tar.gz"), host: { platform: "darwin", arch: "arm64" }, fetch: serve(archive), probe });
     const home = join(engineRoots(root).java, "jdk-21.0.12.1+1", "Contents", "Home");
     expect(result).toEqual({ ok: true, home, version: "21.0.12.1", changed: true });
-    expect(probe).toHaveBeenCalledWith(expect.stringContaining(join("tree", "Contents", "Home")), "darwin");
+    expect(probe).toHaveBeenCalledWith(expect.stringContaining(join("t", "Contents", "Home")), "darwin");
     expect(await readFile(join(home, "release"), "utf8")).toContain("JAVA_VERSION");
     expect(await readEngineSettings(root)).toEqual({ java: { home, managed: true, version: "jdk-21.0.12.1+1" } });
     expect(await readdir(engineRoots(root).java)).toEqual(["jdk-21.0.12.1+1", "my-own-notes"]);
@@ -167,6 +168,40 @@ describe("portable JDK installation", () => {
       .toMatchObject({ ok: false, reason: expect.stringContaining("checksum mismatch") });
     expect(await readEngineSettings(root)).toEqual({});
     expect(await readdir(engineRoots(root).java)).toEqual([]);
+  });
+
+  it("replaces a damaged copy of the same version", async () => {
+    const root = await rootOf();
+    const damaged = join(engineRoots(root).java, "jdk-21.0.12.1+1");
+    await mkdir(join(damaged, "bin"), { recursive: true });
+    await writeFile(join(damaged, "half-extracted"), "x");
+    const archive = zipArchive([{ name: "jdk-21.0.12.1+1/bin/java", body: "x" }]);
+    expect(await installJdk({ root, release: releaseOf(archive, "zip"), host: { platform: "linux", arch: "x64" }, fetch: serve(archive), probe: async () => "21" })).toMatchObject({ ok: true, changed: true });
+    expect(await readdir(engineRoots(root).java)).toEqual(["jdk-21.0.12.1+1"]);
+    await expect(stat(join(damaged, "half-extracted"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(damaged, "bin", "java"), "utf8")).toBe("x");
+  });
+
+  it("clears the leftovers of a crashed install before it starts", async () => {
+    const root = await rootOf();
+    const folder = engineRoots(root).java;
+    for (const name of [".s-deadbeef", ".staging-0b0e4f0e-8c6c-4a0c-9d57-2f1b5e0d9a11"]) {
+      await mkdir(join(folder, name, "t"), { recursive: true });
+      await writeFile(join(folder, name, "t", "partial"), "x");
+    }
+    const archive = zipArchive([{ name: "jdk-21.0.12.1+1/bin/java", body: "x" }]);
+    expect(await installJdk({ root, release: releaseOf(archive, "zip"), host: { platform: "linux", arch: "x64" }, fetch: serve(archive), probe: async () => "21" })).toMatchObject({ ok: true });
+    expect(await readdir(folder)).toEqual(["jdk-21.0.12.1+1"]);
+  });
+
+  it("tells a Windows user whose data folder is too deep to move it, before downloading anything", async () => {
+    const root = join(await workspace(), "a".repeat(200), "tools", "rea");
+    const archive = zipArchive([{ name: "jdk-21.0.12.1+1/bin/java.exe", body: "MZ" }]);
+    const calls: string[] = [];
+    const result = await installJdk({ root, release: releaseOf(archive, "zip"), host: { platform: "win32", arch: "x64" }, fetch: serve(archive, calls), probe: async () => "21" });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringMatching(/too deep for Windows.*CLAI_DATA_DIR/) });
+    expect(calls).toEqual([]);
+    await expect(readdir(engineRoots(root).java)).rejects.toThrow();
   });
 
   it("refuses archives that expand beyond the allowed size", async () => {

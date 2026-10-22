@@ -29,7 +29,7 @@ try {
   if (!enabled.ok) throw new Error(enabled.output);
   const tools = reaTools(runtime);
   const index = enabled.output.slice(enabled.output.indexOf("REA TOOLS ("));
-  const unlisted = tools.filter((tool) => !new RegExp(`(?:^|[ :])${tool.toolName}(?=[ (!~\\n]|$)`).test(index));
+  const unlisted = tools.filter((tool) => !new RegExp(`(?:^|[ :])${tool.toolName}(?=[ (!~#^%\\n]|$)`).test(index));
   if (tools.length < 100 || unlisted.length > 0) throw new Error(`Tool index lists ${tools.length - unlisted.length} of ${tools.length} tools`);
   const catalog = await runtime.agentTools(REA_SERVER, { query: "inspect_go_binary" });
   const name = `mcp.${REA_SERVER}.inspect_go_binary`;
@@ -48,6 +48,6 @@ try {
   await runtime.closeAll();
   if (previousData === undefined) delete process.env.CLAI_DATA_DIR;
   else process.env.CLAI_DATA_DIR = previousData;
-  if (process.env.CLAI_REA_SMOKE_KEEP !== "1") await rm(work, { recursive: true, force: true });
+  if (process.env.CLAI_REA_SMOKE_KEEP !== "1") await rm(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   else console.log(`Artifacts: ${work}`);
 }

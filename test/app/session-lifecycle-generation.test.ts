@@ -103,12 +103,12 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
     ]);
 
     primeCompactionSnapshot(session);
-    const compacting = session.compact(undefined, 1);
+    const compacting = session.compact(undefined, 1).catch(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, 1));
     session.loadHistory([{ role: "user", content: "session B question" }], {
       sessionId: "sess-b",
     });
-    await compacting.catch(() => undefined);
+    await compacting;
 
     expect(session.messages.map((message) => message.content)).toEqual([
       "session B question",
