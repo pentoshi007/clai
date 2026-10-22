@@ -49,10 +49,14 @@ async function hasLiveOwner(path: string): Promise<boolean> {
   }
 }
 
+function expiredAtMillisecondPrecision(mtimeMs: number, cutoff: number): boolean {
+  return Number.isFinite(mtimeMs) && Math.ceil(mtimeMs) < cutoff;
+}
+
 async function treeIsExpired(path: string, cutoff: number, pacer: CleanupPacer, depth = 0): Promise<boolean> {
   await pacer.step();
   const info = await lstat(path);
-  if (!Number.isFinite(info.mtimeMs) || info.mtimeMs >= cutoff) return false;
+  if (!expiredAtMillisecondPrecision(info.mtimeMs, cutoff)) return false;
   if (!info.isDirectory() || info.isSymbolicLink()) return true;
   if (depth >= MAX_DEPTH) return false;
   const dir = await opendir(path, { bufferSize: 16 });
@@ -73,7 +77,7 @@ async function removeExpiredTree(
   if (isWorkspaceActive(root) || await hasLiveOwner(join(root, WORKSPACE_OWNERS_DIR))) return false;
   const info = await lstat(path);
   if (info.isSymbolicLink() || !info.isDirectory()) {
-    if (info.mtimeMs >= cutoff) return false;
+    if (!expiredAtMillisecondPrecision(info.mtimeMs, cutoff)) return false;
     await unlink(path);
     return true;
   }
@@ -155,7 +159,7 @@ async function runCleanup(parent: string, now: number): Promise<number> {
       if (isWorkspaceActive(root)) continue;
       try {
         const observed = await lstat(root);
-        if (!observed.isDirectory() || observed.isSymbolicLink() || observed.mtimeMs >= cutoff) continue;
+        if (!observed.isDirectory() || observed.isSymbolicLink() || !expiredAtMillisecondPrecision(observed.mtimeMs, cutoff)) continue;
         if (typeof process.getuid === "function" && observed.uid !== process.getuid()) continue;
         if (await hasLiveOwner(join(root, WORKSPACE_OWNERS_DIR))) continue;
         if (!await treeIsExpired(root, cutoff, pacer)) continue;
