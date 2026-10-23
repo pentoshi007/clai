@@ -30,19 +30,15 @@ function plan(tasks: PlanTask[]): SessionPlan {
 }
 
 describe("responder rows in the plan pane (TUI-006)", () => {
-  it("keeps active responder rails cyan and terminal rails state-colored", () => {
-    for (const state of ["pending", "in_progress"] as TaskState[]) {
-      expect(taskRowColor(task({ id: "c1", state, responderOwned: true }))).toBe("cyan");
-    }
-    expect(taskRowColor(task({ id: "c1", state: "done", responderOwned: true }))).toBe("success");
-    expect(taskRowColor(task({ id: "c2", state: "failed", responderOwned: true }))).toBe(
-      "diffDel",
-    );
-  });
-
-  it("leaves foreground rows on their state colors", () => {
-    expect(taskRowColor(task({ id: "t1", state: "in_progress" }))).toBe("activity");
-    expect(taskRowColor(task({ id: "t2", state: "done" }))).toBe("success");
+  it.each<{ state: TaskState; color: string }>([
+    { state: "pending", color: "foreground" },
+    { state: "in_progress", color: "activity" },
+    { state: "done", color: "success" },
+    { state: "failed", color: "diffDel" },
+    { state: "skipped", color: "muted" },
+  ])("uses the same $state color for responder and foreground rows", ({ state, color }) => {
+    expect(taskRowColor(task({ id: "c1", state, responderOwned: true }))).toBe(color);
+    expect(taskRowColor(task({ id: "t1", state }))).toBe(color);
   });
 
   it("uses background glyphs for responder rows", () => {

@@ -32,8 +32,8 @@ export interface LayoutModel {
 export const COMPACT_MAX_COLS = 79;
 export const SINGLE_MAX_COLS = 119;
 export const MIN_ROWS_FOR_STANDARD = 20;
-export const PLAN_MIN_WIDTH = 34;
-export const PLAN_MAX_WIDTH = 49;
+export const PLAN_MIN_WIDTH = 33;
+export const PLAN_MAX_WIDTH = 48;
 export const PLAN_SPLIT_SHARE = 0.325;
 export const PLAN_OVERLAY_SHARE = 0.37;
 export const CHAT_MIN_WIDTH_SPLIT = 72;
@@ -123,7 +123,7 @@ function resolvePlan(
     return { placement: "overlay", planWidth: 0, chatWidth: columns };
   }
   const desired = clamp(
-    Math.floor(columns * PLAN_SPLIT_SHARE),
+    Math.floor(columns * PLAN_SPLIT_SHARE) - 1,
     PLAN_MIN_WIDTH,
     PLAN_MAX_WIDTH,
   );

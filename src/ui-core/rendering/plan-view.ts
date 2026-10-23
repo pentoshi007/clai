@@ -173,8 +173,6 @@ export function orderPlanTasksForDisplay(tasks: readonly PlanTask[]): PlanTask[]
 }
 
 export function taskRowColor(task: PlanTask): PlanColorToken {
-  if (!task.responderOwned) return taskStateColor(task.state);
-  if (task.state === "pending" || task.state === "in_progress") return "cyan";
   return taskStateColor(task.state);
 }
 

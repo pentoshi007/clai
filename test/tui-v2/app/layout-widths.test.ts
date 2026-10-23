@@ -3,7 +3,7 @@ import {
   appWidthBudget,
   focusAfterPlanSuppression,
 } from "../../../src/tui-v2/app/layout-widths.js";
-import type { PlanPlacement } from "../../../src/ui-core/layout/compute-layout.js";
+import { computeLayout, type PlanPlacement } from "../../../src/ui-core/layout/compute-layout.js";
 
 const WIDTHS = [0, 1, 9, 19, 20, 23, 24, 27, 28, 55, 56, 59, 60, 100, 119, 120];
 const PLACEMENTS: PlanPlacement[] = ["hidden", "overlay", "split"];
@@ -61,9 +61,34 @@ describe("OpenTUI App width budget", () => {
       requestedSplitPlanWidth: 0,
     });
     expect(usable.showPlanOverlay).toBe(true);
-    expect(usable.overlayPlanWidth).toBe(34);
-    expect(usable.chatContentWidth).toBe(30);
-    expect(usable.transcriptContentWidth).toBe(29);
+    expect(usable.overlayPlanWidth).toBe(33);
+    expect(usable.chatContentWidth).toBe(31);
+    expect(usable.transcriptContentWidth).toBe(30);
+  });
+
+  it.each([
+    { terminalWidth: 120, planWidth: 38, transcriptWidth: 81 },
+    { terminalWidth: 128, planWidth: 40, transcriptWidth: 87 },
+    { terminalWidth: 160, planWidth: 48, transcriptWidth: 111 },
+  ])("gives the transcript one extra column at $terminalWidth columns", ({ terminalWidth, planWidth, transcriptWidth }) => {
+    const layout = computeLayout({ columns: terminalWidth, rows: 40, planVisible: true, splitEnabled: true });
+    const budget = appWidthBudget({
+      terminalWidth,
+      planPresent: true,
+      planPlacement: layout.plan.placement,
+      requestedSplitPlanWidth: layout.plan.width,
+    });
+    expect(budget.splitPlanWidth).toBe(planWidth);
+    expect(budget.transcriptContentWidth).toBe(transcriptWidth);
+    expect(budget.splitPlanWidth + budget.planChatGap + budget.transcriptContentWidth).toBe(terminalWidth);
+  });
+
+  it("preserves the chat floor at the overlay visibility boundary", () => {
+    const budget = (terminalWidth: number) => appWidthBudget({
+      terminalWidth, planPresent: true, planPlacement: "overlay", requestedSplitPlanWidth: 0,
+    });
+    expect(budget(57).showPlanOverlay).toBe(false);
+    expect(budget(58)).toMatchObject({ showPlanOverlay: true, overlayPlanWidth: 33, transcriptContentWidth: 24 });
   });
 
   it("moves focus away from a plan hidden by a narrow resize", () => {
@@ -86,10 +111,10 @@ describe("OpenTUI App width budget", () => {
     expect(transition[1]?.chatContentWidth).toBe(20);
     expect(transition[2]).toMatchObject({
       contentInnerWidth: 100,
-      overlayPlanWidth: 37,
-      overlayReserveWidth: 37,
-      chatContentWidth: 63,
-      transcriptContentWidth: 62,
+      overlayPlanWidth: 36,
+      overlayReserveWidth: 36,
+      chatContentWidth: 64,
+      transcriptContentWidth: 63,
     });
     expect(transition[3]?.chatContentWidth).toBe(20);
     expect(transition[4]).toEqual(transition[2]);

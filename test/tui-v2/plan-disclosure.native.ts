@@ -9,6 +9,7 @@ import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-r
 import { detectCapabilities, type ThemeHint } from "../../src/ui-core/bootstrap/capabilities.js";
 import { themeFor } from "../../src/ui-core/rendering/theme.js";
 import { createPlan, type SessionPlan } from "../../src/store/plan.js";
+import { taskStateColor } from "../../src/ui-core/rendering/plan-view.js";
 import { PlanView } from "../../src/tui-v2/components/plan/plan-view.js";
 import type { PlanInteractionPort } from "../../src/tui-v2/components/plan/plan-interaction.js";
 
@@ -275,6 +276,37 @@ try {
         assertInlineControl("t1");
       }
       await capture(`tasks-inline-${theme}-${width}`);
+    }
+  }
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const state of ["pending", "in_progress", "done", "failed", "skipped"] as const) {
+      const colors: SessionPlan = { ...fresh, tasks: [
+        { ...fresh.tasks[0]!, title: "Background proof", state, responderOwned: true },
+        { ...fresh.tasks[1]!, title: "Foreground proof", state },
+      ] };
+      await rerender({ ...view, plan: colors, width: 48, theme });
+      const palette = themeFor(theme);
+      const railColor = RGBA.fromHex(palette[taskStateColor(state)]).toInts();
+      const titleColor = state === "pending" || state === "skipped" ? palette.foreground : palette[taskStateColor(state)];
+      for (const id of ["t1", "t2"]) {
+        const row = node(`plan-task-${id}`);
+        const header = node(`plan-task-${id}-header`);
+        for (const line of header.getChildren()) {
+          const text = line.getChildren()[0];
+          assert.ok(text instanceof TextRenderable);
+          assert.deepEqual(text.fg.toInts(), RGBA.fromHex(titleColor).toInts(), `${id} must use its ${state} title color in ${theme} mode`);
+        }
+        let x = 0;
+        const rail = setup.captureSpans().lines[header.y]!.spans.find((span) => {
+          const contains = row.x >= x && row.x < x + span.width;
+          x += span.width;
+          return contains;
+        });
+        assert.ok(rail);
+        assert.deepEqual(rail.bg.toInts(), railColor, `${id} must render its ${state} rail color in ${theme} mode`);
+      }
+      await capture(`tasks-status-${theme}-${state}`);
     }
   }
 
