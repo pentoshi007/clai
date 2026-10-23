@@ -187,7 +187,7 @@ function TurnSummaryRow(props: {
   const label = `✻ ${turnSummaryLabel(item.durationMs, item.status, item.changes, item.generation)}`;
   const lines = wrapAnsiLine(label, Math.max(1, props.contentWidth ?? width - 6));
   return (
-    <box style={{ flexDirection: "column", width: "100%" }}>
+    <box style={{ flexDirection: "column", width: "100%", marginBottom: 1 }}>
       {lines.map((line, index) => (
         <text key={index} selectable wrapMode="none" style={{ fg: theme.muted }}>
           {line.split(/([+-]\d+)/).map((part, partIndex) => {
