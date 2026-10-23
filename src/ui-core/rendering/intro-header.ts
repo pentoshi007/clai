@@ -131,6 +131,7 @@ function infoRows(card: CardModel, width: number): string[] {
     ["provider", "prov", card.provider, chalk.hex(t.success)],
   ];
   if (card.effort) rows.push(["effort", "eff", card.effort, chalk.hex(t.magenta)]);
+  rows.push(["version", "ver", card.version, plain]);
 
   const useShort = width < 30;
   const labelWidth = Math.max(...rows.map(([full, short]) => (useShort ? short : full).length));

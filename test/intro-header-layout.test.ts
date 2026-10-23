@@ -51,6 +51,18 @@ expect(lines.some((line) => line.includes("effo") && line.includes("high"))).toB
     }
   });
 
+  it.each([120, 60, 44])("shows the version row from the passed version at %s columns", (width) => {
+    const lines = renderIntroHeaderLines({ ...options, width }).map(stripAnsi);
+    const versionRow = lines.find((line) => line.includes("1.2.3") && /\bver(sion)?\b/.test(line));
+    expect(versionRow, lines.join("\n")).toBeDefined();
+  });
+
+  it("keeps the version row when effort is hidden", () => {
+    const lines = renderIntroHeaderLines({ ...options, variant: "off", width: 44 }).map(stripAnsi);
+    expect(lines.some((line) => line.includes("1.2.3") && /\bver(sion)?\b/.test(line))).toBe(true);
+    expect(lines.join("\n")).not.toMatch(/\beff(ort)?\b/);
+  });
+
   it("never labels the model row as mode in the narrow card", () => {
     const lines = renderIntroHeaderLines({ ...options, width: 44 }).map(stripAnsi);
     const modelRow = lines.find((line) => line.includes("example/model"))!;
