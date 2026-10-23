@@ -94,6 +94,7 @@ export function ThinkingBlock(props: {
       width: bodyWidth + 2,
       defaultFg: bodyColor,
       stripOuterIndent: true,
+      isolateBold: true,
       theme,
       colorMode,
     };

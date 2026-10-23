@@ -14,6 +14,7 @@ import {
   type CodeFenceState,
 } from "./code-block.js";
 import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdown, renderTableBlock } from "./markdown/tables.js";
+import { splitBoldLines } from "./markdown/bold-lines.js";
 
 import { renderColumns } from "./text-width.js";
 import { wrapPagerLine } from "./pager-chrome.js";
@@ -31,6 +32,7 @@ export const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
 };
 
 export type MarkdownAppearance = CodeBlockAppearance & {
+  readonly isolateBold?: boolean | undefined;
   readonly quotePrefix?: string | undefined;
   readonly literalQuotes?: boolean | undefined;
   readonly lineChangeColors?: boolean | undefined;
@@ -217,6 +219,16 @@ export function indentAndWrapText(text: string, indent = "  "): string {
     .join("\n");
 }
 
+function markdownSegments(text: string, context: RenderContext): string[] {
+  return context.appearance?.isolateBold ? splitBoldLines(text) : [text];
+}
+
+function wrapInlineMarkdown(text: string, width: number, context: RenderContext): string[] {
+  return markdownSegments(text, context).flatMap((segment) =>
+    wrapAnsiLine(renderInlineMarkdown(segment, context.paint), width),
+  );
+}
+
 function wrapMarkdownLine(
   line: string,
   wrapWidth: number,
@@ -242,8 +254,7 @@ function wrapMarkdownLine(
         : wrapPagerLine(content, width, { preserveWhitespace: true });
       return rows.map((row) => prefix + paint.dim(row));
     }
-    const renderedContent = renderInlineMarkdown(content, paint);
-    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - renderColumns(prefix)));
+    const wrapped = wrapInlineMarkdown(content, Math.max(10, wrapWidth - renderColumns(prefix)), context);
     return wrapped.map((wl) => prefix + paint.dim.italic(wl));
   }
 
@@ -255,14 +266,10 @@ function wrapMarkdownLine(
     const content = task[3] ?? "";
     const prefix = `${indent}${box} `;
     const prefixLength = indent.length + 2;
-    let renderedContent = renderInlineMarkdown(content, paint);
-    if (checked) {
-      renderedContent = paint.dim(renderedContent);
-    }
-    const wrapped = wrapAnsiLine(
-      renderedContent,
-      Math.max(10, wrapWidth - prefixLength),
-    );
+    const wrapped = markdownSegments(content, context).flatMap((segment) => {
+      const rendered = renderInlineMarkdown(segment, paint);
+      return wrapAnsiLine(checked ? paint.dim(rendered) : rendered, Math.max(10, wrapWidth - prefixLength));
+    });
     return wrapped.map((wl, idx) => {
       if (idx === 0) return prefix + wl;
       return " ".repeat(prefixLength) + wl;
@@ -276,11 +283,7 @@ function wrapMarkdownLine(
     const content = ordered[3] ?? "";
     const prefix = `${indent}${paint.cyan(`${num}.`)} `;
     const prefixLength = indent.length + num.length + 2;
-    const renderedContent = renderInlineMarkdown(content, paint);
-    const wrapped = wrapAnsiLine(
-      renderedContent,
-      Math.max(10, wrapWidth - prefixLength),
-    );
+    const wrapped = wrapInlineMarkdown(content, Math.max(10, wrapWidth - prefixLength), context);
     return wrapped.map((wl, idx) => {
       if (idx === 0) return prefix + wl;
       return " ".repeat(prefixLength) + wl;
@@ -293,19 +296,18 @@ function wrapMarkdownLine(
     const content = unordered[2] ?? "";
     const prefix = `${indent}${paint.cyan("•")} `;
     const prefixLength = indent.length + 2;
-    const renderedContent = renderInlineMarkdown(content, paint);
-    const wrapped = wrapAnsiLine(
-      renderedContent,
-      Math.max(10, wrapWidth - prefixLength),
-    );
+    const wrapped = wrapInlineMarkdown(content, Math.max(10, wrapWidth - prefixLength), context);
     return wrapped.map((wl, idx) => {
       if (idx === 0) return prefix + wl;
       return " ".repeat(prefixLength) + wl;
     });
   }
 
-  const rendered = paintChangeCounts(renderBlockLine(line, state, context), context);
-  return wrapAnsiLine(rendered, wrapWidth);
+  const segments = /^#{1,6}\s/.test(line) ? [line] : markdownSegments(line, context);
+  return segments.flatMap((segment) => {
+    const rendered = paintChangeCounts(renderBlockLine(segment, state, context), context);
+    return wrapAnsiLine(rendered, wrapWidth);
+  });
 }
 
 const BR_RE = /<br\s*\/?>/i;

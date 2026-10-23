@@ -116,7 +116,7 @@ function themeSignature(
 }
 
 function signatureOf(options: RenderMarkdownLinesOptions): string {
-  return `${options.width}|${options.stripOuterIndent ? 1 : 0}|${options.colorMode ?? ""}|${themeSignature(options.theme)}`;
+  return `${options.width}|${options.stripOuterIndent ? 1 : 0}|${options.isolateBold ? 1 : 0}|${options.colorMode ?? ""}|${themeSignature(options.theme)}`;
 }
 
 export interface StreamingMarkdownResult {
