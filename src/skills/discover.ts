@@ -190,6 +190,7 @@ const SCOPE_RANK: Record<SkillMeta["scope"], number> = {
   extra: 0,
   project: 1,
   user: 2,
+  bundled: 3,
 };
 
 export function dedupeSkills(skills: readonly SkillMeta[]): SkillMeta[] {

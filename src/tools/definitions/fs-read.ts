@@ -22,7 +22,7 @@ export const FS_READ_DESCRIPTION = [
   "Read one text file or list one directory with {path,...options}.",
   `Only when several known files are needed together, use {files:[{path,...options},...]} with 1–${MAX_FS_READ_FILES} entries; single-file reads remain preferred when sufficient.`,
   'Example: {"files":[{"path":"src/app.ts","offset":1,"limit":80},{"path":"src/config.ts","pattern":"export","context":2}]}.',
-  "Choose exactly one of path or files. In files mode, every entry requires path; all filters belong inside that entry, never at the top level. Do not add irrelevant files to fill the limit.",
+  "Choose exactly one of path or files; omit unused fields rather than sending empty strings, arrays, or nulls. In files mode, every entry requires path; all filters belong inside that entry, never at the top level. Do not add irrelevant files to fill the limit.",
   "Small path-only files return fully; large files auto-head. hasMore=true or clipping means incomplete coverage: continue using that file’s footer offset/limit, or narrow its filters. Do not repeat path-only hoping for more.",
   "Known range: offset+limit or startLine+endLine (1-indexed inclusive). Known symbol: pattern with optional context. Discover unknown paths with shell.exec rg first.",
   "Range/pattern lines are numbered N: text. Multi-file results are ordered, labeled by path, and report each file’s success or failure separately; successful reads remain available if another fails. Retry only failed/unfinished entries that are still needed.",
@@ -36,7 +36,7 @@ export const FS_READ_PARAMETERS: ToolDefinition["parameters"] = {
       type: "array",
       minItems: 1,
       maxItems: MAX_FS_READ_FILES,
-      description: `Optional alternative to path: 1–${MAX_FS_READ_FILES} relevant file objects, each with its own path and the top-level filter fields. Omit top-level path and filters when using files.`,
+      description: `Alternative to a top-level path: 1–${MAX_FS_READ_FILES} relevant file objects, each containing its path and read filters. Use only files in this mode; omit all top-level single-read fields.`,
       items: {
         type: "object",
         properties: ENTRY_PROPERTIES,

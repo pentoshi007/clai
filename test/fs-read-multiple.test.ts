@@ -40,6 +40,37 @@ describe("fs.read single and multiple inputs", () => {
     expect(window.output).not.toContain("1: first");
   });
 
+  it("reads mixed single-file requests without a model retry", async () => {
+    const path = join(root, "mixed.txt");
+    await writeFile(path, "first\nsecond\nthird\n");
+    const calls = [
+      { path, files: [{ path }], offset: "2", limit: "1" },
+      { path: "", files: [{ path, offset: 2, limit: 1 }] },
+      { path, files: [], offset: 2, limit: 1 },
+      { files: [{ path }], offset: 2, limit: 1 },
+    ];
+    for (const args of calls) {
+      const result = await read(args);
+      expect(result.ok).toBe(true);
+      expect(result.output).toContain("2: second");
+      expect(result.output).not.toMatch(/1: first|3: third/);
+      if (args.files.length) expect(parseFsReadSections(result.output)).toHaveLength(1);
+    }
+  });
+
+  it("preserves all batch entries when a redundant path selects top-level filters", async () => {
+    const path = join(root, "selected.txt");
+    const other = join(root, "unfiltered.txt");
+    await Promise.all([writeFile(path, "first\nsecond\nthird\n"), writeFile(other, "whole file")]);
+    const result = await read({ path, offset: 2, limit: 1, files: [{ path: other }, { path }] });
+    expect(result.ok).toBe(true);
+    const sections = parseFsReadSections(result.output);
+    expect(sections.map((section) => section.path)).toEqual([other, path]);
+    expect(sections[0]!.body).toBe("whole file");
+    expect(sections[1]!.body).toContain("2: second");
+    expect(sections[1]!.body).not.toMatch(/1: first|3: third/);
+  });
+
   it("reads ten files in order with independent full, range, pattern, byte and directory filters", async () => {
     const paths = ["small.txt", "range.txt", "aliases.txt", "pattern.txt", 'spaced "λ".txt', "nested", "tail.txt", "matches.txt", "empty.txt", "unicode.txt"].map((name) => join(root, name));
     await Promise.all([
@@ -93,7 +124,7 @@ describe("fs.read single and multiple inputs", () => {
   it.each([
     {}, { files: [] }, { files: Array.from({ length: 11 }, () => ({ path: "unused" })) },
     { files: ["unused"] }, { files: [{}] }, { path: "unused", files: [{ path: "other" }] },
-    { files: [{ path: "unused" }], limit: 10 },
+    { files: [{ path: "unused" }, { path: "other" }], limit: 10 },
     { files: [{ path: "unused", options: { limit: 10 } }] },
     { files: [{ path: "unused", offset: -1 }] },
     { path: "unused", maxBytes: "bad" },
@@ -209,6 +240,30 @@ describe("multi-file evidence through context limits and child agents", () => {
     expect(process.cwd()).toBe(cwd);
   });
 
+  it("normalizes redundant child inputs before resolving paths and clamping filters", async () => {
+    const path = "mixed-child.txt";
+    await writeFile(join(root, path), "first\nsecond\nthird\n");
+    const call = { name: "fs.read", args: { path, files: [{ path, offset: "2" }], limit: "9999", maxBytes: 1_000_000 } };
+    const prepared = await prepareReadOnlyCall(root, call);
+    expect(prepared.args).toEqual({ files: [{ path: join(root, path), offset: 2, limit: 300, maxBytes: 12_000 }] });
+    const result = await executeReadOnlyCall(root, call, runToolCall, {});
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain("2: second");
+    expect(result.output).not.toContain("1: first");
+    expect(call.args.path).toBe(path);
+    const single = await prepareReadOnlyCall(root, { name: "fs.read", args: { path, files: [], maxBytes: 1_000_000 } });
+    expect(single.args).toEqual({ path: join(root, path), maxBytes: 12_000 });
+  });
+
+  it("does not hide conflicting child filters by clamping them to the same value", async () => {
+    const call = { name: "fs.read", args: { path: "missing.txt", files: [{ path: "missing.txt", maxBytes: 2_000_000 }], maxBytes: 1_000_000 } };
+    expect((await prepareReadOnlyCall(root, call)).args).toEqual(call.args);
+    const result = await executeReadOnlyCall(root, call, runToolCall, {});
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("conflicting maxBytes");
+    expect(result.output).not.toContain("ENOENT");
+  });
+
   it("advertises both inputs consistently across native provider and child tool schemas", () => {
     const tool = getToolDefinition("fs.read")!;
     const child = READ_ONLY_TOOLS.find((entry) => entry.name === "fs.read")!;
@@ -223,6 +278,20 @@ describe("multi-file evidence through context limits and child agents", () => {
     expect(tool.description).toContain("1–10 entries");
     expect(tool.parameters.properties.files).toMatchObject({ description: expect.stringContaining("1–10 relevant file objects") });
     expect(child.description).toContain("1–10 necessary known files");
+  });
+
+  it("deduplicates equivalent normalized reads without conflating different ranges", () => {
+    const cases: Array<[Record<string, unknown>, Record<string, unknown>]> = [
+      [{ path: "a.ts", files: [] }, { path: "a.ts" }],
+      [{ path: "a.ts", files: [{ path: "a.ts" }] }, { files: [{ path: "a.ts" }] }],
+      [{ path: "", files: [{ path: "a.ts" }], limit: null }, { files: [{ path: "a.ts" }] }],
+      [{ path: "a.ts", limit: "2", files: [{ path: "a.ts" }] }, { files: [{ path: "a.ts", limit: 2 }] }],
+    ];
+    for (const [mixed, canonical] of cases) {
+      expect(completedOperationSignature("fs.read", mixed)).toBe(completedOperationSignature("fs.read", canonical));
+    }
+    expect(completedOperationSignature("fs.read", { path: "a.ts", limit: 1, files: [{ path: "a.ts" }] }))
+      .not.toBe(completedOperationSignature("fs.read", { files: [{ path: "a.ts", limit: 2 }] }));
   });
 
   it("recognizes all ten bare read entries", () => {

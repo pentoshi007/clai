@@ -1,5 +1,5 @@
 import type { ToolCall } from "../../types.js";
-import { FS_READ_OPTION_KEYS } from "../../tools/fs/read-input.js";
+import { FS_READ_OPTION_KEYS, parseFsReadInput } from "../../tools/fs/read-input.js";
 import { formatTerminalArgs } from "./terminal-args.js";
 
 export function formatFsReadLineRange(
@@ -48,7 +48,12 @@ function formatFsReadOption(key: (typeof FS_READ_OPTION_KEYS)[number], value: un
 }
 
 function formatFsReadArgs(args: Record<string, unknown>): string {
-  if (Array.isArray(args.files)) return JSON.stringify({ files: args.files });
+  const input = parseFsReadInput(args);
+  if (input.ok) {
+    if (input.multiple) return JSON.stringify({ files: input.files });
+    args = { ...input.files[0]! };
+  }
+  if (Array.isArray(args.files)) return JSON.stringify(args);
   const path = String(args.path ?? "");
   const range = formatFsReadLineRange(args);
   const lineKeys = new Set(["offset", "limit", "startLine", "endLine"]);

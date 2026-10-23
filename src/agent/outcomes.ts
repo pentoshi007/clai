@@ -6,6 +6,7 @@ import { redactSecrets } from "../llm/provider.js";
 import { copyString } from "../os/copy-string.js";
 import { startsPersistentProcess } from "../tools/command-intent.js";
 import { isReadOnlyShellCall } from "../tools/read-only-shell.js";
+import { parseFsReadInput } from "../tools/fs/read-input.js";
 
 export type OutcomeKind = "answer" | "build" | "bugfix" | "operation" | "pentest";
 export type OutcomeStatus = "active" | "succeeded" | "partial" | "blocked" | "failed" | "aborted" | "paused_budget";
@@ -419,6 +420,8 @@ export function normalizeOperationArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   if (tool !== "fs.read") return args;
+  const input = parseFsReadInput(args);
+  if (input.ok) args = input.multiple ? { files: input.files } : { ...input.files[0]! };
   if (Array.isArray(args.files)) {
     return { ...args, files: args.files.map((file) => file && typeof file === "object" && !Array.isArray(file)
       ? normalizeOperationArgs(tool, file as Record<string, unknown>)

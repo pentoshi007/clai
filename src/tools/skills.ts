@@ -3,7 +3,7 @@ import { getActiveProjectRoot } from "../agent/project-root.js";
 import { safeCwd } from "../os/cwd.js";
 import { renderSkillListing, skillScopeLabel } from "../skills/format.js";
 import { getSkillIndex, loadSkill } from "../skills/registry.js";
-import type { SkillMeta } from "../skills/types.js";
+import type { LoadedSkill, SkillMeta } from "../skills/types.js";
 
 const MAX_LISTED = 60;
 
@@ -80,7 +80,16 @@ export async function skillLoadTool(
     };
   }
   const input = scanInput();
-  const loaded = await loadSkill(name, input);
+  let loaded: LoadedSkill | undefined;
+  try {
+    loaded = await loadSkill(name, input);
+  } catch (error) {
+    return {
+      ok: false,
+      exitCode: 1,
+      output: `Could not load skill "${name}": ${error instanceof Error ? error.message : "unknown read error"}`,
+    };
+  }
   if (!loaded) {
     const index = await getSkillIndex(input);
     const known = index.skills.map((skill) => skill.name);

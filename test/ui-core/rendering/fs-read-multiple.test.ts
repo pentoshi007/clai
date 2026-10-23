@@ -34,6 +34,17 @@ describe("multi-file read presentation", () => {
     expect(presentFsReadArgs(JSON.stringify({ files: [files[0]] })).files).toHaveLength(1);
   });
 
+  it("presents the normalized filters used by redundant read inputs", () => {
+    const mixed = { path: "a.ts", offset: "2", limit: "3", files: [{ path: "a.ts" }] };
+    const presented = presentFsReadArgs(formatToolArgs({ name: "fs.read", args: mixed }));
+    expect(presented.path).toBe("1 file");
+    expect(presented.files).toEqual([{ path: "a.ts", options: "offset=2 · limit=3" }]);
+    expect(formatToolArgs({ name: "fs.read", args: { path: "a.ts", files: [], offset: 2, limit: 3 } }))
+      .toBe("a.ts  lines 2–4");
+    const conflicting = { path: "other.ts", files: [{ path: "a.ts" }] };
+    expect(formatToolArgs({ name: "fs.read", args: conflicting })).toBe(JSON.stringify(conflicting));
+  });
+
   it.each([40, 80, 120])("shows option-free compact paths and restores complete inputs and output at %i columns", (columns) => {
     const turn = scriptedTurn();
     const source = transcriptItems(turn.state).find((item): item is ToolItem => item.kind === "tool")!;

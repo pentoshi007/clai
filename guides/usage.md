@@ -49,6 +49,8 @@ The [provider guide](../PROVIDERS.md) covers authentication, environment variabl
 
 Place project notes in `.clai/context.md` in the working directory to supply architecture, conventions, or testing context. Project skills live under `.clai/skills/` as `SKILL.md` playbooks; `/skills list` shows discovered skills and `/skills refresh` rescans them.
 
+clai ships [`clai-superman-skill`](security-skill.md), an on-demand security investigation library spanning pentesting, vulnerability research, code audits and security operations. The model discovers its description and loads relevant guidance when needed; request it explicitly with `skill:clai-superman-skill`. Project/user/custom skills with the same name override the bundled version. It emphasizes evidence, coverage and productive persistence—not guaranteed findings or endless scanning.
+
 MCP servers can expose local or remote tools. Tools are disabled by default; activate a server with an `@mcp:<server>` prompt mention or enable all configured servers with `/mcp all`. Submitted selections remain available for follow-up prompts until changed or disabled with `/mcp off`. `/mcp` also supports configuration, connection status, authentication, and tool discovery.
 
 Use the picker to add a catalog server or paste its JSON configuration. API keys, OAuth browser sign-in, device codes, and pasted callbacks over SSH are supported. Large tool catalogs are searched on demand, keeping schemas out of repeated model requests. See the [MCP guide](../MCP.md) for setup, authentication, configuration compatibility, and troubleshooting.
