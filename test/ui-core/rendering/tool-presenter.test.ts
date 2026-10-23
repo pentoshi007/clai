@@ -353,3 +353,11 @@ describe("failed file mutations surface why they failed", () => {
     expect(presented.detail).toBeUndefined();
   });
 });
+
+
+it.each(["shell.exec", "fs.write", "tool.batch", "mcp.server.tool"])("presents %s as a pending skeleton without partial input", name => {
+  const p = presentTool(toolItem({ name, status: "queued", pending: true, argsDisplay: '{"partial":"do-not-render' }));
+  expect(p).toMatchObject({ name, statusLabel: "pending", glyph: "○", detail: "receiving arguments", isFileDiff: false });
+  expect(p.argsDisplay).toBeUndefined();
+  expect(p.pathLine).toBeUndefined();
+});

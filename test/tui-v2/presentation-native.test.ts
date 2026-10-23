@@ -19,6 +19,8 @@ const cases = [
   ["tool-input-pager", "Native tool input pager passed"],
   ["pager-colors", "Native pager colors passed"],
   ["prompt-layout", "Native prompt layout passed"],
+  ["footer-layout", "Native footer layout passed"],
+  ["pending-tools", "Native pending tools passed"],
 ] as const;
 
 describe.skipIf(!bun)("native terminal presentation", () => {

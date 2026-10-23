@@ -17,6 +17,7 @@ function harness() {
   const ports: StreamSessionPorts = {
     emitStatus: vi.fn(), emitAssistantDelta: vi.fn(), emitThinkingDelta: vi.fn(),
     writeStatus: vi.fn(), notify: vi.fn(), writeToolCall: vi.fn(),
+    writePendingToolCall: vi.fn(), writeToolBlocked: vi.fn(),
     nextToolEventId: () => "call-1", markPrinted: vi.fn(), nativeToolsAttached: () => true,
     onSuccessfulRequest: vi.fn(),
   };

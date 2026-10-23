@@ -377,9 +377,11 @@ describe("native tool loop integration", () => {
     expect(
       events.filter((event) => event.type === "tool-call"),
     ).toHaveLength(1);
-    expect(
-      events.some((event) => event.type === "tool-blocked"),
-    ).toBe(false);
+    const pending = events.find((event) => event.type === "tool-call-pending");
+    expect(pending?.name).toBe("fs.read");
+    expect(events.filter((event) => event.type === "tool-blocked")).toEqual([
+      expect.objectContaining({ id: pending?.id, name: "fs.read", reason: expect.stringContaining("Nothing ran") }),
+    ]);
   });
 
   it("stops repeating unusable native arguments and falls back to text tools", async () => {

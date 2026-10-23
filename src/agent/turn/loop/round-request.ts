@@ -234,6 +234,7 @@ export const requestRound = async (
     }
   } finally {
     streamSession.stopHeartbeat();
+    streamSession.finishToolCalls(completion?.toolCalls);
   }
   return { kind: "completed", completion: completion!, toolsAttached };
 };

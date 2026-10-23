@@ -17,6 +17,7 @@ export type AgentEvent =
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-message"; text: string }
   | { type: "notice"; level: "info" | "warn"; text: string }
+  | { type: "tool-call-pending"; id: string; name: string }
   | { type: "tool-call"; id: string; name: string; argsDisplay: string }
   | { type: "tool-start"; id: string }
   | { type: "tool-output"; id: string; chunk: string; replace?: boolean }

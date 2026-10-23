@@ -4,7 +4,6 @@ import type { ToolItem, ToolStatus } from "../state/transcript-types.js";
 import {
   fileToolTitle,
   isFileMutationTool,
-  type FileChangeKind,
 } from "../../tools/file-diff.js";
 import { sanitizeDisplayText } from "./sanitize-display.js";
 import { MAX_FS_READ_FILES } from "../../tools/fs/read-input.js";
@@ -189,84 +188,57 @@ export function presentFsReadArgs(raw: string | undefined): FsReadArgsPresentati
   return { path: lines[0]!, options: undefined };
 }
 
-export function presentTool(item: ToolItem): ToolPresentation {
-  const fileDiff =
-    isFileMutationTool(item.name) ||
-    Boolean(item.fileChanges && item.fileChanges.length > 0);
+function fileToolPath(item: ToolItem): string {
+  if (item.name === "fs.writeMany" && item.fileChanges?.length) return `${item.fileChanges.length} file(s)`;
+  if (item.fileChanges?.[0]?.path) return item.fileChanges[0].path;
+  if (item.name !== "fs.writeMany") return pathFromArgsDisplay(item.name, item.argsDisplay);
+  return item.status === "failed" || item.status === "blocked" ? "files" : "";
+}
 
+function toolFailureDetail(item: ToolItem): string | undefined {
+  if (item.status === "blocked") return item.reason;
+  if (item.status !== "failed" || !item.summary) return undefined;
+  const summaryLines = item.summary.split("\n");
+  const terminalError = item.name.startsWith("terminal.") ? summaryLines.find(line => /^\[[A-Z_]+\]/.test(line)) : undefined;
+  const short = (terminalError ?? summaryLines[0])?.trim();
+  if (!short || /^Full output saved/i.test(short)) return undefined;
+  return short.length <= FAILURE_DETAIL_CHARS ? short : `${short.slice(0, FAILURE_DETAIL_CHARS - 1).trimEnd()}…`;
+}
+
+function toolStatusLabel(item: ToolItem): string {
+  const label = STATUS_LABEL[item.status];
+  if (item.exitCode === undefined || item.exitCode === 0 || item.status !== "failed" && item.status !== "ok") return label;
+  let why: string | undefined;
+  if (item.exitCode === 127) why = "not found";
+  if (item.exitCode === 126) why = "not executable";
+  return why ? `${label} · ${item.exitCode} · ${why}` : `${label} · ${item.exitCode}`;
+}
+
+export function presentTool(item: ToolItem): ToolPresentation {
+  if (item.pending) {
+    return {
+      glyph: STATUS_GLYPH.queued, statusLabel: "pending", name: item.name,
+      argsLabel: undefined, argsDisplay: undefined, detail: "receiving arguments",
+      pathLine: undefined, isFileDiff: false,
+    };
+  }
+  const fileDiff = isFileMutationTool(item.name) || Boolean(item.fileChanges?.length);
   let name = item.name;
-  let argsLabel: string | undefined = item.argsDisplay
-    ? item.name === "shell.exec" || item.name === "terminal.start"
-      ? "command"
-      : "input"
-    : undefined;
+  let argsLabel: string | undefined;
+  if (item.argsDisplay) argsLabel = item.name === "shell.exec" || item.name === "terminal.start" ? "command" : "input";
   if (item.name === "terminal.send" && item.argsDisplay) argsLabel = "action";
   let argsDisplay = clampArgsDisplay(restoredTerminalArgs(item.name, item.argsDisplay ?? "") || undefined);
   let pathLine: string | undefined;
-
   if (fileDiff) {
-    const kind = item.fileChanges?.[0]?.kind as FileChangeKind | undefined;
-    let pathOrDisplay = "";
-    if (item.name === "fs.writeMany" && item.fileChanges?.length) {
-      pathOrDisplay = `${item.fileChanges.length} file(s)`;
-    } else if (item.fileChanges?.[0]?.path) {
-      pathOrDisplay = item.fileChanges[0].path;
-    } else if (item.name === "fs.writeMany") {
-      pathOrDisplay =
-        item.status === "failed" || item.status === "blocked" ? "files" : "";
-    } else {
-      pathOrDisplay = pathFromArgsDisplay(item.name, item.argsDisplay);
-    }
-    const titled = fileToolTitle(item.name, item.status, pathOrDisplay, kind);
+    const titled = fileToolTitle(item.name, item.status, fileToolPath(item), item.fileChanges?.[0]?.kind);
     name = titled.title;
-    pathLine =
-      item.name === "fs.writeMany"
-        ? undefined
-        : titled.pathLine ?? item.fileChanges?.[0]?.path;
+    pathLine = item.name === "fs.writeMany" ? undefined : titled.pathLine ?? item.fileChanges?.[0]?.path;
     argsLabel = undefined;
     argsDisplay = undefined;
   }
-
-  let detail: string | undefined;
-  if (item.status === "blocked") {
-    detail = item.reason;
-  } else if (item.status === "failed" && item.summary) {
-    const summaryLines = item.summary.split("\n");
-    const terminalError = item.name.startsWith("terminal.")
-      ? summaryLines.find(line => /^\[[A-Z_]+\]/.test(line))
-      : undefined;
-    const short = (terminalError ?? summaryLines[0])?.trim();
-    if (short && !/^Full output saved/i.test(short)) {
-      detail =
-        short.length <= FAILURE_DETAIL_CHARS
-          ? short
-          : `${short.slice(0, FAILURE_DETAIL_CHARS - 1).trimEnd()}…`;
-    }
-  }
-  let statusLabel = STATUS_LABEL[item.status];
-  if (
-    item.exitCode !== undefined &&
-    item.exitCode !== 0 &&
-    (item.status === "failed" || item.status === "ok")
-  ) {
-    const why =
-      item.exitCode === 127
-        ? "not found"
-        : item.exitCode === 126
-          ? "not executable"
-          : undefined;
-    statusLabel = why
-      ? `${statusLabel} · ${item.exitCode} · ${why}`
-      : `${statusLabel} · ${item.exitCode}`;
-  }
   return {
-    glyph: STATUS_GLYPH[item.status],
-    statusLabel,
-    name,
-    argsLabel,
-    argsDisplay,
-    detail,
-    pathLine,
+    glyph: STATUS_GLYPH[item.status], statusLabel: toolStatusLabel(item), name, argsLabel, argsDisplay,
+    detail: toolFailureDetail(item), pathLine,
     isFileDiff: item.name !== "fs.delete" && Boolean(item.fileChanges?.length),
   };
 }

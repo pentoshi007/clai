@@ -18,7 +18,8 @@ function packageArchive(root: string, version: string, name = "@pentoshi/clai"):
   writeFileSync(join(dir, "bin", "clai.mjs"), `#!/usr/bin/env node\nconsole.log(process.argv.includes('--probe')?JSON.stringify({argv1:process.argv[1],execPath:process.execPath}):'${version}');\n`, { mode: 0o755 });
   const output = execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", root], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const list: unknown = JSON.parse(output);
-  const entry: unknown = Array.isArray(list) ? list[0] : undefined;
+  const entries: unknown[] = Array.isArray(list) ? list : Object.values(list ?? {});
+  const entry = entries[0];
   if (!entry || typeof entry !== "object" || !("filename" in entry) || typeof entry.filename !== "string") throw new Error("invalid package fixture output");
   return { archive: readFileSync(join(root, entry.filename)), filename: entry.filename, manifest };
 }

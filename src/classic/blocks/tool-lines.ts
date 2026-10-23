@@ -28,9 +28,9 @@ export function toolGlyph(ctx: BlockContext, status: ToolStatus): string {
 }
 
 export function toolElapsed(ctx: BlockContext, item: ToolItem): string | undefined {
-  if (item.status === "blocked" || !shouldShowToolElapsed(item.name)) return undefined;
-  const open = item.status === "running" || item.status === "queued";
-  const span = open ? ctx.now - item.timestamp : item.endedAt === undefined ? -1 : item.endedAt - item.timestamp;
+  if (item.status === "blocked" || item.status === "queued" || !shouldShowToolElapsed(item.name)) return undefined;
+  const start = item.startedAt ?? item.timestamp;
+  const span = item.status === "running" ? ctx.now - start : item.endedAt === undefined ? -1 : item.endedAt - start;
   const label = formatElapsed(span);
   return label || undefined;
 }
@@ -85,6 +85,7 @@ function readHeaderLines(ctx: BlockContext, item: ToolItem, expanded: boolean): 
 }
 
 export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
+  if (item.pending) return [headline(ctx, item)];
   const expanded = isItemExpanded(ctx.state, item);
   if (item.name === "fs.read") return readHeaderLines(ctx, item, expanded);
   const input = inputSource(item);
@@ -111,6 +112,7 @@ function bodySource(ctx: BlockContext, item: ToolItem): string {
 }
 
 export function buildToolBodyLines(ctx: BlockContext, item: ToolItem, options: ToolBodyOptions = {}): string[] {
+  if (item.pending) return hintRows(ctx, "    ", "receiving arguments");
   const expanded = isItemExpanded(ctx.state, item);
   const failed = item.status === "failed" || item.status === "blocked";
   const source = logicalOutputLines(bodySource(ctx, item), item.name);

@@ -87,7 +87,8 @@ describe("durable background jobs", () => {
     const started = await manager.startJob(command, { ownerSessionId: "session-1" });
     const id = /id=([a-f0-9]+)/.exec(started.output)?.[1];
     expect(id).toBeTruthy();
-    await sleep(150);
+    const marker = "\nsk-••••••\n";
+    await expect.poll(() => readFile(started.outputPath!, "utf8")).toContain(marker);
 
     const restarted = new JobManager(dir);
     managers.push(restarted);
@@ -95,20 +96,20 @@ describe("durable background jobs", () => {
     expect(recovered).toMatchObject({ status: "running", ownerSessionId: "session-1" });
     expect(recovered?.processGroupId).toBe(recovered?.pid);
 
-    const first = await restarted.tailJob(id!, { stream: "stdout", offset: 0, bytes: 80 });
-    const nextOffset = Number(/nextOffset=(\d+)/.exec(first.output)?.[1]);
-    const second = await restarted.tailJob(id!, { stream: "stdout", offset: nextOffset, bytes: 80 });
-    expect(first.output).not.toContain(secret);
-    // Each response is "<header>:\n<payload>"; a real poller reconstructs the
-    // stream from the payloads alone (offset/nextOffset are contiguous, so no
-    // separator belongs between them — unlike the header line, which isn't
-    // part of the byte stream). Comparing full responses with an inserted
-    // "\n" would inject the *second* header between the two payload halves,
-    // spuriously failing whenever the redaction marker straddles the 80-byte
-    // read boundary (path-length dependent, e.g. on macOS runners).
-    const payloadOf = (output: string): string => output.slice(output.indexOf("\n") + 1);
-    expect(`${payloadOf(first.output)}${payloadOf(second.output)}`).toContain("sk-••••••");
-    expect(nextOffset).toBeGreaterThan(0);
+    const snapshotBytes = (await readFile(started.outputPath!)).byteLength;
+    let offset = 0;
+    let output = "";
+    while (offset < snapshotBytes) {
+      const tail = await restarted.tailJob(id!, { stream: "stdout", offset, bytes: 80 });
+      expect(tail.ok).toBe(true);
+      const nextOffset = Number(/nextOffset=(\d+)/.exec(tail.output)?.[1]);
+      expect(nextOffset).toBeGreaterThan(offset);
+      output += tail.output.slice(tail.output.indexOf("\n") + 1);
+      offset = nextOffset;
+    }
+    expect(output).not.toContain(secret);
+    expect(output).not.toContain("\uFFFD");
+    expect(output).toContain(marker);
 
     const stopped = await restarted.stopJob(id!, { graceMs: 500 });
     expect(stopped).toMatchObject({ ok: true });
