@@ -62,7 +62,7 @@ export function reaServerDefinition(installation: ReaInstallation, root = reaRoo
   const config = {
     transport: "stdio" as const, command: installation.node, args: [installation.entry, "mcp"],
     env: { [pathKey]: env[pathKey] ?? "", NODE_OPTIONS: "", NODE_PATH: "", ...engines },
-    connectTimeoutMs: 60_000, timeoutMs: 600_000,
+    connectTimeoutMs: 60_000,
   };
   return {
     name: REA_SERVER, config, disabled: false, toolSelection: "all",

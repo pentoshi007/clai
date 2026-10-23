@@ -45,6 +45,7 @@ const armStallTimer = (
   runtime: WatchdogRuntime,
 ): void => {
   if (runtime.stallTimer) clearTimeout(runtime.stallTimer);
+  if (input.stallBudgetMs <= 0) return;
   runtime.stallTimer = setTimeout(() => {
     if (input.controller.signal.aborted) return;
     runtime.stalled = true;
@@ -100,6 +101,7 @@ const armHardTimer = (
   input: ToolWatchdogInput,
   runtime: WatchdogRuntime,
 ): void => {
+  if (input.hardBudgetMs <= 0) return;
   runtime.hardTimer = setTimeout(() => {
     if (runtime.settled) return;
     runtime.hardTimedOut = true;

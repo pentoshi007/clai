@@ -308,3 +308,51 @@ describe("MCP tool change notifications", () => {
     await client.close();
   });
 });
+
+it("does not add a default deadline to MCP tool calls", async () => {
+  const setup = manager();
+  await setup.manager.refresh();
+  await setup.manager.callTool("mcp.docs.lookup", {});
+  expect(setup.transports[0]!.options[0]!.timeoutMs).toBe(0);
+});
+
+it("enforces an explicit deadline even when a transport ignores cancellation", async () => {
+  const setup = manager({ timeoutMs: 20 });
+  await setup.manager.refresh();
+  vi.spyOn(setup.transports[0]!, "request").mockImplementation(() => new Promise(() => {}));
+  await expect(setup.manager.callTool("mcp.docs.lookup", {})).rejects.toMatchObject({ kind: "timeout" });
+  expect(setup.transports).toHaveLength(1);
+});
+
+it("does not reconnect after manual cancellation of an unlimited MCP call", async () => {
+  const setup = manager();
+  await setup.manager.refresh();
+  vi.spyOn(setup.transports[0]!, "request").mockImplementation(() => new Promise(() => {}));
+  const controller = new AbortController();
+  const pending = setup.manager.callTool("mcp.docs.lookup", {}, { signal: controller.signal });
+  controller.abort();
+  await expect(pending).rejects.toMatchObject({ kind: "cancelled" });
+  expect(setup.transports).toHaveLength(1);
+});
+
+it("keeps an explicit tool deadline while reconnecting", async () => {
+  const setup = manager({ timeoutMs: 20 });
+  await setup.manager.refresh();
+  setup.transports[0]!.failure = new McpTransportError("closed", "connection lost");
+  const reconnect = vi.spyOn(setup.manager, "reconnect").mockImplementation(() => new Promise(() => {}));
+  await expect(setup.manager.callTool("mcp.docs.lookup", {})).rejects.toMatchObject({ kind: "timeout" });
+  expect(reconnect).toHaveBeenCalledTimes(1);
+  expect(setup.transports[0]!.calls).toBe(1);
+});
+
+it("lets a per-call deadline override the server deadline", async () => {
+  const setup = manager({ timeoutMs: 1 });
+  await setup.manager.refresh();
+  const transport = setup.transports[0]!;
+  const request = transport.request.bind(transport);
+  vi.spyOn(transport, "request").mockImplementation(async (message, options) => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    return request(message, options);
+  });
+  await expect(setup.manager.callTool("mcp.docs.lookup", {}, { timeoutMs: 200 })).resolves.toMatchObject({ text: "result" });
+});

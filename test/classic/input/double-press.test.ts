@@ -83,37 +83,20 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe("Ctrl+C ladder", () => {
-  it("aborts a running turn and arms quit on the first press", () => {
-    const h = harness({ running: true });
+  it.each([
+    { running: true }, { interruptibleWork: true }, { runningJobs: 2 },
+    { pendingNotifications: 1 }, { compacting: true },
+  ])("cancels all owned work on the first press: %j", (options) => {
+    const h = harness(options);
     h.ladder.interrupt();
-    expect(h.calls).toEqual([
-      "abort",
-      "notify(warn):Turn aborted · Ctrl+C again to exit",
-    ]);
+    expect(h.calls).toEqual(["cancelAll", "notify(warn):Cancelling work · Ctrl+C again to exit"]);
     expect(h.ladder.quitArmed).toBe(true);
-  });
-
-  it("cancels interruptible work on the first press when no turn is running", () => {
-    const h = harness({ interruptibleWork: true });
-    h.ladder.interrupt();
-    expect(h.calls).toEqual([
-      "notify(warn):Operation cancelled · Ctrl+C again to exit",
-    ]);
-    expect(h.ladder.quitArmed).toBe(true);
-  });
-
-  it("exits on a second press inside the window", () => {
-    const h = harness({ running: true });
-    h.ladder.interrupt();
-    h.advance(CTRL_C_QUIT_WINDOW_MS - 1);
-    h.ladder.interrupt();
-    expect(h.calls.at(-1)).toBe("requestExit");
   });
 
   it("arms then exits when idle", () => {
     const h = harness();
     h.ladder.interrupt();
-    expect(h.calls).toEqual(["notify(info):Ctrl+C again to exit"]);
+    expect(h.calls).toEqual(["cancelAll", "notify(info):Ctrl+C again to exit"]);
     h.ladder.interrupt();
     expect(h.calls.at(-1)).toBe("requestExit");
   });
@@ -124,27 +107,31 @@ describe("Ctrl+C ladder", () => {
     h.advance(CTRL_C_QUIT_WINDOW_MS + 1);
     expect(h.ladder.quitArmed).toBe(false);
     h.ladder.interrupt();
-    expect(h.calls).toEqual([
-      "notify(info):Ctrl+C again to exit",
-      "notify(info):Ctrl+C again to exit",
-    ]);
+    expect(h.calls.filter((call) => call === "cancelAll")).toHaveLength(2);
+    expect(h.calls).not.toContain("requestExit");
   });
 
-  it("dismisses a blocking prompt before anything else", () => {
+  it("dismisses a blocking prompt before cancelling work", () => {
     const h = harness({ blockingPrompt: true });
     h.ladder.interrupt();
-    expect(h.calls).toEqual([
-      "dismissPrompt",
-      "notify(warn):Prompt cancelled · Ctrl+C again to exit",
-    ]);
+    expect(h.calls).toEqual(["dismissPrompt", "cancelAll", "notify(warn):Cancelling work · Ctrl+C again to exit"]);
   });
 
-  it("still exits on the second press while a hung turn refuses to settle", () => {
+  it("exits on the second press without waiting for cancellation to settle", () => {
     const h = harness({ running: true });
     h.ladder.interrupt();
+    h.advance(CTRL_C_QUIT_WINDOW_MS - 1);
     h.calls.length = 0;
     h.ladder.interrupt();
     expect(h.calls).toEqual(["requestExit"]);
+  });
+
+  it("reports job stop failures without claiming a successful cancellation", async () => {
+    const h = harness({ runningJobs: 1, cancelAllOk: false });
+    h.ladder.interrupt();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.calls.at(-1)).toBe("notify(warn):Cancellation completed with job stop failures — open Jobs for details");
   });
 });
 
@@ -156,30 +143,25 @@ describe("Esc ladder", () => {
     expect(h.ladder.escapeArmed).toBe(true);
   });
 
-  it("cancels everything on the second press", async () => {
+  it("stops only the main agent on the second press", () => {
     const h = harness({ running: true });
     h.ladder.escape(false);
     h.advance(ESC_SAME_PRESS_MS + 1);
     h.ladder.escape(false);
-    await Promise.resolve();
-    await Promise.resolve();
     expect(h.calls).toEqual([
       "notify(info):esc again to cancel",
-      "cancelAll",
-      "notify(info):Cancelled turn and Responder jobs",
+      "abort",
+      "notify(info):Main agent stopped · Background work continues",
     ]);
   });
 
-  it("warns when cancellation reports job stop failures", async () => {
+  it("does not invoke job cancellation even when that path would fail", () => {
     const h = harness({ running: true, cancelAllOk: false });
     h.ladder.escape(false);
     h.advance(ESC_SAME_PRESS_MS + 1);
     h.ladder.escape(false);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(h.calls.at(-1)).toBe(
-      "notify(warn):Cancellation completed with job stop failures — open Jobs for details",
-    );
+    expect(h.calls).toContain("abort");
+    expect(h.calls).not.toContain("cancelAll");
   });
 
   it("re-arms rather than cancelling after the window lapses", () => {
@@ -209,13 +191,13 @@ describe("Esc ladder", () => {
     expect(h.ladder.escapeArmed).toBe(false);
   });
 
-  it("arms on responder work alone", () => {
+  it("does not arm on responder work alone", () => {
     const h = harness({ runningJobs: 1 });
     h.ladder.escape(false);
-    expect(h.ladder.escapeArmed).toBe(true);
+    expect(h.ladder.escapeArmed).toBe(false);
     const pending = harness({ pendingNotifications: 2 });
     pending.ladder.escape(false);
-    expect(pending.ladder.escapeArmed).toBe(true);
+    expect(pending.ladder.escapeArmed).toBe(false);
   });
 
   it("arms on interruptible work alone", () => {
@@ -246,4 +228,28 @@ describe("Esc ladder", () => {
     expect(h.ladder.escapeArmed).toBe(false);
     expect(h.ladder.quitArmed).toBe(false);
   });
+});
+
+it("preserves running jobs and pending responder results when Esc stops the main agent", async () => {
+  const h = harness({ running: true, runningJobs: 2, pendingNotifications: 1 });
+  h.ladder.escape(false);
+  h.advance(ESC_SAME_PRESS_MS + 1);
+  h.ladder.escape(false);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(h.calls).toContain("abort");
+  expect(h.calls).not.toContain("cancelAll");
+  expect(h.calls).not.toContain("requestExit");
+});
+
+it("never cancels background-only work on repeated Esc presses", async () => {
+  const h = harness({ runningJobs: 2, pendingNotifications: 1 });
+  for (let press = 0; press < 4; press += 1) {
+    h.ladder.escape(false);
+    h.advance(ESC_SAME_PRESS_MS + 1);
+  }
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(h.ladder.escapeArmed).toBe(false);
+  expect(h.calls).not.toContain("cancelAll");
 });

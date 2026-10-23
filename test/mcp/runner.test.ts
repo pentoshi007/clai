@@ -480,3 +480,34 @@ describe("agent MCP integration", () => {
     expect(requests).toBe(2);
   });
 });
+
+it.each(["native", "text"] as const)("allows a silent hour-long MCP call through the %s agent path", async (toolCalling) => {
+  const original = RunnerTransport.prototype.request;
+  const request = vi.spyOn(RunnerTransport.prototype, "request").mockImplementation(async function (
+    this: RunnerTransport,
+    message: JsonRpcRequest,
+  ) {
+    if (message.method === "tools/call") await vi.advanceTimersByTimeAsync(3_600_000);
+    return original.call(this, message);
+  });
+  const base = { provider: "openai" as const, model: "gpt-4o-mini", finishReason: "stop" as const };
+  const toolCalls = [{ id: "call-long-mcp", name: "mcp.call", args: { name: "mcp.docs.lookup", arguments: { id: "one" } } }];
+  streamMock.mockResolvedValueOnce(toolCalling === "native"
+    ? { ...base, text: "", toolCalls, finishReason: "tool_calls" }
+    : { ...base, text: "```tool\n{\"name\":\"mcp.docs.lookup\",\"args\":{\"id\":\"one\"}}\n```" },
+  ).mockResolvedValue({ ...base, text: "Finished checking documentation." });
+  const events: AgentEvent[] = [];
+  try {
+    await runAgentTurn("Look up documentation record one", {
+      mcp: runtime, provider: "openai", model: "gpt-4o-mini", maxSteps: 3, toolCalling,
+      onToolStart: () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }),
+      onEvent: (event) => events.push(event),
+    });
+    expect(remoteCalls).toEqual([{ name: "lookup", args: { id: "one" } }]);
+    expect(events.some((event) => event.type === "tool-result" && event.ok && event.summary.includes("record:one"))).toBe(true);
+    expect(events.some((event) => event.type === "tool-result" && !event.ok)).toBe(false);
+  } finally {
+    vi.useRealTimers();
+    request.mockRestore();
+  }
+});

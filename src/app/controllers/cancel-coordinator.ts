@@ -80,10 +80,16 @@ export class CancelCoordinator {
     );
   }
 
+  hasForegroundWork(): boolean {
+    const state = this.deps.session.getState();
+    return state.running || state.compacting || this.deps.interruptible.hasWork();
+  }
+
   abortForeground(): AbortForegroundOutcome {
-    const turnAborted = this.deps.session.getState().running;
+    const state = this.deps.session.getState();
+    const turnAborted = state.running;
     const interruptibleCancelled = this.deps.interruptible.cancelAll();
-    if (turnAborted) this.deps.session.abort();
+    if (turnAborted || state.compacting) this.deps.session.abort();
     return { turnAborted, interruptibleCancelled };
   }
 

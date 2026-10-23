@@ -13,7 +13,7 @@ export interface StatusHint {
 }
 
 export function busyCancelHint(_density: StatusDensity): StatusHint {
-  return { short: "esc: cancel", expand: "cancel active work" };
+  return { short: "esc: cancel", expand: "stop main agent; background work continues" };
 }
 
 export function armedCancelHint(): string {

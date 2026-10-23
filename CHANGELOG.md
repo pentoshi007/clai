@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.1.1 — 2026-10-23
+
+### Long-running MCP and REA tools
+
+- Remove automatic MCP tool execution and stall deadlines, including the outer watchdog that cancelled REA analysis after about 63 seconds. Stdio, HTTP, and SSE calls wait for completion unless manually cancelled or given an explicit request deadline.
+- Keep connection startup, authentication, catalog discovery, and shutdown safeguards. Explicit request deadlines cover reconnect and retry without replaying ambiguous writes.
+
+### Foreground-only Esc and immediate mouse cancellation
+
+- Keep double keyboard `Esc` limited to the main agent in Classic and OpenTUI. Shell jobs, Responder tasks, subagents, and their result delivery continue; background-only activity does not arm Esc cancellation.
+- Make the OpenTUI `esc: cancel` button stop the main agent on one click, without keyboard confirmation or hover expansion.
+- Preserve bulk cancellation through `Ctrl+C`, explicit manual stops, and exiting clai, including bounded shutdown cleanup of owned jobs.
+- Add long-running transport/watchdog regressions and native OpenTUI checks covering hover layout, one-click abort, double Esc, real background process survival, Responder result delivery, and Ctrl+C cleanup.
+
+[Full comparison since v5.1.0](https://github.com/pentoshi007/clai/compare/v5.1.0...v5.1.1)
+
 ## v5.1.0 — 2026-10-23
 
 This release adds the Hinoki provider and a bundled, on-demand security skill, improves skill recovery after compaction, and fixes tool progress and terminal rendering. It covers all changes since **v5.0.0**.

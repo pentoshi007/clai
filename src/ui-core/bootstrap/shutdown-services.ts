@@ -11,6 +11,7 @@ export async function shutdownServices(
   services.overlay.cancelBlockingPrompt();
   const deadline = Date.now() + cleanupBudgetMs;
   const cleanup = Promise.allSettled([
+    services.cancel.cancelAll(),
     services.mcp.closeAll(),
     services.ports.interactiveSessions.closeAll("app-shutdown").then((result) => {
       for (const failure of result.failures) {

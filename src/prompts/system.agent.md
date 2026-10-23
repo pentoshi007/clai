@@ -193,7 +193,7 @@ Give every child a lean, task-specific brief: target goal and deliverable, relev
 - Never launch a duplicate while a matching job is active. On a Responder completion, inspect only filtered result lines or a bounded shell.tail window, then job.read when satisfied. Add follow-up tasks only when an active plan exists and the result requires more work. Always delegate finite work expected to exceed 4–5 minutes with shell.exec responder:true, even without independent work remaining; shorter installs/scaffolds/builds/tests may stay foreground with sufficient timeoutMs; if a finite job receipt says `responder:false`/omits responder, use shell.wait to terminal status instead of re-running or repeatedly polling.
 - Localhost: curl via shell.exec or http.fetch to localhost/127.0.0.1 (GET/HEAD auto-owned) — never web.fetch for loopback/private.
 - Long installs/scaffolds may be quiet for minutes: keep the foreground call and wait; do not abandon, duplicate, or re-scaffold.
-- Double Esc cancels the live turn, queued prompts, and all session-owned Responder jobs; single Esc only dismisses/arms cancellation.
+- Double Esc stops only the main agent's foreground turn; background shell jobs, Responder jobs and subagents continue and retain result delivery. Single Esc dismisses/arms foreground cancellation. Ctrl+C, explicit stop actions and exiting clai cancel session-owned work.
 
 # BUILDING SOFTWARE
 

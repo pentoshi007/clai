@@ -42,7 +42,7 @@ import type {
 
 const DEFAULT_CONNECT_CONCURRENCY = 4;
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
-const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 0;
 
 const STOPPED_DETAIL = "stopped for this session; its tools are removed from model requests";
 
@@ -686,63 +686,65 @@ export class McpManager {
     if (!state || !state.client || state.status !== "ready") {
       throw new McpTransportError("closed", `MCP server "${tool.serverName}" is not ready.`);
     }
-    const requestOptions = {
-      ...options,
-      timeoutMs: options.timeoutMs ?? state.definition.config.timeoutMs ?? this.requestTimeoutMs,
-      signal: options.signal
-        ? AbortSignal.any([options.signal, this.lifetime.signal])
-        : this.lifetime.signal,
-    };
-    const deadline = Date.now() + requestOptions.timeoutMs;
-    const client = state.client;
+    const timeoutMs = options.timeoutMs ?? state.definition.config.timeoutMs ?? this.requestTimeoutMs;
+    const parent = options.signal ?? this.lifetime.signal;
+    const { signal, dispose } = withTimeout(
+      AbortSignal.any([parent, this.lifetime.signal]),
+      timeoutMs,
+    );
     try {
-      return await client.callTool(tool.toolName, args, requestOptions);
-    } catch (error) {
-      if (
-        this.closed ||
-        this.stopped.has(tool.serverName) ||
-        options.signal?.aborted ||
-        !(error instanceof McpTransportError)
-      )
-        throw error;
-      const expiredSession = error.status === 404 && client.getSessionId() !== undefined;
-      const transient =
-        ["closed", "network"].includes(error.kind) &&
-        (error.status === undefined || error.status >= 500);
-      if (!expiredSession && !transient) throw error;
-      const remainingMs = deadline - Date.now();
-      const recovery = this.recoverConnection(tool.serverName, client);
-      if (remainingMs <= 0) throw error;
-      const { signal, dispose } = withTimeout(requestOptions.signal, remainingMs);
-      try {
-        await awaitMcpOperation(recovery, signal);
-      } finally {
-        dispose();
-      }
-      if (!expiredSession && !tool.readOnly && !tool.idempotent) throw error;
-      const current = this.connections.get(tool.serverName);
-      const replacement = this.getTool(tool.canonicalName);
-      if (
-        !current?.client ||
-        current.status !== "ready" ||
-        !replacement ||
-        replacement.readOnly !== tool.readOnly ||
-        replacement.idempotent !== tool.idempotent ||
-        replacement.destructive !== tool.destructive ||
-        replacement.openWorld !== tool.openWorld ||
-        JSON.stringify(replacement.inputSchema) !== JSON.stringify(tool.inputSchema)
-      )
-        throw error;
-      if (options.signal?.aborted)
-        throw new McpTransportError("cancelled", "MCP tool call cancelled during reconnect.");
-      const remaining = deadline - Date.now();
-      if (remaining <= 0)
-        throw new McpTransportError("timeout", "MCP tool deadline expired during reconnect.");
-      return current.client.callTool(tool.toolName, args, {
-        ...requestOptions,
-        timeoutMs: remaining,
-      });
+      return await awaitMcpOperation(this.callConnectedTool(tool, args, state.client, signal), signal);
+    } finally {
+      dispose();
     }
+  }
+
+  private async callConnectedTool(
+    tool: McpToolMetadata,
+    args: Record<string, unknown>,
+    client: McpClient,
+    signal: AbortSignal,
+  ): Promise<McpNormalizedResult> {
+    const options = { signal, timeoutMs: 0 };
+    try {
+      return await client.callTool(tool.toolName, args, options);
+    } catch (error) {
+      signal.throwIfAborted();
+      if (!(error instanceof McpTransportError)) throw error;
+      const recovery = this.toolRecoveryKind(tool, client, error);
+      if (!recovery) throw error;
+      await awaitMcpOperation(this.recoverConnection(tool.serverName, client), signal);
+      if (recovery === "transient" && !tool.readOnly && !tool.idempotent) throw error;
+      signal.throwIfAborted();
+      return this.replayClient(tool, error).callTool(tool.toolName, args, options);
+    }
+  }
+
+  private toolRecoveryKind(
+    tool: McpToolMetadata,
+    client: McpClient,
+    error: McpTransportError,
+  ): "expired" | "transient" | undefined {
+    if (this.closed || this.stopped.has(tool.serverName)) return undefined;
+    if (error.status === 404 && client.getSessionId() !== undefined) return "expired";
+    const transient =
+      ["closed", "network"].includes(error.kind) && (error.status ?? 500) >= 500;
+    return transient ? "transient" : undefined;
+  }
+
+  private replayClient(tool: McpToolMetadata, error: McpTransportError): McpClient {
+    const current = this.connections.get(tool.serverName);
+    const replacement = this.getTool(tool.canonicalName);
+    if (!current || !current.client || current.status !== "ready" || !replacement) throw error;
+    if (
+      replacement.readOnly !== tool.readOnly ||
+      replacement.idempotent !== tool.idempotent ||
+      replacement.destructive !== tool.destructive ||
+      replacement.openWorld !== tool.openWorld ||
+      JSON.stringify(replacement.inputSchema) !== JSON.stringify(tool.inputSchema)
+    )
+      throw error;
+    return current.client;
   }
 
   async login(serverName: string): Promise<{ ok: boolean; detail: string }> {

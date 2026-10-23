@@ -427,9 +427,7 @@ export function bumpFeedGeneration(host: WiringHost): void {
 
 export function disarmEscapeIfIdle(host: WiringHost): void {
   host.sessionStateValue = undefined;
-  const busy =
-    sessionSnapshot(host).queued.length > 0 ||
-    host.services.cancel.hasCancelableWork();
+  const busy = host.services.cancel.hasForegroundWork();
   if (!busy) host.ladder.disarmEscape();
 }
 

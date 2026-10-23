@@ -24,6 +24,8 @@ Large pastes collapse into a line or character count inside the composer while r
 
 Type `/` at the start of the draft or after a space to browse commands. Use the arrow keys to select, `Tab` to complete, and `Enter` to run the command. A leading command retains its arguments, such as `/model model-name`; an inline command runs while preserving the surrounding draft. Completed commands also run after the suggestion menu is dismissed. Unknown leading commands show a local warning, and paths such as `/tmp/notes.txt` remain ordinary prompts.
 
+In OpenTUI, the compact `esc: cancel` button stays the same width on hover. Click it once to stop only the main agent. Keyboard cancellation still requires `Esc` twice; neither action stops background jobs, responders, subagents, or their result delivery.
+
 ## Keyboard shortcuts
 
 | Action | Shortcut |
@@ -31,8 +33,8 @@ Type `/` at the start of the draft or after a space to browse commands. Use the 
 | Send prompt | `Enter` |
 | Insert newline | `Shift+Enter`, `Alt+Enter`, or `Ctrl+N` |
 | Expand shortened paste nearest the cursor | `Ctrl+E` or `Alt+E` |
-| Cancel current turn | `Esc` |
-| Interrupt; press again to quit | `Ctrl+C` |
+| Stop the main agent; background jobs, responders and subagents continue | `Esc` twice |
+| Cancel foreground and background work; press again to quit | `Ctrl+C` |
 | Cycle mode | `Shift+Tab` |
 | Toggle plan pane / details | `Ctrl+H` / `Ctrl+P` |
 | Show / hide queued-message blocks (Classic) | `Ctrl+Z` |

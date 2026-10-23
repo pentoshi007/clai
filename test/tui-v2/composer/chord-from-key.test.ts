@@ -165,7 +165,7 @@ describe("escape cancellation decisions", () => {
       escapeCancellationAction({
         dismissed: true,
         doublePress: true,
-        hasCancelableWork: true,
+        hasForegroundWork: true,
       }),
     ).toBe("dismiss");
   });
@@ -175,31 +175,31 @@ describe("escape cancellation decisions", () => {
       escapeCancellationAction({
         dismissed: false,
         doublePress: false,
-        hasCancelableWork: true,
+        hasForegroundWork: true,
       }),
     ).toBe("arm");
     expect(
       escapeCancellationAction({
         dismissed: false,
         doublePress: false,
-        hasCancelableWork: false,
+        hasForegroundWork: false,
       }),
     ).toBe("none");
   });
 
-  it("uses cancel-all only for an armed second press with remaining work", () => {
+  it("stops only foreground work on an armed second press", () => {
     expect(
       escapeCancellationAction({
         dismissed: false,
         doublePress: true,
-        hasCancelableWork: true,
+        hasForegroundWork: true,
       }),
-    ).toBe("cancel-all");
+    ).toBe("cancel-foreground");
     expect(
       escapeCancellationAction({
         dismissed: false,
         doublePress: true,
-        hasCancelableWork: false,
+        hasForegroundWork: false,
       }),
     ).toBe("none");
   });

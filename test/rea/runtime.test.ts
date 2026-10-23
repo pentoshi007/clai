@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reaConnection } from "../../src/rea/connection.js";
-import { manageRea, reaMentionContext } from "../../src/rea/runtime.js";
+import { manageRea, reaMentionContext, reaServerDefinition } from "../../src/rea/runtime.js";
 import { REA_SERVER, REA_WORKFLOW } from "../../src/rea/workflow.js";
 import { classifyToolCall } from "../../src/safety/classifier.js";
 import { createMcpAgentToolExecutor } from "../../src/agent/turn/mcp-agent-tools.js";
@@ -242,4 +242,12 @@ describe("@rea turn context", () => {
       await hanging.runtime.closeAll();
     }
   });
+});
+
+it("keeps REA startup bounded without imposing an analysis deadline", () => {
+  const definition = reaServerDefinition({
+    version: "6.7.0", node: process.execPath, entry: join(root, "rea.mjs"), directory: root,
+  }, root);
+  expect(definition.config.connectTimeoutMs).toBe(60_000);
+  expect(definition.config.timeoutMs).toBeUndefined();
 });

@@ -18,7 +18,7 @@ import {
   type McpRequestOptions,
 } from "./types.js";
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 0;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const SESSION_HEADER = "mcp-session-id";
 const PROTOCOL_HEADER = "mcp-protocol-version";

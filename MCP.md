@@ -44,14 +44,15 @@ Stdio servers run as child processes, exchanging MCP messages over stdin and std
       "env": {
         "SERVICE_API_KEY": "${env:SERVICE_API_KEY}"
       },
-      "connectTimeoutMs": 30000,
-      "timeoutMs": 60000
+      "connectTimeoutMs": 30000
     }
   }
 }
 ```
 
 Commands such as `npx` and `uvx` resolve through the process environment, including Windows command shims. Set `cwd` when a server needs a particular working directory. Environment credentials stay in the server process and are redacted from supported configuration displays.
+
+MCP tool calls have no default execution or output-stall deadline. Long-running calls wait for the server's result unless you cancel them. Set a server's optional `timeoutMs` to impose a deadline in milliseconds; it covers the call and any reconnect/retry together. Omit it to leave tool execution unlimited. Connection startup, catalog discovery, authentication and shutdown retain their separate safeguards. A server or network can still terminate a request.
 
 ### Remote services with API keys
 
@@ -166,7 +167,7 @@ MCP servers must be trusted before their tools are used. Their descriptions and 
 | Server is invalid | Check `/mcp list` for missing environment variables, malformed fields, or the winning config source. |
 | Executable cannot start | Install its runtime, check `PATH` and `cwd`, then use `/mcp reconnect <server>`. |
 | First connection is slow | Increase `connectTimeoutMs` if package installation or startup needs more than the default 30 seconds. |
-| A tool exceeds its deadline | Increase `timeoutMs` for that server; the default is 60 seconds. Timed-out requests are cancelled, not automatically replayed. |
+| A tool exceeds its deadline | Tool calls have no default deadline. Remove or increase an explicitly configured `timeoutMs`, and check for server-side limits. Timed-out requests are cancelled, not automatically replayed. |
 | Server returns 401 | Use `/mcp login <server>` for OAuth, or correct its API key/header configuration. |
 | `mcp.call` rejects a target locally | Follow the specific target or argument error. Use the exact name and JSON object from `mcp.tools`; enabling a server again does not repair malformed arguments or an unknown tool name. |
 | OAuth registration is unavailable | Configure the service's registered `clientId`, or use a supported token/key authentication method. |

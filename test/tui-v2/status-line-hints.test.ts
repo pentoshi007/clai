@@ -24,7 +24,7 @@ describe("status line hints and Esc semantics", () => {
     for (const density of DENSITIES) {
       expect(busyCancelHint(density)).toEqual({
         short: "esc: cancel",
-        expand: "cancel active work",
+        expand: "stop main agent; background work continues",
       });
     }
     expect(armedCancelHint()).toBe("esc again to cancel");
@@ -125,16 +125,23 @@ describe("status line hints and Esc semantics", () => {
     expect(parseContextLimitInput("12k")).toBeNull();
   });
 
-  it("routes clicks through the same arm/confirm path as Esc", () => {
+  it("keeps clicks immediate and compact while keyboard Esc uses arm/confirm", () => {
     const statusLine = readFileSync(STATUS_LINE, "utf8");
     expect(statusLine).toContain("onClick={onRequestCancel}");
+    expect(statusLine).not.toContain("busyCancelHint(density).expand");
+    expect(statusLine).not.toContain("expand={armedCancelHint()}");
     expect(statusLine).not.toContain("void session.cancelAll()");
 
     const app = readFileSync(APP, "utf8");
     expect(app).toContain("cancelArmed={escapeCancelArmed}");
-    expect(app).toContain("onRequestCancel={requestEscapeCancel}");
+    expect(app).toContain("onRequestCancel={stopMainAgent}");
+    expect(app).toContain("onEscapeCancel={requestEscapeCancel}");
     expect(app).toContain("handleEscapeCancellation(false)");
-    expect(app).toContain("}, ESC_CANCEL_WINDOW_MS)");
+    const stop = app.slice(app.indexOf("const stopMainAgent"), app.indexOf("function handleEscapeCancellation"));
+    expect(stop).toContain("clearEscapeCancellation()");
+    expect(stop).toContain("services.cancel.abortForeground()");
+    expect(stop).not.toContain("cancelAll");
+    expect(stop).not.toContain("armEscapeCancellation(");
   });
 
   it("uses fixed separators without reserved hover width or idle cancel chrome", () => {
@@ -157,13 +164,14 @@ describe("OpenTUI cancellation wiring", () => {
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(handler).toContain("escapeCancellationAction");
-    expect(handler).toContain("services.cancel.cancelAll()");
+    expect(handler).toContain("stopMainAgent()");
     expect(handler).toContain("armEscapeCancellation(now)");
-    expect(handler).not.toContain("services.cancel.abortForeground()");
+    expect(handler).not.toContain("services.cancel.cancelAll()");
+    expect(handler).toContain("services.cancel.hasForegroundWork()");
     expect(app).toContain('from "../../ui-core/actions/cancel-timing.js"');
     expect(app).not.toMatch(/const ESC_CANCEL_WINDOW_MS\s*=/);
     expect(handler.indexOf('action === "dismiss"')).toBeLessThan(
-      handler.indexOf("services.cancel.cancelAll()"),
+      handler.indexOf("stopMainAgent()"),
     );
   });
 

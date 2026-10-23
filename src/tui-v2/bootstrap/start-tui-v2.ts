@@ -219,23 +219,14 @@ export async function startTuiV2(
     ],
     epilogue: () => runFreebuffSessionShutdownCleanup(epilogue.run),
     onSigint: () => {
-      const dismissed = services.overlay.cancelBlockingPrompt();
-      if (services.session.getState().running) {
-        services.session.abort();
-        services.session.notice(
-          "info",
-          dismissed
-            ? "prompt cancelled · Ctrl+C again to exit"
-            : "turn aborted · Ctrl+C again to exit",
-        );
-      } else {
-        services.session.notice(
-          "info",
-          dismissed
-            ? "prompt cancelled · Ctrl+C again to exit"
-            : "Ctrl+C again to exit",
-        );
-      }
+      services.overlay.cancelBlockingPrompt();
+      void services.cancel.cancelAll().then(
+        (outcome) => {
+          if (!outcome.ok) services.session.notice("warn", outcome.sessionResult.output);
+        },
+        (error: unknown) => services.session.notice("warn", error instanceof Error ? error.message : String(error)),
+      );
+      services.session.notice("info", "Cancelling work · Ctrl+C again to exit");
     },
     onError: (error) => {
       console.error(

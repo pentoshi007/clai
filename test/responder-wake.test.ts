@@ -6,6 +6,8 @@ import { createCurrentJobsPort } from "../src/app/adapters/current-jobs-adapter.
 import { SessionController } from "../src/app/controllers/session-controller.js";
 import { SessionResponder } from "../src/app/controllers/session-responder.js";
 import { JobManager } from "../src/tools/jobs.js";
+import { CancelCoordinator } from "../src/app/controllers/cancel-coordinator.js";
+import { CancelLadder } from "../src/classic/input/cancel-ladder.js";
 
 const dirs: string[] = [];
 const managers: JobManager[] = [];
@@ -338,7 +340,7 @@ describe("runtime responder listening lease", () => {
     ctx.unsubscribe();
   });
 
-  it("keeps loadHistory and abort responder-off without stopping jobs", async () => {
+  it("fences history loads but preserves responder listening and running jobs on foreground abort", async () => {
     const { manager } = await fixture();
     const jobs = createCurrentJobsPort(manager);
     const session = new SessionController({
@@ -380,9 +382,55 @@ describe("runtime responder listening lease", () => {
     expect(manager.getJob(jobId!)?.status).toBe("running");
 
     await session.submit("listen again");
+    const lease = jobs.getResponderLeaseId("controller-lifecycle");
     session.abort();
-    expect(session.getState().responder.mode).toBe("off");
+    expect(session.getState().responder.mode).toBe("listening");
+    expect(jobs.getResponderLeaseId("controller-lifecycle")).toBe(lease);
     expect(manager.getJob(jobId!)?.status).toBe("running");
     session.dispose();
   });
+});
+
+it.each([false, true])("keeps a real background process alive after Esc and cancels it on Ctrl+C (responder=%s)", async (responder) => {
+  const { manager } = await fixture();
+  const jobs = createCurrentJobsPort(manager);
+  const started = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  const session = new SessionController({
+    sessionId: "esc-survival", jobs, noHistory: true, emit: () => undefined,
+    agent: { async runTurn() { started.resolve(); await finish.promise; return "done"; } },
+    persistence: {
+      saveSession: async () => undefined, loadPlan: async () => undefined,
+      savePlan: async () => undefined, deletePlan: async () => undefined,
+    },
+  });
+  const pending = session.submit("keep working");
+  try {
+    await started.promise;
+    const job = await manager.startJob(`${JSON.stringify(process.execPath)} -e "setInterval(() => {}, 1000)"`, {
+      ownerSessionId: session.sessionId, responder, wakeOnCompletion: responder,
+    });
+    const id = job.backgroundJob!.id;
+    const lease = jobs.getResponderLeaseId(session.sessionId);
+    let clock = 10_000;
+    const ladder = new CancelLadder({
+      coordinator: new CancelCoordinator({ session, sessionId: () => session.sessionId, jobs,
+        interruptible: { hasWork: () => false, cancelAll: () => 0 } }),
+      overlay: { cancelBlockingPrompt: () => false }, notify: () => undefined,
+      requestExit: () => undefined, now: () => clock,
+    });
+    ladder.escape(false);
+    clock += 200;
+    ladder.escape(false);
+    expect(manager.getJob(id)?.status).toBe("running");
+    expect(jobs.getResponderLeaseId(session.sessionId)).toBe(lease);
+    if (responder) expect(session.getState().responder.mode).toBe("listening");
+    ladder.interrupt();
+    await waitFor(() => manager.getJob(id)?.status === "killed");
+    expect(manager.getJob(id)?.wakeOnCompletion).toBe(false);
+  } finally {
+    finish.resolve();
+    await pending;
+    session.dispose();
+  }
 });
