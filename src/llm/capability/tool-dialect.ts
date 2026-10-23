@@ -27,6 +27,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   vercel: "openai",
   anthropic: "anthropic",
   mistral: "openai",
+  hinoki: "openai",
   river: "openai",
   "aws-mantle": "openai",
   gemini: "gemini",

@@ -151,7 +151,7 @@ Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from
 </details>
 
 <details>
-<summary><b>API, keyless and local providers</b>: 30 providers including Free, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter</summary>
+<summary><b>API, keyless and local providers</b>: 31 providers including Free, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, Hinoki</summary>
 
 | Provider | Provider ID | Credential or endpoint variable |
 | --- | --- | --- |
@@ -165,6 +165,7 @@ Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY`; optional `MISTRAL_BASE_URL` for regional endpoints. |
 | River | `river` | `RIVER_API_KEY`; optional `RIVER_BASE_URL`. |
+| Hinoki | `hinoki` | `HINOKI_API_KEY`; optional `HINOKI_BASE_URL`. |
 | Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |

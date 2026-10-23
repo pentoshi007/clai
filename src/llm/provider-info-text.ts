@@ -5,6 +5,28 @@ import {
 } from "./provider-identity.js";
 
 export const providerInfo: Record<string, string> = {
+  hinoki: `Hinoki — offensive-security inference
+
+  API          https://inference.hinoki.security/v1
+  Credential   HINOKI_API_KEY or clai set hinoki
+  Default      hinoki-offensive
+  Models       Live /models catalog; published context/output limits and capabilities
+
+  /effort follows advertised or runtime-learned model settings, with the verified
+  endpoint effort vocabulary when the catalog omits them. Reasoning is displayed
+  when returned; hidden reasoning tokens still count in /usage.
+  Full conversation and tool-result history is sent on every request; saved
+  response IDs are not used. Chat Completions provides token/tool streaming.
+  Images, native tools, parallel calls, subagents, cancellation, and multiple keys
+  use the shared provider lifecycle. Catalog capabilities override fallback facts.
+  Stable message/tool prefixes and a per-session prompt_cache_key preserve cache
+  affinity. /usage reports measured input, output, cached input, and reasoning.
+  Cache hits are upstream-controlled, not guaranteed. Workspace credit balances
+  are not available through this integration; consult Hinoki for those.
+  HINOKI_BASE_URL or a saved endpoint overrides the default API URL.
+
+Setup: clai set hinoki · clai use hinoki · /model
+Website: https://hinoki.security`,
   constellation: `Constellation Gate — OpenAI-compatible model gateway
 
   API          https://gateway.constellationgate.ai/v1

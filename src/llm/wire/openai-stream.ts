@@ -354,7 +354,9 @@ export async function openAiCompatibleStream(request: {
         (typeof reasoning === "string" && reasoning.trim())
       ) {
         emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
-        if (options.providerId === "mistral" && reasoning) emitStreamReasoningDelta(options.onStreamEvent, reasoning);
+        if ((options.providerId === "mistral" || options.providerId === "hinoki") && reasoning) {
+          emitStreamReasoningDelta(options.onStreamEvent, reasoning);
+        }
         if (text) options.onToken(text);
         return {
           text,

@@ -12,6 +12,7 @@ export const endpointProviders: readonly ProviderId[] = [
   "tokenrouter",
   "tokenharbor",
   "mistral",
+  "hinoki",
   "river",
   "constellation",
 ];
@@ -30,6 +31,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   openai: "paid-cloud",
   anthropic: "paid-cloud",
   mistral: "paid-cloud",
+  hinoki: "paid-cloud",
   river: "paid-cloud",
   agentrouter: "paid-cloud",
   constellation: "paid-cloud",

@@ -110,6 +110,7 @@ An environment credential is also used directly when no stored credentials take 
 | ExpLabs | `explabs` | `EXPLABS_API_KEY` |
 | Fireworks | `fireworks` | `FIREWORKS_API_KEY` |
 | Hetzner | `hetzner` | `HETZNER_API_KEY` |
+| Hinoki | `hinoki` | `HINOKI_API_KEY` |
 | Lightning AI | `lightning` | `LIGHTNING_API_KEY` |
 | Merge Gateway | `merge-gateway` | `MERGE_GATEWAY_API_KEY` |
 | Meta Model API | `meta` | `MODEL_API_KEY` |
@@ -132,6 +133,18 @@ Discovered limits are cached for 30 minutes and retained locally for later sessi
 Agent turns retry temporary HTTP 429 failures up to four times, with visible waits of 5, 8, 10, and 15 seconds. This includes gateway responses that report an unavailable upstream endpoint. Shorter provider retry hints can shorten a wait. Standalone requests allow three retries by default.
 
 Retries preserve the conversation and tool definitions; cancelling the turn cancels the wait. Explicit billing or insufficient account quota errors require an account or provider change. If the gateway remains unavailable after the retry budget, select another model with `/model` or provider with `/provider`. Cross-provider fallback follows `/fallback` and `/freeonly` settings.
+
+### Hinoki
+
+Configure `clai set hinoki` and `clai use hinoki`, or set `HINOKI_API_KEY`. Existing `hinoki` credentials in `~/.clai/keys.json`, including multiple key slots, use the same selection, disabled-key handling, cooldowns, and failover as other providers. The default endpoint is `https://inference.hinoki.security/v1`, and the default model is `hinoki-offensive`. `HINOKI_BASE_URL` or a saved endpoint can override the URL.
+
+`/model` discovers the authenticated `/models` catalog. Published context/output limits, vision, tools, and reasoning metadata take precedence over fallback capabilities. Context limits are retained locally for later sessions. Generation reuses the catalog for five minutes; explicit model discovery refreshes it. Concurrent reads are coalesced and caches are isolated by key and endpoint. Temporary failures keep the last successful route catalog with a one-minute retry cooldown; authentication failures remain visible for shared key rotation.
+
+`/effort` uses advertised or runtime-learned settings; when metadata is absent, the endpoint's verified effort vocabulary is `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. These are accepted API controls, not a guarantee of visible reasoning at every level. Returned reasoning streams separately from the answer. Hidden reasoning-token counts still appear in session usage. Images and function calls are supported by `hinoki-offensive`; future models follow their catalog metadata and shared runtime capability handling.
+
+The integration uses Chat Completions for streaming and sends the full conversation, function calls, and tool results on every request. It never relies on saved responses or `previous_response_id`. Stable conversation/tool prefixes and a hashed per-session `prompt_cache_key` preserve cache affinity; cache hits depend on Hinoki's upstream infrastructure and cannot be guaranteed. Subagents and auxiliary requests retain their separate shared affinity.
+
+`/usage` reports measured session input, output, total, cached-input, cache-write, and reasoning tokens when returned by the API, including trailing usage-only stream events. Unknown counters are not fabricated. Workspace credit balances are not available through this integration; use Hinoki's workspace settings for those. API usage is charged against workspace credits.
 
 ### Constellation Gate
 

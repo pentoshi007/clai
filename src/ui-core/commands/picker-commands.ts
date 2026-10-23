@@ -348,6 +348,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   anthropic: "https://api.anthropic.com/v1",
   river: "https://api.river.ai/v1",
   mistral: "https://api.mistral.ai/v1",
+  hinoki: "https://inference.hinoki.security/v1",
   nvidia: "https://integrate.api.nvidia.com/v1",
   agentrouter: "https://agentrouter.org/v1",
   constellation: "https://gateway.constellationgate.ai/v1",

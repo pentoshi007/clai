@@ -340,6 +340,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     options.providerId === "mistral" ||
     options.providerId === "explabs" ||
     options.providerId === "river" ||
+    options.providerId === "hinoki" ||
     options.providerId === "cline"
       ? affinitySession
         ? sessionCacheAffinityKey(affinitySession)
@@ -382,7 +383,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     );
   }
   const acceptsTools =
-    !((options.providerId === "mistral" || options.providerId === "river") &&
+    !((options.providerId === "mistral" || options.providerId === "river" || options.providerId === "hinoki") &&
       modelCatalogFacts(options.providerId, options.model)?.tools === false) &&
     !(options.providerId === "openrouter" &&
       options.control?.profile.capabilities.acceptedParameters !== undefined &&
@@ -411,7 +412,8 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       options.providerId === "mistral" ||
       options.providerId === "tokenrouter" ||
       options.providerId === "explabs" ||
-      options.providerId === "river") &&
+      options.providerId === "river" ||
+      options.providerId === "hinoki") &&
     affinityKey
       ? { prompt_cache_key: affinityKey }
       : {}),
@@ -438,7 +440,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
           toolChoice: options.toolChoice,
           parallelToolCalls: options.parallelToolCalls,
         }) : {}),
-    ...(options.providerId === "mistral" && acceptsTools &&
+    ...((options.providerId === "mistral" || options.providerId === "hinoki") && acceptsTools &&
       options.tools?.length && options.parallelToolCalls !== undefined
       ? { parallel_tool_calls: options.parallelToolCalls }
       : {}),
@@ -489,7 +491,7 @@ function portableToolHistory(
     );
     if (
       isTextOnlyModel(plan.route.provider, plan.route.model) ||
-      ((plan.route.provider === "mistral" || plan.route.provider === "river") &&
+      ((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "hinoki") &&
         modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) ||
       (foreignArtifact && !hasCompatibleArtifact) ||
       (forceReasoningReplay && !replayableText)
@@ -528,7 +530,7 @@ export function chatCompletionsBodyFromPlan(
     Boolean(extras.forceReasoningReplay),
   );
   const allowTools =
-    !((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "constellation") &&
+    !((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "constellation" || plan.route.provider === "hinoki") &&
       modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) &&
     (plan.route.provider !== "openrouter" ||
     plan.policy.acceptedParameters === undefined ||
