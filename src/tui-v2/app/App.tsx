@@ -695,8 +695,8 @@ export function App(): ReactNode {
     <TerminalDimensionsContext.Provider value={{ width, height }}>
     <box
       style={{
-        width: terminalWidth,
-        height,
+        width: "100%",
+        height: "100%",
         flexDirection: "column",
         backgroundColor: theme.background,
         position: "relative",
