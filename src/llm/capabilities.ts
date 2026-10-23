@@ -278,7 +278,7 @@ export function routeReasoningIsMandatory(
   model: string,
 ): boolean {
   if (
-    (provider === "cline" || provider === "river") &&
+    (provider === "cline" || provider === "river" || provider === "hinoki") &&
     modelCatalogFacts(provider, model)?.reasoning?.mandatory === true
   ) return true;
   if (provider === "mistral") {
@@ -362,7 +362,7 @@ export type ReasoningEvidence =
   "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
 function familyForProvider(provider: ProviderId, model: string) {
-  if (provider === "mistral" || provider === "river" || provider === "constellation") return undefined;
+  if (provider === "mistral" || provider === "river" || provider === "constellation" || provider === "hinoki") return undefined;
   const family = modelFamilyFor(model);
   const providerExcluded =
     family?.id === "mimo-v2" && provider !== "mimo";
@@ -397,7 +397,7 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   if (
-    (provider === "mistral" || provider === "cline" || provider === "river" || provider === "constellation") &&
+    (provider === "mistral" || provider === "cline" || provider === "river" || provider === "constellation" || provider === "hinoki") &&
     modelCatalogFacts(provider, model)?.reasoning?.supported === false
   ) return false;
   loadLearnedCapabilities();
@@ -540,7 +540,7 @@ export function catalogAdvertisedEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
-  if (provider === "constellation") {
+  if (provider === "constellation" || provider === "hinoki") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     if (reasoning?.supported === false) return [];
     return wireRejectionEfforts.get(reasoningKey(provider, model)) ?? catalogEffortList(reasoning?.supportedEfforts);
@@ -608,7 +608,7 @@ export function registerModelCatalog(
   );
   for (const model of models) {
     if (!model.id) continue;
-    if (provider === "cline" || provider === "constellation") {
+    if (provider === "cline" || provider === "constellation" || provider === "hinoki") {
       catalogReasoningEfforts.delete(reasoningKey(provider, model.id));
       catalogReasoningSupport.delete(reasoningKey(provider, model.id));
     }

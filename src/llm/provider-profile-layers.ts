@@ -1,5 +1,6 @@
 import type { ProviderId } from "../types.js";
 import { constellationProfile } from "./constellation-profile.js";
+import { hinokiProfile } from "./hinoki-profile.js";
 import { classifyBynaraModel, classifyNvidiaModel } from "./model-families.js";
 import { CHAT_COMPLETIONS_TERMINAL_PROOFS } from "./provider-profile.js";
 import type {
@@ -26,6 +27,7 @@ export const viaGateway = (detail: string): ProfileEvidence => ({
 });
 
 export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = {
+  hinoki: hinokiProfile,
   constellation: constellationProfile,
   river: {
     evidence: providerDoc("https://docs.river.ai/guides/inference/"),
@@ -980,6 +982,7 @@ export const FAMILYLESS_ENDPOINT_LAYERS: Partial<
   free: freeGatewayEffortLayer,
   tokenrouter: FAMILY_LAYERS.tokenrouter!,
   constellation: FAMILY_LAYERS.constellation!,
+  hinoki: FAMILY_LAYERS.hinoki!,
 };
 
 export const GATEWAY_FAMILY_EXCLUDED_PROVIDERS: Readonly<

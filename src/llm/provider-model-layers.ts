@@ -12,6 +12,7 @@ import { MODEL_RULES } from "./model-layers/model-rules.js";
 import { nvidiaModelLayer } from "./model-layers/nvidia-layer.js";
 import { modelCatalogFacts } from "./capabilities.js";
 import { constellationModelLayer } from "./constellation-profile.js";
+import { hinokiModelLayer } from "./hinoki-profile.js";
 import { catalogEffortList } from "./catalog-facts.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
 import { isRiverDeepSeekModel } from "./river-models.js";
@@ -212,6 +213,7 @@ export function modelLayerFor(
   model: string,
 ): ProviderProfileLayer | undefined {
   if (provider === "constellation") return constellationModelLayer(modelCatalogFacts(provider, model));
+  if (provider === "hinoki") return hinokiModelLayer(modelCatalogFacts(provider, model));
   if (provider === "cline") {
     const fallback = MODEL_RULES.cline?.find((rule) => rule.pattern.test(model))?.layer;
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;

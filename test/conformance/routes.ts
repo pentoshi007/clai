@@ -33,6 +33,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "hinoki",
+    provider: "hinoki",
+    family: "chat_completions",
+    model: "hinoki-offensive",
+    auth: { apiKey: "hinoki-conformance-credential" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "river-deepseek",
     provider: "river",
     family: "chat_completions",
