@@ -3,7 +3,7 @@ import type { PlanTask } from "../../../src/store/plan.js";
 import { panelFrameRows } from "../../../src/classic/panels/panel-frame.js";
 import { planBodyRowsWanted, planKey, planView, PLAN_INITIAL_STATE } from "../../../src/classic/panels/plan-panel.js";
 import { allocateChrome } from "../../../src/classic/chrome/row-budget.js";
-import { asciiInk, createHarness, ink, plan, rowsOf } from "./harness.js";
+import { asciiInk, colorInk, createHarness, ink, plan, rowsOf } from "./harness.js";
 
 function task(overrides: Partial<PlanTask> & Pick<PlanTask, "id" | "title" | "state">): PlanTask {
   return { ...overrides };
@@ -40,6 +40,20 @@ describe("plan rows", () => {
     expect(body).toContain("⟳ Add limit/offset to the query layer");
     expect(body).toContain("RESPONDER · RUNNING");
     expect(body).toContain("○ Add tests");
+  });
+
+  it.each([
+    { state: "pending", color: "foreground", phase: "QUEUED" },
+    { state: "in_progress", color: "activity", phase: "RUNNING" },
+    { state: "done", color: "success", phase: "DELIVERED" },
+    { state: "failed", color: "diffDel", phase: "FAILED" },
+    { state: "skipped", color: "muted", phase: "DROPPED" },
+  ] as const)("colors the $state responder label like its task glyph", ({ state, color, phase }) => {
+    const frame = planView({
+      ink: colorInk, columns: 80, rows: 9, state: PLAN_INITIAL_STATE, focused: false,
+      plan: plan([task({ id: "c1", title: "Background proof", state, responderOwned: true })]),
+    });
+    expect(panelFrameRows(frame).rows.join("\n")).toContain(colorInk.fg(color, `RESPONDER · ${phase}`));
   });
 
   it("downgrades the bar and glyphs without Unicode", () => {

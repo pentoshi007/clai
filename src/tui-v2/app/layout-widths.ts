@@ -60,7 +60,7 @@ export function appWidthBudget(input: AppWidthBudgetInput): AppWidthBudget {
     planChatGap = PLAN_CHAT_GAP;
     const desiredPlanWidth = Math.min(
       PLAN_MAX_WIDTH,
-      Math.max(PLAN_MIN_WIDTH, Math.floor(terminalWidth * PLAN_OVERLAY_SHARE)),
+      Math.max(PLAN_MIN_WIDTH, Math.floor(terminalWidth * PLAN_OVERLAY_SHARE) - 1),
     );
     overlayPlanWidth = Math.min(
       desiredPlanWidth,

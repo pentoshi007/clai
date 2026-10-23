@@ -102,7 +102,7 @@ function taskRows(input: PlanViewInput, width: number): readonly PlanRow[] {
     const owner = taskOwnerChip(task);
     if (owner) {
       rows.push({
-        text: `   ${ink.fg("chipTeal", adaptPresenterGlyphs(owner, ink.unicode))}`,
+        text: `   ${ink.fg(token, adaptPresenterGlyphs(owner, ink.unicode))}`,
         taskIndex: index,
         owner: true,
       });

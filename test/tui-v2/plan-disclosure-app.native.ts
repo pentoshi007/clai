@@ -87,6 +87,15 @@ async function capture(name: string): Promise<void> {
 
 try {
   await settle();
+  for (const [width, paneWidth] of [[64, 33], [92, 33], [120, 38], [128, 40], [140, 44], [160, 48]] as const) {
+    await settle(() => setup.resize(width, 40));
+    const pane = setup.renderer.root.findDescendantById("plan-pane");
+    assert.ok(pane);
+    assert.equal(pane.width, paneWidth - 2, `The task pane must yield one column to chat at ${width} columns`);
+    assert.equal(pane.x, width - paneWidth + 1, "The task pane must retain its right-side docking");
+    await capture(`app-task-width-${width}`);
+  }
+  await settle(() => setup.resize(140, 40));
   assert.ok(setup.renderer.root.findDescendantById("plan-expand-all"));
   assert.equal(expanded("t1"), false);
   assert.equal(expanded("t2"), false);
