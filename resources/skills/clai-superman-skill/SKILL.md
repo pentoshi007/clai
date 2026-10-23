@@ -18,9 +18,13 @@ The investigation loop and persistence/proof discipline below govern EVERY secur
 
 ## Load only the relevant depth
 
-Read the matching reference with `fs.read` relative to this skill's directory. Start with the current decision, not the entire library. A narrow task may need no reference. For substantial engagements read [operations](references/operations.md); add a domain guide when that surface is observed, and another only when a boundary or hypothesis needs it.
+These references are the specialized parts of this skill, not optional background once applicable. While the target type is unknown, you may read general behavioral guidance such as [operations](references/operations.md), [evidence and closure](references/evidence-reporting.md) or [sources](references/sources.md) to guide discovery; other relevant guides are optional at that stage. Do not guess a target type just to select a guide.
 
-| Observed problem | Read when needed |
+Once evidence establishes the target type or surface, you MUST read the matching domain reference with `fs.read` before assessing or testing that surface. Loading this entrypoint alone is not enough. Read every applicable guide for a mixed target as its surfaces become relevant; when a new boundary appears, load its guide before investigating it. For substantial engagements, also read [operations](references/operations.md). Read paths relative to this skill's directory, only to the depth needed for the current decision, and do not load the whole library.
+
+After each compaction, a note that a skill or reference was previously loaded does not preserve its exact instructions. Before resuming, reload this entrypoint with `skill.load` if its full body was lost, and re-read previously used references that remain relevant plus any newly applicable ones with `fs.read`. Skip unrelated guides and content still fully present in live context; do not re-read between ordinary steps. Carry the skill name and exact reference paths into continuation memory, not copies of the library.
+
+| Observed problem | Applicable reference |
 | --- | --- |
 | Coverage, prioritization, retries, stalled leads, multi-day continuity | [Operations](references/operations.md) |
 | HTTP, APIs, browsers, JavaScript, auth flows, business logic | [Web and API](references/web-api.md) |

@@ -1,6 +1,7 @@
 import { isItemExpanded, type ToolItem, type ToolStatus } from "../../ui-core/state/transcript-types.js";
 import { presentFsReadArgs, presentTool, toolStatusText } from "../../ui-core/rendering/tool-presenter.js";
 import { shouldShowToolElapsed } from "../../ui-core/rendering/duration.js";
+import { pendingArgumentsText } from "../../ui-core/rendering/pending-arguments.js";
 import { restoredTerminalArgs } from "../../agent/parser/terminal-args.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { parseFsReadSections } from "../../tools/fs/read-sections.js";
@@ -112,7 +113,7 @@ function bodySource(ctx: BlockContext, item: ToolItem): string {
 }
 
 export function buildToolBodyLines(ctx: BlockContext, item: ToolItem, options: ToolBodyOptions = {}): string[] {
-  if (item.pending) return hintRows(ctx, "    ", "receiving arguments");
+  if (item.pending) return hintRows(ctx, "    ", pendingArgumentsText(ctx.now - item.timestamp));
   const expanded = isItemExpanded(ctx.state, item);
   const failed = item.status === "failed" || item.status === "blocked";
   const source = logicalOutputLines(bodySource(ctx, item), item.name);

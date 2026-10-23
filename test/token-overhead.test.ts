@@ -16,7 +16,7 @@ const sha256 = (value: string): string => createHash("sha256").update(value).dig
 describe("token overhead contracts", () => {
   it("locks the retained tool catalog, arguments, flags and validation constraints", () => {
     expect(sha256(JSON.stringify(getToolDefinitions())))
-      .toBe("5674d6a3259750864d8f4bad18c652743da475d68c90944f0275664d6d5198b2");
+      .toBe("e7de9c5fec21fe9784905ffd47695663291cbb45339424236cdb7f9f87d799d9");
   });
 
   it("keeps the complete catalog when compact mode is requested", () => {
@@ -72,12 +72,12 @@ describe("token overhead contracts", () => {
     expect(sha256(buildCompactionUserPrompt({
       source: { kind: "transcript", text: "User asked to fix retry count. Read /project/state.mjs: retryLimit=2. fs.edit changed retryLimit to 3. node check.mjs exited 0." },
       durableState: "ACTIVE PLAN: t1 done; t2 pending: set backoffMs=100 without changing CRLF.",
-    }))).toBe("0869052761d28595adfe27c9cf83c2f6958d5dc1179349072a323b8607610817");
+    }))).toBe("29cd9f115054a0baf638c061145d0029c3e6e6b67233e3c9d7d638b83d116106");
     expect(sha256(buildCompactionUserPrompt({
       source: { kind: "transcript", text: "Read /project/package.json: Vite installed. Existing source has a mock payment form. Verified webhook route requires signature validation." },
       durableState: "ACTIVE PLAN: Implement signature validation; verify invalid signatures and replay protection.",
       purpose: "plan-implement",
-    }))).toBe("73468d9f83f7e0b00caddefd3f91d8f8c39d263244a3df717310a0482789f5b2");
+    }))).toBe("6dd7498375cf6e24bf05ab0a82798ac5f4580658f5ed33e1b944e5315ceaba8c");
   });
 
   it("injects full plan detail and acceptance criteria even with a small request-context budget", () => {

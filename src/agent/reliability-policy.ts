@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getConfig, providerCategory } from "../store/config.js";
-import type { ProviderId } from "../types.js";
+import type { ChatMessage, ProviderId } from "../types.js";
 
 export const DEFAULT_FS_PASSTHROUGH_CAP_CHARS = 64_000;
 
@@ -169,6 +169,7 @@ export function dedupeToolContextOutput(input: {
   toolName: string;
   artifactPath?: string | undefined;
   seenHashes: Map<string, { toolName: string; count: number }>;
+  messages?: readonly ChatMessage[] | undefined;
   policy?: ReliabilityPolicy | undefined;
 }): { content: string; deduped: boolean; hash: string } {
   const policy = input.policy ?? getReliabilityPolicy();
@@ -176,29 +177,20 @@ export function dedupeToolContextOutput(input: {
   if (!policy.toolResultDedup) {
     return { content: input.content, deduped: false, hash };
   }
-  if (input.content.length < 400) {
-    input.seenHashes.set(hash, {
-      toolName: input.toolName,
-      count: (input.seenHashes.get(hash)?.count ?? 0) + 1,
-    });
-    return { content: input.content, deduped: false, hash };
-  }
-  const prior = input.seenHashes.get(hash);
-  if (!prior) {
-    input.seenHashes.set(hash, { toolName: input.toolName, count: 1 });
-    return { content: input.content, deduped: false, hash };
-  }
-  prior.count += 1;
-  if (prior.count > 2) {
-    return { content: input.content, deduped: false, hash };
-  }
+  const prior = input.seenHashes.get(hash) ?? { toolName: input.toolName, count: 0 };
+  const bodyRetained = prior.count === 0 || !input.messages || input.messages.some(message =>
+    message.role === "tool" && message.content.includes(input.content));
+  prior.count = bodyRetained ? prior.count + 1 : 1;
+  input.seenHashes.set(hash, prior);
+  const duplicate = input.content.length >= 400 && prior.count === 2;
+  if (!duplicate) return { content: input.content, deduped: false, hash };
   const artifact = input.artifactPath
     ? ` Full output: ${input.artifactPath}`
     : "";
   const head = input.content.slice(0, 200).replace(/\s+/g, " ").trim();
   const content =
     `[duplicate tool output — identical to earlier ${prior.toolName} this turn; hash=${hash}]${artifact}\n` +
-    `Preview: ${head}${input.content.length > 200 ? "…" : ""}\n` +
+    `Preview: ${head}…\n` +
     `Re-read the prior tool result or artifact if you need the full body; do not assume it changed.`;
   return { content, deduped: true, hash };
 }

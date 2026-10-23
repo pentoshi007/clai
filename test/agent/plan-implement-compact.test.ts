@@ -5,7 +5,8 @@ import {
   CATASTROPHIC_SUMMARY_MIN_CHARS,
   extractCompactionSummaryBody,
 } from "../../src/agent/plan-implement-compact.js";
-import { COMPACTION_MEMORY_PREFIX } from "../../src/agent/context-manager.js";
+import { COMPACTION_MEMORY_PREFIX, shouldApplyAutoCompact } from "../../src/agent/context-manager.js";
+import { renderSkillRecovery } from "../../src/agent/context/compaction-skills.js";
 import type { ChatMessage } from "../../src/types.js";
 
 function msgs(...parts: ChatMessage[]): ChatMessage[] {
@@ -105,6 +106,34 @@ describe("acceptPlanImplementCompaction", () => {
       ),
     });
     expect(r.accept).toBe(false);
+  });
+
+  it.each([false, true])("excludes skill recovery boilerplate from summary quality (indexed: %s)", (indexed) => {
+    const recovery = renderSkillRecovery(indexed ? [{
+      name: "clai-superman-skill",
+      file: "/skills/clai-superman-skill/SKILL.md",
+      resources: ["references/web-api.md"],
+    }] : []);
+    const substantial =
+      "Mapped tenant isolation in the API using two controlled test accounts. " +
+      "The read endpoint enforces ownership, but the write endpoint still needs equivalent authorization tests before reporting.";
+    for (const body of ["", "tiny", substantial]) {
+      const afterMessages: ChatMessage[] = [{
+        role: "system",
+        content: `${COMPACTION_MEMORY_PREFIX}\n\n${body}\n\n${recovery}`,
+      }];
+      const input = {
+        summarized: true,
+        summaryBody: extractCompactionSummaryBody(afterMessages),
+        beforeTokens: 40_000,
+        afterTokens: 250,
+        afterMessages,
+      };
+      const result = acceptPlanImplementCompaction(input);
+      expect(shouldApplyAutoCompact(input)).toBe(body === substantial);
+      expect(result.accept).toBe(body === substantial);
+      if (!result.accept) expect(result.reason).toMatch(body ? /too thin/ : /empty/);
+    }
   });
 
   it("accepts modest token savings with substantial body", () => {

@@ -11,6 +11,7 @@ import {
   withoutRecentUserPrompts,
 } from "./compaction-recent-history.js";
 import { reconcileCompactionUserInstructions } from "./compaction-user-instructions.js";
+import { compactedSkills, renderSkillRecovery, withoutSkillRecovery } from "./compaction-skills.js";
 import { redactUserCredentialsFromMemory } from "./user-credentials.js";
 import {
   canonicalMemoryLayout,
@@ -495,7 +496,8 @@ export async function compactMessagesWithSummary(
     stripThinking(rawSummary).visible,
   );
   const instructionMemory = reconcileCompactionUserInstructions(withoutRecentUserPrompts(normalizedSummary), messages);
-  const summary = canonicalMemoryLayout(instructionMemory.summary);
+  const summary = canonicalMemoryLayout(withoutSkillRecovery(instructionMemory.summary));
+  const skills = compactedSkills(messages);
   if (!summary) {
     throw new Error("compaction failed: model returned an empty summary");
   }
@@ -538,13 +540,14 @@ export async function compactMessagesWithSummary(
   const memoryPrefix = compactionMemoryPrefixForPurpose(options.purpose);
   const memoryMsg: ChatMessage = {
     role: "system",
-    content: [memoryPrefix, summary, renderRecentUserPrompts(recentPrompts, protectedUser)]
+    content: [memoryPrefix, summary, renderSkillRecovery(skills), renderRecentUserPrompts(recentPrompts, protectedUser)]
       .filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentPrompts
         .filter((prompt) => !prompt.message || !rawTail.includes(prompt.message))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
       userInstructions: instructionMemory.instructions,
+      ...(skills.length ? { skills } : {}),
     },
   };
   const envelopeMsg: ChatMessage | undefined = options.durableEnvelope?.trim()

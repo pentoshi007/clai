@@ -34,6 +34,7 @@ import {
   type FileChange,
 } from "../../../tools/file-diff.js";
 import { LinkableText } from "./linkable-text.js";
+import { PendingArguments } from "./pending-arguments.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 import { DiffActionButton, FileDiffBody } from "./file-diff-card.js";
 import {
@@ -649,7 +650,8 @@ export function ToolCard(props: {
           <LinkableText text={pathLine} theme={theme} fg={theme.muted} selectable />
         </box>
       ) : null}
-      {detail ? <LinkableText text={detail} theme={theme} fg={theme.mode} selectable /> : null}
+      {item.pending ? <PendingArguments theme={theme} /> : null}
+      {!item.pending && detail ? <LinkableText text={detail} theme={theme} fg={theme.mode} selectable /> : null}
 
       {summary ? (
         <text selectable style={{ fg: summaryFg, attributes: TextAttributes.DIM }}>{summary}</text>

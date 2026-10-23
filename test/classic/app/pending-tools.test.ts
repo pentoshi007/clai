@@ -14,6 +14,7 @@ let ui: ReturnType<typeof render> | undefined;
 afterEach(() => {
   ui?.unmount(); ui?.cleanup(); harness?.dispose();
   ui = undefined; harness = undefined;
+  vi.useRealTimers();
 });
 
 it.each([40, 80, 120])("renders pending calls in classic at %i columns and upgrades the same card", async columns => {
@@ -44,4 +45,35 @@ it.each([40, 80, 120])("renders pending calls in classic at %i columns and upgra
   await vi.waitFor(() => expect(ui!.lastFrame()).toContain("ready"));
   expect(tools()).toHaveLength(1);
   expect(tools()[0]).toMatchObject({ id, status: "ok", pending: false });
+});
+
+it.each(["complete", "blocked"] as const)("cycles pending dots in classic and stops when %s", async outcome => {
+  vi.useFakeTimers();
+  const h = createHarness({ columns: 80, rows: 30 });
+  harness = h;
+  vi.spyOn(h.services.session, "getState").mockReturnValue({ ...h.services.session.getState(), running: true });
+  const adapter = new AgentEventAdapter(new EventSequencer(h.services.session.sessionId, createCountingIdFactory()), h.services.session.spool, h.emit);
+  adapter.setTurn(asTurnId("animation"));
+  ui = render(createElement(ServicesProvider, { services: h.services, children: createElement(ClassicApp, { wiring: h.wiring }) }));
+  adapter.ingest({ type: "turn-start", prompt: "inspect" });
+  adapter.ingest({ type: "tool-call-pending", id: "animated-call", name: "shell.exec" });
+  const tools = () => transcriptItems(h.services.transcript.getState()).filter(item => item.kind === "tool");
+  const id = tools()[0]!.id;
+  await vi.advanceTimersByTimeAsync(100);
+  for (const dots of [".", "..", "...", "."]) {
+    expect(ui.lastFrame()?.match(/receiving arguments (\.+)/)?.[1]).toBe(dots);
+    expect(tools()).toHaveLength(1);
+    expect(tools()[0]!.id).toBe(id);
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+  if (outcome === "complete") {
+    adapter.ingest({ type: "tool-call", id: "animated-call", name: "shell.exec", argsDisplay: "printf ready" });
+  } else {
+    adapter.ingest({ type: "tool-blocked", id: "animated-call", name: "shell.exec", reason: "Cancelled before arguments completed" });
+  }
+  await vi.advanceTimersByTimeAsync(100);
+  expect(ui.lastFrame()).not.toContain("receiving arguments");
+  expect(tools()[0]).toMatchObject({ id, pending: false, status: outcome === "complete" ? "queued" : "blocked" });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(ui.lastFrame()).not.toContain("receiving arguments");
 });

@@ -77,6 +77,11 @@ describe("bundled skill discovery and progressive loading", () => {
     expect(result.ok).toBe(true);
     expect(result.output).toContain("[bundled/clai]");
     expect(result.output).toContain("references/novel-research.md");
+    expect(result.output).toContain("While the target type is unknown, you may read general behavioral guidance");
+    expect(result.output).toContain("MUST read the matching domain reference");
+    expect(result.output).toContain("Loading this entrypoint alone is not enough");
+    expect(result.output).toContain("After each compaction");
+    expect(result.output).toContain("Skip unrelated guides and content still fully present");
     const loaded = (await loadSkill(name, { cwd: root }))!;
     expect(loaded.truncated).toBe(false);
     expect(loaded.body).toContain("The investigation loop");

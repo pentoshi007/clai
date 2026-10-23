@@ -14,6 +14,7 @@ import { AGENT_INSTRUCTIONS_PREFIX, latestKeyedBlock, upsertAgentInstructionsMes
 import { latestUserMessage } from "./context/latest-user-message.js";
 import { hasCompletedConversationTurn, recentUserPrompts, renderRecentUserPrompts, withoutRecentUserPrompts } from "./context/compaction-recent-history.js";
 import { carriedUserInstructions, renderUserInstructions, withoutUserInstructionSection } from "./context/compaction-user-instructions.js";
+import { compactedSkills, renderSkillRecovery, withoutSkillRecovery } from "./context/compaction-skills.js";
 import {
   estimateImageTokens,
   estimateMessagesTokens,
@@ -96,17 +97,19 @@ export function compactMessages(
   }
 
   const userInstructions = carriedUserInstructions(messages);
+  const skills = compactedSkills(messages);
   const latestUser = latestUserMessage(messages);
   const memo: ChatMessage = {
     role: "system",
     content:
       `${MECHANICAL_MEMORY_PREFIX} to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
-      [renderUserInstructions(userInstructions), bullets.join("\n"), renderRecentUserPrompts(recentUserPrompts(messages), hasCompletedConversationTurn(messages) ? undefined : latestUser)].filter(Boolean).join("\n\n"),
+      [renderUserInstructions(userInstructions), bullets.join("\n"), renderSkillRecovery(skills), renderRecentUserPrompts(recentUserPrompts(messages), hasCompletedConversationTurn(messages) ? undefined : latestUser)].filter(Boolean).join("\n\n"),
     compaction: {
       recentUserPrompts: recentUserPrompts(messages)
         .filter((prompt) => !prompt.message || (!tail.includes(prompt.message) && prompt.message !== latestUser))
         .map(({ content, truncated }) => ({ content, ...(truncated ? { truncated } : {}) })),
       userInstructions,
+      ...(skills.length ? { skills } : {}),
     },
   };
 
@@ -136,7 +139,7 @@ export function shouldApplyAutoCompact(input: {
   if (!input.summarized) return false;
   if (input.afterTokens >= input.beforeTokens) return false;
   if (hasOrphanToolMessages([...input.afterMessages])) return false;
-  const body = withoutRecentUserPrompts(input.summaryBody);
+  const body = withoutSkillRecovery(withoutRecentUserPrompts(input.summaryBody));
   if (!body) return false;
   if (
     input.beforeTokens >= AUTO_COMPACT_STUB_BEFORE_TOKENS &&
@@ -150,7 +153,7 @@ export function shouldApplyAutoCompact(input: {
 const EARLIER_MEMORY_CHAR_BUDGET = 12_000;
 
 function earlierMemoryBody(content: string): string {
-  const body = withoutUserInstructionSection(withoutRecentUserPrompts(content.replace(/^[^\n]*\n+/, ""))).trim();
+  const body = withoutSkillRecovery(withoutUserInstructionSection(withoutRecentUserPrompts(content.replace(/^[^\n]*\n+/, "")))).trim();
   if (body.length <= EARLIER_MEMORY_CHAR_BUDGET) return body;
   return `${body.slice(0, EARLIER_MEMORY_CHAR_BUDGET - 1)}…`;
 }
