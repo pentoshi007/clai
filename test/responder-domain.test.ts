@@ -48,7 +48,7 @@ describe("foreground selectors", () => {
     const plan = planWithChild();
     const child = plan.tasks.find((task) => task.responderOwned)!;
     expect(activeTaskId(plan)).not.toBe(child.id);
-    expect(taskRowColor(child)).toBe("cyan");
+    expect(taskRowColor(child)).toBe("activity");
     expect(taskOwnerChip(child)).toBe("RESPONDER · RUNNING");
     expect(taskOwnerChip(plan.tasks[0]!)).toBeUndefined();
   });
