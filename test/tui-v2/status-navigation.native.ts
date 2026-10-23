@@ -105,9 +105,16 @@ async function verify(width: number): Promise<void> {
     assert.ok(Math.abs(leftGap - rightGap) <= 2, `jump control must be centered in the empty gap: ${JSON.stringify({ width, leftGap, rightGap, row })}`);
     if (width === 160) console.log(JSON.stringify({ running: services.session.getState().running, width, leftGap, rightGap, row }));
   };
+  const branchMounted = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (setup.renderer.root.findDescendantById("status-git-branch")) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("status-git-branch never mounted");
+  };
   try {
     await settle();
-    await act(async () => { await setup.waitFor(() => setup.renderer.root.findDescendantById("status-git-branch") !== undefined); });
+    await act(async () => { await branchMounted(); });
     await settle();
     assertFooterSpacing();
     await settle(() => publishTranscriptScrollMetrics({ linesAbove: 0, linesBelow: 240 }));
