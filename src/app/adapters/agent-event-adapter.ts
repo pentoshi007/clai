@@ -57,7 +57,22 @@ export class AgentEventAdapter {
     this.reasoningSpanOpen = false;
   }
 
+  private ingestPendingTool(event: Extract<AgentEvent, { type: "tool-call-pending" }>): void {
+    const reasoningId = this.reasoningSpanOpen ? this.currentReasoningId() : undefined;
+    this.closeReasoningSpan();
+    if (isQuietMetaTool(event.name)) {
+      if (reasoningId) {
+        this.push("thinking-block", { messageId: this.sequencer.ids.message(), reasoningId, content: "" });
+      }
+      return;
+    }
+    this.push("tool-call", {
+      toolCallId: this.toolCallId(event.id), name: event.name, argsDisplay: "", pending: true,
+    });
+  }
+
   ingest(event: AgentEvent): void {
+    if (event.type === "tool-call-pending") return this.ingestPendingTool(event);
     switch (event.type) {
       case "model-submitted":
         return;

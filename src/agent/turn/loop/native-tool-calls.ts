@@ -25,7 +25,7 @@ const appendCards = (
       { name: native.name, args: native.args },
       ports.mcpRuntime,
     );
-    const eventId = ports.allocateEventId();
+    const eventId = ports.callIds[index] ?? ports.allocateEventId();
     ports.callIds[index] = eventId;
     ports.markPrinted(eventId);
     ports.deferredToolCalls.push({ eventId, call, shown: false });
@@ -48,7 +48,7 @@ const reconcileCards = (
       existing.call = call;
       continue;
     }
-    const eventId = existing?.eventId ?? ports.allocateEventId();
+    const eventId = existing?.eventId ?? ports.callIds[index] ?? ports.allocateEventId();
     ports.callIds[index] = eventId;
     ports.markPrinted(eventId);
     const entry: StreamDeferredToolCall = {

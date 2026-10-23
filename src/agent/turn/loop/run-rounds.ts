@@ -128,6 +128,8 @@ export const runTurnRounds = async (
         writeStatus: deps.writeStatus,
         notify: deps.writeNotice,
         writeToolCall: deps.writeToolCall,
+        writePendingToolCall: (id, name) => deps.emit({ type: "tool-call-pending", id, name }),
+        writeToolBlocked: deps.writeToolBlocked,
         nextToolEventId: () => deps.nextToolEventId(),
         markPrinted: (eventId) => deps.alreadyPrintedIds.add(eventId),
         nativeToolsAttached: () => toolsAttached,

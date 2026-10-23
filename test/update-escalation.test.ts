@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -115,7 +116,7 @@ beforeEach(async () => {
     error.code = "EACCES";
     throw error;
   });
-  root = mkdtempSync(join(tmpdir(), "clai-escalation-"));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "clai-escalation-")));
   const lockedDir = join(root, "bin");
   execPath = join(lockedDir, "clai");
   mkdirSync(lockedDir);

@@ -228,6 +228,7 @@ export function serializeForHistory(
   }
   const out: ClassicTranscriptItem[] = [];
   for (const item of flattenTranscriptHistory(items)) {
+    if (item.kind === "tool" && "pending" in item && item.pending) continue;
     const reusable = item.kind !== "tool";
     const serialized = (reusable ? serializedItems.get(item) : undefined)
       ?? serializeTranscriptItem(item, resolveToolOutput);

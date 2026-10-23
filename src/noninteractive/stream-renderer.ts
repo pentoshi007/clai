@@ -90,6 +90,7 @@ export class StreamRenderer {
           this.pendingThinking = this.options.verbosity === "verbose" ? text : liveThinkingTail(text);
         }
         return;
+      case "tool-call-pending":
       case "assistant-delta":
       case "compaction-delta":
       case "tool-start":

@@ -1,13 +1,12 @@
-import type { SuccessfulRequestSnapshot, ToolCall } from "../../../types.js";
+import type { NativeToolCall, SuccessfulRequestSnapshot, ToolCall, ToolCallStreamDelta } from "../../../types.js";
 import type { ProviderStreamEvent } from "../../../llm/stream-events.js";
 import { createThinkingStreamParser } from "../../../ui/thinking.js";
 import { parseAllToolCalls } from "../../tool-call-parser.js";
 import { canonicalizeTurnCall, type ToolNameCanonicalizer } from "./canonicalize-turn-call.js";
-import { fromWireName } from "../../../llm/tool-protocol.js";
 import { isProviderFailureStatus, providerWaitLabel } from "../../../llm/key-rotation.js";
+import { createPendingToolCalls, type PendingToolCallPorts } from "./pending-tool-calls.js";
 
 const HEARTBEAT_MS = 10_000;
-const LARGE_ARGS_BYTES = 4096;
 
 export interface StreamDeferredToolCall {
   readonly eventId: string;
@@ -15,7 +14,7 @@ export interface StreamDeferredToolCall {
   shown: boolean;
 }
 
-export interface StreamSessionPorts {
+export interface StreamSessionPorts extends PendingToolCallPorts {
   readonly emitStatus: (text: string) => void;
   readonly emitAssistantDelta: (text: string) => void;
   readonly emitThinkingDelta: (text: string) => void;
@@ -39,11 +38,8 @@ export interface StreamSession {
   readonly onToken: (token: string) => void;
   readonly onStatus: (status: string) => void;
   readonly onStreamEvent: (event: ProviderStreamEvent) => void;
-  readonly onToolCallDelta: (delta: {
-    index: number;
-    name?: string | undefined;
-    argumentsBytes?: number | undefined;
-  }) => void;
+  readonly onToolCallDelta: (delta: ToolCallStreamDelta) => void;
+  readonly finishToolCalls: (calls?: readonly NativeToolCall[]) => void;
   readonly onSuccessfulRequest: (snapshot: SuccessfulRequestSnapshot) => void;
   readonly finishDeltaParser: () => void;
   readonly stopHeartbeat: () => void;
@@ -59,9 +55,11 @@ interface StreamState {
   streamedReasoningText: string;
   typedReasoningOpen: boolean;
   streamedCallsCount: number;
+  toolStatus?: string | undefined;
 }
 
 const streamPhase = (state: StreamState): string => {
+  if (state.toolStatus) return state.toolStatus;
   if (state.generatedTokens > 0 && !state.inThinking) return "responding";
   if (state.sawReasoning) return "thinking";
   return "waiting";
@@ -121,6 +119,7 @@ const applyReasoningDelta = (
   text: string,
 ): void => {
   state.waitingForProvider = false;
+  state.toolStatus = undefined;
   state.streamedReasoningText += text;
   state.typedReasoningOpen = true;
   state.sawReasoning = true;
@@ -132,14 +131,6 @@ const applyReasoningDelta = (
   }
   ports.emitThinkingDelta(text);
 };
-
-const toolCallDeltaStatus = (
-  name: string,
-  argumentsBytes: number | undefined,
-): string =>
-  argumentsBytes && argumentsBytes >= LARGE_ARGS_BYTES
-    ? `${name} (${Math.round(argumentsBytes / 1024)}KB args)`
-    : name;
 
 const routeProviderStatus = (
   ports: StreamSessionPorts,
@@ -172,24 +163,56 @@ const createSessionDeltaParser = (ports: StreamSessionPorts, state: StreamState)
     },
   );
 
+const initialStreamState = (): StreamState => ({
+  waitingForProvider: false,
+  sawReasoning: false,
+  inThinking: false,
+  emittedThinkingStatus: false,
+  generatedTokens: 0,
+  accumulatedText: "",
+  streamedReasoningText: "",
+  typedReasoningOpen: false,
+  streamedCallsCount: 0,
+});
+
+function applyToolCallDelta(
+  ports: StreamSessionPorts,
+  state: StreamState,
+  cards: ReturnType<typeof createPendingToolCalls>,
+  delta: ToolCallStreamDelta,
+): void {
+  const observed = cards.observe(delta);
+  if (!observed) return;
+  state.waitingForProvider = false;
+  state.inThinking = false;
+  state.typedReasoningOpen = false;
+  state.toolStatus = observed.status;
+  if (observed.changed) ports.emitStatus(observed.status);
+}
+
+function routeStreamEvent(
+  ports: StreamSessionPorts,
+  state: StreamState,
+  onToolCallDelta: (delta: ToolCallStreamDelta) => void,
+  event: ProviderStreamEvent,
+): void {
+  if (event.type === "reasoning_delta") {
+    applyReasoningDelta(ports, state, event.text);
+    return;
+  }
+  if (event.type === "tool_call_started" || event.type === "tool_call_completed" || event.type === "tool_arguments_delta") {
+    onToolCallDelta(event);
+  }
+}
+
 export const createStreamSession = (
   ports: StreamSessionPorts,
 ): StreamSession => {
-  const state: StreamState = {
-    waitingForProvider: false,
-    sawReasoning: false,
-    inThinking: false,
-    emittedThinkingStatus: false,
-    generatedTokens: 0,
-    accumulatedText: "",
-    streamedReasoningText: "",
-    typedReasoningOpen: false,
-    streamedCallsCount: 0,
-  };
+  const state = initialStreamState();
   const deferredToolCalls: StreamDeferredToolCall[] = [];
-  const streamedNativeCallNames = new Map<number, string>();
   const callIds: string[] = [];
-
+  const cards = createPendingToolCalls(ports, callIds);
+  const onToolCallDelta = (delta: ToolCallStreamDelta) => applyToolCallDelta(ports, state, cards, delta);
   const deltaParser = createSessionDeltaParser(ports, state);
   const heartbeat = setInterval(() => {
     if (!state.waitingForProvider) ports.emitStatus(streamPhase(state));
@@ -201,11 +224,12 @@ export const createStreamSession = (
     streamedReasoningText: () => state.streamedReasoningText,
     sawReasoning: () => state.sawReasoning,
     deferredToolCalls,
-    streamedNativeCallNames,
+    streamedNativeCallNames: cards.names,
     callIds,
     onToken: (token) => {
       if (!token) return;
       state.waitingForProvider = false;
+      state.toolStatus = undefined;
       deltaParser.push(token);
       state.generatedTokens += 1;
       state.accumulatedText += token;
@@ -215,17 +239,9 @@ export const createStreamSession = (
       applyThinkingTransitions(ports, state, token);
     },
     onStatus: (status) => routeProviderStatus(ports, state, status),
-    onStreamEvent: (event) => {
-      if (event.type !== "reasoning_delta") return;
-      applyReasoningDelta(ports, state, event.text);
-    },
-    onToolCallDelta: (delta) => {
-      if (!delta.name) return;
-      state.waitingForProvider = false;
-      const name = fromWireName(delta.name) ?? delta.name;
-      streamedNativeCallNames.set(delta.index, name);
-      ports.emitStatus(toolCallDeltaStatus(name, delta.argumentsBytes));
-    },
+    onStreamEvent: (event) => routeStreamEvent(ports, state, onToolCallDelta, event),
+    onToolCallDelta,
+    finishToolCalls: cards.finish,
     onSuccessfulRequest: ports.onSuccessfulRequest,
     finishDeltaParser: () => deltaParser.finish(),
     stopHeartbeat: () => clearInterval(heartbeat),

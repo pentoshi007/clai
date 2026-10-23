@@ -248,7 +248,7 @@ export function ToolCard(props: {
   const fsReadArgs = useMemo(() => isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined, [isFsRead, item.argsDisplay]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (item.status !== "running" && item.status !== "queued") return;
+    if (item.status !== "running") return;
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(clock);
   }, [item.status]);

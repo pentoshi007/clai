@@ -23,7 +23,8 @@ describe("classic transcript presentation", () => {
     const { turn, ctx } = fixture(mode);
     const item = transcriptItems(turn.state).find((entry): entry is ToolItem => entry.kind === "tool" && entry.name === "shell.exec")!;
     for (const status of ["running", "ok", "failed"] as const) {
-      const rows = buildToolLines({ ...ctx, now: item.timestamp + 1200 }, { ...item, status, endedAt: item.timestamp + 1200 });
+      const end = (item.startedAt ?? item.timestamp) + 1200;
+      const rows = buildToolLines({ ...ctx, now: end }, { ...item, status, endedAt: end });
       expect(rows[0]).toContain(ctx.ink.fg(TOOL_STATUS_TOKEN[status], "1.2s"));
       expect(rows.at(-1)).toContain(ctx.ink.fg("hint", "+ click to expand"));
       if (mode !== "none") expect(rows.at(-1)).not.toContain(ctx.ink.fg("inputBorder", "+ click to expand"));

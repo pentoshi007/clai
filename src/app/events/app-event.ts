@@ -59,6 +59,7 @@ export interface AppEventPayloads {
     readonly toolCallId: ToolCallId;
     readonly name: string;
     readonly argsDisplay: string;
+    readonly pending?: boolean | undefined;
   };
 
   "tool-started": {

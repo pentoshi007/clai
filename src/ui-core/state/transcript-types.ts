@@ -40,6 +40,7 @@ export interface ToolItem extends ItemBase {
   readonly toolCallId: ToolCallId;
   readonly name: string;
   readonly argsDisplay: string;
+  readonly pending?: boolean | undefined;
   readonly status: ToolStatus;
   readonly exitCode: number | undefined;
   readonly summary: string | undefined;
