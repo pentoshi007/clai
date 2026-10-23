@@ -130,6 +130,7 @@ const QUALITY = [
   "- State each fact once, in the section where the next agent will look for it.",
   "- Delegated workers are subagents: record each one's id and attempt, task, status, whether its result was read, and the conclusions of results already read; retained reports stay recoverable by id and attempt. Keep background jobs and Responder tasks separate from subagents. The RESPONDER RESULT LEDGER is authoritative: never describe a consumed=true result as unread, and keep unread results pending.",
   "- Approval and mode gates: plan-mode gather-only or wait-for-approval limits end only when the user accepts the plan; research-only or no-implementation limits the user set for the current topic stay in force. Compaction never grants approval, and an answered question never authorizes new work.",
+  "- Record names and exact paths of still-relevant skills and references, not copies of their instructions. A prior load is historical, not proof that its full body survives compaction; never tell the next agent not to reload content that was lost. The application appends authoritative skill-recovery guidance.",
   "- Refer to credentials and secrets by purpose only; their values are carried separately.",
   "- Length: as long as needed to lose nothing that matters and no longer, usually 1,500 to 4,000 tokens and up to about 6,000 for long sessions with several tasks. Plain Markdown with bullets, no code fences around the whole memory. Finish every section and end on a complete sentence.",
 ];

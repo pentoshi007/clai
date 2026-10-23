@@ -106,7 +106,7 @@ export function renderActiveSkills(loaded: readonly LoadedSkill[]): string | und
   if (loaded.length === 0) return undefined;
   const header = [
     ACTIVE_SKILLS_PREFIX,
-    `The user selected ${loaded.length === 1 ? "this skill" : "these skills"} for this request with skill:<name>. Follow the instructions below for the whole turn; they are already loaded, so do not call skill.load for them.`,
+    `The user selected ${loaded.length === 1 ? "this skill" : "these skills"} for this request with skill:<name>. Follow the instructions below for the whole turn; do not call skill.load again while their full bodies are present here. After compaction, reload still-relevant skills or references whose content was lost; a loaded marker alone is not their instructions. Budget-omitted or truncated bodies still need loading.`,
   ].join("\n");
   const blocks: string[] = [];
   let used = estimateTextTokens(header);

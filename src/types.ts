@@ -202,7 +202,14 @@ export interface ChatMessage {
   compaction?: {
     readonly recentUserPrompts: readonly CompactedUserPrompt[];
     readonly userInstructions?: readonly CompactedUserInstruction[] | undefined;
+    readonly skills?: readonly CompactedSkill[] | undefined;
   } | undefined;
+}
+
+export interface CompactedSkill {
+  readonly name: string;
+  readonly file: string;
+  readonly resources: readonly string[];
 }
 
 export interface CompactedUserInstruction {

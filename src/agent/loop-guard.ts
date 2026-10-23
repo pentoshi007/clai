@@ -25,6 +25,7 @@ const READ_ONLY_TOOLS = new Set([
   "http.fetch",
   "web.search",
   "fs.read",
+  "skill.load",
   "image.ocr",
   "pdf.read",
 ]);
@@ -129,6 +130,7 @@ export class LoopGuard {
     string,
     { fingerprint: string; unchangedRuns: number }
   >();
+  private sequenceReadOnly = new Map<string, boolean>();
   private emptySuccessfulCalls = new Map<
     string,
     { step: number; stateKey?: string | undefined; retryReason?: string | undefined }
@@ -457,6 +459,7 @@ export class LoopGuard {
       });
     }
     this.sequenceRunCounts.set(signature, (this.sequenceRunCounts.get(signature) ?? 0) + 1);
+    this.sequenceReadOnly.set(signature, calls.every(call => READ_ONLY_TOOLS.has(call.name)));
   }
 
   resetSequenceCount(
@@ -486,6 +489,7 @@ export class LoopGuard {
   resetAllSequenceCounts(): void {
     this.sequenceRunCounts.clear();
     this.sequenceOutcomes.clear();
+    this.sequenceReadOnly.clear();
     this.actionSequenceRepetitions = 0;
     this.consecutiveSequenceRepeats = 0;
     this.lastActionSequenceOutcome = undefined;
@@ -1005,16 +1009,31 @@ Do NOT keep trying variations of the same failing approach without explicitly de
 
   resetReadOnly(): void {
     for (const sig of [...this.signatureCount.keys()]) {
-      const name = sig.split("::")[0] ?? "";
-      if (READ_ONLY_TOOLS.has(name)) {
-        this.signatureCount.delete(sig);
-        this.signatureSuccess.delete(sig);
-        this.successfulOutputs.delete(sig);
+      const name = sig.split("::")[0]!;
+      if (!READ_ONLY_TOOLS.has(name)) continue;
+      this.signatureCount.delete(sig);
+      this.signatureSuccess.delete(sig);
+      this.successfulOutputs.delete(sig);
+      this.emptySuccessfulCalls.delete(sig);
+      this.failedReadRetryUsed.delete(sig);
+      const args: Record<string, unknown> = JSON.parse(sig.slice(name.length + 2));
+      const probe = completedOperationSignature(name, args);
+      if (probe) {
+        this.successfulProbes.delete(probe);
+        this.failedProbes.delete(probe);
       }
     }
-    this.attempts = this.attempts.filter(
-      (a) => !READ_ONLY_TOOLS.has(a.callName),
-    );
+    if (this.lastActionSequence && this.sequenceReadOnly.get(this.lastActionSequence)) {
+      this.lastActionSequence = undefined;
+      this.lastActionSequenceEligible = false;
+    }
+    for (const [signature, readOnly] of this.sequenceReadOnly) {
+      if (!readOnly) continue;
+      this.sequenceRunCounts.delete(signature);
+      this.sequenceOutcomes.delete(signature);
+    }
+    this.sequenceReadOnly.clear();
+    this.attempts = this.attempts.filter(attempt => !READ_ONLY_TOOLS.has(attempt.callName));
   }
 
   get totalAttempts(): number {

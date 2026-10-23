@@ -19,7 +19,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_SUBAGENTS,
   def(
     "skill.load",
-    "Read the full instructions of one Agent Skill listed in the AVAILABLE SKILLS block, then follow them. Load a skill when its description covers the work you are about to do — before starting that work, not after. Never guess a skill's contents, never load a skill unrelated to the task, and never load the same skill twice in a session.",
+    "Read the full instructions of one applicable Agent Skill before starting that work, then follow them. Never guess its contents or load unrelated skills. Avoid reloading while the full instructions remain in live context; after compaction, reload still-relevant skills whose bodies were lost and re-read their applicable references with fs.read.",
     {
       type: "object",
       properties: {

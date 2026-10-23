@@ -67,6 +67,7 @@ export const createToolResultRecorder = (ports: ToolResultRecorderPorts) => ({
       toolName: record.call.name,
       artifactPath: record.result.outputPath,
       seenHashes: ports.seenHashes,
+      messages: ports.messages,
     });
     let toolContent =
       `Tool ${record.call.name} result ` +

@@ -173,3 +173,16 @@ describe("createToolResultRecorder", () => {
     ]);
   });
 });
+
+it.each(["skill.load", "fs.read"])("restores the full %s body when compaction discarded the original", name => {
+  const { messages, recorder } = setup();
+  const body = "Required skill instructions. ".repeat(30);
+  const record = { ...baseRecord, call: { name, args: {} }, contextOutput: body };
+  recorder.record(record);
+  messages.splice(0, messages.length, { role: "system", content: "Session memory from compacted earlier turns:\nThe skill was loaded." });
+  recorder.record(record);
+  expect(messages.at(-1)?.content).toContain(body);
+  expect(messages.at(-1)?.content).not.toContain("duplicate tool output");
+  recorder.record(record);
+  expect(messages.at(-1)?.content).toContain("duplicate tool output");
+});
