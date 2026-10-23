@@ -12,7 +12,7 @@ function openTuiLadder(now: () => number) {
   const events: string[] = [];
   return {
     events,
-    escape(hasCancelableWork: boolean, dismissed = false): void {
+    escape(hasForegroundWork: boolean, dismissed = false): void {
       const at = now();
       if (lastHandled > 0 && at - lastHandled < ESC_SAME_PRESS_MS) return;
       lastHandled = at;
@@ -21,11 +21,11 @@ function openTuiLadder(now: () => number) {
       const action = escapeCancellationAction({
         dismissed,
         doublePress,
-        hasCancelableWork,
+        hasForegroundWork,
       });
-      if (action === "cancel-all") {
+      if (action === "cancel-foreground") {
         lastEscape = 0;
-        events.push("cancelAll");
+        events.push("abortForeground");
         return;
       }
       if (action === "arm") {
@@ -43,8 +43,11 @@ function classicLadder(now: () => number) {
   const calls: string[] = [];
   const ladder = new CancelLadder({
     coordinator: {
-      abortForeground: () => ({ turnAborted: true, interruptibleCancelled: 0 }),
-      hasCancelableWork: () => true,
+      abortForeground: () => {
+        calls.push("abortForeground");
+        return { turnAborted: true, interruptibleCancelled: 0 };
+      },
+      hasForegroundWork: () => true,
       cancelAll: async () => {
         calls.push("cancelAll");
         return { ok: true };
@@ -69,7 +72,7 @@ describe("Escape aborts only on a double press", () => {
 
     clock += 400;
     ladder.escape(true);
-    expect(ladder.events).toEqual(["arm", "cancelAll"]);
+    expect(ladder.events).toEqual(["arm", "abortForeground"]);
   });
 
   it("never cancels from single presses, however many times the window lapses", () => {
@@ -127,6 +130,7 @@ describe("Escape aborts only on a double press", () => {
     clock += 400;
     classic.ladder.escape(false);
     await Promise.resolve();
-    expect(classic.calls).toContain("cancelAll");
+    expect(classic.calls).toContain("abortForeground");
+    expect(classic.calls).not.toContain("cancelAll");
   });
 });

@@ -154,3 +154,19 @@ describe("CancelCoordinator", () => {
     expect(outcome.sessionResult.ok).toBe(false);
   });
 });
+
+it("keeps background jobs, subagents and ready results outside the Esc cancellation gate", () => {
+  const { coordinator, calls } = build({ runningJobs: 2, subagents: ["running"], pendingNotifications: 3 });
+  expect(coordinator.hasCancelableWork()).toBe(true);
+  expect(coordinator.hasForegroundWork()).toBe(false);
+  expect(coordinator.abortForeground().turnAborted).toBe(false);
+  expect(calls).not.toContain("session.cancelAll");
+});
+
+it("stops foreground compaction without cancelling background work", () => {
+  const { coordinator, calls } = build({ compacting: true, runningJobs: 1 });
+  expect(coordinator.hasForegroundWork()).toBe(true);
+  coordinator.abortForeground();
+  expect(calls).toContain("session.abort");
+  expect(calls).not.toContain("session.cancelAll");
+});

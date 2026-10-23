@@ -114,7 +114,7 @@ export function App(): ReactNode {
     return services.session.onTurnEnd((result) => {
       if (
         !preserveEscapeArmAfterTurn(
-          services.cancel.hasCancelableWork(),
+          services.cancel.hasForegroundWork(),
         )
       ) {
         clearEscapeCancellation();
@@ -126,7 +126,7 @@ export function App(): ReactNode {
   useEffect(() => {
     const disarmWhenIdle = (): void => {
       if (!escapeCancelArmedRef.current) return;
-      if (!services.cancel.hasCancelableWork()) clearEscapeCancellation();
+      if (!services.cancel.hasForegroundWork()) clearEscapeCancellation();
     };
     const unsubJobs = services.ports.jobs.subscribe(disarmWhenIdle);
     const unsubInterruptible = services.interruptible.subscribe(disarmWhenIdle);
@@ -236,23 +236,7 @@ export function App(): ReactNode {
         key.preventDefault();
         const dismissed = services.overlay.cancelBlockingPrompt();
         if (chord === "ctrl+c") {
-          const now = Date.now();
-          const doublePress =
-            lastCtrlC.current > 0 &&
-            now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
-          services.cancel.abortForeground();
-          if (doublePress) {
-            services.requestExit();
-            return;
-          }
-          lastCtrlC.current = now;
-          notifyWarn(
-            services,
-            dismissed
-              ? "Prompt cancelled · Ctrl+C again to exit"
-              : "Turn aborted · Ctrl+C again to exit",
-            { key: "interrupt", durationMs: 2200 },
-          );
+          handleInterrupt(dismissed);
           return;
         }
         handleEscapeCancellation(dismissed);
@@ -270,19 +254,7 @@ export function App(): ReactNode {
       }
       if (chord === "ctrl+c") {
         key.preventDefault();
-        const now = Date.now();
-        const doublePress =
-          lastCtrlC.current > 0 && now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
-        services.cancel.abortForeground();
-        if (doublePress) {
-          services.requestExit();
-          return;
-        }
-        lastCtrlC.current = now;
-        notifyWarn(services, "Ctrl+C again to exit", {
-          key: "interrupt",
-          durationMs: 2200,
-        });
+        handleInterrupt();
       }
       return;
     }
@@ -307,49 +279,10 @@ export function App(): ReactNode {
         key.preventDefault();
         handleEscapeCancellation(services.overlay.cancelBlockingPrompt());
         break;
-      case "app.interrupt": {
+      case "app.interrupt":
         key.preventDefault();
-        services.overlay.cancelBlockingPrompt();
-        const now = Date.now();
-        const doublePress =
-          lastCtrlC.current > 0 &&
-          now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
-        const outcome = services.cancel.abortForeground();
-        if (outcome.turnAborted) {
-          if (doublePress) {
-            services.requestExit();
-            break;
-          }
-          lastCtrlC.current = now;
-          notifyWarn(services, "Turn aborted · Ctrl+C again to exit", {
-            key: "interrupt",
-            durationMs: 2200,
-          });
-          break;
-        }
-        if (outcome.interruptibleCancelled > 0) {
-          if (doublePress) {
-            services.requestExit();
-            break;
-          }
-          lastCtrlC.current = now;
-          notifyWarn(services, "Operation cancelled · Ctrl+C again to exit", {
-            key: "interrupt",
-            durationMs: 2200,
-          });
-          break;
-        }
-        if (doublePress) {
-          services.requestExit();
-        } else {
-          lastCtrlC.current = now;
-          notify(services, "Ctrl+C again to exit", {
-            key: "interrupt",
-            durationMs: 2200,
-          });
-        }
+        handleInterrupt();
         break;
-      }
       case "app.quit":
         key.preventDefault();
         services.requestExit();
@@ -502,6 +435,39 @@ export function App(): ReactNode {
     }, ESC_CANCEL_WINDOW_MS);
   }
 
+  function handleInterrupt(dismissed = services.overlay.cancelBlockingPrompt()): void {
+    const now = Date.now();
+    if (lastCtrlC.current > 0 && now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS) {
+      services.requestExit();
+      return;
+    }
+    lastCtrlC.current = now;
+    const active = dismissed || services.cancel.hasCancelableWork();
+    const failed = (): void => notifyWarn(services,
+      "Cancellation completed with job stop failures — open Jobs for details",
+      { key: "interrupt-failed", durationMs: 3200 },
+    );
+    void services.cancel.cancelAll().then(
+      (outcome) => { if (!outcome.ok) failed(); },
+      failed,
+    );
+    notify(services, active ? "Cancelling work · Ctrl+C again to exit" : "Ctrl+C again to exit", {
+      key: "interrupt",
+      level: active ? "warn" : "info",
+      durationMs: 2200,
+    });
+  }
+
+  const stopMainAgent = useCallback((): void => {
+    clearEscapeCancellation();
+    services.overlay.cancelBlockingPrompt();
+    services.cancel.abortForeground();
+    notify(services, "Main agent stopped · Background work continues", {
+      key: "escape-foreground",
+      durationMs: 2400,
+    });
+  }, [services]);
+
   function handleEscapeCancellation(dismissed: boolean): void {
     const now = Date.now();
     if (
@@ -514,12 +480,10 @@ export function App(): ReactNode {
     const doublePress =
       lastEscape.current > 0 &&
       now - lastEscape.current < ESC_CANCEL_WINDOW_MS;
-    const hasCancelableWork = services.cancel.hasCancelableWork();
-
     const action = escapeCancellationAction({
       dismissed,
       doublePress,
-      hasCancelableWork,
+      hasForegroundWork: services.cancel.hasForegroundWork(),
     });
 
     if (action === "dismiss") {
@@ -531,26 +495,8 @@ export function App(): ReactNode {
       return;
     }
 
-    if (action === "cancel-all") {
-      clearEscapeCancellation();
-      services.overlay.cancelBlockingPrompt();
-      void services.cancel.cancelAll().then((outcome) => {
-        clearEscapeCancellation();
-        const text = outcome.ok
-          ? "Cancelled turn and Responder jobs"
-          : "Cancellation completed with job stop failures — open Jobs for details";
-        if (outcome.ok) {
-          notify(services, text, {
-            key: "escape-cancel-all",
-            durationMs: 2400,
-          });
-        } else {
-          notifyWarn(services, text, {
-            key: "escape-cancel-all",
-            durationMs: 3200,
-          });
-        }
-      });
+    if (action === "cancel-foreground") {
+      stopMainAgent();
       return;
     }
 
@@ -818,7 +764,7 @@ export function App(): ReactNode {
           hasDraft={hasDraft}
           onCycleMode={cycleMode}
           cancelArmed={escapeCancelArmed}
-          onRequestCancel={requestEscapeCancel}
+          onRequestCancel={stopMainAgent}
           onContextLimitEditingStart={startContextLimitEditing}
           onFocusComposer={focusComposer}
         />

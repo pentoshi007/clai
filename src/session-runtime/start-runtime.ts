@@ -58,7 +58,14 @@ export async function startIndependentRuntime(options: IndependentRuntimeOptions
       () => shutdownServices(services),
     ],
     epilogue: () => runFreebuffSessionShutdownCleanup(),
-    onSigint: () => services.session.abort(),
+    onSigint: () => {
+      void services.cancel.cancelAll().then(
+        (outcome) => {
+          if (!outcome.ok) services.session.notice("warn", outcome.sessionResult.output);
+        },
+        (error: unknown) => services.session.notice("warn", error instanceof Error ? error.message : String(error)),
+      );
+    },
     onError: (error) => { console.error(error instanceof Error ? error.message : String(error)); },
   });
   try {

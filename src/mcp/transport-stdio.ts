@@ -21,7 +21,7 @@ import type {
 } from "./types.js";
 import { isJsonRpcResponse } from "./jsonrpc.js";
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 0;
 const DEFAULT_CLOSE_GRACE_MS = 2_000;
 const MAX_STDERR_BYTES = 64 * 1024;
 

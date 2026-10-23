@@ -112,6 +112,7 @@ describe("blocking overlays", () => {
     feed(router, "\x03");
     expect(calls).toEqual([
       "overlay.cancelBlockingPrompt",
+      "session.cancelAll",
       "notify:Ctrl+C again to exit",
     ]);
   });
@@ -169,7 +170,8 @@ describe("non-blocking overlays", () => {
     now += 500;
     feed(router, "\x1b");
     await Promise.resolve();
-    expect(calls.filter((call) => call === "session.cancelAll")).toHaveLength(1);
+    expect(calls.filter((call) => call === "session.abort")).toHaveLength(1);
+    expect(calls).not.toContain("session.cancelAll");
     overlay.dispose();
   });
 

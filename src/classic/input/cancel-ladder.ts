@@ -53,26 +53,30 @@ export class CancelLadder {
 
   interrupt(): void {
     const dismissed = this.deps.overlay.cancelBlockingPrompt();
-    const doublePress = this.quitArmed;
-    const outcome = this.deps.coordinator.abortForeground();
-    if (doublePress) {
+    if (this.quitArmed) {
       this.deps.requestExit();
       return;
     }
     this.lastCtrlCAt = this.now();
-    const active =
-      dismissed || outcome.turnAborted || outcome.interruptibleCancelled > 0;
+    const active = dismissed || this.deps.coordinator.hasCancelableWork();
+    void this.deps.coordinator.cancelAll().then(
+      (outcome) => { if (!outcome.ok) this.notifyCancellationFailure(); },
+      () => this.notifyCancellationFailure(),
+    );
     this.deps.notify({
       level: active ? "warn" : "info",
-      text: dismissed
-        ? "Prompt cancelled · Ctrl+C again to exit"
-        : outcome.turnAborted
-          ? "Turn aborted · Ctrl+C again to exit"
-          : outcome.interruptibleCancelled > 0
-            ? "Operation cancelled · Ctrl+C again to exit"
-            : "Ctrl+C again to exit",
+      text: active ? "Cancelling work · Ctrl+C again to exit" : "Ctrl+C again to exit",
       key: "interrupt",
       durationMs: 2200,
+    });
+  }
+
+  private notifyCancellationFailure(): void {
+    this.deps.notify({
+      level: "warn",
+      text: "Cancellation completed with job stop failures — open Jobs for details",
+      key: "interrupt-failed",
+      durationMs: 3200,
     });
   }
 
@@ -88,24 +92,20 @@ export class CancelLadder {
     const doublePress =
       this.lastEscapeAt > 0 && now - this.lastEscapeAt < ESC_CANCEL_WINDOW_MS;
 
-    if (doublePress && this.deps.coordinator.hasCancelableWork()) {
+    if (doublePress && this.deps.coordinator.hasForegroundWork()) {
       this.lastEscapeAt = 0;
       this.deps.overlay.cancelBlockingPrompt();
-      void this.deps.coordinator.cancelAll().then((outcome) => {
-        this.lastEscapeAt = 0;
-        this.deps.notify({
-          level: outcome.ok ? "info" : "warn",
-          text: outcome.ok
-            ? "Cancelled turn and Responder jobs"
-            : "Cancellation completed with job stop failures — open Jobs for details",
-          key: "escape-cancel-all",
-          durationMs: outcome.ok ? 2400 : 3200,
-        });
+      this.deps.coordinator.abortForeground();
+      this.deps.notify({
+        level: "info",
+        text: "Main agent stopped · Background work continues",
+        key: "escape-foreground",
+        durationMs: 2400,
       });
       return;
     }
 
-    if (this.deps.coordinator.hasCancelableWork()) {
+    if (this.deps.coordinator.hasForegroundWork()) {
       this.lastEscapeAt = now;
       this.deps.notify({
         level: "info",

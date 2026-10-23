@@ -435,7 +435,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
               {sep(theme)}
               <ClickableHint
                 short={cancelArmed ? armedCancelHint() : busyCancelHint(density).short}
-                expand={cancelArmed ? armedCancelHint() : busyCancelHint(density).expand}
                 active={cancelArmed}
                 theme={theme}
                 accent
@@ -542,7 +541,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             {sep(theme)}
             <ClickableHint
               short={armedCancelHint()}
-              expand={armedCancelHint()}
               active
               theme={theme}
               accent

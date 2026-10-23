@@ -1,21 +1,21 @@
 export type EscapeCancellationAction =
   | "dismiss"
   | "arm"
-  | "cancel-all"
+  | "cancel-foreground"
   | "none";
 
 export function escapeCancellationAction(input: {
   readonly dismissed: boolean;
   readonly doublePress: boolean;
-  readonly hasCancelableWork: boolean;
+  readonly hasForegroundWork: boolean;
 }): EscapeCancellationAction {
   if (input.dismissed) return "dismiss";
-  if (!input.hasCancelableWork) return "none";
-  return input.doublePress ? "cancel-all" : "arm";
+  if (!input.hasForegroundWork) return "none";
+  return input.doublePress ? "cancel-foreground" : "arm";
 }
 
 export function preserveEscapeArmAfterTurn(
-  hasCancelableWork: boolean,
+  hasForegroundWork: boolean,
 ): boolean {
-  return hasCancelableWork;
+  return hasForegroundWork;
 }

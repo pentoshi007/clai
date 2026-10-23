@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ToolResult } from "../../src/types.js";
 import { createToolWatchdog } from "../../src/agent/turn/tool-watchdog.js";
+import { toolHardBudgetMs, toolStallBudgetMs } from "../../src/agent/evidence/tool-budgets.js";
 
 const watchdog = (
   controller: AbortController,
@@ -163,4 +164,52 @@ describe("tool watchdog", () => {
     });
     guard.dispose();
   });
+});
+
+it.each([{}, { timeoutMs: 1 }, { timeoutMs: 3_600_000 }])(
+  "does not impose an MCP deadline or interpret server arguments as a client budget: %j",
+  async (args) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const notices: string[] = [];
+    const call = { name: "mcp.clai-rea.search_procedures", args: { pattern: "isActivated", ...args } };
+    const guard = watchdog(controller, notices, {
+      stallBudgetMs: toolStallBudgetMs(call),
+      hardBudgetMs: toolHardBudgetMs(call),
+    });
+    try {
+      let complete: (result: ToolResult) => void = () => {};
+      const pending = guard.run(() => new Promise<ToolResult>((resolve) => { complete = resolve; }));
+      guard.resetStallTimer();
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(controller.signal.aborted).toBe(false);
+      expect(notices).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+      complete(ok);
+      await expect(pending).resolves.toBe(ok);
+    } finally {
+      guard.dispose();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("still force-settles manual cancellation when MCP budgets are disabled", async () => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  const guard = watchdog(controller, [], { stallBudgetMs: 0, hardBudgetMs: 0, graceMs: 500 });
+  try {
+    guard.resetStallTimer();
+    const pending = guard.run(() => new Promise<ToolResult>(() => {}));
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(controller.signal.aborted).toBe(false);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(pending).resolves.toMatchObject({ ok: false, exitCode: 130 });
+    expect(guard.state().forceSettled).toBe(true);
+    expect(guard.state().hardTimedOut).toBe(false);
+  } finally {
+    guard.dispose();
+    vi.useRealTimers();
+  }
 });

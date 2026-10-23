@@ -915,6 +915,8 @@ export class SessionController implements Disposable {
 
   async shutdown(): Promise<void> {
     this.closing = true;
+    this.responder?.deactivate();
+    this.subagentDelivery.deactivate();
     this.abort("session is closing");
     this.prompts.detach();
     if (this.unsettledTurns > 0) {
@@ -1044,8 +1046,6 @@ export class SessionController implements Disposable {
   }
 
   abort(reason?: string): void {
-    this.responder?.deactivate();
-    this.subagentDelivery.deactivate();
     this.turn.abort(reason);
     this.compactAbort?.abort();
   }

@@ -70,7 +70,6 @@ function requestedToolTimeoutMs(call: {
     );
   }
 
-  if (call.name.startsWith("mcp.")) return 60_000;
   if (call.name === "shell.exec") return DEFAULT_SHELL_TIMEOUT_MS;
   return DEFAULT_TOOL_TIMEOUT_MS;
 }
@@ -81,6 +80,7 @@ export function toolStallBudgetMs(call: {
   name: string;
   args: Record<string, unknown>;
 }): number {
+  if (call.name.startsWith("mcp.")) return 0;
   return requestedToolTimeoutMs(call) + OUTER_STALL_SETTLE_MARGIN_MS;
 }
 
@@ -88,5 +88,5 @@ export function toolHardBudgetMs(call: {
   name: string;
   args: Record<string, unknown>;
 }): number {
-  return requestedToolTimeoutMs(call) + OUTER_STALL_SETTLE_MARGIN_MS;
+  return toolStallBudgetMs(call);
 }

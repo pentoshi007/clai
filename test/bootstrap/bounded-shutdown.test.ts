@@ -17,6 +17,7 @@ function services(overrides: { session?: () => Promise<void>; mcp?: () => Promis
   const order: string[] = [];
   const value = {
     overlay: { cancelBlockingPrompt: () => order.push("cancel") },
+    cancel: { cancelAll: async () => { order.push("cancelWork"); return { ok: true }; } },
     session: { shutdown: async () => { order.push("session"); await (overrides.session?.() ?? Promise.resolve()); order.push("saved"); } },
     mcp: { closeAll: () => { order.push("mcp"); return overrides.mcp?.() ?? Promise.resolve(); } },
     ports: { interactiveSessions: { closeAll: () => { order.push("terminals"); return (overrides.terminals?.() ?? Promise.resolve({ owners: 0, closed: 0, failures: [] })); } } },
@@ -39,12 +40,12 @@ describe("bounded exit", () => {
     const shutdown = shutdownServices(fake, 40).then(() => { done = true; });
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(done).toBe(false);
-    expect(order).toEqual(["cancel", "mcp", "terminals", "session"]);
+    expect(order).toEqual(["cancel", "cancelWork", "mcp", "terminals", "session"]);
     save.resolve();
     const started = Date.now();
     await shutdown;
     expect(Date.now() - started).toBeLessThan(1_000);
-    expect(order).toEqual(["cancel", "mcp", "terminals", "session", "saved", "upload"]);
+    expect(order).toEqual(["cancel", "cancelWork", "mcp", "terminals", "session", "saved", "upload"]);
   });
 
   it("rethrows a failed history save after bounded cleanup", async () => {
