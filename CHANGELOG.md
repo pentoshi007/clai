@@ -1,5 +1,51 @@
 # Changelog
 
+## v5.1.0 — 2026-10-23
+
+This release adds the Hinoki provider and a bundled, on-demand security skill, improves skill recovery after compaction, and fixes tool progress and terminal rendering. It covers all changes since **v5.0.0**.
+
+### Hinoki provider
+
+- Add `hinoki` with the default `hinoki-offensive` model, authenticated model discovery, streaming answers and reasoning, function calls, and image support. Configure it with `clai set hinoki` and `clai use hinoki`, or `HINOKI_API_KEY`; `HINOKI_BASE_URL` and saved endpoints can override the default URL.
+- Use published model metadata for context/output limits, tools, vision, and reasoning controls. Retain learned limits between sessions, coalesce concurrent catalog requests, and isolate caches by credential and endpoint. Temporary catalog failures retain the last successful result with a retry cooldown; authentication errors remain visible for key rotation.
+- Preserve complete conversation and tool-result replay, per-session cache affinity, shared key failover, and measured cached-input, cache-write, and reasoning-token usage when the API reports it. Cache hits and workspace credit balances are not inferred.
+
+### Bundled skills and compaction recovery
+
+- Ship `clai-superman-skill`, an on-demand security investigation library covering web/API, identity, cloud, mobile, native systems, wireless/OT, AI agents, supply chains, and related research workflows. Include its usage guide and evaluation scenarios in the npm package.
+- Discover bundled skill metadata without eagerly loading reference content. Embed the library in standalone binaries and materialize its files only when loaded. Project, user, and custom-root skills with the same name continue to override the bundle.
+- Preserve a bounded index of loaded skills and previously read references through both summarized and mechanical compaction. Tell the agent to reload still-relevant instructions when their full content has left live context, rather than treating a historical load marker as sufficient.
+- Allow necessary skill reloads after compaction without authorizing replay of side-effecting tool sequences. Keep stable prompt/tool prefixes and cache affinity intact when loading or recovering guidance.
+
+### Tool progress and file reads
+
+- Show a pending tool card as soon as the provider identifies a streamed call, before its arguments finish. Animate argument preparation in both interfaces, stop the thinking timer at the tool boundary, and update the same card when complete arguments arrive and execution begins.
+- Reconcile parallel calls by wire ID or stream order, deduplicate legacy progress signals, and settle incomplete previews on cancellation, errors, or retry. Partial argument bytes are not displayed, and an unfinished preview is never recorded as a successful tool execution.
+- Use one `fs.read` input parser across execution, tool schemas, argument display, outcome handling, and read-only subagents. Normalize unambiguous single-file and multi-file inputs while rejecting conflicting paths, ranges, and ambiguous filter placement with actionable errors.
+
+### Terminal rendering and responsiveness
+
+- Make wheel scrolling in Classic and OpenTUI follow current input instead of replaying a long frame-by-frame backlog. Preserve single-notch precision, catch up after delayed frames, and cancel remaining motion on reversal, boundaries, and explicit jumps.
+- Keep clipped artifact paths and other one-row text stable while the transcript scrolls. Middle-clip long whole-text links to preserve both ends without losing their target.
+- Pin the OpenTUI status line to the terminal bottom across viewport resizes, and restore the trailing gap after turn summaries.
+- Restore a dedicated version row on startup cards in both interfaces, including the compact `ver` label at narrow widths.
+- Keep bold reasoning titles on their own rows in both interfaces without changing ordinary assistant emphasis or losing streamed markdown consistency.
+- Color Responder-owned plan rows by task state, matching their glyphs and phase chips. Adjust split and overlay pane widths to retain a clean gutter.
+
+### Validation and packaging
+
+- Check generated bundled-skill content for drift during CI and normal builds, and include it in native compilation.
+- Expand regressions for Hinoki routing/catalogs/streaming, skill discovery and packaging, cache continuity through compaction, pending tool lifecycles, file-read parsing, real terminal geometry, scrolling, and plan rendering.
+- Repair catalog, updater, snapshot, and loaded-machine timing regressions so the release remains gated on the complete cross-platform CI suite.
+
+### Upgrade notes
+
+- No configuration or session migration is required for this release. Existing providers and user/project skills remain supported.
+- Hinoki requires its own API key; generation is charged against the provider's workspace credits. See [PROVIDERS.md](https://github.com/pentoshi007/clai/blob/v5.1.0/PROVIDERS.md#hinoki) for setup and capability details.
+- The bundled security skill loads on demand and does not grant extra tool permissions or change engagement scope. Override it through a normal project/user/custom skill, not by editing its generated cache. See the [security skill guide](https://github.com/pentoshi007/clai/blob/v5.1.0/guides/security-skill.md).
+
+[Full comparison since v5.0.0](https://github.com/pentoshi007/clai/compare/v5.0.0...v5.1.0)
+
 ## v5.0.0 — 2026-10-22
 
 This release covers all changes since **v4.19.0**, including the REA integration, session and interface improvements, provider fixes, and the reliability work below.
