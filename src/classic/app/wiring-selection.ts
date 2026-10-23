@@ -136,6 +136,6 @@ export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void
     host.schedulePaint();
     return;
   }
-  host.wheel.push(event.scroll === "up" ? 1 : -1);
+  host.wheel.push(event.scroll === "up" ? 1 : -1, host.now());
   host.schedulePaint(true);
 }

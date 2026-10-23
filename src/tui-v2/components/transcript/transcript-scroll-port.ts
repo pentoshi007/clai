@@ -90,7 +90,7 @@ export const transcriptScrollPort: TranscriptScrollPort = {
     return true;
   },
   wheel(notches: number): boolean {
-    if (!handler || notches === 0) return false;
+    if (!handler || !Number.isFinite(notches) || notches === 0) return false;
     wheelMotion.push(notches);
     scheduleGlide();
     return true;
@@ -98,11 +98,13 @@ export const transcriptScrollPort: TranscriptScrollPort = {
   stopWheel,
   scrollToTop(): boolean {
     if (!topHandler) return false;
+    stopWheel();
     topHandler();
     return true;
   },
   scrollToBottom(): boolean {
     if (!bottomHandler) return false;
+    stopWheel();
     bottomHandler();
     return true;
   },

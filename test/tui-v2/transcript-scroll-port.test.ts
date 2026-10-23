@@ -11,6 +11,8 @@ function stubFrames(syncWhenIdle: boolean) {
   const queued = new Map<number, () => void>();
   let idle = true;
   let id = 0;
+  let now = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
   vi.stubGlobal("requestAnimationFrame", (callback: () => void) => {
     const frame = ++id;
     if (syncWhenIdle && idle) {
@@ -22,15 +24,19 @@ function stubFrames(syncWhenIdle: boolean) {
     return frame;
   });
   vi.stubGlobal("cancelAnimationFrame", (frame: number) => queued.delete(frame));
+  function flushFrame(elapsed = 17): void {
+    now += elapsed;
+    const callbacks = [...queued.values()];
+    queued.clear();
+    for (const callback of callbacks) callback();
+  }
   return {
     get pending() {
       return queued.size;
     },
+    flushFrame,
     flush() {
-      for (const [frame, callback] of queued) {
-        queued.delete(frame);
-        callback();
-      }
+      while (queued.size > 0) flushFrame();
       idle = true;
     },
   };
@@ -135,7 +141,9 @@ describe("transcript scroll port", () => {
     expect(transcriptScrollPort.wheel(1)).toBe(false);
     const stop = registerTranscriptScrollPort(vi.fn());
     try {
-      expect(transcriptScrollPort.wheel(0)).toBe(false);
+      for (const invalid of [0, NaN, Infinity, -Infinity]) {
+        expect(transcriptScrollPort.wheel(invalid)).toBe(false);
+      }
       expect(frames.pending).toBe(0);
     } finally {
       stop();
@@ -151,9 +159,13 @@ describe("transcript scroll port", () => {
       expect(transcriptScrollPort.wheel(-10)).toBe(true);
       expect(calls).toEqual([]);
       expect(frames.pending).toBe(1);
-      frames.flush();
+      frames.flushFrame();
+      expect(calls).toEqual([-7]);
+      expect(frames.pending).toBe(1);
+      frames.flushFrame();
+      frames.flushFrame();
+      expect(calls).toEqual([-7, -7, -6]);
       expect(calls.reduce((sum, dy) => sum + dy, 0)).toBe(-20);
-      expect(calls.every(dy => dy === -1 || dy === -2)).toBe(true);
       expect(frames.pending).toBe(0);
     } finally {
       stop();
@@ -177,6 +189,67 @@ describe("transcript scroll port", () => {
     } finally {
       stop();
     }
+  });
+
+  it("catches up on a delayed renderer frame without more trailing work", () => {
+    const frames = stubFrames(false);
+    const calls: number[] = [];
+    const stop = registerTranscriptScrollPort((dy) => calls.push(dy));
+    try {
+      transcriptScrollPort.wheel(120);
+      frames.flushFrame(100);
+      expect(calls).toEqual([120]);
+      expect(frames.pending).toBe(0);
+    } finally {
+      stop();
+    }
+  });
+
+  it.each(["scrollToTop", "scrollToBottom"] as const)("cancels a glide before %s", (jump) => {
+    const frames = stubFrames(false);
+    const scroll = vi.fn();
+    const stop = registerTranscriptScrollPort(scroll);
+    const stopJumps = registerTranscriptJumpHandlers(vi.fn(), vi.fn());
+    try {
+      transcriptScrollPort.wheel(120);
+      expect(transcriptScrollPort[jump]()).toBe(true);
+      expect(frames.pending).toBe(0);
+      frames.flush();
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      stopJumps();
+      stop();
+    }
+  });
+
+  it("keeps pending input across mount-window handler replacement", () => {
+    const frames = stubFrames(false);
+    const first = vi.fn();
+    const next = vi.fn();
+    const stopFirst = registerTranscriptScrollPort(first);
+    transcriptScrollPort.wheel(20);
+    frames.flushFrame();
+    stopFirst();
+    const stopNext = registerTranscriptScrollPort(next);
+    try {
+      frames.flush();
+      expect(first).toHaveBeenCalledExactlyOnceWith(7);
+      expect(next.mock.calls.map(([rows]) => rows)).toEqual([7, 6]);
+      expect(frames.pending).toBe(0);
+    } finally {
+      stopNext();
+    }
+  });
+
+  it("stops work if the mounted transcript disappears", () => {
+    const frames = stubFrames(false);
+    const scroll = vi.fn();
+    const stop = registerTranscriptScrollPort(scroll);
+    transcriptScrollPort.wheel(120);
+    stop();
+    frames.flushFrame();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(frames.pending).toBe(0);
   });
 
   it("cancels a pending glide when scrolled directly", () => {
