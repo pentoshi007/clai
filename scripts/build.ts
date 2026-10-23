@@ -7,6 +7,7 @@ import { parseReleaseTarget, releaseTargets, targetBuildArguments, targetNativeP
 const { values } = parseArgs({ options: { target: { type: "string", multiple: true }, outdir: { type: "string", default: "release" } } });
 const targets = [...new Set((values.target ?? releaseTargets).map(parseReleaseTarget))];
 const packages = [...new Set(targets.flatMap(targetNativePackages))];
+await execa("node", ["--import", "tsx", "scripts/embed-skills.ts"], { stdio: "inherit" });
 if (packages.length > 0) {
   await execa("node", ["scripts/install-opentui-platforms.mjs", ...packages], { stdio: "inherit" });
 }

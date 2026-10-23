@@ -54,7 +54,7 @@ export function rankSkills(
 }
 
 function catalogLine(skill: SkillMeta): string {
-  const scope = skill.scope === "project" ? "project" : skill.scope === "user" ? "user" : "custom";
+  const scope = skill.scope === "extra" ? "custom" : skill.scope;
   return `- ${skill.name} [${scope}]: ${skill.description}`;
 }
 
@@ -71,9 +71,12 @@ export function renderSkillCatalog(input: {
   const budget = input.maxTokens ?? CATALOG_TOKEN_BUDGET;
   const header = [
     SKILLS_CATALOG_PREFIX,
-    "Reusable expert procedures found in this workspace and your config. Only metadata is listed here.",
+    "Reusable expert procedures bundled with clai or found in this workspace and your config. Only metadata is listed here.",
     "Before starting work that one of these descriptions covers, call skill.load with its name and follow the loaded instructions. Never guess a skill body, and never load a skill unrelated to the task. Ignore this block entirely when no description matches.",
-  ].join("\n");
+    input.skills.some((skill) => skill.name === "clai-superman-skill")
+      ? "For substantive security operations, vulnerability analysis/research, pentesting, red teaming or security audits in ANY domain, load clai-superman-skill before investigating unless already loaded. Its investigation discipline applies across domain changes; consult current primary sources and map applicable frameworks as evidence develops. Do not load it for routine development or simple definitions."
+      : "",
+  ].filter(Boolean).join("\n");
 
   const lines: string[] = [];
   let used = estimateTextTokens(header);

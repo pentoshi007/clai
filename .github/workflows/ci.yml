@@ -47,6 +47,7 @@ jobs:
           echo "${RUNNER_TEMP}/clai-updater-managers/node_modules/.bin" >> "$GITHUB_PATH"
       - run: npm ci
       - run: npm run embed-prompts:check
+      - run: npm run embed-skills:check
       - run: npm run typecheck
       # Canonical locale/timezone are applied before Node starts by
       # scripts/run-tests.mjs.

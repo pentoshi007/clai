@@ -1,6 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { safeCwd } from "../os/cwd.js";
+import { getDataDir } from "../store/paths.js";
+import { bundledSkillMetas, bundledSkillRoot, materializeBundledSkill } from "./bundled.js";
 import { dedupeSkills, discoverSkills, normalizeSkillName } from "./discover.js";
 import { skillSearchRoots } from "./locations.js";
 import { parseFrontmatter } from "./frontmatter.js";
@@ -27,10 +29,15 @@ interface CacheEntry {
 }
 
 let cache: CacheEntry | undefined;
-let inflight: Promise<SkillIndex> | undefined;
+const inflight = new Map<string, Promise<SkillIndex>>();
 
 function scanKey(input: SkillScanInput): string {
-  return `${input.projectRoot ?? ""}\u0000${input.cwd ?? safeCwd()}`;
+  return JSON.stringify([
+    input.projectRoot ?? "",
+    input.cwd ?? safeCwd(),
+    getDataDir(),
+    process.env.CLAI_SKILLS_PATH ?? "",
+  ]);
 }
 
 function buildIndex(
@@ -53,9 +60,12 @@ async function scan(input: SkillScanInput): Promise<SkillIndex> {
     cwd,
     ...(input.projectRoot ? { projectRoot: input.projectRoot } : {}),
   });
-  if (roots.length === 0) return buildIndex([], roots, false);
   const { skills, truncated } = await discoverSkills(roots);
-  return buildIndex(dedupeSkills(skills), roots, truncated);
+  return buildIndex(
+    dedupeSkills([...skills, ...bundledSkillMetas()]),
+    [...roots, bundledSkillRoot()],
+    truncated,
+  );
 }
 
 export async function getSkillIndex(
@@ -65,21 +75,19 @@ export async function getSkillIndex(
   const fresh =
     cache?.key === key && Date.now() - cache.index.scannedAt < INDEX_TTL_MS;
   if (fresh) return cache!.index;
-  if (inflight) return inflight;
-  inflight = scan(input)
+  const pending = inflight.get(key);
+  if (pending) return pending;
+  const work = scan(input)
+    .catch(() => buildIndex(bundledSkillMetas(), [bundledSkillRoot()], true))
     .then((index) => {
-      cache = { key, index };
+      if (inflight.get(key) === work) cache = { key, index };
       return index;
     })
-    .catch(() => {
-      const fallback = buildIndex([], [], false);
-      cache = { key, index: fallback };
-      return fallback;
-    })
     .finally(() => {
-      inflight = undefined;
+      if (inflight.get(key) === work) inflight.delete(key);
     });
-  return inflight;
+  inflight.set(key, work);
+  return work;
 }
 
 export function skillIndexSnapshot(): SkillIndex {
@@ -98,6 +106,7 @@ export function findSkillInSnapshot(name: string): SkillMeta | undefined {
 
 export function invalidateSkillIndex(): void {
   cache = undefined;
+  inflight.clear();
 }
 
 async function listResources(dir: string): Promise<string[]> {
@@ -137,6 +146,7 @@ export async function loadSkill(
     ? index.skills.find((skill) => skill.name === normalized)
     : undefined;
   if (!meta) return undefined;
+  if (meta.scope === "bundled") await materializeBundledSkill(meta);
   let raw: string;
   try {
     raw = await readFile(meta.file, "utf8");

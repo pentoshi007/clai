@@ -51,27 +51,41 @@ function readFileInput(raw: unknown, label: string): FsReadFileInput {
   return file;
 }
 
+function mergeReadOptions(file: FsReadFileInput, top: FsReadFileInput): FsReadFileInput {
+  const conflict = FS_READ_OPTION_KEYS.find((key) => file[key] !== undefined && top[key] !== undefined && file[key] !== top[key]);
+  if (conflict) throw new Error(`fs.read has conflicting ${conflict} values at the top level and in files. Keep the intended filters only inside the files entry.`);
+  const fileStart = file.startLine ?? file.offset;
+  const topStart = top.startLine ?? top.offset;
+  if (fileStart !== undefined && topStart !== undefined && Math.max(1, fileStart) !== Math.max(1, topStart)) {
+    throw new Error("fs.read has conflicting offset/startLine values at the top level and in files. Keep the intended range only inside the files entry.");
+  }
+  return { ...top, ...file };
+}
+
 export function parseFsReadInput(args: Record<string, unknown>): ReadInputResult {
   try {
-    if (args.files !== undefined && args.files !== null) {
-      if (args.path !== undefined && args.path !== null) {
-        throw new Error("fs.read received both path and files.");
-      }
-      if (!Array.isArray(args.files) || args.files.length < 1 || args.files.length > MAX_FS_READ_FILES) {
-        throw new Error(`fs.read files must be an array of 1–${MAX_FS_READ_FILES} file objects.`);
-      }
-      const sharedOption = FS_READ_OPTION_KEYS.find((key) => args[key] !== undefined && args[key] !== null);
-      if (sharedOption) throw new Error(`Move ${sharedOption} into the appropriate files entry.`);
-      const unknown = Object.keys(args).find((key) => key !== "files" && key !== "path");
-      if (unknown) throw new Error(`fs.read.${unknown} is not supported in files mode; place read filters directly inside each file entry.`);
-      return {
-        ok: true,
-        files: args.files.map((file, index) => readFileInput(file, `files[${index}]`)),
-        multiple: true,
-      };
+    const { files: rawFiles, ...single } = args;
+    const hasPath = typeof args.path === "string" && args.path.trim().length > 0;
+    if (rawFiles === undefined || rawFiles === null || (Array.isArray(rawFiles) && rawFiles.length === 0 && hasPath)) {
+      return { ok: true, files: [readFileInput(single, "fs.read")], multiple: false };
     }
-    const { files: _unused, ...single } = args;
-    return { ok: true, files: [readFileInput(single, "fs.read")], multiple: false };
+    if (!Array.isArray(rawFiles) || rawFiles.length < 1 || rawFiles.length > MAX_FS_READ_FILES) {
+      throw new Error(`fs.read files must be an array of 1–${MAX_FS_READ_FILES} file objects.`);
+    }
+    const files = rawFiles.map((file, index) => readFileInput(file, `files[${index}]`));
+    const unusedPath = args.path === undefined || args.path === null || (typeof args.path === "string" && !hasPath);
+    const top = readFileInput({ ...single, path: unusedPath ? files[0]!.path : args.path }, "fs.read");
+    const matching = unusedPath ? files : files.filter((file) => file.path === top.path);
+    if (matching.length === 0) {
+      throw new Error("fs.read path conflicts with files. Put every requested path inside files and omit the top-level path.");
+    }
+    const option = FS_READ_OPTION_KEYS.find((key) => top[key] !== undefined);
+    if (option) {
+      if (matching.length !== 1) throw new Error(`Move ${option} into the appropriate files entry; its target is ambiguous.`);
+      const index = files.indexOf(matching[0]!);
+      files[index] = mergeReadOptions(files[index]!, top);
+    }
+    return { ok: true, files, multiple: true };
   } catch (error) {
     return { ok: false, error: `${error instanceof Error ? error.message : String(error)}\n${USAGE}` };
   }

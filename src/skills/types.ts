@@ -1,4 +1,13 @@
-export type SkillScope = "project" | "user" | "extra";
+export type SkillScope = "project" | "user" | "extra" | "bundled";
+
+export interface BundledSkillDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly digest: string;
+  readonly resources: readonly string[];
+  readonly license?: string | undefined;
+  readonly compatibility?: string | undefined;
+}
 
 export interface SkillRoot {
   readonly path: string;

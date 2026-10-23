@@ -214,6 +214,7 @@ Type `/` for suggestions and `@` to mention files. `/help` lists everything and 
 | --- | --- |
 | [Persistent sessions](guides/sessions.md) | Detach and resume, SSH and multiple terminals, sudo, history and compaction |
 | [Working with clai](guides/usage.md) | Modes and permissions, subagents, background jobs, interactive terminals, security testing, models and key rotation, project context, skills and MCP |
+| [Security investigation skill](guides/security-skill.md) | Bundled on-demand security methodology, cross-domain research, evidence and coverage, packaging and behavioral evaluation |
 | [Terminal interface](guides/interface.md) | OpenTUI and Classic, terminals, keyboard shortcuts, paste and transcript controls |
 | [Commands](guides/commands.md) | Every slash command and CLI flag |
 | [Configuration and privacy](guides/configuration.md) | Config file, private mode, retention, credential storage and the encrypted `/creds` vault |

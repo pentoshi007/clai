@@ -23,6 +23,7 @@ import type {
   McpToolDescriptor,
 } from "../../src/mcp/types.js";
 import type { SkillMeta } from "../../src/skills/types.js";
+import { bundledSkillMetas } from "../../src/skills/bundled.js";
 import type { CompletionRequest, CompletionResult } from "../../src/types.js";
 import * as reaInstaller from "../../src/rea/install.js";
 import { reaConnection } from "../../src/rea/connection.js";
@@ -275,6 +276,63 @@ afterEach(async () => {
 });
 
 describe("stable skill and MCP catalogs preserve agent request cache prefixes", () => {
+  it.each(["native", "text"] satisfies ToolCallingMode[])("preserves provider prefixes through bundled skill and reference loading in %s mode", async (toolCalling) => {
+    const requests: CapturedRequest[] = [];
+    const skill = bundledSkillMetas()[0]!;
+    const controls = [
+      { name: "skill.load", args: { name: skill.name } },
+      { name: "fs.read", args: { path: join(skill.dir, "references", "novel-research.md") } },
+    ];
+    streamMock.mockImplementation(async (
+      request: CompletionRequest,
+      onToken: (token: string) => void,
+      options: { onSuccessfulRequest?: (snapshot: ReturnType<typeof successfulRequestSnapshot>) => void },
+    ): Promise<CompletionResult> => {
+      requests.push({ messages: structuredClone(request.messages), ...(request.tools ? { tools: structuredClone(request.tools) } : {}) });
+      options.onSuccessfulRequest?.(successfulRequestSnapshot("openai", "gpt-4o-mini", request));
+      const control = controls[requests.length - 2];
+      if (control) return {
+        text: "", provider: "openai", model: "gpt-4o-mini", finishReason: "tool_calls",
+        toolCalls: [{ id: `skill-${requests.length}`, ...control }],
+      };
+      onToken("Fixture evidence reviewed.");
+      return { text: "Fixture evidence reviewed.", provider: "openai", model: "gpt-4o-mini", finishReason: "stop" };
+    });
+    const session = createSessionPolicy(`bundled-skill-cache-${toolCalling}`);
+    let history: CompletionRequest["messages"] = [];
+    const run = (prompt: string) => runAgentTurn(prompt, {
+      mcp: runtime, provider: "openai", model: "gpt-4o-mini", session, history,
+      maxSteps: 6, toolCalling, autoConfirm: true,
+      onMessages: (messages) => { history = messages; },
+    });
+    await run("Review the supplied fixture evidence without using tools.");
+    expect(requests).toHaveLength(1);
+    skillState.skills = [skill];
+    await run("Continue the controlled vulnerability research using the applicable security skill and its research reference.");
+    expect(requests).toHaveLength(4);
+    const load = requests[2]!.messages.find((message) => message.role === "tool" && message.name === "skill.load");
+    expect(load?.ok).toBe(true);
+    expect(load?.content).toContain("The investigation loop");
+    expect(load?.content).not.toContain("A useful harness:");
+    const reference = requests[3]!.messages.find((message) => message.role === "tool" && message.name === "fs.read");
+    expect(reference?.ok).toBe(true);
+    expect(reference?.content).toContain("A useful harness:");
+    const retained = structuredClone(history);
+    await run("Continue the same fixture investigation without repeating skill or reference reads.");
+    expect(requests).toHaveLength(5);
+    expect(requests[4]!.messages.slice(1, retained.length + 1)).toEqual(retained);
+    expect(requests[4]!.messages.filter((message) => message.role === "tool" && message.name === "skill.load")).toHaveLength(1);
+    expect(requests[0]!.messages[0]!.content).not.toContain(skill.name);
+    expect(requests[1]!.messages[0]).toEqual(requests[0]!.messages[0]);
+    expect(requests[1]!.messages.some((message) => message.content.includes(`load ${skill.name} before investigating`))).toBe(true);
+    for (let index = 1; index < requests.length; index += 1) {
+      expect(requests[index]!.tools).toEqual(requests[0]!.tools);
+      const previous = requests[index - 1]!.messages;
+      expect(requests[index]!.messages.slice(0, previous.length)).toEqual(previous);
+    }
+    expectWirePrefixes(requests);
+  });
+
   it.each(["native", "text"] satisfies ToolCallingMode[])("keeps stable tools, the system prompt, and prior wire content across %s catalog transitions", async (toolCalling) => {
     const requests: CapturedRequest[] = [];
     streamMock.mockImplementation(
