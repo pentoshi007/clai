@@ -8,6 +8,7 @@ export type AnsiLine = string;
 export interface RenderMarkdownLinesOptions {
   readonly width: number;
   readonly stripOuterIndent?: boolean | undefined;
+  readonly isolateBold?: boolean | undefined;
   readonly theme?: Theme | undefined;
   readonly colorMode?: ColorMode | undefined;
   readonly quotePrefix?: string | undefined;
@@ -39,6 +40,7 @@ export function renderMarkdownLines(
   const rendered = renderMarkdown(prepared, width, {
     theme: options.theme,
     colorMode: options.colorMode,
+    isolateBold: options.isolateBold,
     quotePrefix: options.quotePrefix,
     literalQuotes: options.literalQuotes,
     lineChangeColors: options.lineChangeColors,

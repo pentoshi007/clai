@@ -118,6 +118,18 @@ try {
   assertPlainColor();
 
   for (const streaming of [true, false]) {
+    await render({ width: 120, expanded: true, item: { ...view.item, streaming } }, "opening **FIRST_TITLE** FIRST_BODY **SECOND_TITLE** SECOND_BODY");
+    const frame = setup.captureCharFrame();
+    for (const title of ["FIRST_TITLE", "SECOND_TITLE"]) {
+      const row = frame.split("\n").find((line) => line.includes(title));
+      assert.ok(row, frame);
+      assert.ok(!/opening|FIRST_BODY|SECOND_BODY/.test(row), `Reasoning title shares a row with prose: ${row}`);
+      assertStyle(title, TextAttributes.BOLD);
+    }
+    assert.ok(frame.includes("FIRST_BODY") && frame.includes("SECOND_BODY"), frame);
+  }
+
+  for (const streaming of [true, false]) {
     await render({ width: 40, item: { ...view.item, streaming } }, `**${"日本語 🧪 long thought ".repeat(30)}**`);
     assert.ok(!setup.captureCharFrame().includes("**"));
     assertStyle("日本語", TextAttributes.BOLD);

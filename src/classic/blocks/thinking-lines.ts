@@ -46,6 +46,7 @@ export function renderThinkingLines(ctx: BlockContext, item: ThinkingItem): Thin
     options: {
       width: Math.max(20, ctx.width - 2),
       stripOuterIndent: true,
+      isolateBold: true,
       theme: ctx.ink.theme,
       colorMode: ctx.ink.colorMode,
     },

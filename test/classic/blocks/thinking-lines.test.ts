@@ -28,10 +28,17 @@ function body(lines: readonly string[]): string {
 }
 
 describe.each([false, true])("classic reasoning Markdown while streaming=%s", (streaming) => {
+  it("isolates repeated bold reasoning titles from the prose on both sides", () => {
+    const source = "opening **First title** first body **Second title** second body";
+    const rendered = renderThinkingLines(context(), thinking(source, streaming));
+    const rows = rendered.lines.slice(1).map((line) => stripAnsi(line).trim());
+    expect(rows).toEqual(["opening", "First title", "first body", "Second title", "second body"]);
+  });
+
   it.each<ColorMode>(["truecolor", "256", "16", "none"])("renders emphasis and code in %s", (mode) => {
     const item = thinking("plain **BOLD** *italic* ~~removed~~ `code` end", streaming);
     const rendered = body(renderThinkingLines(context(mode), item).lines);
-    expect(stripAnsi(rendered).trim()).toBe("plain BOLD italic removed code end");
+    expect(stripAnsi(rendered).split("\n").map((row) => row.trim())).toEqual(["plain", "BOLD", "italic removed code end"]);
     if (mode !== "none") {
       expect(rendered).toContain("\x1b[1mBOLD");
       expect(rendered).toContain("\x1b[3mitalic");
@@ -70,7 +77,7 @@ describe("classic reasoning streaming updates", () => {
       ctx = { ...ctx, markdownCache: rendered.cache };
     }
     expect(body(lines)).toContain("\x1b[1mBOLD");
-    expect(stripAnsi(body(lines)).trim()).toBe("plain BOLD and italic with code end");
+    expect(stripAnsi(body(lines)).split("\n").map((row) => row.trim())).toEqual(["plain", "BOLD", "and italic with code end"]);
     expect(body(lines)).toBe(body(renderThinkingLines(ctx, thinking(source, false)).lines));
   });
 
@@ -88,7 +95,7 @@ describe("classic reasoning streaming updates", () => {
     const ctx = context();
     const first = renderThinkingLines(ctx, thinking(`**old** ${"text ".repeat(180)}\n\nlive`, true));
     const next = renderThinkingLines({ ...ctx, width: 40, markdownCache: first.cache }, thinking("**new** plain", true));
-    expect(stripAnsi(body(next.lines)).trim()).toBe("new plain");
+    expect(stripAnsi(body(next.lines)).split("\n").map((row) => row.trim())).toEqual(["new", "plain"]);
     expect(body(next.lines)).toContain("\x1b[1mnew");
     expect(next.lines.every((line) => displayWidth(line) <= 40)).toBe(true);
   });
