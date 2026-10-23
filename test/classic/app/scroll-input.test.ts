@@ -71,14 +71,47 @@ describe("classic scrolling and keyboard focus", () => {
     h!.wiring.subscribe(() => offsets.push(h!.wiring.getSnapshot().liveOffset));
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     expect(h!.wiring.liveOffsetValue).toBe(0);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(75);
     const expected = Math.min(h!.wiring.maxLiveOffset, 20);
     const steps = offsets.map((offset, i) => offset - (offsets[i - 1] ?? 0));
     expect(offsets.at(-1)).toBe(expected);
-    expect(steps.filter((step) => step > 0).length).toBeGreaterThan(3);
-    expect(steps.every((step) => step >= 0 && step <= 2)).toBe(true);
+    expect(h!.wiring.wheel.active).toBe(false);
+    expect(steps.filter((step) => step > 0).length).toBeGreaterThan(1);
+    expect(steps.every((step) => step >= 0 && step <= 8)).toBe(true);
     expect(h!.services.transcript.getState().order).toBe(order);
     expect(h!.services.focus.activeContext()).toBe("composer");
+  });
+
+  it("keeps a slow VM paint cadence from turning a gesture into a long queue", async () => {
+    vi.useFakeTimers();
+    setup();
+    await vi.advanceTimersByTimeAsync(100);
+    h!.wiring.paintPacing = { costMs: 100, intervalMs: 250 };
+    h!.wiring.lastPaintAt = Date.now();
+    const offsets: number[] = [];
+    h!.wiring.subscribe(() => offsets.push(h!.wiring.getSnapshot().liveOffset));
+    for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
+    await vi.advanceTimersByTimeAsync(34);
+    expect(h!.wiring.liveOffsetValue).toBeGreaterThan(2);
+    expect(h!.wiring.liveOffsetValue).toBeLessThan(20);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(h!.wiring.liveOffsetValue).toBe(Math.min(h!.wiring.maxLiveOffset, 20));
+    expect(h!.wiring.wheel.active).toBe(false);
+    expect(offsets.length).toBeLessThanOrEqual(3);
+  });
+
+  it("discards the remaining gesture as soon as the transcript boundary is reached", async () => {
+    vi.useFakeTimers();
+    setup();
+    h!.wiring.scrollFeed(3);
+    await vi.advanceTimersByTimeAsync(100);
+    for (let i = 0; i < 120; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "down" }));
+    await vi.advanceTimersByTimeAsync(75);
+    expect(h!.wiring.liveOffsetValue).toBe(0);
+    expect(h!.wiring.wheel.active).toBe(false);
+    const offset = h!.wiring.liveOffsetValue;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h!.wiring.liveOffsetValue).toBe(offset);
   });
 
   it("reuses unchanged session state during wheel paints and refreshes on notifications", async () => {

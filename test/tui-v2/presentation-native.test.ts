@@ -15,6 +15,7 @@ const cases = [
   ["tool-output-preview", "Native output previews passed"],
   ["tool-card-reachability", "Native tool-card reachability passed"],
   ["scroll-window-race", "Native scroll-window race passed"],
+  ["wheel-latency", "Native wheel latency passed"],
   ["tool-input-pager", "Native tool input pager passed"],
   ["pager-colors", "Native pager colors passed"],
   ["prompt-layout", "Native prompt layout passed"],

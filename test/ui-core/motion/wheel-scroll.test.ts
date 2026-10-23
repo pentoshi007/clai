@@ -49,12 +49,12 @@ describe("wheel scroll motion", () => {
     expect(drain(wheel)).toEqual([-1]);
   });
 
-  it("drains a large coalesced event without jumping or losing rows", () => {
+  it("spreads a large coalesced event evenly over a short glide without losing rows", () => {
     const wheel = new WheelScroll();
-    wheel.push(-120);
-    const steps = drain(wheel);
+    wheel.push(-120, 0);
+    const steps = [wheel.step(17), wheel.step(34), wheel.step(51)];
+    expect(steps).toEqual([-41, -41, -38]);
     expect(steps.reduce((sum, rows) => sum + rows, 0)).toBe(-120);
-    expect(steps.every(rows => rows === -1 || rows === -2)).toBe(true);
     expect(wheel.active).toBe(false);
   });
 

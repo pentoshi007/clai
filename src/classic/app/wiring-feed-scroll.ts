@@ -29,7 +29,7 @@ export function scrollFeed(host: WiringHost, delta: number): void {
 
 export function stepWheelFeed(host: WiringHost): boolean {
   if (!host.wheel.active) return false;
-  if (!moveFeed(host, host.wheel.step())) host.wheel.stop();
+  if (!moveFeed(host, host.wheel.step(host.now()))) host.wheel.stop();
   return host.wheel.active;
 }
 
