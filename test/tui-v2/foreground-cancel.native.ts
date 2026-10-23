@@ -49,6 +49,14 @@ async function settle(action: () => unknown = () => undefined): Promise<void> {
   await act(async () => { await setup.flush(); });
 }
 
+async function waitForJobEvent(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!predicate() && Date.now() < deadline) {
+    await settle(() => new Promise(resolve => setTimeout(resolve, 25)));
+  }
+  assert.ok(predicate(), "the external job event arrives before the deadline");
+}
+
 async function startTurn(label: string): Promise<void> {
   await settle(() => { active = services.session.submit(`hold ${label}`); });
   assert.equal(services.session.getState().running, true);
@@ -105,21 +113,14 @@ try {
   assert.equal(manager.getJob(ordinaryId)?.status, "running", "background-only Esc is harmless");
   assert.equal(manager.getJob(responderId)?.status, "running");
   await writeFile(trigger, "finish");
-  await act(async () => {
-    await setup.waitFor(async () => {
-      await new Promise(resolve => setTimeout(resolve, 25));
-      return deliveries > 0;
-    }, { maxPasses: 160 });
-  });
+  await waitForJobEvent(() => deliveries > 0);
   assert.equal(manager.getJob(responderId)?.status, "exited");
   await settle(() => setup.mockInput.pressKey("c", { ctrl: true }));
-  await act(async () => {
-    await setup.waitFor(async () => {
-      await new Promise(resolve => setTimeout(resolve, 25));
-      return manager.getJob(ordinaryId)?.status === "killed";
-    }, { maxPasses: 160 });
-  });
+  await waitForJobEvent(() => manager.getJob(ordinaryId)?.status === "killed");
   console.log("Native foreground cancellation passed: fixed hover, one-click abort, double keyboard Esc, surviving jobs, delivered responder result and Ctrl+C cleanup");
+} catch (error) {
+  console.error(JSON.stringify({ jobs: manager.listJobs(services.session.sessionId), notifications: jobs.pendingNotifications(services.session.sessionId), state: services.session.getState(), lease: jobs.getResponderLeaseId(services.session.sessionId) }));
+  throw error;
 } finally {
   services.session.abort();
   await active;

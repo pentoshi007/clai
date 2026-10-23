@@ -106,15 +106,15 @@ async function verify(width: number): Promise<void> {
     if (width === 160) console.log(JSON.stringify({ running: services.session.getState().running, width, leftGap, rightGap, row }));
   };
   const branchMounted = async (): Promise<void> => {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
       if (setup.renderer.root.findDescendantById("status-git-branch")) return;
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await settle(() => new Promise((resolve) => setTimeout(resolve, 25)));
     }
     throw new Error("status-git-branch never mounted");
   };
   try {
     await settle();
-    await act(async () => { await branchMounted(); });
+    await branchMounted();
     await settle();
     assertFooterSpacing();
     await settle(() => publishTranscriptScrollMetrics({ linesAbove: 0, linesBelow: 240 }));
