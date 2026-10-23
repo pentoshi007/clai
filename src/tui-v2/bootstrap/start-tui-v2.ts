@@ -35,6 +35,7 @@ import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { patchOpenTuiSelection } from "./patch-opentui-selection.js";
+import { patchOpenTuiWheelScroll } from "./patch-opentui-wheel.js";
 import { OPEN_TUI_FRAME_PACING } from "./frame-pacing.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
@@ -69,6 +70,7 @@ export async function startTuiV2(
 ): Promise<void> {
   patchOpenTuiTextContent();
   patchOpenTuiSelection();
+  patchOpenTuiWheelScroll();
   setAllowInteractiveStdinInherit(false);
   const startedAt = Date.now();
   let forwardConsoleCapture: ((level: string, message: string) => void) | undefined;

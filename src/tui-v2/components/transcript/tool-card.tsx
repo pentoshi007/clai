@@ -742,7 +742,14 @@ export function ToolCard(props: {
             overflow: "hidden",
           }}
         >
-          <LinkableText text={item.artifactPath} theme={theme} fg={theme.cyan} selectable />
+          <LinkableText
+            text={item.artifactPath}
+            theme={theme}
+            fg={theme.cyan}
+            selectable
+            wrapMode="none"
+            clipTo={cardInnerWidth}
+          />
         </box>
       ) : null}
       {truncatedNotice ? (
