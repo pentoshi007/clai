@@ -161,3 +161,33 @@ describe("PasteRegistry", () => {
     expect(registry.resolve(entry.id)).toBeUndefined();
   });
 });
+
+describe("attachment placeholders", () => {
+  it("shows numbered images and short filenames while preserving exact references", () => {
+    const registry = new PasteRegistry();
+    const original = "inspect file:///tmp/my%20shot.png and file:///tmp/second.webp plus file:///tmp/report.pdf";
+    const compact = registry.compactAttachments(original);
+    expect(compact).toBe("inspect [Image 1] and [Image 2] plus [File 3: report.pdf]");
+    expect(registry.expand(compact)).toBe(original);
+    expect(registry.activeIn(compact)).toHaveLength(3);
+    expect(registry.expand(compact.replace("[Image 1]", ""))).not.toContain("my%20shot.png");
+  });
+
+  it("keeps same-name attachments independent and resets image numbering per draft", () => {
+    const registry = new PasteRegistry();
+    const compact = registry.compactAttachments("file:///a/report.pdf file:///b/report.pdf");
+    expect(registry.expand(compact)).toBe("file:///a/report.pdf file:///b/report.pdf");
+    expect(registry.compactAttachments("file:///a/a.png")).toBe("[Image 1]");
+    registry.clear();
+    expect(registry.compactAttachments("file:///b/b.png")).toBe("[Image 1]");
+    expect(registry.expand(compact)).toBe(compact);
+  });
+
+  it("does not reinterpret attachment-like tokens inside a pasted text block", () => {
+    const registry = new PasteRegistry();
+    const log = registry.register("keep [Image 1] verbatim");
+    const image = registry.compactAttachments("file:///tmp/shot.png");
+    expect(registry.expand(`${log.token} ${image}`)).toBe("keep [Image 1] verbatim file:///tmp/shot.png");
+    expect(registry.compactAttachments("file://invalid%XX")).toBe("file://invalid%XX");
+  });
+});

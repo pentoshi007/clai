@@ -762,7 +762,6 @@ export function App(): ReactNode {
           onClearDraft={composerActionPort.clear}
           onOpenCommands={composerActionPort.openCommands}
           hasDraft={hasDraft}
-          onCycleMode={cycleMode}
           cancelArmed={escapeCancelArmed}
           onRequestCancel={stopMainAgent}
           onContextLimitEditingStart={startContextLimitEditing}

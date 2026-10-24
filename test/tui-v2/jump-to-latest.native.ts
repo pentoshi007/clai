@@ -45,7 +45,8 @@ for (const width of [40, 52, 68, 80, 120]) {
     assert.ok(target.x >= 0 && target.x + target.width <= width, setup.captureCharFrame());
     const row = setup.captureCharFrame().split("\n")[target.y]!;
     assert.match(row, /AGENT/, "metadata does not displace the mode badge");
-    assert.match(row, /ctx 0/, "metadata does not displace the context chip");
+    assert.match(row, /\b0(?:\/\d[\d,.]*[km]?)?\s*$/, "metadata does not displace the numeric context chip");
+    assert.doesNotMatch(row, /\bctx\b/);
     if (width >= 80) {
       assert.match(row.slice(0, target.x), /2(?: queued|q)/, "the jump control follows the queue hint");
     }

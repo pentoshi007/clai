@@ -1,9 +1,8 @@
 import type { ContextUsageSnapshot } from "../../llm/token-usage.js";
 import type { Mode } from "../../types.js";
-import {
-  contextChipForDensity,
-  type StatusDensity,
-} from "../../ui-core/rendering/context-limit.js";
+import type { StatusDensity } from "../../ui-core/rendering/context-limit.js";
+import type { GenerationMetrics } from "../../llm/generation-metrics.js";
+import { footerMetrics } from "../../ui-core/rendering/footer-metrics.js";
 import {
   armedCancelHint,
   busyCancelHint,
@@ -15,7 +14,7 @@ import {
   tasksToggleLabel,
   type IdleHintId,
 } from "../../ui-core/rendering/status-segments.js";
-import { contextLimitEditorLabel, type ContextLimitEditorState } from "./context-limit-editor.js";
+import { contextLimitEditorLabel } from "./context-limit-editor.js";
 import { alignEnds, clipToWidth } from "../render/ansi-text.js";
 import { layoutWidth } from "../render/measure.js";
 import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
@@ -45,6 +44,7 @@ export interface StatusViewInput {
   readonly mode: Mode;
   readonly contextChip: string | undefined;
   readonly contextUsage: ContextUsageSnapshot | undefined;
+  readonly generation?: GenerationMetrics | undefined;
   readonly contextLimitEditing?: boolean | undefined;
   readonly contextLimitDraft?: string | undefined;
   readonly running: boolean;
@@ -73,14 +73,7 @@ export function relativizeHome(path: string, home: string): string {
   return tail.length === 0 ? "~" : `~${tail}`;
 }
 
-function contextSegment(input: StatusViewInput, density: StatusDensity): string | undefined {
-  if (input.contextLimitEditing === true) {
-    const state: ContextLimitEditorState = {
-      editing: true,
-      draft: input.contextLimitDraft ?? "",
-    };
-    return contextLimitEditorLabel(input.ink, state, Math.max(1, input.columns));
-  }
+function metricSegments(input: StatusViewInput): { readonly context: string; readonly rate: string } {
   const usage: ContextUsageSnapshot = input.contextUsage ?? {
     contextTokens: 0,
     contextLimit: 0,
@@ -89,13 +82,11 @@ function contextSegment(input: StatusViewInput, density: StatusDensity): string 
     sessionCompletionTokens: 0,
     exact: true,
   };
-  const baseChip = contextChipForDensity(usage, density);
-  if (baseChip === undefined) return undefined;
-  const chip =
-    density === "xs" || density === "sm"
-      ? baseChip.replace(/^ctx\s*/, "").replace(/\/.*$/, "")
-      : baseChip;
-  return input.ink.fg("userBorder", chip);
+  const metrics = footerMetrics(usage, input.generation, input.columns);
+  return {
+    context: metrics.context ? input.ink.fg("userBorder", metrics.context) : "",
+    rate: metrics.rate ? input.ink.fg("muted", metrics.rate) : "",
+  };
 }
 
 export function contextLimitChipColumns(
@@ -104,8 +95,7 @@ export function contextLimitChipColumns(
   if (input.contextLimitEditing || input.allocatedRows <= 0) return undefined;
   const columns = Math.max(1, Math.floor(input.columns));
   const contentWidth = Math.max(1, columns - STATUS_INSET_COLUMNS - STATUS_RIGHT_INSET_COLUMNS);
-  const chip = contextSegment(input, statusDensityForWidth(columns));
-  const width = chip === undefined ? 0 : layoutWidth(chip);
+  const width = layoutWidth(metricSegments(input).context);
   if (width === 0 || width + 2 > contentWidth) return undefined;
   return { left: columns - STATUS_RIGHT_INSET_COLUMNS - width, width };
 }
@@ -171,9 +161,8 @@ function idleSegments(input: StatusViewInput, density: StatusDensity): string[] 
     input.queued > 0 ? (density === "sm" ? `${input.queued}q` : `${input.queued} queued`) : "";
   const hidden = queued !== "" && input.queueVisible === false ? " (hidden)" : "";
   hints.push({ label: `${queued}${hidden}`, token: "mode" });
-  hints.push({ label: `${ink.unicode ? "⇧⇥" : "S-tab"} mode`, token: "muted" });
   if (density !== "xs" && density !== "sm") {
-    hints.push({ label: "^L ctx", token: "muted" });
+    hints.push({ label: "^L limit", token: "muted" });
   }
   return hints.map((h) => ink.fg(h.token, h.label));
 }
@@ -210,7 +199,8 @@ export function statusRows(input: StatusViewInput): readonly string[] {
   }
 
   const busy = input.running || input.compacting;
-  const right = contextSegment(input, density) ?? "";
+  const metrics = metricSegments(input);
+  const right = [metrics.rate, metrics.context].filter(Boolean).join(separator(input));
 
   if (density === "xs") {
     return [insetRow(alignEnds(modeBadge(input), right, width, input.ink.glyphs.ellipsis))];

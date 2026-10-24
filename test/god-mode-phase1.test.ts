@@ -102,18 +102,18 @@ describe("God Mode Phase 1 contracts", () => {
     expect(hasOrphanToolMessages(compacted.messages)).toBe(false);
   });
 
-  it("delivers exact image bytes and MIME through shared turn resolution", () => {
+  it("delivers exact image bytes and MIME through shared turn resolution", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clai-phase1-"));
     const image = join(dir, "pixel.png");
     const bytes = Buffer.from("89504e470d0a1a0a", "hex");
     writeFileSync(image, bytes);
-    const resolved = resolveTurnInput({
+    const resolved = (await resolveTurnInput({
       prompt: `inspect @${image}`,
       mode: "plan",
       provider: "openai",
       model: "gpt-4o",
       baseDir: dir,
-    });
+    }));
     expect(resolved.mode).toBe("plan");
     expect(resolved.images[0]?.mediaType).toBe("image/png");
     expect(Buffer.from(resolved.images[0]?.dataBase64 ?? "", "base64")).toEqual(bytes);

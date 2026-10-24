@@ -76,7 +76,8 @@ async function verify(width: number): Promise<void> {
     assert.ok(composer, "the composer is mounted");
     const row = setup.captureCharFrame().split("\n")[composer.y + composer.height]!;
     assert.match(row, /AGENT/, row);
-    const context = /ctx \S+\s*$/.exec(row);
+    assert.doesNotMatch(row, /\bctx\b/);
+    const context = /\b\d[\d,.]*[km]?(?:\/\d[\d,.]*[km]?)?\s*$/.exec(row);
     assert.ok(context, row);
     assert.equal(context.index + context[0].trimEnd().length, composer.x + composer.width - 1, `context stays inside the composer border: ${row}`);
     const beforeContext = row.slice(0, context.index);

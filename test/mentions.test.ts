@@ -142,42 +142,42 @@ describe("expandMentions", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("keeps a referenced text file out of the prompt body", () => {
-    const out = expandMentions("read @notes.txt", dir);
+  it("keeps a referenced text file out of the prompt body", async () => {
+    const out = (await expandMentions("read @notes.txt", dir));
     expect(out.attachments).toHaveLength(1);
     expect(out.attachments[0]!.kind).toBe("text");
     expect(out.attachments[0]!.content).toBeUndefined();
     expect(out.contextBlock).toBe("");
   });
 
-  it("notes a missing @ mention", () => {
-    const out = expandMentions("read @nope.txt", dir);
+  it("notes a missing @ mention", async () => {
+    const out = (await expandMentions("read @nope.txt", dir));
     expect(out.attachments[0]!.kind).toBe("missing");
   });
 
-  it("classifies images as non-inlined", () => {
+  it("classifies images as non-inlined", async () => {
     writeFileSync(join(dir, "pic.png"), Buffer.from([0x89, 0x50]));
-    const out = expandMentions("describe @pic.png", dir);
+    const out = (await expandMentions("describe @pic.png", dir));
     expect(out.attachments[0]!.kind).toBe("image");
     expect(out.attachments[0]!.content).toBeUndefined();
   });
 
-  it("returns an empty context block when there are no mentions", () => {
-    const out = expandMentions("just a normal prompt", dir);
+  it("returns an empty context block when there are no mentions", async () => {
+    const out = (await expandMentions("just a normal prompt", dir));
     expect(out.attachments).toHaveLength(0);
     expect(out.contextBlock).toBe("");
   });
 
-  it("preserves the original text", () => {
-    const out = expandMentions("read @notes.txt please", dir);
+  it("preserves the original text", async () => {
+    const out = (await expandMentions("read @notes.txt please", dir));
     expect(out.text).toBe("read @notes.txt please");
   });
 
-  it("attaches a whole directory as an on-demand reference without expanding it", () => {
+  it("attaches a whole directory as an on-demand reference without expanding it", async () => {
     mkdirSync(join(dir, "src"));
     writeFileSync(join(dir, "src", "a.ts"), "export {}");
     writeFileSync(join(dir, "src", "b.ts"), "export {}");
-    const out = expandMentions("review @src", dir);
+    const out = (await expandMentions("review @src", dir));
     expect(out.attachments).toHaveLength(1);
     expect(out.attachments[0]!.kind).toBe("directory");
     expect(out.attachments[0]!.content).toBeUndefined();
@@ -186,15 +186,15 @@ describe("expandMentions", () => {
     expect(out.contextBlock).toBe("");
   });
 
-  it("accepts a directory mention with a trailing slash", () => {
+  it("accepts a directory mention with a trailing slash", async () => {
     mkdirSync(join(dir, "lib"));
     writeFileSync(join(dir, "lib", "x.js"), "1");
-    const out = expandMentions("see @lib/", dir);
+    const out = (await expandMentions("see @lib/", dir));
     expect(out.attachments[0]!.kind).toBe("directory");
     expect(out.attachments[0]!.content).toBeUndefined();
   });
 
-  it("does not generate image context headers", () => {
+  it("does not generate image context headers", async () => {
     writeFileSync(
       join(dir, "pic.png"),
       Buffer.from(
@@ -202,15 +202,15 @@ describe("expandMentions", () => {
         "hex",
       ),
     );
-    const out = expandMentions("describe @pic.png", dir);
+    const out = (await expandMentions("describe @pic.png", dir));
     expect(out.contextBlock).toBe("");
   });
 
-  it("does not infer an attachment from a path embedded in prompt text", () => {
+  it("does not infer an attachment from a path embedded in prompt text", async () => {
     const image = join(dir, "Screenshot 2026-06-27 at 10.44.32 AM.png");
     writeFileSync(image, Buffer.from([0x89, 0x50]));
     const line = `${image.replaceAll(" ", "\\ ")} what is it`;
     expect(extractExistingPathsFs(line, dir)).toEqual([image]);
-    expect(expandMentions(line, dir, true).attachments).toEqual([]);
+    expect((await expandMentions(line, dir, true)).attachments).toEqual([]);
   });
 });

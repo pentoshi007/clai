@@ -1,5 +1,6 @@
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { readImageBytes } from "../attachments/read-image.js";
 import {
   basename,
   dirname,
@@ -18,9 +19,9 @@ import { prepareImageForModel } from "../attachments/image-prepare.js";
 import { safeCwd } from "../os/cwd.js";
 import type { ChatImage } from "../types.js";
 import { expandHome } from "./mentions/file-suggestions.js";
-import { classifyPath, extractMentionTokens, normalizeDroppedPath, stabilizeImagePaths, tokenToPath } from "./mentions/expand.js";
+import { classifyPath, extractMentionTokens, normalizeDroppedPath, tokenToPath } from "./mentions/expand.js";
 export { expandMentions } from "./mentions/expand.js";
-export { extractMentionTokens, normalizeDroppedPath, stabilizeImagePaths };
+export { extractMentionTokens, normalizeDroppedPath };
 export type { Attachment, AttachmentKind, ExpandMentionsOptions, MentionExpansion } from "./mentions/expand.js";
 export { findFileSuggestions } from "./mentions/file-suggestions.js";
 export type { FileSuggestion } from "./mentions/file-suggestions.js";
@@ -51,7 +52,9 @@ export function formatAttachmentReference(
   const absolute = isAbsolute(normalized)
     ? normalized
     : resolve(baseDir, normalized);
-  return pathToFileURL(absolute).href;
+  return pathToFileURL(absolute).href.replace(/[()]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 export function getMentionQuery(
@@ -155,7 +158,9 @@ function scanExistingPaths(line: string, baseDir: string): ScannedPath[] {
       if (resolved) {
         if (!seen.has(resolved)) {
           seen.add(resolved);
-          results.push({ raw: rawSpan, resolved });
+          const quote = line[startIdx - 1];
+          const raw = (quote === '"' || quote === "'") && rawSpan.endsWith(quote) ? quote + rawSpan : rawSpan;
+          results.push({ raw, resolved });
         }
         startRe.lastIndex = startIdx + rawSpan.length;
         break;
@@ -189,9 +194,7 @@ export function stabilizeDroppedFilesInText(
   const images: string[] = [];
   for (const match of matches) {
     const isImage = Boolean(imageMediaType(match.resolved));
-    const stable = isImage
-      ? stabilizeImagePaths([match.resolved], baseDir)[0] ?? match.resolved
-      : match.resolved;
+    const stable = match.resolved;
     rewritten = rewritten.replace(match.raw, formatAttachmentReference(stable, baseDir));
     files.push(stable);
     if (isImage) images.push(stable);
@@ -214,7 +217,7 @@ export function stabilizeDroppedImagesInText(
   let rewritten = text;
   const images: string[] = [];
   for (const match of matches) {
-    const stable = stabilizeImagePaths([match.resolved], baseDir)[0] ?? match.resolved;
+    const stable = match.resolved;
     rewritten = rewritten.replace(match.raw, formatAttachmentReference(stable));
     images.push(stable);
   }
@@ -235,14 +238,15 @@ export function imageAttachmentPaths(
     seen.add(absPath);
     if (classifyPath(absPath) === "image") paths.push(absPath);
   }
-  return stabilizeImagePaths(paths, baseDir);
+  return paths;
 }
 
-export function loadImagePaths(
+export async function loadImagePaths(
   paths: readonly string[],
   budget: ImageBudget = imageBudgetFor(""),
   baseDir: string = safeCwd(),
-): ChatImage[] {
+  signal?: AbortSignal,
+): Promise<ChatImage[]> {
   const images: ChatImage[] = [];
   const seen = new Set<string>();
   let totalBytes = 0;
@@ -250,21 +254,19 @@ export function loadImagePaths(
     if (seen.has(path)) continue;
     seen.add(path);
     if (images.length >= budget.maxCount) break;
-    const prepared = prepareImageForModel(path, budget, baseDir);
+    signal?.throwIfAborted();
+    const prepared = await prepareImageForModel(path, budget, baseDir, signal);
     if (!prepared.ok) continue;
     if (totalBytes + prepared.byteLength > budget.maxTotalBytes) continue;
     try {
-      const buffer = readFileSync(prepared.path);
-      const mediaType = detectModelImageMediaType(buffer);
-      if (!mediaType) continue;
-      totalBytes += buffer.length;
-      images.push({
-        mediaType,
-        dataBase64: buffer.toString("base64"),
-        path: prepared.path,
-      });
+      const limit = Math.min(budget.hardMaxBytes, budget.maxTotalBytes - totalBytes);
+      const bytes = await readImageBytes(prepared.path, limit, signal);
+      const mediaType = detectModelImageMediaType(bytes);
+      if (!mediaType || mediaType !== prepared.mediaType) continue;
+      totalBytes += bytes.length;
+      images.push({ mediaType, dataBase64: bytes.toString("base64"), path: prepared.path });
     } catch {
-      continue;
+      signal?.throwIfAborted();
     }
   }
   return images;
@@ -273,7 +275,7 @@ export function loadImagePaths(
 export function loadImageAttachments(
   line: string,
   baseDir: string = safeCwd(),
-): ChatImage[] {
+): Promise<ChatImage[]> {
   return loadImagePaths(
     imageAttachmentPaths(line, baseDir),
     imageBudgetFor(""),

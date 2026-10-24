@@ -16,6 +16,7 @@ export interface TurnRequestInput {
   readonly model: string;
   readonly history: readonly ChatMessage[];
   readonly materializeImages: boolean;
+  readonly signal?: AbortSignal | undefined;
   readonly displayPrompt?: string | null | undefined;
   readonly previousTurn?: PreviousTurnSignal | undefined;
   readonly previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
@@ -33,22 +34,32 @@ export interface BuiltTurnRequest {
   readonly imageIssues: readonly string[];
 }
 
-export function buildTurnRequest(input: TurnRequestInput): BuiltTurnRequest {
-  const resolved = resolveTurnInput({
+export async function buildTurnRequest(input: TurnRequestInput): Promise<BuiltTurnRequest> {
+  const resolved = await resolveTurnInput({
     prompt: input.prompt,
     mode: input.mode,
     provider: input.provider,
     model: input.model,
+    signal: input.signal,
   });
+  const budget = imageBudgetFor(resolved.provider, resolved.model);
+  const currentImageBytes = resolved.images.reduce((total, image) =>
+    total + Buffer.byteLength(image.dataBase64, "base64"), 0);
+  const historyBudget = {
+    ...budget,
+    maxCount: Math.max(0, budget.maxCount - resolved.images.length),
+    maxTotalBytes: Math.max(0, budget.maxTotalBytes - currentImageBytes),
+  };
   const request: RunTurnRequest = {
     prompt: resolved.prompt,
     mode: resolved.mode,
     provider: resolved.provider,
     model: resolved.model,
     history: input.materializeImages
-      ? materializeHistoryImages(
+      ? await materializeHistoryImages(
           input.history,
-          imageBudgetFor(resolved.provider, resolved.model),
+          historyBudget,
+          input.signal,
         )
       : input.history,
     attachments: resolved.attachments,

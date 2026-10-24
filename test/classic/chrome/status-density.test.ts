@@ -89,7 +89,7 @@ describe("status rows", () => {
       expect(rows).toHaveLength(1);
       const row = plainText(rows[0]!);
       expect(row.trim().startsWith("AGENT")).toBe(true);
-      expect(row.trimEnd().endsWith(width < 68 ? "24.1k" : "ctx 24.1k/128k")).toBe(true);
+      expect(row.trimEnd().endsWith(width < 68 ? "24.1k" : "24.1k/128k")).toBe(true);
     }
   });
 
@@ -99,7 +99,7 @@ describe("status rows", () => {
     );
     expect(editing).toHaveLength(1);
     const text = plainText(editing[0]!);
-    expect(text).toContain("ctx limit 253k");
+    expect(text).toContain("limit 253k");
     expect(text).toContain("save");
     expect(text).not.toContain("%");
     expect(text).not.toContain("ctx 24.1k/128k");
@@ -196,7 +196,7 @@ describe("status rows", () => {
       }),
     )[0]!;
     expect(normal).not.toBe(critical);
-    expect(plainText(critical)).toContain("ctx 120k/128k");
+    expect(plainText(critical)).toContain("120k/128k");
   });
 
   it("shortens the chip at sm and keeps the model off the row", () => {
@@ -329,4 +329,22 @@ it("keeps retry delays visible and provider notices out of classic activity", ()
     expect(notice).toContain("working");
     expect(notice).not.toContain("Free");
   }
+});
+
+describe("footer generation metrics", () => {
+  it.each([24, 40, 60, 80, 120])("shows measured throughput without legacy labels at %s columns", (columns) => {
+    for (const running of [false, true]) {
+      const row = plainText(statusRows({
+        ...base(columns, { running }),
+        generation: { outputTokens: 123, durationMs: 2_000 },
+      })[0]!);
+      expect(row).toContain("61.5 tok/s");
+      expect(row).not.toMatch(/ctx|⇧⇥|S-tab/i);
+      expect(displayWidth(row)).toBeLessThanOrEqual(columns);
+    }
+  });
+
+  it("does not invent throughput before exact generation metrics arrive", () => {
+    expect(plainText(statusRows(base(120))[0]!)).not.toContain("tok/s");
+  });
 });

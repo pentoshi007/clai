@@ -160,7 +160,7 @@ describe("history JSONL sidecar index", () => {
 
     const selected = await getSession("image-session");
     expect(selected?.messages[0]?.images?.[0]?.dataBase64).toBe("");
-    const materialized = materializeHistoryImages(selected!.messages);
+    const materialized = (await materializeHistoryImages(selected!.messages));
     expect(materialized[0]?.images?.[0]?.dataBase64).toBeTruthy();
     expect(selected?.messages[0]?.images?.[0]?.dataBase64).toBe("");
   });

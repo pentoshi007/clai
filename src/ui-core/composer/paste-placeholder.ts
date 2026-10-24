@@ -1,4 +1,6 @@
 
+import { attachmentLabel, mapAttachmentReferences } from "../../attachments/labels.js";
+
 const DEFAULT_LINE_THRESHOLD = 8;
 const DEFAULT_CHAR_THRESHOLD = 800;
 
@@ -86,6 +88,27 @@ export function samePastePlaceholderEntries(
 export class PasteRegistry {
   private readonly entries = new Map<number, PastePlaceholderEntry>();
   private nextId = 1;
+  private nextImage = 1;
+  generation = 0;
+
+  compactAttachments(text: string): string {
+    return mapAttachmentReferences(text, (reference) => {
+      const attachment = attachmentLabel(reference, this.nextImage);
+      if (!attachment) return reference;
+      if (attachment.image) this.nextImage += 1;
+      const id = this.nextId++;
+      const entry: PastePlaceholderEntry = {
+        id,
+        token: attachment.image ? `[${attachment.label}]` : `[File ${id}: ${attachment.label}]`,
+        text: reference,
+        lines: 1,
+        chars: reference.length,
+        label: attachment.label,
+      };
+      this.entries.set(id, entry);
+      return entry.token;
+    });
+  }
 
   register(text: string): PastePlaceholderEntry {
     const id = this.nextId++;
@@ -117,15 +140,15 @@ export class PasteRegistry {
 
   clear(): void {
     this.entries.clear();
+    this.nextImage = 1;
+    this.generation += 1;
   }
 
   expand(value: string): string {
+    const replacements = new Map([...this.entries.values()].map((entry) => [entry.token, entry.text]));
     return value.replace(
-      /\[(?:\d+ (?:lines|chars) pasted|pasted) #(\d+) · Ctrl\+E\]/g,
-      (token, id: string) => {
-        const entry = this.entries.get(Number(id));
-        return entry?.token === token ? entry.text : token;
-      },
+      /\[(?:Image \d+|File \d+: [^\]\r\n]+|(?:\d+ (?:lines|chars) pasted|pasted) #\d+ · Ctrl\+E)\]/g,
+      (token) => replacements.get(token) ?? token,
     );
   }
 

@@ -203,7 +203,7 @@ describe("SessionController queued-draft management (INPUT-007)", () => {
     };
     const session = buildSession(agent);
     const running = session.submit("active");
-    await vi.waitFor(() => expect(session.getState().running).toBe(true));
+    await vi.waitFor(() => expect(seen).toEqual(["active"]));
     session.enqueue("queued-a");
     session.enqueue("queued-b");
     session.sendQueuedNow(1);

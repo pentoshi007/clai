@@ -102,7 +102,7 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
   const imagePaste = createComposerImagePaste(services, editorRef, () => {
     syncContentRows();
     refreshMenu();
-  });
+  }, pasteRegistry.current);
   const arrowBurst = useRef({ count: 0, lastAt: 0 });
   const [menu, setMenu] = useState<CompletionMenu>({ kind: "none" });
   const [completionView, setCompletionView] = useState(
@@ -182,7 +182,8 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     lastSeedToken.current = seed.token;
     const editor = editorRef.current;
     if (!editor) return;
-    editor.setText(seed.text);
+    pasteRegistry.current.clear();
+    editor.setText(pasteRegistry.current.compactAttachments(seed.text));
     editor.gotoBufferEnd();
     services.focus.focusRegion("composer");
     editor.focus();

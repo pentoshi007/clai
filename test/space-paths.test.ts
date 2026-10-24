@@ -78,20 +78,20 @@ describe("extractExistingPathsFs — filenames with spaces", () => {
     expect(out[0]).toBe(file);
   });
 
-  it("loadImageAttachments picks up a space-containing image path", () => {
+  it("loadImageAttachments picks up a space-containing image path", async () => {
     const dir = tmp();
     const file = join(dir, "my screenshot.png");
     writeFileSync(file, Buffer.from(PNG_HEX, "hex"));
-    const imgs = loadImageAttachments(`${formatAttachmentReference(file, dir)} what is this`, dir);
+    const imgs = (await loadImageAttachments(`${formatAttachmentReference(file, dir)} what is this`, dir));
     expect(imgs).toHaveLength(1);
     expect(imgs[0]!.mediaType).toBe("image/png");
   });
 
-  it("expandMentions attaches a space-containing image as viewable for vision models", () => {
+  it("expandMentions attaches a space-containing image as viewable for vision models", async () => {
     const dir = tmp();
     const file = join(dir, "my screenshot.png");
     writeFileSync(file, Buffer.from(PNG_HEX, "hex"));
-    const exp = expandMentions(`${formatAttachmentReference(file, dir)} what is this`, dir, true);
+    const exp = (await expandMentions(`${formatAttachmentReference(file, dir)} what is this`, dir, true));
     const img = exp.attachments.find((a) => a.kind === "image");
     expect(img).toBeDefined();
     expect(img!.note).toMatch(/attached as multimodal input/i);

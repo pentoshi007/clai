@@ -30,7 +30,7 @@ export function contextLimitEditorLabel(
 ): string {
   if (!state.editing) return "";
   const value = state.draft || "1m or 253k";
-  const label = `${ink.fg("muted", "ctx limit ")}${ink.fg("inputBorder", `${value}${ink.glyphs.caret}`)} ${ink.fg("muted", `${ink.glyphs.enter} save · esc cancel · empty reset`)}`;
+  const label = `${ink.fg("muted", "limit ")}${ink.fg("inputBorder", `${value}${ink.glyphs.caret}`)} ${ink.fg("muted", `${ink.glyphs.enter} save · esc cancel · empty reset`)}`;
   return clipToWidth(label, Math.max(1, width), ink.glyphs.ellipsis);
 }
 

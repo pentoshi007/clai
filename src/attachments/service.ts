@@ -39,18 +39,20 @@ function isSendableImage(attachment: Attachment): boolean {
   return attachment.kind === "image" && attachment.sendable !== false;
 }
 
-export function resolveTurnInput(input: {
+export async function resolveTurnInput(input: {
   prompt: string;
   mode: Mode;
   provider: ProviderId;
   model: string;
   baseDir?: string | undefined;
-}): ResolvedTurnInput {
+  signal?: AbortSignal | undefined;
+}): Promise<ResolvedTurnInput> {
   const baseDir = input.baseDir ?? safeCwd();
   let model = input.model;
   let support = modelVisionSupport(input.provider, model);
   let budget = imageBudgetFor(input.provider, model);
-  let expansion = expandMentions(input.prompt, baseDir, {
+  let expansion = await expandMentions(input.prompt, baseDir, {
+    signal: input.signal,
     visionCapable: support !== "no",
     budget,
   });
@@ -71,7 +73,8 @@ export function resolveTurnInput(input: {
       fallbackReason =
         `Selected same-provider vision model ${fallback} because ${reason} ` +
         `(capability source: ${visionCapabilitySource(input.provider, fallback)}).`;
-      expansion = expandMentions(input.prompt, baseDir, {
+      expansion = await expandMentions(input.prompt, baseDir, {
+        signal: input.signal,
         visionCapable: true,
         budget,
       });
@@ -82,10 +85,11 @@ export function resolveTurnInput(input: {
   const images =
     support === "no"
       ? []
-      : loadImagePaths(
+      : await loadImagePaths(
           candidates.map((attachment) => attachment.path),
           budget,
           baseDir,
+          input.signal,
         );
 
   if (fallbackReason && images.length === 0) {
@@ -94,7 +98,8 @@ export function resolveTurnInput(input: {
     budget = imageBudgetFor(input.provider, model);
     fallbackReason =
       "Kept the current model: the referenced image could not be attached, so no vision model was needed.";
-    expansion = expandMentions(input.prompt, baseDir, {
+    expansion = await expandMentions(input.prompt, baseDir, {
+      signal: input.signal,
       visionCapable: support !== "no",
       budget,
     });

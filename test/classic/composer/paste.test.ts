@@ -37,7 +37,7 @@ function makeDeps(overrides: {
   readonly onToast?: (text: string) => void;
   readonly clipboard?: ClipboardPort;
   readonly baseDir?: string;
-  readonly captureClipboardImage?: () => ClipboardImageCapture;
+  readonly captureClipboardImage?: () => ClipboardImageCapture | Promise<ClipboardImageCapture>;
 } = {}) {
   const commands = new CommandRegistry();
   commands.register({ name: "help", description: "show help" });
@@ -243,7 +243,8 @@ describe("classic attachment paste", () => {
     expect(result.images).toHaveLength(1);
     expect(result.text).toContain("file://");
     expect(result.text).toContain(formatAttachmentReference(text, dir));
-    expect(result.text).not.toContain(image);
+    expect(result.images).toEqual([image]);
+    expect(result.text).toContain(formatAttachmentReference(image, dir));
     expect(existsSync(result.images[0]!)).toBe(true);
   });
 
@@ -270,7 +271,8 @@ describe("classic attachment paste", () => {
     }));
     const { composer, deps } = controller({ captureClipboardImage: capture });
     composer.paste("");
-    await vi.waitFor(() => expect(composer.text).toContain(formatAttachmentReference(path, deps.baseDir)));
+    await vi.waitFor(() => expect(composer.text).toBe("[Image 1] "));
+    expect(composer.expand(composer.text)).toBe(`${formatAttachmentReference(path, deps.baseDir)} `);
     expect(capture).toHaveBeenCalledOnce();
   });
 
@@ -307,7 +309,8 @@ describe("classic attachment paste", () => {
     };
     const imageCase = controller({ clipboard: imageBoard, captureClipboardImage: capture });
     expect(imageCase.composer.handleChord("ctrl+v")).toBe(true);
-    await vi.waitFor(() => expect(imageCase.composer.text).toContain("file://"));
+    await vi.waitFor(() => expect(imageCase.composer.text).toBe("[Image 1] "));
+    expect(imageCase.composer.expand(imageCase.composer.text)).toContain("file://");
     expect(capture).toHaveBeenCalledOnce();
   });
 });
@@ -345,5 +348,62 @@ describe("composer frame under a paste", () => {
     });
     expect(frame.showCaret).toBe(false);
     expect(frame.placeholder).toBe("input locked");
+  });
+});
+
+describe("attachment draft safety", () => {
+  it("submits original references behind short image and document labels", () => {
+    const dir = tempDir();
+    const image = join(dir, "my screenshot.png");
+    const pdf = join(dir, "report.pdf");
+    writeFileSync(image, Buffer.from(PNG_HEX, "hex"));
+    writeFileSync(pdf, "%PDF-1.7");
+    const onSubmit = vi.fn();
+    const { composer } = controller({ onSubmit });
+    composer.paste(`"${image}" ${pdf}`);
+    expect(composer.text).toBe("[Image 1] [File 2: report.pdf] ");
+    composer.handleAction("editor.submit");
+    expect(onSubmit).toHaveBeenCalledWith(`${formatAttachmentReference(image)} ${formatAttachmentReference(pdf)}`);
+    expect(composer.text).toBe("");
+  });
+
+  it.each(["clear", "submit", "replace"])("ignores late clipboard text after %s", async (action) => {
+    let release!: (value: string) => void;
+    const readText = vi.fn(() => new Promise<string>((resolve) => { release = resolve; }));
+    const { composer } = controller({ clipboard: { writeText: vi.fn(), readText } });
+    composer.insertText("draft");
+    composer.handleChord("ctrl+v");
+    if (action === "clear") composer.clear();
+    else if (action === "submit") composer.handleAction("editor.submit");
+    else composer.setText("replacement");
+    release("stale clipboard text");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(composer.text).toBe(action === "replace" ? "replacement" : "");
+  });
+
+  it("does not duplicate an in-flight clipboard text read", async () => {
+    let release!: (value: string) => void;
+    const readText = vi.fn(() => new Promise<string>((resolve) => { release = resolve; }));
+    const { composer } = controller({ clipboard: { writeText: vi.fn(), readText } });
+    composer.handleChord("ctrl+v");
+    composer.handleChord("ctrl+v");
+    expect(readText).toHaveBeenCalledOnce();
+    release("clipboard text");
+    await vi.waitFor(() => expect(composer.text).toBe("clipboard text"));
+  });
+
+  it.each(["clear", "submit"])("ignores a late clipboard capture after %s", async (action) => {
+    let release!: (value: ClipboardImageCapture) => void;
+    const capture = vi.fn(() => new Promise<ClipboardImageCapture>((resolve) => { release = resolve; }));
+    const { composer } = controller({ captureClipboardImage: capture });
+    composer.insertText("draft");
+    composer.paste("");
+    composer.paste("");
+    await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce());
+    if (action === "clear") composer.clear();
+    else composer.handleAction("editor.submit");
+    release({ ok: true, path: "/tmp/late.png", mediaType: "image/png", byteLength: 10 });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(composer.text).toBe("");
   });
 });

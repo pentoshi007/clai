@@ -96,7 +96,7 @@ describe("learned capability poisoning protection", () => {
 });
 
 describe("turn input resolution with image attachments", () => {
-  it("does not substitute free-1/muse-spark-1.3-contributor-free when images are attached", () => {
+  it("does not substitute free-1/muse-spark-1.3-contributor-free when images are attached", async () => {
     const imagePath = join(TEST_DIR, "sample.png");
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
@@ -104,13 +104,13 @@ describe("turn input resolution with image attachments", () => {
     );
     writeFileSync(imagePath, png);
 
-    const resolved = resolveTurnInput({
+    const resolved = (await resolveTurnInput({
       prompt: `Inspect @${imagePath}`,
       mode: "ask",
       provider: "free",
       model: "free-1/muse-spark-1.3-contributor-free",
       baseDir: TEST_DIR,
-    });
+    }));
 
     expect(resolved.model).toBe("free-1/muse-spark-1.3-contributor-free");
     expect(resolved.fallbackReason).toBeUndefined();

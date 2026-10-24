@@ -244,10 +244,15 @@ describe("@rea turn context", () => {
   });
 });
 
-it("keeps REA startup bounded without imposing an analysis deadline", () => {
+it("extends engine startup without imposing an outer analysis deadline", () => {
   const definition = reaServerDefinition({
     version: "6.7.0", node: process.execPath, entry: join(root, "rea.mjs"), directory: root,
   }, root);
   expect(definition.config.connectTimeoutMs).toBe(60_000);
-  expect(definition.config.timeoutMs).toBeUndefined();
+  expect(definition.config.timeoutMs).toBe(0);
+  expect(definition.config.transport === "stdio" && definition.config.env).toMatchObject({
+    REA_GHIDRA_STARTUP_TIMEOUT_MS: "7200000",
+    REA_HOPPER_STARTUP_TIMEOUT_MS: "7200000",
+    REA_SWIFTC_COMPILE_TIMEOUT_MS: "600000",
+  });
 });

@@ -1,13 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { execFile } from "node:child_process";
+import { mkdir, open, rm, stat, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { platform } from "node:os";
 import { join } from "node:path";
 import { safeCwd } from "../os/cwd.js";
@@ -30,39 +24,39 @@ const CAPTURE_TIMEOUT_MS = 4_000;
 const MAX_CAPTURE_BYTES = 67_108_864;
 const MAX_CAPTURE_BUFFER = MAX_CAPTURE_BYTES + 1;
 
-function captureCommand(command: string, args: string[]): Buffer | undefined {
-  const result = spawnSync(command, args, {
-    encoding: null,
-    maxBuffer: MAX_CAPTURE_BUFFER,
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: CAPTURE_TIMEOUT_MS,
-  });
-  if (
-    result.status !== 0 ||
-    !Buffer.isBuffer(result.stdout) ||
-    result.stdout.length === 0
-  ) {
+const execute = promisify(execFile);
+const exists = (path: string): Promise<boolean> => stat(path).then((info) => info.isFile(), () => false);
+
+async function captureCommand(command: string, args: string[]): Promise<Buffer | undefined> {
+  try {
+    const { stdout } = await execute(command, args, {
+      encoding: "buffer",
+      maxBuffer: MAX_CAPTURE_BUFFER,
+      timeout: CAPTURE_TIMEOUT_MS,
+      windowsHide: true,
+    });
+    return stdout.length > 0 ? stdout : undefined;
+  } catch {
     return undefined;
   }
-  return result.stdout;
 }
 
-function captureLinuxPng(): Buffer | undefined {
+async function captureLinuxPng(): Promise<Buffer | undefined> {
   const attempts: Array<[string, string[]]> = [
     ["wl-paste", ["--no-newline", "--type", "image/png"]],
     ["xclip", ["-selection", "clipboard", "-t", "image/png", "-o"]],
   ];
   for (const [command, args] of attempts) {
-    const bytes = captureCommand(command, args);
+    const bytes = await captureCommand(command, args);
     if (bytes && detectModelImageMediaType(bytes) === "image/png") return bytes;
   }
   return undefined;
 }
 
-function writeMacClipboardFormat(
+async function writeMacClipboardFormat(
   destination: string,
   clipboardClass: "PNGf" | "TIFF",
-): boolean {
+): Promise<boolean> {
   const script = [
     "on run argv",
     "set destinationPath to item 1 of argv",
@@ -86,39 +80,35 @@ function writeMacClipboardFormat(
     "end run",
   ].join("\n");
   try {
-    const output = execFileSync("osascript", ["-e", script, destination], {
+    const { stdout } = await execute("osascript", ["-e", script, destination], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
       timeout: CAPTURE_TIMEOUT_MS,
-    }).trim();
-    return output !== "NO_IMAGE" && existsSync(destination);
+      maxBuffer: 4096,
+    });
+    return stdout.trim() !== "NO_IMAGE" && await exists(destination);
   } catch {
     return false;
   }
 }
 
-function captureMacPng(destination: string): boolean {
-  if (writeMacClipboardFormat(destination, "PNGf")) return true;
+async function captureMacPng(destination: string): Promise<boolean> {
+  if (await writeMacClipboardFormat(destination, "PNGf")) return true;
   const tiffPath = `${destination}.tiff`;
-  if (!writeMacClipboardFormat(tiffPath, "TIFF")) return false;
   try {
-    execFileSync(
-      "sips",
-      ["-s", "format", "png", tiffPath, "--out", destination],
-      {
-        stdio: "ignore",
-        timeout: CAPTURE_TIMEOUT_MS,
-      },
-    );
-    return existsSync(destination);
+    if (!(await writeMacClipboardFormat(tiffPath, "TIFF"))) return false;
+    await execute("sips", ["-s", "format", "png", tiffPath, "--out", destination], {
+      timeout: CAPTURE_TIMEOUT_MS,
+      maxBuffer: 4096,
+    });
+    return await exists(destination);
   } catch {
     return false;
   } finally {
-    rmSync(tiffPath, { force: true });
+    await rm(tiffPath, { force: true });
   }
 }
 
-function captureWindowsPng(destination: string): boolean {
+async function captureWindowsPng(destination: string): Promise<boolean> {
   const script = [
     "Add-Type -AssemblyName System.Windows.Forms",
     "Add-Type -AssemblyName System.Drawing",
@@ -128,35 +118,42 @@ function captureWindowsPng(destination: string): boolean {
     "$image.Dispose()",
   ].join("; ");
   for (const command of ["powershell.exe", "pwsh.exe", "pwsh"]) {
-    const result = spawnSync(
-      command,
-      ["-NoProfile", "-NonInteractive", "-STA", "-Command", script],
-      {
-        encoding: "utf8",
+    try {
+      await execute(command, ["-NoProfile", "-NonInteractive", "-STA", "-Command", script], {
         env: { ...process.env, CLAI_CLIPBOARD_IMAGE_PATH: destination },
-        stdio: ["ignore", "ignore", "ignore"],
         timeout: CAPTURE_TIMEOUT_MS,
-      },
-    );
-    if (result.status === 0 && existsSync(destination)) return true;
+        maxBuffer: 4096,
+        windowsHide: true,
+      });
+      if (await exists(destination)) return true;
+    } catch {
+      continue;
+    }
   }
   return false;
 }
 
-function validateCapturedPng(destination: string): ClipboardImageCapture {
+async function validateCapturedPng(destination: string): Promise<ClipboardImageCapture> {
   try {
-    const stat = statSync(destination);
-    if (stat.size === 0) {
+    const info = await stat(destination);
+    if (info.size === 0) {
       return { ok: false, reason: "The clipboard does not contain an image." };
     }
-    if (stat.size > MAX_CAPTURE_BYTES) {
+    if (info.size > MAX_CAPTURE_BYTES) {
       return {
         ok: false,
-        reason: `Clipboard image is ${formatByteSize(stat.size)}, above the ${formatByteSize(MAX_CAPTURE_BYTES)} capture ceiling.`,
+        reason: `Clipboard image is ${formatByteSize(info.size)}, above the ${formatByteSize(MAX_CAPTURE_BYTES)} capture ceiling.`,
       };
     }
-    const bytes = readFileSync(destination);
-    if (detectModelImageMediaType(bytes) !== "image/png") {
+    const handle = await open(destination, "r");
+    const bytes = Buffer.alloc(64);
+    let bytesRead: number;
+    try {
+      ({ bytesRead } = await handle.read(bytes, 0, bytes.length, 0));
+    } finally {
+      await handle.close();
+    }
+    if (detectModelImageMediaType(bytes.subarray(0, bytesRead)) !== "image/png") {
       return {
         ok: false,
         reason: "Clipboard image could not be converted to PNG.",
@@ -166,23 +163,23 @@ function validateCapturedPng(destination: string): ClipboardImageCapture {
       ok: true,
       path: destination,
       mediaType: "image/png",
-      byteLength: stat.size,
+      byteLength: info.size,
     };
   } catch {
     return { ok: false, reason: "Clipboard image could not be read." };
   }
 }
 
-export function captureClipboardImage(
+export async function captureClipboardImage(
   baseDir: string = safeCwd(),
-): ClipboardImageCapture {
+): Promise<ClipboardImageCapture> {
   const attachmentDir = join(scratchDirFor(baseDir), "attachments");
   const destination = join(
     attachmentDir,
     `clipboard-${Date.now()}-${randomUUID().slice(0, 8)}.png`,
   );
   try {
-    mkdirSync(attachmentDir, { recursive: true });
+    await mkdir(attachmentDir, { recursive: true });
   } catch {
     return { ok: false, reason: "Could not create the attachment directory." };
   }
@@ -190,23 +187,23 @@ export function captureClipboardImage(
   let captured = false;
   const os = platform();
   if (os === "darwin") {
-    captured = captureMacPng(destination);
+    captured = await captureMacPng(destination);
   } else if (os === "linux") {
-    const bytes = captureLinuxPng();
+    const bytes = await captureLinuxPng();
     if (bytes) {
       try {
-        writeFileSync(destination, bytes, { mode: 0o600 });
+        await writeFile(destination, bytes, { mode: 0o600 });
         captured = true;
       } catch {
         captured = false;
       }
     }
   } else if (os === "win32") {
-    captured = captureWindowsPng(destination);
+    captured = await captureWindowsPng(destination);
   }
 
   if (!captured) {
-    rmSync(destination, { force: true });
+    await rm(destination, { force: true });
     return {
       ok: false,
       reason:
@@ -218,7 +215,7 @@ export function captureClipboardImage(
     };
   }
 
-  const result = validateCapturedPng(destination);
-  if (!result.ok) rmSync(destination, { force: true });
+  const result = await validateCapturedPng(destination);
+  if (!result.ok) await rm(destination, { force: true });
   return result;
 }

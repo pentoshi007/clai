@@ -1,3 +1,4 @@
+import { attachmentDisplayText } from "../../attachments/labels.js";
 import { clipToWidth } from "../render/ansi-text.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { QUEUE_MAX_ROWS } from "./row-budget.js";
@@ -55,7 +56,7 @@ export function queueRows(input: QueueViewInput): readonly string[] {
         ? ink.fg("inputBorder", `${ink.glyphs.promptMark} `)
         : "  ";
     return clipToWidth(
-      `  ${ink.fg("muted", String(index + 1))} ${mark}${entry.replace(/\s+/g, " ").trim()}`,
+      `  ${ink.fg("muted", String(index + 1))} ${mark}${attachmentDisplayText(entry).replace(/\s+/g, " ").trim()}`,
       width,
       ink.glyphs.ellipsis,
     );

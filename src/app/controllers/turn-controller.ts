@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentEvent } from "../../agent/events.js";
+import type { GenerationMetrics } from "../../llm/generation-metrics.js";
 import { renderTurnOutcome, type TurnOutcome } from "../../agent/turn-outcome.js";
 import type { ChatMessage, SuccessfulRequestSnapshot } from "../../types.js";
 import { isAbortError, type SessionPolicy } from "../../agent/session-policy.js";
@@ -33,7 +34,9 @@ export interface TurnRunOptions {
     | undefined;
   readonly onStarted?: (() => void) | undefined;
   readonly onSubmitted?: (() => void) | undefined;
+  readonly onGeneration?: ((metrics: GenerationMetrics | undefined) => void) | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly prepareRequest?: ((signal: AbortSignal) => Promise<RunTurnRequest>) | undefined;
 }
 
 export interface TurnControllerDeps {
@@ -150,7 +153,9 @@ export class TurnController implements Disposable {
       submitted = true;
     };
     const coalescer = new DeltaCoalescer((event) => {
+      if (event.type === "turn-start" && options.prepareRequest) return;
       if (event.type === "model-submitted") acknowledge();
+      if (event.type === "generation-completed") options.onGeneration?.(event.metrics);
       adapter.ingest(event);
     });
 
@@ -161,9 +166,17 @@ export class TurnController implements Disposable {
       else external.addEventListener("abort", onExternalAbort, { once: true });
     }
 
+    let preparing = options.prepareRequest !== undefined;
     try {
+      if (preparing) {
+        adapter.ingest({ type: "turn-start", prompt: request.prompt,
+          ...(request.displayPrompt !== undefined ? { displayPrompt: request.displayPrompt } : {}) });
+      }
       options.onStarted?.();
-      const outcome = await this.deps.agent.runTurn(request, {
+      const prepared = options.prepareRequest ? await options.prepareRequest(ac.signal) : request;
+      ac.signal.throwIfAborted();
+      preparing = false;
+      const outcome = await this.deps.agent.runTurn(prepared, {
         onEvent: (event) => coalescer.push(event),
         onMessages: options.onMessages,
         onSuccessfulRequest: options.onSuccessfulRequest,
@@ -182,12 +195,11 @@ export class TurnController implements Disposable {
       };
     } catch (error) {
       coalescer.flush();
-      if (isAbortError(error, ac.signal)) return { status: "aborted", turnId };
-      return {
-        status: "error",
-        turnId,
-        error: error instanceof Error ? error : new Error(String(error)),
-      };
+      const aborted = isAbortError(error, ac.signal);
+      const failure = error instanceof Error ? error : new Error(String(error));
+      if (preparing) adapter.ingest(aborted ? { type: "turn-aborted" } : { type: "turn-error", message: failure.message });
+      if (aborted) return { status: "aborted", turnId };
+      return { status: "error", turnId, error: failure };
     } finally {
       if (external) external.removeEventListener("abort", onExternalAbort);
       this.active = false;

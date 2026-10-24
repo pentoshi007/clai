@@ -145,6 +145,7 @@ export function ClassicApp(
     mode: session.mode,
     contextChip: session.contextChip,
     contextUsage: session.contextUsage,
+    generation: session.generation,
     contextLimitEditing: wiring.contextLimitEditingValue,
     contextLimitDraft: wiring.contextLimitDraftValue,
     running: session.running,

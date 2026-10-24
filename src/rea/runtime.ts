@@ -9,6 +9,7 @@ import type { McpServerDefinition } from "../mcp/types.js";
 import type { ToolResult } from "../types.js";
 import { detectRea, reaMaintenance, reaRoot, runReaMaintenance } from "./install.js";
 import { reaEnvironment } from "./node.js";
+import { reaStartupEnvironment } from "./timeouts.js";
 import type { ReaInstallation, ReaInstallOptions, ReaStatus } from "./types.js";
 import { REA_SERVER, reaWorkflowContext } from "./workflow.js";
 
@@ -61,8 +62,12 @@ export function reaServerDefinition(installation: ReaInstallation, root = reaRoo
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
   const config = {
     transport: "stdio" as const, command: installation.node, args: [installation.entry, "mcp"],
-    env: { [pathKey]: env[pathKey] ?? "", NODE_OPTIONS: "", NODE_PATH: "", ...engines },
+    env: {
+      [pathKey]: env[pathKey] ?? "", NODE_OPTIONS: "", NODE_PATH: "", ...engines,
+      ...reaStartupEnvironment({ ...env, ...engines }),
+    },
     connectTimeoutMs: 60_000,
+    timeoutMs: 0,
   };
   return {
     name: REA_SERVER, config, disabled: false, toolSelection: "all",

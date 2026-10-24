@@ -22,10 +22,8 @@ import type { Mode } from "../../../types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { ContextLimitChip } from "./context-limit-chip.js";
 import type { ContextUsageSnapshot } from "../../../llm/token-usage.js";
-import {
-  contextChipForDensity,
-  type StatusDensity,
-} from "../../../ui-core/rendering/context-limit.js";
+import type { StatusDensity } from "../../../ui-core/rendering/context-limit.js";
+import { footerMetrics } from "../../../ui-core/rendering/footer-metrics.js";
 
 import {
   SPINNER_FRAMES,
@@ -66,7 +64,6 @@ export interface StatusLineProps {
   readonly onClearDraft?: (() => void) | undefined;
   readonly onOpenCommands?: (() => void) | undefined;
   readonly hasDraft?: boolean | undefined;
-  readonly onCycleMode?: (() => void) | undefined;
   readonly cancelArmed?: boolean | undefined;
   readonly onRequestCancel?: (() => void) | undefined;
   readonly onContextLimitEditingStart?: (() => void) | undefined;
@@ -285,7 +282,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
     onClearDraft,
     onOpenCommands,
     hasDraft = false,
-    onCycleMode,
     cancelArmed = false,
     onRequestCancel,
     onContextLimitEditingStart,
@@ -377,8 +373,8 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
     sessionCompletionTokens: 0,
     exact: true,
   };
-  const ctxChip = contextChipForDensity(contextUsage, density);
-  const contextGap = ctxChip ? 3 : 0;
+  const { context: ctxChip, rate: rateLabel } = footerMetrics(contextUsage, state.generation, width);
+  const contextGap = ctxChip || rateLabel ? 3 : 0;
   const idleHints = idleHintIds(density, hasDraft);
 
   if (busy) {
@@ -498,6 +494,14 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             ) : null}
           </box>
         </box>
+        {rateLabel ? (
+          <text
+            id="status-generation-rate"
+            selectable={false}
+            content={ctxChip ? `${rateLabel} · ` : rateLabel}
+            style={{ fg: theme.muted, flexShrink: 0 }}
+          />
+        ) : null}
         {ctxChip ? (
           <ContextLimitChip
             chip={ctxChip}
@@ -545,20 +549,6 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
               theme={theme}
               accent
               onClick={onRequestCancel}
-            />
-          </>
-        ) : null}
-
-        {}
-        {density !== "xs" ? (
-          <>
-            {sep(theme)}
-            <ClickableHint
-              short="⇧⇥"
-              expand="cycle mode"
-              active={false}
-              theme={theme}
-              onClick={onCycleMode}
             />
           </>
         ) : null}
@@ -681,6 +671,14 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           ) : null}
         </box>
       </box>
+      {rateLabel ? (
+        <text
+          id="status-generation-rate"
+          selectable={false}
+          content={ctxChip ? `${rateLabel} · ` : rateLabel}
+          style={{ fg: theme.muted, flexShrink: 0 }}
+        />
+      ) : null}
       {ctxChip ? (
         <ContextLimitChip
           chip={ctxChip}

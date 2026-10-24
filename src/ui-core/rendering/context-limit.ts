@@ -27,8 +27,8 @@ export function contextChipForDensity(
   const approx = !usage.exact && usage.contextTokens > 0 ? "~" : "";
   const used = `${approx}${formatContextK(usage.contextTokens)}`;
   return usage.contextLimit > 0
-    ? `ctx ${used}/${formatContextK(usage.contextLimit)}`
-    : `ctx ${used}`;
+    ? `${used}/${formatContextK(usage.contextLimit)}`
+    : used;
 }
 
 export function parseContextLimitInput(value: string): number | undefined | null {

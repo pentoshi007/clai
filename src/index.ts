@@ -180,7 +180,7 @@ async function oneShot(
   }
 
   const { resolveTurnInput } = await import("./attachments/service.js");
-  const resolved = resolveTurnInput({
+  const resolved = await resolveTurnInput({
     prompt,
     mode,
     provider: activeProvider,

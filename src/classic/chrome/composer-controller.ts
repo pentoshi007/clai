@@ -1,13 +1,6 @@
 import type { CommandRegistry } from "../../app/commands/registry.js";
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
-import {
-  captureClipboardImage as captureSystemClipboardImage,
-  type ClipboardImageCapture,
-} from "../../attachments/clipboard-image.js";
-import {
-  formatAttachmentReference,
-  stabilizeDroppedFilesInText,
-} from "../../ui/mentions.js";
+import type { ClipboardImageCapture } from "../../attachments/clipboard-image.js";
 import type { ActionId } from "../../ui-core/actions/action-id.js";
 import {
   ARROW_BURST_WINDOW_MS,
@@ -24,7 +17,6 @@ import { cutDraft, cutDraftMessage } from "../../ui-core/composer/draft-actions.
 import { tokenInsertion } from "../../ui-core/composer/insert-token.js";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import {
-  isLargePaste,
   PasteRegistry,
   type PastePlaceholderEntry,
 } from "../../ui-core/composer/paste-placeholder.js";
@@ -36,6 +28,7 @@ import {
 import { completionItemValues } from "../panels/completion-rows.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
 import { composerMentionSpans } from "./composer-mentions.js";
+import { ComposerPaste } from "./composer-paste.js";
 import { editorEditFor } from "./composer-keys.js";
 import type { EditorSpan } from "./editor-view.js";
 import { EMPTY_EDITOR, boundaries, caretPosition, insert, logicalLines, type EditorState } from "./editor-model.js";
@@ -66,7 +59,7 @@ export interface ComposerControllerDeps {
   readonly onToast: (text: string) => void;
   readonly onScrollChat: (delta: number) => void;
   readonly onJumpTop: () => void;
-  readonly captureClipboardImage?: (() => ClipboardImageCapture) | undefined;
+  readonly captureClipboardImage?: (() => ClipboardImageCapture | Promise<ClipboardImageCapture>) | undefined;
   readonly now?: (() => number) | undefined;
   readonly promptHistory?: PromptHistory | undefined;
 }
@@ -86,9 +79,11 @@ export class ComposerController {
   private readonly pastes = new PasteRegistry();
   private arrowBurst = { count: 0, lastAt: 0 };
   private textWidth = 80;
+  private readonly pasteInput: ComposerPaste;
 
   constructor(private readonly deps: ComposerControllerDeps) {
     this.history = deps.promptHistory ?? new PromptHistory();
+    this.pasteInput = new ComposerPaste(deps, this.pastes, () => this.snapshot.state, (text) => this.insertText(text));
   }
 
   getSnapshot = (): ComposerSnapshot => this.snapshot;
@@ -140,61 +135,18 @@ export class ComposerController {
   }
 
   paste(text: string): void {
-    if (text.length === 0) {
-      this.pasteClipboardImage();
-      return;
-    }
-    const normalized = text.replace(/\r\n?/g, "\n");
-    const dropped = stabilizeDroppedFilesInText(
-      normalized,
-      this.deps.baseDir ?? process.cwd(),
-    );
-    const value = dropped.files.length > 0 ? dropped.text : normalized;
-    if (dropped.files.length > 0) {
-      this.insertAttachmentText(value);
-      this.deps.onToast(
-        dropped.files.length === 1
-          ? dropped.images.length === 1
-            ? "Image attached"
-            : "File attached"
-          : `${dropped.files.length} files attached`,
-      );
-      return;
-    }
-    if (!isLargePaste(value)) {
-      this.insertText(value);
-      return;
-    }
-    const entry = this.pastes.register(value);
-    this.commit(insert(this.snapshot.state, entry.token), { resetHistory: true });
-  }
-
-  private insertAttachmentText(text: string): void {
-    const before = this.snapshot.state.text[this.snapshot.state.cursor - 1] ?? "";
-    const leadingSpace = before && !/\s/.test(before) ? " " : "";
-    this.insertText(`${leadingSpace}${text.trim()} `);
-  }
-
-  private pasteClipboardImage(): void {
-    const capture = this.deps.captureClipboardImage ?? captureSystemClipboardImage;
-    setImmediate(() => {
-      const result = capture();
-      if (!result.ok) {
-        this.deps.onToast(result.reason);
-        return;
-      }
-      this.insertAttachmentText(
-        formatAttachmentReference(result.path, this.deps.baseDir ?? process.cwd()),
-      );
-      this.deps.onToast("Image attached from clipboard");
-    });
+    this.pasteInput.paste(text);
   }
 
   setText(text: string): void {
-    this.commit({ text, cursor: text.length }, { resetHistory: true });
+    this.pasteInput.invalidate();
+    const compact = this.pastes.compactAttachments(text);
+    this.commit({ text: compact, cursor: compact.length }, { resetHistory: true });
   }
 
   clear(): void {
+    this.pasteInput.invalidate();
+    this.pastes.clear();
     this.history.reset();
     this.arrowBurst = { count: 0, lastAt: 0 };
     this.commit(EMPTY_EDITOR, { menu: NO_MENU, acceptedSlash: undefined });
@@ -256,14 +208,7 @@ export class ComposerController {
   handleChord(chord: string): boolean {
     if (this.menuOpen() && this.handleMenuChord(chord)) return true;
     if (chord === "ctrl+v") {
-      const readText = this.deps.clipboard.readText;
-      if (!readText) {
-        this.paste("");
-        return true;
-      }
-      void readText.call(this.deps.clipboard)
-        .then((text) => this.paste(text ?? ""))
-        .catch(() => this.paste(""));
+      this.pasteInput.pasteClipboard();
       return true;
     }
     if (
@@ -414,6 +359,7 @@ export class ComposerController {
       return;
     }
     const prompt = this.pastes.expand(this.snapshot.state.text).trim();
+    this.pasteInput.invalidate();
     this.pastes.clear();
     this.history.reset();
     this.arrowBurst = { count: 0, lastAt: 0 };

@@ -92,7 +92,7 @@ export function ContextLimitChip(props: {
   if (editing) {
     return (
       <box style={{ flexDirection: "row", alignItems: "center", flexShrink: 0 }}>
-        <text content="ctx limit " style={{ fg: theme.muted }} />
+        <text content="limit " style={{ fg: theme.muted }} />
         <input
           ref={(input: InputRenderable | null) => {
             inputRef.current = input;
@@ -128,7 +128,7 @@ export function ContextLimitChip(props: {
   }
 
   const shown = hovered || clickExpanded;
-  const label = shown ? "edit ctx limit" : chip;
+  const label = shown ? "edit limit" : chip;
   return (
     <box
       onMouseDown={(event) => {

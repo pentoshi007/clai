@@ -2,11 +2,9 @@ import { imageBudgetFor } from "../../attachments/image-content.js";
 import type { ImageBudget } from "../../attachments/image-content.js";
 import { prepareImageForModel } from "../../attachments/image-prepare.js";
 import { safeCwd } from "../../os/cwd.js";
-import { scratchDirFor } from "../../prompts/index.js";
 import { expandHome } from "./file-suggestions.js";
-import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { extname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findReaMentions } from "../../rea/workflow.js";
 
@@ -137,6 +135,7 @@ export interface MentionExpansion {
 export interface ExpandMentionsOptions {
   visionCapable?: boolean | undefined;
   budget?: ImageBudget | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export function normalizeDroppedPath(token: string): string {
@@ -213,11 +212,11 @@ export function tokenToPath(token: string, baseDir: string): string {
   return isAbsolute(path) ? path : resolve(baseDir, path);
 }
 
-export function expandMentions(
+export async function expandMentions(
   line: string,
   baseDir: string = safeCwd(),
   vision: boolean | ExpandMentionsOptions = false,
-): MentionExpansion {
+): Promise<MentionExpansion> {
   const options: ExpandMentionsOptions =
     typeof vision === "boolean" ? { visionCapable: vision } : vision;
   const visionCapable = options.visionCapable === true;
@@ -234,15 +233,10 @@ export function expandMentions(
     if (kind === "text") {
       attachments.push({ raw: token, path: absPath, kind: "text" });
     } else if (kind === "image") {
-      const stablePath = stabilizeImagePaths([absPath], baseDir)[0] ?? absPath;
-      let prepared = prepareImageForModel(stablePath, budget, baseDir);
-      if (!prepared.ok && stablePath !== absPath) {
-        const original = prepareImageForModel(absPath, budget, baseDir);
-        if (original.ok) prepared = original;
-      }
+      const prepared = await prepareImageForModel(absPath, budget, baseDir, options.signal);
       attachments.push({
         raw: token,
-        path: prepared.ok ? prepared.path : stablePath,
+        path: absPath,
         kind: "image",
         sendable: prepared.ok,
         note: !prepared.ok
@@ -293,56 +287,4 @@ export function expandMentions(
     attachments,
     contextBlock: "",
   };
-}
-
-export function stabilizeImagePaths(
-  paths: string[],
-  baseDir: string = safeCwd(),
-): string[] {
-  const output: string[] = [];
-  const attachmentDir = join(scratchDirFor(baseDir), "attachments");
-  for (const source of paths) {
-    let info;
-    try {
-      info = statSync(source);
-    } catch {
-      output.push(source);
-      continue;
-    }
-    if (!info.isFile()) {
-      output.push(source);
-      continue;
-    }
-    if (resolve(dirname(source)) === resolve(attachmentDir)) {
-      output.push(source);
-      continue;
-    }
-    try {
-      mkdirSync(attachmentDir, { recursive: true });
-      const extension = extname(source).toLowerCase();
-      const stem =
-        basename(source, extension)
-          .replace(/[^\w.-]+/g, "_")
-          .replace(/_+/g, "_")
-          .slice(0, 100) || "image";
-      const id = createHash("sha1")
-        .update(`${resolve(source)}|${Math.round(info.mtimeMs)}|${info.size}`)
-        .digest("hex")
-        .slice(0, 12);
-      const destination = join(
-        attachmentDir,
-        `${id}-${stem}${extension || ".img"}`,
-      );
-      if (
-        !existsSync(destination) ||
-        statSync(destination).size !== info.size
-      ) {
-        copyFileSync(source, destination);
-      }
-      output.push(destination);
-    } catch {
-      output.push(source);
-    }
-  }
-  return output;
 }

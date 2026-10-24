@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
 import { memo } from "react";
+import { attachmentDisplayText } from "../../../attachments/labels.js";
 import type { ReactNode } from "react";
 import { countRender } from "../../perf/render-counters.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
@@ -88,7 +89,7 @@ function QueueRow(props: {
   const prefix = ` ${index + 1}. `;
   const actions = "  [Send now] [Edit] [×]";
   const previewBudget = Math.max(8, width - prefix.length - actions.length);
-  const preview = clip(text, previewBudget);
+  const preview = clip(attachmentDisplayText(text), previewBudget);
   const bg = index % 2 === 0 ? theme.rowA : theme.rowB;
 
   return (

@@ -65,42 +65,41 @@ async function changeLimit(value: string): Promise<void> {
 try {
   await settle();
   await settle(() => setup.mockInput.typeText("keep this prompt"));
-  assert.match(await clickLabel("ctx 0/200k"), /ctx limit/);
+  assert.match(await clickLabel("0/200k"), /limit/);
   await changeLimit("500k");
   const saved = await settle(() => setup.mockInput.pressEnter());
   assert.equal(services.session.getState().contextUsage?.contextLimit, 500_000);
-  assert.match(saved, /ctx 0\/500k/);
+  assert.match(saved, /0\/500k/);
   assert.match(saved, /keep this prompt/);
 
-  await clickLabel("ctx 0/500k");
+  await clickLabel("0/500k");
   await changeLimit("100k");
   await settle(() => setup.mockInput.pressEnter());
   assert.equal(services.session.getState().contextUsage?.contextLimit, 100_000);
 
-  await clickLabel("ctx 0/100k");
+  await clickLabel("0/100k");
   await changeLimit("1m");
   await settle(() => setup.mockInput.pressEscape());
   assert.equal(services.session.getState().contextUsage?.contextLimit, 100_000);
 
-  await clickLabel("ctx 0/100k");
+  await clickLabel("0/100k");
   await changeLimit("10k");
-  assert.match(await settle(() => setup.mockInput.pressEnter()), /ctx limit/);
+  assert.match(await settle(() => setup.mockInput.pressEnter()), /limit/);
   assert.equal(services.session.getState().contextUsage?.contextLimit, 100_000);
-  assert.match(await clickLabel("reset"), /ctx 0\/200k/);
+  assert.match(await clickLabel("reset"), /0\/200k/);
   assert.equal(services.session.getState().contextUsage?.contextLimit, 200_000);
 
   clearModelCatalogFacts();
   await settle(() => services.session.setContextLimitTokens(undefined));
   assert.equal(services.session.getState().contextLimit?.source, "model-table");
-  await clickLabel("ctx 0/200k");
+  await clickLabel("0/200k");
   await changeLimit("1m");
-  assert.match(await settle(() => setup.mockInput.pressEnter()), /ctx 0\/1M/);
+  assert.match(await settle(() => setup.mockInput.pressEnter()), /0\/1M/);
   assert.equal(services.session.getState().contextUsage?.contextLimit, 1_000_000);
-  await clickLabel("ctx 0/1M");
+  await clickLabel("0/1M");
   await changeLimit("");
-  assert.match(await settle(() => setup.mockInput.pressEnter()), /ctx 0\/200k/);
+  assert.match(await settle(() => setup.mockInput.pressEnter()), /0\/200k/);
   assert.equal(services.session.getState().contextUsage?.contextLimit, 200_000);
-
   assert.match(await settle(() => setup.mockInput.typeText("!")), /keep this prompt!/);
   assert.equal(submitted, 0);
   console.log("Native context chip passed: provider/model overrides, save, cancel, reset, validation, and composer focus/draft preservation");

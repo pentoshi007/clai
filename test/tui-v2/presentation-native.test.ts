@@ -8,6 +8,7 @@ import { findBunExecutable } from "../../src/os/bun-runtime.js";
 
 const bun = findBunExecutable();
 const cases = [
+  ["attachment-flow", "Native attachment flow passed"],
   ["jump-to-latest", "Native jump-to-latest passed"],
   ["status-navigation", "Native status navigation passed"],
   ["queue-panel", "Native queue panel passed"],

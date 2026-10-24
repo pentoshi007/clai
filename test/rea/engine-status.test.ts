@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectEngineReport, discoverGhidra, ghidraSearchPatterns } from "../../src/rea/engine-status.js";
 import { updateEngineSettings } from "../../src/rea/engines.js";
 import type { EngineHost } from "../../src/rea/ghidra.js";
@@ -9,6 +9,7 @@ import type { EngineHost } from "../../src/rea/ghidra.js";
 const directories: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 
@@ -98,6 +99,7 @@ describe("engine report", () => {
   });
 
   it("asks the installed REA which engines are ready, passing the engines clai manages", async () => {
+    vi.stubEnv("GHIDRA_INSTALL_DIR", undefined);
     const root = await fakeRea(PROVIDERS_SCRIPT);
     const before = await collectEngineReport({ root, host: HOST, patterns: [] });
     expect(before.availability?.engines.map((engine) => [engine.id, engine.ready])).toEqual([["ghidra", false], ["hopper", false]]);
@@ -106,6 +108,13 @@ describe("engine report", () => {
     const after = await collectEngineReport({ root, host: HOST, patterns: [] });
     expect(after.availability?.engines.map((engine) => [engine.id, engine.ready])).toEqual([["ghidra", true], ["hopper", false]]);
     expect(after.settings.ghidra?.managed).toBe(true);
+  });
+
+  it("preserves an inherited Ghidra installation without recording it as managed", async () => {
+    vi.stubEnv("GHIDRA_INSTALL_DIR", join(await workspace(), "external-ghidra"));
+    const report = await collectEngineReport({ root: await fakeRea(PROVIDERS_SCRIPT), host: HOST, patterns: [] });
+    expect(report.availability?.engines.find((engine) => engine.id === "ghidra")?.ready).toBe(true);
+    expect(report.settings.ghidra).toBeUndefined();
   });
 
   it("includes installations found on disk", async () => {

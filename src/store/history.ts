@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { isInternalChatMessage, type ChatImage, type ChatMessage, type ToolCall, type ToolResult } from "../types.js";
 import {
   imageBudgetFor,
   type ImageBudget,
 } from "../attachments/image-content.js";
-import { prepareImageForModel } from "../attachments/image-prepare.js";
+import { loadImagePaths } from "../ui/mentions.js";
 import type { TranscriptItem } from "../app/ports/transcript-item.js";
 import { flattenTranscriptHistory } from "../ui-core/state/transcript-history.js";
 import type { PreviousTurnSignal } from "../agent/continue-orient.js";
@@ -168,40 +167,39 @@ function scrubMessage(source: ChatMessage): ChatMessage {
 
 const MAX_RESTORED_IMAGE_COUNT = 6;
 
-export function materializeHistoryImages(
+export async function materializeHistoryImages(
   messages: readonly ChatMessage[],
   budget: ImageBudget = imageBudgetFor(""),
-): ChatMessage[] {
+  signal?: AbortSignal,
+): Promise<ChatMessage[]> {
   let imageCount = 0;
   let totalBytes = 0;
   const maxCount = Math.min(MAX_RESTORED_IMAGE_COUNT, budget.maxCount);
-  const maxTotalBytes = budget.maxTotalBytes;
-  return messages.map((message) => {
-    if (!message.images?.length) return { ...message };
-    const images = message.images.flatMap((image): ChatImage[] => {
-      if (image.dataBase64) return [image];
-      if (!image.path || imageCount >= maxCount) return [];
-      const prepared = prepareImageForModel(image.path, budget);
-      if (!prepared.ok) return [];
-      if (totalBytes + prepared.byteLength > maxTotalBytes) return [];
-      try {
-        const bytes = readFileSync(prepared.path);
-        imageCount += 1;
-        totalBytes += bytes.length;
-        return [
-          {
-            mediaType: prepared.mediaType,
-            dataBase64: bytes.toString("base64"),
-            path: prepared.path,
-          },
-        ];
-      } catch {
-        return [];
-      }
-    });
+  const output: ChatMessage[] = [];
+  for (const message of messages) {
+    signal?.throwIfAborted();
+    if (!message.images?.length) {
+      output.push({ ...message });
+      continue;
+    }
+    const images: ChatImage[] = [];
+    for (const image of message.images) {
+      if (imageCount >= maxCount || totalBytes >= budget.maxTotalBytes) break;
+      const remaining = { ...budget, maxCount: 1, maxTotalBytes: budget.maxTotalBytes - totalBytes };
+      const loaded = image.dataBase64 ? [image]
+        : image.path ? await loadImagePaths([image.path], remaining, undefined, signal) : [];
+      const candidate = loaded[0];
+      if (!candidate) continue;
+      const bytes = Buffer.byteLength(candidate.dataBase64, "base64");
+      if (bytes > budget.hardMaxBytes || totalBytes + bytes > budget.maxTotalBytes) continue;
+      imageCount += 1;
+      totalBytes += bytes;
+      images.push(candidate);
+    }
     const { images: _images, ...rest } = message;
-    return images.length > 0 ? { ...rest, images } : rest;
-  });
+    output.push(images.length > 0 ? { ...rest, images } : rest);
+  }
+  return output;
 }
 
 let scrubbedItems = new WeakMap<TranscriptItem, TranscriptItem>();

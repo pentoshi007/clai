@@ -50,7 +50,8 @@ import { createSubagentStore } from "../../store/subagents.js";
 import { SessionSubagents } from "./session-subagents.js";
 import { previousTurnSignal } from "./turn-continuation.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
-import { buildTurnRequest } from "./session-turn-request.js";
+import { buildTurnRequest, type TurnRequestInput } from "./session-turn-request.js";
+import { attachmentDisplayText } from "../../attachments/labels.js";
 import { resolveTurnInput } from "../../attachments/service.js";
 import { clearTextOnlyModels } from "../../llm/tool-protocol.js";
 import { prefetchProviderCatalog } from "../../llm/catalog-prefetch.js";
@@ -105,6 +106,7 @@ import { legacySessionPrompts } from "./session-prompt-history.js";
 import { SessionChanges, type FileLineChanges, type SessionChangesReport } from "./session-changes.js";
 import { SessionLateWork } from "./session-late-work.js";
 import { isInternalChatMessage } from "../../types.js";
+import { validGenerationMetrics, type GenerationMetrics } from "../../llm/generation-metrics.js";
 
 export interface SubagentsRuntimeState {
   readonly enabled: boolean;
@@ -130,6 +132,7 @@ export interface SessionState {
   readonly contextUsage: ContextUsageSnapshot | undefined;
   readonly contextChip: string | undefined;
   readonly contextLimit?: ContextSnapshotLimit | undefined;
+  readonly generation?: GenerationMetrics | undefined;
 }
 
 export type NoticeLevel = "info" | "warn";
@@ -192,6 +195,7 @@ export class SessionController implements Disposable {
   private pendingPromptWrites = new Map<SessionPromptInput, Promise<void> | undefined>();
   private legacyPromptSource: (() => Iterable<SessionPromptInput>) | undefined;
   private lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
+  private generation: GenerationMetrics | undefined;
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
   private readonly persistence: SessionPersistenceQueue;
@@ -405,6 +409,7 @@ export class SessionController implements Disposable {
       contextUsage,
       contextChip,
       contextLimit,
+      generation: this.generation,
     };
   }
 
@@ -547,6 +552,7 @@ export class SessionController implements Disposable {
 
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
+    this.generation = undefined;
     this.lastMainRequestSnapshot = undefined;
     this.setContextSnapshot(contextSnapshotForRoute(this.usageTarget, this.contextSnapshot));
     clearTextOnlyModels();
@@ -563,6 +569,7 @@ export class SessionController implements Disposable {
 
   setModel(model: string | undefined): void {
     this.model = model;
+    this.generation = undefined;
     this.lastMainRequestSnapshot = undefined;
     this.setContextSnapshot(contextSnapshotForRoute(this.usageTarget, this.contextSnapshot));
     clearTextOnlyModels();
@@ -663,6 +670,7 @@ export class SessionController implements Disposable {
   ): void {
     this.provider = provider;
     this.model = model;
+    this.generation = undefined;
     this.lastMainRequestSnapshot = undefined;
     clearTextOnlyModels();
     this.refreshProviderCatalog();
@@ -1095,16 +1103,14 @@ export class SessionController implements Disposable {
     this.setContextSnapshot(this.resolveContextSnapshot());
     const providerReportedContextTokens = this.providerReportedContextTokens();
     const checkpoint = this.continuationCheckpoint();
-    const built = buildTurnRequest({
+    const input: TurnRequestInput = {
       prompt,
       mode: this.mode,
       provider,
       model,
       history: this.history,
       materializeImages: opts?.materializeHistoryImages !== false,
-      ...(opts?.displayPrompt !== undefined
-        ? { displayPrompt: opts.displayPrompt }
-        : {}),
+      displayPrompt: opts?.displayPrompt === null ? null : attachmentDisplayText(opts?.displayPrompt ?? prompt),
       ...(checkpoint ? { previousTurn: checkpoint } : {}),
       ...(this.lastMainRequestSnapshot
         ? { previousSuccessfulRequest: this.lastMainRequestSnapshot }
@@ -1117,17 +1123,7 @@ export class SessionController implements Disposable {
         : {}),
       getContextLimitTokens: (routeProvider, routeModel) =>
         customContextLimit(routeProvider, routeModel),
-    });
-    if (built.fallbackReason) this.notice("info", built.fallbackReason);
-    for (const issue of built.imageIssues) this.notice("warn", issue);
-    const lateWorkNote = this.lateWork.takeNote();
-    const request = lateWorkNote
-      ? {
-          ...built.request,
-          prompt: `${lateWorkNote}\n\n${built.request.prompt}`,
-          displayPrompt: built.request.displayPrompt !== undefined ? built.request.displayPrompt : built.request.prompt,
-        }
-      : built.request;
+    };
     const turnGeneration = this.lifecycleGeneration;
     const userPrompt = opts?.displayPrompt ?? prompt;
     if (this.isPromptHistoryEnabled() && opts?.displayPrompt !== null && !opts?.internal &&
@@ -1135,15 +1131,24 @@ export class SessionController implements Disposable {
       void this.appendCapturedPrompt({
         content: userPrompt,
         timestamp: this.contextTimestamp(),
-        provider: request.provider ?? provider,
-        model: request.model ?? model,
+        provider,
+        model,
         effort: config.thinking.enabled ? config.thinking.effort : "off",
       }).catch(() => undefined);
     }
     this.activeTurnGeneration = turnGeneration;
+    this.generation = undefined;
     this.unsettledTurns += 1;
     try {
-      const pending = this.turn.run(request, {
+      const pending = this.turn.run(input, {
+        prepareRequest: async (signal) => {
+          const built = await buildTurnRequest({ ...input, signal });
+          signal.throwIfAborted();
+          if (built.fallbackReason) this.notice("info", built.fallbackReason);
+          for (const issue of built.imageIssues) this.notice("warn", issue);
+          const lateWorkNote = this.lateWork.takeNote();
+          return lateWorkNote ? { ...built.request, prompt: `${lateWorkNote}\n\n${built.request.prompt}` } : built.request;
+        },
         confirm: this.deps.confirm,
         requestSecret: this.deps.requestSecret,
         session: this.policy,
@@ -1156,6 +1161,13 @@ export class SessionController implements Disposable {
         onSuccessfulRequest: (snapshot) => {
           if (turnGeneration !== this.lifecycleGeneration) return;
           this.lastMainRequestSnapshot = snapshot;
+        },
+        onGeneration: (metrics) => {
+          if (turnGeneration !== this.lifecycleGeneration ||
+              (this.provider ?? getConfig().defaultProvider) !== provider ||
+              (this.model ?? getProviderModel(provider)) !== model) return;
+          this.generation = validGenerationMetrics(metrics) ? { ...metrics } : undefined;
+          this.notifyState();
         },
         onStarted: opts?.onStarted,
         onSubmitted: () => {
@@ -1250,6 +1262,7 @@ export class SessionController implements Disposable {
 
   private beginLifecycleGeneration(): void {
     this.lifecycleGeneration += 1;
+    this.generation = undefined;
     this.lastTurnResult = undefined;
     this.restoredPreviousTurn = undefined;
     this.lastMainRequestSnapshot = undefined;

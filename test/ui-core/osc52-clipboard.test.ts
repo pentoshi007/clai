@@ -94,3 +94,16 @@ describe("OSC 52 clipboard adapter (V2-064)", () => {
     expect(clipboard.lastWrite).toEqual({ method: "fallback", reason: "too-large" });
   });
 });
+
+it.each([true, false])("preserves system clipboard reads with OSC 52 enabled=%s", async (enabled) => {
+  const system = { ...fallback(), text: "file:///tmp/original.png", async readText() { return this.text; } };
+  const clipboard = createOsc52ClipboardPort({ renderer: renderer(), fallback: system, enabled });
+  expect(await clipboard.readText?.()).toBe(system.text);
+  expect(system.writes).toEqual([]);
+  expect(clipboard.lastWrite).toBeUndefined();
+});
+
+it("returns no text when the fallback cannot read the clipboard", async () => {
+  const clipboard = createOsc52ClipboardPort({ renderer: renderer(), fallback: fallback(), enabled: true });
+  expect(await clipboard.readText?.()).toBeUndefined();
+});

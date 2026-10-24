@@ -44,7 +44,7 @@ exports[`status rows > width=48 · compacting fits and matches its golden 1`] = 
 
 exports[`status rows > width=48 · idle fits and matches its golden 1`] = `
 [
-  " AGENT  · ^N newline · ⇧⇥ mode            24.1k",
+  " AGENT  · ^N newline                      24.1k",
 ]
 `;
 
@@ -62,90 +62,90 @@ exports[`status rows > width=48 · running fits and matches its golden 1`] = `
 
 exports[`status rows > width=68 · armed-cancel fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ responding · esc again to cancel         ctx 24.1k/128k",
+  " AGENT  · ⠋ responding · esc again to cancel             24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=68 · compacting fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ compacting · esc: cancel                 ctx 24.1k/128k",
+  " AGENT  · ⠋ compacting · esc: cancel                     24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=68 · idle fits and matches its golden 1`] = `
 [
-  " AGENT  · ^N newline · ⇧⇥ mode · ^L ctx              ctx 24.1k/128k",
+  " AGENT  · ^N newline · ^L limit                          24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=68 · queued fits and matches its golden 1`] = `
 [
-  " AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued  ctx 24.1k/128k",
+  " AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued      24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=68 · running fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ shell.exec · esc: cancel                 ctx 24.1k/128k",
+  " AGENT  · ⠋ shell.exec · esc: cancel                     24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=96 · armed-cancel fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ responding · esc again to cancel                                     ctx 24.1k/128k",
+  " AGENT  · ⠋ responding · esc again to cancel                                         24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=96 · compacting fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ compacting · esc: cancel                                             ctx 24.1k/128k",
+  " AGENT  · ⠋ compacting · esc: cancel                                                 24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=96 · idle fits and matches its golden 1`] = `
 [
-  " AGENT  · ^N newline · ⇧⇥ mode · ^L ctx                                          ctx 24.1k/128k",
+  " AGENT  · ^N newline · ^L limit                                                      24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=96 · queued fits and matches its golden 1`] = `
 [
-  " AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued · ⇧⇥ mode · ^L ctx           ctx 24.1k/128k",
+  " AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued · ^L limit                       24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=96 · running fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ shell.exec npm test · esc: cancel                                    ctx 24.1k/128k",
+  " AGENT  · ⠋ shell.exec npm test · esc: cancel                                        24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=120 · armed-cancel fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ responding · esc again to cancel                                                             ctx 24.1k/128k",
+  " AGENT  · ⠋ responding · esc again to cancel                                                                 24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=120 · compacting fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ compacting · esc: cancel                                                                     ctx 24.1k/128k",
+  " AGENT  · ⠋ compacting · esc: cancel                                                                         24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=120 · idle fits and matches its golden 1`] = `
 [
-  " AGENT  · ^N newline · ⇧⇥ mode · ^L ctx                                                                  ctx 24.1k/128k",
+  " AGENT  · ^N newline · ^L limit                                                                              24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=120 · queued fits and matches its golden 1`] = `
 [
-  " AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued · ⇧⇥ mode · ^L ctx                                   ctx 24.1k/128k",
+  " AGENT  · ^X cut · ^Q clear · ^N newline · 2 queued · ^L limit                                               24.1k/128k",
 ]
 `;
 
 exports[`status rows > width=120 · running fits and matches its golden 1`] = `
 [
-  " AGENT  · ⠋ shell.exec npm test · esc: cancel                                                            ctx 24.1k/128k",
+  " AGENT  · ⠋ shell.exec npm test · esc: cancel                                                                24.1k/128k",
 ]
 `;

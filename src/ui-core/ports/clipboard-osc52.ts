@@ -42,6 +42,9 @@ export function createOsc52ClipboardPort(options: Osc52ClipboardOptions): Osc52C
     get lastWrite() {
       return lastWrite;
     },
+    async readText(): Promise<string | undefined> {
+      return options.fallback.readText?.();
+    },
     async writeText(text: string): Promise<void> {
       const fallbackReason = copyWithOsc52(options, text, maxBytes);
       if (!fallbackReason) {

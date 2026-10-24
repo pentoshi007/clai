@@ -48,7 +48,7 @@ describe("Classic context chip", () => {
     const composerRight = frame.findLast((line) => line.includes("╮"))!.lastIndexOf("╮");
     expect(region.left + region.width).toBe(composerRight);
     expect(frame[region.top]?.trimEnd().length).toBe(composerRight);
-    expect(frame[region.top]?.slice(region.left, region.left + region.width)).toMatch(/(?:ctx )?0(?:\/200k)?/);
+    expect(frame[region.top]?.slice(region.left, region.left + region.width)).toMatch(/^0(?:\/200k)?$/);
     h.wiring.handleMouse(mouse(region.left, region.top));
     expect(h.wiring.contextLimitEditingValue).toBe(true);
     expect(h.wiring.contextLimitDraftValue).toBe("200000");
@@ -65,7 +65,7 @@ describe("Classic context chip", () => {
     h.wiring.handleData("\r");
     expect(h.services.session.getState().contextUsage?.contextLimit).toBe(500_000);
     expect(h.wiring.contextLimitEditingValue).toBe(false);
-    await expect.poll(() => view?.lastFrame()).toContain("ctx 0/500k");
+    await expect.poll(() => view?.lastFrame()).toContain("0/500k");
 
     h.wiring.handleData("\x0c");
     h.wiring.handleData("\x15");

@@ -13,6 +13,7 @@ import {
   prepareImageForModel,
 } from "../attachments/image-prepare.js";
 import { modelSupportsVision } from "../llm/capabilities.js";
+import { readImageBytes } from "../attachments/read-image.js";
 import {
   LANG_PATTERN,
   MIN_RELIABLE_CONFIDENCE,
@@ -233,7 +234,7 @@ export async function imageView(
 
   for (const path of paths) {
     options.signal?.throwIfAborted();
-    const prepared = prepareImageForModel(path, budget);
+    const prepared = await prepareImageForModel(path, budget, undefined, options.signal);
     if (!prepared.ok) {
       failures.push(`${path} — ${prepared.reason}`);
       continue;
@@ -247,25 +248,9 @@ export async function imageView(
     }
     let bytes: Buffer;
     try {
-      const handle = await open(prepared.path, "r");
-      try {
-        const current = await handle.stat();
-        if (!current.isFile()) {
-          failures.push(`${path} — prepared path is no longer a regular file`);
-          continue;
-        }
-        if (current.size > budget.hardMaxBytes) {
-          failures.push(
-            `${path} — changed to ${formatByteSize(current.size)}, above the ` +
-              `${formatByteSize(budget.hardMaxBytes)} per-image limit for ${budget.label} models`,
-          );
-          continue;
-        }
-        bytes = await handle.readFile();
-      } finally {
-        await handle.close();
-      }
+      bytes = await readImageBytes(prepared.path, Math.min(budget.hardMaxBytes, budget.maxTotalBytes - totalBytes), options.signal);
     } catch (error) {
+      options.signal?.throwIfAborted();
       failures.push(
         `${path} — could not be read (${error instanceof Error ? error.message : String(error)})`,
       );

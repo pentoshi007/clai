@@ -97,7 +97,7 @@ describe("status line hints and Esc semantics", () => {
         },
         "lg",
       ),
-    ).toBe("ctx 0");
+    ).toBe("0");
   });
 
   it("shows only the raw count without an override and the explicit window when set", () => {
@@ -110,10 +110,10 @@ describe("status line hints and Esc semantics", () => {
       exact: true,
     };
     for (const density of DENSITIES) {
-      expect(contextChipForDensity(usage, density)).toBe("ctx 54k");
+      expect(contextChipForDensity(usage, density)).toBe("54k");
       expect(
         contextChipForDensity({ ...usage, contextLimit: 1_000_000 }, density),
-      ).toBe("ctx 54k/1M");
+      ).toBe("54k/1M");
     }
   });
 

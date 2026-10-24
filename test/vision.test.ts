@@ -185,34 +185,34 @@ describe("loadImageAttachments", () => {
     dirs.length = 0;
   });
 
-  it("reads an image file into a base64 ChatImage", () => {
+  it("reads an image file into a base64 ChatImage", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clai-vis-"));
     dirs.push(dir);
     const png = join(dir, "shot.png");
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
 
-    const imgs = loadImageAttachments(`${formatAttachmentReference(png, dir)} what is this`, dir);
+    const imgs = (await loadImageAttachments(`${formatAttachmentReference(png, dir)} what is this`, dir));
     expect(imgs).toHaveLength(1);
     expect(imgs[0]!.mediaType).toBe("image/png");
     expect(imgs[0]!.dataBase64.length).toBeGreaterThan(0);
   });
 
-  it("notes images as viewable when vision is enabled", () => {
+  it("notes images as viewable when vision is enabled", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clai-vis-"));
     dirs.push(dir);
     const png = join(dir, "shot.png");
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
-    const exp = expandMentions(`${formatAttachmentReference(png, dir)} hi`, dir, true);
+    const exp = (await expandMentions(`${formatAttachmentReference(png, dir)} hi`, dir, true));
     expect(exp.attachments[0]!.note).toMatch(/attached as multimodal input/i);
     expect(exp.attachments[0]!.note).toMatch(/inspect it directly/i);
   });
 
-  it("notes OCR fallback when vision is disabled", () => {
+  it("notes OCR fallback when vision is disabled", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clai-vis-"));
     dirs.push(dir);
     const png = join(dir, "shot.png");
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
-    const exp = expandMentions(`${formatAttachmentReference(png, dir)} hi`, dir, false);
+    const exp = (await expandMentions(`${formatAttachmentReference(png, dir)} hi`, dir, false));
     expect(exp.attachments[0]!.note).toMatch(/not viewable/i);
   });
 
@@ -224,10 +224,7 @@ describe("loadImageAttachments", () => {
     const txt = join(dir, "notes.txt");
     writeFileSync(txt, "hello");
     const paths = imageAttachmentPaths(`${formatAttachmentReference(png, dir)} and ${txt} what is this`, dir);
-    // Paths are stabilized into scratch/attachments for vision reliability.
-    expect(paths).toHaveLength(1);
-    expect(paths[0]).toMatch(/shot\.png$/);
-    expect(paths[0]).toContain("attachments");
+    expect(paths).toEqual([png]);
   });
 
   it("imageAttachmentPaths returns empty when no images are referenced", () => {
