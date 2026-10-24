@@ -94,7 +94,9 @@ for (const width of [120, 80]) {
   async function waitFor(text: string): Promise<string> {
     for (let attempt = 0; attempt < 60; attempt++) {
       const frame = await settle();
-      if (services.overlay.getState().kind === "pager" && frame.includes("Session prompts") && frame.includes(text)) return frame;
+      const pagerReady = services.overlay.getState().kind === "pager"
+        && frame.includes("Session prompts") && !frame.includes(" ^R ");
+      if (pagerReady && frame.includes(text)) return frame;
       await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 5)); });
     }
     throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
@@ -117,7 +119,8 @@ for (const width of [120, 80]) {
     await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
     for (const char of "MIDDLE_NEEDLE") await settle(() => setup.mockInput.pressKey(char));
     await settle(() => setup.mockInput.pressEnter());
-    await waitFor("MIDDLE_NEEDLE");
+    const searched = await waitFor("MIDDLE_NEEDLE");
+    assert.doesNotMatch(searched, / \^R /, "Search must finish before its pager is closed");
     await settle(() => setup.mockInput.pressEscape());
     await settle(() => setup.mockInput.typeText("q"));
     assert.equal(services.overlay.getState().kind, "none");

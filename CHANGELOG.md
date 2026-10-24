@@ -25,7 +25,7 @@
 - Fix the native attachment-flow test on CI's pinned Bun 1.3.14 by awaiting actual request dispatch and turn completion instead of treating renderer idleness as completion of asynchronous file preparation. Preserve responsive-typing, compact-label, normal-send, queued-send, and exact image-byte assertions.
 - Add live-streaming, cancellation, lifecycle-fencing, throughput-math, and Classic/OpenTUI footer regressions across terminal widths.
 - Await background history recovery and full Ctrl+C cancellation settlement before fixture cleanup. Restore persisted model selections explicitly in compaction tests so changing default-provider catalog limits cannot change their expected context window.
-- Pin elapsed-time fixtures away from rounding boundaries, and wait for the actual session-prompts pager before asserting recovered journal entries instead of matching text already present in the transcript.
+- Pin elapsed-time fixtures away from rounding boundaries. Wait for the actual session-prompts pager and completed disk search instead of matching transcript or search-input text, and reject late disposed-source errors in the native test.
 
 ### Upgrade notes
 

@@ -13,4 +13,5 @@ it.skipIf(!bun)("browses session prompts and route metadata in native OpenTUI", 
   expect(result.signal, result.stderr).toBeNull();
   expect(result.status, result.stderr).toBe(0);
   expect(result.stdout).toContain("Native prompts passed");
+  expect(result.stderr).not.toContain("pager source is disposed");
 }, 70000);
