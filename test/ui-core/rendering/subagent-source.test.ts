@@ -211,6 +211,7 @@ describe("subagent pager snapshots", () => {
 
   it("ignores other child updates and releases pending notifications on disposal", async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(100_000);
     let snapshot: SubagentRun | undefined = run();
     const listeners = new Set<() => void>();
     const source = createSubagentPagerSource({

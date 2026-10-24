@@ -94,7 +94,7 @@ for (const width of [120, 80]) {
   async function waitFor(text: string): Promise<string> {
     for (let attempt = 0; attempt < 60; attempt++) {
       const frame = await settle();
-      if (frame.includes(text)) return frame;
+      if (services.overlay.getState().kind === "pager" && frame.includes("Session prompts") && frame.includes(text)) return frame;
       await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 5)); });
     }
     throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
