@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as config from "../../src/store/config.js";
 import { COMPACTION_MAX_COMPLETION_TOKENS } from "../../src/agent/compaction-summary.js";
 import type { AgentPort, RunTurnRequest } from "../../src/app/ports/agent-port.js";
 import type { ChatMessage, SuccessfulRequestSnapshot } from "../../src/types.js";
@@ -16,6 +17,9 @@ import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
 
 const completeWithProvider = vi.fn();
+vi.mock("../../src/llm/catalog-prefetch.js", () => ({
+  prefetchProviderCatalog: async () => {},
+}));
 vi.mock("../../src/llm/router.js", async (importActual) => {
   const actual = await importActual<typeof import("../../src/llm/router.js")>();
   return {
@@ -96,6 +100,10 @@ function renderedCompaction(events: readonly AnyAppEvent[]): string {
 }
 
 describe("SessionController parity helpers (V2-080)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     completeWithProvider.mockReset();
     completeWithProvider.mockResolvedValue({
@@ -318,6 +326,11 @@ describe("SessionController parity helpers (V2-080)", () => {
   });
 
   it("persists the computed post-compaction context for a later resume", async () => {
+    vi.spyOn(config, "getConfig").mockReturnValue({
+      ...config.getConfig(),
+      defaultProvider: "nvidia",
+    });
+    vi.spyOn(config, "getProviderModel").mockReturnValue("moonshotai/kimi-k2-instruct");
     const saved: Array<{
       messages: readonly { role: string; content: string }[];
       options: Parameters<PersistencePort["saveSession"]>[1];
@@ -356,6 +369,8 @@ describe("SessionController parity helpers (V2-080)", () => {
       ],
       {
         sessionId: "sess-compaction-context",
+        provider: "nvidia",
+        model: "test-model",
         contextUsage: {
           contextTokens: before.contextTokens,
           contextLimit: 0,
@@ -382,8 +397,14 @@ describe("SessionController parity helpers (V2-080)", () => {
       provider: "nvidia" as never,
       model: "test-model",
     });
+    expect(saved[0]?.options).toMatchObject({
+      provider: "nvidia",
+      model: "test-model",
+    });
     reopened.loadHistory(saved[0]!.messages as never, {
       sessionId: "sess-compaction-context",
+      provider: saved[0]!.options?.provider,
+      model: saved[0]!.options?.model,
       contextUsage: saved[0]!.options?.contextUsage,
     });
     expect(reopened.getState().contextSnapshot).toMatchObject({

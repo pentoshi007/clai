@@ -36,6 +36,8 @@ function record(id: string, content: string, revision = 1) {
 }
 
 afterEach(async () => {
+  const { ensureHistoryRecovered } = await import("../src/store/history/recovery.js");
+  await ensureHistoryRecovered();
   if (originalHistoryDir === undefined) delete process.env.CLAI_HISTORY_DIR;
   else process.env.CLAI_HISTORY_DIR = originalHistoryDir;
   await Promise.all(
