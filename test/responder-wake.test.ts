@@ -404,6 +404,7 @@ it.each([false, true])("keeps a real background process alive after Esc and canc
       savePlan: async () => undefined, deletePlan: async () => undefined,
     },
   });
+  const cancelAll = vi.spyOn(session, "cancelAll");
   const pending = session.submit("keep working");
   try {
     await started.promise;
@@ -426,11 +427,15 @@ it.each([false, true])("keeps a real background process alive after Esc and canc
     expect(jobs.getResponderLeaseId(session.sessionId)).toBe(lease);
     if (responder) expect(session.getState().responder.mode).toBe("listening");
     ladder.interrupt();
-    await waitFor(() => manager.getJob(id)?.status === "killed");
+    expect(cancelAll).toHaveBeenCalledOnce();
+    await expect(cancelAll.mock.results[0]?.value).resolves.toMatchObject({ ok: true });
+    expect(manager.getJob(id)?.status).toBe("killed");
     expect(manager.getJob(id)?.wakeOnCompletion).toBe(false);
   } finally {
     finish.resolve();
     await pending;
+    await cancelAll.mock.results[0]?.value;
+    cancelAll.mockRestore();
     session.dispose();
   }
 });
