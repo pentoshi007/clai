@@ -28,6 +28,8 @@ describe("turn generation summaries", () => {
   it.each([ended, { type: "turn-aborted" }, { type: "turn-error", message: "failed" }] satisfies AgentEvent[])("projects complete generation metrics for $type", (terminal) => {
     const h = harness();
     h.adapter.ingest({ type: "turn-start", prompt: "do work" });
+    h.adapter.ingest({ type: "generation-progress", metrics: { outputTokens: 40, durationMs: 1_000, estimated: true } });
+    h.adapter.ingest({ type: "generation-progress", metrics: { outputTokens: 80, durationMs: 1_800 } });
     h.adapter.ingest({ type: "generation-completed", metrics: { outputTokens: 100, durationMs: 2_000 } });
     h.advance(60_000);
     h.adapter.ingest({ type: "tool-call", id: "read", name: "fs.read", argsDisplay: "file.ts" });

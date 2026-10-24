@@ -20,6 +20,8 @@ const reference = formatAttachmentReference(path);
 let releaseClipboard!: (text: string) => void;
 let reads = 0;
 const requests: RunTurnRequest[] = [];
+const dispatched = [Promise.withResolvers<RunTurnRequest>(), Promise.withResolvers<RunTurnRequest>()];
+const completed = Promise.withResolvers<void>();
 const services = createCompositionRoot({
   noHistory: true, provider: "openai", model: "gpt-4o",
   clipboard: createOsc52ClipboardPort({
@@ -37,6 +39,7 @@ const services = createCompositionRoot({
     reportsModelSubmission: true,
     async runTurn(request, handlers) {
       requests.push(request);
+      dispatched[requests.length - 1]?.resolve(request);
       handlers.onEvent({ type: "turn-start", prompt: request.prompt });
       handlers.onEvent({ type: "model-submitted" });
       if (requests.length === 1) {
@@ -48,6 +51,9 @@ const services = createCompositionRoot({
     },
   },
   persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+});
+const unsubscribe = services.session.onTurnEnd((result) => {
+  if (requests.length === 2 && result.status === "completed") completed.resolve();
 });
 const setup = await testRender(createElement(ServicesProvider, { services, children: createElement(App) }), {
   width: 100, height: 30, useThread: false,
@@ -66,11 +72,10 @@ try {
   assert.doesNotMatch(setup.captureCharFrame(), /file:\/\//);
   await settle(() => setup.mockInput.pressEnter());
   await act(async () => {
-    await setup.waitFor(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      return requests.length === 1;
-    }, { maxPasses: 200 });
+    await dispatched[0]!.promise;
+    await setup.flush();
   });
+  assert.equal(requests.length, 1);
   assert.equal(requests[0]!.prompt, `typing ${reference}`);
   assert.deepEqual(Buffer.from(requests[0]!.images![0]!.dataBase64, "base64"), pixels);
   await settle(() => setup.renderer.stdin.emit("data", Buffer.from(`\x1b[200~${reference}\x1b[201~`)));
@@ -80,11 +85,12 @@ try {
   assert.doesNotMatch(setup.captureCharFrame(), /file:\/\//);
   await settle(() => services.session.sendQueuedNow(0));
   await act(async () => {
-    await setup.waitFor(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      return requests.length === 2 && !services.session.getState().running;
-    }, { maxPasses: 200 });
+    await dispatched[1]!.promise;
+    await completed.promise;
+    await setup.flush();
   });
+  assert.equal(requests.length, 2);
+  assert.equal(services.session.getState().running, false);
   assert.equal(requests[1]!.prompt, reference);
   assert.deepEqual(Buffer.from(requests[1]!.images![0]!.dataBase64, "base64"), pixels);
   assert.deepEqual(services.session.getState().queued, []);
@@ -93,6 +99,7 @@ try {
   console.error(JSON.stringify({ reads, requests: requests.length, running: services.session.getState().running, frame: setup.captureCharFrame() }));
   throw error;
 } finally {
+  unsubscribe();
   await act(async () => { services.dispose(); setup.renderer.destroy(); });
   await setup.renderer.idle();
   await rm(directory, { recursive: true, force: true });

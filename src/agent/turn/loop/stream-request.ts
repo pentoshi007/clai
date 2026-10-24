@@ -19,6 +19,7 @@ export interface StreamRequestInput {
   readonly toolsAttached: boolean;
   readonly tools: ToolDefinition[] | undefined;
   readonly onToolCallDelta: (delta: ToolCallStreamDelta) => void;
+  readonly onGenerationProgress?: CompletionRequest["onGenerationProgress"];
 }
 
 export const buildStreamRequest = (
@@ -33,6 +34,7 @@ export const buildStreamRequest = (
   maxTokens: input.maxTokens,
   signal: input.signal,
   thinking: input.thinking,
+  ...(input.onGenerationProgress ? { onGenerationProgress: input.onGenerationProgress } : {}),
   ...(input.toolsAttached
     ? {
         tools: input.tools,

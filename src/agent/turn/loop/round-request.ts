@@ -129,6 +129,7 @@ export const requestRound = async (
             toolsAttached,
             tools: turnTools,
             onToolCallDelta: streamSession.onToolCallDelta,
+            onGenerationProgress: (metrics) => deps.emit({ type: "generation-progress", metrics }),
           }),
           streamSession.onToken,
           {

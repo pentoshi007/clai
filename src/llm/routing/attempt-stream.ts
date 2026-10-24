@@ -30,6 +30,7 @@ import {
 import { createStreamEventGuard } from "../stream-events.js";
 import type { ProviderStreamEvent } from "../stream-events.js";
 import { markStreamEmittedBytes } from "../stream-progress.js";
+import { observeGenerationStreamEvent } from "../operation-usage.js";
 import {
   isToolsUnsupportedError,
   markTextOnlyModel,
@@ -78,6 +79,7 @@ export async function tryStreamOnce(
   const startedToolCallIndexes = new Set<number>();
   const emitEvent = (event: ProviderStreamEvent): void => {
     guard.accept(event);
+    observeGenerationStreamEvent(event);
     if (event.type === "reasoning_delta" || event.type === "commentary_delta") {
       emittedBytes += event.text.length;
     }

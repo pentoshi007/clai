@@ -5,6 +5,10 @@ export interface GenerationMetrics {
   readonly durationMs: number;
 }
 
+export interface GenerationProgress extends GenerationMetrics {
+  readonly estimated?: true | undefined;
+}
+
 const interruptedGenerations = new WeakMap<object, GenerationMetrics>();
 
 export function validGenerationMetrics(value: unknown): value is GenerationMetrics {

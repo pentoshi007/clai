@@ -1,5 +1,36 @@
 # Changelog
 
+## v5.1.2 — 2026-10-24
+
+### Responsive attachments
+
+- Show submitted prompts immediately while images are prepared asynchronously, including queued prompts sent with **Send now**. Keep typing, navigation, clipboard operations, and `image.view` responsive during image loading and conversion.
+- Reference original image files instead of making redundant scratch copies. Cache successful image preparation with source-change invalidation, while preserving model image limits, cancellation, and the exact bytes sent to the provider.
+- Display compact attachment labels such as `[Image 1]` instead of full file URIs in the composer and transcript, without losing the underlying file reference or changing ordinary prompt text.
+
+### Compact, live, persistent TPS
+
+- Use the shorter `tps` label below the composer in Classic and OpenTUI. Remove the visual `ctx` and Shift+Tab hints while preserving context-limit editing and keyboard mode switching.
+- Update throughput during generation with event-driven, throttled updates. A `~` prefix identifies estimates while streaming; exact provider output-token counters replace estimates when available. Reasoning and tool-call output are included without counting reasoning twice in provider usage.
+- Retain the latest reading through tool execution, idle periods, and the next turn. Clear it when the provider, model, or session changes, and reject late updates from cancelled or settled work.
+- Keep live estimates separate from completed-turn summaries. Saved summaries continue to use exact reported output and provider-active duration, excluding tool execution and auxiliary requests.
+
+### Reliable long-running REA analysis
+
+- Increase managed Ghidra and Hopper startup defaults to **two hours**, and the Swift helper startup default to **ten minutes**, so large imports are not cancelled by the earlier short startup deadline.
+- Prevent a global MCP timeout from imposing a shorter deadline on managed REA calls. Preserve explicit request deadlines, manual cancellation, and bounded connection/availability checks. See [REA.md](https://github.com/pentoshi007/clai/blob/v5.1.2/REA.md) for configuration.
+
+### CI reliability
+
+- Fix the native attachment-flow test on CI's pinned Bun 1.3.14 by awaiting actual request dispatch and turn completion instead of treating renderer idleness as completion of asynchronous file preparation. Preserve responsive-typing, compact-label, normal-send, queued-send, and exact image-byte assertions.
+- Add live-streaming, cancellation, lifecycle-fencing, throughput-math, and Classic/OpenTUI footer regressions across terminal widths.
+
+### Upgrade notes
+
+- No configuration or session migration is required. A `~` TPS value is a live estimate, not an exact provider measurement; providers that report usage only at completion receive their exact rate at that point.
+
+[Full comparison since v5.1.1](https://github.com/pentoshi007/clai/compare/v5.1.1...v5.1.2)
+
 ## v5.1.1 — 2026-10-23
 
 ### Long-running MCP and REA tools

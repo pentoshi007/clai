@@ -368,6 +368,7 @@ export interface CompletionRequest {
   onToolCallDelta?: ((delta: ToolCallStreamDelta) => void) | undefined;
   onReasoningArtifactReplayDecision?: ReasoningArtifactReplayObserver | undefined;
   onStreamEvent?: import("./llm/stream-events.js").ProviderStreamEventSink | undefined;
+  onGenerationProgress?: ((metrics: import("./llm/generation-metrics.js").GenerationProgress) => void) | undefined;
 }
 
 export interface UsageCharge {

@@ -15,6 +15,8 @@ import { sessionCacheAffinityKey } from "./cache-affinity.js";
 import { currentSessionAffinity } from "./session-affinity.js";
 import { acknowledgeGenerationSubmission } from "./generation-submission.js";
 import { recordInterruptedGeneration } from "./generation-metrics.js";
+import { GenerationProgressTracker } from "./generation-progress.js";
+import type { ProviderStreamEvent } from "./stream-events.js";
 
 export type AttemptUsageValue =
   | { readonly kind: "known"; readonly value: TokenUsage }
@@ -221,13 +223,23 @@ interface GenerationAttemptContext {
   admissions: number;
   startedAt: number;
   streamUsage?: TokenUsage | undefined;
+  progress?: GenerationProgressTracker | undefined;
 }
 
 const generationAttemptContext = new AsyncLocalStorage<GenerationAttemptContext>();
 
 export function observeStreamUsage(usage: TokenUsage | undefined): void {
+  if (unrecordedTransportStorage.getStore()) return;
   const context = generationAttemptContext.getStore();
-  if (context && usage) context.streamUsage = usage;
+  if (context && usage) {
+    context.streamUsage = usage;
+    context.progress?.observeUsage(usage);
+  }
+}
+
+export function observeGenerationStreamEvent(event: ProviderStreamEvent): void {
+  if (unrecordedTransportStorage.getStore()) return;
+  generationAttemptContext.getStore()?.progress?.observe(event);
 }
 
 const failedAttemptUsage = (
@@ -290,7 +302,11 @@ export async function generationFetch(
     return fetch(input, init);
   }
   const context = generationAttemptContext.getStore();
-  if (context) context.startedAt = performance.now();
+  if (context) {
+    context.startedAt = performance.now();
+    context.streamUsage = undefined;
+    context.progress?.reset(context.startedAt);
+  }
   if (!context?.request.attemptUsage) {
     const response = await fetch(input, init);
     if (response.ok) acknowledgeGenerationSubmission();
@@ -303,7 +319,6 @@ export async function generationFetch(
     context.admissions === 0 ? context.input.reason : "provider-retry";
   const requestFingerprint = fingerprintFinalRequest(context.input, init?.body);
   context.admissions += 1;
-  context.streamUsage = undefined;
   context.active = context.request.attemptUsage.begin({
     provider: context.input.provider,
     model: context.input.model,
@@ -336,6 +351,10 @@ export async function runGenerationAttempt(
   run: () => Promise<CompletionResult>,
 ): Promise<CompletionResult> {
   const context: GenerationAttemptContext = { request, input, admissions: 0, startedAt: performance.now() };
+  if (input.mode === "stream" && request.onGenerationProgress &&
+      (request.purpose === undefined || request.purpose === "turn")) {
+    context.progress = new GenerationProgressTracker(request.onGenerationProgress, context.startedAt, request.signal);
+  }
   return generationAttemptContext.run(context, async () => {
     try {
       const result = await run();
@@ -355,6 +374,8 @@ export async function runGenerationAttempt(
         statusCodeFromError(error),
       );
       throw error;
+    } finally {
+      context.progress?.close();
     }
   });
 }

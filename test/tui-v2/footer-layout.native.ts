@@ -7,13 +7,15 @@ import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-r
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { composerActionPort } from "../../src/ui-core/composer/composer-action-port.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
+import type { RunTurnHandlers } from "../../src/app/ports/agent-port.js";
 
 let finish: (() => void) | undefined;
+let activeHandlers: RunTurnHandlers | undefined;
 const services = createCompositionRoot({
   noHistory: true, mode: "agent", provider: "free", model: "fixture-model",
   agent: {
     async runTurn(_request, handlers) {
-      handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 123, durationMs: 2_000 } });
+      activeHandlers = handlers;
       await new Promise<void>((resolve) => { finish = resolve; });
       return createTurnOutcome({ status: "succeeded", answer: "", steps: 1, remainingCriteria: [] });
     },
@@ -42,17 +44,28 @@ try {
   let pending: ReturnType<typeof services.session.submit> | undefined;
   await settle(() => { pending = services.session.submit("measure generation"); });
   assert.ok(finish);
+  await settle(() => activeHandlers?.onEvent?.({ type: "generation-progress", metrics: { outputTokens: 123, durationMs: 2_000, estimated: true } }));
   for (const busy of [true, false]) {
-    if (!busy) await act(async () => { finish?.(); await pending; });
+    if (!busy) await act(async () => {
+      activeHandlers?.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 123, durationMs: 2_000 } });
+      finish?.();
+      await pending;
+    });
     for (const width of [24, 40, 80, 120]) {
       await settle(() => setup.resize(width, 30));
       const footer = setup.captureCharFrame().split("\n")[29]!;
-      assert.match(footer, /61\.5 tok\/s/);
-      assert.doesNotMatch(footer, /\bctx\b|⇧⇥|S-tab/);
+      assert.match(footer, busy ? /~61\.5 tps/ : /61\.5 tps/);
+      assert.doesNotMatch(footer, /\bctx\b|⇧⇥|S-tab|tok\/s/);
       assert.equal(services.session.getState().running, busy);
     }
   }
-  console.log("Native footer layout passed: resize, multiline drafts, exact busy/idle throughput, compact labels, and Shift+Tab keyboard behavior");
+  await settle(() => { pending = services.session.submit("next generation"); });
+  assert.match(setup.captureCharFrame().split("\n")[29]!, /61\.5 tps/);
+  await settle(() => activeHandlers?.onEvent?.({ type: "generation-progress", metrics: { outputTokens: 100, durationMs: 2_000, estimated: true } }));
+  assert.match(setup.captureCharFrame().split("\n")[29]!, /~50\.0 tps/);
+  await act(async () => { finish?.(); await pending; });
+  assert.match(setup.captureCharFrame().split("\n")[29]!, /~50\.0 tps/);
+  console.log("Native footer layout passed: resize, multiline drafts, live/exact/idle/new-turn throughput, compact labels, and Shift+Tab keyboard behavior");
 } finally {
   await act(async () => { services.dispose(); setup.renderer.destroy(); });
   await setup.renderer.idle();

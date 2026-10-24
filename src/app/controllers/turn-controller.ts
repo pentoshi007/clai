@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentEvent } from "../../agent/events.js";
-import type { GenerationMetrics } from "../../llm/generation-metrics.js";
+import type { GenerationProgress } from "../../llm/generation-metrics.js";
 import { renderTurnOutcome, type TurnOutcome } from "../../agent/turn-outcome.js";
 import type { ChatMessage, SuccessfulRequestSnapshot } from "../../types.js";
 import { isAbortError, type SessionPolicy } from "../../agent/session-policy.js";
@@ -34,7 +34,7 @@ export interface TurnRunOptions {
     | undefined;
   readonly onStarted?: (() => void) | undefined;
   readonly onSubmitted?: (() => void) | undefined;
-  readonly onGeneration?: ((metrics: GenerationMetrics | undefined) => void) | undefined;
+  readonly onGeneration?: ((metrics: GenerationProgress | undefined) => void) | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly prepareRequest?: ((signal: AbortSignal) => Promise<RunTurnRequest>) | undefined;
 }
@@ -152,10 +152,14 @@ export class TurnController implements Disposable {
       options.onSubmitted?.();
       submitted = true;
     };
+    let acceptingGeneration = true;
     const coalescer = new DeltaCoalescer((event) => {
       if (event.type === "turn-start" && options.prepareRequest) return;
       if (event.type === "model-submitted") acknowledge();
-      if (event.type === "generation-completed") options.onGeneration?.(event.metrics);
+      if (acceptingGeneration && (event.type === "generation-completed" ||
+          (event.type === "generation-progress" && !ac.signal.aborted))) {
+        options.onGeneration?.(event.metrics);
+      }
       adapter.ingest(event);
     });
 
@@ -201,6 +205,7 @@ export class TurnController implements Disposable {
       if (aborted) return { status: "aborted", turnId };
       return { status: "error", turnId, error: failure };
     } finally {
+      acceptingGeneration = false;
       if (external) external.removeEventListener("abort", onExternalAbort);
       this.active = false;
       this.ac = undefined;

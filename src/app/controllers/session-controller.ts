@@ -106,7 +106,7 @@ import { legacySessionPrompts } from "./session-prompt-history.js";
 import { SessionChanges, type FileLineChanges, type SessionChangesReport } from "./session-changes.js";
 import { SessionLateWork } from "./session-late-work.js";
 import { isInternalChatMessage } from "../../types.js";
-import { validGenerationMetrics, type GenerationMetrics } from "../../llm/generation-metrics.js";
+import { generationTokensPerSecond, type GenerationProgress } from "../../llm/generation-metrics.js";
 
 export interface SubagentsRuntimeState {
   readonly enabled: boolean;
@@ -132,7 +132,7 @@ export interface SessionState {
   readonly contextUsage: ContextUsageSnapshot | undefined;
   readonly contextChip: string | undefined;
   readonly contextLimit?: ContextSnapshotLimit | undefined;
-  readonly generation?: GenerationMetrics | undefined;
+  readonly generation?: GenerationProgress | undefined;
 }
 
 export type NoticeLevel = "info" | "warn";
@@ -195,7 +195,7 @@ export class SessionController implements Disposable {
   private pendingPromptWrites = new Map<SessionPromptInput, Promise<void> | undefined>();
   private legacyPromptSource: (() => Iterable<SessionPromptInput>) | undefined;
   private lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
-  private generation: GenerationMetrics | undefined;
+  private generation: GenerationProgress | undefined;
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
   private readonly persistence: SessionPersistenceQueue;
@@ -1137,7 +1137,6 @@ export class SessionController implements Disposable {
       }).catch(() => undefined);
     }
     this.activeTurnGeneration = turnGeneration;
-    this.generation = undefined;
     this.unsettledTurns += 1;
     try {
       const pending = this.turn.run(input, {
@@ -1163,10 +1162,14 @@ export class SessionController implements Disposable {
           this.lastMainRequestSnapshot = snapshot;
         },
         onGeneration: (metrics) => {
-          if (turnGeneration !== this.lifecycleGeneration ||
+          if (!metrics || turnGeneration !== this.lifecycleGeneration ||
               (this.provider ?? getConfig().defaultProvider) !== provider ||
-              (this.model ?? getProviderModel(provider)) !== model) return;
-          this.generation = validGenerationMetrics(metrics) ? { ...metrics } : undefined;
+              (this.model ?? getProviderModel(provider)) !== model ||
+              generationTokensPerSecond(metrics) === undefined) return;
+          if (this.generation?.outputTokens === metrics.outputTokens &&
+              this.generation.durationMs === metrics.durationMs &&
+              this.generation.estimated === metrics.estimated) return;
+          this.generation = { ...metrics };
           this.notifyState();
         },
         onStarted: opts?.onStarted,

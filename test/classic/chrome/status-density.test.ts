@@ -338,13 +338,24 @@ describe("footer generation metrics", () => {
         ...base(columns, { running }),
         generation: { outputTokens: 123, durationMs: 2_000 },
       })[0]!);
-      expect(row).toContain("61.5 tok/s");
-      expect(row).not.toMatch(/ctx|⇧⇥|S-tab/i);
+      expect(row).toContain("61.5 tps");
+      expect(row).not.toMatch(/ctx|⇧⇥|S-tab|tok\/s/i);
       expect(displayWidth(row)).toBeLessThanOrEqual(columns);
     }
   });
 
-  it("does not invent throughput before exact generation metrics arrive", () => {
-    expect(plainText(statusRows(base(120))[0]!)).not.toContain("tok/s");
+  it("marks live estimates without widening or hiding the rate", () => {
+    for (const columns of [24, 40, 80, 120]) {
+      const row = plainText(statusRows({
+        ...base(columns, { running: true }),
+        generation: { outputTokens: 123, durationMs: 2_000, estimated: true },
+      })[0]!);
+      expect(row).toContain("~61.5 tps");
+      expect(displayWidth(row)).toBeLessThanOrEqual(columns);
+    }
+  });
+
+  it("does not invent throughput before generation metrics arrive", () => {
+    expect(plainText(statusRows(base(120))[0]!)).not.toContain("tps");
   });
 });

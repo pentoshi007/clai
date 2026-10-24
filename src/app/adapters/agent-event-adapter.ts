@@ -301,6 +301,8 @@ export class AgentEventAdapter {
           afterTokens: event.afterTokens,
         });
         return;
+      case "generation-progress":
+        return;
       case "generation-completed":
         this.generation = addGenerationMetrics(this.generation, event.metrics);
         return;

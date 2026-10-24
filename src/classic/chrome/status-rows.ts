@@ -1,7 +1,7 @@
 import type { ContextUsageSnapshot } from "../../llm/token-usage.js";
 import type { Mode } from "../../types.js";
 import type { StatusDensity } from "../../ui-core/rendering/context-limit.js";
-import type { GenerationMetrics } from "../../llm/generation-metrics.js";
+import type { GenerationProgress } from "../../llm/generation-metrics.js";
 import { footerMetrics } from "../../ui-core/rendering/footer-metrics.js";
 import {
   armedCancelHint,
@@ -44,7 +44,7 @@ export interface StatusViewInput {
   readonly mode: Mode;
   readonly contextChip: string | undefined;
   readonly contextUsage: ContextUsageSnapshot | undefined;
-  readonly generation?: GenerationMetrics | undefined;
+  readonly generation?: GenerationProgress | undefined;
   readonly contextLimitEditing?: boolean | undefined;
   readonly contextLimitDraft?: string | undefined;
   readonly running: boolean;
