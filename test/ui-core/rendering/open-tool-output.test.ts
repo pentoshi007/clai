@@ -279,7 +279,7 @@ describe("tool pager regions", () => {
     return { calls, services };
   };
 
-  it("marks every line of a multi-line shell.exec command as input, blank lines included", async () => {
+  it.each([[undefined, "running"], ["ok", "success"], ["failed", "failed"], ["blocked", "failed"]] as const)("marks every multiline command line with its %s status, blank lines included", async (status, inputTone) => {
     const { calls, services } = capture();
     const command = "cat > /tmp/x.sh <<'EOF'\necho one\n\necho two\nEOF";
     await openToolOutputPager(services, {
@@ -287,9 +287,10 @@ describe("tool pager regions", () => {
       name: "shell.exec",
       argsDisplay: command,
       artifactPath: undefined,
+      status,
     } as never);
     const opened = calls[0]!;
-    expect(opened.regions).toEqual({ inputEnd: 5 });
+    expect(opened.regions).toEqual({ inputEnd: 5, inputTone });
     const lines = opened.body.split("\n");
     expect(lines.slice(0, 5).join("\n")).toBe(`command: ${command}`);
     expect(lines.slice(6)).toEqual(["file1.txt", "file2.txt"]);
