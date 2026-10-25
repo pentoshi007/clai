@@ -52,13 +52,15 @@ try {
     try {
       const shell = asToolCallId("call-shell");
       services.session.spool.replace(shell, "SHELL_OUTPUT_ONE\nSHELL_OUTPUT_TWO");
-      await settle(() => openToolOutputPager(services, {
-        toolCallId: shell, name: "shell.exec", argsDisplay: "printf INPUT_FIRST\n\nprintf INPUT_AFTER_BLANK", artifactPath: undefined,
-      }));
-      assert.deepEqual((await waitFor("INPUT_FIRST")).fg.toInts(), color(theme.userBorder), "command input is userBorder yellow");
-      assert.deepEqual((await waitFor("INPUT_AFTER_BLANK")).fg.toInts(), color(theme.userBorder), "input after a blank line stays userBorder yellow");
-      assert.deepEqual((await waitFor("SHELL_OUTPUT_ONE")).fg.toInts(), color(theme.foreground), "output stays foreground");
-      await settle(() => services.overlay.close());
+      for (const [status, token] of [[undefined, "userBorder"], ["ok", "success"], ["failed", "diffDel"], ["blocked", "diffDel"]] as const) {
+        await settle(() => openToolOutputPager(services, {
+          toolCallId: shell, name: "shell.exec", argsDisplay: "printf INPUT_FIRST\n\nprintf INPUT_AFTER_BLANK", artifactPath: undefined, status,
+        }));
+        assert.deepEqual((await waitFor("INPUT_FIRST")).fg.toInts(), color(theme[token]), `${status} command input`);
+        assert.deepEqual((await waitFor("INPUT_AFTER_BLANK")).fg.toInts(), color(theme[token]), `${status} input after a blank line`);
+        assert.deepEqual((await waitFor("SHELL_OUTPUT_ONE")).fg.toInts(), color(theme.foreground), "output stays foreground");
+        await settle(() => services.overlay.close());
+      }
 
       const read = asToolCallId("call-read");
       services.session.spool.replace(read, "ok\nread");
@@ -95,4 +97,4 @@ try {
   rmSync(directory, { recursive: true, force: true });
 }
 
-console.log("Native pager colors passed: userBorder-yellow shell input, foreground output and fs.read syntax highlighting, including while searching, at 100/60 columns");
+console.log("Native pager colors passed: status-aware shell input, foreground output and fs.read syntax highlighting, including while searching, at 100/60 columns");

@@ -43,7 +43,7 @@ describe("continuous pager rows", () => {
     const body = "command: cat > /tmp/x.sh <<'EOF'\necho one\n\necho two\nEOF\n\nfile1.txt\nfile2.txt";
     const rows = plainRows(body, { regions: { inputEnd: 5 } });
     const toneByIndex = new Map(rows.map((row) => [row.index, row.tone]));
-    for (const index of [0, 1, 2, 3, 4]) expect(toneByIndex.get(index)).toBe("input");
+    for (const index of [0, 1, 2, 3, 4]) expect(toneByIndex.get(index)).toBe("running");
     for (const index of [5, 6, 7]) expect(toneByIndex.get(index)).toBeUndefined();
     expect(rows.every((row) => row.spans === undefined)).toBe(true);
   });

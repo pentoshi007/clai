@@ -1,5 +1,6 @@
 import { watchFile, unwatchFile } from "node:fs";
 import type { JobsPort } from "../../app/ports/jobs-port.js";
+import { pagerCommandTone } from "./pager-regions.js";
 import {
   createArtifactPagerSource,
   DEFAULT_ARTIFACT_PAGE_BYTES,
@@ -58,6 +59,10 @@ export function createJobTailPagerSource(
   return {
     path: initialPath,
     pageBytes,
+    commandTone: () => {
+      const job = jobs.get(jobId);
+      return pagerCommandTone(job?.status ?? "lost", job?.exitCode);
+    },
     readPage: (offset) => active().readPage(offset),
     readTail: () => {
       const source = active();

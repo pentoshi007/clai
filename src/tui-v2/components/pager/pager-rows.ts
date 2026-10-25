@@ -5,7 +5,7 @@ import {
   highlightLineForPath,
   type SyntaxSpan,
 } from "../../../ui-core/rendering/syntax-highlight.js";
-import type { PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
+import type { PagerBodyRegions, PagerCommandTone } from "../../../ui-core/rendering/pager-regions.js";
 import type { preparePagerDisplay } from "../../rendering/pager-markdown.js";
 import { parseDiffLine } from "./pager-line.js";
 
@@ -20,7 +20,7 @@ export interface PagerRow {
   readonly kind: PagerRowKind;
   readonly textOffset?: number | undefined;
   readonly spans?: readonly SyntaxSpan[] | undefined;
-  readonly tone?: "input" | undefined;
+  readonly tone?: PagerCommandTone | undefined;
 }
 
 export interface LineSearch {
@@ -90,7 +90,7 @@ export function buildPagerRows(input: {
       });
       continue;
     }
-    const tone = index < inputEnd ? "input" : undefined;
+    const tone = index < inputEnd ? regions?.inputTone ?? "running" : undefined;
     const spans =
       codeStart !== undefined && index >= codeStart && index < codeEnd
         ? highlightLineForPath(line, highlightPath, carry)

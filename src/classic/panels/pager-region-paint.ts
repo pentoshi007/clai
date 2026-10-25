@@ -1,6 +1,6 @@
 import { sliceSpans, syntaxColor } from "../../ui-core/rendering/file-diff-view.js";
 import { wrapPagerLine } from "../../ui-core/rendering/pager-chrome.js";
-import type { PagerBodyRegions } from "../../ui-core/rendering/pager-regions.js";
+import { pagerCommandColor, type PagerBodyRegions } from "../../ui-core/rendering/pager-regions.js";
 import { emptyCarry, highlightLineForPath, type SyntaxSpan } from "../../ui-core/rendering/syntax-highlight.js";
 import { sealStyle } from "../render/ansi-text.js";
 import type { InkTheme } from "../render/ink-theme.js";
@@ -29,7 +29,7 @@ export function regionPagerLines(
   logical.forEach((line, index) => {
     const chunks = wrapPagerLine(line, width, { preserveWhitespace: true });
     if (index < inputEnd) {
-      for (const chunk of chunks) out.push(ink.fg("aqua", chunk));
+      for (const chunk of chunks) out.push(ink.fg(pagerCommandColor(regions.inputTone ?? "running"), chunk));
       return;
     }
     const spans = path && codeStart !== undefined && index >= codeStart && index < codeEnd

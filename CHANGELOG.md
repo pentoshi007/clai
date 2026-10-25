@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v5.1.3 — 2026-10-25
+
+### Status-aware command colors
+
+- Color tool-pager commands green on success, yellow while queued or running, and red on failure or blocked execution in Classic and OpenTUI.
+- Apply the same status colors to command titles in job-tail views, including live completion, failure, and paused readers. Preserve output colors, wrapped multiline commands, search highlighting, and file syntax highlighting.
+
+### Live TPS corrections
 
 - Refresh live TPS during provider pauses instead of leaving a fast burst frozen on screen. Stop sampling when the request settles, is cancelled, or retries.
 - Apply cumulative OpenAI-compatible and Gemini usage after the output in the same frame so subsequent estimates do not count that output twice. Exact counters immediately replace displayed estimates without disabling update throttling.

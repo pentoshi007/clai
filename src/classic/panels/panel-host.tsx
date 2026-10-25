@@ -6,6 +6,7 @@ import { JobsPanel } from "./JobsPanel.js";
 import { KeysPanel } from "./KeysPanel.js";
 import { PagerPanel } from "./PagerPanel.js";
 import { pagerPaintOptions, pagerSubagentPaint, pagerViewModel } from "./pager-panel.js";
+import { pagerCommandColor } from "../../ui-core/rendering/pager-regions.js";
 import type { PanelController, PanelSnapshot } from "./panel-controller.js";
 import { PickerPanel } from "./PickerPanel.js";
 import { PromptActionsPanel } from "./PromptActionsPanel.js";
@@ -40,6 +41,8 @@ export function PanelHost(props: PanelHostProps): ReactNode {
     case "picker":
       return <PickerPanel {...shared} request={overlay.request} state={snapshot.picker} />;
     case "pager": {
+      const commandTone = overlay.source?.commandTone?.() ?? overlay.regions?.inputTone;
+      const title = commandTone ? props.ink.fg(pagerCommandColor(commandTone), overlay.title) : overlay.title;
       const view = pagerViewModel(
         snapshot.pagerBody,
         props.columns,
@@ -54,7 +57,7 @@ export function PanelHost(props: PanelHostProps): ReactNode {
       return (
         <PagerPanel
           {...shared}
-          title={overlay.title}
+          title={title}
           lines={view.lines}
           searchLines={view.searchLines}
           state={snapshot.pager}

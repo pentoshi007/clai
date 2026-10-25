@@ -1,5 +1,6 @@
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { ToolItem } from "../state/transcript-types.js";
+import { pagerCommandTone } from "./pager-regions.js";
 import {
   createArtifactPagerSource,
   createTextPagerSource,
@@ -11,6 +12,7 @@ export function createToolOutputPagerSource(
   services: AppServices,
   initial: Pick<ToolItem, "toolCallId" | "artifactPath">,
   format: (body: string) => string,
+  inputEnd = 0,
 ): ArtifactPagerSource {
   const sessionId = services.session.sessionId;
   const spool = services.session.spool;
@@ -21,6 +23,7 @@ export function createToolOutputPagerSource(
   let latest: ToolItem | undefined;
   let version = -1;
   let memory: ArtifactPagerSource | undefined;
+  let usingMemory = true;
 
   const current = (): ToolItem | undefined => {
     if (services.session.sessionId !== sessionId) return latest;
@@ -32,6 +35,7 @@ export function createToolOutputPagerSource(
     return latest;
   };
   const spooled = (): ArtifactPagerSource => {
+    usingMemory = true;
     const nextVersion = spool.version(initial.toolCallId);
     if (!memory || services.session.sessionId === sessionId && nextVersion !== version) {
       memory?.dispose();
@@ -51,6 +55,7 @@ export function createToolOutputPagerSource(
       source = createArtifactPagerSource(artifactPath);
       artifacts.set(artifactPath, source);
     }
+    usingMemory = false;
     return source;
   };
   const read = async <T>(operation: (source: ArtifactPagerSource) => Promise<T>): Promise<T> => {
@@ -64,6 +69,8 @@ export function createToolOutputPagerSource(
   return {
     path,
     pageBytes: DEFAULT_ARTIFACT_PAGE_BYTES,
+    commandTone: () => pagerCommandTone(current()?.status),
+    regions: () => usingMemory && inputEnd > 0 ? { inputEnd, inputTone: pagerCommandTone(current()?.status) } : undefined,
     readPage: (offset) => read((source) => source.readPage(offset)),
     readTail: () => read((source) => source.readTail!()),
     readAll: () => read((source) => source.readAll()),

@@ -16,6 +16,7 @@ import {
 } from "../../../ui-core/rendering/syntax-highlight.js";
 import type { PagerDisplayLine } from "../../rendering/pager-markdown.js";
 import type { SubagentSpan } from "../../../ui-core/rendering/subagent-presentation.js";
+import { pagerCommandColor, type PagerCommandTone } from "../../../ui-core/rendering/pager-regions.js";
 
 export function baseLineFg(line: string, theme: Theme): string {
   const t = line.trim();
@@ -91,7 +92,7 @@ function PagerLineImpl(props: {
   diffGutters?: boolean | undefined;
   subagent?: boolean | undefined;
   subagentSpans?: readonly SubagentSpan[] | undefined;
-  tone?: "input" | undefined;
+  tone?: PagerCommandTone | undefined;
 }): ReactNode {
   const {
     line,
@@ -259,8 +260,8 @@ function PagerLineImpl(props: {
     );
   }
 
-  const codeSpans = props.tone === "input" ? undefined : precomputedSpans;
-  const baseFg = props.tone === "input" ? theme.userBorder : baseLineFg(line, theme);
+  const codeSpans = props.tone ? undefined : precomputedSpans;
+  const baseFg = props.tone ? theme[pagerCommandColor(props.tone)] : baseLineFg(line, theme);
   const wrapProps = props.subagent ? { wrapMode: "word" as const } : {};
   if (!hasQuery || matches.length === 0) {
     if (codeSpans && codeSpans.length > 0) {

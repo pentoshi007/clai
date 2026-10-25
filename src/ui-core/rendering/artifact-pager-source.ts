@@ -1,4 +1,5 @@
 import { open, stat } from "node:fs/promises";
+import type { PagerBodyRegions, PagerCommandTone } from "./pager-regions.js";
 
 export const DEFAULT_ARTIFACT_PAGE_BYTES = 64 * 1024;
 export const MAX_FULL_ARTIFACT_EXPORT_BYTES = 16 * 1024 * 1024;
@@ -29,6 +30,8 @@ export interface ArtifactPagerSource {
   readTail?(): Promise<ArtifactPage>;
   watch?(onChange: () => void): () => void;
   isGrowing?(): boolean;
+  commandTone?(): PagerCommandTone;
+  regions?(): PagerBodyRegions | undefined;
 }
 
 export function createArtifactPagerSource(

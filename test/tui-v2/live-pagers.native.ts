@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act, createElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import { RGBA } from "@opentui/core";
+import { themeFor } from "../../src/ui-core/rendering/theme.js";
 import { spyOn } from "bun:test";
 import { App } from "../../src/tui-v2/app/App.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
@@ -44,6 +46,12 @@ async function waitFor(text: string): Promise<string> {
   throw new Error(`Missing ${text}: ${setup.captureCharFrame()}`);
 }
 const type = (text: string) => settle(() => setup.mockInput.typeText(text));
+const theme = themeFor(services.capabilities.themeHint);
+function assertColor(text: string, token: "userBorder" | "success" | "diffDel"): void {
+  const span = setup.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(text));
+  assert.ok(span, setup.captureCharFrame());
+  assert.deepEqual(span.fg.toInts(), RGBA.fromHex(theme[token]).toInts(), `${text} uses ${token}`);
+}
 try {
   await waitFor("stream line");
   const rows = setup.captureCharFrame().split("\n");
@@ -54,6 +62,7 @@ try {
   assert.equal(services.overlay.getState().kind, "pager", setup.captureCharFrame());
   await settle(() => setup.mockInput.pressKey("\x1b[H"));
   await waitFor("stream line 1");
+  assertColor("command: example", "userBorder");
   await settle(() => tool.output("\nAPPENDED_WHILE_PAUSED"));
   let frame = await waitFor("paused");
   assert.ok(!frame.includes("APPENDED_WHILE_PAUSED"), frame);
@@ -63,6 +72,7 @@ try {
   writeFileSync(path, `${numberedOutput(45)}\nFINAL_ARTIFACT_OUTPUT`);
   await settle(() => tool.finish(path));
   frame = await waitFor("finished");
+  assertColor("example streaming command", "success");
   assert.ok(frame.includes("stream line 1"), frame);
   assert.ok(!frame.includes("FINAL_ARTIFACT_OUTPUT"), frame);
   await type("l");
@@ -77,6 +87,7 @@ try {
     await waitFor("Background jobs");
     await settle(() => key === "enter" ? setup.mockInput.pressEnter() : setup.mockInput.typeText(key));
     await waitFor("stream line 45");
+    assertColor("npm test", "userBorder");
     const state = services.overlay.getState();
     assert.equal(state.kind, "pager");
     appendFileSync(path, "\nDISK_ONLY_APPEND");
@@ -85,8 +96,10 @@ try {
     await waitFor("stream line 1");
     appendFileSync(path, "\nPAUSED_DISK_APPEND");
     if (state.kind === "pager") assert.ok((await state.source!.readAll()).includes("PAUSED_DISK_APPEND"));
-    await settle(() => job.update({ status: "exited", exitCode: 0 }));
+    const failed = key === "v";
+    await settle(() => job.update({ status: failed ? "failed" : "exited", exitCode: failed ? 1 : 0 }));
     frame = await waitFor("finished");
+    assertColor("npm test", failed ? "diffDel" : "success");
     assert.ok(frame.includes("stream line 1"), frame);
     assert.ok(!frame.includes("PAUSED_DISK_APPEND"), frame);
     await type("l");

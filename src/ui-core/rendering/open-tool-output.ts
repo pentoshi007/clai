@@ -14,7 +14,7 @@ import type { FileChange } from "../../tools/file-diff.js";
 import { formatModalPlainText } from "./file-diff-view.js";
 import { defaultPagerMarkdownMode } from "./pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "./pager-source.js";
-import type { PagerBodyRegions } from "./pager-regions.js";
+import { pagerCommandTone, type PagerBodyRegions } from "./pager-regions.js";
 import { presentFsReadArgs } from "./tool-presenter.js";
 import { createToolOutputPagerSource } from "./tool-output-pager-source.js";
 
@@ -232,7 +232,8 @@ export async function openToolOutputPager(
     if ((item.status === "running" || item.status === "queued") && options.bodyOverride === undefined && !options.fileChange) {
       const label = cleanArgsLabel(item.name, item.argsDisplay);
       const header = label ? `${item.name === "shell.exec" ? "command" : "query"}: ${label}\n\n` : "";
-      const source = createToolOutputPagerSource(services, item, (raw) => `${header}${formatToolPagerBody(raw) || "(no output yet)"}`);
+      const inputEnd = item.name === "shell.exec" && header ? header.split("\n").length - 2 : 0;
+      const source = createToolOutputPagerSource(services, item, (raw) => `${header}${formatToolPagerBody(raw) || "(no output yet)"}`, inputEnd);
       services.overlay.openPager(options.titleOverride ?? toolPagerTitle(item.name, item.argsDisplay), "", source, undefined, "plain");
       return;
     }
@@ -445,7 +446,7 @@ export async function openToolOutputPager(
       } else if (openedSourceFile) {
         regions = { codeStart: headerLines, codeEnd: headerLines + (body ? body.split("\n").length : 0) };
       } else if (!artifactSource && commandLines > 0) {
-        regions = { inputEnd: commandLines };
+        regions = { inputEnd: commandLines, inputTone: pagerCommandTone(item.status) };
       }
     }
     if (!artifactSource && openedSourceFile && highlightPath && mdMode !== "force" && exceedsInlinePagerBudget(finalBody)) {
@@ -459,6 +460,9 @@ export async function openToolOutputPager(
       );
       finalBody = paged.body;
       artifactSource = paged.source;
+    }
+    if (artifactSource && item.name === "shell.exec") {
+      artifactSource.commandTone = () => pagerCommandTone(item.status);
     }
     const opened = services.overlay.openPager(
       title,

@@ -153,13 +153,14 @@ export function pagerPaintOptions(
 ): PagerPaintOptions | undefined {
   if (overlay.kind !== "pager") return undefined;
   const path = overlay.highlightPath || undefined;
-  const regions = pagerRegionsForPage(overlay.regions, pageOffset);
+  const currentRegions = overlay.source?.regions ? overlay.source.regions() : overlay.regions;
+  const regions = pagerRegionsForPage(currentRegions, pageOffset);
   if (!path && !regions) return undefined;
   return { ...(path ? { path } : {}), ...(ink ? { ink } : {}), ...(regions ? { regions } : {}) };
 }
 
 function regionsKey(regions: PagerBodyRegions | undefined): string {
-  return regions ? `${regions.inputEnd ?? ""}:${regions.codeStart ?? ""}:${regions.codeEnd ?? ""}` : "";
+  return regions ? `${regions.inputEnd ?? ""}:${regions.inputTone ?? ""}:${regions.codeStart ?? ""}:${regions.codeEnd ?? ""}` : "";
 }
 
 const unpaintSubagentSpan: SubagentSpanPaint = (span) => span.text;

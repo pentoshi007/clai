@@ -30,7 +30,7 @@ import {
   stripPagerLineGutters,
 } from "../../../ui-core/rendering/pager-source.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
-import { pagerRegionsForPage, type PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
+import { pagerCommandColor, pagerRegionsForPage, type PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
 import {
   PagerLine,
   bodyOnlyForCopy,
@@ -183,10 +183,11 @@ export function Pager(props: PagerProps): ReactNode {
   });
   const hasQuery = query.trim().length > 0;
   const rowHighlightPath = viewMode === "raw" && highlightPath ? highlightPath : "";
-  const rowRegions = useMemo(
-    () => (viewMode === "raw" ? pagerRegionsForPage(regions, artifactPage?.offset) : undefined),
-    [viewMode, regions, artifactPage?.offset],
-  );
+  const commandTone = source?.commandTone?.() ?? regions?.inputTone;
+  const rowRegions = useMemo(() => {
+    const currentRegions = source?.regions ? source.regions() : regions;
+    return viewMode === "raw" ? pagerRegionsForPage(currentRegions, artifactPage?.offset) : undefined;
+  }, [viewMode, regions, source, artifactPage, commandTone]);
   const rowModels = useMemo(
     () => buildPagerRows({
       display, lines, contentCols, useDiffGutters, isSubagent,
@@ -717,7 +718,7 @@ export function Pager(props: PagerProps): ReactNode {
       borderStyle="rounded"
       title={borderTitle}
       titleAlignment="left"
-      titleColor={theme.cyan}
+      titleColor={commandTone ? theme[pagerCommandColor(commandTone)] : theme.cyan}
       style={{
         flexDirection: "column",
         width: size.width,

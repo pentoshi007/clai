@@ -24,16 +24,16 @@ const keyword = (text: string) => colorInk.hex(syntaxColor("keyword", colorInk.t
 const opening = (paint: (text: string) => string, text: string) => `${paint("\u0000").split("\u0000")[0]!}${text}`;
 
 describe("classic pager regions", () => {
-  it("paints shell input aqua and output in the foreground colour, wrapped rows included", () => {
+  it.each([['running', 'userBorder'], ['success', 'success'], ['failed', 'diffDel']] as const)("paints %s commands with %s, including wrapped rows", (inputTone, token) => {
     const command = `command: npm run build -- --filter ${"x".repeat(90)}`;
     const body = `${command}\n\n${"o".repeat(120)}`;
-    const painted = pagerLines(body, 60, 20, "raw", false, undefined, { ink: colorInk, regions: { inputEnd: 1 } });
+    const painted = pagerLines(body, 60, 20, "raw", false, undefined, { ink: colorInk, regions: { inputEnd: 1, inputTone } });
     const plain = pagerLines(body, 60, 20, "raw", false, undefined);
     expect(painted.map(stripAnsi)).toEqual(plain);
     const inputRows = plain.findIndex((line) => line.startsWith("o"));
     expect(inputRows).toBeGreaterThan(2);
     for (const [index, line] of painted.slice(0, inputRows - 1).entries()) {
-      expect(line).toBe(colorInk.fg("aqua", plain[index]!));
+      expect(line).toBe(colorInk.fg(token, plain[index]!));
     }
     expect(painted[inputRows]).toBe(colorInk.fg("foreground", plain[inputRows]!));
   });
@@ -69,7 +69,7 @@ describe("classic pager regions", () => {
     expect(mono.join("")).not.toContain("\x1b[");
   });
 
-  it("paints a real shell.exec pager opened from the transcript", async () => {
+  it.each([["ok", "success"], ["failed", "diffDel"], ["blocked", "diffDel"]] as const)("paints a real %s shell.exec pager", async (status, token) => {
     const harness = createHarness({ columns: 100, rows: 12 });
     const services = {
       overlay: harness.overlay,
@@ -80,11 +80,12 @@ describe("classic pager regions", () => {
       name: "shell.exec",
       argsDisplay: "npm run build",
       artifactPath: undefined,
+      status,
     } as never);
     const frame = render(
       <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={12} jobs={harness.jobs} transcript={harness.transcript} now={0} />,
     ).lastFrame() ?? "";
-    expect(frame).toContain(opening((text) => colorInk.fg("aqua", text), "command: npm run build"));
+    expect(frame).toContain(opening((text) => colorInk.fg(token, text), "command: npm run build"));
     expect(frame).toContain(opening((text) => colorInk.fg("foreground", text), "built ok"));
   });
 
@@ -114,14 +115,14 @@ describe("classic pager regions", () => {
     const mount = () => render(
       <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={220} jobs={harness.jobs} transcript={harness.transcript} now={0} />,
     ).lastFrame() ?? "";
-    expect(mount()).toContain(opening((text) => colorInk.fg("aqua", text), "command: seq"));
+    expect(mount()).toContain(opening((text) => colorInk.fg("userBorder", text), "command: seq"));
     harness.press("shift+g");
     await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerPageOffset).toBeGreaterThan(0));
     const firstShown = harness.panels.getSnapshot().pagerBody.split("\n")[0]!;
     expect(firstShown).not.toBe("");
     const frame = mount();
     expect(stripAnsi(frame)).toContain(firstShown);
-    expect(frame).not.toContain(opening((text) => colorInk.fg("aqua", text), firstShown));
+    expect(frame).not.toContain(opening((text) => colorInk.fg("userBorder", text), firstShown));
     harness.overlay.close();
   });
 });
