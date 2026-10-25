@@ -10,6 +10,7 @@ import {
 import { tryStreamOnce } from "../../src/llm/routing/attempt-stream.js";
 
 let now = 0;
+const trackers: GenerationProgressTracker[] = [];
 const usage: TokenUsage = { promptTokens: 1_000, completionTokens: 100, reasoningTokens: 60, totalTokens: 1_100, exact: true };
 const result: CompletionResult = { provider: "openai", model: "fixture", text: "done", usage };
 const attempt: GenerationAttemptInput = { provider: "openai", model: "fixture", mode: "stream", reason: "initial" };
@@ -18,11 +19,17 @@ beforeEach(() => {
   now = 0;
   vi.spyOn(performance, "now").mockImplementation(() => now);
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  for (const progress of trackers.splice(0)) progress.close();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function tracker(signal?: AbortSignal) {
   const publish = vi.fn();
-  return { progress: new GenerationProgressTracker(publish, 0, signal), publish };
+  const progress = new GenerationProgressTracker(publish, 0, signal);
+  trackers.push(progress);
+  return { progress, publish };
 }
 
 describe("live generation throughput", () => {
@@ -59,16 +66,17 @@ describe("live generation throughput", () => {
     expect(publish).toHaveBeenCalledTimes(1);
   });
 
-  it("throttles high-rate output without running a timer or decaying the idle reading", () => {
+  it("throttles high-rate output and freezes the reading after settlement", () => {
     const { progress, publish } = tracker();
     const interval = vi.spyOn(globalThis, "setInterval");
     const timeout = vi.spyOn(globalThis, "setTimeout");
     for (now = 1; now <= 1_000; now++) progress.observe({ type: "answer_delta", text: "x" });
     expect(publish).toHaveBeenCalledTimes(4);
     expect(publish.mock.calls.at(-1)?.[0]).toEqual({ outputTokens: 304, durationMs: 1_000, estimated: true });
+    progress.close();
     now = 60_000;
     expect(publish).toHaveBeenCalledTimes(4);
-    expect(interval).not.toHaveBeenCalled();
+    expect(interval).toHaveBeenCalledTimes(1);
     expect(timeout).not.toHaveBeenCalled();
   });
 

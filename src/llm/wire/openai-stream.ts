@@ -750,10 +750,7 @@ export async function openAiCompatibleStream(request: {
                   response.headers,
                 )
               : parseOpenAiUsage(parsed.usage, options.usageAliases);
-          if (chunkUsage) {
-            streamUsage = chunkUsage;
-            observeStreamUsage(chunkUsage);
-          }
+          if (chunkUsage) streamUsage = chunkUsage;
           const finalUsageFrame = isFinalUsageFrame(parsed);
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
@@ -884,6 +881,7 @@ export async function openAiCompatibleStream(request: {
               thoughtSignatures.push({ ...capture, toolCallIndex });
             }
           }
+          if (chunkUsage) observeStreamUsage(chunkUsage);
         }
       }
       if (done) break;

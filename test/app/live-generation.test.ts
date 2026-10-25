@@ -30,6 +30,9 @@ it.each([false, true])("streams real provider throughput into the session footer
     const live = session.getState();
     expect(footerMetrics(live.contextUsage!, live.generation, 80).rate).toBe("~30.0 tps");
     now = 2_000;
+    await vi.waitFor(() => expect(session.getState().generation).toEqual({ outputTokens: 30, durationMs: 2_000, estimated: true }));
+    expect(footerMetrics(session.getState().contextUsage!, session.getState().generation, 80).rate).toBe("~15.0 tps");
+    now = 3_000;
     if (aborted) {
       session.abort();
     } else {
@@ -39,9 +42,9 @@ it.each([false, true])("streams real provider throughput into the session footer
     await pending;
     const idle = session.getState();
     expect(idle.running).toBe(false);
-    expect(footerMetrics(idle.contextUsage!, idle.generation, 80).rate).toBe(aborted ? "~30.0 tps" : "60.0 tps");
+    expect(footerMetrics(idle.contextUsage!, idle.generation, 80).rate).toBe(aborted ? "~15.0 tps" : "40.0 tps");
     const summary = transcriptItems(services.transcript.getState()).find((item) => item.kind === "turn-summary");
-    expect(summary?.generation).toEqual(aborted ? undefined : { outputTokens: 120, durationMs: 2_000 });
+    expect(summary?.generation).toEqual(aborted ? undefined : { outputTokens: 120, durationMs: 3_000 });
   } finally {
     services.dispose();
     await pending.catch(() => undefined);

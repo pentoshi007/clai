@@ -7,11 +7,15 @@ const ESTIMATED_CHARACTERS_PER_TOKEN = 3.3;
 
 export class GenerationProgressTracker {
   private startedAt: number;
-  private lastPublishedAt: number | undefined;
+  private lastPublished: GenerationProgress | undefined;
   private outputUnits = 0;
+  private outputTokens = 0;
+  private estimated = true;
   private observedTokens = 0;
   private observedUnits = 0;
   private closed = false;
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private readonly onAbort = (): void => this.close();
   private readonly tools = new Map<number, { name: number; arguments: number }>();
 
   constructor(
@@ -20,12 +24,17 @@ export class GenerationProgressTracker {
     private readonly signal?: AbortSignal | undefined,
   ) {
     this.startedAt = startedAt;
+    if (signal?.aborted) this.closed = true;
+    else signal?.addEventListener("abort", this.onAbort, { once: true });
   }
 
   reset(startedAt: number): void {
+    this.stopSampling();
     this.startedAt = startedAt;
-    this.lastPublishedAt = undefined;
+    this.lastPublished = undefined;
     this.outputUnits = 0;
+    this.outputTokens = 0;
+    this.estimated = true;
     this.observedTokens = 0;
     this.observedUnits = 0;
     this.tools.clear();
@@ -33,6 +42,13 @@ export class GenerationProgressTracker {
 
   close(): void {
     this.closed = true;
+    this.stopSampling();
+    this.signal?.removeEventListener("abort", this.onAbort);
+  }
+
+  private stopSampling(): void {
+    if (this.timer !== undefined) clearInterval(this.timer);
+    this.timer = undefined;
   }
 
   observe(event: ProviderStreamEvent): void {
@@ -58,7 +74,7 @@ export class GenerationProgressTracker {
     const outputTokens = this.observedTokens + Math.ceil(
       Math.max(0, this.outputUnits - this.observedUnits) / ESTIMATED_CHARACTERS_PER_TOKEN,
     );
-    this.emit(outputTokens, true);
+    this.update(outputTokens, true);
   }
 
   observeUsage(usage: TokenUsage | undefined): void {
@@ -66,17 +82,31 @@ export class GenerationProgressTracker {
         !Number.isSafeInteger(usage.completionTokens) || usage.completionTokens <= 0) return;
     this.observedTokens = usage.completionTokens;
     this.observedUnits = this.outputUnits;
-    this.emit(this.observedTokens, false);
+    this.update(this.observedTokens, false);
   }
 
-  private emit(outputTokens: number, estimated: boolean): void {
-    const now = performance.now();
-    const durationMs = now - this.startedAt;
+  private update(outputTokens: number, estimated: boolean): void {
+    this.outputTokens = outputTokens;
+    this.estimated = estimated;
+    if (this.timer === undefined) {
+      this.timer = setInterval(() => this.emit(), UPDATE_INTERVAL_MS);
+      this.timer.unref?.();
+    }
+    this.emit();
+  }
+
+  private emit(): void {
+    if (this.closed || this.signal?.aborted) return;
+    const durationMs = performance.now() - this.startedAt;
+    const previous = this.lastPublished;
+    const correction = !this.estimated && previous?.estimated;
     if (durationMs < UPDATE_INTERVAL_MS ||
-        (this.lastPublishedAt !== undefined && now - this.lastPublishedAt < UPDATE_INTERVAL_MS)) return;
-    const metrics: GenerationProgress = { outputTokens, durationMs, ...(estimated ? { estimated: true } : {}) };
+        (previous && durationMs - previous.durationMs < UPDATE_INTERVAL_MS && !correction)) return;
+    const metrics: GenerationProgress = {
+      outputTokens: this.outputTokens, durationMs, ...(this.estimated ? { estimated: true } : {}),
+    };
     if (generationTokensPerSecond(metrics) === undefined) return;
-    this.lastPublishedAt = now;
+    this.lastPublished = metrics;
     this.publish(metrics);
   }
 

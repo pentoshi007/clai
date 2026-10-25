@@ -424,10 +424,7 @@ export const geminiProvider: LlmProvider = {
           }>;
         };
         const u = parseGeminiUsage(parsed.usageMetadata);
-        if (u) {
-          streamUsage = u;
-          observeStreamUsage(u);
-        }
+        if (u) streamUsage = u;
         const candidate = parsed.candidates?.[0];
         if (candidate?.finishReason) finishReason = candidate.finishReason;
         const parts = candidate?.content?.parts ?? [];
@@ -460,6 +457,7 @@ export const geminiProvider: LlmProvider = {
             onToken(part.text);
           }
         }
+        if (u) observeStreamUsage(u);
       } catch (frameError) {
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }

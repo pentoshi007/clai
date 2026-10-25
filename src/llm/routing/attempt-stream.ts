@@ -90,7 +90,7 @@ export async function tryStreamOnce(
     ...requestForRoute(replay.request, providerId, model),
     provider: providerId,
     model,
-    ...(onToolCallDelta || downstreamEvents
+    ...(onToolCallDelta || downstreamEvents || request.onGenerationProgress
       ? {
           onToolCallDelta: (delta: ToolCallStreamDelta): void => {
             const argumentBytes = delta.argumentsBytes ?? 0;
@@ -125,7 +125,7 @@ export async function tryStreamOnce(
           },
         }
       : {}),
-    ...(downstreamEvents ? { onStreamEvent: emitEvent } : {}),
+    ...(downstreamEvents || request.onGenerationProgress ? { onStreamEvent: emitEvent } : {}),
   };
   const preserveCodexEffort = providerId === "codex" && activeRequest.thinking?.enabled === true;
   const emit = (token: string): void => {

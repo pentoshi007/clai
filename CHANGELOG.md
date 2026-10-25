@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Refresh live TPS during provider pauses instead of leaving a fast burst frozen on screen. Stop sampling when the request settles, is cancelled, or retries.
+- Apply cumulative OpenAI-compatible and Gemini usage after the output in the same frame so subsequent estimates do not count that output twice. Exact counters immediately replace displayed estimates without disabling update throttling.
+- Include reasoning and tool-call output when throughput is the only stream observer. Completed TPS remains reported output, including reasoning, divided by provider-active time; live `~` readings are estimates, not visible-answer speed.
+
 ## v5.1.2 — 2026-10-24
 
 ### Responsive attachments
