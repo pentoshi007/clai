@@ -69,7 +69,15 @@ export function pickerScrollTop(
   const last = items.at(-1);
   const max = Math.max(0, (last ? last.top + last.height : 0) - height);
   let top = Math.max(0, Math.min(previousTop, max));
-  if (item && (item.top + item.height <= top || item.top >= top + height)) top = item.top;
+  if (!item) return top;
+  const bottom = item.top + item.height;
+  if (item.height > height) {
+    if (bottom <= top || item.top >= top + height) top = item.top;
+  } else if (item.top < top) {
+    top = item.top;
+  } else if (bottom > top + height) {
+    top = bottom - height;
+  }
   return Math.min(top, max);
 }
 

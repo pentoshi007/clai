@@ -82,4 +82,28 @@ describe("wrapped picker options", () => {
     expect(pickerScrollTop(items, 0, 3, 0)).toBe(0);
     expect(pickerScrollTop(items, 0, 3, 6)).toBe(6);
   });
+
+  it("keeps visible selections stationary and scrolls only enough to reveal adjacent options", () => {
+    const items = layoutPickerOptions(Array.from({ length: 20 }, (_, index) => ({
+      value: String(index), label: `Session ${index}`, description: "Details",
+    })), 40, true);
+    expect(pickerScrollTop(items, 1, 8, 0)).toBe(0);
+    expect(pickerScrollTop(items, 3, 8, 0)).toBe(0);
+    expect(pickerScrollTop(items, 4, 8, 0)).toBe(2);
+    expect(pickerScrollTop(items, 4, 8, 1)).toBe(2);
+    expect(pickerScrollTop(items, 3, 8, 7)).toBe(6);
+    expect(pickerScrollTop(items, 19, 8, 0)).toBe(32);
+    expect(pickerScrollTop(items, 0, 8, 32)).toBe(0);
+  });
+
+  it("reveals wrapped selections without snapping them to the first viewport row", () => {
+    const items = layoutPickerOptions([
+      { value: "one", label: "First", description: "Details" },
+      { value: "two", label: "Second", description: "Detail\nMore detail\nLast detail" },
+      { value: "three", label: "Third", description: "Details" },
+    ], 40, true);
+    expect(pickerScrollTop(items, 1, 5, 0)).toBe(1);
+    expect(pickerScrollTop(items, 2, 5, 1)).toBe(3);
+    expect(pickerScrollTop(items, 1, 5, 3)).toBe(2);
+  });
 });

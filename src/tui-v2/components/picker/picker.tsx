@@ -45,8 +45,8 @@ export function Picker(props: PickerProps): ReactNode {
   const showFilter = innerH >= 3;
   const bodyHeight = innerH - Number(showTitle) - Number(showFilter) - Number(innerH >= 2);
   const [query, setQuery] = useState("");
-  const [hovered, setHovered] = useState<number | undefined>(undefined);
   const [cursor, setCursor] = useState(() => activeIndex(request.options));
+  const cursorRef = useRef(cursor);
   const [paintTick, setPaintTick] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -59,9 +59,14 @@ export function Picker(props: PickerProps): ReactNode {
     () => layoutPickerOptions(filtered, innerW, twoLineLayout),
     [filtered, innerW, twoLineLayout],
   );
-  const selected = Math.min(hovered ?? cursor, Math.max(0, filtered.length - 1));
+  const selected = Math.min(cursor, Math.max(0, filtered.length - 1));
   const window = pickerWindow(items, scrollTop, bodyHeight);
   const previousFilter = useRef({ options: filtered, query });
+
+  function selectIndex(index: number): void {
+    cursorRef.current = index;
+    setCursor(index);
+  }
 
   useEffect(() => {
     const id = setTimeout(() => setPaintTick(1), 0);
@@ -70,16 +75,12 @@ export function Picker(props: PickerProps): ReactNode {
   useEffect(() => {
     const previous = previousFilter.current;
     if (request.preserveSelection && previous.query === query) {
-      const retainedIndex = (index: number): number => {
-        const value = previous.options[index]?.value;
-        const next = filtered.findIndex((option) => option.value === value);
-        return next >= 0 ? next : Math.min(index, Math.max(0, filtered.length - 1));
-      };
-      setCursor(retainedIndex);
-      setHovered((index) => index === undefined ? undefined : retainedIndex(index));
+      const index = cursorRef.current;
+      const value = previous.options[index]?.value;
+      const next = filtered.findIndex((option) => option.value === value);
+      selectIndex(next >= 0 ? next : Math.min(index, Math.max(0, filtered.length - 1)));
     } else {
-      setCursor(activeIndex(filtered));
-      setHovered(undefined);
+      selectIndex(activeIndex(filtered));
     }
     previousFilter.current = { options: filtered, query };
   }, [filtered, query, request.preserveSelection]);
@@ -103,17 +104,17 @@ export function Picker(props: PickerProps): ReactNode {
     sb.scrollTo(pickerScrollTop(items, selected, sb.viewport.height, sb.scrollTop));
   }, [selected, items, paintTick, innerH]);
 
-  const move = (next: number): void => {
-    setHovered(undefined);
-    setCursor(next);
-    scrollRef.current?.scrollTo(items[next]?.top ?? 0);
-  };
   useKeyboard((key) => {
     if (key.defaultPrevented || key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
+    const index = Math.min(cursorRef.current, Math.max(0, filtered.length - 1));
     if (chord === "up" || chord === "down") {
       key.preventDefault();
-      move(filtered.length === 0 ? 0 : (selected + (chord === "up" ? -1 : 1) + filtered.length) % filtered.length);
+      const next = filtered.length === 0 ? 0 : (index + (chord === "up" ? -1 : 1) + filtered.length) % filtered.length;
+      selectIndex(next);
+      const sb = scrollRef.current;
+      const item = items[next];
+      if (sb && item && item.height > sb.viewport.height) sb.scrollTo(item.top);
       return;
     }
     if (["pageup", "pagedown", "left", "right"].includes(chord)) {
@@ -124,22 +125,23 @@ export function Picker(props: PickerProps): ReactNode {
       const delta = direction * distance;
       sb?.scrollBy(delta);
       if (sb) {
-        const item = items[selected];
+        const item = items[index];
         if (!item || item.top + item.height <= sb.scrollTop || item.top >= sb.scrollTop + sb.viewport.height) {
-          setHovered(undefined);
-          setCursor(Math.max(0, pickerItemAtRow(items, sb.scrollTop)));
+          selectIndex(Math.max(0, pickerItemAtRow(items, sb.scrollTop)));
         }
       }
       return;
     }
     if (chord === "home" || chord === "end") {
       key.preventDefault();
-      move(chord === "home" ? 0 : Math.max(0, filtered.length - 1));
+      const next = chord === "home" ? 0 : Math.max(0, filtered.length - 1);
+      selectIndex(next);
+      scrollRef.current?.scrollTo(items[next]?.top ?? 0);
       return;
     }
     if (chord === "enter") {
       key.preventDefault();
-      const option = filtered[selected];
+      const option = filtered[index];
       if (option) services.overlay.selectPicker(option.value);
       return;
     }
@@ -160,7 +162,7 @@ export function Picker(props: PickerProps): ReactNode {
     }
     if (request.rowAction && chord === request.rowAction.chord) {
       key.preventDefault();
-      const option = filtered[selected];
+      const option = filtered[index];
       if (option) services.overlay.actOnPickerRow(option.value);
       return;
     }
@@ -248,7 +250,7 @@ export function Picker(props: PickerProps): ReactNode {
                 justifyContent: "center",
                 backgroundColor: bg,
               }}
-              onMouseOver={() => setHovered(index)}
+              onMouseMove={() => selectIndex(index)}
               onMouseDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
