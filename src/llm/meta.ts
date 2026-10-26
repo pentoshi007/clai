@@ -5,12 +5,15 @@ import type {
 } from "../types.js";
 import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
 import { cachePolicyFields } from "./cache-policy-fields.js";
-import { readJson, ingestOpenAiModelCatalog } from "./http.js";
-import { registerModelReasoningEfforts } from "./capabilities.js";
+import { readJson } from "./http.js";
+import { displayReasoningEfforts, registerModelCatalog, type CatalogModel } from "./capabilities.js";
+import { catalogEntriesFromPayload } from "./catalog-facts.js";
+import { withModelCatalogFacts } from "./catalog-context.js";
+import { parseModelCatalogEntries } from "./wire/model-catalog.js";
+import { mainEffortProbe } from "./main-effort-discovery.js";
 import { runGenerationAttempt } from "./operation-usage.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import {
-  metaAcceptedEfforts,
   metaReasoningEffort,
   metaReasoningSummary,
 } from "./meta-effort.js";
@@ -25,16 +28,20 @@ export { parseResponsesUsage as parseMetaUsage } from "./responses-dialect.js";
 
 const baseUrl = "https://api.meta.ai/v1";
 
-const modelCache = modelListCache("meta");
+const modelCache = modelListCache<CatalogModel[]>("meta");
 
 function metaReasoningPayload(
   reasoning: ReasoningPreference | undefined,
   model: string,
-): Record<string, unknown> {
-  const enabled = Boolean(reasoning?.enabled);
-  if (!enabled) return { effort: "minimal" };
-  const eff = metaReasoningEffort(reasoning?.effort ?? "medium", model);
-  return { effort: eff, summary: metaReasoningSummary(eff) };
+): Record<string, unknown> | undefined {
+  const probe = mainEffortProbe("meta", model);
+  const efforts = probe ? [probe] : displayReasoningEfforts("meta", model);
+  const requested = reasoning?.enabled ? reasoning.effort : "none";
+  const effort = metaReasoningEffort(requested, model, efforts);
+  if (effort === undefined) return undefined;
+  return reasoning?.enabled
+    ? { effort, summary: metaReasoningSummary(effort) }
+    : { effort };
 }
 
 const META_RESPONSES_CONFIG: ResponsesDialectConfig = {
@@ -79,20 +86,19 @@ export const metaProvider: LlmProvider = {
   async listModels(auth: ProviderAuth): Promise<string[]> {
     const cacheKey = auth.apiKey ?? "";
     const cached = modelCache.fresh(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      registerModelCatalog("meta", cached);
+      return cached.map((model) => model.id).sort();
+    }
     try {
       const headers: Record<string, string> = {};
       if (auth.apiKey) headers["authorization"] = `Bearer ${auth.apiKey}`;
       const response = await fetch(`${baseUrl}/models`, { headers });
-      const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
-      const models = ingestOpenAiModelCatalog("meta", data);
-      for (const model of models) {
-        registerModelReasoningEfforts("meta", model, [
-          ...metaAcceptedEfforts(model),
-        ]);
-      }
+      const data = await readJson<unknown>(response);
+      const models = parseModelCatalogEntries(catalogEntriesFromPayload(data));
+      registerModelCatalog("meta", models);
       modelCache.store(models, cacheKey);
-      return models;
+      return models.map((model) => model.id).sort();
     } catch {
       return [];
     }
@@ -118,7 +124,8 @@ export const metaProvider: LlmProvider = {
         mode: "complete",
         reason: request.attemptReason ?? "initial",
       },
-      () => responsesComplete(META_RESPONSES_CONFIG, request, auth, model),
+      () => withModelCatalogFacts("meta", modelCache.fresh(auth.apiKey) ?? [],
+        () => responsesComplete(META_RESPONSES_CONFIG, request, auth, model)),
     );
   },
   async stream(
@@ -136,7 +143,8 @@ export const metaProvider: LlmProvider = {
         mode: "stream",
         reason: request.attemptReason ?? "initial",
       },
-      () => responsesStream(META_RESPONSES_CONFIG, request, auth, onToken, model),
+      () => withModelCatalogFacts("meta", modelCache.fresh(auth.apiKey) ?? [],
+        () => responsesStream(META_RESPONSES_CONFIG, request, auth, onToken, model)),
     );
   },
 };

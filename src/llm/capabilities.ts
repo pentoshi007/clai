@@ -47,6 +47,7 @@ import { registerModelVisionCapability } from "./capability/vision-registry.js";
 import { resolveToolDialect } from "./capability/tool-dialect.js";
 import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
+import { metaModelReasoning } from "./meta-models.js";
 import { riverModelFacts } from "./river-models.js";
 import { resetMainEffortKnowledge, resolvedMainEffort } from "./main-effort-discovery.js";
 import { scopedModelCatalogFacts } from "./catalog-context.js";
@@ -187,6 +188,8 @@ export function effectiveThinkingEffort(
   if (isReasoningUnsupported(provider, model)) return undefined;
   if (!modelSupportsThinking(provider, model)) return undefined;
   const efforts = displayReasoningEfforts(provider, model);
+  const published = provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning?.supportedEfforts : undefined;
+  if (Array.isArray(published)) return clampEffortToRoute(thinking.effort, efforts);
   return resolvedMainEffort(provider, model, thinking.effort) ?? clampEffortToRoute(
     thinking.effort,
     provider === "mistral" && thinking.effort !== "none"
@@ -281,6 +284,10 @@ export function routeReasoningIsMandatory(
     (provider === "cline" || provider === "river" || provider === "hinoki") &&
     modelCatalogFacts(provider, model)?.reasoning?.mandatory === true
   ) return true;
+  if (provider === "meta") {
+    const mandatory = metaModelReasoning(model, modelCatalogFacts(provider, model)?.reasoning)?.mandatory;
+    if (mandatory !== undefined) return mandatory;
+  }
   if (provider === "mistral") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning ?? documentedMistralReasoning(model);
     if (reasoning?.mandatory === true) return true;
@@ -397,7 +404,7 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   if (
-    (provider === "mistral" || provider === "cline" || provider === "river" || provider === "constellation" || provider === "hinoki") &&
+    (provider === "meta" || provider === "mistral" || provider === "cline" || provider === "river" || provider === "constellation" || provider === "hinoki") &&
     modelCatalogFacts(provider, model)?.reasoning?.supported === false
   ) return false;
   loadLearnedCapabilities();
@@ -411,6 +418,10 @@ export function modelSupportsThinking(
 }
 
 function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
+  if (provider === "meta") {
+    const supported = metaModelReasoning(model, modelCatalogFacts(provider, model)?.reasoning)?.supported;
+    if (supported !== undefined) return supported;
+  }
   if (provider === "river") {
     const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
     if (declared !== undefined) return declared;
@@ -440,6 +451,12 @@ export function displayReasoningEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  if (provider === "meta") {
+    const published = modelCatalogFacts(provider, model)?.reasoning;
+    if (published?.supported === false) return [];
+    if (Array.isArray(published?.supportedEfforts)) return published.supportedEfforts;
+    return learnedRouteEfforts(provider, model) ?? modelReasoningEfforts(provider, model);
+  }
   const scoped = scopedKnowledge(provider, model);
   if (scoped) return scoped.acceptedEfforts ?? scoped.displayEfforts;
   if (provider === "mistral") {
@@ -540,6 +557,11 @@ export function catalogAdvertisedEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
+  if (provider === "meta") {
+    const reasoning = modelCatalogFacts(provider, model)?.reasoning;
+    if (reasoning?.supported === false) return [];
+    if (Array.isArray(reasoning?.supportedEfforts)) return reasoning.supportedEfforts;
+  }
   if (provider === "constellation" || provider === "hinoki") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     if (reasoning?.supported === false) return [];
@@ -577,6 +599,12 @@ export function modelReasoningEfforts(
   model: string,
 ): readonly string[] | undefined {
   loadLearnedCapabilities();
+  if (provider === "meta") {
+    const reasoning = metaModelReasoning(model, modelCatalogFacts(provider, model)?.reasoning);
+    if (reasoning?.supported === false) return [];
+    const efforts = reasoning?.supportedEfforts;
+    return Array.isArray(efforts) ? efforts : undefined;
+  }
   if (provider === "mistral") {
     const facts = modelCatalogFacts(provider, model)?.reasoning;
     if (facts?.supported === false) return [];
@@ -608,7 +636,7 @@ export function registerModelCatalog(
   );
   for (const model of models) {
     if (!model.id) continue;
-    if (provider === "cline" || provider === "constellation" || provider === "hinoki") {
+    if (provider === "meta" || provider === "cline" || provider === "constellation" || provider === "hinoki") {
       catalogReasoningEfforts.delete(reasoningKey(provider, model.id));
       catalogReasoningSupport.delete(reasoningKey(provider, model.id));
     }

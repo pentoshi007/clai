@@ -1,22 +1,26 @@
-const META_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+import { documentedMetaReasoning } from "./meta-models.js";
+import { EFFORT_SCALE, nearestAcceptedEffort } from "./reasoning-controls.js";
 
 export function metaSupportsMaxEffort(model: string): boolean {
-  const m = model.trim().toLowerCase();
-  if (m.includes("contributor")) return false;
-  return /muse-spark-1\.3(?![\d.])/.test(m);
+  return metaAcceptedEfforts(model).includes("max");
 }
 
 export function metaAcceptedEfforts(model: string): readonly string[] {
-  return metaSupportsMaxEffort(model)
-    ? META_EFFORTS
-    : META_EFFORTS.filter((effort) => effort !== "max");
+  const efforts = documentedMetaReasoning(model)?.supportedEfforts;
+  return Array.isArray(efforts) ? efforts : [];
 }
 
-export function metaReasoningEffort(effort: string, model: string): string {
-  const e = effort.trim().toLowerCase();
-  if (e === "none") return "minimal";
-  if (e === "max") return metaSupportsMaxEffort(model) ? "max" : "xhigh";
-  return (META_EFFORTS as readonly string[]).includes(e) ? e : "medium";
+export function metaReasoningEffort(
+  effort: string,
+  model: string,
+  accepted?: readonly string[],
+): string | undefined {
+  const normalized = effort.trim().toLowerCase();
+  const requested = EFFORT_SCALE.find((value) => value === normalized) ?? "medium";
+  const documented = documentedMetaReasoning(model);
+  const efforts = accepted ?? (documented ? metaAcceptedEfforts(model) : undefined);
+  if (efforts) return nearestAcceptedEffort(requested, efforts);
+  return requested === "none" ? "minimal" : requested;
 }
 
 export function metaReasoningSummary(effort: string): string {

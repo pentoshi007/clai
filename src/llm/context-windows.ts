@@ -57,7 +57,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /mimo/i, tokens: 128_000 },
   { pattern: /gpt-oss/i, tokens: 128_000 },
   { pattern: /nemotron/i, tokens: 128_000 },
-  { pattern: /muse-spark/i, tokens: 1_048_576 },
+  { pattern: /muse-spark|muse-wonder-1\.0(?:$|[-/])/i, tokens: 1_048_576 },
 ];
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;

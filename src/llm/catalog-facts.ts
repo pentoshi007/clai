@@ -172,6 +172,7 @@ function parseSupportedEfforts(
   if (!("supported_efforts" in reasoning)) return undefined;
   const raw = reasoning.supported_efforts;
   if (raw === null) return "any";
+  if (Array.isArray(raw) && raw.length === 0) return [];
   return catalogEffortList(stringList(raw));
 }
 
@@ -201,7 +202,7 @@ function parseReasoning(
     }
     const efforts = parseSupportedEfforts(nested);
     if (efforts !== undefined) facts.supportedEfforts = efforts;
-    facts.supported = true;
+    facts.supported = typeof nested.supported === "boolean" ? nested.supported : true;
   } else if (typeof entry.reasoning === "boolean") {
     facts.supported = entry.reasoning;
   }

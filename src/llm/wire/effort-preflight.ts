@@ -101,6 +101,7 @@ export function needsEffortPreflight(route: EffortPreflightRoute): boolean {
   }
   if (!route.rejectedEffort && probedKeys.has(key)) return false;
   if (isReasoningUnsupported(route.providerId, route.model)) return false;
+  if (route.providerId === "meta" && displayReasoningEfforts(route.providerId, route.model)?.length === 0) return false;
   if (!isSubagentProbe(route)) {
     const { providerId, model, requested } = route;
     const profile = resolveBuiltInProfile({ provider: providerId, model });

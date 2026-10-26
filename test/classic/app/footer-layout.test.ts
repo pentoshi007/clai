@@ -77,3 +77,49 @@ it.each([40, 80])("renders live, exact, idle, and next-turn TPS below the classi
     await pending;
   }
 });
+
+it.each([40, 80, 120].flatMap((columns) =>
+  (["completed", "aborted", "error"] as const).map((status) => ({ columns, status })),
+))("keeps aggregate TPS only below the composer after $status at $columns columns", async ({ columns, status }) => {
+  let handlers: RunTurnHandlers | undefined;
+  let finish: (() => void) | undefined;
+  const outcome = createTurnOutcome({ status: "succeeded", answer: "done", steps: 2, remainingCriteria: [] });
+  const h = createHarness({
+    columns, rows: 30,
+    agent: {
+      async runTurn(_request, next) {
+        handlers = next;
+        await new Promise<void>((resolve) => { finish = resolve; });
+        return outcome;
+      },
+    },
+  });
+  harness = h;
+  ui = render(createElement(ServicesProvider, {
+    services: h.services, children: createElement(ClassicApp, { wiring: h.wiring }),
+  }));
+  const pending = h.services.session.submit("measure aggregate generation");
+  try {
+    await vi.waitFor(() => expect(handlers).toBeDefined());
+    handlers!.onEvent({ type: "turn-start", prompt: "measure aggregate generation" });
+    handlers!.onEvent({ type: "generation-completed", metrics: { outputTokens: 66, durationMs: 3_000 } });
+    handlers!.onEvent({ type: "generation-completed", metrics: { outputTokens: 500, durationMs: 7_000 } });
+    if (status === "completed") handlers!.onEvent({ type: "turn-end", finalAnswer: "done", steps: 2, outcome });
+    if (status === "aborted") handlers!.onEvent({ type: "turn-aborted" });
+    if (status === "error") handlers!.onEvent({ type: "turn-error", message: "fixture error" });
+    finish?.();
+    await pending;
+    await vi.waitFor(() => {
+      const lines = ui!.lastFrame()!.split("\n");
+      expect(lines[29]).toContain("56.6 tps");
+      const transcript = lines.slice(0, 29).join("\n");
+      expect(transcript).toContain("Worked for");
+      if (status !== "completed") expect(transcript).toContain(status);
+      expect(transcript).not.toMatch(/tok\/s|\btps\b/);
+    });
+    expect(h.services.session.getState().generation).toEqual({ outputTokens: 566, durationMs: 10_000 });
+  } finally {
+    finish?.();
+    await pending;
+  }
+});

@@ -11,10 +11,7 @@ export function catalogEntryVision(entry: unknown): boolean | undefined {
   return parseCatalogFacts(entry)?.vision;
 }
 
-export function ingestModelCatalogEntries(
-  provider: ProviderId,
-  entries: readonly unknown[],
-): string[] {
+export function parseModelCatalogEntries(entries: readonly unknown[]): CatalogModel[] {
   const models: CatalogModel[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
@@ -35,6 +32,14 @@ export function ingestModelCatalogEntries(
       ...(reasoningEfforts === undefined ? {} : { reasoningEfforts }),
     });
   }
+  return models;
+}
+
+export function ingestModelCatalogEntries(
+  provider: ProviderId,
+  entries: readonly unknown[],
+): string[] {
+  const models = parseModelCatalogEntries(entries);
   if (models.length > 0) registerModelCatalog(provider, models);
   return models.map((model) => model.id).sort();
 }

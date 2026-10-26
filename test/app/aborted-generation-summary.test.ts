@@ -43,7 +43,7 @@ it("retains measured throughput when the next real provider stream is aborted af
     expect(summary).toMatchObject({ status: "aborted", generation: { outputTokens: 100, durationMs: expect.any(Number) } });
     expect(tokensPerSecondLabel(summary?.generation)).toMatch(/\d+\.\d tok\/s/);
     if (summary?.kind !== "turn-summary") throw new Error("missing turn summary");
-    expect(turnSummaryLabel(summary.durationMs, summary.status, summary.changes, summary.generation)).toContain("tok/s");
+    expect(turnSummaryLabel(summary.durationMs, summary.status, summary.changes)).not.toMatch(/tok\/s|\btps\b/);
     const saved = serializeForHistory(state, (id) => services.session.spool.tail(id));
     const restored = transcriptItems(hydrateFromClassicTranscript(saved).state).find((item) => item.kind === "turn-summary");
     expect(restored?.generation).toEqual(summary.generation);

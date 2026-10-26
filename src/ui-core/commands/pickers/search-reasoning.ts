@@ -158,13 +158,13 @@ export function reasoningOptionValues(
     return ["off"];
   }
   const accepted = displayReasoningEfforts(provider, model) ?? [];
-  const published = provider === "cline" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
+  const published = provider === "cline" || provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
   if (published?.supported === true && accepted.length === 0) {
     return published.mandatory === false ? ["off", "on"] : [];
   }
   if (
-    provider === "mistral" && accepted.length === 0 &&
-    modelSupportsThinking(provider, model)
+    accepted.length === 0 && (provider === "meta" ||
+      (provider === "mistral" && modelSupportsThinking(provider, model)))
   ) {
     return [];
   }
@@ -180,7 +180,7 @@ export function reasoningOptionValues(
 
 function reasoningPickerTitle(provider: ProviderId, model: string): string {
   const evidence = modelReasoningEvidence(provider, model);
-  const published = provider === "cline" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
+  const published = provider === "cline" || provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
   const status =
     (published?.mandatory !== false && modelReasoningIsMandatory(model)) || routeReasoningIsMandatory(provider, model)
       ? "always on"

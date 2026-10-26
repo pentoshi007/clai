@@ -17,10 +17,10 @@ describe("Classic session changes", () => {
     }));
     const frame = () => view.lastFrame()?.replace(/[│║]/g, "").replace(/\s+/g, " ") ?? "";
     try {
-      await expect.poll(frame).toContain("Worked for 1m16s · +213 -435 · /changes · 42.0 tok/s");
-      await expect.poll(frame).toContain("Worked for 5.0s · aborted · +5 -1 · /changes · 30.0 tok/s");
-      expect(frame()).toContain("Worked for 2.0s · 50.0 tok/s");
-      expect(frame()).not.toContain("/changes · 50.0 tok/s");
+      await expect.poll(frame).toContain("Worked for 1m16s · +213 -435 · /changes");
+      await expect.poll(frame).toContain("Worked for 5.0s · aborted · +5 -1 · /changes");
+      expect(frame()).toContain("Worked for 2.0s");
+      expect(frame()).not.toContain("tok/s");
       expect(frame()).not.toContain("Worked for 2.0s · +");
       h.wiring.composer.setText("/changes");
       h.wiring.handleData("\r");

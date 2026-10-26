@@ -87,15 +87,12 @@ export function turnSummaryLabel(
   durationMs: number,
   status: "completed" | "aborted" | "error",
   changes?: LineChangeTotals,
-  generation?: GenerationMetrics,
 ): string {
   const base = `Worked for ${formatDurationMs(durationMs)}`;
   const statusLabel = status === "completed" ? base : `${base} · ${status}`;
-  const label = changes && sumLineChanges([changes])
+  return changes && sumLineChanges([changes])
     ? `${statusLabel} · +${changes.added} -${changes.removed} · /changes`
     : statusLabel;
-  const tps = tokensPerSecondLabel(generation);
-  return tps ? `${label} · ${tps}` : label;
 }
 
 export function tokensPerSecondLabel(generation: GenerationMetrics | undefined): string | undefined {

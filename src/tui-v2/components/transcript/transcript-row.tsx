@@ -180,7 +180,7 @@ function TurnSummaryRow(props: {
   const { item, theme } = props;
   const { width } = useTerminalDimensionsContext();
   const changes = lineChangeLabels(item.changes);
-  const label = `✻ ${turnSummaryLabel(item.durationMs, item.status, item.changes, item.generation)}`;
+  const label = `✻ ${turnSummaryLabel(item.durationMs, item.status, item.changes)}`;
   const lines = wrapAnsiLine(label, Math.max(1, props.contentWidth ?? width - 6));
   return (
     <box style={{ flexDirection: "column", width: "100%", marginBottom: 1 }}>

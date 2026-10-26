@@ -355,7 +355,7 @@ export function buildResponsesBody(
     : config.reasoningPayload(plan.controls.reasoning, options.model);
   const exactEffort = mainEffortProbe(config.providerId, options.model);
   if (exactEffort !== undefined) reasoning = { effort: exactEffort };
-  else if (hasMainEffortKnowledge(config.providerId, options.model) && plan.controls.reasoning && !plan.controls.controlSuppression) {
+  else if (config.providerId !== "meta" && hasMainEffortKnowledge(config.providerId, options.model) && plan.controls.reasoning && !plan.controls.controlSuppression) {
     reasoning = { ...reasoning, effort: plan.controls.reasoning.enabled ? plan.controls.reasoning.effort : "none" };
   }
   const input = toResponsesInput(

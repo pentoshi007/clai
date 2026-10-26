@@ -1,5 +1,6 @@
 import type { ProviderId, ReasoningPreference } from "../../types.js";
 import {
+  displayReasoningEfforts,
   modelReasoningEfforts,
   modelSupportsThinking,
 } from "../capabilities.js";
@@ -88,8 +89,9 @@ export function buildReasoningPayload(
 
   switch (style) {
     case "meta": {
-      if (!enabled) return { reasoning_effort: "minimal" };
-      return { reasoning_effort: metaReasoningEffort(effort, model ?? "") };
+      const id = model ?? "";
+      const mapped = metaReasoningEffort(enabled ? effort : "none", id, displayReasoningEfforts("meta", id));
+      return mapped === undefined ? {} : { reasoning_effort: mapped };
     }
     case "openai": {
       if (!enabled) {

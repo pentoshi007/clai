@@ -50,3 +50,40 @@ it.each([false, true])("streams real provider throughput into the session footer
     await pending.catch(() => undefined);
   }
 }, 15_000);
+
+it("settles real multi-request provider throughput to the same facts as the turn summary", async () => {
+  let now = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const wires: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const transport = installTransport(() => new Response(new ReadableStream<Uint8Array>({
+    start(controller) { wires.push(controller); },
+  }), { headers: { "content-type": "application/x-ndjson" } }));
+  services = createCompositionRoot({
+    provider: "ollama", model: "fixture-model", noHistory: true,
+    persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+  });
+  const session = services.session;
+  const pending = session.submit("Read README.md, then say hi without further tools.");
+  try {
+    await vi.waitFor(() => expect(wires).toHaveLength(1));
+    now = 3_000;
+    wires[0]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "Reading.", tool_calls: [{ function: { name: "fs_read", arguments: { path: "README.md", limit: 1 } } }] }, done: false })}\n`));
+    wires[0]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, prompt_eval_count: 1_000, eval_count: 66 })}\n`));
+    wires[0]!.close();
+    await vi.waitFor(() => expect(wires).toHaveLength(2));
+    now = 10_000;
+    wires[1]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "hi" }, done: false })}\n`));
+    wires[1]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, prompt_eval_count: 1_000, eval_count: 500 })}\n`));
+    wires[1]!.close();
+    await pending;
+    expect(transport.generations).toHaveLength(2);
+    expect(session.getState().running).toBe(false);
+    const summary = transcriptItems(services.transcript.getState()).find((item) => item.kind === "turn-summary");
+    expect(summary?.generation).toEqual({ outputTokens: 566, durationMs: 10_000 });
+    expect(session.getState().generation).toEqual(summary?.generation);
+    expect(footerMetrics(session.getState().contextUsage!, session.getState().generation, 80).rate).toBe("56.6 tps");
+  } finally {
+    services.dispose();
+    await pending.catch(() => undefined);
+  }
+}, 15_000);

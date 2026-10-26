@@ -165,18 +165,12 @@ describe("thinkingElapsedLabel / compactionElapsedLabel", () => {
   });
 });
 
-describe("turn throughput labels", () => {
-  const generation = { outputTokens: 420, durationMs: 10_000 };
-  it("orders time, changes, the changes command, and TPS", () => {
-    expect(turnSummaryLabel(76_000, "completed", { added: 213, removed: 435 }, generation))
-      .toBe("Worked for 1m16s · +213 -435 · /changes · 42.0 tok/s");
-    expect(turnSummaryLabel(2_000, "completed", undefined, generation)).toBe("Worked for 2.0s · 42.0 tok/s");
-    expect(turnSummaryLabel(5_000, "aborted", undefined, generation)).toBe("Worked for 5.0s · aborted · 42.0 tok/s");
-    expect(turnSummaryLabel(2_500, "error", { added: 0, removed: 0 }, generation)).toBe("Worked for 2.5s · error · 42.0 tok/s");
-  });
-  it("omits unavailable and zero-output throughput without dangling separators", () => {
-    expect(turnSummaryLabel(2_000, "completed", undefined, { outputTokens: 0, durationMs: 1_000 })).toBe("Worked for 2.0s");
-    expect(turnSummaryLabel(2_000, "completed", undefined, { outputTokens: 10, durationMs: 0 })).toBe("Worked for 2.0s");
-    expect(turnSummaryLabel(2_000, "completed", undefined, { outputTokens: 1, durationMs: 3_000 })).toBe("Worked for 2.0s · 0.3 tok/s");
+describe("turn-summary labels", () => {
+  it("retains time, status, changes, and the changes command without TPS", () => {
+    expect(turnSummaryLabel(76_000, "completed", { added: 213, removed: 435 }))
+      .toBe("Worked for 1m16s · +213 -435 · /changes");
+    expect(turnSummaryLabel(2_000, "completed")).toBe("Worked for 2.0s");
+    expect(turnSummaryLabel(5_000, "aborted")).toBe("Worked for 5.0s · aborted");
+    expect(turnSummaryLabel(2_500, "error", { added: 0, removed: 0 })).toBe("Worked for 2.5s · error");
   });
 });

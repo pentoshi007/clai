@@ -4,6 +4,11 @@ import type { RunTurnHandlers } from "../../src/app/ports/agent-port.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import { getProvider } from "../../src/llm/router.js";
 import { footerMetrics } from "../../src/ui-core/rendering/footer-metrics.js";
+import type { AgentEvent } from "../../src/agent/events.js";
+import type { AnyAppEvent } from "../../src/app/events/app-event.js";
+import { tokensPerSecondLabel } from "../../src/ui-core/rendering/duration.js";
+import { applyAppEvent } from "../../src/ui-core/state/transcript/apply-app-event.js";
+import { EMPTY_TRANSCRIPT_STATE, transcriptItems } from "../../src/ui-core/state/transcript-types.js";
 
 function rate(session: SessionController): string | undefined {
   const usage = { contextTokens: 0, contextLimit: 0, lastCompletionTokens: 0, sessionPromptTokens: 0, sessionCompletionTokens: 0, exact: true };
@@ -20,11 +25,12 @@ function harness() {
   vi.spyOn(getProvider("free"), "listModels").mockResolvedValue([]);
   let handlers: RunTurnHandlers | undefined;
   let finish: (() => void) | undefined;
+  const events: AnyAppEvent[] = [];
   const session = new SessionController({
     provider: "free",
     model: "fixture-model",
     noHistory: true,
-    emit() {},
+    emit(event) { events.push(event); },
     persistence: {
       async saveSession() {}, async loadPlan() { return undefined; },
       async savePlan() {}, async deletePlan() {},
@@ -47,10 +53,43 @@ function harness() {
       return { turn, handlers: handlers! };
     },
     finish() { finish?.(); },
+    summary() {
+      return transcriptItems(events.reduce(applyAppEvent, EMPTY_TRANSCRIPT_STATE))
+        .findLast((item) => item.kind === "turn-summary");
+    },
   };
 }
 
 describe("session footer generation metrics", () => {
+  const outcome = createTurnOutcome({ status: "succeeded", answer: "hi", steps: 2, remainingCriteria: [] });
+  const ended: AgentEvent = { type: "turn-end", finalAnswer: "hi", steps: 2, outcome };
+
+  it.each([
+    ended, { type: "turn-aborted" }, { type: "turn-error", message: "failed" },
+  ] satisfies AgentEvent[])("settles the footer to the same aggregate as the $type summary", async (terminal) => {
+    const h = harness();
+    const { turn, handlers } = await h.start();
+    handlers.onEvent?.({ type: "turn-start", prompt: "hi" });
+    handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 66, durationMs: 3_000 } });
+    expect(rate(h.session)).toBe("22.0 tps");
+    handlers.onEvent?.({ type: "status", text: "waiting for tool" });
+    handlers.onEvent?.({ type: "generation-progress", metrics: { outputTokens: 400, durationMs: 6_000, estimated: true } });
+    expect(rate(h.session)).toBe("~66.7 tps");
+    handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 500, durationMs: 7_000 } });
+    expect(rate(h.session)).toBe("71.4 tps");
+    handlers.onEvent?.(terminal);
+    expect(rate(h.session)).toBe("56.6 tps");
+    handlers.onEvent?.({ type: "generation-progress", metrics: { outputTokens: 999, durationMs: 1_000, estimated: true } });
+    handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 999, durationMs: 1_000 } });
+    expect(rate(h.session)).toBe("56.6 tps");
+    h.finish();
+    await turn;
+    expect(h.summary()?.generation).toEqual({ outputTokens: 566, durationMs: 10_000 });
+    expect(tokensPerSecondLabel(h.summary()?.generation)).toBe("56.6 tok/s");
+    expect(rate(h.session)).toBe("56.6 tps");
+    expect(h.session.getState().generation).toEqual(h.summary()?.generation);
+  });
+
   it("keeps the last measured rate through tools, unknown rounds, idle, and a new turn", async () => {
     const h = harness();
     const { turn, handlers } = await h.start();
@@ -67,13 +106,45 @@ describe("session footer generation metrics", () => {
     expect(updates).toBe(1);
     handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 123, durationMs: 3_000 } });
     expect(updates).toBe(2);
+    handlers.onEvent?.(ended);
+    expect(h.summary()?.generation).toBeUndefined();
+    expect(updates).toBe(2);
     h.finish();
     await turn;
     expect(rate(h.session)).toBe("41.0 tps");
     const next = await h.start();
     expect(rate(h.session)).toBe("41.0 tps");
+    next.handlers.onEvent?.(ended);
     h.finish();
     await next.turn;
+    expect(rate(h.session)).toBe("41.0 tps");
+  });
+
+  it("includes measured zero-token rounds and resets the aggregate on the next turn", async () => {
+    const h = harness();
+    const first = await h.start();
+    first.handlers.onEvent?.({ type: "turn-start", prompt: "hi" });
+    first.handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 66, durationMs: 3_000 } });
+    first.handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 0, durationMs: 1_500 } });
+    expect(rate(h.session)).toBe("22.0 tps");
+    first.handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 500, durationMs: 5_500 } });
+    first.handlers.onEvent?.(ended);
+    h.finish();
+    await first.turn;
+    expect(rate(h.session)).toBe("56.6 tps");
+    expect(h.session.getState().generation).toEqual(h.summary()?.generation);
+    const next = await h.start();
+    expect(rate(h.session)).toBe("56.6 tps");
+    first.handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 999, durationMs: 1_000 } });
+    first.handlers.onEvent?.(ended);
+    expect(rate(h.session)).toBe("56.6 tps");
+    next.handlers.onEvent?.({ type: "turn-start", prompt: "next" });
+    next.handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 80, durationMs: 1_000 } });
+    next.handlers.onEvent?.(ended);
+    h.finish();
+    await next.turn;
+    expect(h.session.getState().generation).toEqual({ outputTokens: 80, durationMs: 1_000 });
+    expect(h.session.getState().generation).toEqual(h.summary()?.generation);
   });
 
   it("updates during streaming, distinguishes estimates, and settles to exact provider usage", async () => {
@@ -124,9 +195,11 @@ describe("session footer generation metrics", () => {
     expect(h.session.getState().generation).toBeUndefined();
     handlers.onEvent?.({ type: "generation-progress", metrics: { outputTokens: 200, durationMs: 2_000, estimated: true } });
     handlers.onEvent?.({ type: "generation-completed", metrics: { outputTokens: 200, durationMs: 2_000 } });
+    handlers.onEvent?.(ended);
     expect(h.session.getState().generation).toBeUndefined();
     h.finish();
     await turn;
+    expect(h.session.getState().generation).toBeUndefined();
   });
 
   it.each([

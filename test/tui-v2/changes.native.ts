@@ -47,16 +47,14 @@ for (const width of [120, 80, 40]) {
     assert.deepEqual(span.fg.toInts(), RGBA.fromHex(color).toInts(), `Incorrect color for ${text}`);
   }
   try {
-    const frame = await waitFor("Worked for 1m16s · +213 -435 · /changes · 42.0 tok/s");
-    assert.ok(frame.includes("Worked for 5.0s · aborted · +5 -1 · /changes · 30.0 tok/s"), frame);
-    assert.ok(frame.includes("Worked for 2.0s · 50.0 tok/s"), frame);
-    assert.ok(!frame.includes("/changes · 50.0 tok/s"), frame);
+    const frame = await waitFor("Worked for 1m16s · +213 -435 · /changes");
+    assert.ok(frame.includes("Worked for 5.0s · aborted · +5 -1 · /changes"), frame);
+    assert.ok(frame.includes("Worked for 2.0s"), frame);
+    assert.doesNotMatch(frame, /tok\/s|\btps\b/);
     assert.ok(!frame.includes("Worked for 2.0s · +"), frame);
     assertColor("Worked for 1m16s", theme.muted);
     assertColor("+213", theme.success);
     assertColor("-435", theme.diffDel);
-    assertColor("42.0 tok/s", theme.muted);
-    assertColor("30.0 tok/s", theme.muted);
     await settle(() => setup.mockInput.typeText("/changes"));
     await settle(() => setup.mockInput.pressEnter());
     await waitFor("+218 -436");

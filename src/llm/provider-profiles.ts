@@ -130,7 +130,7 @@ export function catalogLayerFor(
 ): ProviderProfileLayer | undefined {
   const facts = modelCatalogFacts(provider, model);
   const layer = facts ? catalogProfileLayer(facts) : undefined;
-  if (provider !== "cline" || !layer || facts?.reasoning?.supported !== false) return layer;
+  if ((provider !== "cline" && provider !== "meta") || !layer || facts?.reasoning?.supported !== false) return layer;
   return {
     ...layer,
     reasoning: {
@@ -264,13 +264,14 @@ function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
   const wireEfforts = learnedRouteEfforts(provider, model);
   const advertised = catalogAdvertisedEfforts(provider, model);
   const learnedEfforts =
-    wireEfforts ??
-    advertised ??
+    (provider === "meta" ? advertised ?? wireEfforts : wireEfforts ?? advertised) ??
     (profile.reasoning.acceptedEfforts.length === 0
       ? modelReasoningEfforts(provider, model)
       : undefined);
+  const published = modelCatalogFacts(provider, model)?.reasoning;
   const discovered = hasMainEffortKnowledge(provider, model) && Boolean(wireEfforts?.length) &&
-    modelCatalogFacts(provider, model)?.reasoning?.supported !== false &&
+    !(provider === "meta" && Array.isArray(published?.supportedEfforts)) &&
+    published?.supported !== false &&
     isEffortControlDialect(profile.reasoning.control.dialect);
   if (!suppressed && !mandatory && !learnedEfforts?.length) return profile;
   const observed: ProfileEvidence = {

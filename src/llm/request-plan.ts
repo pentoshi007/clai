@@ -383,7 +383,9 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     (input.provider === "mistral" || input.provider === "river") && reasoningEnabled && input.reasoning?.effort !== "none"
     ? profile.reasoning.acceptedEfforts.filter((effort) => effort !== "none")
     : profile.reasoning.acceptedEfforts;
-  const discoveredEffort = input.reasoning &&
+  const prefersPublishedEfforts = input.provider === "meta" &&
+    Array.isArray(modelCatalogFacts(input.provider, input.model)?.reasoning?.supportedEfforts);
+  const discoveredEffort = !prefersPublishedEfforts && input.reasoning &&
     (input.reasoning.enabled || input.reasoning.effort === "none") &&
     mainEffortProbe(input.provider, input.model) === undefined
     ? resolvedMainEffort(input.provider, input.model, input.reasoning.effort) : undefined;

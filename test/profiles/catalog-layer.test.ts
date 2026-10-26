@@ -110,13 +110,20 @@ describe("catalog facts reach the resolved profile per facet", () => {
 });
 
 describe("meta effort vocabulary follows the live catalog", () => {
-  it("advertises no fixed list until the provider sends one", () => {
+  it("uses the documented vocabulary for known ID-only models", () => {
     const profile = resolveBuiltInProfile({
       provider: "meta",
       model: "muse-spark-1.2",
     });
+    const documented = ["minimal", "low", "medium", "high", "xhigh"];
+    expect(profile.reasoning.acceptedEfforts).toEqual(documented);
+    expect(displayReasoningEfforts("meta", "muse-spark-1.2")).toEqual(documented);
+  });
+
+  it("advertises no fixed list for an unknown model until the provider sends one", () => {
+    const profile = resolveBuiltInProfile({ provider: "meta", model: "future-meta-model" });
     expect(profile.reasoning.acceptedEfforts).toEqual([]);
-    expect(displayReasoningEfforts("meta", "muse-spark-1.2")).toBeUndefined();
+    expect(displayReasoningEfforts("meta", "future-meta-model")).toBeUndefined();
   });
 
   it("scopes efforts to what the catalog advertises for the model", () => {

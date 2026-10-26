@@ -15,6 +15,7 @@ import { constellationModelLayer } from "./constellation-profile.js";
 import { hinokiModelLayer } from "./hinoki-profile.js";
 import { catalogEffortList } from "./catalog-facts.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
+import { metaModelReasoning } from "./meta-models.js";
 import { isRiverDeepSeekModel } from "./river-models.js";
 import {
   AWS_MANTLE_ANTHROPIC_MODEL,
@@ -208,10 +209,39 @@ function openrouterModelLayer(model: string): ProviderProfileLayer | undefined {
   };
 }
 
+function metaModelLayer(model: string): ProviderProfileLayer {
+  const published = modelCatalogFacts("meta", model)?.reasoning;
+  const reasoning = metaModelReasoning(model, published);
+  const efforts = Array.isArray(reasoning?.supportedEfforts) ? reasoning.supportedEfforts : [];
+  const evidence = published
+    ? { source: "catalog" as const, confidence: "high" as const }
+    : providerDoc("https://dev.meta.ai/docs/reasoning");
+  const supported = reasoning?.supported;
+  return {
+    evidence,
+    reasoning: {
+      generation: supported === false ? "none" : reasoning?.mandatory === true ? "mandatory"
+        : supported === true ? "optional" : "unknown",
+      generationEvidence: evidence,
+      control: {
+        dialect: "meta-reasoning-effort",
+        status: supported === false || (Array.isArray(reasoning?.supportedEfforts) && efforts.length === 0)
+          ? "unsupported" : efforts.length > 0 ? "supported" : "unknown",
+        evidence,
+      },
+      acceptedEfforts: efforts,
+      disable: reasoning?.mandatory === false ? "supported" : "unsupported",
+      disableForm: efforts.includes("none") ? "effort-none" : "none-documented",
+      ...(reasoning?.defaultEffort ? { defaultEffort: reasoning.defaultEffort } : {}),
+    },
+  };
+}
+
 export function modelLayerFor(
   provider: ProviderId,
   model: string,
 ): ProviderProfileLayer | undefined {
+  if (provider === "meta") return metaModelLayer(model);
   if (provider === "constellation") return constellationModelLayer(modelCatalogFacts(provider, model));
   if (provider === "hinoki") return hinokiModelLayer(modelCatalogFacts(provider, model));
   if (provider === "cline") {

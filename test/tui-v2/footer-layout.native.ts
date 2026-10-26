@@ -65,7 +65,34 @@ try {
   assert.match(setup.captureCharFrame().split("\n")[29]!, /~50\.0 tps/);
   await act(async () => { finish?.(); await pending; });
   assert.match(setup.captureCharFrame().split("\n")[29]!, /~50\.0 tps/);
-  console.log("Native footer layout passed: resize, multiline drafts, live/exact/idle/new-turn throughput, compact labels, and Shift+Tab keyboard behavior");
+  for (const status of ["completed", "aborted", "error"] as const) {
+    await settle(() => { pending = services.session.submit("hi"); });
+    await settle(() => {
+      activeHandlers?.onEvent({ type: "turn-start", prompt: "hi" });
+      activeHandlers?.onEvent({ type: "generation-completed", metrics: { outputTokens: 66, durationMs: 3_000 } });
+      activeHandlers?.onEvent({ type: "generation-completed", metrics: { outputTokens: 500, durationMs: 7_000 } });
+    });
+    assert.match(setup.captureCharFrame().split("\n")[29]!, /71\.4 tps/);
+    await act(async () => {
+      const outcome = createTurnOutcome({ status: "succeeded", answer: "hi", steps: 2, remainingCriteria: [] });
+      if (status === "completed") activeHandlers?.onEvent({ type: "turn-end", finalAnswer: "hi", steps: 2, outcome });
+      if (status === "aborted") activeHandlers?.onEvent({ type: "turn-aborted" });
+      if (status === "error") activeHandlers?.onEvent({ type: "turn-error", message: "fixture error" });
+      finish?.();
+      await pending;
+    });
+    for (const width of [40, 80, 120]) {
+      await settle(() => setup.resize(width, 30));
+      const frame = setup.captureCharFrame();
+      assert.match(frame, /Worked for/);
+      if (status !== "completed") assert.ok(frame.includes(status), frame);
+      assert.doesNotMatch(frame, /tok\/s/);
+      assert.match(frame.split("\n")[29]!, /56\.6 tps/);
+      assert.doesNotMatch(frame.split("\n").slice(0, 29).join("\n"), /\btps\b/);
+      assert.doesNotMatch(frame, /71\.4 tps/);
+    }
+  }
+  console.log("Native footer layout passed: resize, multiline drafts, live/exact/idle/new-turn throughput, aggregate TPS below composer only, compact labels, and Shift+Tab keyboard behavior");
 } finally {
   await act(async () => { services.dispose(); setup.renderer.destroy(); });
   await setup.renderer.idle();

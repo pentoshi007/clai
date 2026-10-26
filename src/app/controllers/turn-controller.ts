@@ -139,10 +139,18 @@ export class TurnController implements Disposable {
     this.active = true;
     this.abortReason = undefined;
 
+    let acceptingEvents = true;
     const adapter = new AgentEventAdapter(
       this.deps.sequencer,
       this.deps.spool,
-      this.deps.emit,
+      (event) => {
+        if (acceptingEvents && (event.type === "turn-ended" ||
+            event.type === "turn-aborted" || event.type === "turn-error")) {
+          acceptingEvents = false;
+          options.onGeneration?.(event.payload.generation);
+        }
+        this.deps.emit(event);
+      },
       () => this.abortReason,
     );
     adapter.setTurn(turnId);
@@ -152,12 +160,12 @@ export class TurnController implements Disposable {
       options.onSubmitted?.();
       submitted = true;
     };
-    let acceptingGeneration = true;
     const coalescer = new DeltaCoalescer((event) => {
+      if (!acceptingEvents) return;
       if (event.type === "turn-start" && options.prepareRequest) return;
       if (event.type === "model-submitted") acknowledge();
-      if (acceptingGeneration && (event.type === "generation-completed" ||
-          (event.type === "generation-progress" && !ac.signal.aborted))) {
+      if (event.type === "generation-completed" ||
+          (event.type === "generation-progress" && !ac.signal.aborted)) {
         options.onGeneration?.(event.metrics);
       }
       adapter.ingest(event);
@@ -205,7 +213,7 @@ export class TurnController implements Disposable {
       if (aborted) return { status: "aborted", turnId };
       return { status: "error", turnId, error: failure };
     } finally {
-      acceptingGeneration = false;
+      acceptingEvents = false;
       if (external) external.removeEventListener("abort", onExternalAbort);
       this.active = false;
       this.ac = undefined;

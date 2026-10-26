@@ -16,6 +16,16 @@
 - Remove delivered results from the Responder strip, including delivered-but-unread entries. Keep running and awaiting-delivery work visible without changing result consumption or Jobs history.
 - Stabilize history selection and scrolling, simplify pagers, and keep image-view cards compact.
 
+### Meta model capabilities
+
+- Prefer published model context limits, output limits, and reasoning efforts. When Meta returns only model IDs, use the documented 1,048,576-token context for Muse Wonder 1.0 and Muse Spark text models rather than the generic 200k fallback.
+- Show only supported effort levels. Preserve literal `max` for Muse Wonder 1.0 and standard Muse Spark 1.3 in complete and streaming requests, including after catalog refreshes and earlier learned downgrades. Keep credential-scoped cached metadata separate and omit unsupported reasoning controls.
+
+### Composer-only token speed
+
+- Show token speed only below the composer in Classic and OpenTUI. Retain duration, completion status, line-change counts, and `/changes` in turn summaries without appending TPS.
+- Settle the footer to the completed turn's aggregate output tokens and provider-active duration, including aborted and failed turns. Preserve live estimates, stored generation metrics, and lifecycle fencing against late events.
+
 ### Reliability
 
 - Restore River usage reporting and strengthen provider-accounting coverage.
