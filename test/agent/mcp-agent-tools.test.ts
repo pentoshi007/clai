@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { updateConfig } from "../../src/store/config.js";
 import { readFile, rm } from "node:fs/promises";
 import type { ToolCall, ToolResult } from "../../src/types.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
@@ -97,7 +98,10 @@ describe("mcp agent tool helpers", () => {
 });
 
 describe("mcp agent tool execution", () => {
-  it("keeps oversized discovery details in an artifact with bounded model context", async () => {
+  afterEach(() => { updateConfig({ saveToolOutputs: false }); });
+
+  it.each([false, true])("bounds oversized discovery details with saving set to %s", async (saveToolOutputs) => {
+    updateConfig({ saveToolOutputs });
     const output = `MCP tools 1–1 of 1.\n- mcp.docs.lookup args=${JSON.stringify({
       type: "object",
       properties: { id: { type: "string", description: "Field instructions. ".repeat(2_000) } },
@@ -112,11 +116,16 @@ describe("mcp agent tool execution", () => {
     expect(result.ok).toBe(true);
     expect(result.result.output).toBe(output);
     expect(result.contextOutput.length).toBeLessThan(13_000);
+    const path = result.result.outputPath;
+    expect(Boolean(path)).toBe(saveToolOutputs);
+    expect(emitResult).toHaveBeenCalledWith("oversized-catalog", result.result, result.contextOutput, path);
+    if (!path) {
+      expect(result.contextOutput).toContain("Full body was not persisted.");
+      expect(result.contextOutput).not.toContain("Full artifact:");
+      return;
+    }
     expect(result.contextOutput).toContain("Full artifact:");
     expect(result.contextOutput).toContain("fs.read");
-    expect(result.result.outputPath).toBeDefined();
-    const path = result.result.outputPath!;
-    expect(emitResult).toHaveBeenCalledWith("oversized-catalog", result.result, result.contextOutput, path);
     try {
       expect(await readFile(path, "utf8")).toBe(`${output}\n`);
     } finally {

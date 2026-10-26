@@ -182,10 +182,8 @@ for (const multi of [false, true]) {
           const row = frameRows.findIndex(line => line.includes(label));
           assert.ok(row >= 0, before);
           const column = frameRows[row]!.indexOf(label);
-          await act(async () => {
-            await setup.mockMouse.click(column + 1, row);
-            await setup.flush();
-          });
+          await act(async () => { await setup.mockMouse.click(column + 1, row); });
+          await act(async () => { await setup.flush(); });
           const after = setup.captureCharFrame();
           assert.equal(after.includes("ROW_0_0"), label === "expand", after);
           assert.doesNotMatch(after, /\b(?:expand|collapse) all\b/i);

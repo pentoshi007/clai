@@ -125,7 +125,7 @@ const execute = async (
   const shown = mcpAgentOutput(call, result);
   const artifactPath = shown.length > 24_000 ? await saveToolOutput(call, shown) : undefined;
   const framed = { ...result, output: shown, ...(artifactPath ? { outputPath: artifactPath } : {}) };
-  const contextOutput = artifactPath ? formatToolContext(call, framed) : shown;
+  const contextOutput = shown.length > 24_000 ? formatToolContext(call, framed) : shown;
   ports.recordAttempt(call, result.ok, shown);
   ports.writeOutput(toolEventId, `${shown}\n`);
   ports.emitResult(toolEventId, framed, contextOutput, artifactPath);

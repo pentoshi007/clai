@@ -163,6 +163,8 @@ describe("session workspace path routing", () => {
     const { beginSessionWorkspace, clearActiveSessionWorkspace } =
       await import("../src/store/session-workspace.js");
     const { shellExec } = await import("../src/tools/shell.js");
+    const { updateConfig } = await import("../src/store/config.js");
+    updateConfig({ saveToolOutputs: true });
 
     const ws = track(beginSessionWorkspace());
     const result = await shellExec({

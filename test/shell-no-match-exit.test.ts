@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { shellExec } from "../src/tools/shell.js";
+import { updateConfig } from "../src/store/config.js";
 
 describe("shell exec — grep-family no-match exit classification", () => {
   it("treats grep exit 1 (no matches) as success with an explanatory note", async () => {
@@ -109,12 +110,17 @@ describe("shell exec — requested command classification", () => {
   });
 
   it("names the output artifact after the requested command", async () => {
-    const result = await shellExec({
-      command: "printf hi",
-      requestedCommand: "git status",
-      timeoutMs: 5_000,
-    });
-    expect(result.output).toBe("hi");
-    expect(basename(result.outputPath ?? "")).toMatch(/-git\.txt$/);
+    updateConfig({ saveToolOutputs: true });
+    try {
+      const result = await shellExec({
+        command: "printf hi",
+        requestedCommand: "git status",
+        timeoutMs: 5_000,
+      });
+      expect(result.output).toBe("hi");
+      expect(basename(result.outputPath ?? "")).toMatch(/-git\.txt$/);
+    } finally {
+      updateConfig({ saveToolOutputs: false });
+    }
   });
 });

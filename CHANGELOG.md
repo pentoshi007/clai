@@ -19,6 +19,7 @@
 ### Reliability
 
 - Restore River usage reporting and strengthen provider-accounting coverage.
+- Keep oversized MCP discovery output bounded in model context even when automatic saving is disabled, without advertising a nonexistent artifact.
 - Accept generated history session IDs whose timestamp ends in `sk`, without weakening rejection of secret-like parent identifiers. Add a deterministic regression for the intermittent subagent-history CI failure.
 - Extend native terminal and cross-platform CI coverage for settings, output retention, attachment colors, and tool/task interactions. Correct the stale multi-file pager-title assertion.
 

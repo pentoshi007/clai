@@ -355,10 +355,15 @@ describe.skipIf(process.platform === "win32")("shell.exec with rtk compression",
   });
 
   it("names the output artifact after the requested command, not rtk", async () => {
-    const result = await exec("grep alpha notes.txt");
-    expect(result.output).toContain(`${FAKE_RTK_MARKER} grep`);
-    expect(result.outputPath).toBeDefined();
-    expect(basename(result.outputPath!)).toMatch(/-grep\.txt$/);
+    updateConfig({ saveToolOutputs: true });
+    try {
+      const result = await exec("grep alpha notes.txt");
+      expect(result.output).toContain(`${FAKE_RTK_MARKER} grep`);
+      expect(result.outputPath).toBeDefined();
+      expect(basename(result.outputPath!)).toMatch(/-grep\.txt$/);
+    } finally {
+      updateConfig({ saveToolOutputs: false });
+    }
   });
 
   it("does not count a command that fails to launch", async () => {
