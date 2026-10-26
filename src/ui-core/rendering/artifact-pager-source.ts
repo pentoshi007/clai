@@ -31,6 +31,7 @@ export interface ArtifactPagerSource {
   watch?(onChange: () => void): () => void;
   isGrowing?(): boolean;
   commandTone?(): PagerCommandTone;
+  commandText?(): string | undefined;
   regions?(): PagerBodyRegions | undefined;
 }
 

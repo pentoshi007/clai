@@ -184,6 +184,7 @@ export function Pager(props: PagerProps): ReactNode {
   const hasQuery = query.trim().length > 0;
   const rowHighlightPath = viewMode === "raw" && highlightPath ? highlightPath : "";
   const commandTone = source?.commandTone?.() ?? regions?.inputTone;
+  const commandText = source?.commandText?.();
   const rowRegions = useMemo(() => {
     const currentRegions = source?.regions ? source.regions() : regions;
     return viewMode === "raw" ? pagerRegionsForPage(currentRegions, artifactPage?.offset) : undefined;
@@ -718,7 +719,7 @@ export function Pager(props: PagerProps): ReactNode {
       borderStyle="rounded"
       title={borderTitle}
       titleAlignment="left"
-      titleColor={commandTone ? theme[pagerCommandColor(commandTone)] : theme.cyan}
+      titleColor={theme.cyan}
       style={{
         flexDirection: "column",
         width: size.width,
@@ -818,6 +819,18 @@ export function Pager(props: PagerProps): ReactNode {
           refreshScrollHint();
         }}
       >
+        {commandText ? <text
+          id="pager-command"
+          selectable
+          wrapMode="word"
+          content={`command: ${sanitizeDisplayText(commandText)}\n`}
+          style={{
+            width: "100%",
+            flexShrink: 0,
+            fg: theme[pagerCommandColor(commandTone ?? "running")],
+            bg: theme.background,
+          }}
+        /> : null}
         {continuous ? <box key="before" style={{ height: rowWindow.start, flexShrink: 0 }} /> : null}
         {bodyRows}
         {continuous ? <box key="after" style={{ height: rowModels.length - rowWindow.end, flexShrink: 0 }} /> : null}

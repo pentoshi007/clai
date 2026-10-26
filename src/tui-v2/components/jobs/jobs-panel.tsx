@@ -14,11 +14,7 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 import { responderStatusText } from "../../../ui-core/rendering/status-segments.js";
-import {
-  createJobTailPagerSource,
-  isLiveJobStatus,
-  jobTailTitle,
-} from "../../../ui-core/rendering/job-tail-source.js";
+import { createJobTailPagerSource } from "../../../ui-core/rendering/job-tail-source.js";
 
 export interface JobsPanelProps {
   readonly services: AppServices;
@@ -126,7 +122,7 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
       return;
     }
     const opened = services.overlay.openPager(
-      jobTailTitle(job.commandDisplay || job.command, isLiveJobStatus(job.status)),
+      "shell.exec",
       "",
       source,
     );

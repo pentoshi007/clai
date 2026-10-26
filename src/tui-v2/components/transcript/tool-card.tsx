@@ -246,6 +246,7 @@ export function ToolCard(props: {
     presentTool(item);
   const statusText = toolStatusText(statusLabel);
   const isFsRead = item.name === "fs.read";
+  const isPagerOnly = isFsRead || item.name === "image.view";
   const fsReadArgs = useMemo(() => isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined, [isFsRead, item.argsDisplay]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -292,7 +293,7 @@ export function ToolCard(props: {
     [item.name, readPath, tail],
   );
   const formatMdRead =
-    !isFsRead &&
+    !isPagerOnly &&
     !isBatch &&
     !isBatchLive &&
     !isFileDiff &&
@@ -327,7 +328,7 @@ export function ToolCard(props: {
   }, [formatMdRead, item, tail, expanded, termWidth, theme, colorMode]);
 
   const presentsRawOutput =
-    !(isFsRead || isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead);
+    !(isPagerOnly || isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead);
   const { lines, hiddenAboveCount, truncatedNotice } = useMemo(
     () =>
       presentsRawOutput
@@ -350,7 +351,7 @@ export function ToolCard(props: {
   const hasWriteManyBody =
     isWriteMany && Boolean(fileChanges && fileChanges.length > 0);
   const hasBody =
-    isFsRead ||
+    isPagerOnly ||
     isBatch ||
     isBatchLive ||
     (isFileDiff && !isWriteMany) ||
@@ -361,7 +362,7 @@ export function ToolCard(props: {
     Boolean(item.artifactPath);
 
   const canToggleOutput =
-    !isFsRead &&
+    !isPagerOnly &&
     !isFileDiff &&
     !isBatch &&
     !isBatchLive &&
@@ -371,7 +372,7 @@ export function ToolCard(props: {
       (formatMdRead && (mdPreview?.length ?? 0) > 0));
 
   const openFull = (): void => {
-    if (!isFsRead && expanded) return;
+    if (!isPagerOnly && expanded) return;
     if (item.status === "running" && !hasBody) return;
     void openToolOutputPager(services, item);
   };
@@ -395,14 +396,13 @@ export function ToolCard(props: {
       },
       {
         bodyOverride: formatBatchSectionForPager(section),
-        titleOverride: `${section.name} · #${section.index}`,
         skipArtifact: true,
       },
     );
   };
 
   let footerHint: string | undefined;
-  if (isFsRead) {
+  if (isPagerOnly) {
     footerHint = "click to open pager";
   } else if (isWriteMany && item.status !== "running") {
     const n = fileChanges?.length ?? 0;
@@ -459,7 +459,7 @@ export function ToolCard(props: {
         paddingTop: 0,
         paddingBottom: 0,
        }}
-       {...(isFsRead
+       {...(isPagerOnly
          ? {
              onMouseDown: openFullClick.onMouseDown,
              onMouseUp: openFullClick.onMouseUp,
@@ -487,7 +487,7 @@ export function ToolCard(props: {
             flexShrink: 1,
             minWidth: 0,
           }}
-           {...(!isFsRead
+           {...(!isPagerOnly
              ? {
                  onMouseDown: openFullClick.onMouseDown,
                  onMouseUp: openFullClick.onMouseUp,
@@ -733,7 +733,7 @@ export function ToolCard(props: {
       ) : null}
 
       {}
-      {item.artifactPath && !isFsRead && !isFileDiff && !isMutation ? (
+      {item.artifactPath && !isPagerOnly && !isFileDiff && !isMutation ? (
         <box
           style={{
             flexDirection: "row",

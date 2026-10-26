@@ -13,6 +13,7 @@ export function createToolOutputPagerSource(
   initial: Pick<ToolItem, "toolCallId" | "artifactPath">,
   format: (body: string) => string,
   inputEnd = 0,
+  command?: string,
 ): ArtifactPagerSource {
   const sessionId = services.session.sessionId;
   const spool = services.session.spool;
@@ -70,6 +71,7 @@ export function createToolOutputPagerSource(
     path,
     pageBytes: DEFAULT_ARTIFACT_PAGE_BYTES,
     commandTone: () => pagerCommandTone(current()?.status),
+    commandText: () => usingMemory ? undefined : command,
     regions: () => usingMemory && inputEnd > 0 ? { inputEnd, inputTone: pagerCommandTone(current()?.status) } : undefined,
     readPage: (offset) => read((source) => source.readPage(offset)),
     readTail: () => read((source) => source.readTail!()),

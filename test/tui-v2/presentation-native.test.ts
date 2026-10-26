@@ -14,6 +14,7 @@ const cases = [
   ["queue-panel", "Native queue panel passed"],
   ["toast-centered", "Native centered toasts passed"],
   ["tool-output-preview", "Native output previews passed"],
+  ["compact-image-view", "Native compact image view passed"],
   ["tool-card-reachability", "Native tool-card reachability passed"],
   ["scroll-window-race", "Native scroll-window race passed"],
   ["wheel-latency", "Native wheel latency passed"],

@@ -63,6 +63,10 @@ export function createJobTailPagerSource(
       const job = jobs.get(jobId);
       return pagerCommandTone(job?.status ?? "lost", job?.exitCode);
     },
+    commandText: () => {
+      const job = jobs.get(jobId);
+      return job?.commandDisplay || job?.command;
+    },
     readPage: (offset) => active().readPage(offset),
     readTail: () => {
       const source = active();

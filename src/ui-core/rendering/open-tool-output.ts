@@ -137,15 +137,6 @@ export function pathFromArgsDisplay(argsDisplay: string | undefined): string | u
   return resolve(label);
 }
 
-export function toolPagerTitle(
-  name: string,
-  argsDisplay: string | undefined,
-): string {
-  const label = cleanArgsLabel(name, argsDisplay, { maxLen: 48 });
-  if (!label) return `${name} · output`;
-  return `${name} · ${label}`;
-}
-
 const INLINE_ARTIFACT_MAX_BYTES = 128 * 1024;
 const FULL_SOURCE_FILE_MAX_BYTES = 128 * 1024;
 const INLINE_PAGER_MAX_LINES = 2_000;
@@ -233,8 +224,11 @@ export async function openToolOutputPager(
       const label = cleanArgsLabel(item.name, item.argsDisplay);
       const header = label ? `${item.name === "shell.exec" ? "command" : "query"}: ${label}\n\n` : "";
       const inputEnd = item.name === "shell.exec" && header ? header.split("\n").length - 2 : 0;
-      const source = createToolOutputPagerSource(services, item, (raw) => `${header}${formatToolPagerBody(raw) || "(no output yet)"}`, inputEnd);
-      services.overlay.openPager(options.titleOverride ?? toolPagerTitle(item.name, item.argsDisplay), "", source, undefined, "plain");
+      const source = createToolOutputPagerSource(
+        services, item, (raw) => `${header}${formatToolPagerBody(raw) || "(no output yet)"}`,
+        inputEnd, item.name === "shell.exec" ? label : undefined,
+      );
+      services.overlay.openPager(options.titleOverride ?? item.name, "", source, undefined, "plain");
       return;
     }
     const fileChange =
@@ -248,7 +242,7 @@ export async function openToolOutputPager(
       const fullChange = resolved.change;
       const title =
         options.titleOverride ??
-        `${fullChange.kind === "create" ? "Created" : fullChange.kind === "delete" ? "Deleted" : fullChange.kind === "append" ? "Appended" : fullChange.kind === "overwrite" ? "Wrote" : "Edited"} · ${fullChange.basename}`;
+        item.name;
       const mdMode = defaultPagerMarkdownMode({
         kind: "file-change",
         fileChange: fullChange,
@@ -299,7 +293,7 @@ export async function openToolOutputPager(
       }
       const title =
         options.titleOverride ??
-        toolPagerTitle(item.name, item.argsDisplay);
+        item.name;
       const combined = parts.join("\n").trim() || "(no output)";
       const paged = exceedsInlinePagerBudget(combined)
         ? await pageTextBody(combined, item.fileChanges[0]?.path)
@@ -424,7 +418,7 @@ export async function openToolOutputPager(
     }
 
     const title =
-      options.titleOverride ?? toolPagerTitle(item.name, item.argsDisplay);
+      options.titleOverride ?? item.name;
     const shownBody = body || "(no output)";
     const pagerBody = artifactSource ? shownBody : `${header}${shownBody}${note}`;
     const mdMode = defaultPagerMarkdownMode({
@@ -463,6 +457,9 @@ export async function openToolOutputPager(
     }
     if (artifactSource && item.name === "shell.exec") {
       artifactSource.commandTone = () => pagerCommandTone(item.status);
+      if (!regions?.inputEnd && options.bodyOverride === undefined) {
+        artifactSource.commandText = () => cleanArgsLabel(item.name, item.argsDisplay);
+      }
     }
     const opened = services.overlay.openPager(
       title,

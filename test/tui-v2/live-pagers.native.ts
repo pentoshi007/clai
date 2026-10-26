@@ -87,7 +87,12 @@ try {
     await waitFor("Background jobs");
     await settle(() => key === "enter" ? setup.mockInput.pressEnter() : setup.mockInput.typeText(key));
     await waitFor("stream line 45");
-    assertColor("npm test", "userBorder");
+    await settle(() => setup.mockInput.pressKey("\x1b[H"));
+    await waitFor("command: npm test");
+    assertColor("command: npm test", "userBorder");
+    const border = setup.captureCharFrame().split("\n").find((line) => line.includes("╭") && line.includes("shell.exec"));
+    assert.ok(border && !border.includes("npm test"), setup.captureCharFrame());
+    await type("l");
     const state = services.overlay.getState();
     assert.equal(state.kind, "pager");
     appendFileSync(path, "\nDISK_ONLY_APPEND");
@@ -99,7 +104,7 @@ try {
     const failed = key === "v";
     await settle(() => job.update({ status: failed ? "failed" : "exited", exitCode: failed ? 1 : 0 }));
     frame = await waitFor("finished");
-    assertColor("npm test", failed ? "diffDel" : "success");
+    assertColor("command: npm test", failed ? "diffDel" : "success");
     assert.ok(frame.includes("stream line 1"), frame);
     assert.ok(!frame.includes("PAUSED_DISK_APPEND"), frame);
     await type("l");

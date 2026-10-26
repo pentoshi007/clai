@@ -56,6 +56,15 @@ try {
         await settle(() => openToolOutputPager(services, {
           toolCallId: shell, name: "shell.exec", argsDisplay: "printf INPUT_FIRST\n\nprintf INPUT_AFTER_BLANK", artifactPath: undefined, status,
         }));
+        await waitFor("INPUT_FIRST");
+        const border = setup.captureSpans().lines.find((line) => line.spans.some((span) => span.text.includes("╭")));
+        assert.ok(border, setup.captureCharFrame());
+        const borderText = border.spans.map((span) => span.text).join("");
+        assert.ok(borderText.includes("shell.exec"), borderText);
+        assert.ok(!borderText.includes("INPUT_FIRST"), borderText);
+        const borderTitle = border.spans.find((span) => span.text.includes("shell.exec"));
+        assert.ok(borderTitle);
+        assert.deepEqual(borderTitle.fg.toInts(), color(theme.cyan), "border title stays neutral");
         assert.deepEqual((await waitFor("INPUT_FIRST")).fg.toInts(), color(theme[token]), `${status} command input`);
         assert.deepEqual((await waitFor("INPUT_AFTER_BLANK")).fg.toInts(), color(theme[token]), `${status} input after a blank line`);
         assert.deepEqual((await waitFor("SHELL_OUTPUT_ONE")).fg.toInts(), color(theme.foreground), "output stays foreground");

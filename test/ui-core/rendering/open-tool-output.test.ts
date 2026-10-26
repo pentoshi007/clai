@@ -8,7 +8,6 @@ import {
   formatToolPagerBody,
   openToolOutputPager,
   pathFromArgsDisplay,
-  toolPagerTitle,
 } from "../../../src/ui-core/rendering/open-tool-output.js";
 
 const tempDirs: string[] = [];
@@ -63,31 +62,25 @@ describe("formatToolPagerBody", () => {
   });
 });
 
-describe("toolPagerTitle", () => {
-  it("keeps a short stable title", () => {
-    expect(toolPagerTitle("web.search", "who is uk pm")).toBe(
-      "web.search · who is uk pm",
-    );
-  });
-
-  it("clips very long args in the title", () => {
-    const long = "x".repeat(80);
-    const title = toolPagerTitle("web.search", long);
-    expect(title.length).toBeLessThan(70);
-    expect(title.startsWith("web.search · ")).toBe(true);
-    expect(title.endsWith("…")).toBe(true);
-  });
-
-  it("extracts path from JSON args instead of dumping JSON", () => {
-    const title = toolPagerTitle(
-      "fs.read",
-      JSON.stringify({
-        path: "/Users/me/todo-app/src/components/TodoForm.tsx",
-        offset: 55,
-      }),
-    );
-    expect(title).toContain("TodoForm.tsx");
-    expect(title).not.toContain("{");
+describe("tool pager titles", () => {
+  it.each([
+    ["shell.exec", "printf INPUT_FIRST\n\nprintf INPUT_AFTER_BLANK"],
+    ["web.search", "who is uk pm"],
+    ["web.search", "x".repeat(800)],
+    ["fs.read", '{"path":"/missing/pager-fixture.ts","offset":55}'],
+    ["mcp.call", '{"name":"fixture.lookup","arguments":{"query":"input"}}'],
+    ["shell.exec", ""],
+  ])("shows only %s in the border and keeps input in the body", async (name, argsDisplay) => {
+    let opened: { title: string; body: string } | undefined;
+    const services = {
+      overlay: { openPager(title: string, body: string) { opened = { title, body }; return true; } },
+      session: { spool: { tail: () => "OUTPUT" }, notice() {} },
+    } as never;
+    await openToolOutputPager(services, { toolCallId: "pager-title", name, argsDisplay, artifactPath: undefined });
+    expect(opened?.title).toBe(name);
+    const input = cleanArgsLabel(name, argsDisplay);
+    if (input) expect(opened?.body.split(input)).toHaveLength(2);
+    expect(opened?.body).toContain("OUTPUT");
   });
 });
 
@@ -142,7 +135,6 @@ describe("cleanArgsLabel / pathFromArgsDisplay", () => {
     ].join(" ");
     expect(cleanArgsLabel("shell.exec", cmd)).toBe(cmd);
     expect(cleanArgsLabel("shell.exec", cmd)).not.toContain("…");
-    // Short form only when maxLen is requested (border title).
     const short = cleanArgsLabel("shell.exec", cmd, { maxLen: 48 });
     expect(short.endsWith("…")).toBe(true);
     expect(short.length).toBeLessThanOrEqual(48);

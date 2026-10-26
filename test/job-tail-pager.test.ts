@@ -217,6 +217,29 @@ describe("job tail source", () => {
     source.dispose();
   });
 
+  it("exposes status-colored command content without changing log offsets or exports", async () => {
+    const dir = workspace();
+    const target = job(dir, { command: "private raw command", commandDisplay: "printf first\n\nprintf second" });
+    writeFileSync(target.stdoutArtifact, "first output\nsecond output\n");
+    const { port, setJob } = fakeJobsPort(target);
+    const source = createJobTailPagerSource({ jobs: port, jobId: target.id })!;
+    try {
+      expect(source.commandText?.()).toBe("printf first\n\nprintf second");
+      expect(source.commandTone?.()).toBe("running");
+      const page = await source.readPage(0);
+      expect(page.body).toBe("first output\nsecond output\n");
+      expect(page.offset).toBe(0);
+      expect(page.nextOffset).toBe(Buffer.byteLength(page.body));
+      expect(await source.readAll()).toBe(page.body);
+      expect((await source.search("second output"))?.body).toContain("second output");
+      setJob({ ...target, status: "exited", exitCode: 0 });
+      expect(source.commandTone?.()).toBe("success");
+      setJob({ ...target, status: "exited", exitCode: 1 });
+      expect(source.commandTone?.()).toBe("failed");
+      expect(source.commandText?.()).not.toContain("private");
+    } finally { source.dispose(); }
+  });
+
   it("titles live and finished views differently", () => {
     expect(jobTailTitle("npm run dev", true)).toBe("npm run dev · live");
     expect(jobTailTitle("npm run dev", false)).toBe("npm run dev · output");
