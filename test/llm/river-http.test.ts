@@ -37,11 +37,13 @@ it("runs River discovery, completion and SSE over a real HTTP transport", async 
         response.end(JSON.stringify({ choices: [{ message: { content: "HTTP answer", reasoning_content: "HTTP thinking" }, finish_reason: "stop" }], usage: USAGE }));
         return;
       }
+      const parsed: { stream_options?: { include_usage?: boolean } } = JSON.parse(body);
       response.writeHead(200, { "content-type": "text/event-stream" });
       for (const payload of [
         { choices: [{ delta: { reasoning_content: "Stream thinking" } }] },
         { choices: [{ delta: { content: "Stream answer" } }] },
-        { choices: [{ delta: {}, finish_reason: "stop" }], usage: USAGE },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+        ...(parsed.stream_options?.include_usage ? [{ choices: [], usage: USAGE }] : []),
       ]) response.write(`data: ${JSON.stringify(payload)}\n\n`);
       response.end("data: [DONE]\n\n");
     });
@@ -61,6 +63,7 @@ it("runs River discovery, completion and SSE over a real HTTP transport", async 
     const tokens: string[] = [];
     expect(await riverProvider.stream!({ ...REQUEST, thinking: { enabled: true, effort: "max" } }, auth, (token) => tokens.push(token))).toMatchObject({
       text: "Stream answer", reasoningBlock: { text: "Stream thinking" },
+      usage: { promptTokens: 120, completionTokens: 30, totalTokens: 150, cachedPromptTokens: 80, reasoningTokens: 10, exact: true },
     });
     expect(tokens.join("")).toBe("Stream answer");
     expect(captured.map(({ path }) => path)).toEqual(["/v1/models", "/v1/chat/completions", "/v1/chat/completions"]);

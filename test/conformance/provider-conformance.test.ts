@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { accountCompletionUsage, type CompletionUsagePorts } from "../../src/agent/turn/loop/completion-interpretation.js";
+import { createContextProjector, recordContextUsageSnapshot } from "../../src/app/controllers/session-context-usage.js";
+import { SessionUsageLedger } from "../../src/app/controllers/session-usage-ledger.js";
+import type { ContextSnapshotV1 } from "../../src/llm/context-snapshot.js";
+import { formatContextChip } from "../../src/llm/token-usage.js";
+import { formatSessionUsage } from "../../src/ui-core/rendering/format-usage.js";
 import { providerIds } from "../../src/types.js";
 import type { CompletionRequest, CompletionResult, ToolDefinition } from "../../src/types.js";
 import { providers } from "../../src/llm/router.js";
@@ -72,6 +78,46 @@ async function run(
   const stream = provider.stream;
   if (!stream) throw new Error(`${route.id} declares no stream implementation`);
   return stream.call(provider, request, route.auth, () => {});
+}
+
+async function assertAccountedUsage(result: CompletionResult): Promise<void> {
+  const target = { provider: result.provider, model: result.model };
+  const ledger = new SessionUsageLedger();
+  let snapshot: ContextSnapshotV1 | undefined;
+  const emitTokenUsage = vi.fn<CompletionUsagePorts["emitTokenUsage"]>(({ usage, provider, model, api, attempt }) => {
+    ledger.record(usage, provider, model, api);
+    snapshot = recordContextUsageSnapshot(target, snapshot, usage, attempt);
+  });
+  await accountCompletionUsage({
+    dispatchedRawRequestTokens: PROMPT_TOKENS,
+    dispatchedRequestRoute: target,
+    emitTokenUsage,
+    emitDiscardedUsage: vi.fn(),
+    audit: vi.fn().mockResolvedValue(undefined),
+  }, result);
+  expect(emitTokenUsage).toHaveBeenCalledOnce();
+  const view = createContextProjector(formatContextChip)(target, snapshot);
+  expect(view.contextSnapshot).toMatchObject({
+    contextTokens: PROMPT_TOKENS,
+    lastCompletionTokens: COMPLETION_TOKENS,
+    sessionPromptTokens: PROMPT_TOKENS,
+    sessionCompletionTokens: COMPLETION_TOKENS,
+    precision: "provider-exact",
+  });
+  expect(view.contextChip).toContain("ctx 1,234/");
+  expect(ledger.report().totals).toMatchObject({
+    requests: 1,
+    promptTokens: PROMPT_TOKENS,
+    completionTokens: COMPLETION_TOKENS,
+    totalTokens: PROMPT_TOKENS + COMPLETION_TOKENS,
+    estimatedRequests: 0,
+    unmeasuredPromptRequests: 0,
+  });
+  const restored = new SessionUsageLedger();
+  restored.restore(JSON.parse(JSON.stringify(ledger.persist())));
+  expect(restored.report()).toEqual(ledger.report());
+  expect(formatSessionUsage(restored.report(), { sessionId: "conformance" }))
+    .toContain("| 1 | 1,234 | 56 | 1,290 |");
 }
 
 function skipReason(
@@ -159,6 +205,18 @@ describe("provider conformance matrix", () => {
               expect(result.usage?.exact).toBe(true);
               expect(result.usage?.promptTokens).toBe(PROMPT_TOKENS);
               expect(result.usage?.completionTokens).toBe(COMPLETION_TOKENS);
+            }
+
+            if (scenario === "usage") {
+              if (mode === "stream" && route.family === "chat_completions") {
+                const body = scenarioGenerations[0]!.body;
+                if (route.provider === "mistral") {
+                  expect(body).not.toHaveProperty("stream_options");
+                } else {
+                  expect(body).toHaveProperty("stream_options.include_usage", true);
+                }
+              }
+              await assertAccountedUsage(result);
             }
 
             if (scenario === "terminal") {

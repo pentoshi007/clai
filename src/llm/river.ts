@@ -87,7 +87,6 @@ function requestOptions(request: CompletionRequest, auth: ProviderAuth) {
     signal: request.signal,
     reasoning: request.thinking,
     reasoningStyle: "openai" as const,
-    includeStreamUsage: false,
     tools: request.tools,
     toolChoice: request.toolChoice,
     parallelToolCalls: request.parallelToolCalls,

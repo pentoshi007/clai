@@ -47,7 +47,7 @@ describe("River streaming and history", () => {
     expect(events.filter((event) => event.type === "provider_terminal")).toHaveLength(1);
     expect(result.usage).toMatchObject({ cachedPromptTokens: 80, reasoningTokens: 10, totalTokens: 150 });
     expect(JSON.parse(generations[0]!.body)).toMatchObject({ stream: true, reasoning_effort: "max" });
-    expect(generations[0]!.body).not.toContain("stream_options");
+    expect(JSON.parse(generations[0]!.body)).toHaveProperty("stream_options.include_usage", true);
   });
 
   it("accepts a DONE-only completion marker and reports truncated output", async () => {
