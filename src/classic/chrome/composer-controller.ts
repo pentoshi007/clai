@@ -18,6 +18,7 @@ import { tokenInsertion } from "../../ui-core/composer/insert-token.js";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import {
   PasteRegistry,
+  pastePlaceholderRanges,
   type PastePlaceholderEntry,
 } from "../../ui-core/composer/paste-placeholder.js";
 import { PromptHistory, recallPromptHistory } from "../../ui-core/composer/prompt-history.js";
@@ -428,7 +429,10 @@ export class ComposerController {
     const text = snapshot.state.text;
     const skills = skillNamesSnapshot();
     const servers = this.deps.mcp?.serverNames() ?? new Set<string>();
-    const spans = composerMentionSpans(text, skills, servers);
+    const spans: EditorSpan[] = [
+      ...composerMentionSpans(text, skills, servers),
+      ...pastePlaceholderRanges(text, snapshot.pastes).map(({ start, end }) => ({ start, end, color: "aqua" as const })),
+    ];
     this.snapshot = {
       ...snapshot,
       mentionSpans: spans.length === 0 ? EMPTY_SPANS : spans,

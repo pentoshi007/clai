@@ -30,6 +30,8 @@ export interface PickerRequest {
   readonly preserveSelection?: boolean | undefined;
   readonly twoLine?: boolean | undefined;
   readonly historyStyle?: boolean | undefined;
+  readonly selectLabel?: string | undefined;
+  readonly adjustment?: { readonly hint: string } | undefined;
 }
 
 export interface SecretRequestView {
@@ -92,6 +94,7 @@ export type OverlayState =
       readonly request: PickerRequest;
       readonly onSelect: (value: string) => void;
       readonly onRowAction?: ((value: string) => void) | undefined;
+      readonly onAdjust?: ((value: string, direction: -1 | 1) => void) | undefined;
     }
   | {
       readonly kind: "confirm";
@@ -158,6 +161,7 @@ export class OverlayController {
     request: PickerRequest,
     onSelect: (value: string) => void,
     onRowAction?: (value: string) => void,
+    onAdjust?: (value: string, direction: -1 | 1) => void,
   ): boolean {
     return this.open(
       {
@@ -165,6 +169,7 @@ export class OverlayController {
         request,
         onSelect,
         ...(onRowAction ? { onRowAction } : {}),
+        ...(onAdjust ? { onAdjust } : {}),
       },
       "picker",
     );
@@ -402,6 +407,11 @@ export class OverlayController {
   actOnPickerRow(value: string): void {
     if (this.state.kind !== "picker") return;
     this.state.onRowAction?.(value);
+  }
+
+  adjustPicker(value: string, direction: -1 | 1): void {
+    if (this.state.kind !== "picker" || !this.state.request.adjustment) return;
+    this.state.onAdjust?.(value, direction);
   }
 
   close(): void {

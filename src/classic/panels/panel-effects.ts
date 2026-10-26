@@ -38,6 +38,9 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
     case "picker-row-action":
       overlay.actOnPickerRow(effect.value);
       return;
+    case "picker-adjust":
+      overlay.adjustPicker(effect.value, effect.direction);
+      return;
     case "confirm":
       overlay.answerConfirm(effect.ok);
       return;

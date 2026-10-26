@@ -52,7 +52,7 @@ function Harness() {
   updateView = setState;
   binding = useTaskDisclosureBinding(state.plan);
   return createElement("box", { border: true, style: { width: "100%", height: "100%", borderColor: themeFor(state.theme).inputBorder } },
-    createElement(PlanView, { theme: themeFor(state.theme), plan: state.plan, services, width: state.width, focused: state.focused, interactionRef, disclosureBinding: binding }));
+    createElement(PlanView, { theme: themeFor(state.theme), plan: state.plan, services, width: state.width, focused: state.focused, interactionRef, disclosureBinding: binding, onHide() {} }));
 }
 const setup = await testRender(createElement(Harness), { width: view.width, height: view.height, useThread: false });
 const violations = new Set<string>();

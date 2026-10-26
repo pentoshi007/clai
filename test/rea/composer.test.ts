@@ -18,6 +18,7 @@ function paint(text: string) {
   paintDraftMentions({
     editor: editor as unknown as TextareaRenderable,
     text,
+    widthMethod: "unicode",
     skills: new Set(),
     servers: new Set(),
     skillColor: "#ffff00",

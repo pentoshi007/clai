@@ -53,7 +53,8 @@ for (const width of [220, 100, 60]) {
       const hint = frame.findIndex((row, index) => index >= first && row.includes("click for full"));
       assert.ok(hint > first, `${testCase.label} at ${width}: expected a pager hint\n${frame.join("\n")}`);
       assert.ok(hint - first <= 2, `${testCase.label} at ${width}: input and hint exceeded three rows\n${frame.join("\n")}`);
-      const shown = frame.slice(first, hint).map((row) => row.replace(/^\s*│\s*(?:command: )?/, "").replace(/\s*│\s*$/, "")).join("");
+      const argumentColumn = frame[first]!.indexOf("command:") + "command: ".length;
+      const shown = frame.slice(first, hint).map(row => row.slice(argumentColumn, row.lastIndexOf("│")).trimEnd()).join("");
       assert.ok(shown.length <= ARGS_PREVIEW_MAX_CHARS, `${testCase.label} at ${width}: ${shown.length} chars shown`);
 
       assert.equal(services.overlay.getState().kind, "none");

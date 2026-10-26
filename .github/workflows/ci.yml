@@ -154,6 +154,10 @@ jobs:
           bun-version: 1.3.14
       - name: Updater provenance, execution and native PowerShell contracts
         run: npx vitest run test/update-install.test.ts test/update-detection-regressions.test.ts test/update-provenance.test.ts test/update-execution.test.ts test/update-metadata.test.ts test/update-permissions.test.ts test/update-windows-stage.test.ts test/update-windows-worker.test.ts --reporter=dot
+      - name: Settings, output saving, and attachment colors
+        run: |
+          node scripts/run-tests.mjs test/tool-output-saving.test.ts test/classic/app/settings.test.ts test/classic/composer/chip-colors.test.ts test/classic/panels/picker.test.ts test/tui-v2/settings.test.ts --reporter=dot
+          node scripts/run-tests.mjs test/tui-v2/presentation-native.test.ts --testNamePattern="composer-chip-colors|tool-output-preview" --reporter=dot
       - name: Prompt history and Classic terminal colors
         run: npx vitest run test/store/session-prompts.test.ts test/app/session-prompts.test.ts test/classic/app/prompts.test.ts test/ui-core/composer/saved-prompt-history.test.ts test/session-runtime/terminal-options.test.ts test/session-runtime/view-manager.test.ts test/ui-core/capabilities.test.ts --reporter=dot
       - name: Minimise and Windows console fallback

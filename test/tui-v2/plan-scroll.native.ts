@@ -44,7 +44,7 @@ let updateView: (state: ViewState) => void = () => { throw new Error("View has n
 function Harness() {
   const [state, setState] = useState(view);
   updateView = setState;
-  return createElement(PlanView, { theme: themeFor(state.theme), plan: state.plan, services, width: state.width, focused: state.focused, interactionRef });
+  return createElement(PlanView, { theme: themeFor(state.theme), plan: state.plan, services, width: state.width, focused: state.focused, interactionRef, onHide() {} });
 }
 const setup = await testRender(createElement(Harness), { width: view.width, height: view.height, useThread: false });
 async function settle(action: () => unknown = () => undefined): Promise<string> {

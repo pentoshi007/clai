@@ -2,6 +2,7 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { lstat, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getArtifactDir } from "../../store/paths.js";
+import { shouldSaveToolOutput } from "../../store/config/settings.js";
 import { formatRuntimeError } from "../../os/runtime-error.js";
 import type { ToolResult } from "../../types.js";
 import { safeArtifactName } from "./artifact-name.js";
@@ -16,7 +17,8 @@ export interface ShellArtifact {
 export async function openArtifact(
   command: string,
   override?: string,
-): Promise<ShellArtifact> {
+): Promise<ShellArtifact | undefined> {
+  if (!shouldSaveToolOutput(override !== undefined)) return undefined;
   const path = override ?? join(
     getArtifactDir(),
     `${new Date().toISOString().replace(/[:.]/g, "-")}-${safeArtifactName(command)}.txt`,

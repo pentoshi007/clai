@@ -4,6 +4,8 @@
 
 `clai config` prints the configuration and its location. Use `clai mode`, `clai model`, and `clai use` to change defaults. History, prompt journals, logs, and runtime data normally live under `~/.clai/`; each saved session is stored in its own append-only log under `~/.clai/sessions/`, and an older `history.jsonl` is imported automatically and left in place. Large outputs may also use per-session temporary directories.
 
+`/settings` opens persistent preferences in either UI. **Save command outputs** is **off by default** (`saveToolOutputs: false`): automatic tool-output files are not created and no saved-output path is shown. Turn it on to retain full outputs and show their paths. Explicit capture files and background-job logs are unaffected; private mode pauses tool-output saving. This setting does not delete existing files or disable chat history, logs, or other runtime storage.
+
 ```sh
 clai privacy status
 clai privacy on

@@ -161,7 +161,7 @@ export function App(): ReactNode {
     const key = `${plan.sessionId}:${plan.updatedAt}`;
     if (seenPlanKey.current === key) return;
     seenPlanKey.current = key;
-    if (planVisibilityRef.current !== "visible") setPlanVisible(true);
+    if (planVisibilityRef.current === "auto") setPlanVisible(true);
   }, [plan]);
 
   const terminalWidth = Number.isFinite(width)
@@ -383,6 +383,14 @@ export function App(): ReactNode {
     }
   });
 
+  const hideTasksPane = useCallback((): void => {
+    if (services.overlay.isOpen()) return;
+    planVisibilityRef.current = "hidden";
+    setPlanVisible(false);
+    services.focus.focusRegion("composer");
+    notify(services, "Tasks hidden · ^H", { key: "tasks", durationMs: 1400 });
+  }, [services]);
+
   const planPaneWidth =
     layout.plan.placement === "split"
       ? splitPlanW
@@ -396,6 +404,7 @@ export function App(): ReactNode {
         focused={focusContext === "plan"}
         interactionRef={planInteractionRef}
         disclosureBinding={planDisclosure}
+        onHide={hideTasksPane}
       />
     ) : null;
 
@@ -588,9 +597,9 @@ export function App(): ReactNode {
   }
 
   const toggleTasksPane = useCallback((): void => {
-    planVisibilityRef.current = planVisible ? "hidden" : "visible";
     setPlanVisible((visible) => {
       const next = !visible;
+      planVisibilityRef.current = next ? "visible" : "hidden";
       if (next && !services.plan.current()) {
         void services.plan
           .load(services.session.sessionId)
@@ -749,7 +758,7 @@ export function App(): ReactNode {
           activity={runningStatus}
           width={contentInnerWidth}
           hasActivePlan={Boolean(plan)}
-          planVisible={planVisible}
+          planVisible={planRendered}
           thinkingExpanded={thinkingExpanded}
           outputExpanded={outputExpanded}
           onToggleThinking={toggleThinking}

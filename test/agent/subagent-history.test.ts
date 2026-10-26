@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSubagentStore } from "../../src/store/subagents.js";
 import { clearAllHistory, deleteSession, saveSession } from "../../src/store/history.js";
 import type { SubagentRun } from "../../src/agent/subagents/types.js";
@@ -19,6 +19,19 @@ async function seed(name: string): Promise<string> {
 }
 
 describe("subagent history lifecycle", () => {
+  it("retains child transcripts when the generated parent ID contains sk-", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Number.parseInt("mvp5eksk", 36));
+    try {
+      const parent = await seed("subagent-parent-secret-like-id");
+      expect(parent).toMatch(/^mvp5eksk-/);
+      expect(createSubagentStore().load(parent)).toHaveLength(1);
+      expect((await deleteSession(parent)).deleted).toBe(true);
+      expect(createSubagentStore().load(parent)).toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("deletes only the selected parent's child transcripts", async () => {
     const one = await seed("subagent-parent-one");
     const two = await seed("subagent-parent-two");

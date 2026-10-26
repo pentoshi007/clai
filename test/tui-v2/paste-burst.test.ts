@@ -11,7 +11,7 @@ it("installs the paste burst guard when the OpenTUI renderer starts", () => {
     fileURLToPath(new URL("../../src/tui-v2/bootstrap/start-tui-v2.ts", import.meta.url)),
     "utf8",
   );
-  expect(source).toContain("installPasteBurstGuard<KeyEvent>(renderer.keyInput)");
+  expect(source).toMatch(/installPasteBurstGuard<KeyEvent>\(renderer\.keyInput,\s*\{\s*enabled: \(\) => services\.focus\.activeContext\(\) !== "picker"/);
   expect(source).toMatch(/disposers:\s*\[\s*disposePasteBurstGuard,/);
 });
 

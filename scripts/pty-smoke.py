@@ -350,6 +350,40 @@ def run(timeout: float) -> int:
                 timeout,
                 "composer after pager",
             )
+            send(master, b"\x1b[200~/settings\x1b[201~")
+            drain(master, output, probe, 0.2)
+            send(master, b"\r")
+            wait_for(
+                process, master, output, probe,
+                lambda data: re.search(r"Save command outputs.+Off", "\n".join(probe.nonempty_rows())),
+                timeout, "settings default off",
+            )
+            for key, state in ((b"\x1b[C", "On"), (b"\x1b[D", "Off")):
+                send(master, key)
+                wait_for(
+                    process, master, output, probe,
+                    lambda data: re.search(r"Save command outputs.+" + state, "\n".join(probe.nonempty_rows())),
+                    timeout, f"settings arrow {state}",
+                )
+            send(master, b"\x1b[A\x1b[B\t\x1b[Z ")
+            wait_for(
+                process, master, output, probe,
+                lambda data: re.search(r"Save command outputs.+On", "\n".join(probe.nonempty_rows())),
+                timeout, "settings navigation and space toggle",
+            )
+            send(master, b"\r")
+            wait_for(
+                process, master, output, probe,
+                lambda data: re.search(r"Save command outputs.+Off", "\n".join(probe.nonempty_rows())),
+                timeout, "settings enter toggle",
+            )
+            settings_closed_at = len(output)
+            send(master, b"\x1b")
+            wait_for(
+                process, master, output, probe,
+                lambda data: b"Ask anything" in data[settings_closed_at:],
+                timeout, "composer after settings",
+            )
             send(master, b"resize smoke")
             wait_for(process, master, output, probe, lambda data: b"resize smoke" in data, timeout, "draft echo")
             set_window_size(master, 60, 20)
@@ -416,7 +450,7 @@ def run(timeout: float) -> int:
 
     print(
         "PTY smoke passed: "
-        f"exit={return_code}, queue_toggle=passed, bytes={len(output)}, "
+        f"exit={return_code}, queue_toggle=passed, settings=passed, bytes={len(output)}, "
         f"max_visible_row={probe.max_visible_row_width()}, "
         f"echo={'on' if final_termios[3] & termios.ECHO else 'off'}, "
         f"initial_echo={'on' if initial_termios[3] & termios.ECHO else 'off'}"

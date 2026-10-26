@@ -307,7 +307,9 @@ function readResponderProjection(services: AppServices): ResponderProjection {
   const sessionId = services.session.sessionId;
   const notifications = services.ports.jobs
     .pendingNotifications(sessionId)
-    .filter((notification) => notification.responder);
+    .filter((notification) => notification.responder &&
+      !notification.deliveredAt && !notification.readAt &&
+      !notification.analyzedAt && !notification.archivedAt);
   const live = services.ports.jobs
     .running(sessionId)
     .filter((job) => job.responder);
@@ -398,13 +400,9 @@ export const ResponderPanel = memo(function ResponderPanel(props: ResponderPanel
     waitingRef.current = waiting;
   }, [waiting, liveCount, services]);
 
-  const hasActiveWork =
-    responderState.running > 0 ||
-    responderState.ready > 0 ||
-    responderState.delivered > 0;
   if (
     blockingOverlay ||
-    !hasActiveWork ||
+    !hasLiveWork ||
     (projection.jobs.length === 0 && projection.notifications.length === 0)
   ) {
     return null;
@@ -419,7 +417,7 @@ export const ResponderPanel = memo(function ResponderPanel(props: ResponderPanel
       : responderState.archived > 0
         ? theme.queued
         : theme.muted;
-  const statusText = responderStatusText(responderState).replace(
+  const statusText = responderStatusText({ ...responderState, delivered: 0 }).replace(
     /^Responder:\s*/,
     "",
   );

@@ -62,3 +62,8 @@ export function setActiveSearchProvider(id: SearchProviderId): ClaiConfig {
 export function setExaSearchType(type: ExaSearchType): ClaiConfig {
   return updateConfig({ exaSearchType: type });
 }
+
+export function shouldSaveToolOutput(explicit = false): boolean {
+  const config = getConfig();
+  return !config.privateMode && (explicit || config.saveToolOutputs === true);
+}

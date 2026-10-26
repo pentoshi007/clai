@@ -35,6 +35,7 @@ import { handleSkills } from "./skill-commands.js";
 import { handleRtk } from "./rtk-commands.js";
 import { handleRea } from "./rea-commands.js";
 import { handlePrompts } from "./prompt-commands.js";
+import { handleSettings } from "./settings-commands.js";
 import { handleCreds } from "./credential-commands.js";
 import { handleChanges } from "./change-commands.js";
 import { handleSubagents, handleOrchestration } from "./subagent-commands.js";
@@ -130,6 +131,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("privacy", (i) => void handlePrivacy(services, i));
   c.setHandler("models", (i) => void handleModels(services, i));
   c.setHandler("update", () => void handleUpdate(services));
+  c.setHandler("settings", (i) => handleSettings(services, i));
   c.setHandler("help", () => handleHelp(services));
   c.setHandler("shortcuts", () => handleShortcuts(services));
   c.setHandler("minimise", () => handleMinimise(services));

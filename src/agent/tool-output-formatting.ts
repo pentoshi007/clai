@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fixOwner } from "../os/permissions.js";
 import { getArtifactDir } from "../store/paths.js";
+import { shouldSaveToolOutput } from "../store/config/settings.js";
 import {
   hasStructuredReducer,
   reduceToolOutput,
@@ -22,7 +23,7 @@ export async function saveToolOutput(
   call: ToolCall,
   output: string,
 ): Promise<string | undefined> {
-  if (!output.trim()) return undefined;
+  if (!output.trim() || !shouldSaveToolOutput()) return undefined;
   const dir = getArtifactDir();
   try {
     await mkdir(dir, { recursive: true });

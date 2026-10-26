@@ -126,7 +126,8 @@ describe("multi-file read presentation", () => {
       session: { spool: { tail: () => output }, notice() {} },
     } as never;
     await openToolOutputPager(services, { toolCallId: "multi", name: "fs.read", argsDisplay, artifactPath: undefined } as never);
-    expect(opened?.title).toBe("fs.read · 6 files");
+    expect(opened?.title).toBe("fs.read");
+    expect(opened?.body).toContain("path: 6 files");
     expect(opened?.body).toContain(output);
     expect(opened?.path).toBeUndefined();
     expect(opened?.mode).toBe("plain");

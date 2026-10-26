@@ -35,7 +35,9 @@ const setup = await testRender(createElement(ServicesProvider, { services, child
 async function settle(action: () => unknown = () => undefined): Promise<string> {
   await act(async () => { await action(); });
   await act(async () => { await setup.flush(); });
-  return setup.captureCharFrame();
+  const frame = setup.captureCharFrame();
+  assert.doesNotMatch(frame, /\b(?:Expand|Collapse) all\b/);
+  return frame;
 }
 function expanded(id: string): boolean {
   return Boolean(setup.renderer.root.findDescendantById(`plan-task-${id}-details`));
@@ -96,7 +98,8 @@ try {
     await capture(`app-task-width-${width}`);
   }
   await settle(() => setup.resize(140, 40));
-  assert.ok(setup.renderer.root.findDescendantById("plan-expand-all"));
+  assert.ok(setup.renderer.root.findDescendantById("plan-hide"));
+  assert.equal(setup.renderer.root.findDescendantById("status-tasks-toggle"), undefined);
   assert.equal(expanded("t1"), false);
   assert.equal(expanded("t2"), false);
   assert.doesNotMatch(setup.captureCharFrame(), /↑↓ select|Enter details|E\/C all/);
@@ -165,10 +168,10 @@ try {
     assert.equal(setup.renderer.currentFocusedRenderable, detailFocus, "Detail clicks must leave native keyboard focus unchanged");
     assert.equal(setup.renderer.hasSelection, false, "Expanded detail clicks must not start native text selection");
     assert.equal(expanded("t2"), true);
-    await click("plan-collapse-all");
+    await click("plan-task-t2-disclosure");
     assert.equal(services.focus.activeContext(), "plan");
     assert.equal(expanded("t2"), false);
-    assert.equal(setup.renderer.hasSelection, false, "Bulk controls must not start native text selection");
+    assert.equal(setup.renderer.hasSelection, false, "Disclosure must not start native text selection");
     await capture(`app-button-only-${width}`);
   }
   await settle(() => setup.resize(140, 40));
@@ -235,10 +238,32 @@ try {
     assert.ok(frame.split("\n").length <= height! + 1);
   }
   assert.match(frame, /Alpha proof/);
-  await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
-  assert.equal(setup.renderer.root.findDescendantById("plan-pane"), undefined);
-  await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
-  assert.equal(expanded("t1"), true, "Hiding and showing the pane must preserve explicit disclosure");
+  for (const width of [140, 92]) {
+    await settle(() => setup.resize(width, 40));
+    assert.ok(setup.renderer.root.findDescendantById("plan-hide"));
+    assert.equal(setup.renderer.root.findDescendantById("status-tasks-toggle"), undefined);
+    await click("plan-hide");
+    assert.equal(setup.renderer.root.findDescendantById("plan-pane"), undefined);
+    assert.equal(services.focus.activeContext(), "composer");
+    assert.ok(setup.renderer.root.findDescendantById("status-tasks-toggle"));
+    await capture(`app-tasks-hidden-${width}`);
+    await settle(() => observe({ ...plan, updatedAt: `2026-10-26T12:00:${width === 140 ? "01" : "02"}Z` }));
+    assert.equal(setup.renderer.root.findDescendantById("plan-pane"), undefined, "Live updates must preserve the Hide choice");
+    await click("status-tasks-toggle");
+    assert.ok(setup.renderer.root.findDescendantById("plan-hide"));
+    assert.equal(setup.renderer.root.findDescendantById("status-tasks-toggle"), undefined);
+    assert.equal(expanded("t1"), true, "Mouse hide/show must preserve explicit disclosure");
+    await capture(`app-tasks-visible-${width}`);
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
+      assert.equal(setup.renderer.root.findDescendantById("plan-pane"), undefined);
+      assert.ok(setup.renderer.root.findDescendantById("status-tasks-toggle"));
+      await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
+      assert.equal(expanded("t1"), true, "Keyboard hide/show must preserve explicit disclosure");
+      assert.equal(setup.renderer.root.findDescendantById("status-tasks-toggle"), undefined);
+    }
+  }
+  await settle(() => setup.resize(140, 40));
 
   const updated: SessionPlan = { ...plan, updatedAt: "2026-10-11T19:30:01Z", tasks: [{ ...plan.tasks[0]!, note: "Alpha proof updated" }, plan.tasks[1]!, { id: "t3", title: "New live task", state: "pending", note: "Gamma proof" }] };
   frame = await settle(() => observe(updated));

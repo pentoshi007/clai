@@ -27,6 +27,7 @@ export interface PasteBurstGuardOptions {
   readonly now?: (() => number) | undefined;
   readonly schedule?: ((callback: () => void, delayMs: number) => () => void) | undefined;
   readonly defer?: ((callback: () => void) => void) | undefined;
+  readonly enabled?: (() => boolean) | undefined;
 }
 
 const PRINTABLE = /^[^\u0000-\u0008\u000a-\u001f\u007f-\u009f]+$/u;
@@ -126,7 +127,9 @@ export function installPasteBurstGuard<K extends GuardedKey>(
 
   const onKeyPress = (key: K): void => {
     if (replaying) return;
-    const unit = classify(key);
+    const unit: BurstUnit<K> = options.enabled?.() === false
+      ? { kind: "other", text: "", source: key }
+      : classify(key);
     if (unit.kind === "other") {
       settleChunk();
       deliver(detector.process([unit], now()), key);

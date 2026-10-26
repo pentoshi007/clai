@@ -167,3 +167,37 @@ describe("picker panel keys", () => {
     expect(harness.press("ctrl+g")).toBe(false);
   });
 });
+
+describe("picker adjustment controls", () => {
+  const request: PickerRequest = { ...MODELS, adjustment: { hint: "left/right adjust" } };
+
+  it("moves forward and backward with Tab without changing the filter", () => {
+    const state = { query: "", cursor: 0, top: 0 };
+    const next = pickerKey({ request, state, chord: "tab", rows: 8 });
+    expect(next.state.cursor).toBe(1);
+    expect(next.state.query).toBe("");
+    expect(pickerKey({ request, state: next.state, chord: "shift+tab", rows: 8 }).state.cursor).toBe(0);
+    expect(pickerKey({ request, state, chord: "shift+tab", rows: 8 }).state.cursor).toBe(2);
+  });
+
+  it.each([["left", -1], ["right", 1]] as const)("adjusts the focused row with %s", (chord, direction) => {
+    const result = pickerKey({ request, state: pickerInitialState(request), chord, rows: 8 });
+    expect(result.effects).toEqual([{ kind: "picker-adjust", value: "gpt-oss-20b", direction }]);
+    expect(result.state.cursor).toBe(2);
+  });
+
+  it("does not adjust when there are no matches", () => {
+    expect(pickerKey({ request, state: { query: "missing", cursor: 0, top: 0 }, chord: "right", rows: 8 }).effects).toEqual([]);
+  });
+
+  it("routes adjustments through the overlay", () => {
+    const harness = createHarness();
+    const adjust = vi.fn();
+    harness.overlay.openPicker(request, vi.fn(), undefined, adjust);
+    harness.press("right");
+    expect(adjust).toHaveBeenCalledWith("gpt-oss-20b", 1);
+    harness.press("left");
+    expect(adjust).toHaveBeenCalledWith("gpt-oss-20b", -1);
+    harness.panels.dispose();
+  });
+});

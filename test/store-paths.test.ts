@@ -84,6 +84,8 @@ describe("store path roots", () => {
 
   it("routes shell artifacts through the injected artifact root", async () => {
     const { shellExec } = await import("../src/tools/shell.js");
+    const { updateConfig } = await import("../src/store/config.js");
+    updateConfig({ saveToolOutputs: true });
 
     const result = await shellExec({
       command: "printf shell-path-test",

@@ -1,5 +1,32 @@
 # Changelog
 
+## v5.1.4 — 2026-10-26
+
+### Settings and output retention
+
+- Add `/settings` in Classic and OpenTUI with filtering, arrow/Tab navigation, keyboard toggles, and persistent preferences.
+- Turn automatic tool-output saving off by default. Enable it through settings when needed; explicit captures, background logs, and interactive-session logs remain available. Do not display saved-output paths when no file was created, and preserve private-mode restrictions.
+- Render image/paste attachment labels, brackets, and caret boundaries in aqua, including whitespace-prefixed, wrapped, and Unicode input.
+
+### Cleaner OpenTUI controls
+
+- Connect tool commands and their output with a continuous branch, including multiline arguments and failed or blocked details.
+- Remove tool-card and task-pane expand-all/collapse-all buttons while retaining individual disclosure and keyboard controls.
+- Show **Hide** inside the task pane and **Tasks** below the composer only while the pane is hidden. Preserve an explicit hidden preference across plan updates.
+- Remove delivered results from the Responder strip, including delivered-but-unread entries. Keep running and awaiting-delivery work visible without changing result consumption or Jobs history.
+- Stabilize history selection and scrolling, simplify pagers, and keep image-view cards compact.
+
+### Reliability
+
+- Restore River usage reporting and strengthen provider-accounting coverage.
+- Accept generated history session IDs whose timestamp ends in `sk`, without weakening rejection of secret-like parent identifiers. Add a deterministic regression for the intermittent subagent-history CI failure.
+- Extend native terminal and cross-platform CI coverage for settings, output retention, attachment colors, and tool/task interactions. Correct the stale multi-file pager-title assertion.
+
+### Upgrade notes
+
+- No session migration is required. Automatic tool-output saving is now opt-in; existing saved files are not removed.
+- Task-pane, tool-card, and Responder-strip control changes are OpenTUI-only.
+
 ## v5.1.3 — 2026-10-25
 
 ### Status-aware command colors

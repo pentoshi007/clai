@@ -190,9 +190,12 @@ function paintCaretRow(
     const from = bounds[index - 1]!;
     const to = bounds[index]!;
     if (column === caretColumn) {
+      const origin = row.start + from;
+      const highlighted = spans.some((span) => span.end > origin && span.start < row.start + to);
+      const caret = highlighted ? paintAccentText(ink, text.slice(from, to), origin, spans) : text.slice(from, to);
       return sealStyle(
         paintAccentText(ink, text.slice(0, from), row.start, spans) +
-          ink.inverse(text.slice(from, to)) +
+          ink.inverse(caret) +
           paintAccentText(ink, text.slice(to), row.start + to, spans),
       );
     }

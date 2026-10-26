@@ -7,7 +7,9 @@ import {
 import type { DecodedEvent, KeyEvent } from "./key-event.js";
 import { sanitizePasteText } from "./paste-decoder.js";
 
-export type PasteBurstOptions = Omit<DetectorOptions, "normalize">;
+export type PasteBurstOptions = Omit<DetectorOptions, "normalize"> & {
+  readonly enabled?: (() => boolean) | undefined;
+};
 
 function unmodified(key: KeyEvent): boolean {
   return !key.ctrl && !key.alt && !key.meta && key.super !== true;
@@ -50,9 +52,12 @@ function eventOf(output: BurstOutput<DecodedEvent>): DecodedEvent {
 
 export class PasteBurstAssembler {
   private readonly detector: PasteBurstDetector<DecodedEvent>;
+  private readonly enabled: () => boolean;
 
   constructor(options: PasteBurstOptions = {}) {
-    this.detector = new PasteBurstDetector({ ...options, normalize: sanitizePasteText });
+    const { enabled = () => true, ...detector } = options;
+    this.enabled = enabled;
+    this.detector = new PasteBurstDetector({ ...detector, normalize: sanitizePasteText });
   }
 
   get pendingDeadline(): number | undefined {
@@ -61,7 +66,11 @@ export class PasteBurstAssembler {
 
   process(events: readonly DecodedEvent[], now: number): readonly DecodedEvent[] {
     if (events.length === 0) return events;
-    return this.detector.process(events.map(unitOf), now).map(eventOf);
+    const enabled = this.enabled();
+    const units = events.map((event): BurstUnit<DecodedEvent> => enabled
+      ? unitOf(event)
+      : { kind: "other", text: "", source: event });
+    return this.detector.process(units, now).map(eventOf);
   }
 
   expire(now: number): readonly DecodedEvent[] {

@@ -39,16 +39,21 @@ const interactionRef = createRef<PlanInteractionPort>();
 interface ViewState { plan: SessionPlan | undefined; width: number; theme: ThemeHint }
 let view: ViewState = { plan, width: 52, theme: "dark" };
 let updateView: (state: ViewState) => void = () => { throw new Error("View has not mounted"); };
+let hideCalls = 0;
 function Harness() {
   const [state, setState] = useState(view);
   updateView = setState;
-  return createElement(PlanView, { theme: themeFor(state.theme), plan: state.plan, services, width: state.width, focused: true, interactionRef });
+  return createElement(PlanView, { theme: themeFor(state.theme), plan: state.plan, services, width: state.width, focused: true, interactionRef, onHide() { hideCalls += 1; } });
 }
 const setup = await testRender(createElement(Harness), { width: 52, height: 40, useThread: false });
 async function settle(action: () => unknown = () => undefined): Promise<string> {
   await act(async () => { await action(); });
   await act(async () => { await setup.flush(); });
-  return setup.captureCharFrame();
+  const frame = setup.captureCharFrame();
+  assert.doesNotMatch(frame, /\b(?:Expand|Collapse) all\b/);
+  assert.equal(setup.renderer.root.findDescendantById("plan-expand-all"), undefined);
+  assert.equal(setup.renderer.root.findDescendantById("plan-collapse-all"), undefined);
+  return frame;
 }
 function node(id: string): Renderable {
   const value = setup.renderer.root.findDescendantById(id);
@@ -152,12 +157,16 @@ try {
   assert.doesNotMatch(frame, /Unique finding alpha/, "Task findings must be collapsed by default");
   assert.doesNotMatch(frame, /Unique finding beta/, "Task findings must be collapsed by default");
   node("plan-task-t1-disclosure");
-  node("plan-expand-all");
+  node("plan-hide");
   assert.equal(setup.renderer.root.findDescendantById("plan-task-t3-disclosure"), undefined);
   assertInlineControl("t1");
   assertInlineControl("t2");
   assertButtonStyle("t1", false);
   assertButtonStyle("t2", false);
+  await click("plan-hide", 2);
+  assert.equal(hideCalls, 0);
+  await click("plan-hide");
+  assert.equal(hideCalls, 1);
   await capture("tasks-dark-collapsed");
   const hoverTarget = node("plan-task-t2-disclosure");
   await settle(() => setup.mockMouse.moveTo(hoverTarget.x, hoverTarget.y));
@@ -172,10 +181,8 @@ try {
   frame = await click("plan-task-t1-disclosure");
   assert.match(frame, /Unique finding alpha/);
   assert.doesNotMatch(frame, /Unique finding beta/);
-  node("plan-expand-all");
-  node("plan-collapse-all");
-  assertContained("plan-expand-all");
-  assertContained("plan-collapse-all");
+  node("plan-hide");
+  assertContained("plan-hide");
   await settle(() => setup.mockMouse.moveTo(0, 0));
   assertButtonStyle("t1", false);
   await capture("tasks-dark-clicked-mouseout");
@@ -190,10 +197,10 @@ try {
   assertButtonStyle("t1", false);
   await capture("tasks-dark-mixed");
 
-  frame = await click("plan-collapse-all");
+  frame = await settle(() => interactionRef.current!.setAllExpanded(false));
   assert.doesNotMatch(frame, /Unique finding alpha|Unique finding beta/);
   assert.equal(setup.renderer.root.findDescendantById("plan-collapse-all"), undefined);
-  frame = await click("plan-expand-all");
+  frame = await settle(() => interactionRef.current!.setAllExpanded(true));
   assert.match(frame, /Unique finding alpha/);
   assert.match(frame, /Unique finding beta/);
   assert.equal(setup.renderer.root.findDescendantById("plan-expand-all"), undefined);
@@ -212,7 +219,7 @@ try {
   assert.match(frame, /Refreshed findings/);
   assert.doesNotMatch(frame, /New child findings/, "New tasks must start collapsed after expand-all");
   node("plan-task-c1-header");
-  await click("plan-expand-all");
+  await settle(() => interactionRef.current!.setAllExpanded(true));
   await click("plan-task-t1-disclosure");
   assert.ok(setup.renderer.root.findDescendantById("plan-task-c1-details"), "Collapsing a parent must not hide child tasks or child details");
   assert.ok(node("plan-task-c1-header").y > node("plan-task-t1-header").y);
@@ -232,22 +239,21 @@ try {
     await click("plan-task-t1-disclosure");
     assertInlineControl("t1");
     assertInlineControl("t2");
-    assertContained("plan-expand-all");
-    assertContained("plan-collapse-all");
+    assertContained("plan-hide");
     assert.ok(node("plan-tasks").height >= 1);
     assert.doesNotMatch(setup.captureCharFrame(), /\bDetails\b|\bNotes\b|Hidden .* field/);
     await capture(`tasks-dark-mixed-${width}`);
-    await click("plan-collapse-all");
+    await settle(() => interactionRef.current!.setAllExpanded(false));
   }
 
   frame = await rerender({ ...view, width: 52, theme: "light" });
   await capture("tasks-light-collapsed");
-  frame = await click("plan-expand-all");
+  frame = await settle(() => interactionRef.current!.setAllExpanded(true));
   assert.match(frame, /Unique finding alpha/);
   assert.match(frame, /Unique finding beta/);
   assertOriginalStyle();
   assertInlineControl("t1");
-  assertButtonStyle("t1", false);
+  assertButtonStyle("t1", true);
   assertButtonStyle("t2", false);
   const lightHoverTarget = node("plan-task-t2-disclosure");
   await settle(() => setup.mockMouse.moveTo(lightHoverTarget.x, lightHoverTarget.y));
@@ -330,6 +336,8 @@ try {
 
   await rerender({ ...view, plan: undefined });
   assert.match(setup.captureCharFrame(), /No tasks yet/);
+  await click("plan-hide");
+  assert.equal(hideCalls, 2);
   frame = await rerender({ ...view, plan });
   assert.doesNotMatch(frame, /Unique finding alpha|Unique finding beta/);
   await rerender({ ...view, plan: { ...plan, tasks: [] } });

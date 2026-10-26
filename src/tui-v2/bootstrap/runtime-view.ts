@@ -41,7 +41,9 @@ export async function mountOpenTuiRuntimeView(
   const resize = (): void => renderer.resize(terminal.stdout.columns, terminal.stdout.rows);
   terminal.stdout.on("resize", resize);
   const shrink = installShrinkResizeGuard({ renderer, terminal: terminal.stdout, signals: terminal.stdout });
-  const paste = installPasteBurstGuard<KeyEvent>(renderer.keyInput);
+  const paste = installPasteBurstGuard<KeyEvent>(renderer.keyInput, {
+    enabled: () => services.focus.activeContext() !== "picker",
+  });
   const { handle } = createOpenTuiRendererHandle({
     mount: () => root.render(createElement(ServicesProvider, { services: viewServices, children: createElement(App) })),
     unmount: () => root.unmount(), renderer, finalized: destroyed,

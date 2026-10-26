@@ -110,14 +110,10 @@ export function TranscriptRowImpl(props: {
           services={services}
           expanded={expanded}
           onToggle={() => store.toggleItemOverride(item.id, expandOutputGlobal)}
-          onCollapseAllOutput={() => store.setOutputGlobal(false)}
-          onExpandAllOutput={() => store.setOutputGlobal(true)}
           fileDiffExpanded={fileDiffExpanded}
           onToggleFileDiff={() =>
             store.toggleFileDiffOverride(item.id, expandFileDiffsGlobal)
           }
-          onCollapseAllFileDiffs={() => store.setFileDiffsGlobal(false)}
-          onExpandAllFileDiffs={() => store.setFileDiffsGlobal(true)}
           contentWidth={
             searchMatched && contentWidth != null ? contentWidth - 2 : contentWidth
           }

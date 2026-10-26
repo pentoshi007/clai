@@ -82,8 +82,14 @@ export function pickerKey(input: PickerKeyInput): PanelKeyResult<PickerPanelStat
     return handled({ ...state, cursor, top });
   };
 
-  if (chord === "up") return move(-1);
-  if (chord === "down") return move(1);
+  if (chord === "up" || chord === "shift+tab") return move(-1);
+  if (chord === "down" || chord === "tab") return move(1);
+  if (request.adjustment && (chord === "left" || chord === "right")) {
+    const option = filtered[Math.min(state.cursor, Math.max(0, count - 1))];
+    return option
+      ? handled(state, { kind: "picker-adjust", value: option.value, direction: chord === "left" ? -1 : 1 })
+      : handled(state);
+  }
   if (chord === "pageup") return scroll(-capacity);
   if (chord === "pagedown") return scroll(capacity);
   if (chord === "left") return scroll(-1);
@@ -134,11 +140,12 @@ export interface PickerView {
 }
 
 function pickerHints(ink: InkTheme, request: PickerRequest): readonly string[] {
-  const accept = request.historyStyle === true ? "resume" : "select";
+  const accept = request.selectLabel ?? (request.historyStyle === true ? "resume" : "select");
   const hints = [
-    `${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} move`,
+    `${ink.glyphs.scrollUp}${ink.glyphs.scrollDown}/tab move`,
     `${ink.glyphs.enter} ${accept}`,
   ];
+  if (request.adjustment) hints.push(request.adjustment.hint);
   if (request.rowAction) hints.push(request.rowAction.hint);
   hints.push("esc cancel", "type to filter");
   hints.push(`pg${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} scroll`);

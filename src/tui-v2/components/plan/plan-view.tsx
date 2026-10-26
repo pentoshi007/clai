@@ -33,6 +33,7 @@ export interface PlanViewProps {
   readonly theme: Theme;
   readonly plan: SessionPlan | undefined;
   readonly services: AppServices;
+  readonly onHide: () => void;
   readonly width?: number | undefined;
   readonly focused?: boolean | undefined;
   readonly interactionRef?: Ref<PlanInteractionPort> | undefined;
@@ -98,7 +99,7 @@ function ActionChip(props: {
 
 function PlanViewImpl(props: PlanViewProps): ReactNode {
   countRender("PlanView");
-  const { theme, plan, services, width: widthProp, interactionRef } = props;
+  const { theme, plan, services, onHide, width: widthProp, interactionRef } = props;
   const focused = props.focused ?? services.focus.activeContext() === "plan";
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const paneRef = useRef<BoxRenderable>(null);
@@ -124,11 +125,6 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
     services.focus.focusRegion("plan");
     disclosure.toggleTask(id);
   }, [services.focus, services.overlay, disclosure.toggleTask]);
-  function setAllExpanded(expanded: boolean): void {
-    if (services.overlay.isOpen()) return;
-    services.focus.focusRegion("plan");
-    disclosure.setAllExpanded(expanded);
-  }
   function trapWheel(event: MouseEvent): void {
     if (!event.scroll) return;
     event.stopPropagation();
@@ -158,9 +154,14 @@ function PlanViewImpl(props: PlanViewProps): ReactNode {
       onMouseDown={onPaneMouseDown}
       onMouseScroll={trapWheel}
     >
+      {!plan ? (
+        <box style={{ alignItems: "flex-end", paddingTop: 1, paddingRight: 1, flexShrink: 0 }}>
+          <ActionChip id="plan-hide" label="Hide" fg={theme.foreground} bg={theme.chip} onClick={onHide} />
+        </box>
+      ) : null}
       {plan ? (
         <>
-          <PlanHeader theme={theme} plan={plan} services={services} width={headerWidth} summary={disclosure.summary} onSetAllExpanded={setAllExpanded} />
+          <PlanHeader theme={theme} plan={plan} services={services} width={headerWidth} onHide={onHide} />
           <scrollbox
             id="plan-tasks"
             ref={scrollRef}
@@ -206,25 +207,17 @@ function PlanHeader(props: {
   plan: SessionPlan;
   services: AppServices;
   width: number;
-  summary: { readonly total: number; readonly expanded: number };
-  onSetAllExpanded: (expanded: boolean) => void;
+  onHide: () => void;
 }): ReactNode {
-  const { theme, plan, services, width, summary, onSetAllExpanded } = props;
+  const { theme, plan, services, width, onHide } = props;
   const progress = progressView(plan);
   const statusFg = tokenFg(theme, planStatusColor(plan.status));
   const statusBg = plan.status === "completed" ? theme.diffAddBg : plan.status === "draft" ? theme.chipTeal : theme.chip;
   const countLabel = progress.total === 0 ? "0 tasks" : `${progress.done}/${progress.total}`;
-  const canExpand = summary.expanded < summary.total;
-  const canCollapse = summary.expanded > 0;
-  const controlsWidth = (canExpand ? 12 : 0) + (canCollapse ? 14 : 0) + (canExpand && canCollapse ? 1 : 0);
+  const controlsWidth = 6;
   const inline = width >= controlsWidth + countLabel.length + 7;
   const barWidth = Math.max(4, Math.min(14, width - countLabel.length - (inline ? controlsWidth + 3 : 1)));
-  const controls = summary.total > 0 ? (
-    <box style={{ flexDirection: width >= controlsWidth ? "row" : "column", flexShrink: 0, gap: width >= controlsWidth ? 1 : 0 }}>
-      {canExpand ? <ActionChip id="plan-expand-all" label="Expand all" fg={theme.foreground} bg={theme.chip} onClick={() => onSetAllExpanded(true)} /> : null}
-      {canCollapse ? <ActionChip id="plan-collapse-all" label="Collapse all" fg={theme.foreground} bg={theme.chip} onClick={() => onSetAllExpanded(false)} /> : null}
-    </box>
-  ) : null;
+  const controls = <ActionChip id="plan-hide" label="Hide" fg={theme.foreground} bg={theme.chip} onClick={onHide} />;
 
   return (
     <box id="plan-header" style={{ flexDirection: "column", width: "100%", flexShrink: 0, paddingLeft: 1, paddingRight: 1, paddingTop: 1 }}>
@@ -238,10 +231,10 @@ function PlanHeader(props: {
       <box id="plan-progress" style={{ flexDirection: "row", width: "100%", height: 1, marginTop: 1, alignItems: "center", flexShrink: 0, gap: 1 }}>
         <text selectable={false} content={progressBar(progress.done, progress.total, barWidth)} style={{ fg: progress.done === progress.total && progress.total > 0 ? theme.success : theme.cyan, height: 1, flexShrink: 0 }} />
         <text selectable content={countLabel} style={{ fg: statusFg, height: 1, flexShrink: 0, attributes: TextAttributes.BOLD }} />
-        {inline && controls ? <box style={{ flexGrow: 1 }} /> : null}
+        {inline ? <box style={{ flexGrow: 1 }} /> : null}
         {inline ? controls : null}
       </box>
-      {!inline && controls ? <box style={{ flexShrink: 0, marginTop: 1 }}>{controls}</box> : null}
+      {!inline ? <box style={{ flexShrink: 0, marginTop: 1 }}>{controls}</box> : null}
       {plan.status === "draft" ? (
         <box style={{ flexDirection: width >= 21 ? "row" : "column", width: "100%", marginTop: 1, flexShrink: 0, gap: width >= 21 ? 1 : 0 }}>
           <ActionChip id="plan-implement" label="Implement" fg={theme.foreground} bg={theme.diffAddBg} onClick={() => void implementPlan(services)} />

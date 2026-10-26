@@ -1,4 +1,4 @@
-import { SyntaxStyle, type TextareaRenderable } from "@opentui/core";
+import { SyntaxStyle, TextBuffer, type TextareaRenderable, type WidthMethod } from "@opentui/core";
 import { findMcpMentions } from "../../mcp/mentions.js";
 import { findReaMentions } from "../../rea/workflow.js";
 import { findSkillMentions } from "../../skills/mentions.js";
@@ -89,9 +89,35 @@ export function paintComposerMentions(
   }
 }
 
+function bufferPaintRanges(
+  text: string,
+  paints: readonly MentionPaint[],
+  widthMethod: WidthMethod,
+): readonly MentionPaint[] {
+  const boundaries = [...new Set(paints.flatMap((paint) => paint.ranges.flatMap((range) => [range.start, range.end])))].sort((a, b) => a - b);
+  if (boundaries.length === 0 || /^[\x20-\x7e]*$/.test(text)) return paints;
+  const offsets = new Map<number, number>();
+  const measure = TextBuffer.create(widthMethod);
+  try {
+    let previous = 0;
+    for (const boundary of boundaries) {
+      measure.append(text.slice(previous, boundary));
+      offsets.set(boundary, measure.length);
+      previous = boundary;
+    }
+  } finally {
+    measure.destroy();
+  }
+  return paints.map((paint) => ({
+    ...paint,
+    ranges: paint.ranges.map((range) => ({ start: offsets.get(range.start)!, end: offsets.get(range.end)! })),
+  }));
+}
+
 export function paintDraftMentions(input: {
   readonly editor: TextareaRenderable | null;
   readonly text: string;
+  readonly widthMethod: WidthMethod;
   readonly skills: ReadonlySet<string>;
   readonly skillColor: string;
   readonly servers: ReadonlySet<string>;
@@ -99,7 +125,7 @@ export function paintDraftMentions(input: {
   readonly pasteRanges?: readonly { readonly start: number; readonly end: number }[];
   readonly pasteColor?: string;
 }): void {
-  paintComposerMentions(input.editor, [
+  paintComposerMentions(input.editor, bufferPaintRanges(input.text, [
     {
       kind: "skill",
       ranges: findSkillMentions(input.text, input.skills),
@@ -115,5 +141,5 @@ export function paintDraftMentions(input: {
       ranges: input.pasteRanges ?? [],
       color: input.pasteColor ?? input.serverColor,
     },
-  ]);
+  ], input.widthMethod));
 }

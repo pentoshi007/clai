@@ -26,7 +26,7 @@ export function sanitizeSubagentText(value: string): string {
 export function isValidSubagentParentId(value: unknown): value is string {
   if (typeof value !== "string" || !value || value.length > 256) return false;
   // Generated session IDs can contain sk- across the timestamp/entropy boundary.
-  return /^sess-[a-z0-9]{8,11}-[a-z0-9]{0,6}$/.test(value) || sanitizeSubagentText(value) === value;
+  return /^(?:sess-)?[a-z0-9]{8,11}-[a-z0-9]{0,6}$/.test(value) || sanitizeSubagentText(value) === value;
 }
 
 export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {

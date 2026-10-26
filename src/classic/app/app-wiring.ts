@@ -217,7 +217,7 @@ export class ClassicAppWiring implements WiringHost {
         mouse: options.mouse,
         onWarn: (message) => notify(this.services, message, { level: "warn" }),
       }),
-      new PasteBurstAssembler(),
+      new PasteBurstAssembler({ enabled: () => this.services.focus.activeContext() !== "picker" }),
       this.now,
     );
 

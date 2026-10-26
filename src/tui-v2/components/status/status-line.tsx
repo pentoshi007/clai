@@ -153,6 +153,7 @@ function sep(theme: Theme): ReactNode {
 }
 
 function ClickableHint(props: {
+  readonly id?: string | undefined;
   readonly short: string;
   readonly expand?: string | undefined;
   readonly active: boolean;
@@ -202,6 +203,7 @@ function ClickableHint(props: {
 
   return (
     <box
+      {...(props.id ? { id: props.id } : {})}
       onMouseOver={reveal}
       onMouseOut={scheduleHide}
       onMouseDown={(event) => {
@@ -349,7 +351,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
     renderColumns(cwdDisplay),
   );
   const busy = state.running || state.compacting;
-  const showTasks = (hasActivePlan || planVisible) && density !== "xs";
+  const showTasks = hasActivePlan && !planVisible && density !== "xs";
 
   useEffect(() => {
     if (!busy) {
@@ -442,6 +444,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
             <>
               {sep(theme)}
               <ClickableHint
+                id="status-tasks-toggle"
                 short={tasksToggleLabel(planVisible, density)}
                 expand="Tasks"
                 active={planVisible}
@@ -618,6 +621,7 @@ export const StatusLine = memo(function StatusLine(props: StatusLineProps): Reac
           <>
             {sep(theme)}
             <ClickableHint
+              id="status-tasks-toggle"
               short={tasksToggleLabel(planVisible, density)}
               expand="Tasks"
               active={planVisible}

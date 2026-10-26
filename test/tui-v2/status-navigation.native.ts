@@ -13,7 +13,7 @@ import { StatusLine } from "../../src/tui-v2/components/status/status-line.js";
 import { ComposerInputBox } from "../../src/tui-v2/components/composer/composer-input-box.js";
 import { publishTranscriptScrollMetrics } from "../../src/tui-v2/components/transcript/transcript-scroll-port.js";
 
-async function verify(width: number): Promise<void> {
+async function verify(width: number, planVisible: boolean): Promise<void> {
   let finish: (() => void) | undefined;
   let active: Promise<void> | undefined;
   let jumps = 0;
@@ -62,7 +62,7 @@ async function verify(width: number): Promise<void> {
     activity: "checking status spacing",
     width,
     hasActivePlan: true,
-    planVisible: false,
+    planVisible,
     onJumpBottom: () => { jumps += 1; publishTranscriptScrollMetrics({ linesAbove: 240, linesBelow: 0 }); },
     onFocusComposer: () => { focused += 1; },
   })), { width, height: 5, useThread: false, useMouse: true });
@@ -76,6 +76,7 @@ async function verify(width: number): Promise<void> {
     assert.ok(composer, "the composer is mounted");
     const row = setup.captureCharFrame().split("\n")[composer.y + composer.height]!;
     assert.match(row, /AGENT/, row);
+    if (planVisible) assert.equal(setup.renderer.root.findDescendantById("status-tasks-toggle"), undefined, row);
     assert.doesNotMatch(row, /\bctx\b/);
     const context = /\b\d[\d,.]*[km]?(?:\/\d[\d,.]*[km]?)?\s*$/.exec(row);
     assert.ok(context, row);
@@ -96,7 +97,7 @@ async function verify(width: number): Promise<void> {
     assert.ok(target.x + target.width <= contextLeft - 3, `jump control stays clear of context: ${JSON.stringify({ width, x: target.x, jumpWidth: target.width, contextLeft, row })}`);
     if (width < 120) return;
     const before = Array.from(row).slice(0, target.x).join("");
-    assert.match(before, /Tasks/, row);
+    assert.equal(before.includes("Tasks"), !planVisible, row);
     assert.match(before, /2(?: queued|q)/, row);
     const slot = setup.renderer.root.findDescendantById("status-jump-slot");
     assert.ok(slot, "the jump control owns a centering slot");
@@ -156,7 +157,9 @@ try {
   process.chdir(root);
   for (const branch of ["main", "regression/" + "long-branch-name-".repeat(8)]) {
     execFileSync("git", ["checkout", "--quiet", "-B", branch], { cwd: root });
-    for (const width of [40, 52, 68, 80, 120, 160, 240]) await verify(width);
+    for (const width of [40, 52, 68, 80, 120, 160, 240]) {
+      for (const planVisible of [false, true]) await verify(width, planVisible);
+    }
   }
   console.log("Native status navigation passed: centered idle/busy controls with Tasks, queue and short/long branches at 40/52/68/80/120/160/240 columns");
 } finally {

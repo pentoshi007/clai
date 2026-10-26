@@ -108,13 +108,20 @@ export function Picker(props: PickerProps): ReactNode {
     if (key.defaultPrevented || key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
     const index = Math.min(cursorRef.current, Math.max(0, filtered.length - 1));
-    if (chord === "up" || chord === "down") {
+    if (["up", "down", "tab", "shift+tab"].includes(chord)) {
       key.preventDefault();
-      const next = filtered.length === 0 ? 0 : (index + (chord === "up" ? -1 : 1) + filtered.length) % filtered.length;
+      const backwards = chord === "up" || chord === "shift+tab";
+      const next = filtered.length === 0 ? 0 : (index + (backwards ? -1 : 1) + filtered.length) % filtered.length;
       selectIndex(next);
       const sb = scrollRef.current;
       const item = items[next];
       if (sb && item && item.height > sb.viewport.height) sb.scrollTo(item.top);
+      return;
+    }
+    if (request.adjustment && (chord === "left" || chord === "right")) {
+      key.preventDefault();
+      const option = filtered[index];
+      if (option) services.overlay.adjustPicker(option.value, chord === "left" ? -1 : 1);
       return;
     }
     if (["pageup", "pagedown", "left", "right"].includes(chord)) {
@@ -173,11 +180,12 @@ export function Picker(props: PickerProps): ReactNode {
   });
 
   const hints = [
-    "↑↓ move",
-    "pg↑↓ scroll",
-    `enter ${isHistory ? "resume" : "select"}`,
+    "↑↓/tab move",
+    `enter ${request.selectLabel ?? (isHistory ? "resume" : "select")}`,
+    request.adjustment?.hint,
     request.rowAction?.hint,
     "esc close",
+    "pg↑↓ scroll",
   ].filter(Boolean).join(" · ");
   return (
     <box style={{

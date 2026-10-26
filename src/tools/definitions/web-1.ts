@@ -4,7 +4,7 @@ import { def, emptyObject } from "./define.js";
 export const TOOL_DEFINITIONS_WEB_1: ToolDefinition[] = [
   def(
     "http.fetch",
-    "Raw-by-default HTTP evidence for pentest/protocol/private targets: status, full redirect response headers, final headers/cookies, decoded source body, and captured-body SHA-256. Full output is artifacted while model context is capped separately. Cross-origin redirects strip credentials unless explicitly overridden. Default no status-retries (pass retries to retry 5xx). For https://IP or self-signed lab certs use insecureTls=true (records that verification was off). TLS fingerprint: web.fetch includeTls. Not for casual public-page reading (prefer web.fetch).",
+    "Raw-by-default HTTP evidence for pentest/protocol/private targets: status, full redirect response headers, final headers/cookies, decoded source body, and captured-body SHA-256. Full-output saving is opt-in via /settings (off by default); model context is capped separately. A saved path is returned only when output is persisted. Cross-origin redirects strip credentials unless explicitly overridden. Default no status-retries (pass retries to retry 5xx). For https://IP or self-signed lab certs use insecureTls=true (records that verification was off). TLS fingerprint: web.fetch includeTls. Not for casual public-page reading (prefer web.fetch).",
     {
       type: "object",
       properties: {

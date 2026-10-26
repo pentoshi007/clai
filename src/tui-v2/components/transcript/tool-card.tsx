@@ -46,7 +46,7 @@ import {
 import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
 import { shouldDefaultFormattedView } from "../../../ui-core/rendering/pager-view-policy.js";
 import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.js";
-import { StyledTextBlock } from "./styled-text-block.js";
+import { ToolOutputBranch } from "./tool-output-branch.js";
 import { parseFsReadSections } from "../../../tools/fs/read-sections.js";
 import { middleClipText, renderColumns } from "../../../ui-core/rendering/text-width.js";
 
@@ -219,12 +219,8 @@ export function ToolCard(props: {
   expanded: boolean;
   services: AppServices;
   onToggle: () => void;
-  onCollapseAllOutput?: () => void;
-  onExpandAllOutput?: () => void;
   fileDiffExpanded?: boolean;
   onToggleFileDiff?: () => void;
-  onCollapseAllFileDiffs?: () => void;
-  onExpandAllFileDiffs?: () => void;
   contentWidth?: number | undefined;
 }): ReactNode {
   const {
@@ -234,12 +230,8 @@ export function ToolCard(props: {
     expanded,
     services,
     onToggle,
-    onCollapseAllOutput,
-    onExpandAllOutput,
     fileDiffExpanded = true,
     onToggleFileDiff,
-    onCollapseAllFileDiffs,
-    onExpandAllFileDiffs,
     contentWidth,
   } = props;
   const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
@@ -301,7 +293,7 @@ export function ToolCard(props: {
     tailFormatted;
   const mdPreview = useMemo(() => {
     if (!formatMdRead || !tail.trim()) return null;
-    const width = Math.max(24, termWidth - 12);
+    const width = Math.max(1, cardInnerWidth - 3);
     const rendered = MARKDOWN_PREVIEWS.resolve(
       item,
       `${width}|${colorMode}|${objectIdentity(theme)}|${tail.length}`,
@@ -325,7 +317,7 @@ export function ToolCard(props: {
       styleAnsiLine(toolOutputGapLabel(hiddenLines), theme.muted),
       rendered.length, "first-three",
     ).lines;
-  }, [formatMdRead, item, tail, expanded, termWidth, theme, colorMode]);
+  }, [formatMdRead, item, tail, expanded, cardInnerWidth, theme, colorMode]);
 
   const presentsRawOutput =
     !(isPagerOnly || isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead);
@@ -337,6 +329,9 @@ export function ToolCard(props: {
     [presentsRawOutput, tail, spool, item.toolCallId, item.outputBytes, expanded, item.name],
   );
 
+  const hasOutputBranch = !isBatch && !isBatchLive && !isFileDiff &&
+    (lines.length > 0 || Boolean(mdPreview?.length));
+  const argumentStem = hasOutputBranch ? "\n│".repeat((boundedArgs?.split("\n").length ?? 1) - 1) : "";
   const statusFg = theme[STATUS_COLOR[item.status]];
   const highlight = statusFg;
   const statusBadgeBg =
@@ -436,6 +431,9 @@ export function ToolCard(props: {
     footerHint = "click for full · Ctrl+O to expand";
   }
 
+  const detailContent = !item.pending && detail
+    ? <LinkableText text={detail} theme={theme} fg={theme.mode} selectable />
+    : null;
   const summary = isBatch ? batchSummaryLine(batchSections, "glyph") : undefined;
   const summaryFg =
     isBatch &&
@@ -548,38 +546,18 @@ export function ToolCard(props: {
           </>
         ) : null}
         {isFileDiff ? (
-          <>
-            <DiffActionButton
-              label={fileDiffExpanded ? "collapse" : "expand"}
-              theme={theme}
-              onClick={() => onToggleFileDiff?.()}
-            />
-            <DiffActionButton
-              label={fileDiffExpanded ? "collapse all" : "expand all"}
-              theme={theme}
-              onClick={() =>
-                fileDiffExpanded
-                  ? onCollapseAllFileDiffs?.()
-                  : onExpandAllFileDiffs?.()
-              }
-            />
-          </>
+          <DiffActionButton
+            label={fileDiffExpanded ? "collapse" : "expand"}
+            theme={theme}
+            onClick={() => onToggleFileDiff?.()}
+          />
         ) : null}
         {canToggleOutput ? (
-          <>
-            <DiffActionButton
-              label={expanded ? "collapse" : "expand"}
-              theme={theme}
-              onClick={() => onToggle()}
-            />
-            <DiffActionButton
-              label={expanded ? "collapse all" : "expand all"}
-              theme={theme}
-              onClick={() =>
-                expanded ? onCollapseAllOutput?.() : onExpandAllOutput?.()
-              }
-            />
-          </>
+          <DiffActionButton
+            label={expanded ? "collapse" : "expand"}
+            theme={theme}
+            onClick={onToggle}
+          />
         ) : null}
         {isBatch || isBatchLive ? (
           <>
@@ -638,7 +616,7 @@ export function ToolCard(props: {
           onMouseUp={openInputClick.onMouseUp}
         >
           <text selectable style={{ fg: theme.muted, width: argsLabel.length + 2, flexShrink: 0 }}>
-            {argsLabel}:{" "}
+            {argsLabel}:{" "}<span style={{ fg: theme.toolOutput }}>{argumentStem}</span>
           </text>
           <text selectable wrapMode="none" style={{ fg: theme.inputBorder, flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
             {boundedArgs}
@@ -651,7 +629,20 @@ export function ToolCard(props: {
         </box>
       ) : null}
       {item.pending ? <PendingArguments theme={theme} /> : null}
-      {!item.pending && detail ? <LinkableText text={detail} theme={theme} fg={theme.mode} selectable /> : null}
+      {hasOutputBranch && detailContent ? (
+        <box
+          border={["left"]}
+          style={{
+            flexDirection: "column",
+            width: "100%",
+            flexShrink: 0,
+            borderColor: theme.toolOutput,
+            paddingLeft: 2,
+          }}
+        >
+          {detailContent}
+        </box>
+      ) : detailContent}
 
       {summary ? (
         <text selectable style={{ fg: summaryFg, attributes: TextAttributes.DIM }}>{summary}</text>
@@ -695,10 +686,7 @@ export function ToolCard(props: {
       ) : null}
 
       {}
-      {!isBatch &&
-      !isBatchLive &&
-      !isFileDiff &&
-      (lines.length > 0 || (mdPreview && mdPreview.length > 0)) ? (
+      {hasOutputBranch ? (
         <box
           style={{
             flexDirection: "column",
@@ -713,22 +701,7 @@ export function ToolCard(props: {
           onMouseDown={openFullClick.onMouseDown}
           onMouseUp={openFullClick.onMouseUp}
         >
-          <text
-            selectable
-            style={{
-              fg: theme.white,
-              bg: theme.chipTeal,
-              attributes: TextAttributes.BOLD,
-              height: 1,
-            }}
-          >
-            {formatMdRead ? " OUTPUT · formatted " : " OUTPUT "}
-          </text>
-          {mdPreview && mdPreview.length > 0 ? (
-            <StyledTextBlock lines={mdPreview} background={theme.statusBackground} />
-          ) : (
-            <OutputLines lines={lines} theme={theme} gutterFg={theme.toolOutput} />
-          )}
+          <ToolOutputBranch lines={lines} formatted={mdPreview} theme={theme} />
         </box>
       ) : null}
 

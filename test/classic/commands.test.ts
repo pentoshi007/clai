@@ -117,6 +117,26 @@ describe("classic command parity (W12)", () => {
     expect(getConfig().defaultMode).toBe("agent");
   });
 
+  spec(["settings"], "/settings keeps preferences open while applying changes", async () => {
+    const { services } = open();
+    updateConfig({ saveToolOutputs: false });
+    await run(services, "settings");
+    const state = services.overlay.getState();
+    expect(state.kind).toBe("picker");
+    if (state.kind === "picker") {
+      expect(state.request.options[0]?.label).toBe("Save command outputs · Off");
+    }
+    services.overlay.adjustPicker("save-tool-outputs", 1);
+    expect(getConfig().saveToolOutputs).toBe(true);
+    services.overlay.selectPicker("save-tool-outputs");
+    expect(getConfig().saveToolOutputs).toBe(false);
+    expect(services.overlay.getState().kind).toBe("picker");
+    services.overlay.close();
+    await run(services, "settings", "invalid");
+    expect(noticed(services, "usage: /settings")).toBe(true);
+    expect(services.overlay.isOpen()).toBe(false);
+  });
+
   spec(["model"], "/model <name> applies the model to the session", async () => {
     const { services } = open();
     await run(services, "model", "gpt-4o-mini");

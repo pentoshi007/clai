@@ -7,6 +7,7 @@ export type PanelEffect =
   | { readonly kind: "close" }
   | { readonly kind: "picker-select"; readonly value: string }
   | { readonly kind: "picker-row-action"; readonly value: string }
+  | { readonly kind: "picker-adjust"; readonly value: string; readonly direction: -1 | 1 }
   | { readonly kind: "confirm"; readonly ok: boolean }
   | { readonly kind: "confirm-plan"; readonly result: PlanConfirmResult }
   | { readonly kind: "view-plan" }

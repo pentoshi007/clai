@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { act, createElement } from "react";
+import { act, createElement, useState, type ComponentProps, type ReactNode } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { FileDiffBody } from "../../src/tui-v2/components/transcript/file-diff-card.js";
 import { ToolCard } from "../../src/tui-v2/components/transcript/tool-card.js";
@@ -15,6 +15,18 @@ import type { ToolItem } from "../../src/ui-core/state/transcript-types.js";
 
 const height = 160;
 let scenarios = 0;
+
+function InteractiveDiffCard(props: ComponentProps<typeof ToolCard>): ReactNode {
+  const [diffExpanded, setDiffExpanded] = useState(true);
+  return createElement(ToolCard, {
+    ...props,
+    fileDiffExpanded: diffExpanded,
+    onToggleFileDiff() {
+      props.onToggleFileDiff?.();
+      setDiffExpanded(value => !value);
+    },
+  });
+}
 
 function change(lines: number, file = 0): FileChange {
   return buildFileChange({
@@ -139,27 +151,49 @@ for (const multi of [false, true]) {
   try {
     const sizes: number[] = [];
     for (const expanded of [false, true]) {
+      let diffToggles = 0;
+      let outputToggles = 0;
       const setup = await testRender(createElement(ServicesProvider, {
         services,
         children: createElement(TerminalDimensionsContext.Provider, {
           value: { width: 120, height },
           children: createElement("box", {
             style: { width: 116, flexDirection: "column" },
-            children: createElement(ToolCard, {
+            children: createElement(InteractiveDiffCard, {
               item, theme: themeFor("dark"), spool: services.session.spool, expanded,
-              services, onToggle() {}, contentWidth: 116,
+              services, onToggle() { outputToggles += 1; },
+              onToggleFileDiff() { diffToggles += 1; }, contentWidth: 116,
             }),
           }),
         }),
-      }), { width: 120, height, useThread: false });
+      }), { width: 120, height, useThread: false, useMouse: true });
       try {
         await act(async () => { await setup.flush(); });
         const frame = setup.captureCharFrame();
+        assert.doesNotMatch(frame, /\b(?:expand|collapse) all\b/i);
         const card = setup.renderer.root.findDescendantById(item.id)!;
         sizes.push(card.height);
         assert.equal(frame.includes(multi ? "file-11.ts" : "ROW_0_39"), expanded, frame);
         if (!expanded) assert.ok(card.height <= 30, frame);
         if (multi) assert.equal(frame.match(/more files/g)?.length, 1, frame);
+        for (const label of ["collapse", "expand"]) {
+          const before = setup.captureCharFrame();
+          const frameRows = before.split("\n");
+          const row = frameRows.findIndex(line => line.includes(label));
+          assert.ok(row >= 0, before);
+          const column = frameRows[row]!.indexOf(label);
+          await act(async () => {
+            await setup.mockMouse.click(column + 1, row);
+            await setup.flush();
+          });
+          const after = setup.captureCharFrame();
+          assert.equal(after.includes("ROW_0_0"), label === "expand", after);
+          assert.doesNotMatch(after, /\b(?:expand|collapse) all\b/i);
+          assert.equal(services.overlay.getState().kind, "none", after);
+        }
+        assert.equal(diffToggles, 2, frame);
+        assert.equal(outputToggles, 0, frame);
+        assert.equal(setup.captureCharFrame(), frame);
         assert.deepEqual(item, stored);
         scenarios += 1;
       } finally {

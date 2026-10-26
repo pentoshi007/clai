@@ -310,12 +310,13 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
     paintDraftMentions({
       editor,
       text,
+      widthMethod: renderer.widthMethod,
       skills: skillNamesSnapshot(),
       skillColor: theme.activity,
       servers,
       serverColor: theme.aqua,
       pasteRanges: pastePlaceholderRanges(text, pasteRegistry.current.activeIn(text)),
-      pasteColor: theme.cyan,
+      pasteColor: theme.aqua,
     });
     services.mcp.applyMentionSelection(text);
   }

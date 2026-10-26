@@ -206,7 +206,9 @@ export async function startTuiV2(
     disposeServices: () => services.dispose(),
   });
   const disposeShrinkResizeGuard = installShrinkResizeGuard({ renderer });
-  const disposePasteBurstGuard = installPasteBurstGuard<KeyEvent>(renderer.keyInput);
+  const disposePasteBurstGuard = installPasteBurstGuard<KeyEvent>(renderer.keyInput, {
+    enabled: () => services.focus.activeContext() !== "picker",
+  });
   const lifecycle = new RendererLifecycle({
     handle,
     disposers: [

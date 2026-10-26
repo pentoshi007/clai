@@ -83,6 +83,7 @@ export interface ClaiConfig {
   offline: boolean;
   parserStrict: boolean;
   privateMode: boolean;
+  saveToolOutputs: boolean;
   historyRetentionLimit: number;
   sandboxReads: boolean;
   activeSearchProvider: SearchProviderId;
@@ -125,6 +126,7 @@ const defaults: ClaiConfig = {
   offline: false,
   parserStrict: false,
   privateMode: false,
+  saveToolOutputs: false,
   historyRetentionLimit: 0,
   sandboxReads: false,
   activeSearchProvider: "duckduckgo",
@@ -248,6 +250,7 @@ function readConfigFromStore(): ClaiConfig {
   const permissions = configuredPermissionMode(current.permissions);
   return {
     ...current,
+    saveToolOutputs: current.saveToolOutputs === true,
     permissions,
     defaultProvider,
     defaultModel: sanitizeProviderModel(defaultProvider, defaultModel),

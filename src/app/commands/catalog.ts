@@ -9,6 +9,7 @@ export interface SlashCommand {
 export const slashCommands: SlashCommand[] = [
   { command: "/ask", description: "switch to ask mode" },
   { command: "/agent", description: "switch to agent mode" },
+  { command: "/settings", description: "configure preferences, including automatic tool-output saving" },
   {
     command: "/orchestrator",
     usage: "[on|off|status|models]",
