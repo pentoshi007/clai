@@ -34,94 +34,75 @@ const setup = await testRender(createElement(ServicesProvider, { services, child
   width: 90, height: 30, useThread: false, useMouse: true,
 });
 const requestFrame = globalThis.requestAnimationFrame;
-const cancelFrame = globalThis.cancelAnimationFrame;
-const performanceNow = performance.now;
-const queued = new Map<number, FrameRequestCallback>();
-let frameId = -100;
-let now = 0;
+let animationFrames = 0;
 
-async function frame(elapsedMs: number): Promise<void> {
-  now += elapsedMs;
-  const callbacks = [...queued.values()];
-  queued.clear();
-  await act(async () => {
-    for (const callback of callbacks) callback(elapsedMs);
-    await setup.renderOnce();
-  });
-  await act(async () => { await setup.renderOnce(); });
+function wheelReports(count: number, direction: "up" | "down"): string {
+  const viewport = findScrollBox(setup.renderer.root)!.viewport;
+  const button = direction === "up" ? 64 : 65;
+  return `\x1b[<${button};${viewport.x + 3};${viewport.y + 2}M`.repeat(count);
 }
 
-async function burst(count: number, direction: "up" | "down"): Promise<void> {
-  const viewport = findScrollBox(setup.renderer.root)!.viewport;
+async function deliver(input: string): Promise<void> {
   await act(async () => {
-    for (let index = 0; index < count; index += 1) {
-      await setup.mockMouse.scroll(viewport.x + 2, viewport.y + 1, direction);
-    }
+    setup.renderer.stdin.emit("data", Buffer.from(input));
+    await Promise.resolve();
   });
+}
+
+async function paint(): Promise<string> {
+  await act(async () => { await setup.renderOnce(); });
+  return setup.captureCharFrame();
 }
 
 try {
   await act(async () => { await setup.waitForFrame((view) => view.includes("ROW_599")); });
   const sb = findScrollBox(setup.renderer.root)!;
   const order = services.transcript.getState().order;
+  await deliver(wheelReports(1, "up"));
+  await paint();
   globalThis.requestAnimationFrame = (callback) => {
-    const id = --frameId;
-    queued.set(id, callback);
-    return id;
+    animationFrames += 1;
+    return requestFrame(callback);
   };
-  globalThis.cancelAnimationFrame = (id) => {
-    if (id < 0) queued.delete(id);
-    else cancelFrame(id);
-  };
-  performance.now = () => now;
-
-  await burst(1, "up");
-  await frame(17);
   setRenderCountersEnabled(true);
   resetRenderCounts();
+
   const start = sb.scrollTop;
-  const views: string[] = [];
-  const deltas: number[] = [];
-  await burst(120, "up");
-  assert.equal(queued.size, 1, "dense input coalesces into one pending frame");
-  let previous = start;
-  for (let index = 0; index < 3; index += 1) {
-    await frame(17);
-    deltas.push(previous - sb.scrollTop);
-    previous = sb.scrollTop;
-    views.push(setup.captureCharFrame());
-  }
-  assert.equal(sb.scrollTop, start - 120, "native wheel input preserves every row within 51ms");
-  assert.deepEqual(deltas, [41, 41, 38], "a buffered burst remains continuous across frames");
-  assert.equal(new Set(views).size, 3, "each native frame actually paints the intermediate position");
-  assert.equal(queued.size, 0, "no trailing wheel animation remains");
+  const before = await paint();
+  await deliver(wheelReports(120, "up"));
+  assert.equal(sb.scrollTop, start - 120, "a burst delivered in one input chunk lands before the next paint");
+  const after = await paint();
+  assert.notEqual(after, before, "the burst paints its final position in a single frame");
+  assert.equal(await paint(), after, "no trailing motion follows the burst");
+  assert.equal(animationFrames, 0, "wheel input never schedules animation frames");
   assert.equal(readRenderCounts().get("TranscriptRow") ?? 0, 0, "scrolling reuses unchanged transcript rows");
 
-  await burst(120, "down");
-  await frame(100);
-  assert.equal(sb.scrollTop, start, "a delayed frame catches up instead of replaying stale events");
-  assert.equal(queued.size, 0);
-  await burst(120, "up");
-  await frame(17);
-  const reversedAt = sb.scrollTop;
-  await burst(1, "down");
-  await frame(17);
-  assert.equal(sb.scrollTop, reversedAt + 1, "a reversal responds on the next painted frame");
-  assert.equal(queued.size, 0);
+  const sparseStart = sb.scrollTop;
+  for (let notch = 0; notch < 5; notch += 1) {
+    await deliver(wheelReports(1, "up"));
+    assert.equal(sb.scrollTop, sparseStart - notch - 1, "each separately delivered notch moves exactly one row");
+  }
 
-  await burst(120, "up");
-  await act(async () => { transcriptScrollPort.scrollToBottom(); });
-  await frame(100);
-  assert.equal(sb.scrollTop, sb.scrollHeight - sb.viewport.height, "jump-to-latest cancels stale motion");
+  const reversedAt = sb.scrollTop;
+  await deliver(wheelReports(1, "down"));
+  assert.equal(sb.scrollTop, reversedAt + 1, "a reversal responds on the next painted frame");
+  await deliver(wheelReports(3, "up") + wheelReports(1, "down"));
+  assert.equal(sb.scrollTop, reversedAt - 1, "opposite reports in one chunk net out");
+
+  await act(async () => {
+    transcriptScrollPort.wheel(-120);
+    transcriptScrollPort.scrollToBottom();
+  });
+  await paint();
+  await paint();
+  assert.equal(sb.scrollTop, sb.scrollHeight - sb.viewport.height, "jump-to-latest discards pending wheel input");
   assert.equal(services.transcript.getState().order, order);
   assert.equal(order.length, 1);
-  console.log(`Native wheel latency passed: burst_ms=51 frames=3 row_rerenders=0 steps=${deltas.join(",")}`);
+  console.log("Native wheel latency passed: burst_frames=1 animation_frames=0 row_rerenders=0");
 } finally {
   transcriptScrollPort.stopWheel();
   setRenderCountersEnabled(false);
-  performance.now = performanceNow;
   globalThis.requestAnimationFrame = requestFrame;
-  globalThis.cancelAnimationFrame = cancelFrame;
   await act(async () => { services.dispose(); setup.renderer.destroy(); });
   await setup.renderer.idle();
 }

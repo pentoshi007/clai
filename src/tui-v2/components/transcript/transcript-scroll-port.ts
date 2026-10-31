@@ -38,30 +38,17 @@ let bottomHandler: JumpHandler | undefined;
 let autoScroll: AutoScrollHandler | undefined;
 let metrics: ScrollMetrics = EMPTY_SCROLL_METRICS;
 const metricListeners = new Set<(m: ScrollMetrics) => void>();
-const wheelMotion = new WheelScroll();
-let wheelFrame: number | undefined;
+const wheelInput = new WheelScroll();
+let wheelFlushQueued = false;
 
-function scheduleGlide(): void {
-  if (wheelFrame !== undefined || !wheelMotion.active) return;
-  wheelFrame = -1;
-  const frame = requestAnimationFrame(glideWheel);
-  if (wheelFrame === -1) wheelFrame = frame;
-}
-
-function glideWheel(): void {
-  wheelFrame = undefined;
-  if (!handler) {
-    wheelMotion.stop();
-    return;
-  }
-  handler(wheelMotion.step());
-  scheduleGlide();
+function flushWheel(): void {
+  wheelFlushQueued = false;
+  const rows = wheelInput.take();
+  if (rows !== 0) handler?.(rows);
 }
 
 function stopWheel(): void {
-  wheelMotion.stop();
-  if (wheelFrame !== undefined) cancelAnimationFrame(wheelFrame);
-  wheelFrame = undefined;
+  wheelInput.stop();
 }
 
 function publishMetrics(next: ScrollMetrics): void {
@@ -91,8 +78,11 @@ export const transcriptScrollPort: TranscriptScrollPort = {
   },
   wheel(notches: number): boolean {
     if (!handler || !Number.isFinite(notches) || notches === 0) return false;
-    wheelMotion.push(notches);
-    scheduleGlide();
+    wheelInput.push(notches);
+    if (!wheelFlushQueued) {
+      wheelFlushQueued = true;
+      queueMicrotask(flushWheel);
+    }
     return true;
   },
   stopWheel,

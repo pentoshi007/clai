@@ -35,17 +35,33 @@ const step = async (dy: number): Promise<void> => {
   });
   record();
 };
-try {
-  await act(async () => { await setup.waitForFrame((frame) => frame.includes(`END_${total - 1}`)); });
+const wheelBurst = async (dy: number): Promise<void> => {
+  const report = `\x1b[<${dy < 0 ? 64 : 65};10;5M`;
+  await act(async () => {
+    setup.renderer.stdin.emit("data", Buffer.from(report.repeat(Math.abs(dy))));
+    await Promise.resolve();
+    await setup.renderOnce();
+    await setup.renderOnce();
+  });
   record();
-  for (let guard = 0; guard < 4_000 && !setup.captureCharFrame().includes("START_0"); guard += 1) await step(-3);
-  assert.ok(setup.captureCharFrame().includes("START_0"), "scrolling up reaches the first item");
-  for (let index = 0; index < total; index += 1) assert.ok(seen.has(index), `item ${index} was visible while scrolling up`);
+};
+const traverse = async (move: (dy: number) => Promise<void>, rows: number, label: string): Promise<void> => {
   seen.clear();
   record();
-  for (let guard = 0; guard < 4_000 && !setup.captureCharFrame().includes(`END_${total - 1}`); guard += 1) await step(3);
-  assert.ok(setup.captureCharFrame().includes(`END_${total - 1}`), "scrolling down reaches the last item");
-  for (let index = 0; index < total; index += 1) assert.ok(seen.has(index), `item ${index} was visible while scrolling down`);
+  for (let guard = 0; guard < 4_000 && !setup.captureCharFrame().includes("START_0"); guard += 1) await move(-rows);
+  assert.ok(setup.captureCharFrame().includes("START_0"), `${label} up reaches the first item`);
+  for (let index = 0; index < total; index += 1) assert.ok(seen.has(index), `item ${index} was visible during ${label} up`);
+  seen.clear();
+  record();
+  for (let guard = 0; guard < 4_000 && !setup.captureCharFrame().includes(`END_${total - 1}`); guard += 1) await move(rows);
+  assert.ok(setup.captureCharFrame().includes(`END_${total - 1}`), `${label} down reaches the last item`);
+  for (let index = 0; index < total; index += 1) assert.ok(seen.has(index), `item ${index} was visible during ${label} down`);
+};
+try {
+  await act(async () => { await setup.waitForFrame((frame) => frame.includes(`END_${total - 1}`)); });
+  await traverse(step, 3, "scrolling");
+  await traverse(wheelBurst, 8, "wheel bursts");
+  assert.equal(services.transcript.getState().order.length, total);
 } finally {
   await act(async () => {
     services.dispose();

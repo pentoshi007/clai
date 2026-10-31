@@ -7,39 +7,15 @@ import {
   transcriptScrollPort,
 } from "../../src/tui-v2/components/transcript/transcript-scroll-port.js";
 
-function stubFrames(syncWhenIdle: boolean) {
-  const queued = new Map<number, () => void>();
-  let idle = true;
-  let id = 0;
-  let now = 0;
-  vi.spyOn(performance, "now").mockImplementation(() => now);
-  vi.stubGlobal("requestAnimationFrame", (callback: () => void) => {
-    const frame = ++id;
-    if (syncWhenIdle && idle) {
-      idle = false;
-      callback();
-      return frame;
-    }
-    queued.set(frame, callback);
-    return frame;
-  });
-  vi.stubGlobal("cancelAnimationFrame", (frame: number) => queued.delete(frame));
-  function flushFrame(elapsed = 17): void {
-    now += elapsed;
-    const callbacks = [...queued.values()];
-    queued.clear();
-    for (const callback of callbacks) callback();
-  }
-  return {
-    get pending() {
-      return queued.size;
-    },
-    flushFrame,
-    flush() {
-      while (queued.size > 0) flushFrame();
-      idle = true;
-    },
-  };
+function stubFrames() {
+  const requestFrame = vi.fn(() => 1);
+  vi.stubGlobal("requestAnimationFrame", requestFrame);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  return requestFrame;
+}
+
+function deliverInput(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 describe("transcript scroll port", () => {
@@ -136,85 +112,73 @@ describe("transcript scroll port", () => {
     }
   });
 
-  it("ignores wheel input without a handler or distance", () => {
-    const frames = stubFrames(false);
+  it("ignores wheel input without a handler or distance", async () => {
     expect(transcriptScrollPort.wheel(1)).toBe(false);
-    const stop = registerTranscriptScrollPort(vi.fn());
+    const scroll = vi.fn();
+    const stop = registerTranscriptScrollPort(scroll);
     try {
       for (const invalid of [0, NaN, Infinity, -Infinity]) {
         expect(transcriptScrollPort.wheel(invalid)).toBe(false);
       }
-      expect(frames.pending).toBe(0);
+      await deliverInput();
+      expect(scroll).not.toHaveBeenCalled();
     } finally {
       stop();
     }
   });
 
-  it("glides queued notches without losing distance or scheduling duplicate frames", () => {
-    const frames = stubFrames(false);
+  it("applies every notch of one input chunk as a single scroll without animation frames", async () => {
+    const requestFrame = stubFrames();
     const calls: number[] = [];
     const stop = registerTranscriptScrollPort((dy) => calls.push(dy));
     try {
-      expect(transcriptScrollPort.wheel(-10)).toBe(true);
-      expect(transcriptScrollPort.wheel(-10)).toBe(true);
+      for (let notch = 0; notch < 120; notch += 1) expect(transcriptScrollPort.wheel(-1)).toBe(true);
       expect(calls).toEqual([]);
-      expect(frames.pending).toBe(1);
-      frames.flushFrame();
-      expect(calls).toEqual([-7]);
-      expect(frames.pending).toBe(1);
-      frames.flushFrame();
-      frames.flushFrame();
-      expect(calls).toEqual([-7, -7, -6]);
-      expect(calls.reduce((sum, dy) => sum + dy, 0)).toBe(-20);
-      expect(frames.pending).toBe(0);
+      await deliverInput();
+      expect(calls).toEqual([-120]);
+      expect(requestFrame).not.toHaveBeenCalled();
     } finally {
       stop();
     }
   });
 
-  it("keeps gliding after a frame callback runs synchronously on an idle renderer", () => {
-    const frames = stubFrames(true);
+  it("moves each separately delivered notch exactly once", async () => {
     const calls: number[] = [];
     const stop = registerTranscriptScrollPort((dy) => calls.push(dy));
     try {
-      transcriptScrollPort.wheel(1);
-      frames.flush();
-      transcriptScrollPort.wheel(1);
-      expect(frames.pending).toBe(0);
-      transcriptScrollPort.wheel(1);
-      frames.flush();
+      for (let notch = 0; notch < 3; notch += 1) {
+        transcriptScrollPort.wheel(1);
+        await deliverInput();
+      }
       expect(calls).toEqual([1, 1, 1]);
-      expect(calls.every((dy) => dy === 1)).toBe(true);
-      expect(frames.pending).toBe(0);
+      await deliverInput();
+      expect(calls).toEqual([1, 1, 1]);
     } finally {
       stop();
     }
   });
 
-  it("catches up on a delayed renderer frame without more trailing work", () => {
-    const frames = stubFrames(false);
+  it("nets out a reversal inside one input chunk", async () => {
     const calls: number[] = [];
     const stop = registerTranscriptScrollPort((dy) => calls.push(dy));
     try {
-      transcriptScrollPort.wheel(120);
-      frames.flushFrame(100);
-      expect(calls).toEqual([120]);
-      expect(frames.pending).toBe(0);
+      transcriptScrollPort.wheel(-3);
+      transcriptScrollPort.wheel(1);
+      await deliverInput();
+      expect(calls).toEqual([-2]);
     } finally {
       stop();
     }
   });
 
-  it.each(["scrollToTop", "scrollToBottom"] as const)("cancels a glide before %s", (jump) => {
-    const frames = stubFrames(false);
+  it.each(["scrollToTop", "scrollToBottom"] as const)("discards pending wheel input before %s", async (jump) => {
     const scroll = vi.fn();
     const stop = registerTranscriptScrollPort(scroll);
     const stopJumps = registerTranscriptJumpHandlers(vi.fn(), vi.fn());
     try {
       transcriptScrollPort.wheel(120);
       expect(transcriptScrollPort[jump]()).toBe(true);
-      expect(frames.pending).toBe(0);
-      frames.flush();
+      await deliverInput();
       expect(scroll).not.toHaveBeenCalled();
     } finally {
       stopJumps();
@@ -222,48 +186,50 @@ describe("transcript scroll port", () => {
     }
   });
 
-  it("keeps pending input across mount-window handler replacement", () => {
-    const frames = stubFrames(false);
+  it("delivers pending input to the handler that is current when it is applied", async () => {
     const first = vi.fn();
     const next = vi.fn();
     const stopFirst = registerTranscriptScrollPort(first);
     transcriptScrollPort.wheel(20);
-    frames.flushFrame();
     stopFirst();
     const stopNext = registerTranscriptScrollPort(next);
     try {
-      frames.flush();
-      expect(first).toHaveBeenCalledExactlyOnceWith(7);
-      expect(next.mock.calls.map(([rows]) => rows)).toEqual([7, 6]);
-      expect(frames.pending).toBe(0);
+      await deliverInput();
+      expect(first).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledExactlyOnceWith(20);
     } finally {
       stopNext();
     }
   });
 
-  it("stops work if the mounted transcript disappears", () => {
-    const frames = stubFrames(false);
+  it("stops work if the mounted transcript disappears", async () => {
     const scroll = vi.fn();
     const stop = registerTranscriptScrollPort(scroll);
     transcriptScrollPort.wheel(120);
     stop();
-    frames.flushFrame();
+    await deliverInput();
     expect(scroll).not.toHaveBeenCalled();
-    expect(frames.pending).toBe(0);
+    const next = vi.fn();
+    const stopNext = registerTranscriptScrollPort(next);
+    try {
+      await deliverInput();
+      expect(next).not.toHaveBeenCalled();
+    } finally {
+      stopNext();
+    }
   });
 
-  it("cancels a pending glide when scrolled directly", () => {
-    const frames = stubFrames(false);
+  it("discards pending wheel input when scrolled directly", async () => {
     const calls: number[] = [];
     const stop = registerTranscriptScrollPort((dy) => calls.push(dy));
     try {
       transcriptScrollPort.wheel(-10);
       transcriptScrollPort.scrollBy(5);
-      expect(frames.pending).toBe(0);
-      frames.flush();
+      expect(calls).toEqual([5]);
+      await deliverInput();
       expect(calls).toEqual([5]);
       transcriptScrollPort.wheel(1);
-      frames.flush();
+      await deliverInput();
       expect(calls).toEqual([5, 1]);
     } finally {
       stop();
