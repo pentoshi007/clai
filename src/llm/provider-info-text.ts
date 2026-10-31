@@ -54,10 +54,15 @@ Docs: https://docs.constellationgate.ai/guides/openai-sdk/`,
   API          https://api.river.ai/v1
   Credential   RIVER_API_KEY or clai set river
   Default      deepseek-ai/DeepSeek-V4.1-Flash
-  Models       Discovered from /models; live metadata overrides documented facts
+  Models       Discovered from /models; limits and efforts come from River's published
+               model docs, refreshed at discovery, with live metadata taking precedence
 
-  DeepSeek-V4.1-Flash: 1,048,576 context; 384,000 output; none / high / max.
+  Kimi-K3: 1,048,576 context; none / low / high / max.
+  DeepSeek-V4.1-Flash: 1,048,576 context; 393,216 output; none / low / high / max.
+  NVIDIA-Nemotron-3.5-Super-VL: 1,048,576 context; none / medium / high.
   GLM-5.3-Flash: 1,048,576 context; 128K output; low / high / max (required).
+  GLM-5.3: 1,048,576 context; text only; low / high / max (required).
+  Qwen3.8-27B-FP8: 262,144 context; none / low / medium / xhigh.
   clai conservatively caps documented GLM output at 128,000 until live metadata.
   /effort follows the selected model's supported settings.
   DeepSeek V4 uses recommended sampling defaults; sustained exact repetition

@@ -102,7 +102,7 @@ describe("remembered model limits", () => {
   });
 
   it("resolves route output limits as observed, then catalog, then remembered, then documented", () => {
-    expect(routeOutputTokenLimit("river", "deepseek-ai/DeepSeek-V4.1-Flash")).toBe(384_000);
+    expect(routeOutputTokenLimit("river", "deepseek-ai/DeepSeek-V4.1-Flash")).toBe(393_216);
     const model = "vendor/reasoner-9";
     expect(routeOutputTokenLimit("tokenrouter", model)).toBeUndefined();
     rememberModelLimits("tokenrouter", [{ model, contextTokens: 1_048_576, maxOutputTokens: 200_000 }]);

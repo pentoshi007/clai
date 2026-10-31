@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompletionResult } from "../../src/types.js";
 import type { ProviderKeyEvent } from "../../src/llm/key-rotation.js";
 import { clearModelCatalogFacts, resetReasoningKnowledge } from "../../src/llm/capabilities.js";
-import { completion, json, REQUEST, sse } from "./river-fixtures.js";
+import { completion, json, REQUEST, sse, stubRiverFetch } from "./river-fixtures.js";
 
 const state = vi.hoisted(() => ({
   keys: [
@@ -45,13 +45,13 @@ describe("River shared key lifecycle", () => {
   it.each(["complete", "stream"] as const)("rotates a rejected key and preserves provider/model identity (%s)", async (mode) => {
     const used: string[] = [];
     const events: ProviderKeyEvent[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    stubRiverFetch(vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const credential = new Headers(init?.headers).get("authorization") ?? "";
       if (credential.endsWith(state.keys[0]!.value)) return json({ error: "Invalid API key" }, 401);
       if (String(input).endsWith("/models")) return json({ data: [{ id: REQUEST.model }] });
       used.push(credential);
       return mode === "complete" ? completion() : sse([{ choices: [{ delta: { content: "Answer" }, finish_reason: "stop" }] }]);
-    }));
+    }) as unknown as typeof fetch);
     const result = await runWithKeyRotation<CompletionResult>({
       providerId: "river", provider: riverProvider, request: REQUEST, model: REQUEST.model!,
       emitKey: (event) => events.push(event), mode, initialAttemptReason: "initial", maxRetries: 0,

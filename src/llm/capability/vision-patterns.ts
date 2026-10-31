@@ -61,7 +61,13 @@ export const universalVisionPatterns: RegExp[] = [
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
   hinoki: [/^hinoki-offensive$/i],
   constellation: [],
-  river: [/^deepseek-ai\/DeepSeek-V4\.1-Flash(?:-1017)?$/i, /^zai-org\/GLM-5\.3-Flash$/i],
+  river: [
+    /^deepseek-ai\/DeepSeek-V4\.1-Flash(?:-1017)?$/i,
+    /^zai-org\/GLM-5\.3-Flash$/i,
+    /^moonshotai\/Kimi-K3$/i,
+    /^nvidia\/NVIDIA-Nemotron-3\.5-Super-VL-120B-A12B-NVFP4$/i,
+    /^Qwen\/Qwen3\.8-27B-FP8$/i,
+  ],
   mistral: [
     /^mistral-small-(?:latest|2603)/i,
     /^mistral-medium-(?:latest|3-5|2604)/i,

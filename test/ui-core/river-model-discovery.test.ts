@@ -13,6 +13,7 @@ import { createCompositionRoot, type AppServices } from "../../src/ui-core/boots
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { handleModel, handleProvider, resolveModelsForProvider } from "../../src/ui-core/commands/picker-commands.js";
 import { releaseSessionModel } from "../../src/store/session-model.js";
+import { stubRiverFetch } from "../llm/river-fixtures.js";
 
 const state = vi.hoisted(() => ({
   keys: [] as ProviderKeySlot[],
@@ -133,7 +134,7 @@ function recoveringTransport() {
     const authorization = new Headers(init?.headers).get("authorization");
     return authorization === `Bearer ${state.keys[0]!.value}` ? rejected(state.keys[0]!.value) : catalog();
   });
-  vi.stubGlobal("fetch", fetchMock);
+  stubRiverFetch(fetchMock as unknown as typeof fetch);
   return fetchMock;
 }
 
@@ -148,7 +149,7 @@ describe("live River model discovery recovery", () => {
   it("recovers a transient catalog 401 with one configured key", async () => {
     state.keys = state.keys.slice(0, 1);
     const fetchMock = vi.fn().mockResolvedValueOnce(rejected(state.keys[0]!.value)).mockImplementation(async () => catalog());
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect(await resolveModelsForProvider("river")).toEqual({ models: liveModels, source: "live" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -159,7 +160,7 @@ describe("live River model discovery recovery", () => {
       .mockResolvedValueOnce(rejected(state.keys[0]!.value))
       .mockResolvedValueOnce(rejected(state.keys[0]!.value))
       .mockImplementation(async () => catalog());
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect(await resolveModelsForProvider("river")).toEqual({ models: liveModels, source: "live" });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -169,7 +170,7 @@ describe("live River model discovery recovery", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(rejected(state.keys[0]!.value))
       .mockImplementation(async () => Response.json({ error: "Unavailable" }, { status: 503 }));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const result = await resolveModelsForProvider("river");
     expect(result.source).toBe("known");
     expect(result.error).toContain("503");
@@ -181,7 +182,7 @@ describe("live River model discovery recovery", () => {
     state.endpoints = ["https://rejected.example/v1", "https://disabled.example/v1", "https://working.example/v1"];
     state.disabledEndpoints = [state.endpoints[1]!];
     const fetchMock = vi.fn(async (input: string | URL | Request) => String(input).includes("working.example") ? catalog() : rejected(state.keys[0]!.value));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect(await resolveModelsForProvider("river")).toEqual({ models: liveModels, source: "live" });
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       "https://rejected.example/v1/models", "https://working.example/v1/models",
@@ -201,7 +202,7 @@ describe("live River model discovery recovery", () => {
     state.endpoints = ["https://stored.example/v1"];
     state.environmentEndpoint = "https://override.example/v1";
     const fetchMock = vi.fn(async (input: string | URL | Request) => String(input).includes("stored.example") ? catalog() : rejected(state.keys[0]!.value));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const result = await resolveModelsForProvider("river");
     expect(result.source).toBe("known");
     expect(result.error).toContain("401");
@@ -211,7 +212,7 @@ describe("live River model discovery recovery", () => {
   it("keeps permanent catalog failures visible and redacts credentials", async () => {
     state.keys = state.keys.slice(0, 1);
     const fetchMock = vi.fn(async () => rejected(state.keys[0]!.value));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const result = await resolveModelsForProvider("river");
     expect(result.source).toBe("known");
     expect(result.error).toContain("401");
@@ -221,7 +222,7 @@ describe("live River model discovery recovery", () => {
 
   it("does not turn a malformed request into repeated catalog calls", async () => {
     const fetchMock = vi.fn(async () => Response.json({ error: "Bad request" }, { status: 400 }));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect((await resolveModelsForProvider("river")).error).toContain("400");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -233,7 +234,7 @@ describe("live River model discovery recovery", () => {
       state.disabledEndpoints = [...state.endpoints];
     }
     const fetchMock = vi.fn(async () => catalog());
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const result = await resolveModelsForProvider("river");
     expect(result.source).toBe("known");
     expect(result.error).toContain("disabled");
@@ -260,7 +261,7 @@ describe("live River model discovery recovery", () => {
     vi.spyOn(services.overlay, "openSecret").mockResolvedValue("rv_newly_added");
     const notice = vi.spyOn(services.session, "notice");
     const fetchMock = vi.fn().mockResolvedValueOnce(rejected("rv_newly_added")).mockImplementation(async () => catalog());
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     handleProvider(services, { name: "provider", args: "river" });
     await vi.waitFor(() => {
       const overlay = services.overlay.getState();
@@ -283,7 +284,7 @@ describe("live River model discovery recovery", () => {
   it("coalesces foreground and background recovery for the same credentials", async () => {
     state.keys = state.keys.slice(0, 1);
     const fetchMock = vi.fn().mockResolvedValueOnce(rejected(state.keys[0]!.value)).mockImplementation(async () => catalog());
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const [first, , second] = await Promise.all([
       resolveModelsForProvider("river"), prefetchProviderCatalog("river"), resolveModelsForProvider("river"),
     ]);
@@ -299,7 +300,7 @@ describe("live River model discovery recovery", () => {
       await gate.promise;
       return catalog();
     });
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const first = resolveModelsForProvider("river");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const spy = vi.spyOn(getProvider("river"), "listModels").mockResolvedValue(["river-mocked-live"]);
@@ -321,7 +322,7 @@ describe("live River model discovery recovery", () => {
       if (oldCredential) await gate.promise;
       return Response.json({ data: [{ id: oldCredential ? "river-original-live" : "river-replacement-live" }] });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const first = resolveModelsForProvider("river");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     state.keys = [{ id: "replacement", value: "rv_changed_credential", createdAt: 1 }];
@@ -340,7 +341,7 @@ describe("live River model discovery recovery", () => {
     state.keys = state.keys.slice(0, 1);
     let available = false;
     const fetchMock = vi.fn(async () => available ? catalog() : rejected(state.keys[0]!.value));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect((await resolveModelsForProvider("river")).source).toBe("known");
     available = true;
     expect(await resolveModelsForProvider("river")).toEqual({ models: liveModels, source: "live" });
@@ -356,7 +357,7 @@ describe("live River model discovery recovery", () => {
       return String(input).includes("working.example") && authorization === `Bearer ${state.keys[0]!.value}`
         ? catalog() : rejected("rv_fixture_rejection");
     });
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect(await resolveModelsForProvider("river")).toEqual({ models: liveModels, source: "live" });
     expect(fetchMock.mock.calls.map(([url, init]) => [String(url), new Headers(init?.headers).get("authorization")])).toEqual([
       ["https://rejected.example/v1/models", `Bearer ${state.keys[1]!.value}`],
@@ -377,7 +378,7 @@ describe("live River model discovery recovery", () => {
       }
       return catalog();
     });
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect(await resolveModelsForProvider("river")).toEqual({ models: liveModels, source: "live" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer rv_reloaded_key");
@@ -390,7 +391,7 @@ describe("live River model discovery recovery", () => {
       clock.mockReturnValue(started + 15_001);
       return rejected(state.keys[0]!.value);
     });
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     const result = await resolveModelsForProvider("river");
     expect(result.source).toBe("known");
     expect(result.error).toContain("401");
@@ -400,7 +401,7 @@ describe("live River model discovery recovery", () => {
   it("does not retry a permanent single-key permission rejection", async () => {
     state.keys = state.keys.slice(0, 1);
     const fetchMock = vi.fn(async () => Response.json({ error: "Forbidden" }, { status: 403 }));
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     expect((await resolveModelsForProvider("river")).error).toContain("403");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -411,7 +412,7 @@ describe("live River model discovery recovery", () => {
     vi.spyOn(services.overlay, "openSecret").mockResolvedValue(undefined);
     const notice = vi.spyOn(services.session, "notice");
     const fetchMock = vi.fn(async () => catalog());
-    vi.stubGlobal("fetch", fetchMock);
+    stubRiverFetch(fetchMock as unknown as typeof fetch);
     handleProvider(services, { name: "provider", args: "river" });
     await vi.waitFor(() => expect(notice).toHaveBeenCalledWith("info", "cancelled · provider unchanged"));
     expect(state.saveKey).not.toHaveBeenCalled();

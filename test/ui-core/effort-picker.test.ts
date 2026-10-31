@@ -178,17 +178,21 @@ describe("/effort on a route known not to reason", () => {
 
 describe("/effort follows River model controls", () => {
   it.each([
-    "deepseek-ai/DeepSeek-V4.1-Flash",
-    "deepseek-ai/DeepSeek-V4.1-Flash-1017",
-  ])("offers off, high and max for River %s", (model) => {
+    ["moonshotai/Kimi-K3", ["off", "low", "high", "max"]],
+    ["deepseek-ai/DeepSeek-V4.1-Flash", ["off", "low", "high", "max"]],
+    ["deepseek-ai/DeepSeek-V4.1-Flash-1017", ["off", "low", "high", "max"]],
+    ["nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4", ["off", "medium", "high"]],
+    ["Qwen/Qwen3.8-27B-FP8", ["off", "low", "medium", "xhigh"]],
+  ])("offers the documented efforts for River %s", (model, expected) => {
     const services = makeServices();
     const picker = openEffortPicker(services, "river", model);
-    expect(picker.options.map((option) => option.value)).toEqual(["off", "high", "max"]);
+    expect(picker.options.map((option) => option.value)).toEqual(expected);
+    expect(picker.title).not.toContain("always on");
   });
 
-  it("offers low, high and max without off for mandatory River GLM", () => {
+  it.each(["zai-org/GLM-5.3-Flash", "GLM-5.3"])("offers low, high and max without off for mandatory River %s", (model) => {
     const services = makeServices();
-    const picker = openEffortPicker(services, "river", "zai-org/GLM-5.3-Flash");
+    const picker = openEffortPicker(services, "river", model);
     expect(picker.options.map((option) => option.value)).toEqual(["low", "high", "max"]);
   });
 });

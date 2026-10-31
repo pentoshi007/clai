@@ -67,7 +67,7 @@ describe("River provider", () => {
     ["deepseek-ai/DeepSeek-V4.1-Flash-1017", "none", false, "none"],
     ["deepseek-ai/DeepSeek-V4.1-Flash-1017", "high", true, "high"],
     ["deepseek-ai/DeepSeek-V4.1-Flash-1017", "max", true, "max"],
-    [RIVER_DEFAULT_MODEL, "minimal", true, "high"],
+    [RIVER_DEFAULT_MODEL, "minimal", true, "low"],
     [RIVER_GLM_MODEL, "low", true, "low"],
     [RIVER_GLM_MODEL, "high", true, "high"],
     [RIVER_GLM_MODEL, "max", true, "max"],

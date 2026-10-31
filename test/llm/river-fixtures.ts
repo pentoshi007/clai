@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import type { CompletionRequest, ToolDefinition } from "../../src/types.js";
 import { RIVER_DEFAULT_MODEL } from "../../src/llm/river-models.js";
+import { resetRiverDocFacts } from "../../src/llm/river-docs.js";
 
 export const TOOL: ToolDefinition = {
   name: "fs.read",
@@ -58,9 +59,23 @@ export function sse(frames: readonly unknown[], done = true, fragmented = false)
   }), { headers: { "content-type": "text/event-stream" } });
 }
 
+export const RIVER_DOCS_ORIGIN = "https://docs.river.ai/";
+
+export function stubRiverFetch(apiFetch: typeof fetch, docs?: (url: string) => Response) {
+  resetRiverDocFacts();
+  const docsFetch = vi.fn(async (input: string | URL | Request) =>
+    docs?.(String(input)) ?? new Response("", { status: 404 }));
+  vi.stubGlobal("fetch", ((input: string | URL | Request, init?: RequestInit) =>
+    String(input).startsWith(RIVER_DOCS_ORIGIN)
+      ? docsFetch(input)
+      : apiFetch(input, init)) as typeof fetch);
+  return { docsFetch };
+}
+
 export function transport(
   reply: () => Response = completion,
   catalog: () => Response = () => json({ data: [{ id: RIVER_DEFAULT_MODEL }] }),
+  docs?: (url: string) => Response,
 ) {
   const generations: { url: string; body: string; headers: Headers; signal?: AbortSignal | null }[] = [];
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -70,6 +85,6 @@ export function transport(
     generations.push({ url, body: init.body, headers: new Headers(init.headers), signal: init.signal });
     return reply();
   });
-  vi.stubGlobal("fetch", fetchMock);
-  return { generations, fetchMock };
+  const { docsFetch } = stubRiverFetch(fetchMock as unknown as typeof fetch, docs);
+  return { generations, fetchMock, docsFetch };
 }

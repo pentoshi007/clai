@@ -30,16 +30,20 @@ afterEach(() => {
 
 describe("River model facts", () => {
   it.each([
-    [RIVER_DEFAULT_MODEL, ["none", "high", "max"], 384_000, false],
-    ["deepseek-ai/DeepSeek-V4.1-Flash-1017", ["none", "high", "max"], 384_000, false],
-    [RIVER_GLM_MODEL, ["low", "high", "max"], 128_000, true],
-  ] as const)("provides documented capabilities before discovery for %s", (model, efforts, output, mandatory) => {
+    ["moonshotai/Kimi-K3", ["none", "low", "high", "max"], 1_048_576, 1_048_575, false, true],
+    [RIVER_DEFAULT_MODEL, ["none", "low", "high", "max"], 1_048_576, 393_216, false, true],
+    ["deepseek-ai/DeepSeek-V4.1-Flash-1017", ["none", "low", "high", "max"], 1_048_576, 393_216, false, true],
+    ["nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4", ["none", "medium", "high"], 1_048_576, 1_048_575, false, true],
+    [RIVER_GLM_MODEL, ["low", "high", "max"], 1_048_576, 128_000, true, true],
+    ["GLM-5.3", ["low", "high", "max"], 1_048_576, 128_000, true, false],
+    ["Qwen/Qwen3.8-27B-FP8", ["none", "low", "medium", "xhigh"], 262_144, 262_143, false, true],
+  ] as const)("provides documented capabilities before discovery for %s", (model, efforts, context, output, mandatory, vision) => {
     expect(modelReasoningEfforts("river", model)).toEqual(efforts);
     expect(modelSupportsThinking("river", model)).toBe(true);
     expect(routeReasoningIsMandatory("river", model)).toBe(mandatory);
-    expect(modelSupportsVision("river", model)).toBe(true);
+    expect(modelSupportsVision("river", model)).toBe(vision);
     expect(resolveToolDialect("river", model)).toBe("openai");
-    expect(resolveContextWindow({ provider: "river", model })).toMatchObject({ tokens: 1_048_576, source: "provider" });
+    expect(resolveContextWindow({ provider: "river", model })).toMatchObject({ tokens: context, source: "provider" });
     expect(modelMaxOutputTokens("river", model)).toBe(output);
     const profile = resolveBuiltInProfile({ provider: "river", model });
     expect(profile.reasoning.control.dialect).toBe("openai-effort");
@@ -55,7 +59,7 @@ describe("River model facts", () => {
     ]) {
       const models = riverModelCatalog(payload);
       expect(models).toHaveLength(1);
-      expect(models[0]).toMatchObject({ id: RIVER_DEFAULT_MODEL, vision: true, reasoningEfforts: ["none", "high", "max"] });
+      expect(models[0]).toMatchObject({ id: RIVER_DEFAULT_MODEL, vision: true, reasoningEfforts: ["none", "low", "high", "max"] });
     }
     expect(riverModelCatalog({ error: "unavailable" })).toEqual([]);
   });
@@ -121,7 +125,7 @@ describe("River model facts", () => {
     }] }));
     withModelCatalogFacts("river", [], () => {
       expect(modelCatalogFacts("river", RIVER_DEFAULT_MODEL)?.contextTokens).toBe(1_048_576);
-      expect(modelReasoningEfforts("river", RIVER_DEFAULT_MODEL)).toEqual(["none", "high", "max"]);
+      expect(modelReasoningEfforts("river", RIVER_DEFAULT_MODEL)).toEqual(["none", "low", "high", "max"]);
     });
     expect(modelCatalogFacts("river", RIVER_DEFAULT_MODEL)?.contextTokens).toBe(50_000);
   });

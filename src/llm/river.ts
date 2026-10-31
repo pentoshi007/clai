@@ -11,6 +11,7 @@ import {
   toCompletionResult,
 } from "./http.js";
 import { normalizeEndpointUrl, type LlmProvider, type ProviderAuth } from "./provider.js";
+import { isOfficialRiverEndpoint, loadRiverDocFacts } from "./river-docs.js";
 import { RIVER_DEFAULT_MODEL, riverModelCatalog } from "./river-models.js";
 
 const BASE_URL = "https://api.river.ai/v1";
@@ -39,11 +40,14 @@ async function loadCatalog(auth: ProviderAuth, refresh = false): Promise<Catalog
   const pending = pendingCatalogs.get(key);
   if (pending) return pending;
   const task = (async () => {
-    const response = await fetch(`${baseUrl}/models`, {
-      headers: { authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    const models = riverModelCatalog(await readJson<unknown>(response));
+    const [response, docs] = await Promise.all([
+      fetch(`${baseUrl}/models`, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      }),
+      isOfficialRiverEndpoint(baseUrl) ? loadRiverDocFacts() : undefined,
+    ]);
+    const models = riverModelCatalog(await readJson<unknown>(response), docs);
     catalogs.set(key, { expiresAt: Date.now() + CATALOG_TTL_MS, models });
     while (catalogs.size > MAX_CATALOG_ROUTES)
       catalogs.delete(catalogs.keys().next().value!);

@@ -172,17 +172,26 @@ export function reasoningOptionValues(
     accepted.length > 0 || provider === "mistral"
       ? scale.filter((value) => accepted.includes(value))
       : scale;
-  return (published?.mandatory !== false && modelReasoningIsMandatory(model)) ||
+  return familyReasoningIsMandatory(provider, model, published) ||
     routeReasoningIsMandatory(provider, model)
     ? efforts
     : ["off", ...efforts];
+}
+
+function familyReasoningIsMandatory(
+  provider: ProviderId,
+  model: string,
+  published: { readonly mandatory?: boolean | undefined } | undefined,
+): boolean {
+  const facts = published ?? (provider === "river" ? modelCatalogFacts(provider, model)?.reasoning : undefined);
+  return facts?.mandatory !== false && modelReasoningIsMandatory(model);
 }
 
 function reasoningPickerTitle(provider: ProviderId, model: string): string {
   const evidence = modelReasoningEvidence(provider, model);
   const published = provider === "cline" || provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
   const status =
-    (published?.mandatory !== false && modelReasoningIsMandatory(model)) || routeReasoningIsMandatory(provider, model)
+    familyReasoningIsMandatory(provider, model, published) || routeReasoningIsMandatory(provider, model)
       ? "always on"
       : evidence === "rejected"
         ? "previously rejected — picking a level retries it"
