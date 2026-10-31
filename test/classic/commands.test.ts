@@ -439,6 +439,22 @@ describe("classic command parity (W12)", () => {
     await vi.waitFor(() => expect(noticed(services, "no active plan to discard")).toBe(true));
   });
 
+  spec(["goal"], "/goal sets, reports, pauses and clears the session goal", async () => {
+    const { services } = open();
+    await run(services, "goal", "clear");
+    await vi.waitFor(() => expect(noticed(services, "No goal set")).toBe(true));
+    services.session.setMode("plan");
+    await run(services, "goal", '"all tests pass"');
+    expect(services.session.getState().goal).toMatchObject({ objective: "all tests pass", status: "active" });
+    await run(services, "goal", "pause");
+    expect(services.session.getState().goal).toMatchObject({ status: "paused", resumeOnPrompt: false });
+    await run(services, "goal");
+    expect(services.overlay.getState().kind).toBe("pager");
+    services.overlay.close();
+    await run(services, "goal", "off");
+    expect(services.session.getState().goal).toBeUndefined();
+  });
+
   spec(["scope"], "/scope opens the scope editor and /scope clear disables scoping", async () => {
     const { services } = open();
     void run(services, "scope");

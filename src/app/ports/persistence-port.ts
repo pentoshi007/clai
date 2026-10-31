@@ -31,10 +31,24 @@ export interface PersistedSessionMerge {
   readonly transcript: readonly TranscriptItem[];
 }
 
+export interface PersistedGoalPause {
+  readonly reason: string;
+  readonly resumeOnPrompt: boolean;
+}
+
+export interface PersistedGoal {
+  readonly id: string;
+  readonly objective: string;
+  readonly status: "active" | "paused";
+  readonly createdAt: number;
+  readonly pause?: PersistedGoalPause | undefined;
+}
 
 export interface PersistencePort {
   loadQueuedPrompts?(sessionId: string): readonly PersistedQueuedPrompt[];
   saveQueuedPrompts?(sessionId: string, prompts: readonly PersistedQueuedPrompt[]): void;
+  loadGoal?(sessionId: string): PersistedGoal | undefined;
+  saveGoal?(sessionId: string, goal: PersistedGoal | undefined): void;
   saveSession(
     messages: readonly ChatMessage[],
     options?: SaveSessionOptions,

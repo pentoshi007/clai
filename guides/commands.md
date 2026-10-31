@@ -8,6 +8,7 @@ Run `clai --help` for CLI flags and `clai <command> --help` for a subcommand. In
 | --- | --- |
 | `/ask`, `/agent`, `/plan` | Switch working mode. |
 | `/view-plan`, `/implement`, `/discard` | Review, execute, or discard a plan. |
+| `/goal [<condition>\|pause\|resume\|clear]` | Keep working until a condition holds; an evaluator checks it after every turn. With no argument, shows the goal's status. See [goals](usage.md#goals). |
 | `/provider [name]`, `/model [name\|refresh]`, `/models [refresh] [filter]` | Select providers and models. Fetched model lists are cached for two minutes; `refresh` fetches them again immediately. |
 | `/set [provider]`, `/unset [provider]`, `/keys`, `/info [provider]` | Configure provider credentials and inspect provider setup. |
 | `/creds` | Manage encrypted freeform credentials and this machine's sudo password. |

@@ -2,18 +2,24 @@ import type { AnyAppEvent, AppEvent, AppEventPayloads, AppEventType } from "../.
 import { sumLineChanges } from "../../../app/controllers/session-changes.js";
 import { isProviderFailureStatus } from "../../../llm/key-rotation.js";
 import { isToolFenceOnlyText, stripToolCallSurfaces } from "../../rendering/strip-tool-surfaces.js";
+import { formatGoalUpdate } from "../../rendering/goal-format.js";
 import { appendItem, removeItem, updateItem } from "../transcript-struct.js";
-import type { AssistantItem, CompactedItem, NoticeLevel, ThinkingItem, TranscriptState, TurnSummaryItem } from "../transcript-types.js";
+import type { AssistantItem, CompactedItem, NoticeItem, NoticeLevel, ThinkingItem, TranscriptState, TurnSummaryItem } from "../transcript-types.js";
 import { appendDelta, clearStripStream, closePendingThinking, finalizeMessage } from "./message-lifecycle.js";
 import { settlePendingTools, toolEventHandlers } from "./tool-lifecycle.js";
 
 type EventFor<K extends AppEventType> = Extract<AnyAppEvent, { type: K }>;
 
-function pushNotice(state: TranscriptState, event: AnyAppEvent, level: NoticeLevel, text: string): TranscriptState {
+function pushNotice(state: TranscriptState, event: AnyAppEvent, level: NoticeLevel, text: string, tone?: NoticeItem["tone"]): TranscriptState {
   return appendItem(state, {
     id: `notice-${event.id}`, sequence: event.sequence, turnId: event.turnId,
-    timestamp: event.timestamp, kind: "notice", level, text,
+    timestamp: event.timestamp, kind: "notice", level, text, ...(tone ? { tone } : {}),
   });
+}
+
+function applyGoalUpdated(state: TranscriptState, event: EventFor<"goal-updated">): TranscriptState {
+  const notice = formatGoalUpdate(event.payload);
+  return pushNotice(state, event, notice.level, notice.text, "goal");
 }
 
 function appendTurnSummary(
@@ -210,6 +216,7 @@ const eventHandlers: { [K in AppEventType]: (state: TranscriptState, event: AppE
   "plan-cleared": unchanged,
   "confirm-requested": unchanged,
   "token-usage": unchanged,
+  "goal-updated": applyGoalUpdated,
 };
 
 export class TranscriptSequenceError extends Error {

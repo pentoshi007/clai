@@ -3,7 +3,7 @@
 import { useMemo, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
-import type { NoticeItem, NoticeLevel } from "../../../ui-core/state/transcript-types.js";
+import type { NoticeItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { wrapAnsiLine } from "../../../ui-core/rendering/markdown.js";
 import { LinkableText } from "./linkable-text.js";
@@ -11,16 +11,17 @@ import { LinkableText } from "./linkable-text.js";
 const BADGE_WIDTH = 6;
 const BODY_PADDING = 1;
 
-function badge(level: NoticeLevel): { label: string; fg: string; bg: string } {
-  if (level === "warn") return { label: " WARN ", fg: "#FFFFFF", bg: "#D97706" };
-  if (level === "error") return { label: " ERR  ", fg: "#FFFFFF", bg: "#B91C1C" };
+function badge(item: NoticeItem): { label: string; fg: string; bg: string } {
+  if (item.tone === "goal") return { label: " GOAL ", fg: "#FFFFFF", bg: item.level === "info" ? "#7C3AED" : item.level === "warn" ? "#D97706" : "#B91C1C" };
+  if (item.level === "warn") return { label: " WARN ", fg: "#FFFFFF", bg: "#D97706" };
+  if (item.level === "error") return { label: " ERR  ", fg: "#FFFFFF", bg: "#B91C1C" };
   return { label: " INFO ", fg: "#FFFFFF", bg: "#334155" };
 }
 
-function bodyColor(level: NoticeLevel, theme: Theme): string {
-  if (level === "warn") return theme.activity;
-  if (level === "error") return theme.diffDel;
-  return theme.cyan;
+function bodyColor(item: NoticeItem, theme: Theme): string {
+  if (item.level === "warn") return theme.activity;
+  if (item.level === "error") return theme.diffDel;
+  return item.tone === "goal" ? theme.magenta : theme.cyan;
 }
 
 export function NoticeRow(props: {
@@ -30,8 +31,8 @@ export function NoticeRow(props: {
 }): ReactNode {
   const { item, theme, contentWidth } = props;
   const { width: termWidth } = useTerminalDimensionsContext();
-  const b = badge(item.level);
-  const fg = bodyColor(item.level, theme);
+  const b = badge(item);
+  const fg = bodyColor(item, theme);
 
   const wrapWidth = Math.max(
     20,

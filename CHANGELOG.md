@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Goals
+
+- Add `/goal <condition>`, which starts a turn with the condition and keeps working until an evaluator judges it met or impossible. Verdicts appear in the transcript, and a strip above the composer in Classic and OpenTUI shows the elapsed time and evaluated turns.
+- Add `/goal` status (condition, running time, evaluated turns, token spend and last reason), `/goal pause`, `/goal resume`, and `/goal clear` with the aliases `stop`, `off`, `reset`, `none` and `cancel`.
+- Pause the goal after an interrupt, three turns without tool calls, 50 automatic turns, or a rate limit. Retry network and server errors three times. Clear it after authentication, credit, model-availability or context-overflow errors. Defer evaluation while subagents or background jobs run, with check-ins after 30 minutes.
+- Restore active and paused goals when a session resumes. Store them per session, redacted, and skip storage in private mode and with `--no-history`.
+- Keep the prompt cache warm: the evaluator repeats the last request with identical tools and reasoning settings and appends the question, which is never saved to history. Continuations are appended as hidden messages. `Esc` cancels an in-flight evaluation.
+
+### Context usage after compaction
+
+- Report the size of the compacted request right after `/compact` and automatic compaction. Previously the context indicator kept the provider count of the discarded history, so it could show several times the real size until the next request corrected it.
+
 ## v5.1.4 — 2026-10-26
 
 ### Settings and output retention

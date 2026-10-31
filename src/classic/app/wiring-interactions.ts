@@ -436,6 +436,7 @@ export function needsCadence(host: WiringHost): boolean {
   return (
     state.running ||
     state.compacting ||
+    state.goal?.status === "active" ||
     host.panels.getSnapshot().kind === "jobs" ||
     host.services.ports.jobs.running(state.sessionId).length > 0
   );

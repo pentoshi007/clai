@@ -89,7 +89,7 @@ export function effortPreflightKey(route: EffortPreflightRoute): string {
 }
 
 export function needsEffortPreflight(route: EffortPreflightRoute): boolean {
-  if (route.purpose === "compaction" || route.purpose === "auxiliary") {
+  if (route.purpose === "compaction" || route.purpose === "evaluation" || route.purpose === "auxiliary") {
     return false;
   }
   const key = effortPreflightKey(route);

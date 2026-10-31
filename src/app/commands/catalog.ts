@@ -175,6 +175,11 @@ export const slashCommands: SlashCommand[] = [
     description: "discard the current plan so later messages ignore it",
   },
   {
+    command: "/goal",
+    usage: "[<condition>|pause|resume|clear]",
+    description: "keep working until a condition is met; an evaluator checks it after every turn",
+  },
+  {
     command: "/scope",
     usage: "[show|clear|new|add <targets>]",
     description: "manage pentest engagement scope",

@@ -20,6 +20,7 @@ import { OverlayHost } from "../components/overlay/overlay-host.js";
 import { QueuePanel } from "../components/queue/queue-panel.js";
 import { ResponderPanel } from "../components/jobs/jobs-panel.js";
 import { SubagentsPanel } from "../components/jobs/subagents-panel.js";
+import { GoalPanel } from "../components/goal/goal-panel.js";
 import {
   chordFromKeyEvent,
   consumeCancellationKeyRepeat,
@@ -703,6 +704,12 @@ export function App(): ReactNode {
               blockingOverlay={blockingOverlay}
             />
             <SubagentsPanel
+              services={services}
+              theme={theme}
+              width={transcriptContentWidth}
+              blockingOverlay={blockingOverlay}
+            />
+            <GoalPanel
               services={services}
               theme={theme}
               width={transcriptContentWidth}

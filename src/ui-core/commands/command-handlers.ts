@@ -38,6 +38,7 @@ import { handlePrompts } from "./prompt-commands.js";
 import { handleSettings } from "./settings-commands.js";
 import { handleCreds } from "./credential-commands.js";
 import { handleChanges } from "./change-commands.js";
+import { handleGoal } from "./goal-commands.js";
 import { handleSubagents, handleOrchestration } from "./subagent-commands.js";
 import {
   handleHistory,
@@ -110,6 +111,7 @@ export function attachCommandHandlers(services: AppServices): void {
     })(),
   );
   c.setHandler("clear", () => void handleClear(services));
+  c.setHandler("goal", (i) => handleGoal(services, i));
   c.setHandler("new", () => void handleNew(services));
   c.setHandler("think", () => handleThink(services));
   c.setHandler("context", () => handleContext(services));

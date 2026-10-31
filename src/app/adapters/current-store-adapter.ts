@@ -1,6 +1,7 @@
 import { pendingSessionMerge, saveSession, upsertSession, type HistoryRecord } from "../../store/history.js";
 import { deletePlan, loadPlan, mutatePlan, savePlan } from "../../store/plan.js";
 import { loadQueuedPrompts, saveQueuedPrompts } from "../../store/session-queue.js";
+import { loadSessionGoal, saveSessionGoal } from "../../store/session-goal.js";
 import type { PersistedSessionMerge, PersistencePort } from "../ports/persistence-port.js";
 import type { TranscriptItem } from "../ports/transcript-item.js";
 
@@ -12,6 +13,8 @@ export function createCurrentPersistencePort(): PersistencePort {
   return {
     loadQueuedPrompts,
     saveQueuedPrompts,
+    loadGoal: loadSessionGoal,
+    saveGoal: saveSessionGoal,
     async saveSession(messages, options) {
       const list = [...messages];
       const transcript = options?.transcript

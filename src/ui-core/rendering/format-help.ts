@@ -3,7 +3,7 @@ import type { CommandHelpEntry } from "../../app/commands/registry.js";
 
 function sectionFor(command: string): string {
   const name = command.replace(/^\//, "").toLowerCase();
-  if (["ask", "agent", "plan", "implement", "discard"].includes(name)) {
+  if (["ask", "agent", "plan", "implement", "discard", "goal"].includes(name)) {
     return "Mode & plan";
   }
   if (

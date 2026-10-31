@@ -12,6 +12,8 @@ import { composerDirectoryView } from "../chrome/directory-row.js";
 import { QueuePanel } from "../chrome/QueuePanel.js";
 import { ResponderStrip } from "../chrome/ResponderStrip.js";
 import { SubagentsStrip } from "../chrome/SubagentsStrip.js";
+import { GoalStrip } from "../chrome/GoalStrip.js";
+import { goalVisible } from "../chrome/goal-row.js";
 import { StatusBar } from "../chrome/StatusBar.js";
 import { ToastRow } from "../chrome/ToastRow.js";
 import { toastRowsWanted } from "../chrome/toast-rows.js";
@@ -83,6 +85,7 @@ export function ClassicApp(
     queueCount: snapshot.queueVisible ? session.queued.length : 0,
     responderVisible: responderVisible(session.responder),
     subagentsVisible: subagentsVisible(session.subagents),
+    goalVisible: goalVisible(session.goal),
     planVisible: snapshot.planVisible && plan !== undefined,
     planRowsWanted: plan ? planBodyRowsWanted(plan, shellWidth) : 0,
     overlay,
@@ -221,6 +224,7 @@ export function ClassicApp(
       queue: snapshot.queueVisible ? <QueuePanel ink={feed.ink} columns={shellWidth} allocatedRows={layout.queue} queued={session.queued} selected={snapshot.queueSelected} /> : undefined,
       responder: <ResponderStrip ink={feed.ink} columns={shellWidth} state={session.responder} />,
       subagents: <SubagentsStrip ink={feed.ink} columns={shellWidth} state={session.subagents} />,
+      goal: <GoalStrip ink={feed.ink} columns={shellWidth} goal={session.goal} now={snapshot.now} running={session.running} />,
       toast: <ToastRow ink={feed.ink} columns={shellWidth} allocatedRows={layout.toast} toasts={snapshot.toasts} />,
       composer: <Box flexDirection="column" flexShrink={0} width={shellWidth}>
         {frame.showDirectory ? <Text wrap="truncate"> </Text> : null}

@@ -58,6 +58,7 @@ export interface NoticeItem extends ItemBase {
   readonly kind: "notice";
   readonly level: NoticeLevel;
   readonly text: string;
+  readonly tone?: "goal" | undefined;
 }
 
 export interface CompactedItem extends ItemBase {

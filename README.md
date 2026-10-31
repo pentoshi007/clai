@@ -24,6 +24,7 @@ clai reads your repository, edits files with reviewable diffs, runs commands and
 - **Multiple keys and accounts with automatic rotation.** Add up to 10 API keys or signed-in accounts per provider. On a rate limit, clai waits for the provider's `Retry-After` hint, retries, then moves to the next key. Auth and quota errors switch keys immediately, and the key that last worked is tried first next time. Optional cross-provider fallback (`/fallback on`) covers outages.
 - **Persistent sessions.** `/minimise` detaches while the agent keeps working. Reattach from another terminal or over SSH; several terminals can share one live session.
 - **Ask, agent and plan modes.** Read-only questions, autonomous execution, or a reviewed plan you approve with `/implement`.
+- **Goals.** `/goal <condition>` keeps the agent working turn after turn until an evaluator confirms the condition holds, without breaking the prompt cache.
 - **Tools.** File edits with diffs, shell commands, background jobs, interactive terminals (SSH, REPLs, debuggers, database consoles), web search, MCP servers, Agent Skills and parallel subagents.
 - **Long sessions.** Context compaction keeps the model focused without dropping your instructions. `/changes` shows per-file diffs for the session and `/prompts` lists every prompt you sent.
 - **Authorized security testing.** Scoped engagements with targets, exclusions, phases and rate limits, for systems you own or have permission to assess.
@@ -194,6 +195,7 @@ Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from
 | Command | Purpose |
 | --- | --- |
 | `/agent`, `/ask`, `/plan` | Switch mode |
+| `/goal <condition>` | Keep working until a condition is met; `/goal` shows status, `/goal clear` stops |
 | `/provider`, `/model`, `/models` | Choose a provider and model |
 | `/set`, `/fallback` | Manage keys and accounts; toggle cross-provider fallback |
 | `/effort` | Set reasoning effort where supported |

@@ -2,6 +2,7 @@ import type { ContextAttemptReference, ContextSnapshotScope } from "../../llm/co
 import type { GenerationMetrics } from "../../llm/generation-metrics.js";
 import type { SessionPlan } from "../../store/plan.js";
 import type { ProviderId, UsageCharge } from "../../types.js";
+import type { GoalUpdate } from "../controllers/goal-types.js";
 
 
 export type Brand<T, B extends string> = T & { readonly __brand: B };
@@ -149,6 +150,7 @@ export interface AppEventPayloads {
   "turn-ended": { readonly finalAnswer: string; readonly steps: number; readonly generation?: GenerationMetrics | undefined };
   "turn-aborted": { readonly reason?: string | undefined; readonly generation?: GenerationMetrics | undefined };
   "turn-error": { readonly message: string; readonly generation?: GenerationMetrics | undefined };
+  "goal-updated": GoalUpdate;
 }
 
 export type AppEventType = keyof AppEventPayloads;

@@ -1,5 +1,6 @@
 import type {
   ChatMessage,
+  CompletionResult,
   Mode,
   ProviderId,
   SuccessfulRequestSnapshot,
@@ -37,7 +38,7 @@ import {
 } from "./session-context-usage.js";
 import { createSessionPolicy, type SessionPolicy } from "../../agent/session-policy.js";
 import { SubagentManager } from "../../agent/subagents/manager.js";
-import { knownAttemptUsage, type OperationUsageSnapshot } from "../../llm/operation-usage.js";
+import { claimDiscardedAttemptUsage, knownAttemptUsage, type OperationUsageSnapshot } from "../../llm/operation-usage.js";
 import { getActiveProjectRoot } from "../../agent/project-root.js";
 import {
   collectCompactionEnvelopeInput,
@@ -107,6 +108,13 @@ import { SessionChanges, type FileLineChanges, type SessionChangesReport } from 
 import { SessionLateWork } from "./session-late-work.js";
 import { isInternalChatMessage } from "../../types.js";
 import { generationTokensPerSecond, type GenerationProgress } from "../../llm/generation-metrics.js";
+import { randomUUID } from "node:crypto";
+import { evaluateGoal } from "../../agent/goal/goal-evaluator.js";
+import type { GoalVerdict } from "../../agent/goal/goal-verdict.js";
+import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
+import { SessionGoal, type GoalBackgroundWork, type GoalTimers } from "./session-goal.js";
+import type { GoalReport, GoalSetResult, GoalView } from "./goal-types.js";
+import type { PersistedGoal } from "../ports/persistence-port.js";
 
 export interface SubagentsRuntimeState {
   readonly enabled: boolean;
@@ -133,6 +141,7 @@ export interface SessionState {
   readonly contextChip: string | undefined;
   readonly contextLimit?: ContextSnapshotLimit | undefined;
   readonly generation?: GenerationProgress | undefined;
+  readonly goal?: GoalView | undefined;
 }
 
 export type NoticeLevel = "info" | "warn";
@@ -159,6 +168,7 @@ export interface SessionControllerDeps {
   readonly noHistory?: boolean | undefined;
   readonly notifyResponderDelivery?: ((summary: string) => void) | undefined;
   readonly titleCompleter?: ((messages: ChatMessage[]) => Promise<string>) | undefined;
+  readonly goalTimers?: GoalTimers | undefined;
 }
 
 export type TurnEndListener = (result: TurnResult) => void;
@@ -181,6 +191,7 @@ export class SessionController implements Disposable {
   private history: ChatMessage[] = [];
   private readonly prompts: SessionPromptQueue;
   private readonly loopRecovery: SessionLoopRecovery;
+  private readonly goal: SessionGoal;
   private readonly responder: SessionResponder | undefined;
   private provider: ProviderId | undefined;
   private model: string | undefined;
@@ -279,16 +290,42 @@ export class SessionController implements Disposable {
       notice: (text) => this.notice("warn", text),
       enqueue: (prompt, label) => this.prompts.enqueuePriority(prompt, label),
     });
+    this.goal = new SessionGoal({
+      now: () => this.contextTimestamp(),
+      mintId: () => randomUUID(),
+      isBusy: () => this.closing || this.turn.running || this.compactingFlag || this.unsettledTurns > 0,
+      hasQueuedWork: () => this.prompts.hasPending(),
+      mode: () => this.mode,
+      background: () => this.goalBackgroundWork(),
+      tokens: () => this.usageLedger.report().totals.totalTokens,
+      evaluate: (objective, signal) => this.evaluateGoal(objective, signal),
+      runTurn: (prompt, options) => {
+        if (options.kickoff) this.activateUserWork();
+        return this.runTurn(prompt, { displayPrompt: options.displayPrompt });
+      },
+      load: () => this.loadGoal(),
+      save: (goal) => this.saveGoal(goal),
+      emit: (update) => this.deps.emit(this.sequencer.build("goal-updated", update, undefined)),
+      notifyState: () => this.notifyState(),
+      idle: () => {
+        this.responder?.scheduleWake();
+        this.subagentDelivery.scheduleWake();
+      },
+      timers: deps.goalTimers,
+    });
     this.subagentDelivery = new SessionSubagents({
       sessionId: () => this.sessionIdValue,
-      isBusy: () => this.turn.running || this.compactingFlag || this.unsettledTurns > 0,
+      isBusy: () => this.turn.running || this.compactingFlag || this.unsettledTurns > 0 || this.goal.evaluating,
       hasQueuedWork: () => this.prompts.hasPending(),
       continueQueue: () => this.prompts.continue(),
       runTurn: (prompt) => this.runTurn(prompt, {
         displayPrompt: null,
         materializeHistoryImages: false,
       }),
-      notifyState: () => this.notifyState(),
+      notifyState: () => {
+        this.notifyState();
+        this.goal.scheduleWake();
+      },
     });
     this.subagentDelivery.bind(this.subagentsValue);
     this.namer = new SessionNamer({
@@ -312,7 +349,7 @@ export class SessionController implements Disposable {
         jobs: deps.jobs,
         persistence: deps.persistence,
         sessionId: () => this.sessionIdValue,
-        isBusy: () => this.turn.running || this.compactingFlag || this.unsettledTurns > 0,
+        isBusy: () => this.turn.running || this.compactingFlag || this.unsettledTurns > 0 || this.goal.evaluating,
         hasQueuedWork: () => this.prompts.hasPending(),
         continueQueue: () => this.prompts.continue(),
         runTurn: (prompt, onStarted) =>
@@ -328,6 +365,7 @@ export class SessionController implements Disposable {
       });
       const unsubscribe = deps.jobs.subscribe((change) => {
         this.responder?.handleChange(change);
+        this.goal.scheduleWake();
       });
       this.disposables.add({ dispose: unsubscribe });
     } else {
@@ -410,6 +448,7 @@ export class SessionController implements Disposable {
       contextChip,
       contextLimit,
       generation: this.generation,
+      goal: this.goal.view(),
     };
   }
 
@@ -593,6 +632,7 @@ export class SessionController implements Disposable {
   setMode(mode: Mode): void {
     this.mode = mode;
     this.notifyState();
+    this.goal.scheduleWake();
   }
 
   loadHistory(
@@ -661,6 +701,7 @@ export class SessionController implements Disposable {
       code: options.workspaceCode,
     });
     this.settlePersistedResponderResults();
+    this.goal.restore();
     this.notifyState();
   }
 
@@ -679,6 +720,110 @@ export class SessionController implements Disposable {
 
   notice(level: NoticeLevel, text: string): void {
     this.deps.emit(this.sequencer.build("notice", { level, text }, undefined));
+  }
+
+  setGoal(objective: string): GoalSetResult {
+    return this.goal.set(objective);
+  }
+
+  pauseGoal(): GoalView | undefined {
+    return this.goal.pause();
+  }
+
+  resumeGoal(): GoalView | undefined {
+    if (this.goal.view()?.status === "paused") this.activateUserWork();
+    return this.goal.resume();
+  }
+
+  clearGoal(): string | undefined {
+    return this.goal.clear();
+  }
+
+  goalReport(): GoalReport | undefined {
+    return this.goal.report();
+  }
+
+  private activateUserWork(): void {
+    this.responder?.activate();
+    this.subagentDelivery.activate();
+    this.loopRecovery.clear();
+  }
+
+  private goalBackgroundWork(): GoalBackgroundWork {
+    const sessionId = this.sessionIdValue;
+    const jobs = this.deps.jobs;
+    const live = this.subagentsValue.list().filter((run) => run.status === "running" || run.status === "stopping");
+    const undeliveredRuns = this.subagentsValue.enabled ? this.subagentsValue.pendingResults().length : 0;
+    const undeliveredJobs = this.responder?.getState().ready ?? 0;
+    return {
+      running: [
+        ...(jobs?.running(sessionId) ?? []).map((job) => `background job ${job.name ?? job.commandDisplay}`),
+        ...live.map((run) => `subagent ${run.title}`),
+      ],
+      pendingDeliveries: undeliveredRuns + undeliveredJobs,
+    };
+  }
+
+  private async evaluateGoal(objective: string, signal: AbortSignal): Promise<GoalVerdict | undefined> {
+    const config = getConfig();
+    const base = this.lastMainRequestSnapshot;
+    const provider = base?.provider ?? this.provider ?? config.defaultProvider;
+    const model = base?.model ?? this.model ?? getProviderModel(provider);
+    const generation = this.lifecycleGeneration;
+    const evaluation = await withSessionAffinity(this.sessionIdValue, () =>
+      evaluateGoal({
+        objective,
+        history: this.history,
+        baseRequest: base,
+        provider,
+        model,
+        ...(provider === "codex" ? { thinking: { ...config.thinking } } : {}),
+        contextLimitTokens: effectiveContextWindowTokens(provider, model, customContextLimit(provider, model)),
+        signal,
+        onUsage: (result) => {
+          if (generation === this.lifecycleGeneration) this.emitAuxiliaryUsage(result);
+        },
+      }),
+    );
+    return evaluation.verdict;
+  }
+
+  private emitAuxiliaryUsage(result: CompletionResult): void {
+    for (const discarded of claimDiscardedAttemptUsage(result.operationUsage)) {
+      this.deps.emit(this.sequencer.build("token-usage", {
+        ...discarded.usage,
+        provider: discarded.provider,
+        model: discarded.model,
+        auxiliary: true,
+      }, undefined));
+    }
+    if (!result.usage) return;
+    this.deps.emit(this.sequencer.build("token-usage", {
+      ...result.usage,
+      provider: result.provider,
+      model: result.model,
+      ...(result.api ? { api: result.api } : {}),
+      auxiliary: true,
+    }, undefined));
+  }
+
+  private loadGoal(): PersistedGoal | undefined {
+    if (!this.isPromptHistoryEnabled()) return undefined;
+    try {
+      return this.deps.persistence.loadGoal?.(this.sessionIdValue);
+    } catch (error) {
+      this.notice("warn", `could not restore the session goal: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+  }
+
+  private saveGoal(goal: PersistedGoal | undefined): void {
+    if (!this.isPromptHistoryEnabled()) return;
+    try {
+      this.deps.persistence.saveGoal?.(this.sessionIdValue, goal);
+    } catch (error) {
+      this.notice("warn", `could not save the session goal: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   allowTool(name: string): void {
@@ -866,6 +1011,7 @@ export class SessionController implements Disposable {
       this.notifyState();
       this.responder?.scheduleWake();
       this.subagentDelivery.scheduleWake();
+      this.goal.scheduleWake();
     }
   }
 
@@ -925,6 +1071,7 @@ export class SessionController implements Disposable {
     this.closing = true;
     this.responder?.deactivate();
     this.subagentDelivery.deactivate();
+    this.goal.halt();
     this.abort("session is closing");
     this.prompts.detach();
     if (this.unsettledTurns > 0) {
@@ -1003,6 +1150,7 @@ export class SessionController implements Disposable {
   async cancelAll(): Promise<ToolResult> {
     this.responder?.invalidateWake();
     this.subagentDelivery.deactivate();
+    this.goal.interrupt(this.turn.running);
     this.prompts.preservePendingPriority();
     this.turn.abort();
     this.compactAbort?.abort();
@@ -1026,6 +1174,7 @@ export class SessionController implements Disposable {
   }
 
   enqueue(prompt: string, opts?: TurnDisplayOptions): void {
+    this.goal.noteUserPrompt();
     this.prompts.enqueue(prompt, opts);
   }
 
@@ -1054,8 +1203,10 @@ export class SessionController implements Disposable {
   }
 
   abort(reason?: string): void {
+    const turnRunning = this.turn.running;
     this.turn.abort(reason);
     this.compactAbort?.abort();
+    if (reason !== "steer" && !this.closing) this.goal.interrupt(turnRunning);
   }
 
   async continueQueue(): Promise<void> {
@@ -1076,9 +1227,8 @@ export class SessionController implements Disposable {
   }
 
   async submit(prompt: string, opts?: TurnDisplayOptions): Promise<TurnResult> {
-    this.responder?.activate();
-    this.subagentDelivery.activate();
-    this.loopRecovery.clear();
+    this.activateUserWork();
+    this.goal.noteUserPrompt();
     return this.prompts.submit(prompt, opts);
   }
 
@@ -1188,7 +1338,10 @@ export class SessionController implements Disposable {
       if (sameGeneration) {
         this.lastTurnResult = result;
         this.restoredPreviousTurn = undefined;
-        if (!this.closing) this.loopRecovery.handle(result);
+        if (!this.closing) {
+          this.loopRecovery.handle(result);
+          this.goal.handleTurnEnd(result);
+        }
       }
       if (
         sameGeneration &&
@@ -1209,6 +1362,7 @@ export class SessionController implements Disposable {
       }
       this.responder?.scheduleWake();
       this.subagentDelivery.scheduleWake();
+      this.goal.scheduleWake();
     }
   }
 
@@ -1277,10 +1431,12 @@ export class SessionController implements Disposable {
     this.activeCompactions.clear();
     this.responder?.invalidateWake();
     this.subagentDelivery.deactivate();
+    this.goal.reset();
   }
 
   dispose(): void {
     this.beginLifecycleGeneration();
+    this.goal.dispose();
     this.prompts.detach();
     this.namer.reset();
     this.subagentDelivery.dispose();
@@ -1301,6 +1457,8 @@ export class SessionController implements Disposable {
         this.activeTurnGeneration === this.lifecycleGeneration) {
       this.changeLedger.record(`${event.turnId}:${event.payload.toolCallId}`, event.payload.fileChanges);
     }
+    if (event.type === "turn-started") this.goal.noteTurnStarted();
+    else if (event.type === "tool-call") this.goal.noteToolCall();
     if (event.type === "compaction-started") {
       this.activeCompactions.add(event.payload.compactionId);
       this.notifyState();

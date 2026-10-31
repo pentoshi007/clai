@@ -16,6 +16,34 @@ Fresh configurations use **full-access** permissions. `/permissions default` ena
 
 When an approval prompt appears, `Ctrl+O` opens the complete pending operation, including its arguments and working directory. Reading the operation does not approve it. These policies govern clai's tool execution; they are not an OS sandbox.
 
+## Goals
+
+`/goal <condition>` keeps clai working until a condition holds, without a prompt for each step. Setting a goal starts a turn immediately with the condition as the directive. After every turn, an evaluator reads the conversation and returns one of these verdicts:
+
+- **Not met**: clai starts another turn and uses the evaluator's reason and suggested next step as guidance.
+- **Met**: the goal is cleared and the transcript records it as achieved, with its duration, evaluated turns and token spend.
+- **Impossible**: the goal is cleared and the transcript records it as failed, with the reason.
+- **Blocked**: the goal pauses when progress needs something only you can provide, such as a decision or credentials.
+
+The evaluator does not run tools. Write the condition as something the conversation can show, with one measurable end state and how to check it, for example `/goal all tests in test/auth pass and npm run lint exits 0`. Conditions can be up to 4,000 characters. A goal does not change the mode or the permission policy; use agent mode with suitable permissions for unattended work.
+
+| Command | Effect |
+| --- | --- |
+| `/goal <condition>` | Set the goal, replacing any current one. If a turn is running, the goal starts after it. |
+| `/goal` | Show the condition, running time, evaluated turns, tokens spent and the last evaluator reason. After a goal is achieved, shows that goal's result. |
+| `/goal pause`, `/goal resume` | Stop or restart automatic turns without clearing the goal. |
+| `/goal clear` | Remove the goal. `stop`, `off`, `reset`, `none` and `cancel` are aliases. `/clear` also removes it, and `/new` starts a session without it. |
+
+A strip above the composer shows `◎ goal active` with the elapsed time and evaluated turns, or `goal paused` with how to continue. Click it in OpenTUI to open the status view.
+
+The goal pauses and your next message resumes it when you interrupt a goal turn with `Esc`, when three turns in a row make no tool calls, after 50 automatic turns, or after a rate or usage limit. Network and server errors retry after 15 s, 30 s and 60 s, then pause. Authentication failures, exhausted credits, an unavailable model, and context overflow clear the goal; fix the cause and run `/goal` again. `/goal pause` waits for `/goal resume`.
+
+While a subagent or background job runs, evaluation waits and resumes after the result is delivered. After 30 minutes of waiting, clai starts a check-in turn that reviews the running work, then waits twice as long before each later check-in, up to two hours and at most three times until you send a message. Plan mode also defers evaluation until you switch modes.
+
+Resuming a session restores a goal that was still active or paused, with its timer, turn count and token baseline reset. It does not start a turn until you send a message or run `/goal resume`. Achieved and cleared goals are not restored. Private mode and `--no-history` keep the goal in memory only.
+
+Evaluation reuses the conversation's prompt cache. The evaluator request repeats the last model request unchanged, with the same tools and reasoning settings, and adds the evaluation question at the end. The question is never written to history, and continuation prompts are appended as hidden messages, so the cached prefix stays the same for the next turn. When no reusable request exists, for example right after compaction or a model switch, clai evaluates a bounded transcript excerpt as a separate background request that uses its own cache key.
+
 ## Subagents and background work
 
 `/orchestrator` controls delegation and subagent model choices; delegation is off by default, and `/orchestrator on` enables it. `/subagents` shows assignments and lets you stop or restart an investigation. Retained findings and delivery state help the parent reuse completed research after compaction or resuming a session.

@@ -29,9 +29,15 @@ export interface CancelCoordinatorSession {
     readonly running: boolean;
     readonly compacting: boolean;
     readonly queued: readonly string[];
+    readonly goal?: { readonly phase?: string | undefined } | undefined;
   };
   abort(): void;
   cancelAll(): Promise<ToolResult>;
+}
+
+function goalInterruptible(state: ReturnType<CancelCoordinatorSession["getState"]>): boolean {
+  const phase = state.goal?.phase;
+  return phase === "evaluating" || phase === "retrying";
 }
 
 export interface CancelCoordinatorJobs {
@@ -76,20 +82,21 @@ export class CancelCoordinator {
       snap.responderJobs > 0 ||
       snap.subagents > 0 ||
       snap.pendingNotifications > 0 ||
-      snap.interruptible
+      snap.interruptible ||
+      goalInterruptible(this.deps.session.getState())
     );
   }
 
   hasForegroundWork(): boolean {
     const state = this.deps.session.getState();
-    return state.running || state.compacting || this.deps.interruptible.hasWork();
+    return state.running || state.compacting || goalInterruptible(state) || this.deps.interruptible.hasWork();
   }
 
   abortForeground(): AbortForegroundOutcome {
     const state = this.deps.session.getState();
     const turnAborted = state.running;
     const interruptibleCancelled = this.deps.interruptible.cancelAll();
-    if (turnAborted || state.compacting) this.deps.session.abort();
+    if (turnAborted || state.compacting || goalInterruptible(state)) this.deps.session.abort();
     return { turnAborted, interruptibleCancelled };
   }
 

@@ -20,6 +20,7 @@ function demand(over: Partial<ChromeDemand> = {}): ChromeDemand {
     queueCount: 0,
     responderVisible: false,
     subagentsVisible: false,
+    goalVisible: false,
     planVisible: false,
     planRowsWanted: 0,
     overlay: undefined,
@@ -36,6 +37,7 @@ const demandArb = fc.record({
   queueCount: fc.integer({ min: 0, max: 12 }),
   responderVisible: fc.boolean(),
   subagentsVisible: fc.boolean(),
+  goalVisible: fc.boolean(),
   planVisible: fc.boolean(),
   planRowsWanted: fc.integer({ min: 0, max: 40 }),
   overlay: fc.option(
@@ -54,6 +56,7 @@ const parts = (layout: ChromeLayout): number[] => [
   layout.queue,
   layout.responder,
   layout.subagents,
+  layout.goal,
   layout.plan,
   layout.overlay,
   layout.liveTail,
@@ -102,6 +105,7 @@ describe("allocateChrome invariants", () => {
         expect(layout.plan).toBeLessThanOrEqual(planMaxRows(input.rows));
         expect(layout.responder).toBeLessThanOrEqual(1);
         expect(layout.subagents).toBeLessThanOrEqual(1);
+        expect(layout.goal).toBeLessThanOrEqual(1);
         expect(layout.status).toBeLessThanOrEqual(input.statusRowsWanted);
         if (input.overlay) {
           expect(layout.overlay).toBeLessThanOrEqual(Math.floor(input.rows * 0.6));
@@ -112,6 +116,7 @@ describe("allocateChrome invariants", () => {
         if (!input.planVisible) expect(layout.plan).toBe(0);
         if (!input.responderVisible) expect(layout.responder).toBe(0);
         if (!input.subagentsVisible) expect(layout.subagents).toBe(0);
+        if (!input.goalVisible) expect(layout.goal).toBe(0);
       }),
       { numRuns: 2_000 },
     );
@@ -189,10 +194,11 @@ describe("priority order", () => {
 
   it("allocates one row to each visible strip", () => {
     const layout = allocateChrome(
-      demand({ rows: 24, responderVisible: true, subagentsVisible: true }),
+      demand({ rows: 24, responderVisible: true, subagentsVisible: true, goalVisible: true }),
     );
     expect(layout.responder).toBe(1);
     expect(layout.subagents).toBe(1);
+    expect(layout.goal).toBe(1);
   });
 
   it("expands the status only after the plan is served", () => {

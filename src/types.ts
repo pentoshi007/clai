@@ -334,7 +334,7 @@ export interface GenerationAttemptUsageSink {
   begin(input: GenerationAttemptInput): GenerationAttemptHandle;
 }
 
-export type CompletionRequestPurpose = "turn" | "compaction" | "auxiliary";
+export type CompletionRequestPurpose = "turn" | "compaction" | "evaluation" | "auxiliary";
 
 export interface SuccessfulRequestSnapshot {
   readonly provider: ProviderId;
