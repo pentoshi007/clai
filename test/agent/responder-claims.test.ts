@@ -23,10 +23,11 @@ const notification = (
   }) as ResponderNotification;
 
 describe("responder claim ledger", () => {
-  it("owns membership, size, and insertion-ordered ids", () => {
+  it("owns membership, and reports size/ids for still-unread claims", () => {
     const ledger = new ResponderClaimLedger({
-      getPendingNotifications: () => [],
+      getPendingNotifications: () => [notification("n-1"), notification("n-2")],
       releaseClaim: () => undefined,
+      settleClaim: () => undefined,
     });
 
     ledger.add("n-1");
@@ -41,6 +42,72 @@ describe("responder claim ledger", () => {
     expect(ledger.ids()).toEqual(["n-2"]);
   });
 
+  it("drops settled claims from size/ids and releases them so nudges stop", () => {
+    const releaseClaim = vi.fn();
+    const ledger = new ResponderClaimLedger({
+      getPendingNotifications: () => [
+        notification("n-live", {
+          deliveryStartedAt: "2026-01-01T00:00:02.000Z",
+        }),
+      ],
+      releaseClaim,
+      settleClaim: vi.fn(),
+    });
+    ledger.add("n-live");
+    ledger.add("n-gone");
+
+    expect(ledger.size).toBe(1);
+    expect(ledger.ids()).toEqual(["n-live"]);
+    expect(releaseClaim).toHaveBeenCalledWith("n-gone");
+    expect(releaseClaim).not.toHaveBeenCalledWith("n-live");
+  });
+
+  it("drops a read claim from size/ids even while it is still pending", () => {
+    const releaseClaim = vi.fn();
+    const ledger = new ResponderClaimLedger({
+      getPendingNotifications: () => [
+        notification("n-read", {
+          deliveryStartedAt: "2026-01-01T00:00:02.000Z",
+          readAt: "2026-01-01T00:00:03.000Z",
+        }),
+      ],
+      releaseClaim,
+      settleClaim: vi.fn(),
+    });
+    ledger.add("n-read");
+
+    expect(ledger.size).toBe(0);
+    expect(releaseClaim).toHaveBeenCalledWith("n-read");
+  });
+
+  it("settles only delivered, still-unread claims", () => {
+    const settleClaim = vi.fn();
+    const ledger = new ResponderClaimLedger({
+      getPendingNotifications: () => [
+        notification("n-delivered", {
+          deliveryStartedAt: "2026-01-01T00:00:02.000Z",
+          deliveredAt: "2026-01-01T00:00:03.000Z",
+        }),
+        notification("n-started", {
+          deliveryStartedAt: "2026-01-01T00:00:02.000Z",
+        }),
+        notification("n-read", {
+          deliveryStartedAt: "2026-01-01T00:00:02.000Z",
+          deliveredAt: "2026-01-01T00:00:03.000Z",
+          readAt: "2026-01-01T00:00:04.000Z",
+        }),
+      ],
+      releaseClaim: vi.fn(),
+      settleClaim,
+    });
+    for (const id of ["n-delivered", "n-started", "n-read", "n-absent"]) {
+      ledger.add(id);
+    }
+    ledger.settleDelivered();
+
+    expect(settleClaim.mock.calls.map(([id]) => id)).toEqual(["n-delivered"]);
+  });
+
   it("keeps a claim whose delivery started and was never consumed", () => {
     const releaseClaim = vi.fn();
     const ledger = new ResponderClaimLedger({
@@ -50,6 +117,7 @@ describe("responder claim ledger", () => {
         }),
       ],
       releaseClaim,
+      settleClaim: vi.fn(),
     });
     ledger.add("n-inflight");
     ledger.release();
@@ -76,6 +144,7 @@ describe("responder claim ledger", () => {
         notification("n-unstarted"),
       ],
       releaseClaim,
+      settleClaim: vi.fn(),
     });
     for (const id of [
       "n-read",

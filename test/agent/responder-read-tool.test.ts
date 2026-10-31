@@ -136,15 +136,17 @@ describe("responder read tool", () => {
     expect(decision.releaseClaimId).toBeUndefined();
   });
 
-  it("reports an unavailable result when nothing matches", () => {
+  it("acknowledges an already-consumed result idempotently when nothing matches", () => {
     const decision = decideResponderRead(
       { toolName: "job.read", notificationId: "", jobId: "j9" },
       noWake,
       ports(),
     );
+    expect(decision.marked).toBe(true);
     expect(decision.output).toBe(
-      "job.read failed: Responder result j9 is unavailable, consumed, or archived.",
+      "Responder result j9 is already settled, consumed, or archived; acknowledgement is idempotent and no further action is required.",
     );
+    expect(decision.ledgerNotification).toBeUndefined();
   });
 
   it("reports a persistence failure distinctly", () => {
@@ -172,7 +174,7 @@ describe("responder read tool", () => {
     );
     expect(decision.marked).toBe(true);
     expect(decision.output).toBe(
-      "Responder result j1 revision 3 was already settled or discarded; the stale wake is acknowledged idempotently.",
+      "Responder result j1 revision 3 is already settled, consumed, or archived; acknowledgement is idempotent and no further action is required.",
     );
     expect(decision.releaseClaimId).toBe("n1");
   });
@@ -186,7 +188,9 @@ describe("responder read tool", () => {
         matchesWakeRevision: () => false,
       }),
     );
-    expect(decision.marked).toBe(false);
-    expect(decision.output).toContain("is unavailable, consumed, or archived");
+    expect(decision.marked).toBe(true);
+    expect(decision.output).toContain(
+      "is already settled, consumed, or archived",
+    );
   });
 });

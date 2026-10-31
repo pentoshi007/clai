@@ -99,9 +99,6 @@ const failureText = (
   if (match.identifiersConflict) {
     return `${request.toolName} failed: jobId and notificationId refer to different Responder results.`;
   }
-  if (!match.notification) {
-    return `${request.toolName} failed: Responder result ${identifier} is unavailable, consumed, or archived.`;
-  }
   if (!visible) {
     return `${request.toolName} failed: Responder result ${identifier} was not delivered to this model turn. Analyze a delivered result before marking it read.`;
   }
@@ -131,21 +128,18 @@ export const decideResponderRead = (
     };
   }
 
-  const staleWakeSettled =
-    !notification &&
-    !match.identifiersConflict &&
-    wakeIdentityMatches(request, wake);
   const identifier = request.jobId || request.notificationId;
 
-  if (staleWakeSettled) {
-    const revisionLabel = wake.resultRevision
-      ? ` revision ${wake.resultRevision}`
-      : "";
+  if (!notification && !match.identifiersConflict && identifier) {
+    const revisionLabel =
+      wakeIdentityMatches(request, wake) && wake.resultRevision
+        ? ` revision ${wake.resultRevision}`
+        : "";
     return {
       marked: true,
-      output: `Responder result ${identifier}${revisionLabel} was already settled or discarded; the stale wake is acknowledged idempotently.`,
+      output: `Responder result ${identifier}${revisionLabel} is already settled, consumed, or archived; acknowledgement is idempotent and no further action is required.`,
       ledgerNotification: undefined,
-      releaseClaimId: wake.notificationId,
+      releaseClaimId: request.notificationId || wake.notificationId,
     };
   }
 

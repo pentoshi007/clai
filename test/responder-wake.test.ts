@@ -317,6 +317,35 @@ describe("runtime responder listening lease", () => {
     ctx.unsubscribe();
   });
 
+  it("settles a delivered result the model never read so a new lease neither re-shows nor re-delivers it", async () => {
+    const { manager } = await fixture();
+    const ctx = buildResponder(manager, "unread");
+    ctx.runTurn.mockImplementation(
+      async (_prompt: string, onStarted: () => void) => {
+        onStarted();
+        return { status: "completed" as const };
+      },
+    );
+    ctx.responder.activate();
+    await startResponderJob(
+      manager,
+      "unread",
+      ctx.jobs.getResponderLeaseId("unread"),
+    );
+    await waitFor(() => ctx.runTurn.mock.calls.length === 1);
+    await waitFor(() => manager.getPendingNotifications("unread").length === 0);
+
+    expect(ctx.responder.getState()).toMatchObject({ delivered: 0, ready: 0, running: 0 });
+
+    ctx.responder.deactivate();
+    ctx.responder.activate();
+    await sleep(300);
+
+    expect(ctx.runTurn).toHaveBeenCalledTimes(1);
+    expect(ctx.responder.getState()).toMatchObject({ mode: "idle", delivered: 0, ready: 0 });
+    ctx.unsubscribe();
+  });
+
   it("bounds UTF-8 result previews to 20 lines and 4 KiB", async () => {
     const { manager } = await fixture();
     const ctx = buildResponder(manager, "bounded");

@@ -285,8 +285,14 @@ export async function runAgentTurn(
     getPendingNotifications: () => jobManager.getPendingNotifications(),
     releaseClaim: (notificationId) =>
       jobManager.releaseResponderNotificationClaim(notificationId),
+    settleClaim: (notificationId) => {
+      if (jobManager.markAnalyzed(notificationId)) {
+        jobManager.acknowledge(notificationId);
+      }
+    },
   });
   const finishTurn = createTurnFinisher({
+    settleResponderClaims: () => responderClaims.settleDelivered(),
     releaseResponderClaims: () => responderClaims.release(),
     liveMessages: () => liveMessages,
     diagnostics: () => !suppressOutcomeDiagnostics,

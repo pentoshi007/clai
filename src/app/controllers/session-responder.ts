@@ -242,13 +242,16 @@ export class SessionResponder {
       return;
     }
 
-    if (!notification.readAt) {
-      this.deps.notifyState();
-      return;
-    }
+    if (!notification.readAt) this.settleUnread(notification.id, sessionId);
     this.deps.notifyState();
     if (this.hasDeliverable(sessionId, leaseId)) {
       this.wakeRequested = true;
+    }
+  }
+
+  private settleUnread(notificationId: string, sessionId: string): void {
+    if (this.deps.jobs.markAnalyzed(notificationId, sessionId)) {
+      this.deps.jobs.acknowledge(notificationId, sessionId);
     }
   }
 

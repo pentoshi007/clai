@@ -9,6 +9,7 @@ import {
 import { buildTurnHistory } from "../tool-call-parser.js";
 
 export interface TurnFinalizerPorts {
+  readonly settleResponderClaims: () => void;
   readonly releaseResponderClaims: () => void;
   readonly liveMessages: () => ChatMessage[];
   readonly diagnostics: () => boolean;
@@ -37,6 +38,7 @@ export const finalizeTurn = (
   ports: TurnFinalizerPorts,
   input: TurnFinalizerInput,
 ): TurnOutcome => {
+  if (input.status !== "aborted") ports.settleResponderClaims();
   ports.releaseResponderClaims();
   const outcome = createTurnOutcome(
     normalizeTurnOutcomeInput({
