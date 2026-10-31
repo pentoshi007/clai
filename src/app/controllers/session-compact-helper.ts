@@ -25,6 +25,8 @@ import {
 } from "../../agent/context-manager.js";
 import { projectToolHistory } from "../../agent/tool-history.js";
 import { buildContextBreakdown } from "../../agent/context-breakdown.js";
+import { estimateToolSchemaTokens } from "../../agent/request-accounting.js";
+import { isRequestContextSystemMessage } from "../../llm/system-messages.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../../llm/context-snapshot.js";
@@ -119,6 +121,22 @@ export interface ReportedCompaction {
   readonly scope: "message-history" | "assembled-request";
 }
 
+export function retainedRequestOverheadTokens(
+  request: SuccessfulRequestSnapshot | undefined,
+  history: readonly ChatMessage[],
+): number | undefined {
+  if (!request) return undefined;
+  const historyHead = history[0];
+  const fixed = request.messages.filter((message, index) =>
+    index === 0
+      ? message.role === "system" &&
+        !(historyHead?.role === "system" && historyHead.content === message.content)
+      : isRequestContextSystemMessage(message),
+  );
+  if (fixed.length === 0 && !request.tools?.length) return undefined;
+  return estimateMessagesTokens(fixed) + estimateToolSchemaTokens(request.tools);
+}
+
 export async function runSessionCompaction(
   options: RunSessionCompactionOptions,
 ): Promise<CompactResult> {
@@ -186,12 +204,21 @@ export async function runSessionCompaction(
   const calibrated = (tokens: number): number =>
     calibratedRequestTokens(calibrationProvider, calibrationModel, Math.max(0, tokens));
   const beforeTokens = requestTokensBefore ?? calibrated(historyTokensBefore);
+  const retainedOverheadTokens = retainedRequestOverheadTokens(successfulRequest, history);
   const reportedFor = (result: CompactResult): ReportedCompaction => {
+    const measurement =
+      options.requestTokensBeforeMeasurement ?? "estimated";
+    if (retainedOverheadTokens !== undefined) {
+      return {
+        beforeTokens,
+        afterTokens: calibrated(result.afterTokens + retainedOverheadTokens),
+        measurement,
+        scope: "assembled-request",
+      };
+    }
     const retainedHistoryTokens = calibrated(result.afterTokens);
     const overheadTokens = (assembledTokens: number): number =>
       Math.max(0, assembledTokens - calibrated(result.beforeTokens));
-    const measurement =
-      options.requestTokensBeforeMeasurement ?? "estimated";
     const afterTokens =
       useContinuationAccounting && continuationAccounting
         ? retainedHistoryTokens +

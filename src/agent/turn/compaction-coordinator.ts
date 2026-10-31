@@ -248,12 +248,11 @@ const runAdmittedCompaction = async (
   ports.refreshSessionState(livePlan);
   ports.setLastCompactionMsgCount(ports.messages.length);
 
-  const afterEstimate = ports.estimateRequestTokens(ports.messages);
-  const afterTokens = ports.measureRequestTokens?.(afterEstimate) ?? afterEstimate;
+  const afterTokens = ports.estimateRequestTokens(ports.messages);
   ports.clearProviderMeasurement();
   ports.audit("agent.compact", {
     newLength: ports.messages.length,
-    estimatedTokens: afterEstimate,
+    estimatedTokens: afterTokens,
     afterTokens,
     reason,
     strategy: result.strategy ?? "single",

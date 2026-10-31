@@ -13,6 +13,8 @@ import {
 } from "../../src/agent/context-manager.js";
 import { SessionController } from "../../src/app/controllers/session-controller.js";
 import { createContextSnapshot } from "../../src/llm/context-snapshot.js";
+import { calibratedRequestTokens } from "../../src/llm/token-estimate-calibration.js";
+import { estimateToolSchemaTokens } from "../../src/agent/request-accounting.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
 
@@ -59,27 +61,38 @@ function fakeAgent(): AgentPort {
   };
 }
 
+const PRIMED_SYSTEM_PROMPT: ChatMessage = { role: "system", content: "main system prompt" };
+const PRIMED_TOOLS: NonNullable<SuccessfulRequestSnapshot["tools"]> = [
+  {
+    name: "fs.read",
+    description: "read a file",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" } },
+    },
+  },
+];
+
+function retainedTokens(messages: readonly ChatMessage[]): number {
+  return calibratedRequestTokens(
+    "nvidia",
+    "test-model",
+    estimateMessagesTokens([...messages, PRIMED_SYSTEM_PROMPT]) + estimateToolSchemaTokens(PRIMED_TOOLS),
+  );
+}
+
 function primeCompactionSnapshot(session: SessionController): void {
   const history = session.messages.map((message) => structuredClone(message));
   const snapshot: SuccessfulRequestSnapshot = {
     provider: "nvidia",
     model: "test-model",
     messages: [
-      { role: "system", content: "main system prompt" },
+      PRIMED_SYSTEM_PROMPT,
       ...history.slice(0, -1),
     ],
     temperature: 0.2,
     thinking: { enabled: true, effort: "medium" },
-    tools: [
-      {
-        name: "fs.read",
-        description: "read a file",
-        parameters: {
-          type: "object",
-          properties: { path: { type: "string" } },
-        },
-      },
-    ],
+    tools: PRIMED_TOOLS,
     toolChoice: "auto",
     parallelToolCalls: true,
   };
@@ -597,9 +610,9 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
     );
     primeCompactionSnapshot(session);
-    const historyTokensBefore = estimateMessagesTokens(session.messages);
-    const result = await session.compact(undefined, 2);
-    const expectedAfterTokens = 115_000 - historyTokensBefore + result.afterTokens;
+    await session.compact(undefined, 2);
+    const expectedAfterTokens = retainedTokens(session.messages);
+    expect(expectedAfterTokens).toBeLessThan(10_000);
     expect(completeWithProvider).toHaveBeenCalledOnce();
     expect(events.filter((event) => event.type === "token-usage")).toEqual([
       expect.objectContaining({
@@ -621,7 +634,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextTokens: expectedAfterTokens,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe(`ctx ~${expectedAfterTokens.toLocaleString()}/200k 58%`);
+    expect(session.getState().contextChip).toBe(`ctx ~${expectedAfterTokens.toLocaleString()}/200k 0%`);
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );
@@ -984,9 +997,11 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(generations[1]).toBe(generations[0]);
     expect(saved[0]?.options?.contextUsage?.contextTokens).toBe(88_000);
     const compactedTokens = saved[1]?.options?.contextUsage?.contextTokens ?? 0;
-    expect(compactedTokens).toBe(88_000 - historyTokensBefore + estimateMessagesTokens(session.messages));
+    const snapshot = (session as unknown as { lastMainRequestSnapshot?: SuccessfulRequestSnapshot }).lastMainRequestSnapshot;
+    expect(snapshot).toBeUndefined();
+    expect(compactedTokens).toBe(retainedTokens(session.messages));
+    expect(compactedTokens).toBeLessThan(88_000 - historyTokensBefore);
     expect(saved[1]?.messages).toEqual(session.messages);
-    expect(compactedTokens).toBeGreaterThan(80_000);
     expect(saved[1]?.options?.transcript?.map((item) => item.kind)).toEqual([
       "compacted",
     ]);

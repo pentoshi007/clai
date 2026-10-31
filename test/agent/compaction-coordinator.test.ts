@@ -234,7 +234,7 @@ it("re-arms once after success and admits a later estimate crossing", async () =
 });
 
 
-it("projects the post-compaction size from the provider measurement before releasing it", async () => {
+it("reports the compacted request estimate instead of projecting the discarded history's provider measurement", async () => {
   const liveMessages: ChatMessage[] = [
     { role: "system", content: "stable cache prefix" },
     ...messages().map((message) => ({
@@ -275,13 +275,13 @@ it("projects the post-compaction size from the provider measurement before relea
     "compact-test",
     expect.any(String),
     400_000,
-    10_000,
+    5_000,
     "provider-reported",
   );
   expect(providerMeasurement).toBeUndefined();
   expect(notify).toHaveBeenCalledWith(
     "info",
-    expect.stringContaining("400,000 tokens → ~10,000 tokens"),
+    expect.stringContaining("400,000 tokens → ~5,000 tokens"),
   );
 });
 

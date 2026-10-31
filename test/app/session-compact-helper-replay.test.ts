@@ -3,6 +3,7 @@ import { MIN_CUSTOM_CONTEXT_LIMIT_TOKENS } from "../../src/llm/context-windows.j
 import type { ChatMessage } from "../../src/types.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
 import { estimateMessagesTokens, isCompactionMemoryMessage } from "../../src/agent/context-manager.js";
+import { estimateToolSchemaTokens } from "../../src/agent/request-accounting.js";
 
 const complete = vi.fn();
 const stream = vi.fn();
@@ -317,5 +318,38 @@ describe("runSessionCompaction cache-preserving replay", () => {
         : 0;
     expect(afterTokens).toBeGreaterThan(0);
     expect(afterTokens).toBe(estimateMessagesTokens(committed[0]!));
+  });
+
+  it("reports the retained request after compaction instead of carrying the provider count of the discarded history", async () => {
+    stream.mockResolvedValueOnce(okResult());
+    const systemPrompt = { role: "system" as const, content: "agent system prompt ".repeat(2_000) };
+    const tools = [{ name: "fs.read", description: "read a file ".repeat(400), parameters: { type: "object", properties: { path: { type: "string" } } } }];
+    const history: ChatMessage[] = [
+      { role: "user", content: "screenshot review", images: [{ mediaType: "image/png", dataBase64: "", path: "/tmp/a.png" }] },
+      { role: "assistant", content: "reviewed ".repeat(20_000) },
+      { role: "user", content: "now compact" },
+    ];
+    const successfulRequest = { ...SNAPSHOT, messages: [systemPrompt, ...history.slice(0, -1)], tools };
+    const overhead = estimateMessagesTokens([systemPrompt]) + estimateToolSchemaTokens(tools);
+    const historyBefore = estimateMessagesTokens(history);
+    const providerReported = (overhead + historyBefore) * 3;
+    const events: AnyAppEvent[] = [];
+    const { options, committed } = harness(history);
+
+    await runSessionCompaction({
+      ...options,
+      successfulRequest,
+      requestTokensBefore: providerReported,
+      requestTokensBeforeMeasurement: "provider-reported",
+      persist: true,
+      emit: (event) => events.push(event),
+    });
+
+    const completed = events.find((event) => event.type === "compaction-completed");
+    expect(completed?.type === "compaction-completed" ? completed.payload : undefined).toMatchObject({
+      beforeTokens: providerReported,
+      afterTokens: estimateMessagesTokens(committed[0]!) + overhead,
+      contextScope: "assembled-request",
+    });
   });
 });
