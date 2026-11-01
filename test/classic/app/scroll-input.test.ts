@@ -63,22 +63,27 @@ describe("classic scrolling and keyboard focus", () => {
     expect(h!.wiring.composer.text).toBe("x");
   });
 
-  it("moves a whole wheel burst in the next paint without losing scroll distance or transcript content", async () => {
+  it("glides a wheel burst over consecutive paints without losing scroll distance or transcript content", async () => {
     vi.useFakeTimers();
     setup();
     const order = h!.services.transcript.getState().order;
+    const expected = Math.min(h!.wiring.maxLiveOffset, 20);
     const offsets: number[] = [];
     h!.wiring.subscribe(() => offsets.push(h!.wiring.getSnapshot().liveOffset));
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     expect(h!.wiring.liveOffsetValue).toBe(0);
-    await vi.advanceTimersByTimeAsync(75);
-    expect(offsets).toEqual([Math.min(h!.wiring.maxLiveOffset, 20)]);
+    await vi.advanceTimersByTimeAsync(500);
+    const moving = offsets.filter((offset, index) => offset !== (offsets[index - 1] ?? 0));
+    expect(moving.at(-1)).toBe(expected);
+    expect(moving.length).toBeGreaterThan(1);
+    expect(moving[0]).toBeLessThan(expected);
+    for (let index = 1; index < moving.length; index += 1) expect(moving[index]).toBeGreaterThan(moving[index - 1]!);
     expect(h!.wiring.wheel.active).toBe(false);
     expect(h!.services.transcript.getState().order).toBe(order);
     expect(h!.services.focus.activeContext()).toBe("composer");
   });
 
-  it("keeps a slow VM paint cadence from turning a gesture into a queue of paints", async () => {
+  it("keeps a slow background paint cadence from stretching or queueing a gesture", async () => {
     vi.useFakeTimers();
     setup();
     await vi.advanceTimersByTimeAsync(100);
@@ -87,12 +92,13 @@ describe("classic scrolling and keyboard focus", () => {
     const offsets: number[] = [];
     h!.wiring.subscribe(() => offsets.push(h!.wiring.getSnapshot().liveOffset));
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
-    await vi.advanceTimersByTimeAsync(34);
+    await vi.advanceTimersByTimeAsync(400);
     const expected = Math.min(h!.wiring.maxLiveOffset, 20);
-    expect(offsets).toEqual([expected]);
+    expect(offsets.at(-1)).toBe(expected);
     expect(h!.wiring.wheel.active).toBe(false);
+    const painted = offsets.length;
     await vi.advanceTimersByTimeAsync(500);
-    expect(new Set(offsets)).toEqual(new Set([expected]));
+    expect(new Set(offsets.slice(painted - 1))).toEqual(new Set([expected]));
   });
 
   it("discards the remaining gesture as soon as the transcript boundary is reached", async () => {
@@ -135,9 +141,11 @@ describe("classic scrolling and keyboard focus", () => {
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     await vi.advanceTimersByTimeAsync(20);
     const scrolled = h!.wiring.liveOffsetValue;
-    expect(scrolled).toBe(Math.min(h!.wiring.maxLiveOffset, 20));
+    expect(scrolled).toBeGreaterThan(0);
+    expect(h!.wiring.wheel.active).toBe(true);
     for (let i = 0; i < 5; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     h!.wiring.scrollFeed(-1);
+    expect(h!.wiring.wheel.active).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     expect(h!.wiring.liveOffsetValue).toBe(scrolled - 1);
   });

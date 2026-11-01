@@ -6,6 +6,7 @@ import {
   registerTranscriptScrollPort,
   transcriptScrollPort,
 } from "../../src/tui-v2/components/transcript/transcript-scroll-port.js";
+import { WHEEL_FRAME_MS } from "../../src/ui-core/motion/wheel-scroll.js";
 
 function stubFrames() {
   const requestFrame = vi.fn(() => 1);
@@ -19,16 +20,30 @@ function deliverInput(): Promise<void> {
 }
 
 function stubWheelScheduler() {
-  const callbacks = new Set<() => Promise<void>>();
+  const callbacks = new Set<(deltaTime: number) => Promise<void>>();
+  let now = performance.now();
+  vi.spyOn(performance, "now").mockImplementation(() => now);
   return {
     callbacks,
     requestRender: vi.fn(),
-    setFrameCallback: (callback: () => Promise<void>) => { callbacks.add(callback); },
-    removeFrameCallback: (callback: () => Promise<void>) => { callbacks.delete(callback); },
+    setFrameCallback: (callback: (deltaTime: number) => Promise<void>) => { callbacks.add(callback); },
+    removeFrameCallback: (callback: (deltaTime: number) => Promise<void>) => { callbacks.delete(callback); },
     async paint(): Promise<void> {
-      for (const callback of callbacks) await callback();
+      now += WHEEL_FRAME_MS;
+      for (const callback of callbacks) await callback(WHEEL_FRAME_MS);
     },
   };
+}
+
+async function paintUntilIdle(scheduler: ReturnType<typeof stubWheelScheduler>, scroll: { mock: { calls: unknown[][] } }): Promise<number[]> {
+  const steps: number[] = [];
+  for (let frame = 0; frame < 200; frame += 1) {
+    const before = scroll.mock.calls.length;
+    await scheduler.paint();
+    if (scroll.mock.calls.length === before) break;
+    steps.push(scroll.mock.calls.at(-1)![0] as number);
+  }
+  return steps;
 }
 
 describe("transcript scroll port", () => {
@@ -171,10 +186,10 @@ describe("transcript scroll port", () => {
     }
   });
 
-  it("coalesces separate SSH input chunks until the renderer is ready to paint", async () => {
+  it("glides separate SSH input chunks across renderer frames without losing distance", async () => {
     const scheduler = stubWheelScheduler();
     const { callbacks } = scheduler;
-    const scroll = vi.fn();
+    const scroll = vi.fn(() => true);
     const stop = registerTranscriptScrollPort(scroll, scheduler);
     try {
       for (let chunk = 0; chunk < 40; chunk += 1) {
@@ -182,19 +197,38 @@ describe("transcript scroll port", () => {
         await deliverInput();
       }
       expect(scroll).not.toHaveBeenCalled();
-      expect(scheduler.requestRender).toHaveBeenCalledTimes(1);
-      for (const callback of callbacks) await callback();
-      expect(scroll).toHaveBeenCalledExactlyOnceWith(-120);
-      for (const callback of callbacks) await callback();
-      expect(scroll).toHaveBeenCalledTimes(1);
+      expect(scheduler.requestRender).toHaveBeenCalled();
+      const requested = scheduler.requestRender.mock.calls.length;
+      const steps = await paintUntilIdle(scheduler, scroll);
+      expect(steps.reduce((sum, rows) => sum + rows, 0)).toBe(-120);
+      expect(steps.length).toBeGreaterThan(1);
+      expect(Math.abs(steps[0]!)).toBeLessThan(120);
+      for (let index = 1; index < steps.length; index += 1) {
+        expect(Math.abs(steps[index]!)).toBeLessThanOrEqual(Math.abs(steps[index - 1]!));
+      }
+      expect(scheduler.requestRender.mock.calls.length - requested).toBe(steps.length - 1);
       transcriptScrollPort.wheel(1);
-      expect(scheduler.requestRender).toHaveBeenCalledTimes(2);
-      for (const callback of callbacks) await callback();
+      await scheduler.paint();
       expect(scroll).toHaveBeenLastCalledWith(1);
     } finally {
       stop();
     }
     expect(callbacks.size).toBe(0);
+  });
+
+  it("ends the glide as soon as the transcript cannot move further", async () => {
+    const scheduler = stubWheelScheduler();
+    const scroll = vi.fn(() => false);
+    const stop = registerTranscriptScrollPort(scroll, scheduler);
+    try {
+      transcriptScrollPort.wheel(-60);
+      await scheduler.paint();
+      await scheduler.paint();
+      expect(scroll).toHaveBeenCalledTimes(1);
+      expect(scheduler.requestRender).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+    }
   });
 
   it.each([false, true])("discards orphaned input before a later mount with reused scheduler %s", async (reuse) => {
@@ -221,31 +255,48 @@ describe("transcript scroll port", () => {
 
   it("preserves frame-owned input through a synchronous handler replacement", async () => {
     const scheduler = stubWheelScheduler();
-    const first = vi.fn();
-    const next = vi.fn();
+    const first = vi.fn(() => true);
+    const next = vi.fn(() => true);
     const stopFirst = registerTranscriptScrollPort(first, scheduler);
     transcriptScrollPort.wheel(-20);
     stopFirst();
     const stopNext = registerTranscriptScrollPort(next, scheduler);
     try {
       await deliverInput();
-      await scheduler.paint();
+      const steps = await paintUntilIdle(scheduler, next);
       expect(first).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalledExactlyOnceWith(-20);
+      expect(steps.reduce((sum, rows) => sum + rows, 0)).toBe(-20);
       expect(scheduler.callbacks.size).toBe(1);
     } finally {
       stopNext();
     }
   });
 
-  it("nets out a reversal inside one input chunk", async () => {
+  it("drops the unfinished glide when the wheel reverses", async () => {
+    const scheduler = stubWheelScheduler();
+    const scroll = vi.fn(() => true);
+    const stop = registerTranscriptScrollPort(scroll, scheduler);
+    try {
+      transcriptScrollPort.wheel(-30);
+      await scheduler.paint();
+      const travelled = scroll.mock.calls.reduce((sum, [rows]) => sum + (rows as number), 0);
+      expect(travelled).toBeLessThan(0);
+      transcriptScrollPort.wheel(1);
+      const steps = await paintUntilIdle(scheduler, scroll);
+      expect(steps).toEqual([1]);
+    } finally {
+      stop();
+    }
+  });
+
+  it("applies a reversal inside one unscheduled input chunk in the newest direction", async () => {
     const calls: number[] = [];
-    const stop = registerTranscriptScrollPort((dy) => calls.push(dy));
+    const stop = registerTranscriptScrollPort((dy) => { calls.push(dy); });
     try {
       transcriptScrollPort.wheel(-3);
       transcriptScrollPort.wheel(1);
       await deliverInput();
-      expect(calls).toEqual([-2]);
+      expect(calls).toEqual([1]);
     } finally {
       stop();
     }

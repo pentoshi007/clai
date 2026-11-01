@@ -6,7 +6,7 @@ import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js
 import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-size.js";
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
 import { readBranchFromGitDir } from "./git-branch.js";
-import { applyWheelFeed } from "./wiring-feed-scroll.js";
+import { stepWheelFeed } from "./wiring-feed-scroll.js";
 import { nextPaintPacing, paintIntervalMs } from "./paint-pacing.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
@@ -246,9 +246,10 @@ export function schedulePaint(host: WiringHost, interactive = false): void {
     if (host.disposed) return;
     const startedAt = host.now();
     host.lastPaintAt = startedAt;
-    applyWheelFeed(host);
+    const gliding = stepWheelFeed(host);
     host.snapshot = buildSnapshot(host);
     for (const listener of host.listeners) listener();
+    if (gliding) host.schedulePaint(true);
     setImmediate(() => {
       if (!host.disposed) host.paintPacing = nextPaintPacing(host.paintPacing, host.now() - startedAt);
     });

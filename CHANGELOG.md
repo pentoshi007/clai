@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Smooth transcript scrolling
+
+- Glide wheel input on each renderer's own frame clock in Classic and OpenTUI. Motion now follows elapsed time instead of when input reports arrive, so bursty SSH input scrolls as continuous 60 fps motion instead of uneven multi-row jumps. Distance stays exact, single notches move exactly one row, reversals respond on the next frame, the glide stops at the transcript edges, and keyboard or jump navigation still cancels pending wheel input.
+- Keep OpenTUI's frame rate at its 60 fps cap when an animation-frame request starts live rendering while a frame is already scheduled. OpenTUI 0.4.5 started a second frame loop in that case, roughly doubling frames, CPU and terminal output during scrolling.
+- Keep the OpenTUI transcript moving while an older or newer window of items mounts, instead of holding the scroll position until the swap completes and then jumping.
+
 ## v5.1.5 — 2026-11-01
 
 ### Goals

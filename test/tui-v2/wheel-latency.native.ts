@@ -67,30 +67,44 @@ try {
   setRenderCountersEnabled(true);
   resetRenderCounts();
 
+  const glide = async (): Promise<number[]> => {
+    const steps: number[] = [];
+    for (let frame = 0; frame < 240; frame += 1) {
+      const before = sb.scrollTop;
+      await paint();
+      if (sb.scrollTop === before) break;
+      steps.push(sb.scrollTop - before);
+    }
+    return steps;
+  };
+
   const start = sb.scrollTop;
-  const before = await paint();
   await deliver(wheelReports(120, "up"));
-  const after = await paint();
-  assert.equal(sb.scrollTop, start - 120, "a burst delivered in one input chunk lands in the next paint");
-  assert.notEqual(after, before, "the burst paints its final position in a single frame");
-  assert.equal(await paint(), after, "no trailing motion follows the burst");
+  const burst = await glide();
+  assert.equal(sb.scrollTop, start - 120, "a burst travels exactly its wheel distance");
+  assert.ok(burst.length > 1, "a burst glides across frames instead of jumping in one");
+  assert.ok(burst.every((rows) => rows < 0), "the glide never moves against the wheel");
+  assert.ok(-burst[0]! < 120, "the first frame starts the glide without dumping the burst");
   assert.equal(animationFrames, 0, "wheel input never schedules animation frames");
   assert.equal(readRenderCounts().get("TranscriptRow") ?? 0, 0, "scrolling reuses unchanged transcript rows");
 
-  const sparseStart = sb.scrollTop;
   for (let notch = 0; notch < 5; notch += 1) {
+    const before = sb.scrollTop;
     await deliver(wheelReports(1, "up"));
     await paint();
-    assert.equal(sb.scrollTop, sparseStart - notch - 1, "each painted notch moves exactly one row");
+    assert.equal(sb.scrollTop, before - 1, "each isolated notch moves exactly one row on the next frame");
+    assert.deepEqual(await glide(), [], "an isolated notch leaves no trailing motion");
   }
 
+  const glideStart = sb.scrollTop;
+  await deliver(wheelReports(30, "up"));
+  await paint();
   const reversedAt = sb.scrollTop;
+  assert.ok(reversedAt < glideStart && reversedAt > glideStart - 30, "the reversal interrupts a glide in progress");
   await deliver(wheelReports(1, "down"));
   await paint();
-  assert.equal(sb.scrollTop, reversedAt + 1, "a reversal responds on the next painted frame");
-  await deliver(wheelReports(3, "up") + wheelReports(1, "down"));
-  await paint();
-  assert.equal(sb.scrollTop, reversedAt - 1, "opposite reports in one chunk net out");
+  assert.equal(sb.scrollTop, reversedAt + 1, "a reversal responds on the next frame");
+  assert.deepEqual(await glide(), [], "a reversal drops the unfinished glide");
 
   await act(async () => {
     transcriptScrollPort.wheel(-120);
@@ -101,7 +115,7 @@ try {
   assert.equal(sb.scrollTop, sb.scrollHeight - sb.viewport.height, "jump-to-latest discards pending wheel input");
   assert.equal(services.transcript.getState().order, order);
   assert.equal(order.length, 1);
-  console.log("Native wheel latency passed: burst_frames=1 animation_frames=0 row_rerenders=0");
+  console.log(`Native wheel latency passed: glide_frames=${burst.length} animation_frames=0 row_rerenders=0`);
 } finally {
   transcriptScrollPort.stopWheel();
   setRenderCountersEnabled(false);
