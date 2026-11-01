@@ -65,9 +65,10 @@ for (const width of [120, 40]) {
           if (status === "failed") assert.match(frame, /Image not found/);
           if (status === "blocked") assert.match(frame, /Image access denied/);
           assert.equal(services.session.spool.tail(item.toolCallId), body);
+          assert.ok(!frame.includes('"paths"'), `raw image args leaked into the card\n${frame}`);
           if (width === 120) {
-            assert.ok(frame.includes(paths[0]!), frame);
-            if (multiple) assert.ok(frame.includes(paths[1]!), frame);
+            assert.match(frame, multiple ? /image 1\/2: screenshots\/before\.png/ : /image: screenshots\/before\.png/, frame);
+            if (multiple) assert.match(frame, /image 2\/2: screenshots\/after\.png/, frame);
           }
           const lines = frame.split("\n");
           const row = lines.findIndex((line) => line.includes(expanded ? "image.view" : "click to open pager"));
@@ -90,6 +91,41 @@ for (const width of [120, 40]) {
         }
       }
     }
+  }
+}
+{
+  const services = createCompositionRoot({
+    noHistory: true,
+    persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: 100, rows: 40 }),
+  });
+  const item: ToolItem = {
+    id: "ocr-card", sequence: 1, turnId: asTurnId("turn-1"), timestamp: 0, kind: "tool", toolCallId: asToolCallId("call-ocr"),
+    name: "image.ocr", argsDisplay: formatToolArgs({ name: "image.ocr", args: { path: "shots/ocr.png", lang: "eng", psm: 6 } }),
+    status: "ok", exitCode: 0, summary: undefined, artifactPath: undefined, reason: undefined,
+    outputBytes: 0, fileChanges: undefined,
+  };
+  services.session.spool.replace(item.toolCallId, "[image.ocr shots/ocr.png — psm 6, confidence 91%]\nINVOICE TOTAL 42\n");
+  const setup = await testRender(createElement(ServicesProvider, {
+    services,
+    children: createElement(TerminalDimensionsContext.Provider, {
+      value: { width: 100, height: 40 },
+      children: createElement(ToolCard, {
+        item, theme: themeFor(services.capabilities.themeHint), spool: services.session.spool,
+        expanded: false, services, onToggle() {}, contentWidth: 100,
+      }),
+    }),
+  }), { width: 100, height: 40, useThread: false, useMouse: true });
+  try {
+    await act(async () => { await setup.flush(); });
+    const frame = setup.captureCharFrame();
+    assert.match(frame, /image: shots\/ocr\.png/, frame);
+    assert.ok(!frame.includes('"path"'), `raw OCR args leaked into the card\n${frame}`);
+    assert.match(frame, /INVOICE TOTAL 42/, frame);
+    if (process.env.CLAI_IMAGE_CARD_CAPTURE) captures.push(frame);
+  } finally {
+    await act(async () => { services.dispose(); setup.renderer.destroy(); });
+    await setup.renderer.idle();
   }
 }
 const capturePath = process.env.CLAI_IMAGE_CARD_CAPTURE;

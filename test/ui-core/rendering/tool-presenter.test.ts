@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { asToolCallId } from "../../../src/app/events/app-event.js";
+import { formatToolArgs } from "../../../src/agent/tool-call-parser.js";
 import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 import {
   cleanToolOutputLines,
   presentFsReadArgs,
+  presentImageArgs,
   presentOutput,
   presentTool,
   toolStatusText,
@@ -99,6 +101,35 @@ describe("presentTool (CHAT-004)", () => {
       path: "src/app.ts",
       options: "lines=1–8",
     });
+  });
+
+  it("lists every viewed image with its own path", () => {
+    const args = formatToolArgs({ name: "image.view", args: { paths: ["shots/before.png", "shots/after.png"] } });
+    expect(presentImageArgs(args)).toEqual({
+      path: "2 images",
+      options: undefined,
+      images: [
+        { path: "shots/before.png", options: undefined },
+        { path: "shots/after.png", options: undefined },
+      ],
+    });
+    expect(presentImageArgs(formatToolArgs({ name: "image.view", args: { paths: ["shots/only.png"] } }))).toEqual({
+      path: "1 image",
+      options: undefined,
+      images: [{ path: "shots/only.png", options: undefined }],
+    });
+  });
+
+  it("keeps a single image path and its OCR options", () => {
+    expect(presentImageArgs(formatToolArgs({ name: "image.ocr", args: { path: "/tmp/shot.png", lang: "eng" } })))
+      .toEqual({ path: "/tmp/shot.png", options: undefined });
+    expect(presentImageArgs(JSON.stringify({ path: "/tmp/shot.png", lang: "eng", psm: 6 })))
+      .toEqual({ path: "/tmp/shot.png", options: 'lang="eng" · psm=6' });
+  });
+
+  it("falls back to the raw input when image args are not JSON", () => {
+    expect(presentImageArgs("shots/before.png")).toEqual({ path: "shots/before.png", options: undefined });
+    expect(presentImageArgs(undefined)).toEqual({ path: "", options: undefined });
   });
 
   it("titles fs.edit with basename and hides JSON args", () => {

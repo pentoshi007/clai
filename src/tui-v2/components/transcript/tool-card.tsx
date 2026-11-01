@@ -18,11 +18,13 @@ import {
 import {
   boundArgsRows,
   presentFsReadArgs,
+  presentImageArgs,
   collapseOutputLines,
   presentOutput,
   presentTool,
   toolStatusText,
   toolOutputGapLabel,
+  type PathArgsRow,
 } from "../../../ui-core/rendering/tool-presenter.js";
 import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
 import {
@@ -212,6 +214,68 @@ function BatchSubCard(props: {
   );
 }
 
+interface ArgsPathRow {
+  readonly label: string;
+  readonly path: string;
+  readonly options?: string | undefined;
+  readonly ok?: boolean | undefined;
+}
+
+function buildArgsPathRows(
+  entries: readonly PathArgsRow[],
+  noun: string,
+  numbered: boolean,
+  outcomes: readonly (boolean | undefined)[] = [],
+): readonly ArgsPathRow[] {
+  return entries.map((entry, index) => ({
+    label: numbered ? `${noun} ${index + 1}/${entries.length}` : noun,
+    path: entry.path,
+    options: entry.options,
+    ok: outcomes[index],
+  }));
+}
+
+function ArgsPathRows(props: {
+  rows: readonly ArgsPathRow[];
+  theme: Theme;
+  contentWidth: number;
+}): ReactNode {
+  const { rows, theme, contentWidth } = props;
+  return (
+    <box style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
+      {rows.map((row, index) => {
+        const glyph = row.ok === undefined ? "" : `${row.ok ? "✓" : "✗"} `;
+        const pathBudget = Math.max(0, contentWidth - renderColumns(`${row.label}: ${glyph}`));
+        const path = middleClipText(row.path, pathBudget);
+        const options = row.options ? middleClipText(row.options, Math.max(1, contentWidth - 9) * 2) : undefined;
+        const pathFg = row.ok === false ? theme.diffDel : theme.inputBorder;
+        return (
+          <box key={index} style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
+            {options ? (
+              <box style={{ flexDirection: "row", width: "100%" }}>
+                <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>options: </text>
+                <text selectable style={{ fg: theme.inputBorder, flexShrink: 1, minWidth: 0 }}>{options}</text>
+              </box>
+            ) : null}
+            {row.path ? (
+              <box style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, overflow: "hidden" }}>
+                <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>{`${row.label}: ${glyph}`}</text>
+                <box style={{ width: pathBudget, height: 1, flexShrink: 1, minWidth: 0, overflow: "hidden" }}>
+                  {path === row.path ? (
+                    <LinkableText text={path} theme={theme} fg={pathFg} selectable wrapMode="none" />
+                  ) : (
+                    <text selectable wrapMode="none" style={{ fg: pathFg, height: 1 }}>{path}</text>
+                  )}
+                </box>
+              </box>
+            ) : null}
+          </box>
+        );
+      })}
+    </box>
+  );
+}
+
 export function ToolCard(props: {
   item: ToolItem;
   theme: Theme;
@@ -238,8 +302,10 @@ export function ToolCard(props: {
     presentTool(item);
   const statusText = toolStatusText(statusLabel);
   const isFsRead = item.name === "fs.read";
+  const isImageTool = item.name === "image.view" || item.name === "image.ocr";
   const isPagerOnly = isFsRead || item.name === "image.view";
   const fsReadArgs = useMemo(() => isFsRead ? presentFsReadArgs(item.argsDisplay) : undefined, [isFsRead, item.argsDisplay]);
+  const imageArgs = useMemo(() => isImageTool ? presentImageArgs(item.argsDisplay) : undefined, [isImageTool, item.argsDisplay]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (item.status !== "running") return;
@@ -249,6 +315,16 @@ export function ToolCard(props: {
   const elapsedLabel = toolElapsedLabel(item, now);
   const tail = spool.tail(item.toolCallId);
   const fsReadSections = useMemo(() => fsReadArgs?.files ? parseFsReadSections(tail) : [], [fsReadArgs, tail]);
+  const pathArgsRows = useMemo((): readonly ArgsPathRow[] | undefined => {
+    if (fsReadArgs) {
+      const files = fsReadArgs.files ?? [fsReadArgs];
+      const outcomes = files.map((_, index) => fsReadSections.find((section) => section.index === index + 1)?.ok);
+      return buildArgsPathRows(files, "file", Boolean(fsReadArgs.files), outcomes);
+    }
+    if (!imageArgs) return undefined;
+    const images = imageArgs.images ?? [imageArgs];
+    return buildArgsPathRows(images, "image", images.length > 1);
+  }, [fsReadArgs, fsReadSections, imageArgs]);
   const fileChanges = item.fileChanges;
   const fileChangeStats = fileChangeLineStats(fileChanges);
   const isWriteMany = item.name === "fs.writeMany";
@@ -569,39 +645,8 @@ export function ToolCard(props: {
         ) : null}
       </box>
 
-      {isFsRead ? (
-        <box style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
-          {(fsReadArgs?.files ?? (fsReadArgs ? [fsReadArgs] : [])).map((file, index, files) => {
-            const section = fsReadSections.find((entry) => entry.index === index + 1);
-            const glyph = section ? `${section.ok ? "✓" : "✗"} ` : "";
-            const label = fsReadArgs?.files ? `file ${index + 1}/${files.length}` : "file";
-            const pathBudget = Math.max(0, cardInnerWidth - renderColumns(`${label}: ${glyph}`));
-            const path = middleClipText(file.path, pathBudget);
-            const options = file.options ? middleClipText(file.options, Math.max(1, cardInnerWidth - 9) * 2) : undefined;
-            return (
-              <box key={index} style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
-                {options ? (
-                  <box style={{ flexDirection: "row", width: "100%" }}>
-                    <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>options: </text>
-                    <text selectable style={{ fg: theme.inputBorder, flexShrink: 1, minWidth: 0 }}>{options}</text>
-                  </box>
-                ) : null}
-                {file.path ? (
-                  <box style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, overflow: "hidden" }}>
-                    <text selectable style={{ fg: theme.muted, flexShrink: 0 }}>{`${label}: ${glyph}`}</text>
-                    <box style={{ width: pathBudget, height: 1, flexShrink: 1, minWidth: 0, overflow: "hidden" }}>
-                      {path === file.path ? (
-                        <LinkableText text={path} theme={theme} fg={section?.ok === false ? theme.diffDel : theme.inputBorder} selectable wrapMode="none" />
-                      ) : (
-                        <text selectable wrapMode="none" style={{ fg: section?.ok === false ? theme.diffDel : theme.inputBorder, height: 1 }}>{path}</text>
-                      )}
-                    </box>
-                  </box>
-                ) : null}
-              </box>
-            );
-          })}
-        </box>
+      {pathArgsRows ? (
+        <ArgsPathRows rows={pathArgsRows} theme={theme} contentWidth={cardInnerWidth} />
       ) : argsDisplay && argsLabel ? (
         <box
           style={{

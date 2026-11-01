@@ -143,34 +143,50 @@ export function boundArgsRows(
   return rows.join("\n");
 }
 
-export interface FsReadArgsPresentation {
+export interface PathArgsRow {
   readonly path: string;
   readonly options: string | undefined;
-  readonly files?: readonly FsReadArgsPresentation[];
 }
 
-function presentFsReadFile(parsed: Record<string, unknown>): FsReadArgsPresentation | undefined {
-  if (typeof parsed.path !== "string") return undefined;
+export interface FsReadArgsPresentation extends PathArgsRow {
+  readonly files?: readonly PathArgsRow[];
+}
+
+export interface ImageArgsPresentation extends PathArgsRow {
+  readonly images?: readonly PathArgsRow[];
+}
+
+function pathOptions(parsed: Record<string, unknown>): string | undefined {
   const options = Object.entries(parsed)
     .filter(([key, value]) => key !== "path" && value !== undefined)
     .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
     .join(" · ");
-  return { path: sanitizeDisplayText(parsed.path), options: options ? sanitizeDisplayText(options) : undefined };
+  return options ? sanitizeDisplayText(options) : undefined;
 }
 
-function optionsFromFsReadJson(raw: string): FsReadArgsPresentation | undefined {
+function presentPathRow(entry: unknown): PathArgsRow | undefined {
+  if (typeof entry === "string") return { path: sanitizeDisplayText(entry), options: undefined };
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+  const parsed = entry as Record<string, unknown>;
+  if (typeof parsed.path !== "string") return undefined;
+  return { path: sanitizeDisplayText(parsed.path), options: pathOptions(parsed) };
+}
+
+function pathArgsRows(list: readonly unknown[]): readonly PathArgsRow[] {
+  return list.slice(0, MAX_FS_READ_FILES).flatMap((entry) => presentPathRow(entry) ?? []);
+}
+
+function pathArgsLabel(list: readonly unknown[], noun: string): string {
+  return `${list.length} ${noun}${list.length === 1 ? "" : "s"}`;
+}
+
+function parsePathArgs(raw: string): Record<string, unknown> | undefined {
   if (!raw.startsWith("{")) return undefined;
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (Array.isArray(parsed.files)) {
-      const files = parsed.files.slice(0, MAX_FS_READ_FILES).flatMap((file) => {
-        if (!file || typeof file !== "object" || Array.isArray(file)) return [];
-        const presented = presentFsReadFile(file as Record<string, unknown>);
-        return presented ? [presented] : [];
-      });
-      return { path: `${parsed.files.length} file${parsed.files.length === 1 ? "" : "s"}`, options: undefined, files };
-    }
-    return presentFsReadFile(parsed);
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined;
   } catch {
     return undefined;
   }
@@ -179,13 +195,28 @@ function optionsFromFsReadJson(raw: string): FsReadArgsPresentation | undefined 
 export function presentFsReadArgs(raw: string | undefined): FsReadArgsPresentation {
   const value = (raw ?? "").trim();
   if (!value) return { path: "", options: undefined };
-  const json = optionsFromFsReadJson(value);
-  if (json) return json;
+  const parsed = parsePathArgs(value);
+  if (parsed && Array.isArray(parsed.files)) {
+    return { path: pathArgsLabel(parsed.files, "file"), options: undefined, files: pathArgsRows(parsed.files) };
+  }
+  const single = parsed ? presentPathRow(parsed) : undefined;
+  if (single) return single;
   const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length > 1) return { path: lines[0]!, options: lines.slice(1).join(" · ") };
   const legacy = /^(.*?)\s{2}lines\s+(.+)$/.exec(lines[0]!);
   if (legacy) return { path: legacy[1]!, options: `lines=${legacy[2]}` };
   return { path: lines[0]!, options: undefined };
+}
+
+export function presentImageArgs(raw: string | undefined): ImageArgsPresentation {
+  const value = (raw ?? "").trim();
+  if (!value) return { path: "", options: undefined };
+  const parsed = parsePathArgs(value);
+  if (parsed && Array.isArray(parsed.paths)) {
+    return { path: pathArgsLabel(parsed.paths, "image"), options: undefined, images: pathArgsRows(parsed.paths) };
+  }
+  const single = parsed ? presentPathRow(parsed) : undefined;
+  return single ?? { path: sanitizeDisplayText(value), options: undefined };
 }
 
 function fileToolPath(item: ToolItem): string {

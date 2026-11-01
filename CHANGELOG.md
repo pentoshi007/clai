@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## v5.1.6 — 2026-11-01
+
+### Image tool cards
+
+- Show `image.view` and `image.ocr` calls as one row per image with its path (`image 1/2: shots/before.png`) in OpenTUI, matching `fs.read` cards, instead of dumping the raw `{"paths": […]}` arguments. Paths that exceed the card width are middle-clipped with the filename intact, OCR options stay on their own line when the input carries them, and the pager header lists every image the call opened so the full input remains recoverable.
 
 ### Smooth transcript scrolling
 

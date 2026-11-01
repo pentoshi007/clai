@@ -15,7 +15,7 @@ import { formatModalPlainText } from "./file-diff-view.js";
 import { defaultPagerMarkdownMode } from "./pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "./pager-source.js";
 import { pagerCommandTone, type PagerBodyRegions } from "./pager-regions.js";
-import { presentFsReadArgs } from "./tool-presenter.js";
+import { presentFsReadArgs, presentImageArgs } from "./tool-presenter.js";
 import { createToolOutputPagerSource } from "./tool-output-pager-source.js";
 
 interface SearchHit {
@@ -93,6 +93,11 @@ export function cleanArgsLabel(
   const raw = (argsDisplay ?? "").trim();
   if (!raw) return "";
   if (name === "fs.read") return clip(presentFsReadArgs(raw).path);
+  if (name === "image.view" || name === "image.ocr") {
+    const args = presentImageArgs(raw);
+    const images = args.images?.map((image) => image.path);
+    return clip(images ? [args.path, ...images].join(" · ") : args.path);
+  }
   if (!raw.startsWith("{")) {
     return clip(raw);
   }
@@ -119,6 +124,14 @@ export function cleanArgsLabel(
   }
   void name;
   return clip(raw);
+}
+
+function toolArgsHeaderKind(name: string, openedSourceFile: boolean): string {
+  if (name === "shell.exec") return "command";
+  if (openedSourceFile) return "file";
+  if (name.startsWith("fs.")) return "path";
+  if (name.startsWith("image.")) return "image";
+  return "query";
 }
 
 export function pathFromArgsDisplay(argsDisplay: string | undefined): string | undefined {
@@ -392,14 +405,7 @@ export async function openToolOutputPager(
     if (options.bodyOverride === undefined) {
       const label = cleanArgsLabel(item.name, item.argsDisplay);
       if (label) {
-        const kind =
-          item.name === "shell.exec"
-            ? "command"
-            : openedSourceFile
-              ? "file"
-              : item.name.startsWith("fs.")
-                ? "path"
-                : "query";
+        const kind = toolArgsHeaderKind(item.name, openedSourceFile);
         header = `${kind}: ${label}\n\n`;
         headerLines = header.split("\n").length - 1;
         if (kind === "command") commandLines = headerLines - 1;
