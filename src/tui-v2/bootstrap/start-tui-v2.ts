@@ -33,6 +33,7 @@ import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { installTerminalRescue } from "../../os/terminal-rescue.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
+import { patchOpenTuiFrameLoop } from "./patch-opentui-frame-loop.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { patchOpenTuiSelection } from "./patch-opentui-selection.js";
 import { patchOpenTuiWheelScroll } from "./patch-opentui-wheel.js";
@@ -71,6 +72,7 @@ export async function startTuiV2(
   patchOpenTuiTextContent();
   patchOpenTuiSelection();
   patchOpenTuiWheelScroll();
+  patchOpenTuiFrameLoop();
   setAllowInteractiveStdinInherit(false);
   const startedAt = Date.now();
   let forwardConsoleCapture: ((level: string, message: string) => void) | undefined;

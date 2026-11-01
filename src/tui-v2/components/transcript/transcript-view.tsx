@@ -529,28 +529,31 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     sb.horizontalScrollBar.visible = false;
   }, [itemCount, introWidth]);
 
-  function scrollMainBy(dy: number): void {
-    if (!Number.isFinite(dy) || dy === 0) return;
+  function scrollMainBy(dy: number): boolean {
+    if (!Number.isFinite(dy) || dy === 0) return false;
     if (dy < 0) setFollowing(false);
     clearNativeSelection();
     const sb = scrollRef.current;
-    if (!sb) return;
-    const pending = pendingWindowJump.current;
-    if (windowShiftPending.current && pending?.kind === "anchor") {
-      pendingWindowJump.current = { ...pending, delta: pending.delta + dy };
-      return;
-    }
+    if (!sb) return false;
     const intent = resolveTranscriptScrollIntent(
       sb.scrollTop,
       maxScrollTop(sb),
       dy,
     );
-    if (intent.reachedOlderEdge && showOlderWindow(sb, dy)) return;
-    if (intent.reachedNewerEdge && showNewerWindow(sb, dy)) return;
+    const pending = pendingWindowJump.current;
+    if (windowShiftPending.current && pending?.kind === "anchor") {
+      pendingWindowJump.current = { ...pending, delta: pending.delta + dy };
+      sb.scrollTo(intent.nextScrollTop);
+      return true;
+    }
+    if (intent.reachedOlderEdge && showOlderWindow(sb, dy)) return true;
+    if (intent.reachedNewerEdge && showNewerWindow(sb, dy)) return true;
+    const moved = intent.nextScrollTop !== sb.scrollTop;
     sb.scrollTo(intent.nextScrollTop);
     if (!intent.leaveTail) updateFollowingFromPosition(intent.atBottom);
     publishScrollRemainder(sb, mountWindow.newerCount > 0);
     prefetchWindow(sb, dy);
+    return moved;
   }
 
   function prefetchWindow(sb: ScrollBoxRenderable, dy: number): void {

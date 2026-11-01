@@ -40,10 +40,15 @@ const wheelBurst = async (dy: number): Promise<void> => {
   await act(async () => {
     setup.renderer.stdin.emit("data", Buffer.from(report.repeat(Math.abs(dy))));
     await Promise.resolve();
-    await setup.renderOnce();
-    await setup.renderOnce();
   });
-  record();
+  let previous: string | undefined;
+  for (let frame = 0; frame < 240; frame += 1) {
+    await act(async () => { await setup.renderOnce(); });
+    record();
+    const current = setup.captureCharFrame();
+    if (current === previous) break;
+    previous = current;
+  }
 };
 const traverse = async (move: (dy: number) => Promise<void>, rows: number, label: string): Promise<void> => {
   seen.clear();

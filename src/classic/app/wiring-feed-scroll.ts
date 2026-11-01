@@ -27,8 +27,10 @@ export function scrollFeed(host: WiringHost, delta: number): void {
   host.schedulePaint(true);
 }
 
-export function applyWheelFeed(host: WiringHost): void {
-  if (host.wheel.active) moveFeed(host, host.wheel.take());
+export function stepWheelFeed(host: WiringHost): boolean {
+  if (!host.wheel.active) return false;
+  if (!moveFeed(host, host.wheel.step(host.now()))) host.wheel.stop();
+  return host.wheel.active;
 }
 
 export function showTranscriptTopHint(host: WiringHost): void {

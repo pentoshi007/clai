@@ -5,6 +5,7 @@ import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { resolveOpenTuiCapabilities } from "../../ui-core/bootstrap/capabilities.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
+import { patchOpenTuiFrameLoop } from "./patch-opentui-frame-loop.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { patchOpenTuiSelection } from "./patch-opentui-selection.js";
 import { patchOpenTuiWheelScroll } from "./patch-opentui-wheel.js";
@@ -24,6 +25,7 @@ export async function mountOpenTuiRuntimeView(
   patchOpenTuiTextContent();
   patchOpenTuiSelection();
   patchOpenTuiWheelScroll();
+  patchOpenTuiFrameLoop();
   let finalized = (): void => {};
   const destroyed = new Promise<void>((resolve) => { finalized = resolve; });
   const renderer = await createCliRenderer({
