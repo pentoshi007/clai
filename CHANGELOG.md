@@ -14,6 +14,10 @@
 
 - Report the size of the compacted request right after `/compact` and automatic compaction. Previously the context indicator kept the provider count of the discarded history, so it could show several times the real size until the next request corrected it.
 
+### Smooth scrolling over SSH
+
+- Paint all wheel input received before a frame in that frame, in Classic and OpenTUI. The previous 50 ms glide spread each burst over several full-screen repaints, and in OpenTUI the first notch of every burst repainted on its own, bypassing the 60 fps cap. On remote terminals this doubled the output per scrolled row, so frames queued behind the connection and scrolling trailed the wheel. With a 120×40 terminal, OpenTUI now writes about half the bytes for the same scroll, and the delay after the last wheel event on a 250 KB/s link drops from about 3.3 s to 0.13 s. Single notches still move exactly one row, and every transcript item stays reachable in both directions.
+
 ## v5.1.4 — 2026-10-26
 
 ### Settings and output retention

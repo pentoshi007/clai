@@ -63,7 +63,7 @@ describe("classic scrolling and keyboard focus", () => {
     expect(h!.wiring.composer.text).toBe("x");
   });
 
-  it("glides a wheel burst across paints without losing scroll distance or transcript content", async () => {
+  it("moves a whole wheel burst in the next paint without losing scroll distance or transcript content", async () => {
     vi.useFakeTimers();
     setup();
     const order = h!.services.transcript.getState().order;
@@ -72,17 +72,13 @@ describe("classic scrolling and keyboard focus", () => {
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     expect(h!.wiring.liveOffsetValue).toBe(0);
     await vi.advanceTimersByTimeAsync(75);
-    const expected = Math.min(h!.wiring.maxLiveOffset, 20);
-    const steps = offsets.map((offset, i) => offset - (offsets[i - 1] ?? 0));
-    expect(offsets.at(-1)).toBe(expected);
+    expect(offsets).toEqual([Math.min(h!.wiring.maxLiveOffset, 20)]);
     expect(h!.wiring.wheel.active).toBe(false);
-    expect(steps.filter((step) => step > 0).length).toBeGreaterThan(1);
-    expect(steps.every((step) => step >= 0 && step <= 8)).toBe(true);
     expect(h!.services.transcript.getState().order).toBe(order);
     expect(h!.services.focus.activeContext()).toBe("composer");
   });
 
-  it("keeps a slow VM paint cadence from turning a gesture into a long queue", async () => {
+  it("keeps a slow VM paint cadence from turning a gesture into a queue of paints", async () => {
     vi.useFakeTimers();
     setup();
     await vi.advanceTimersByTimeAsync(100);
@@ -92,12 +88,11 @@ describe("classic scrolling and keyboard focus", () => {
     h!.wiring.subscribe(() => offsets.push(h!.wiring.getSnapshot().liveOffset));
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     await vi.advanceTimersByTimeAsync(34);
-    expect(h!.wiring.liveOffsetValue).toBeGreaterThan(2);
-    expect(h!.wiring.liveOffsetValue).toBeLessThan(20);
-    await vi.advanceTimersByTimeAsync(50);
-    expect(h!.wiring.liveOffsetValue).toBe(Math.min(h!.wiring.maxLiveOffset, 20));
+    const expected = Math.min(h!.wiring.maxLiveOffset, 20);
+    expect(offsets).toEqual([expected]);
     expect(h!.wiring.wheel.active).toBe(false);
-    expect(offsets.length).toBeLessThanOrEqual(3);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(new Set(offsets)).toEqual(new Set([expected]));
   });
 
   it("discards the remaining gesture as soon as the transcript boundary is reached", async () => {
@@ -134,16 +129,17 @@ describe("classic scrolling and keyboard focus", () => {
     expect(read).toHaveBeenCalled();
   });
 
-  it("cancels a wheel glide when the keyboard scrolls", async () => {
+  it("lets keyboard scrolling replace wheel input that has not been painted yet", async () => {
     vi.useFakeTimers();
     setup();
     for (let i = 0; i < 20; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     await vi.advanceTimersByTimeAsync(20);
-    const glided = h!.wiring.liveOffsetValue;
-    expect(glided).toBeGreaterThan(0);
+    const scrolled = h!.wiring.liveOffsetValue;
+    expect(scrolled).toBe(Math.min(h!.wiring.maxLiveOffset, 20));
+    for (let i = 0; i < 5; i += 1) h!.wiring.handleMouse(mouse(1, 1, { scroll: "up" }));
     h!.wiring.scrollFeed(-1);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(h!.wiring.liveOffsetValue).toBe(glided - 1);
+    expect(h!.wiring.liveOffsetValue).toBe(scrolled - 1);
   });
 
   it("does not re-layout a long unchanged composer for scroll-only frames", async () => {

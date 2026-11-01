@@ -1,79 +1,58 @@
 import { describe, expect, it } from "vitest";
 import { WheelScroll } from "../../../src/ui-core/motion/wheel-scroll.js";
 
-function drain(wheel: WheelScroll): number[] {
-  const steps: number[] = [];
-  while (wheel.active) steps.push(wheel.step());
-  return steps;
-}
-
-describe("wheel scroll motion", () => {
-  it("moves an isolated notch in one frame with no idle work", () => {
+describe("wheel scroll input", () => {
+  it("moves an isolated notch exactly one row with no idle work", () => {
     const wheel = new WheelScroll();
     wheel.push(1);
-    expect(drain(wheel)).toEqual([1]);
+    expect(wheel.take()).toBe(1);
     expect(wheel.active).toBe(false);
-    expect(wheel.step()).toBe(0);
+    expect(wheel.take()).toBe(0);
     wheel.push(-1);
-    expect(drain(wheel)).toEqual([-1]);
+    expect(wheel.take()).toBe(-1);
   });
 
-  it("preserves the distance of dense trackpad streams", () => {
+  it("delivers a whole burst in the next step instead of replaying it over later frames", () => {
+    const wheel = new WheelScroll();
+    for (let index = 0; index < 120; index += 1) wheel.push(-1);
+    expect(wheel.take()).toBe(-120);
+    expect(wheel.active).toBe(false);
+  });
+
+  it("preserves the distance of dense trackpad streams at any frame cadence", () => {
     const wheel = new WheelScroll();
     let travelled = 0;
     for (let index = 1; index <= 40; index += 1) {
       wheel.push(1);
-      if (index % 2 === 0) travelled += wheel.step();
+      if (index % 3 === 0) travelled += wheel.take();
     }
-    travelled += drain(wheel).reduce((sum, rows) => sum + rows, 0);
+    travelled += wheel.take();
     expect(travelled).toBe(40);
   });
 
-  it("keeps steady-stream steps within two rows", () => {
+  it("nets out a reversal that arrives before the next frame", () => {
     const wheel = new WheelScroll();
-    const steps: number[] = [];
-    for (let frame = 0; frame < 60; frame += 1) {
-      wheel.push(2);
-      steps.push(wheel.step());
-    }
-    steps.push(...drain(wheel));
-    expect(Math.max(...steps)).toBeLessThanOrEqual(2);
-    expect(steps.reduce((sum, rows) => sum + rows, 0)).toBe(120);
-  });
-
-  it("drops the remaining glide when the direction reverses", () => {
-    const wheel = new WheelScroll();
-    wheel.push(10);
-    expect(wheel.step()).toBe(2);
+    wheel.push(3);
     wheel.push(-1);
-    expect(drain(wheel)).toEqual([-1]);
-  });
-
-  it("spreads a large coalesced event evenly over a short glide without losing rows", () => {
-    const wheel = new WheelScroll();
-    wheel.push(-120, 0);
-    const steps = [wheel.step(17), wheel.step(34), wheel.step(51)];
-    expect(steps).toEqual([-41, -41, -38]);
-    expect(steps.reduce((sum, rows) => sum + rows, 0)).toBe(-120);
+    expect(wheel.take()).toBe(2);
+    wheel.push(-2);
+    wheel.push(2);
     expect(wheel.active).toBe(false);
+    expect(wheel.take()).toBe(0);
   });
 
-  it("travels every row of a burst and stops on demand", () => {
+  it("discards pending input on demand", () => {
     const wheel = new WheelScroll();
-    for (let index = 0; index < 20; index += 1) wheel.push(-1);
-    const steps = drain(wheel);
-    expect(steps.reduce((sum, rows) => sum + rows, 0)).toBe(-20);
-    expect(steps.every(rows => Math.abs(rows) <= 2)).toBe(true);
-    wheel.push(1);
+    wheel.push(20);
     wheel.stop();
     expect(wheel.active).toBe(false);
-    expect(wheel.step()).toBe(0);
+    expect(wheel.take()).toBe(0);
   });
 
-  it("ignores zero input without interrupting a glide", () => {
+  it("ignores zero and invalid deltas without disturbing pending input", () => {
     const wheel = new WheelScroll();
     wheel.push(5);
-    wheel.push(0);
-    expect(drain(wheel).reduce((sum, rows) => sum + rows, 0)).toBe(5);
+    for (const value of [0, NaN, Infinity, -Infinity]) wheel.push(value);
+    expect(wheel.take()).toBe(5);
   });
 });

@@ -92,7 +92,7 @@ for (const [width, height] of [[180, 50], [180, 51], [140, 40], [140, 41], [92, 
       });
       assertBottom("idle-wheel-restart");
       assert.equal(transcriptScrollPort.metrics.linesBelow, 0);
-      assert.equal(frameId, -105, "a settled bottom needs no extra pin frames");
+      assert.equal(frameId, -100, "wheel input at a settled bottom requests no animation or pin frames");
     } finally {
       globalThis.requestAnimationFrame = requestFrame;
       globalThis.cancelAnimationFrame = cancelFrame;
