@@ -10,7 +10,7 @@ import {
 } from "../tools/policies/output-policy.js";
 import type { ToolCall, ToolResult } from "../types.js";
 import { getReliabilityPolicy } from "./reliability-policy.js";
-import { boundFsReadOutput, isFsReadMultiOutput } from "../tools/fs/read-sections.js";
+import { boundFsReadOutput, isFsReadMultiOutput, parseFsReadSections } from "../tools/fs/read-sections.js";
 
 function safeArtifactName(name: string): string {
   return (
@@ -248,7 +248,7 @@ export function failureSummaryLine(result: {
   ok: boolean;
   exitCode?: number | undefined;
   output?: string | undefined;
-}): string | undefined {
+}, toolName?: string): string | undefined {
   if (result.ok) return undefined;
   const exit =
     typeof result.exitCode === "number" ? `exit=${result.exitCode}` : "failed";
@@ -258,7 +258,12 @@ export function failureSummaryLine(result: {
       : result.exitCode === 126
         ? "not executable"
         : undefined;
-  const snippet = failureSnippetFromOutput(result.output);
+  const sections = toolName === "fs.read" ? parseFsReadSections(result.output ?? "") : [];
+  const snippet = sections.length > 0
+    ? sections.filter((section) => !section.ok).map((section) =>
+      `file ${section.index}/${section.total}: ${failureSnippetFromOutput(section.body)}`,
+    ).join("; ")
+    : failureSnippetFromOutput(result.output);
   const parts = [exit, hint, snippet && snippet !== hint ? snippet : undefined].filter(
     Boolean,
   );
@@ -298,7 +303,7 @@ function artifactFooter(
 export function formatToolContext(call: ToolCall, result: ToolResult): string {
   const output = result.output.trim();
   if (!output) {
-    const fail = failureSummaryLine(result);
+    const fail = failureSummaryLine(result, call.name);
     return (
       fail ??
       (result.ok
@@ -307,7 +312,7 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
     );
   }
   const preferErrors = !result.ok;
-  const failLine = failureSummaryLine(result);
+  const failLine = failureSummaryLine(result, call.name);
 
   if (call.name === "web.search") {
     const { text, truncated } = summarizeOutput(output, WEB_SEARCH_CAP_CHARS, {

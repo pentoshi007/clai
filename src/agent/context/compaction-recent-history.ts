@@ -83,9 +83,7 @@ export function renderRecentUserPrompts(
     ...newestFirst.map((prompt, index) => {
       const live = Boolean(retainedLive) && prompt.message === retainedLive;
       const title = `### ${index + 1}. ${ORDINALS[index] ?? "Earlier"} prompt${live ? " (still being worked on; the full message is retained live after this memory)" : ""}${prompt.truncated ? " (excerpt; middle omitted for length)" : ""}`;
-      const body = live
-        ? "> See the retained user message below."
-        : prompt.content.split("\n").map((line) => `> ${line}`).join("\n");
+      const body = prompt.content.split("\n").map((line) => `> ${line}`).join("\n");
       return `${title}\n\n${body}`;
     }),
   ].join("\n\n");

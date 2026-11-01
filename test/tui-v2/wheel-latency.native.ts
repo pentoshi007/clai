@@ -70,8 +70,8 @@ try {
   const start = sb.scrollTop;
   const before = await paint();
   await deliver(wheelReports(120, "up"));
-  assert.equal(sb.scrollTop, start - 120, "a burst delivered in one input chunk lands before the next paint");
   const after = await paint();
+  assert.equal(sb.scrollTop, start - 120, "a burst delivered in one input chunk lands in the next paint");
   assert.notEqual(after, before, "the burst paints its final position in a single frame");
   assert.equal(await paint(), after, "no trailing motion follows the burst");
   assert.equal(animationFrames, 0, "wheel input never schedules animation frames");
@@ -80,13 +80,16 @@ try {
   const sparseStart = sb.scrollTop;
   for (let notch = 0; notch < 5; notch += 1) {
     await deliver(wheelReports(1, "up"));
-    assert.equal(sb.scrollTop, sparseStart - notch - 1, "each separately delivered notch moves exactly one row");
+    await paint();
+    assert.equal(sb.scrollTop, sparseStart - notch - 1, "each painted notch moves exactly one row");
   }
 
   const reversedAt = sb.scrollTop;
   await deliver(wheelReports(1, "down"));
+  await paint();
   assert.equal(sb.scrollTop, reversedAt + 1, "a reversal responds on the next painted frame");
   await deliver(wheelReports(3, "up") + wheelReports(1, "down"));
+  await paint();
   assert.equal(sb.scrollTop, reversedAt - 1, "opposite reports in one chunk net out");
 
   await act(async () => {

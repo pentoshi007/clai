@@ -25,12 +25,17 @@ describe("paint pacing", () => {
   it("retains adaptive background backoff without stalling interaction", () => {
     const slow = settle(Array(40).fill(100));
     expect(paintIntervalMs(slow, false)).toBe(PAINT_MAX_INTERVAL_MS);
-    expect(paintIntervalMs(slow, true)).toBe(PAINT_MIN_INTERVAL_MS * 2);
+    expect(paintIntervalMs(slow, true)).toBe(PAINT_MIN_INTERVAL_MS);
     expect(paintIntervalMs(INITIAL_PAINT_PACING, true)).toBe(PAINT_MIN_INTERVAL_MS);
   });
 
-  it("scales interaction pacing with the measured cost between its bounds", () => {
-    expect(paintIntervalMs({ costMs: 20, intervalMs: 80 }, true)).toBe(25);
+  it("does not add a second frame budget when a slow VM has already spent time rendering", () => {
+    expect(paintIntervalMs({ costMs: 100, intervalMs: 250 }, true)).toBe(PAINT_MIN_INTERVAL_MS);
+  });
+
+  it("keeps input on the frame clock independently of adaptive background backoff", () => {
+    expect(paintIntervalMs({ costMs: 20, intervalMs: 80 }, true)).toBe(PAINT_MIN_INTERVAL_MS);
+    expect(paintIntervalMs({ costMs: 20, intervalMs: 80 }, false)).toBe(80);
   });
 
   it("keeps interaction at the full frame rate while a frame fits the frame budget", () => {

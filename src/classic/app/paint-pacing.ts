@@ -2,8 +2,6 @@ export const CLASSIC_MAX_FPS = 60;
 export const PAINT_MIN_INTERVAL_MS = Math.ceil(1000 / CLASSIC_MAX_FPS);
 export const PAINT_MAX_INTERVAL_MS = 250;
 export const PAINT_BUSY_SHARE_DIVISOR = 4;
-const INTERACTION_COST_HEADROOM = 1.25;
-const INTERACTION_MAX_INTERVAL_MS = PAINT_MIN_INTERVAL_MS * 2;
 const COST_SMOOTHING = 0.3;
 
 export interface PaintPacing {
@@ -21,12 +19,7 @@ function clamp(value: number, lower: number, upper: number): number {
 }
 
 export function paintIntervalMs(pacing: PaintPacing, interactive: boolean): number {
-  if (!interactive) return pacing.intervalMs;
-  return clamp(
-    Math.ceil(pacing.costMs * INTERACTION_COST_HEADROOM),
-    PAINT_MIN_INTERVAL_MS,
-    INTERACTION_MAX_INTERVAL_MS,
-  );
+  return interactive ? PAINT_MIN_INTERVAL_MS : pacing.intervalMs;
 }
 
 export function nextPaintPacing(previous: PaintPacing, sampleMs: number): PaintPacing {

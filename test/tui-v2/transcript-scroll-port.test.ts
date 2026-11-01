@@ -18,6 +18,19 @@ function deliverInput(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function stubWheelScheduler() {
+  const callbacks = new Set<() => Promise<void>>();
+  return {
+    callbacks,
+    requestRender: vi.fn(),
+    setFrameCallback: (callback: () => Promise<void>) => { callbacks.add(callback); },
+    removeFrameCallback: (callback: () => Promise<void>) => { callbacks.delete(callback); },
+    async paint(): Promise<void> {
+      for (const callback of callbacks) await callback();
+    },
+  };
+}
+
 describe("transcript scroll port", () => {
   afterEach(() => {
     transcriptScrollPort.stopWheel();
@@ -155,6 +168,73 @@ describe("transcript scroll port", () => {
       expect(calls).toEqual([1, 1, 1]);
     } finally {
       stop();
+    }
+  });
+
+  it("coalesces separate SSH input chunks until the renderer is ready to paint", async () => {
+    const scheduler = stubWheelScheduler();
+    const { callbacks } = scheduler;
+    const scroll = vi.fn();
+    const stop = registerTranscriptScrollPort(scroll, scheduler);
+    try {
+      for (let chunk = 0; chunk < 40; chunk += 1) {
+        transcriptScrollPort.wheel(-3);
+        await deliverInput();
+      }
+      expect(scroll).not.toHaveBeenCalled();
+      expect(scheduler.requestRender).toHaveBeenCalledTimes(1);
+      for (const callback of callbacks) await callback();
+      expect(scroll).toHaveBeenCalledExactlyOnceWith(-120);
+      for (const callback of callbacks) await callback();
+      expect(scroll).toHaveBeenCalledTimes(1);
+      transcriptScrollPort.wheel(1);
+      expect(scheduler.requestRender).toHaveBeenCalledTimes(2);
+      for (const callback of callbacks) await callback();
+      expect(scroll).toHaveBeenLastCalledWith(1);
+    } finally {
+      stop();
+    }
+    expect(callbacks.size).toBe(0);
+  });
+
+  it.each([false, true])("discards orphaned input before a later mount with reused scheduler %s", async (reuse) => {
+    const scheduler = stubWheelScheduler();
+    const scroll = vi.fn();
+    const stop = registerTranscriptScrollPort(scroll, scheduler);
+    transcriptScrollPort.wheel(120);
+    stop();
+    await deliverInput();
+    const nextScheduler = reuse ? scheduler : stubWheelScheduler();
+    const next = vi.fn();
+    const stopNext = registerTranscriptScrollPort(next, nextScheduler);
+    try {
+      await nextScheduler.paint();
+      expect(scroll).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+      transcriptScrollPort.wheel(-1);
+      await nextScheduler.paint();
+      expect(next).toHaveBeenCalledExactlyOnceWith(-1);
+    } finally {
+      stopNext();
+    }
+  });
+
+  it("preserves frame-owned input through a synchronous handler replacement", async () => {
+    const scheduler = stubWheelScheduler();
+    const first = vi.fn();
+    const next = vi.fn();
+    const stopFirst = registerTranscriptScrollPort(first, scheduler);
+    transcriptScrollPort.wheel(-20);
+    stopFirst();
+    const stopNext = registerTranscriptScrollPort(next, scheduler);
+    try {
+      await deliverInput();
+      await scheduler.paint();
+      expect(first).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledExactlyOnceWith(-20);
+      expect(scheduler.callbacks.size).toBe(1);
+    } finally {
+      stopNext();
     }
   });
 

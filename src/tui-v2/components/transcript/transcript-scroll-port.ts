@@ -25,6 +25,12 @@ export const EMPTY_SCROLL_METRICS: ScrollMetrics = {
   linesBelow: 0,
 };
 
+interface WheelFrameScheduler {
+  requestRender(): void;
+  setFrameCallback(callback: () => Promise<void>): void;
+  removeFrameCallback(callback: () => Promise<void>): void;
+}
+
 type Handler = (dy: number) => void;
 type JumpHandler = () => void;
 type AutoScrollHandler = {
@@ -40,6 +46,7 @@ let metrics: ScrollMetrics = EMPTY_SCROLL_METRICS;
 const metricListeners = new Set<(m: ScrollMetrics) => void>();
 const wheelInput = new WheelScroll();
 let wheelFlushQueued = false;
+let wheelScheduler: WheelFrameScheduler | undefined;
 
 function flushWheel(): void {
   wheelFlushQueued = false;
@@ -49,6 +56,14 @@ function flushWheel(): void {
 
 function stopWheel(): void {
   wheelInput.stop();
+  wheelFlushQueued = false;
+}
+
+function requestWheelFlush(): void {
+  if (wheelFlushQueued) return;
+  wheelFlushQueued = true;
+  if (wheelScheduler) wheelScheduler.requestRender();
+  else queueMicrotask(() => { if (!wheelScheduler) flushWheel(); });
 }
 
 function publishMetrics(next: ScrollMetrics): void {
@@ -79,10 +94,7 @@ export const transcriptScrollPort: TranscriptScrollPort = {
   wheel(notches: number): boolean {
     if (!handler || !Number.isFinite(notches) || notches === 0) return false;
     wheelInput.push(notches);
-    if (!wheelFlushQueued) {
-      wheelFlushQueued = true;
-      queueMicrotask(flushWheel);
-    }
+    requestWheelFlush();
     return true;
   },
   stopWheel,
@@ -113,10 +125,26 @@ export const transcriptScrollPort: TranscriptScrollPort = {
   },
 };
 
-export function registerTranscriptScrollPort(next: Handler): () => void {
+export function registerTranscriptScrollPort(
+  next: Handler,
+  scheduler?: WheelFrameScheduler,
+): () => void {
   handler = next;
+  wheelScheduler = scheduler;
+  const beforeFrame = async (): Promise<void> => {
+    if (handler === next && wheelScheduler === scheduler) flushWheel();
+  };
+  scheduler?.setFrameCallback(beforeFrame);
+  if (wheelInput.active) {
+    wheelFlushQueued = false;
+    requestWheelFlush();
+  }
   return () => {
-    if (handler === next) handler = undefined;
+    scheduler?.removeFrameCallback(beforeFrame);
+    if (handler !== next) return;
+    handler = undefined;
+    wheelScheduler = undefined;
+    queueMicrotask(() => { if (!handler) stopWheel(); });
   };
 }
 

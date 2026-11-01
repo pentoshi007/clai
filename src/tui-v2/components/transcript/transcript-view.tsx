@@ -568,8 +568,8 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   }
 
   useLayoutEffect(() => {
-    return registerTranscriptScrollPort(scrollMainBy);
-  }, [itemCount, mountWindow.start, mountWindow.end]);
+    return registerTranscriptScrollPort(scrollMainBy, renderer);
+  }, [renderer, itemCount, mountWindow.start, mountWindow.end]);
 
   useEffect(() => {
     return registerTranscriptJumpHandlers(

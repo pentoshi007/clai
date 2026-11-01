@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v5.1.5 — 2026-11-01
+
 ### Goals
 
 - Add `/goal <condition>`, which starts a turn with the condition and keeps working until an evaluator judges it met or impossible. Verdicts appear in the transcript, and a strip above the composer in Classic and OpenTUI shows the elapsed time and evaluated turns.
@@ -16,7 +18,15 @@
 
 ### Smooth scrolling over SSH
 
-- Paint all wheel input received before a frame in that frame, in Classic and OpenTUI. The previous 50 ms glide spread each burst over several full-screen repaints, and in OpenTUI the first notch of every burst repainted on its own, bypassing the 60 fps cap. On remote terminals this doubled the output per scrolled row, so frames queued behind the connection and scrolling trailed the wheel. With a 120×40 terminal, OpenTUI now writes about half the bytes for the same scroll, and the delay after the last wheel event on a 250 KB/s link drops from about 3.3 s to 0.13 s. Single notches still move exactly one row, and every transcript item stays reachable in both directions.
+- Apply pending wheel input on the next paint instead of spreading a burst over trailing animation frames. OpenTUI coalesces reports across separate input chunks until its renderer is ready, avoiding repeated scroll/layout work between visible frames.
+- Keep Classic's interactive paint interval at its 60 Hz target instead of adding cost-based delays during wheel input. Adaptive background pacing remains unchanged.
+- Compact redundant terminal style sequences in durable attachments while preserving text, cursor commands, queries, UTF-8 and opaque control payloads, including tmux passthrough. A real-renderer fixture reduced OpenTUI's ANSI stream by 62% compared with that same stream before compaction; Classic's already-minimal stream was unchanged. Total traffic still depends on content and paint cadence, and network latency or VM load can still affect responsiveness.
+- Retain the complete transcript, exact wheel displacement, navigation and jump-to-latest cancellation. Discard orphaned wheel input when a transcript unmounts without losing pending input during synchronous window replacement.
+
+### Compaction and file-read diagnostics
+
+- Quote the actual latest one to three user prompts in compaction memory, including a lone unfinished prompt, instead of substituting a retained-message placeholder. Keep existing excerpt limits, credential redaction, live-message retention and cache/replay prefixes intact.
+- Derive multi-file `fs.read` failure summaries only from failed entries. Successful source containing words such as `failure`, `ENOENT` or `clearTimeout` no longer supplies a misleading error snippet; real partial failures still retain every successful read and per-file status.
 
 ## v5.1.4 — 2026-10-26
 

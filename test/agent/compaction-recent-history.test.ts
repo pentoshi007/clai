@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../src/types.js";
 import {
+  compactMessages,
   compactMessagesWithSummary,
   isCompactionMemoryMessage,
   shouldApplyAutoCompact,
@@ -103,6 +104,32 @@ describe("recent conversation memory", () => {
     expect(recentUserPrompts(third.messages).map((prompt) => prompt.content)).toEqual(prompts);
   });
 
+  it.each(["summary", "mechanical"] as const)("quotes the only live prompt through repeated %s compaction", async (strategy) => {
+    const request: ChatMessage = { role: "user", content: "Fix scrolling on the cloud VM.\nKeep every transcript item." };
+    let history: ChatMessage[] = [
+      { role: "system", content: "Stable instructions" },
+      request,
+      { role: "assistant", content: "Reading", toolCalls: [{ id: "only-read", name: "fs.read", args: { path: "scroll.ts" } }] },
+      { role: "tool", content: "Scroll implementation", toolCallId: "only-read" },
+    ];
+    for (let round = 0; round < 3; round += 1) {
+      const original = structuredClone(history);
+      const result = strategy === "summary"
+        ? (await compactMessagesWithSummary(history, async () => SUMMARY, { budgetTokens: 0, preserveActiveTurn: true })).messages
+        : compactMessages(history, { budgetTokens: 0 });
+      const memory = result.find(isCompactionMemoryMessage)!;
+      expect(memory.content).toContain("> Fix scrolling on the cloud VM.\n> Keep every transcript item.");
+      expect(memory.content).not.toContain("See the retained user message below.");
+      expect(memory.content.match(/### \d+\./g)).toHaveLength(1);
+      expect(memory.compaction?.recentUserPrompts).toEqual([]);
+      expect(recentUserPrompts(result).map(({ content }) => content)).toEqual([request.content]);
+      expect(result.filter((message) => message.role === "user")).toEqual([request]);
+      expect(history).toEqual(original);
+      assertValidToolProtocol(result);
+      history = structuredClone(result);
+    }
+  });
+
   it("retains an unfinished request and its complete native tool group", async () => {
     const history = researchHistory().slice(0, 9);
     const result = await compactMessagesWithSummary(history, async () => SUMMARY);
@@ -151,8 +178,8 @@ describe("recent conversation memory", () => {
     const result = await compactMessagesWithSummary(history, async () => SUMMARY);
     const memory = result.messages.find(isCompactionMemoryMessage)!;
 
-    expect(memory.content.match(/> Explain caching/g)).toHaveLength(1);
-    expect(memory.content).toContain("> See the retained user message below.");
+    expect(memory.content.match(/> Explain caching/g)).toHaveLength(2);
+    expect(memory.content).not.toContain("See the retained user message below.");
     expect(recentUserPrompts(result.messages).map(({ content }) => content)).toEqual(["Explain caching", "Explain caching"]);
     expect(memory.content).not.toContain("> You wrote a message");
     expect(result.messages.some((message) => message === history[2])).toBe(true);
@@ -175,6 +202,25 @@ describe("recent conversation memory", () => {
     expect(memory.content).toContain("closing constraint");
     expect(JSON.stringify(memory)).not.toContain(secret);
     expect(result.afterTokens).toBeLessThan(5_000);
+  });
+
+  it("keeps live prompt quotes bounded and redacted without changing the retained request", async () => {
+    const secret = "sk-abcdefgh123456789";
+    const request: ChatMessage = { role: "user", content: `opening ${secret} ${"evidence ".repeat(4_000)} closing constraint` };
+    const result = await compactMessagesWithSummary([
+      { role: "system", content: "Stable instructions" },
+      request,
+      { role: "assistant", content: "Still reading the supplied evidence." },
+    ], async () => SUMMARY, { budgetTokens: 0, preserveActiveTurn: true });
+    const memory = result.messages.find(isCompactionMemoryMessage)!;
+
+    expect(memory.content).toContain("> opening");
+    expect(memory.content).toContain("closing constraint");
+    expect(memory.content).toContain("excerpt; middle omitted for length");
+    expect(memory.content).not.toContain(secret);
+    expect(recentUserPrompts(result.messages)[0]!.content.length).toBeLessThanOrEqual(RECENT_USER_PROMPT_CHAR_BUDGET);
+    expect(result.messages).toContain(request);
+    expect(request.content).toContain(secret);
   });
 
   it("distinguishes final answers from tools, reasoning-only responses, and recovery prompts", () => {

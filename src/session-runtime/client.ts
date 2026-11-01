@@ -35,6 +35,7 @@ import {
   type RuntimeTerminalOptions,
 } from "./types.js";
 import { runtimeTerminalOptions } from "./terminal-options.js";
+import { TerminalSgrCompactor } from "../os/terminal-sgr-compactor.js";
 import { startRuntimeHost, type RuntimeTarget } from "./startup.js";
 
 const TERMINAL_RESTORE = TERMINAL_MODE_RESET;
@@ -288,6 +289,7 @@ async function attachRuntime(
   ui: RuntimeTerminalOptions["ui"] = "auto",
 ): Promise<AttachOutcome> {
   const clientId = `${process.pid}-${randomUUID()}`;
+  const terminalOutput = new TerminalSgrCompactor();
   const dimensions = {
     columns: terminalColumns(),
     rows: terminalRows(),
@@ -437,7 +439,7 @@ async function attachRuntime(
   const onOutput = (bytes: Buffer): void => {
     if (settled) return;
     inputStream.observeOutput(bytes);
-    if (!writeOutput(altScreen, bytes)) terminal.pause();
+    if (!writeOutput(altScreen, terminalOutput.compact(bytes))) terminal.pause();
   };
   const onStdoutDrain = (): void => {
     terminal.resume();
@@ -479,7 +481,7 @@ async function attachRuntime(
     if (!settled) {
       inputStream.observeOutput(terminalConnection.first.rest);
       const writable = terminalConnection.first.rest.length === 0 ||
-        writeOutput(altScreen, terminalConnection.first.rest);
+        writeOutput(altScreen, terminalOutput.compact(terminalConnection.first.rest));
       if (writable) terminal.resume();
       sendResize();
     }
@@ -496,6 +498,8 @@ async function attachRuntime(
     terminal.off("drain", onTerminalDrain);
     terminal.off("error", onTerminalError);
     terminal.off("data", onOutput);
+    const remaining = terminalOutput.finish();
+    if (remaining.byteLength > 0) writeOutput(altScreen, remaining);
     process.stdout.off("drain", onStdoutDrain);
     process.off("SIGWINCH", sendResize);
     signal.removeEventListener("abort", onTerminate);

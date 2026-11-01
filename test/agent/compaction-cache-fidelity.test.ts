@@ -137,6 +137,41 @@ describe("compaction request cache fidelity", () => {
     }
   });
 
+  it("quotes a single active prompt without rewriting the cached replay prefix", async () => {
+    const original = request();
+    const prompt: ChatMessage = { role: "user", content: "Fix scrolling without dropping any transcript content." };
+    original.messages = [original.messages[0]!, prompt];
+    const snapshot = successfulRequestSnapshot(original.provider, original.model!, original);
+    const history: ChatMessage[] = [
+      ...original.messages,
+      { role: "assistant", content: "Reading", toolCalls: [{ id: "scroll-read", name: "fs.read", args: { path: "scroll.ts" } }] },
+      { role: "tool", toolCallId: "scroll-read", content: "Scroll implementation" },
+    ];
+    const before = structuredClone(history);
+    const result = await compactMessagesWithSummary(history, (instruction) => executeCompactionSummary({
+      provider: original.provider, model: original.model, systemContent: "Unused summary system",
+      prompt: instruction, maxTokens: 12_288, baseRequest: snapshot, history, stream: false,
+      qualityRetry: false, retryOnTruncation: false, retryOnRequestShapeRejection: false,
+    }), { budgetTokens: 0, singleAdmission: true, forceDirectSinglePass: true, preserveActiveTurn: true });
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    const sent = complete.mock.calls[0]![0] as CompletionRequest;
+    expect(sent.messages.slice(0, snapshot.messages.length)).toEqual(snapshot.messages);
+    const priorWire = JSON.parse(buildAnthropicBody(original, false));
+    const compactionWire = JSON.parse(buildAnthropicBody(sent, false));
+    expect(compactionWire.system).toEqual(priorWire.system);
+    expect(compactionWire.tools).toEqual(priorWire.tools);
+    expect(compactionWire.thinking).toEqual(priorWire.thinking);
+    expect(compactionWire.tool_choice).toEqual(priorWire.tool_choice);
+    expect(blocks(compactionWire).slice(0, blocks(priorWire).length)).toEqual(blocks(priorWire));
+    const memory = result.messages.find(isCompactionMemoryMessage)!;
+    expect(memory.content).toContain(`> ${prompt.content}`);
+    expect(memory.content).not.toContain("See the retained user message below.");
+    expect(memory.compaction?.recentUserPrompts).toEqual([]);
+    expect(result.messages).toContain(prompt);
+    expect(history).toEqual(before);
+  });
+
   it("appends instruction continuity after an unchanged wire prefix and restores omitted rules without another request", async () => {
     const original = request();
     const rule = { id: "S1", scope: "session" as const, text: "Preserve backward compatibility unless the user approves an exception." };
