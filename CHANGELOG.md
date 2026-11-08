@@ -2,6 +2,10 @@
 
 ## v5.1.6 — 2026-11-01
 
+### Turns that stop mid-work
+
+- Check once before ending a turn whose reply has no tool call while the active plan still has open tasks or the reply announces a next step. Some models, such as Muse Spark, end a round with a progress line like "Moving to the cross-pass diff." and the turn stopped with work unfinished. The model now either makes the next tool call or confirms it is done, blocked, waiting for your input, or pausing as you asked, and that reply always ends the turn. Questions, chat, and replies that ask you something are never checked, and another check needs more tool work first, so turns cannot loop.
+
 ### Image tool cards
 
 - Show `image.view` and `image.ocr` calls as one row per image with its path (`image 1/2: shots/before.png`) in OpenTUI, matching `fs.read` cards, instead of dumping the raw `{"paths": […]}` arguments. Paths that exceed the card width are middle-clipped with the filename intact, OCR options stay on their own line when the input carries them, and the pager header lists every image the call opened so the full input remains recoverable.

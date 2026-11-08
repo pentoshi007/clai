@@ -636,7 +636,7 @@ describe("native tool loop integration", () => {
     expect(streamMock).toHaveBeenCalledTimes(4);
   });
 
-  it("lets the turn end when action narration follows a productive tool step", async () => {
+  it("checks once before ending on action narration, then accepts the model's reply", async () => {
     let turn = 0;
     streamMock.mockImplementation(
       async (request: CompletionRequest, onToken: (token: string) => void) => {
@@ -670,8 +670,88 @@ describe("native tool loop integration", () => {
       maxSteps: 5,
     });
 
-    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(streamMock).toHaveBeenCalledTimes(3);
+    const checkRequest = streamMock.mock.calls[2]![0] as CompletionRequest;
+    const checkMessage = checkRequest.messages.at(-1)!;
+    expect(checkMessage.role).toBe("user");
+    expect(checkMessage.content).toContain("CONTINUATION CHECK");
     expect(answer).toBe("Let's check the remaining files.");
+  });
+
+  it("resumes work when the continuation check is answered with a tool call", async () => {
+    let turn = 0;
+    streamMock.mockImplementation(
+      async (request: CompletionRequest, onToken: (token: string) => void) => {
+        turn += 1;
+        if (turn === 1 || turn === 3) {
+          return {
+            text: "",
+            provider: "gemini",
+            model: "gemini-test",
+            toolCalls: [
+              { id: `call_read_${turn}`, name: "fs.read", args: { path: cwd } },
+            ],
+            finishReason: "tool_calls",
+          };
+        }
+        const text = turn === 2 ? "Let me check the remaining files." : "All files listed.";
+        onToken(text);
+        return {
+          text,
+          provider: "gemini",
+          model: "gemini-test",
+          finishReason: "stop",
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("find all files in this directory", {
+      provider: "gemini",
+      model: "gemini-test",
+      maxSteps: 6,
+    });
+
+    expect(streamMock).toHaveBeenCalledTimes(4);
+    expect(answer).toBe("All files listed.");
+  });
+
+  it("ends without a continuation check when the reply asks the user a question", async () => {
+    let turn = 0;
+    streamMock.mockImplementation(
+      async (request: CompletionRequest, onToken: (token: string) => void) => {
+        turn += 1;
+        if (turn === 1) {
+          return {
+            text: "",
+            provider: "gemini",
+            model: "gemini-test",
+            toolCalls: [
+              { id: "call_list_first", name: "fs.read", args: { path: cwd } },
+            ],
+            finishReason: "tool_calls",
+          };
+        }
+        const text = "I'll check the remaining files next — should I include hidden files?";
+        onToken(text);
+        return {
+          text,
+          provider: "gemini",
+          model: "gemini-test",
+          finishReason: "stop",
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("find all files in this directory", {
+      provider: "gemini",
+      model: "gemini-test",
+      maxSteps: 5,
+    });
+
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(answer).toContain("should I include hidden files?");
   });
 
   it("does not append internal outcome diagnostics to a continue response", async () => {

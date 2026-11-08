@@ -91,11 +91,24 @@ export const resolveAnswerPath = async (
     {
       assistantVisible: assistantText.visible,
       wantsAction: assessment.wantsAction,
+      narratedNextStep: assessment.narratedNextStep,
+      continuationEligible: assessment.continuationEligible,
+      continuationChecked:
+        deps.counters.continuationCheckStep === deps.counters.productiveSteps,
       consecutiveModelOnlyRounds: deps.counters.consecutiveModelOnlyRounds,
       plan: livePlanAtCompletion,
     },
   );
   if (modelOnly.kind === "continue-round") return { kind: "continue" };
+  if (modelOnly.kind === "continuation-check") {
+    deps.counters.continuationCheckStep = deps.counters.productiveSteps;
+    await auditLog("agent.continuation_check", {
+      provider: deps.loop.provider,
+      model: deps.loop.model,
+      productiveSteps: deps.counters.productiveSteps,
+    });
+    return { kind: "continue" };
+  }
   if (modelOnly.kind === "stop") {
     deps.outcomeState.outcome.status = "partial";
     await saveOutcomeState(deps.outcomeState);
