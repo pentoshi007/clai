@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../src/types.js";
 import { CompactionOverLimitError } from "../../src/agent/compaction-executor.js";
 import { CompactionAttemptLedger } from "../../src/agent/compaction-attempt.js";
+import { autoCompactTriggerTokens } from "../../src/agent/request-budget.js";
 import {
   createCompactionCoordinator,
   type CompactionCoordinatorPorts,
@@ -335,7 +336,9 @@ describe("auto-compaction trigger follows the live context limit", () => {
     expect(writeStarted).not.toHaveBeenCalled();
     expect(audit).toHaveBeenCalledWith(
       "agent.compact.skip-threshold",
-      expect.objectContaining({ triggerTokens: 140_000 }),
+      expect.objectContaining({
+        triggerTokens: autoCompactTriggerTokens({ provider: "nvidia", model: "test-model" }),
+      }),
     );
   });
 });

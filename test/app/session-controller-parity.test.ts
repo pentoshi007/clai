@@ -398,7 +398,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextTokens: 4_354,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe("ctx ~4,354/200k 2%");
+    expect(session.getState().contextChip).toBe("ctx ~4,354/250k 2%");
 
     await session.persistNow();
     const reopened = new SessionController({
@@ -424,7 +424,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextTokens: 4_354,
       precision: "estimate",
     });
-    expect(reopened.getState().contextChip).toBe("ctx ~4,354/200k 2%");
+    expect(reopened.getState().contextChip).toBe("ctx ~4,354/250k 2%");
   });
 
   it("shows only the resolved window before provider telemetry arrives", () => {
@@ -634,7 +634,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       contextTokens: expectedAfterTokens,
       precision: "estimate",
     });
-    expect(session.getState().contextChip).toBe(`ctx ~${expectedAfterTokens.toLocaleString()}/200k 0%`);
+    expect(session.getState().contextChip).toBe(`ctx ~${expectedAfterTokens.toLocaleString()}/250k 0%`);
     expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
       events.findIndex((event) => event.type === "compaction-completed"),
     );

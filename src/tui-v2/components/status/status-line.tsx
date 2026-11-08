@@ -19,7 +19,7 @@ import type {
 } from "../../../app/controllers/session-controller.js";
 import type { ResponderRuntimeState } from "../../../app/controllers/session-responder.js";
 import type { Mode } from "../../../types.js";
-import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { modeBadgeToken, type Theme } from "../../../ui-core/rendering/theme.js";
 import { ContextLimitChip } from "./context-limit-chip.js";
 import type { ContextUsageSnapshot } from "../../../llm/token-usage.js";
 import type { StatusDensity } from "../../../ui-core/rendering/context-limit.js";
@@ -236,12 +236,7 @@ function ModeBadge(props: {
 }): ReactNode {
   const { mode, theme } = props;
   const label = modeIndicatorPresentation(mode).label;
-  const bg =
-    mode === "plan"
-      ? theme.mode
-      : mode === "ask"
-        ? theme.chipIndigo
-        : theme.chipTeal;
+  const bg = theme[modeBadgeToken(mode)];
   return (
     <>
       <text

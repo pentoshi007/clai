@@ -128,10 +128,10 @@ describe("remembered model limits", () => {
     });
   });
 
-  it("falls back to the 200k default when nothing is known", () => {
+  it("falls back to the 250k default when nothing is known", () => {
     expect(resolveContextWindow({ provider: "openrouter", model: "vendor/unknown-9" })).toMatchObject({
       source: "default",
-      tokens: 200_000,
+      tokens: 250_000,
     });
   });
 });

@@ -70,7 +70,7 @@ describe("dynamic Cline model metadata", () => {
     expect(modelMaxOutputTokens("cline", "cline-free/nebula-next")).toBe(65_536);
     expect(reasoningOptionValues("cline", "cline-free/nebula-next")).toEqual(["off", "low", "high", "xhigh"]);
     expect(wire("cline-free/nebula-next").reasoning).toEqual({ enabled: true, effort: "xhigh" });
-    expect(modelContextWindow("cline-free/nebula-next", "free")).toBe(200_000);
+    expect(modelContextWindow("cline-free/nebula-next", "free")).toBe(250_000);
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("authorization");
   });
 

@@ -69,13 +69,16 @@ describe("provider context windows", () => {
     });
   });
 
-  it.each(["claude-sonnet-4", "unknown-model"])(
+  it.each([
+    ["claude-sonnet-4", 200_000],
+    ["unknown-model", 250_000],
+  ] as const)(
     "overrides the detected window for %s and resets to detection",
-    (model) => {
+    (model, detectedTokens) => {
       expect(resolveContextWindow({ provider: "anthropic", model, contextLimitTokens: 500_000 }))
         .toMatchObject({ tokens: 500_000, source: "session-override" });
       expect(resolveContextWindow({ provider: "anthropic", model }))
-        .toMatchObject({ tokens: 200_000 });
+        .toMatchObject({ tokens: detectedTokens });
     },
   );
 
@@ -102,7 +105,7 @@ describe("provider context windows", () => {
     ).toMatchObject({ source: "model-table", tokens: 200_000 });
     expect(
       resolveContextWindow({ provider: "openai", model: "unknown-model" }),
-    ).toMatchObject({ source: "default", tokens: 200_000 });
+    ).toMatchObject({ source: "default", tokens: 250_000 });
   });
 });
 

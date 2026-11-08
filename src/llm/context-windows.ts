@@ -60,7 +60,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /muse-spark|muse-wonder-1\.0(?:$|[-/])/i, tokens: 1_048_576 },
 ];
 
-const DEFAULT_CONTEXT_WINDOW = 200_000;
+const DEFAULT_CONTEXT_WINDOW = 250_000;
 
 export const MIN_CUSTOM_CONTEXT_LIMIT_TOKENS = 20_000;
 

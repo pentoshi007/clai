@@ -154,9 +154,9 @@ describe("OrcaRouter model discovery", () => {
 
     expect(modelContextWindow(contextModel, "orcarouter")).toBe(777_777);
     expect(modelMaxOutputTokens("orcarouter", contextModel)).toBe(65_536);
-    expect(modelContextWindow(zeroContextModel, "orcarouter")).toBe(200_000);
+    expect(modelContextWindow(zeroContextModel, "orcarouter")).toBe(250_000);
     expect(modelMaxOutputTokens("orcarouter", zeroContextModel)).toBe(100_000);
-    expect(modelContextWindow(unknownModel, "orcarouter")).toBe(200_000);
+    expect(modelContextWindow(unknownModel, "orcarouter")).toBe(250_000);
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
