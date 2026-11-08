@@ -60,6 +60,8 @@ import { retireRejectedReasoningReplay } from "../../../llm/routing/attempt-requ
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
 import { providerContextMeasurement } from "../provider-measurement.js";
 import { stripToolCallSurfaces } from "../../../ui-core/rendering/strip-tool-surfaces.js";
+import { imageBudgetFor } from "../../../attachments/image-content.js";
+import { imageRetentionLimits, releaseStaleImages } from "../../../attachments/image-retention.js";
 
 export const runTurnRounds = async (
   deps: TurnLoopDeps,
@@ -95,6 +97,10 @@ export const runTurnRounds = async (
       deps.writeStatus(batchStatus);
     } else {
 
+      releaseStaleImages(
+        deps.messages,
+        imageRetentionLimits(imageBudgetFor(deps.loop.provider, deps.loop.model)),
+      );
       await deps.maybeAutoCompact("auto-token-budget");
       subagentInbox.prepareInventory();
       const responderDelivery = deps.refreshResponderInbox();

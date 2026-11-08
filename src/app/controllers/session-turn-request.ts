@@ -7,6 +7,7 @@ import type {
 import { materializeHistoryImages } from "../../store/history.js";
 import { resolveTurnInput } from "../../attachments/service.js";
 import { imageBudgetFor } from "../../attachments/image-content.js";
+import { imagePayloadBytes, imageRetentionLimits } from "../../attachments/image-retention.js";
 import type { PreviousTurnSignal, RunTurnRequest } from "../ports/agent-port.js";
 
 export interface TurnRequestInput {
@@ -43,12 +44,13 @@ export async function buildTurnRequest(input: TurnRequestInput): Promise<BuiltTu
     signal: input.signal,
   });
   const budget = imageBudgetFor(resolved.provider, resolved.model);
+  const retention = imageRetentionLimits(budget);
   const currentImageBytes = resolved.images.reduce((total, image) =>
-    total + Buffer.byteLength(image.dataBase64, "base64"), 0);
+    total + imagePayloadBytes(image), 0);
   const historyBudget = {
     ...budget,
-    maxCount: Math.max(0, budget.maxCount - resolved.images.length),
-    maxTotalBytes: Math.max(0, budget.maxTotalBytes - currentImageBytes),
+    maxCount: Math.max(0, retention.maxCount - resolved.images.length),
+    maxTotalBytes: Math.max(0, retention.maxTotalBytes - currentImageBytes),
   };
   const request: RunTurnRequest = {
     prompt: resolved.prompt,

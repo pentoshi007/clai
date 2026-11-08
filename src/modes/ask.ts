@@ -21,6 +21,8 @@ import { loadAgentInstructions } from "../instructions/load.js";
 import { safeCwd } from "../os/cwd.js";
 import { parseAllToolCalls, formatToolArgs, looksLikePromptLeak } from "../agent/runner.js";
 import { runToolCall } from "../tools/registry.js";
+import { imageBudgetFor } from "../attachments/image-content.js";
+import { imageRetentionLimits, releaseStaleImages } from "../attachments/image-retention.js";
 import { getToolDefinitions } from "../tools/definitions.js";
 import { isReadOnlyShellCall } from "../tools/read-only-shell.js";
 import {
@@ -386,8 +388,13 @@ async function resolveAskAnswer(
     });
   }
 
+  const releaseStaleRoundImages = (): void => {
+    releaseStaleImages(messages, imageRetentionLimits(imageBudgetFor(activeProvider, activeModel)));
+  };
+
   for (let round = 0; round < ASK_MAX_RESEARCH_ROUNDS; round += 1) {
     options.signal?.throwIfAborted();
+    releaseStaleRoundImages();
     const roundResult = await streamAskRound(baseRequest, messages, onToken);
     activeProvider = roundResult.provider;
     activeModel = roundResult.model;
@@ -560,6 +567,7 @@ async function resolveAskAnswer(
     content:
       "Stop researching now. Using only what you have already gathered above, give your final answer to the original question. Do NOT call any more tools. Prefer high-trust sources; only claim a page confirms a fact if that fact appears in the tool output; include 1–3 source URLs from the results above.",
   });
+  releaseStaleRoundImages();
   const finalRound = await streamAskRound(baseRequest, messages, onToken);
   return finalRound.text;
 }
