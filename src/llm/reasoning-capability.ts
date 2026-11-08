@@ -1,6 +1,39 @@
 import type { ProviderId } from "../types.js";
 import { FAMILYLESS_ENDPOINT_LAYERS } from "./provider-profile-layers.js";
 
+const TOKEN_HARBOR_REASONING_PATTERNS: RegExp[] = [
+  /claude-(?:opus|sonnet|haiku|fable|mythos)/i,
+  /gpt-[5-9]/i,
+  /o[134](?:-mini)?\b/i,
+  /gemini-(?:2\.5|[3-9])/i,
+  /grok-(?:4|[5-9])/i,
+  /muse-spark/i,
+  /kimi/i,
+  /deepseek/i,
+  /qwen3/i,
+  /glm-?[45]/i,
+  /minimax/i,
+  /reason/i,
+  /thinking/i,
+];
+
+const FRONTIER_GATEWAY_REASONING_PATTERNS: RegExp[] = [
+  ...TOKEN_HARBOR_REASONING_PATTERNS,
+  /mimo/i,
+];
+
+const OPEN_WEIGHT_REASONING_PATTERNS: RegExp[] = [
+  /deepseek/i,
+  /glm-?[45]/i,
+  /kimi/i,
+  /mimo/i,
+  /minimax/i,
+  /qwen3/i,
+  /(?:^|[/-])hy\d/i,
+  /reason/i,
+  /thinking/i,
+];
+
 export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   hinoki: [/^hinoki-offensive$/i],
   constellation: [],
@@ -169,22 +202,13 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   copilot: [/gpt-5/i, /claude/i, /gemini/i, /o[34]/i, /reason/i],
   kiro: [/claude/i, /gpt/i, /reason/i, /thinking/i],
   omnirush: [/gpt-[5-9]/i, /muse/i, /reason/i],
-  tokenharbor: [
-    /claude-(?:opus|sonnet|haiku|fable|mythos)/i,
-    /gpt-[5-9]/i,
-    /o[134](?:-mini)?\b/i,
-    /gemini-(?:2\.5|[3-9])/i,
-    /grok-(?:4|[5-9])/i,
-    /muse-spark/i,
-    /kimi/i,
-    /deepseek/i,
-    /qwen3/i,
-    /glm-?[45]/i,
-    /minimax/i,
-    /reason/i,
-    /thinking/i,
-  ],
+  tokenharbor: TOKEN_HARBOR_REASONING_PATTERNS,
   qoder: [/qwen/i, /reason/i, /thinking/i, /glm/i, /deepseek/i],
+  refuseless: OPEN_WEIGHT_REASONING_PATTERNS,
+  unrestricted: OPEN_WEIGHT_REASONING_PATTERNS,
+  unaligned: FRONTIER_GATEWAY_REASONING_PATTERNS,
+  respan: FRONTIER_GATEWAY_REASONING_PATTERNS,
+  silkcompute: OPEN_WEIGHT_REASONING_PATTERNS,
 };
 
 export function endpointAcceptedEfforts(

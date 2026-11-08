@@ -156,6 +156,16 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Lightning AI keys are alphanumeric (from https://lightning.ai/lightning-ai/model-apis/models?showApiKey=true)";
   if (provider === "tokenharbor")
     return "Token Harbor keys start with thk_live_ (create one at https://tokenharbor.ai/dashboard/api-keys)";
+  if (provider === "refuseless")
+    return "Refuseless keys are issued in the Refuseless console (https://docs.refuseless.com/quickstart)";
+  if (provider === "unrestricted")
+    return "Unrestricted keys start with unr_sk_ (create one at https://unrestricted.sh)";
+  if (provider === "unaligned")
+    return "Unaligned keys start with sk-unal- (create one under Dashboard → API keys at https://unaligned.pw)";
+  if (provider === "respan")
+    return "Respan keys are created with Gateway enabled at https://platform.respan.ai/platform/gateway/api-keys";
+  if (provider === "silkcompute")
+    return "Silk Compute keys start with sk- (create one at https://platform.silkcompute.com/api-keys)";
   if (provider === "tokenrouter")
     return "TokenRouter keys usually start with sk- (create one under My Account → API Keys)";
   if (provider === "meta")

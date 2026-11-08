@@ -12,13 +12,45 @@ import {
   providerDoc,
 } from "../provider-profile-layers.js";
 import type { ProviderProfileLayer } from "../provider-profile.js";
+import { CLAUDE_MODEL_ID } from "../claude-breakpoints.js";
+import { WIRE_EFFORT_SCALE } from "../reasoning-controls.js";
 
 interface ModelRule {
   readonly pattern: RegExp;
   readonly layer: ProviderProfileLayer;
 }
 
+const GATEWAY_UPSTREAM_RULES: readonly ModelRule[] = [
+  { pattern: /kimi-k3|kimi-k2\.7/i, layer: kimiMandatoryLayer },
+  { pattern: /kimi-k2\.6/i, layer: kimiConfigurableLayer },
+  { pattern: /kimi/i, layer: kimiNoPreservationLayer },
+  { pattern: /deepseek-v[4-9]/i, layer: deepseekV4DefaultOn },
+];
+
+const RESPAN_CLAUDE_CACHE_RULE: ModelRule = {
+  pattern: CLAUDE_MODEL_ID,
+  layer: {
+    evidence: providerDoc("https://www.respan.ai/docs/ai-gateway/features/caching"),
+    cache: {
+      kind: "explicit-breakpoint",
+      cacheAffectingFields: ["model", "messages", "tools", "tool_choice", "cache_control"],
+    },
+  },
+};
+
+const UNRESTRICTED_EFFORT_LAYER: ProviderProfileLayer = {
+  evidence: providerDoc("https://unrestricted.sh/reference"),
+  reasoning: {
+    acceptedEfforts: WIRE_EFFORT_SCALE,
+    disable: "supported",
+    disableForm: "effort-none",
+  },
+};
+
 export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
+  respan: [RESPAN_CLAUDE_CACHE_RULE, ...GATEWAY_UPSTREAM_RULES],
+  unaligned: GATEWAY_UPSTREAM_RULES,
+  unrestricted: [{ pattern: /./, layer: UNRESTRICTED_EFFORT_LAYER }],
   anthropic: [
     {
       pattern: /claude-(?:opus|sonnet|haiku)-(?:3-7|4|5)|claude-3-7/i,

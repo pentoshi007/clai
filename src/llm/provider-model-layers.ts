@@ -13,6 +13,8 @@ import { nvidiaModelLayer } from "./model-layers/nvidia-layer.js";
 import { modelCatalogFacts } from "./capabilities.js";
 import { constellationModelLayer } from "./constellation-profile.js";
 import { hinokiModelLayer } from "./hinoki-profile.js";
+import { openAiEffortCatalogLayer } from "./catalog-effort-layer.js";
+import { catalogDrivesEffortLayer } from "./capability/catalog-trust.js";
 import { catalogEffortList } from "./catalog-facts.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
 import { metaModelReasoning } from "./meta-models.js";
@@ -244,6 +246,7 @@ export function modelLayerFor(
   if (provider === "meta") return metaModelLayer(model);
   if (provider === "constellation") return constellationModelLayer(modelCatalogFacts(provider, model));
   if (provider === "hinoki") return hinokiModelLayer(modelCatalogFacts(provider, model));
+  if (catalogDrivesEffortLayer(provider)) return openAiEffortCatalogLayer(modelCatalogFacts(provider, model));
   if (provider === "cline") {
     const fallback = MODEL_RULES.cline?.find((rule) => rule.pattern.test(model))?.layer;
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
