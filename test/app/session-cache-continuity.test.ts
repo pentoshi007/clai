@@ -27,6 +27,7 @@ vi.mock("../../src/commands/providers.js", () => ({ ensureProviderConfigured: as
 vi.mock("../../src/llm/catalog-prefetch.js", () => ({ prefetchProviderCatalog: async () => {} }));
 
 const summary = "## Work completed\n- Reviewed the supplied evidence and explained the findings.\n\n## Remaining work\n- No outstanding questions.";
+const REQUESTS_PER_UNDECLARED_ANSWER = 2;
 const originalThinking = getConfig().thinking;
 let cwd: string;
 let directory: string;
@@ -50,6 +51,10 @@ afterEach(async () => {
 });
 
 type WireDialect = "chat" | "responses" | "kiro";
+
+function lastMessageContainsTurnEndCheck(request: CompletionRequest): boolean {
+  return JSON.stringify(request.messages.at(-1)).includes("TURN END CHECK");
+}
 
 function kiroWire(request: CompletionRequest): unknown[] {
   const route = resolveKiroModel(request.model!);
@@ -130,11 +135,15 @@ describe("production session cache continuity", () => {
     });
     session.setContextLimitTokens(1_000_000);
     expect((await session.submit(`Read these two files and explain them. This is research only.\n${"Relevant request evidence. ".repeat(2000)}`)).status).toBe("completed");
-    expect(requests).toHaveLength(3);
-    expect(JSON.stringify(requests[2]!.messages)).toContain("# fs.read file=2/2");
+    const answerIndex = 2;
+    const checkIndex = answerIndex + 1;
+    const compactionIndex = answerIndex + REQUESTS_PER_UNDECLARED_ANSWER;
+    expect(requests).toHaveLength(checkIndex + 1);
+    expect(JSON.stringify(requests[answerIndex]!.messages)).toContain("# fs.read file=2/2");
+    expect(requests.map(lastMessageContainsTurnEndCheck)).toEqual(requests.map((_, index) => index === checkIndex));
     expect((await session.compact(undefined, 2, undefined, { persist: false })).summarized).toBe(true);
-    expect(requests).toHaveLength(4);
-    expect(requests[3]!.purpose).toBe("compaction");
+    expect(requests).toHaveLength(compactionIndex + 1);
+    expect(requests[compactionIndex]!.purpose).toBe("compaction");
     for (let index = 1; index < requests.length; index += 1) {
       const previous = requests[index - 1]!;
       const next = requests[index]!;
@@ -191,13 +200,18 @@ describe("production session cache continuity", () => {
     session.setContextLimitTokens(1_000_000);
     const first = await session.submit(`Explain this evidence without tools:\n${"evidence detail ".repeat(45_000)}`);
     expect(first.status).toBe("completed");
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(REQUESTS_PER_UNDECLARED_ANSWER);
     const followUp = await session.submit("Explain the conclusion in more detail without tools.");
     expect(followUp.status).toBe("completed");
     session.enqueue("Explain the remaining implications without tools.");
     session.enqueue("Summarize the explanation without tools.");
     await session.drain();
-    expect(requests).toHaveLength(4);
+    const turns = 4;
+    const compactionIndex = turns * REQUESTS_PER_UNDECLARED_ANSWER;
+    expect(requests).toHaveLength(compactionIndex);
+    expect(requests.map(lastMessageContainsTurnEndCheck)).toEqual(
+      requests.map((_, index) => index % REQUESTS_PER_UNDECLARED_ANSWER === 1),
+    );
     const last = requests.at(-1)!;
     const requestTokens = accountAssembledRequest({
       provider,
@@ -211,17 +225,18 @@ describe("production session cache continuity", () => {
     if (compaction === "manual") {
       const compacted = await session.compact(undefined, 2, undefined, { persist: false });
       expect(compacted.summarized).toBe(true);
-      expect(requests).toHaveLength(5);
+      expect(requests).toHaveLength(compactionIndex + 1);
     } else {
       session.setContextLimitTokens(Math.ceil(requestTokens / 0.8));
       const continued = await session.submit("Explain the final implications without tools.");
       expect(continued.status).toBe("completed");
-      expect(requests).toHaveLength(6);
-      expect(JSON.stringify(requests[5]!.messages).length).toBeLessThan(JSON.stringify(last.messages).length);
+      expect(requests).toHaveLength(compactionIndex + REQUESTS_PER_UNDECLARED_ANSWER + 1);
+      expect(JSON.stringify(requests[compactionIndex + 1]!.messages).length).toBeLessThan(JSON.stringify(last.messages).length);
+      expect(lastMessageContainsTurnEndCheck(requests[compactionIndex + 2]!)).toBe(true);
     }
-    expect(requests[4]!.purpose).toBe("compaction");
+    expect(requests[compactionIndex]!.purpose).toBe("compaction");
     expect(new Set(affinities)).toEqual(new Set([`cache-${provider}-${dialect}`]));
-    for (let index = 1; index <= 4; index += 1) {
+    for (let index = 1; index <= compactionIndex; index += 1) {
       const previous = requests[index - 1]!;
       const next = requests[index]!;
       const prefix = wire(previous, dialect);

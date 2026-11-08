@@ -2,9 +2,10 @@
 
 ## v5.1.6 — 2026-11-01
 
-### Turns that stop mid-work
+### Explicit turn completion
 
-- Check once before ending a turn whose reply has no tool call while the active plan still has open tasks or the reply announces a next step. Some models, such as Muse Spark, end a round with a progress line like "Moving to the cross-pass diff." and the turn stopped with work unfinished. The model now either makes the next tool call or confirms it is done, blocked, waiting for your input, or pausing as you asked, and that reply always ends the turn. Questions, chat, and replies that ask you something are never checked, and another check needs more tool work first, so turns cannot loop.
+- Add the `turn.end` tool. The agent calls it with its final message and a reason (`completed`, `answered`, `needs_user_input`, `blocked` or `stop_requested`), judged only against your latest message, and the turn ends without another request. Tool-free answers, questions back to you, genuine blockers and explicit stop instructions are all valid ends. The declaration resets for every new prompt and counts only when the rest of the response is successful plan or job bookkeeping and no Responder result is unread.
+- When a reply ends without a tool call and without `turn.end`, ask the model once whether it is finished. It either declares the end, which keeps its earlier reply as the answer, or makes the next tool call. Some models, such as Muse Spark, end a round with a progress line like "Moving to the cross-pass diff." and the turn stopped with work unfinished. The check is a fixed message appended after the reply, so earlier cached context is reused, and further checks need more tool work first, so turns cannot loop.
 
 ### Image tool cards
 

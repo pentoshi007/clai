@@ -135,6 +135,27 @@ describe("hydrateFromMessages", () => {
     expect(userTexts).toEqual(["recon example.com"]);
   });
 
+  it("hides turn.end declarations from resumed history while keeping the final answer", () => {
+    const { state } = hydrateFromMessages([
+      { role: "user", content: "explain TCP" },
+      {
+        role: "assistant",
+        content: "TCP retransmits unacknowledged segments.",
+        toolCalls: [{ id: "e1", name: "turn.end", args: { reason: "answered" } }],
+      },
+      { role: "tool", toolCallId: "e1", name: "turn.end", content: "Turn end declared: answered.", ok: true },
+      { role: "user", content: "and UDP?" },
+      {
+        role: "assistant",
+        content: "UDP does not retransmit.",
+        toolCalls: [{ id: "e2", name: "turn.end", args: { reason: "done" } }],
+      },
+      { role: "tool", toolCallId: "e2", name: "turn.end", content: "turn.end needs reason", ok: false },
+    ]);
+    const kinds = state.order.map((id) => state.byId.get(id)!.kind);
+    expect(kinds).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
   it("reconstructs tool cards from assistant toolCalls + role:tool results", () => {
     const { state, toolOutputs } = hydrateFromMessages([
       { role: "user", content: "list files" },

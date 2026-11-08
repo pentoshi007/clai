@@ -5,6 +5,7 @@ import { transcriptItems } from "../../src/ui-core/state/transcript-types.js";
 import { installTransport } from "../conformance/fake-transport.js";
 
 const encoder = new TextEncoder();
+const turnEnd = { function: { name: "turn_end", arguments: { reason: "answered" } } };
 let services: AppServices | undefined;
 afterEach(() => { services?.dispose(); services = undefined; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -36,7 +37,7 @@ it.each([false, true])("streams real provider throughput into the session footer
     if (aborted) {
       session.abort();
     } else {
-      wire!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, prompt_eval_count: 1_000, eval_count: 120 })}\n`));
+      wire!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "", tool_calls: [turnEnd] }, done: true, prompt_eval_count: 1_000, eval_count: 120 })}\n`));
       wire!.close();
     }
     await pending;
@@ -72,7 +73,7 @@ it("settles real multi-request provider throughput to the same facts as the turn
     wires[0]!.close();
     await vi.waitFor(() => expect(wires).toHaveLength(2));
     now = 10_000;
-    wires[1]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "hi" }, done: false })}\n`));
+    wires[1]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "hi", tool_calls: [turnEnd] }, done: false })}\n`));
     wires[1]!.enqueue(encoder.encode(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, prompt_eval_count: 1_000, eval_count: 500 })}\n`));
     wires[1]!.close();
     await pending;

@@ -116,12 +116,13 @@ describe("Free rate-limit recovery through the agent and HTTP router", () => {
 
       const result = await turn.result;
       expect(result).toMatchObject({ outcome: { answer: ANSWER_TEXT } });
-      expect(requests).toHaveLength(3);
-      expect(requests.map((request) => request.body)).toEqual([
+      expect(requests).toHaveLength(4);
+      expect(requests.slice(0, 3).map((request) => request.body)).toEqual([
         requests[0]!.body,
         requests[0]!.body,
         requests[0]!.body,
       ]);
+      expect(JSON.stringify(requests[3]!.body)).toContain("TURN END CHECK");
       if (model === MODEL) {
         expect(new Set(requests.map((request) => request.headers["x-opencode-session"])).size).toBe(1);
         expect(requests[0]!.headers["x-opencode-session"]).toBeTruthy();

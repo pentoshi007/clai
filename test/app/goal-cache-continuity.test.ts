@@ -94,6 +94,10 @@ function wire(request: CompletionRequest, dialect: WireDialect): unknown[] {
   return body.input ?? body.messages;
 }
 
+function lastMessageContainsTurnEndCheck(request: CompletionRequest): boolean {
+  return JSON.stringify(request.messages.at(-1)).includes("TURN END CHECK");
+}
+
 function expectExtends(previous: CompletionRequest, next: CompletionRequest, dialect: WireDialect): void {
   const prefix = wire(previous, dialect);
   expect(JSON.stringify(wire(next, dialect).slice(0, prefix.length)) === JSON.stringify(prefix)).toBe(true);
@@ -146,18 +150,24 @@ describe("/goal cache continuity", () => {
     session.setContextLimitTokens(1_000_000);
     expect(session.setGoal(`one.ts is read and its value explained\n${"Relevant evidence. ".repeat(150)}`)).toMatchObject({ ok: true });
     await vi.waitFor(() => {
-      expect(requests).toHaveLength(5);
+      expect(requests).toHaveLength(7);
       expect(session!.getState().goal).toBeUndefined();
       expect(session!.getState().running).toBe(false);
     }, { timeout: 20_000 });
 
-    expect(requests.map((request) => request.purpose ?? "turn")).toEqual(["turn", "turn", "evaluation", "turn", "evaluation"]);
-    const [kickoffTool, kickoffAnswer, firstEvaluation, continuation, secondEvaluation] = requests as [
-      CompletionRequest, CompletionRequest, CompletionRequest, CompletionRequest, CompletionRequest,
+    expect(requests.map((request) => request.purpose ?? "turn")).toEqual(["turn", "turn", "turn", "evaluation", "turn", "turn", "evaluation"]);
+    const [kickoffTool, kickoffAnswer, kickoffCheck, firstEvaluation, continuation, continuationCheck, secondEvaluation] = requests as [
+      CompletionRequest, CompletionRequest, CompletionRequest, CompletionRequest, CompletionRequest, CompletionRequest, CompletionRequest,
     ];
+    expect(requests.map(lastMessageContainsTurnEndCheck)).toEqual([false, false, true, false, false, true, false]);
     expectExtends(kickoffTool, kickoffAnswer, dialect);
+    expectExtends(kickoffAnswer, kickoffCheck, dialect);
+    expectExtends(kickoffCheck, firstEvaluation, dialect);
     expectExtends(kickoffAnswer, firstEvaluation, dialect);
+    expectExtends(kickoffCheck, continuation, dialect);
     expectExtends(kickoffAnswer, continuation, dialect);
+    expectExtends(continuation, continuationCheck, dialect);
+    expectExtends(continuationCheck, secondEvaluation, dialect);
     expectExtends(continuation, secondEvaluation, dialect);
     expect(firstEvaluation.messages.at(-1)).toMatchObject({ role: "user", internal: true });
     expect(firstEvaluation.messages.at(-1)!.content).toContain(GOAL_EVALUATION_MARKER);

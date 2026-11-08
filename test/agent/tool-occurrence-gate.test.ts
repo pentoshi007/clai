@@ -8,6 +8,14 @@ import { clearTextOnlyModels } from "../../src/llm/tool-protocol.js";
 
 const streamMock = vi.fn();
 
+const turnEnd = (
+  id: string,
+): NonNullable<CompletionResult["toolCalls"]>[number] => ({
+  id,
+  name: "turn.end",
+  args: { reason: "completed" },
+});
+
 vi.mock("../../src/llm/router.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../../src/llm/router.js")>();
@@ -122,7 +130,8 @@ describe("tool occurrence execution gate (T620)", () => {
           text: "counted once, replayed once",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -189,7 +198,8 @@ describe("tool occurrence execution gate (T620)", () => {
           text: "read once, replayed once, checked tools",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -256,7 +266,8 @@ describe("tool occurrence execution gate (T620)", () => {
           text: "retried and recovered",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -305,7 +316,8 @@ describe("tool occurrence execution gate (T620)", () => {
           text: "nothing ran from the truncated call",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end")],
+          finishReason: "tool_calls",
         };
       },
     );

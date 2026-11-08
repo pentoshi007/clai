@@ -233,6 +233,22 @@ describe("V2-021 AgentEventAdapter", () => {
     expect(blocked).toEqual([]);
   });
 
+  it("hides turn.end entirely, including pending, failed and blocked declarations", () => {
+    const out = collectFrom([
+      { type: "tool-call-pending", id: "end-0", name: "turn.end" },
+      { type: "tool-call", id: "end-1", name: "turn.end", argsDisplay: "completed" },
+      { type: "tool-start", id: "end-1" },
+      { type: "tool-output", id: "end-1", chunk: "ok\n" },
+      { type: "tool-result", id: "end-1", ok: true, summary: "Turn end declared: completed.", exitCode: 0 },
+      { type: "tool-call", id: "end-2", name: "turn.end", argsDisplay: "finished" },
+      { type: "tool-output", id: "end-2", chunk: "failed\n" },
+      { type: "tool-result", id: "end-2", ok: false, summary: "turn.end needs reason", exitCode: 1 },
+      { type: "tool-call", id: "end-3", name: "turn.end", argsDisplay: "completed" },
+      { type: "tool-blocked", id: "end-3", name: "turn.end", reason: "policy denied" },
+    ]);
+    expect(out).toEqual([]);
+  });
+
   it("shows blocked plan commands instead of silently dropping them", () => {
     const out = collectFrom([
       { type: "tool-call", id: "plan-1", name: "plan.create", argsDisplay: "blocked plan" },

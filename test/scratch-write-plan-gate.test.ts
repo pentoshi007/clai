@@ -36,6 +36,12 @@ function streamReply(text: string) {
   };
 }
 
+function declaredFinalReply(text: string) {
+  return streamReply(
+    `${text}\n\`\`\`tool\n{"name":"turn.end","args":{"reason":"answered"}}\n\`\`\``,
+  );
+}
+
 describe("scratch-only writes bypass the plan gate", () => {
   beforeEach(async () => {
     stream.mockReset();
@@ -57,7 +63,7 @@ describe("scratch-only writes bypass the plan gate", () => {
             '","content":"hello"}}\n```',
         ),
       )
-      .mockImplementationOnce(streamReply("wrote scratch note"));
+      .mockImplementationOnce(declaredFinalReply("wrote scratch note"));
 
     runTool.mockResolvedValueOnce({ ok: true, output: "ok" });
 
@@ -87,7 +93,7 @@ describe("scratch-only writes bypass the plan gate", () => {
           '```tool\n{"name":"fs.write","args":{"path":"src/index.ts","content":"export const x = 1;"}}\n```',
         ),
       )
-      .mockImplementationOnce(streamReply("wrote src/index.ts"));
+      .mockImplementationOnce(declaredFinalReply("wrote src/index.ts"));
 
     runTool.mockResolvedValueOnce({ ok: true, output: "wrote src/index.ts" });
 
@@ -111,7 +117,7 @@ describe("scratch-only writes bypass the plan gate", () => {
       .mockImplementationOnce(
         streamReply('```tool\n{"name":"fs.read","args":{"path":"."}}\n```'),
       )
-      .mockImplementationOnce(streamReply("listed"));
+      .mockImplementationOnce(declaredFinalReply("listed"));
 
     runTool.mockResolvedValueOnce({ ok: true, output: "a.ts, b.ts" });
 

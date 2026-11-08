@@ -5,6 +5,11 @@ import type { LooseWorkReceipt, TaskWorkLedger } from "../../task-evidence.js";
 import type { SingleToolResult } from "../contracts.js";
 import { RUNNER_META_TOOL_NAMES } from "../../../tools/definitions.js";
 import {
+  isTurnEndReason,
+  TURN_END_REASONS,
+  TURN_END_TOOL_NAME,
+} from "../../../tools/turn-end.js";
+import {
   decideResponderRead,
   parseResponderReadRequest,
   type ResponderReadWakeIdentity,
@@ -56,6 +61,25 @@ export type MetaToolOutcome =
 
 export const isRunnerMetaTool = (name: string): boolean =>
   RUNNER_META_TOOL_NAMES.has(name);
+
+const handleTurnEnd = (
+  ports: MetaToolPorts,
+  call: ToolCall,
+): MetaToolOutcome => {
+  const reason = call.args.reason;
+  const ok = isTurnEndReason(reason);
+  const output = ok
+    ? `Turn end declared: ${reason}. It applies only when every other call in this response succeeded as plan or job bookkeeping; otherwise review the results and declare again when finished.`
+    : `turn.end needs reason set to one of: ${TURN_END_REASONS.join(", ")}.`;
+  ports.showCall(call);
+  const result: ToolResult = ok ? { ok, output } : { ok, output, exitCode: 1 };
+  ports.emitToolResult(result, output);
+  ports.writeToolOutput(ok ? "ok\n" : "failed\n");
+  return {
+    kind: "handled",
+    result: { ok, call, result, contextOutput: output },
+  };
+};
 
 const handleResponderRead = (
   ports: MetaToolPorts,
@@ -165,6 +189,9 @@ export const runMetaTool = async (
   call: ToolCall,
 ): Promise<MetaToolOutcome> => {
   if (!isRunnerMetaTool(call.name)) return { kind: "not-meta" };
+  if (call.name === TURN_END_TOOL_NAME) {
+    return handleTurnEnd(ports, call);
+  }
   if (call.name === "job.read") {
     return handleResponderRead(ports, call);
   }

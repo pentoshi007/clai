@@ -2,6 +2,7 @@ import type { ToolDefinition } from "../types.js";
 import { toSnakeWireName, toWireName } from "../llm/tool-protocol.js";
 import { byName } from "./definitions/selection.js";
 import { TOOL_DEFINITIONS } from "./definitions/aggregate.js";
+import { TURN_END_TOOL_NAME } from "./turn-end.js";
 export { TOOL_DEFINITIONS };
 export {
   assertDefinitionRegistryConsistency,
@@ -22,6 +23,7 @@ export const RESPONDER_TOOL_NAMES = new Set(["job.read"]);
 export const RUNNER_META_TOOL_NAMES = new Set([
   ...PLAN_TOOL_NAMES,
   ...RESPONDER_TOOL_NAMES,
+  TURN_END_TOOL_NAME,
 ]);
 
 export const MCP_CONTROL_TOOL_NAMES = new Set([

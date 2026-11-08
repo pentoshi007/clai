@@ -28,13 +28,18 @@ function frame(body: object | string): string {
   return `data: ${JSON.stringify({ body: typeof body === "string" ? body : JSON.stringify(body), statusCodeValue: 200 })}\n\n`;
 }
 
+const turnEndDelta = {
+  index: 0, id: "call_turn_end", type: "function",
+  function: { name: "turn_end", arguments: JSON.stringify({ reason: "answered" }) },
+};
+
 beforeEach(() => {
   vi.stubEnv("QODER_API_KEY", credential);
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.endsWith("/model/list")) return Response.json({ chat: [{ key: "qfmodel", is_free: true, max_input_tokens: 180_000 }] });
     if (url.endsWith("/inference")) return new Response(
-      frame({ choices: [{ delta: { content: "QODER_USAGE_OK" }, finish_reason: "stop" }] }) +
+      frame({ choices: [{ delta: { content: "QODER_USAGE_OK", tool_calls: [turnEndDelta] }, finish_reason: "tool_calls" }] }) +
       frame({ choices: [], usage: {
         prompt_tokens: 81, completion_tokens: 192, total_tokens: 273,
         prompt_tokens_details: { cached_tokens: 20 }, completion_tokens_details: { reasoning_tokens: 182 },

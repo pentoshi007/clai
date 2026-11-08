@@ -172,6 +172,7 @@ describe("agent MCP integration", () => {
     provider: "openai",
     model: "gpt-4o-mini",
     finishReason: "stop",
+    toolCalls: [{ id: "call-turn-end", name: "turn.end", args: { reason: "answered" } }],
   });
   const toolReply = (name: string, args: Record<string, unknown>): CompletionResult => ({
     ...reply(""),
@@ -464,7 +465,7 @@ describe("agent MCP integration", () => {
         }
         onToken("record two found");
         return {
-          text: "record two found",
+          text: "record two found\n```tool\n{\"name\":\"turn.end\",\"args\":{\"reason\":\"answered\"}}\n```",
           provider: "openai",
           model: "gpt-test",
           finishReason: "stop",

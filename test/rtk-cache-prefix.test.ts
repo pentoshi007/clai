@@ -49,7 +49,10 @@ const TOGGLED_SESSION: readonly Step[] = [
   { rtk: true, command: "diff notes.txt other.txt" },
   { rtk: false, command: "grep beta notes.txt" },
   { rtk: false },
+  { rtk: false },
 ];
+
+const TURN_END_CHECK_REQUESTS = 1;
 
 const PLAIN_SESSION: readonly Step[] = TOGGLED_SESSION.map((step) => ({ ...step, rtk: false }));
 
@@ -138,6 +141,12 @@ describe.skipIf(process.platform === "win32")("rtk keeps the provider cache pref
     });
     expect(answer).toContain("done");
     expect(sent).toHaveLength(steps.length);
+    const checkIndex = sent.length - TURN_END_CHECK_REQUESTS;
+    for (const [index, request] of sent.entries()) {
+      const lastMessage = JSON.stringify(request.messages.at(-1));
+      if (index === checkIndex) expect(lastMessage).toContain("TURN END CHECK");
+      else expect(lastMessage).not.toContain("TURN END CHECK");
+    }
     return sent;
   };
 

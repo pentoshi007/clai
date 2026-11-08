@@ -274,6 +274,7 @@ describe("ordinary-turn responder delivery", () => {
           provider: "openai",
           model: "gpt-test",
           finishReason: "stop",
+          toolCalls: [{ id: "call-turn-end", name: "turn.end", args: { reason: "answered" } }],
         };
       },
     );
@@ -762,6 +763,7 @@ describe("standalone responder report continuation", () => {
           provider: "openai",
           model: "gpt-test",
           finishReason: "stop",
+          toolCalls: [{ id: "call-turn-end", name: "turn.end", args: { reason: "answered" } }],
         };
       },
     );
