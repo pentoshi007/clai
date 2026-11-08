@@ -38,6 +38,11 @@ const endpointEnvVars: Partial<Record<ProviderId, string>> = {
   lightning: "LIGHTNING_BASE_URL",
   tokenrouter: "TOKENROUTER_BASE_URL",
   tokenharbor: "TOKENHARBOR_BASE_URL",
+  refuseless: "REFUSELESS_BASE_URL",
+  unrestricted: "UNRESTRICTED_BASE_URL",
+  unaligned: "UNALIGNED_BASE_URL",
+  respan: "RESPAN_GATEWAY_BASE_URL",
+  silkcompute: "SILK_BASE_URL",
 };
 
 function providerEndpointEnvVar(provider: ProviderId): string | undefined {

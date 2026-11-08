@@ -262,6 +262,301 @@ GOOD TO KNOW
   - Env var: TOKENHARBOR_API_KEY (used when nothing is stored).
 
 Docs: https://tokenharbor.ai/docs`,
+  refuseless: `Refuseless — hosted inference for refusal-removed open weights
+
+WHAT IT IS
+  An OpenAI-compatible host for abliterated GLM, DeepSeek and MiniMax models
+  and their standard-weight variants. clai uses /v1/chat/completions with SSE
+  streaming, native tool calling and live reasoning_content streaming.
+
+  Base URL   https://api.refuseless.com/v1   (override — see ENDPOINTS below)
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions
+
+MODELS
+  /model reads GET /v1/models with your key, so private models granted to the
+  account are listed too. Context windows, image input and the reasoning
+  levels each model accepts (off, low, high, max) come from that catalog:
+  /effort offers exactly those levels, and a model that does not list "off"
+  always reasons. Refuseless rejects minimal, medium and xhigh, so clai maps
+  them to the nearest level the model accepts. Text-only models never receive
+  image attachments.
+
+CACHING
+  Prefix caching is automatic; clai keeps the system prompt, tools and
+  history byte-stable between turns and reads usage.prompt_tokens_details.
+  cached_tokens into the usage totals. Reuse depends on the server's cache
+  window and prompt length.
+
+COST
+  Metered in credits. HTTP 402 means the balance is empty; a stream that runs
+  out mid-generation ends with an insufficient_credits error. 429 model_busy
+  and model_warming carry Retry-After and clai waits and retries.
+
+SETUP
+  1. Create a key in the Refuseless console (https://docs.refuseless.com/quickstart)
+  2. clai set refuseless <key>
+  3. clai use refuseless
+  4. /model deepseek-v4.1-flash-abliterated      (or any id from /model)
+
+MANAGING KEYS AND ENDPOINTS IN clai
+  clai set refuseless <key>             add a key (up to 10, rotated on failure)
+  clai keys                             masked keys + the active endpoint
+  clai unset refuseless                 remove every stored key
+  /set refuseless                       TUI: endpoint editor, then key editor
+  /info refuseless                      this page
+
+  Base URL (optional — defaults to api.refuseless.com):
+  clai set refuseless --url https://gateway.example.com/v1
+  clai unset refuseless --url           back to the default
+  REFUSELESS_BASE_URL overrides the whole list.
+
+GOOD TO KNOW
+  - Env var: REFUSELESS_API_KEY (used when nothing is stored).
+  - Anthropic Messages and Responses endpoints exist but clai uses chat
+    completions, which carries reasoning_content and tool calls natively.
+
+Docs: https://docs.refuseless.com`,
+  unrestricted: `Unrestricted — pay-per-token uncensored coding and chat models
+
+WHAT IT IS
+  An OpenAI- and Anthropic-compatible API for uncensored Qwen, MiMo, GLM and
+  DeepSeek models. clai uses /v1/chat/completions with SSE streaming, native
+  tool calling and live reasoning_content streaming.
+
+  Base URL   https://api.unrestricted.sh/v1   (override — see ENDPOINTS below)
+  Auth       Authorization: Bearer unr_sk_…
+  Endpoints  /models · /chat/completions
+
+MODELS
+  /model reads the live catalog from GET /v1/models. Context windows, maximum
+  output and image input come from that catalog, so /context and image
+  attachments follow the selected model. The catalog does not publish
+  reasoning levels; /effort offers the standard ladder. "none" switches
+  thinking off on every model, and any other level switches it on (Qwen caps
+  reasoning at 1,024 / 4,096 / 16,384 tokens for low / medium / high and above).
+
+CACHING
+  Cached input is billed at a lower rate automatically; clai keeps the prompt
+  prefix byte-stable and reads usage.prompt_tokens_details.cached_tokens into
+  the usage totals.
+
+LIMITS
+  Concurrent requests per account: 3 (5 on Pro, 8 on Max), shared by every
+  key. Excess requests get HTTP 429 concurrent_request_limit with Retry-After
+  and cost nothing; clai waits and retries. 402 insufficient_funds means the
+  balance is empty, and 403 api_locked means funds must be added once to
+  unlock API keys.
+
+SETUP
+  1. Create a key at https://unrestricted.sh (it starts with unr_sk_)
+  2. clai set unrestricted unr_sk_yourKey
+  3. clai use unrestricted
+  4. /model qwen3.8-27b-uncensored      (or any id from /model)
+
+MANAGING KEYS AND ENDPOINTS IN clai
+  clai set unrestricted <key>           add a key (up to 10, rotated on failure)
+  clai keys                             masked keys + the active endpoint
+  clai unset unrestricted               remove every stored key
+  /set unrestricted                     TUI: endpoint editor, then key editor
+  /info unrestricted                    this page
+
+  Base URL (optional — defaults to api.unrestricted.sh):
+  clai set unrestricted --url https://gateway.example.com/v1
+  clai unset unrestricted --url         back to the default
+  UNRESTRICTED_BASE_URL overrides the whole list.
+
+GOOD TO KNOW
+  - Env var: UNRESTRICTED_API_KEY (used when nothing is stored).
+  - Requests can run for up to 5.5 minutes; waking a sleeping GPU adds a
+    $0.01 fee.
+
+Docs: https://unrestricted.sh/reference`,
+  unaligned: `Unaligned — one key for uncensored open weights and frontier models
+
+WHAT IT IS
+  A gateway that serves uncensored and abliterated GLM and DeepSeek models
+  next to GPT, Claude, Grok, Kimi, MiMo and Gemini models under one balance.
+  clai uses the OpenAI format (/openai/v1/chat/completions) with SSE
+  streaming, native tool calling and live reasoning streaming.
+
+  Base URL   https://api.unaligned.pw/openai/v1   (override — see ENDPOINTS below)
+  Auth       Authorization: Bearer sk-unal-…
+  Endpoints  /models · /chat/completions
+
+MODELS
+  /model reads the public catalog at https://api.unaligned.pw/v1/models
+  (the key is not needed to browse it). Context windows, maximum output,
+  image input and whether a model reasons come from that catalog. The
+  catalog does not publish reasoning levels, so /effort offers the standard
+  ladder for the selected model family. Images are sent inline as data URLs
+  (JPEG, PNG, GIF or WebP, up to 5 MB each) and only to models marked as
+  vision-capable.
+
+CACHING
+  Cached input is billed at a lower rate automatically. clai keeps the
+  prompt prefix byte-stable, sends a per-session prompt_cache_key (unknown
+  fields are ignored by the gateway) and reads cached tokens from the usage
+  block.
+
+COST
+  All keys share one balance. HTTP 401 means the key is wrong or revoked and
+  402 means the balance is empty. The gateway has no endpoint that checks a
+  key without spending, so a mistyped key is only detected on the first
+  request.
+
+SETUP
+  1. Create a key under Dashboard → API keys at https://unaligned.pw (sk-unal-…)
+  2. clai set unaligned sk-unal-yourKey
+  3. clai use unaligned
+  4. /model gpt-6-luna      (or any id from /model)
+
+MANAGING KEYS AND ENDPOINTS IN clai
+  clai set unaligned <key>              add a key (up to 10, rotated on failure)
+  clai keys                             masked keys + the active endpoint
+  clai unset unaligned                  remove every stored key
+  /set unaligned                        TUI: endpoint editor, then key editor
+  /info unaligned                       this page
+
+  Base URL (optional — defaults to api.unaligned.pw):
+  clai set unaligned --url https://gateway.example.com/openai/v1
+  clai unset unaligned --url            back to the default
+  UNALIGNED_BASE_URL overrides the whole list.
+
+GOOD TO KNOW
+  - Env var: UNALIGNED_API_KEY (used when nothing is stored).
+  - The Responses API is stateless here (store: false); clai uses chat
+    completions.
+
+Docs: https://unaligned.pw/docs`,
+  respan: `Respan — AI gateway with routing, logging and one key for every model
+
+WHAT IT IS
+  An OpenAI-compatible gateway that routes to OpenAI, Anthropic, Google,
+  DeepSeek and many other providers. clai sends chat completions to the
+  gateway with SSE streaming, native tool calling and live reasoning
+  streaming. Every request is logged in your Respan project.
+
+  Base URL   https://gateway.respan.ai/v1   (override — see ENDPOINTS below)
+  Auth       Authorization: Bearer <Respan API key>
+  Endpoints  /chat/completions
+
+MODELS
+  /model reads https://api.respan.ai/api/v1/models with your key, which lists
+  the models your project can call, and keeps token-priced chat models only
+  (image, audio, video and embedding entries are hidden). Context windows
+  come from that catalog. It does not publish reasoning levels or image
+  support, so /effort offers the standard ladder for the model family and
+  images are sent to families known to accept them.
+  Ids carry no vendor prefix (gpt-5.5, claude-sonnet-4.5). A provider-qualified
+  id pins the call to one provider's offering.
+
+CACHING
+  - Claude models: clai places ephemeral cache_control marks on the system
+    prompt and the tail of the conversation (at most four, as content
+    blocks), which the gateway forwards to Anthropic.
+  - OpenAI models: caching is automatic and clai sends a per-session
+    prompt_cache_key; the gateway drops it for other providers.
+  - DeepSeek models cache repeated prefixes automatically.
+  - Cached tokens are read from usage.prompt_tokens_details.cached_tokens,
+    usage.cache_read_input_tokens and usage.prompt_cache_hit_tokens.
+
+COST
+  Calls on provider keys you saved with BYOK are billed by the provider;
+  other calls are charged to Respan credits. HTTP 401 activation_required
+  means the account needs credits or a provider key; 403 means the Respan
+  key is invalid or expired.
+
+SETUP
+  1. Create a key with Gateway enabled at
+     https://platform.respan.ai/platform/gateway/api-keys
+  2. clai set respan <key>
+  3. clai use respan
+  4. /model gpt-5.5      (or any id from /model)
+
+MANAGING KEYS AND ENDPOINTS IN clai
+  clai set respan <key>                 add a key (up to 10, rotated on failure)
+  clai keys                             masked keys + the active endpoint
+  clai unset respan                     remove every stored key
+  /set respan                           TUI: endpoint editor, then key editor
+  /info respan                          this page
+
+  Gateway URL (optional — defaults to gateway.respan.ai):
+  clai set respan --url https://gateway.example.com/v1
+  clai unset respan --url               back to the default
+  RESPAN_GATEWAY_BASE_URL overrides the whole list. A custom gateway URL
+  reads its catalog from <url>/models.
+
+GOOD TO KNOW
+  - Env var: RESPAN_API_KEY (used when nothing is stored).
+  - clai routes completions through the gateway only; Respan tracing and the
+    Respan CLI are separate and are not configured by clai.
+
+Docs: https://www.respan.ai/docs/ai-gateway/quickstart`,
+  silkcompute: `Silk Compute — abliterated Kimi, Hy4, DeepSeek and GLM on prepaid credits
+
+WHAT IT IS
+  An OpenAI-, Responses- and Anthropic-compatible API for uncensored and
+  standard Kimi K3.1, Hy4, DeepSeek V4.1 and GLM-5.3 models, 1M tokens of
+  context on every model. clai uses /v1/chat/completions with SSE streaming,
+  native tool calling and live reasoning_content streaming.
+
+  Base URL   https://api.silkcompute.com/v1   (override — see ENDPOINTS below)
+  Auth       Authorization: Bearer sk-…
+  Endpoints  /models · /chat/completions
+
+MODELS
+  /model reads GET /v1/models with your key (the list needs a key). Context
+  window, maximum output and the reasoning levels each model accepts (none,
+  low, high, max) come from that catalog, so /context and /effort follow the
+  selected model and new models appear without a clai update. Other effort
+  names are mapped to the nearest level the model accepts. "none" asks for
+  the least thinking the model allows; it does not always switch thinking
+  off. The catalog does not publish image support; images go to models that
+  take them (Kimi K3.1 and Hy4) and, for any other model, are removed and the
+  model remembered as text-only if the server rejects them.
+
+CACHING
+  Prefix caching is automatic on every model. clai keeps the system prompt,
+  tool definitions and earlier turns byte-stable between turns, sends
+  assistant messages back unchanged (including reasoning_content on tool
+  turns) and reads usage.prompt_tokens_details.cached_tokens into the usage
+  totals. Cached input is billed at a lower rate.
+
+LIMITS
+  8 requests run at once per account (1 while the balance is under $1), and a
+  request over 8 MiB is rejected with 413. A ninth request waits up to 5
+  seconds, then gets 429 concurrent_request_limit with Retry-After; clai waits
+  and retries. 402 insufficient_credits means the balance is empty. Thinking
+  counts toward the output limit, so a long-thinking model can end with
+  finish_reason length and no answer text; raise the output limit if so.
+
+SETUP
+  1. Create a key at https://platform.silkcompute.com/api-keys and add credits
+     at https://platform.silkcompute.com/billing
+  2. clai set silkcompute sk-yourKey
+  3. clai use silkcompute
+  4. /model deepseek-v4.1-flash-1017-uncensored      (or any id from /model)
+
+MANAGING KEYS AND ENDPOINTS IN clai
+  clai set silkcompute <key>            add a key (up to 10, rotated on failure)
+  clai keys                             masked keys + the active endpoint
+  clai unset silkcompute                remove every stored key
+  /set silkcompute                      TUI: endpoint editor, then key editor
+  /info silkcompute                     this page
+
+  Base URL (optional — defaults to api.silkcompute.com):
+  clai set silkcompute --url https://gateway.example.com/v1
+  clai unset silkcompute --url          back to the default
+  SILK_BASE_URL overrides the whole list.
+
+GOOD TO KNOW
+  - Env var: SILK_API_KEY (used when nothing is stored). Aliases: silk,
+    silk-compute.
+  - Hosted tools such as web search, previous_response_id and PDFs are not
+    available; clai sends the whole conversation each turn.
+
+Docs: https://silkcompute.com/docs`,
   lightning: `Lightning AI Model APIs — one key for OpenAI, Anthropic, Google
 and Lightning-hosted open models
 

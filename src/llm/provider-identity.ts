@@ -147,6 +147,23 @@ export const providerAliases: Record<string, ProviderId> = {
   tokenharbor: "tokenharbor",
   "token-harbor": "tokenharbor",
   "tokenharbor.ai": "tokenharbor",
+  refuseless: "refuseless",
+  "refuseless.com": "refuseless",
+  "refuseless-ai": "refuseless",
+  unrestricted: "unrestricted",
+  "unrestricted.sh": "unrestricted",
+  "unrestricted-sh": "unrestricted",
+  unaligned: "unaligned",
+  "unaligned.pw": "unaligned",
+  "unaligned-pw": "unaligned",
+  respan: "respan",
+  "respan.ai": "respan",
+  "respan-ai": "respan",
+  "respan-gateway": "respan",
+  silkcompute: "silkcompute",
+  "silk-compute": "silkcompute",
+  "silkcompute.com": "silkcompute",
+  silk: "silkcompute",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -188,6 +205,11 @@ export const defaultModels: Record<ProviderId, string> = {
   omnirush: "gpt-6-astra",
   tokenharbor: "claude-sonnet-5.5",
   qoder: "auto",
+  refuseless: "deepseek-v4.1-flash-abliterated",
+  unrestricted: "qwen3.8-27b-uncensored",
+  unaligned: "gpt-6-luna",
+  respan: "gpt-5.5",
+  silkcompute: "deepseek-v4.1-flash-1017-uncensored",
 };
 
 export const retiredModelReplacements: Partial<
@@ -265,4 +287,9 @@ export const envVars: Record<ProviderId, string | undefined> = {
   omnirush: "OMNIRUSH_API_KEY",
   tokenharbor: "TOKENHARBOR_API_KEY",
   qoder: "QODER_API_KEY",
+  refuseless: "REFUSELESS_API_KEY",
+  unrestricted: "UNRESTRICTED_API_KEY",
+  unaligned: "UNALIGNED_API_KEY",
+  respan: "RESPAN_API_KEY",
+  silkcompute: "SILK_API_KEY",
 };

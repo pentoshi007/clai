@@ -377,6 +377,11 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   omnirush: "https://omnirush.ai/omnirush/v1",
   qoder: "https://api1.qoder.sh",
   tokenharbor: "https://tokenharbor.ai/v1",
+  refuseless: "https://api.refuseless.com/v1",
+  unrestricted: "https://api.unrestricted.sh/v1",
+  unaligned: "https://api.unaligned.pw/openai/v1",
+  respan: "https://gateway.respan.ai/v1",
+  silkcompute: "https://api.silkcompute.com/v1",
 };
 
 function providerBaseUrl(provider: ProviderId): string | undefined {

@@ -16,6 +16,7 @@ import {
   toCompletionResult,
 } from "./http.js";
 import { catalogEntriesFromPayload } from "./catalog-facts.js";
+import { NON_CHAT_MODEL_ID } from "./catalog-provider.js";
 import { tokenHarborBreakpointMode } from "./tokenharbor-cache.js";
 import { modelListCache } from "./model-list-cache.js";
 
@@ -25,9 +26,6 @@ export const TOKENHARBOR_CACHE_CONTROL_HEADER = "X-TH-Cache-Control";
 const GATEWAY_HEADERS: Readonly<Record<string, string>> = {
   [TOKENHARBOR_CACHE_CONTROL_HEADER]: "bypass",
 };
-
-const NON_CHAT_MODEL_ID =
-  /embed|(?:^|[-/.])image(?:[-/.]|$)|imagen|dall-e|(?:^|[-/])tts(?:[-/]|$)|whisper|transcribe|moderation|rerank|(?:^|[-/])video(?:[-/]|$)/i;
 
 const catalogCache = modelListCache("tokenharbor");
 

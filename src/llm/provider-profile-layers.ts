@@ -4,8 +4,11 @@ import { hinokiProfile } from "./hinoki-profile.js";
 import { classifyBynaraModel, classifyNvidiaModel } from "./model-families.js";
 import { CHAT_COMPLETIONS_TERMINAL_PROOFS } from "./provider-profile.js";
 import type {
+  CachePolicySpec,
   ProfileEvidence,
+  ProfileTriState,
   ProviderProfileLayer,
+  UsageAliasSpec,
 } from "./provider-profile.js";
 
 export const codeFact = (detail?: string): ProfileEvidence => ({
@@ -25,6 +28,77 @@ export const viaGateway = (detail: string): ProfileEvidence => ({
   confidence: "inferred",
   detail,
 });
+
+const CATALOG_GATEWAY_CACHED_INPUT = [
+  "usage.prompt_tokens_details.cached_tokens",
+] as const;
+
+function catalogGatewayLayer(input: {
+  readonly doc: string;
+  readonly keyEnv: string;
+  readonly baseUrlEnv: string;
+  readonly streamOptions: ProfileTriState;
+  readonly cache: Pick<CachePolicySpec, "kind" | "affinityField">;
+  readonly usage?: Partial<UsageAliasSpec> | undefined;
+  readonly reasoning?: NonNullable<ProviderProfileLayer["reasoning"]> | undefined;
+}): ProviderProfileLayer {
+  const evidence = providerDoc(input.doc);
+  return {
+    evidence,
+    transport: {
+      authType: "bearer",
+      keyEnv: input.keyEnv,
+      baseUrlEnv: input.baseUrlEnv,
+      systemPolicy: "single-leading",
+    },
+    capabilities: {
+      tools: "supported",
+      images: "unknown",
+      streamOptions: input.streamOptions,
+    },
+    reasoning: input.reasoning ?? {
+      control: { dialect: "openai-effort", status: "supported", evidence },
+      outputShapes: ["reasoning-content", "reasoning-field"],
+    },
+    cache: {
+      ...input.cache,
+      cacheAffectingFields: [
+        "model",
+        "messages",
+        "tools",
+        "tool_choice",
+        "reasoning_effort",
+        ...(input.cache.affinityField ? [input.cache.affinityField] : []),
+      ],
+    },
+    usage: {
+      cachedInput: CATALOG_GATEWAY_CACHED_INPUT,
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+      ...input.usage,
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  };
+}
+
+function noneDisablesReasoning(
+  doc: string,
+): NonNullable<ProviderProfileLayer["reasoning"]> {
+  return {
+    control: {
+      dialect: "openai-effort",
+      status: "supported",
+      evidence: providerDoc(doc),
+    },
+    disable: "supported",
+    disableForm: "effort-none",
+    outputShapes: ["reasoning-content"],
+    replayScope: "tool-turn",
+    finalTurnPreservation: "unsupported",
+  };
+}
 
 export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = {
   hinoki: hinokiProfile,
@@ -497,6 +571,54 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  refuseless: catalogGatewayLayer({
+    doc: "https://docs.refuseless.com/api/chat-completions",
+    keyEnv: "REFUSELESS_API_KEY",
+    baseUrlEnv: "REFUSELESS_BASE_URL",
+    streamOptions: "supported",
+    cache: { kind: "automatic-prefix" },
+    reasoning: noneDisablesReasoning("https://docs.refuseless.com/guides/reasoning"),
+  }),
+  silkcompute: catalogGatewayLayer({
+    doc: "https://silkcompute.com/docs/anthropic-and-responses",
+    keyEnv: "SILK_API_KEY",
+    baseUrlEnv: "SILK_BASE_URL",
+    streamOptions: "supported",
+    cache: { kind: "automatic-prefix" },
+    reasoning: noneDisablesReasoning("https://silkcompute.com/docs/reasoning"),
+  }),
+  unrestricted: catalogGatewayLayer({
+    doc: "https://unrestricted.sh/reference",
+    keyEnv: "UNRESTRICTED_API_KEY",
+    baseUrlEnv: "UNRESTRICTED_BASE_URL",
+    streamOptions: "unknown",
+    cache: { kind: "automatic-prefix" },
+  }),
+  unaligned: catalogGatewayLayer({
+    doc: "https://unaligned.pw/docs/openai",
+    keyEnv: "UNALIGNED_API_KEY",
+    baseUrlEnv: "UNALIGNED_BASE_URL",
+    streamOptions: "supported",
+    cache: { kind: "automatic-prefix", affinityField: "prompt_cache_key" },
+  }),
+  respan: catalogGatewayLayer({
+    doc: "https://www.respan.ai/docs/ai-gateway/requests/chat-completions",
+    keyEnv: "RESPAN_API_KEY",
+    baseUrlEnv: "RESPAN_GATEWAY_BASE_URL",
+    streamOptions: "supported",
+    cache: { kind: "automatic-prefix", affinityField: "prompt_cache_key" },
+    usage: {
+      cachedInput: [
+        "usage.prompt_tokens_details.cached_tokens",
+        "usage.cache_read_input_tokens",
+        "usage.prompt_cache_hit_tokens",
+      ],
+      cacheWrite: [
+        "usage.prompt_tokens_details.cache_write_tokens",
+        "usage.cache_creation_input_tokens",
+      ],
+    },
+  }),
   fireworks: {
     evidence: providerDoc("fireworks-chat-completions"),
     capabilities: { tools: "supported" },

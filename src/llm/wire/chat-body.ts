@@ -240,6 +240,32 @@ export interface ChatCompletionsBodyOptions {
 
 const DEFAULT_REASONING_OUTPUT_FLOOR = 16_384;
 
+const PROMPT_CACHE_KEY_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>([
+  "openai",
+  "mistral",
+  "tokenrouter",
+  "explabs",
+  "river",
+  "hinoki",
+  "unaligned",
+  "respan",
+]);
+
+const AFFINITY_KEY_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>([
+  ...PROMPT_CACHE_KEY_PROVIDERS,
+  "openrouter",
+  "fireworks",
+  "merge-gateway",
+  "cline",
+]);
+
+function providerIn(
+  providers: ReadonlySet<ProviderId>,
+  provider: ProviderId | undefined,
+): provider is ProviderId {
+  return provider !== undefined && providers.has(provider);
+}
+
 function outputBudgetWithReasoning(
   requested: number,
   options: ChatCompletionsBodyOptions,
@@ -332,16 +358,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     : claudeFloored;
   const affinitySession = currentSessionAffinity();
   const affinityKey =
-    options.providerId === "openrouter" ||
-    options.providerId === "fireworks" ||
-    options.providerId === "merge-gateway" ||
-    options.providerId === "tokenrouter" ||
-    options.providerId === "openai" ||
-    options.providerId === "mistral" ||
-    options.providerId === "explabs" ||
-    options.providerId === "river" ||
-    options.providerId === "hinoki" ||
-    options.providerId === "cline"
+    providerIn(AFFINITY_KEY_PROVIDERS, options.providerId)
       ? affinitySession
         ? sessionCacheAffinityKey(affinitySession)
         : cacheAffinityKey(options.providerId, options.model, options.messages)
@@ -408,12 +425,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     affinityKey
       ? { session_id: affinityKey }
       : {}),
-    ...((options.providerId === "openai" ||
-      options.providerId === "mistral" ||
-      options.providerId === "tokenrouter" ||
-      options.providerId === "explabs" ||
-      options.providerId === "river" ||
-      options.providerId === "hinoki") &&
+    ...(providerIn(PROMPT_CACHE_KEY_PROVIDERS, options.providerId) &&
     affinityKey
       ? { prompt_cache_key: affinityKey }
       : {}),

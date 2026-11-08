@@ -1,5 +1,4 @@
-import type { CatalogFacts } from "./catalog-facts.js";
-import { catalogEffortList } from "./catalog-facts.js";
+import { openAiEffortCatalogLayer } from "./catalog-effort-layer.js";
 import { CHAT_COMPLETIONS_TERMINAL_PROOFS, type ProviderProfileLayer } from "./provider-profile.js";
 import { WIRE_EFFORT_SCALE } from "./reasoning-controls.js";
 
@@ -41,20 +40,4 @@ export const hinokiProfile: ProviderProfileLayer = {
   terminal: { proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS, naturalEofAccepted: false },
 };
 
-export function hinokiModelLayer(facts: CatalogFacts | undefined): ProviderProfileLayer | undefined {
-  const reasoning = facts?.reasoning;
-  if (!reasoning) return undefined;
-  const supported = reasoning.supported !== false;
-  const efforts = supported ? catalogEffortList(reasoning.supportedEfforts) ?? WIRE_EFFORT_SCALE : [];
-  const catalogEvidence = { source: "catalog" as const, confidence: "high" as const };
-  return {
-    evidence: catalogEvidence,
-    reasoning: {
-      generation: !supported ? "none" : reasoning.mandatory ? "mandatory" : reasoning.defaultEnabled ? "default-on" : "optional",
-      control: { dialect: "openai-effort", status: supported ? "supported" : "unsupported", evidence: catalogEvidence },
-      acceptedEfforts: efforts,
-      disable: reasoning.mandatory ? "unsupported" : "supported",
-      disableForm: efforts.includes("none") ? "effort-none" : "omit-control",
-    },
-  };
-}
+export const hinokiModelLayer = openAiEffortCatalogLayer;

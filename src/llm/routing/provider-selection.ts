@@ -50,6 +50,11 @@ import { copilotProvider } from "../copilot.js";
 import { kiroProvider } from "../kiro.js";
 import { omnirushProvider } from "../omnirush.js";
 import { tokenharborProvider } from "../tokenharbor.js";
+import { refuselessProvider } from "../refuseless.js";
+import { respanProvider } from "../respan.js";
+import { silkcomputeProvider } from "../silkcompute.js";
+import { unalignedProvider } from "../unaligned.js";
+import { unrestrictedProvider } from "../unrestricted.js";
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
@@ -90,6 +95,11 @@ export const providers: Record<ProviderId, LlmProvider> = {
   omnirush: omnirushProvider,
   tokenharbor: tokenharborProvider,
   qoder: qoderProvider,
+  refuseless: refuselessProvider,
+  unrestricted: unrestrictedProvider,
+  unaligned: unalignedProvider,
+  respan: respanProvider,
+  silkcompute: silkcomputeProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -130,6 +140,11 @@ const fallbackOrder: ProviderId[] = [
   "omnirush",
   "tokenharbor",
   "qoder",
+  "refuseless",
+  "unrestricted",
+  "unaligned",
+  "respan",
+  "silkcompute",
 ];
 
 function allFallbackIds(): ProviderId[] {
