@@ -4,6 +4,7 @@ import {
   imageBudgetFor,
   type ImageBudget,
 } from "../attachments/image-content.js";
+import { imagePayloadBytes, imageRetentionLimits } from "../attachments/image-retention.js";
 import { loadImagePaths } from "../ui/mentions.js";
 import type { TranscriptItem } from "../app/ports/transcript-item.js";
 import { flattenTranscriptHistory } from "../ui-core/state/transcript-history.js";
@@ -165,41 +166,61 @@ function scrubMessage(source: ChatMessage): ChatMessage {
   });
 }
 
-const MAX_RESTORED_IMAGE_COUNT = 6;
-
 export async function materializeHistoryImages(
   messages: readonly ChatMessage[],
   budget: ImageBudget = imageBudgetFor(""),
   signal?: AbortSignal,
 ): Promise<ChatMessage[]> {
+  const limits = imageRetentionLimits(budget);
+  const restored = new Map<number, ChatImage[]>();
   let imageCount = 0;
   let totalBytes = 0;
-  const maxCount = Math.min(MAX_RESTORED_IMAGE_COUNT, budget.maxCount);
-  const output: ChatMessage[] = [];
-  for (const message of messages) {
-    signal?.throwIfAborted();
-    if (!message.images?.length) {
-      output.push({ ...message });
-      continue;
-    }
-    const images: ChatImage[] = [];
-    for (const image of message.images) {
-      if (imageCount >= maxCount || totalBytes >= budget.maxTotalBytes) break;
-      const remaining = { ...budget, maxCount: 1, maxTotalBytes: budget.maxTotalBytes - totalBytes };
-      const loaded = image.dataBase64 ? [image]
-        : image.path ? await loadImagePaths([image.path], remaining, undefined, signal) : [];
-      const candidate = loaded[0];
+  let exhausted = false;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const images = messages[index]!.images;
+    if (!images?.length) continue;
+    const kept: ChatImage[] = [];
+    restored.set(index, kept);
+    for (let position = images.length - 1; position >= 0 && !exhausted; position -= 1) {
+      signal?.throwIfAborted();
+      if (imageCount >= limits.maxCount || totalBytes >= limits.maxTotalBytes) {
+        exhausted = true;
+        break;
+      }
+      const candidate = await restoreImage(images[position]!, {
+        ...budget,
+        maxCount: 1,
+        maxTotalBytes: limits.maxTotalBytes - totalBytes,
+      }, signal);
       if (!candidate) continue;
-      const bytes = Buffer.byteLength(candidate.dataBase64, "base64");
-      if (bytes > budget.hardMaxBytes || totalBytes + bytes > budget.maxTotalBytes) continue;
+      const bytes = imagePayloadBytes(candidate);
+      if (bytes > budget.hardMaxBytes) continue;
+      if (totalBytes + bytes > limits.maxTotalBytes) {
+        exhausted = true;
+        break;
+      }
       imageCount += 1;
       totalBytes += bytes;
-      images.push(candidate);
+      kept.unshift(candidate);
     }
-    const { images: _images, ...rest } = message;
-    output.push(images.length > 0 ? { ...rest, images } : rest);
   }
-  return output;
+  return messages.map((message, index) => {
+    const kept = restored.get(index);
+    if (kept === undefined) return { ...message };
+    const { images: _images, ...rest } = message;
+    return kept.length > 0 ? { ...rest, images: kept } : rest;
+  });
+}
+
+async function restoreImage(
+  image: ChatImage,
+  budget: ImageBudget,
+  signal?: AbortSignal,
+): Promise<ChatImage | undefined> {
+  if (image.dataBase64) return image;
+  if (!image.path) return undefined;
+  const loaded = await loadImagePaths([image.path], budget, undefined, signal);
+  return loaded[0];
 }
 
 let scrubbedItems = new WeakMap<TranscriptItem, TranscriptItem>();
