@@ -47,7 +47,7 @@ export function Picker(props: PickerProps): ReactNode {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(() => activeIndex(request.options));
   const cursorRef = useRef(cursor);
-  const [paintTick, setPaintTick] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const isHistory = Boolean(request.historyStyle);
@@ -69,10 +69,6 @@ export function Picker(props: PickerProps): ReactNode {
   }
 
   useEffect(() => {
-    const id = setTimeout(() => setPaintTick(1), 0);
-    return () => clearTimeout(id);
-  }, []);
-  useEffect(() => {
     const previous = previousFilter.current;
     if (request.preserveSelection && previous.query === query) {
       const index = cursorRef.current;
@@ -89,20 +85,21 @@ export function Picker(props: PickerProps): ReactNode {
     if (!sb) return;
     const syncViewport = (): void => {
       setScrollTop(Math.max(0, sb.scrollTop));
+      setViewportHeight(sb.viewport.height);
     };
     sb.verticalScrollBar.on("change", syncViewport);
-    sb.viewport.on("resized", syncViewport);
+    sb.viewport.on("resize", syncViewport);
     syncViewport();
     return () => {
       sb.verticalScrollBar.off("change", syncViewport);
-      sb.viewport.off("resized", syncViewport);
+      sb.viewport.off("resize", syncViewport);
     };
   }, []);
   useEffect(() => {
     const sb = scrollRef.current;
-    if (!sb || sb.viewport.height <= 0) return;
-    sb.scrollTo(pickerScrollTop(items, selected, sb.viewport.height, sb.scrollTop));
-  }, [selected, items, paintTick, innerH]);
+    if (!sb || viewportHeight <= 0) return;
+    sb.scrollTo(pickerScrollTop(items, selected, viewportHeight, sb.scrollTop));
+  }, [selected, items, viewportHeight]);
 
   useKeyboard((key) => {
     if (key.defaultPrevented || key.eventType === "release") return;

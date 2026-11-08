@@ -7,6 +7,10 @@
 - Add the `turn.end` tool. The agent calls it with its final message and a reason (`completed`, `answered`, `needs_user_input`, `blocked` or `stop_requested`), judged only against your latest message, and the turn ends without another request. Tool-free answers, questions back to you, genuine blockers and explicit stop instructions are all valid ends. The declaration resets for every new prompt and counts only when the rest of the response is successful plan or job bookkeeping and no Responder result is unread.
 - When a reply ends without a tool call and without `turn.end`, ask the model once whether it is finished. It either declares the end, which keeps its earlier reply as the answer, or makes the next tool call. Some models, such as Muse Spark, end a round with a progress line like "Moving to the cross-pass diff." and the turn stopped with work unfinished. The check is a fixed message appended after the reply, so earlier cached context is reused, and further checks need more tool work first, so turns cannot loop.
 
+### History picker
+
+- Keep the selected session in view in OpenTUI's history and option pickers when the list's layout arrives after the picker opens or the terminal is resized. The picker listened for a viewport event OpenTUI never emits, so the current session could open scrolled out of sight on a slow first frame or after shrinking the window.
+
 ### Image tool cards
 
 - Show `image.view` and `image.ocr` calls as one row per image with its path (`image 1/2: shots/before.png`) in OpenTUI, matching `fs.read` cards, instead of dumping the raw `{"paths": […]}` arguments. Paths that exceed the card width are middle-clipped with the filename intact, OCR options stay on their own line when the input carries them, and the pager header lists every image the call opened so the full input remains recoverable.
