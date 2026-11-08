@@ -15,6 +15,11 @@ export const endpointProviders: readonly ProviderId[] = [
   "hinoki",
   "river",
   "constellation",
+  "refuseless",
+  "unrestricted",
+  "unaligned",
+  "respan",
+  "silkcompute",
 ];
 
 export function providerUsesEndpoints(provider: ProviderId): boolean {
@@ -61,6 +66,11 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   omnirush: "free-cloud",
   tokenharbor: "paid-cloud",
   qoder: "free-cloud",
+  refuseless: "paid-cloud",
+  unrestricted: "paid-cloud",
+  unaligned: "paid-cloud",
+  respan: "paid-cloud",
+  silkcompute: "paid-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

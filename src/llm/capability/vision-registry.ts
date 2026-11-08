@@ -10,6 +10,7 @@ import {
 } from "./vision-patterns.js";
 import type { VisionEvidence, VisionSupport } from "../capabilities.js";
 import { scopedModelCatalogFacts } from "../catalog-context.js";
+import { catalogDeclaresVision } from "./catalog-trust.js";
 import {
   clearPersistedLearnedVision,
   persistLearnedVision,
@@ -129,7 +130,7 @@ export function modelVisionSupport(
     if (vision !== undefined) return vision ? "yes" : "no";
     cached = undefined;
   }
-  if ((provider === "mistral" || provider === "river" || provider === "constellation" || provider === "hinoki") && cached) return cached.vision ? "yes" : "no";
+  if (catalogDeclaresVision(provider) && cached) return cached.vision ? "yes" : "no";
   if (cached?.vision) return "yes";
   const configured = configuredVisionModel(provider);
   if (configured?.toLowerCase() === model.trim().toLowerCase()) return "yes";

@@ -44,6 +44,7 @@ import {
   wireRejectionEfforts,
 } from "./capability/state.js";
 import { registerModelVisionCapability } from "./capability/vision-registry.js";
+import { catalogDeclaresMandatoryReasoning, catalogDrivesEffortLayer } from "./capability/catalog-trust.js";
 import { resolveToolDialect } from "./capability/tool-dialect.js";
 import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
@@ -281,7 +282,7 @@ export function routeReasoningIsMandatory(
   model: string,
 ): boolean {
   if (
-    (provider === "cline" || provider === "river" || provider === "hinoki") &&
+    catalogDeclaresMandatoryReasoning(provider) &&
     modelCatalogFacts(provider, model)?.reasoning?.mandatory === true
   ) return true;
   if (provider === "meta") {
@@ -636,7 +637,7 @@ export function registerModelCatalog(
   );
   for (const model of models) {
     if (!model.id) continue;
-    if (provider === "meta" || provider === "cline" || provider === "constellation" || provider === "hinoki") {
+    if (provider === "meta" || provider === "cline" || provider === "constellation" || provider === "hinoki" || catalogDrivesEffortLayer(provider)) {
       catalogReasoningEfforts.delete(reasoningKey(provider, model.id));
       catalogReasoningSupport.delete(reasoningKey(provider, model.id));
     }

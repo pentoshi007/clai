@@ -152,7 +152,7 @@ Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from
 </details>
 
 <details>
-<summary><b>API, keyless and local providers</b>: 31 providers including Free, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, Hinoki</summary>
+<summary><b>API, keyless and local providers</b>: 36 providers including Free, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, Hinoki</summary>
 
 | Provider | Provider ID | Credential or endpoint variable |
 | --- | --- | --- |
@@ -184,8 +184,13 @@ Run `clai set <provider>` to add a key (`--from-env <variable>` imports one from
 | Meta Model API | `meta` | `MODEL_API_KEY` |
 | Modal | `modal` | Both `MODAL_PROXY_TOKEN_ID` and `MODAL_PROXY_TOKEN_SECRET`; deployed endpoint required. |
 | OrcaRouter | `orcarouter` | `ORCAROUTER_API_KEY` |
+| Refuseless | `refuseless` | `REFUSELESS_API_KEY`; optional `REFUSELESS_BASE_URL`. |
+| Respan | `respan` | `RESPAN_API_KEY`; optional `RESPAN_GATEWAY_BASE_URL`. |
+| Silk Compute | `silkcompute` | `SILK_API_KEY`; optional `SILK_BASE_URL`. |
 | Token Harbor | `tokenharbor` | `TOKENHARBOR_API_KEY` |
 | TokenRouter | `tokenrouter` | `TOKENROUTER_API_KEY` |
+| Unaligned | `unaligned` | `UNALIGNED_API_KEY`; optional `UNALIGNED_BASE_URL`. |
+| Unrestricted | `unrestricted` | `UNRESTRICTED_API_KEY`; optional `UNRESTRICTED_BASE_URL`. |
 | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
 
 </details>

@@ -249,6 +249,11 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /vision/i,
   ],
   qoder: [/qwen/i, /vision/i, /gpt/i, /claude/i, /glm/i, /kimi/i, /deepseek/i],
+  refuseless: [/vision/i],
+  unrestricted: [/vision/i],
+  unaligned: [/vision/i],
+  respan: [/(?:^|\/)o(?:1|3|4-mini)(?:-pro)?(?:-\d{4}-\d{2}-\d{2})?$/i, /vision/i],
+  silkcompute: [/kimi-k[3-9]/i, /(?:^|[/-])hy\d/i, /vision/i],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
@@ -280,6 +285,10 @@ export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   glm: "glm-4v-plus",
   minimax: "MiniMax-Text-01",
   kiro: "claude-sonnet-4.5",
+  refuseless: "glm-5.3-flash-abliterated",
+  unaligned: "gpt-6-luna",
+  respan: "gpt-5.5",
+  silkcompute: "hy4-uncensored",
 };
 
 function matchesPattern(patterns: readonly RegExp[], model: string): boolean {

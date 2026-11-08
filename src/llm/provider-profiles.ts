@@ -26,6 +26,7 @@ import {
 import { providerContextOverrideTokens } from "./token-usage.js";
 import { modelMaxOutputTokens } from "./context-windows.js";
 import { modelLayerFor } from "./provider-model-layers.js";
+import { catalogDeclaresReasoningSupport } from "./capability/catalog-trust.js";
 import {
   FAMILY_LAYERS,
   FAMILYLESS_ENDPOINT_LAYERS,
@@ -130,7 +131,7 @@ export function catalogLayerFor(
 ): ProviderProfileLayer | undefined {
   const facts = modelCatalogFacts(provider, model);
   const layer = facts ? catalogProfileLayer(facts) : undefined;
-  if ((provider !== "cline" && provider !== "meta") || !layer || facts?.reasoning?.supported !== false) return layer;
+  if (!catalogDeclaresReasoningSupport(provider) || !layer || facts?.reasoning?.supported !== false) return layer;
   return {
     ...layer,
     reasoning: {

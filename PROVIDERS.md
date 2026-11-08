@@ -116,8 +116,13 @@ An environment credential is also used directly when no stored credentials take 
 | Meta Model API | `meta` | `MODEL_API_KEY` |
 | Modal | `modal` | Both `MODAL_PROXY_TOKEN_ID` and `MODAL_PROXY_TOKEN_SECRET`. |
 | OrcaRouter | `orcarouter` | `ORCAROUTER_API_KEY` |
+| Refuseless | `refuseless` | `REFUSELESS_API_KEY` |
+| Respan | `respan` | `RESPAN_API_KEY` |
+| Silk Compute | `silkcompute` | `SILK_API_KEY` |
 | Token Harbor | `tokenharbor` | `TOKENHARBOR_API_KEY` |
 | TokenRouter | `tokenrouter` | `TOKENROUTER_API_KEY` |
+| Unaligned | `unaligned` | `UNALIGNED_API_KEY` |
+| Unrestricted | `unrestricted` | `UNRESTRICTED_API_KEY` |
 | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
 
 For model choice, use `/model` or `clai model <name>`. Use the `/provider` picker's custom-provider option to add an OpenAI-compatible endpoint.
@@ -193,7 +198,19 @@ Modal needs the URL of your deployed endpoint in addition to its credentials:
 clai set modal --url https://your-deployment.example.com --from-env MODAL_CREDENTIAL
 ```
 
-Here, `MODAL_CREDENTIAL` contains `token-id:token-secret`. Alternatively, supply both native Modal environment variables and configure the endpoint URL separately. `MODAL_BASE_URL` is also supported. Lightning, TokenRouter, and Token Harbor support configured endpoints and the corresponding `LIGHTNING_BASE_URL`, `TOKENROUTER_BASE_URL`, and `TOKENHARBOR_BASE_URL` variables.
+Here, `MODAL_CREDENTIAL` contains `token-id:token-secret`. Alternatively, supply both native Modal environment variables and configure the endpoint URL separately. `MODAL_BASE_URL` is also supported. Lightning, TokenRouter, Token Harbor, Refuseless, Unrestricted, Unaligned, Respan, and Silk Compute support configured endpoints and the corresponding `LIGHTNING_BASE_URL`, `TOKENROUTER_BASE_URL`, `TOKENHARBOR_BASE_URL`, `REFUSELESS_BASE_URL`, `UNRESTRICTED_BASE_URL`, `UNALIGNED_BASE_URL`, `RESPAN_GATEWAY_BASE_URL`, and `SILK_BASE_URL` variables.
+
+### Catalog-driven gateways
+
+Refuseless, Unrestricted, Unaligned, Respan, and Silk Compute read their live model catalogs and apply what each publishes: context window, maximum output, image input, and reasoning support. Anything a catalog omits falls back to clai's model-family rules and the standard effort ladder instead of a guess.
+
+- **Refuseless** lists the reasoning levels each model accepts (`off`, `low`, `high`, `max`). `/effort` offers exactly those; `off` is sent as `none`, and a model without `off` always reasons.
+- **Unrestricted** publishes context, output limits, and input modalities. `none` disables thinking on every model and any other level enables it.
+- **Unaligned** reads its public native catalog (`/v1/models`) while requests use the OpenAI format. Images go inline as data URLs only to vision-marked models. The gateway has no key-check endpoint, so a wrong key surfaces on the first request.
+- **Respan** reads `api.respan.ai/api/v1/models`, keeping token-priced chat models, and sends requests through `gateway.respan.ai`. Claude requests use content-block `cache_control` marks, and every request carries a session `prompt_cache_key` that the gateway forwards to OpenAI and drops for other providers.
+- **Silk Compute** needs a key even to list models (`GET /v1/models`) and publishes context, output limit, and the reasoning levels each model accepts (`none`, `low`, `high`, `max`). `none` is the least thinking a model allows rather than a guaranteed off switch, and a model that does not list `none` always reasons. Image support is not published: Kimi K3.1 and Hy4 receive images, and any other model gets them removed (and is remembered as text-only) if the server rejects them. Caching is automatic and read from `usage.prompt_tokens_details.cached_tokens`; clai adds no cache fields.
+
+All five use Chat Completions with streaming, native tools, and `reasoning_content`, rotate across up to 10 credentials, and read cached input from `usage.prompt_tokens_details.cached_tokens` (Respan also reads `cache_read_input_tokens` and `prompt_cache_hit_tokens`).
 
 ## Prompt caching
 

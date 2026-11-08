@@ -44,6 +44,11 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   omnirush: "openai",
   tokenharbor: "openai",
   qoder: "openai",
+  refuseless: "openai",
+  unrestricted: "openai",
+  unaligned: "openai",
+  respan: "openai",
+  silkcompute: "openai",
 };
 
 const nativeToolsDenylist: RegExp[] = [

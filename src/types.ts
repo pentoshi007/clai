@@ -37,6 +37,11 @@ export const providerIds = [
   "omnirush",
   "tokenharbor",
   "qoder",
+  "refuseless",
+  "unrestricted",
+  "unaligned",
+  "respan",
+  "silkcompute",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

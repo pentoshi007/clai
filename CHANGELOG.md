@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Refuseless, Unrestricted, Unaligned, Respan and Silk Compute providers
+
+- Add the `refuseless`, `unrestricted`, `unaligned`, `respan` and `silkcompute` providers (`REFUSELESS_API_KEY`, `UNRESTRICTED_API_KEY`, `UNALIGNED_API_KEY`, `RESPAN_API_KEY`, `SILK_API_KEY`), each with endpoint overrides, up to 10 rotating credentials, streaming, native tools and live reasoning.
+- Read each provider's live model catalog: context windows, maximum output, image input and reasoning support follow the selected model. Refuseless and Silk Compute also publish the reasoning levels each model accepts, so `/effort` offers exactly those, `off` is sent as `none`, and models without a `none` level always reason. A catalog that drops a level stops offering it on the next refresh. Where a catalog does not publish levels, the standard effort ladder applies.
+- Unaligned reads its public native catalog while sending OpenAI-format requests; Respan keeps token-priced chat models from its gateway catalog, marks Claude requests with content-block cache controls, and sends a session `prompt_cache_key` that the gateway forwards to OpenAI and drops for other providers.
+- Treat the catalog image flag as authoritative for Refuseless, Unrestricted and Unaligned, so a model-name heuristic can no longer override a catalog that says a model is text-only.
+
 ### Context window default
 
 - Raise the fallback context window for models with no published or table limit from 200,000 to 250,000 tokens. Automatic compaction for these models now starts at 175,000 tokens instead of 140,000, and the context chip shows `250k`.
