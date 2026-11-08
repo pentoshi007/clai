@@ -46,6 +46,27 @@ vi.mock("../../src/agent/confirm-port.js", async () => {
 
 await import("../../src/agent/runner.js");
 
+const turnEnd = (
+  id: string,
+  reason: string,
+): NonNullable<CompletionResult["toolCalls"]>[number] => ({
+  id,
+  name: "turn.end",
+  args: { reason },
+});
+
+const isTurnEndCheck = (message: CompletionRequest["messages"][number]): boolean =>
+  message.role === "user" && message.content.startsWith("TURN END CHECK:");
+
+const turnEndCheckIndex = (request: CompletionRequest): number =>
+  request.messages.findLastIndex(isTurnEndCheck);
+
+const turnEndCheckCount = (request: CompletionRequest): number =>
+  request.messages.filter(isTurnEndCheck).length;
+
+const turnEndFence = (reason: string): string =>
+  `\`\`\`tool\n${JSON.stringify({ name: "turn.end", args: { reason } })}\n\`\`\``;
+
 describe("native tool loop integration", () => {
   let cwd: string;
   let prevCwd: string;
@@ -96,7 +117,8 @@ describe("native tool loop integration", () => {
           text: "done",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -222,7 +244,8 @@ describe("native tool loop integration", () => {
           text: "inspection complete",
           provider: "bynara",
           model: "grok-4.5-free",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -253,7 +276,7 @@ describe("native tool loop integration", () => {
         .filter((event) => event.type === "tool-result")
         .map((event) => event.id),
     );
-    expect(toolCallIds.size).toBe(2);
+    expect(toolCallIds.size).toBe(3);
     expect([...toolCallIds].every((id) => id && toolResultIds.has(id))).toBe(true);
   });
 
@@ -280,8 +303,8 @@ describe("native tool loop integration", () => {
       return {
         text: round < 3 ? "" : "Updated retryLimit; preserved backoff and CRLF.",
         provider: "openai", model: "gpt-4o-mini",
-        ...(round < 3 ? { toolCalls: finalizeOpenAiToolCalls(state) } : {}),
-        finishReason: round < 3 ? "tool_calls" : "stop",
+        toolCalls: round < 3 ? finalizeOpenAiToolCalls(state) : [turnEnd("suffix-end", "completed")],
+        finishReason: "tool_calls",
       };
     });
     const { runAgentLoop } = await import("../../src/agent/runner.js");
@@ -293,9 +316,9 @@ describe("native tool loop integration", () => {
       .toBe("export const retryLimit = 3;\r\nexport const backoffMs = 50;\r\n");
     expect(streamMock).toHaveBeenCalledTimes(3);
     expect(events.filter((event) => event.type === "tool-call").map((event) => event.name))
-      .toEqual(["shell.exec", "fs.read", "fs.edit"]);
+      .toEqual(["shell.exec", "fs.read", "fs.edit", "turn.end"]);
     expect(events.filter((event) => event.type === "tool-result"))
-      .toHaveLength(3);
+      .toHaveLength(4);
     expect(events.some((event) => event.type === "tool-result" && event.ok === false)).toBe(false);
     const requests = streamMock.mock.calls.map(([request]) => request as CompletionRequest);
     for (const request of requests.slice(1)) {
@@ -355,7 +378,7 @@ describe("native tool loop integration", () => {
           ),
         ).toBe(true);
         return {
-          text: "listed successfully",
+          text: `listed successfully\n\n${turnEndFence("completed")}`,
           provider: "bynara",
           model: "grok-4.5-free",
           finishReason: "stop",
@@ -375,8 +398,8 @@ describe("native tool loop integration", () => {
 
     expect(streamMock).toHaveBeenCalledTimes(3);
     expect(
-      events.filter((event) => event.type === "tool-call"),
-    ).toHaveLength(1);
+      events.filter((event) => event.type === "tool-call").map((event) => event.name),
+    ).toEqual(["fs.read", "turn.end"]);
     const pending = events.find((event) => event.type === "tool-call-pending");
     expect(pending?.name).toBe("fs.read");
     expect(events.filter((event) => event.type === "tool-blocked")).toEqual([
@@ -428,7 +451,7 @@ describe("native tool loop integration", () => {
         }
 
         return {
-          text: "listing complete",
+          text: `listing complete\n\n${turnEndFence("completed")}`,
           provider: "bynara",
           model: "grok-4.5-free",
           finishReason: "stop",
@@ -619,7 +642,8 @@ describe("native tool loop integration", () => {
           text: "done",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -654,31 +678,54 @@ describe("native tool loop integration", () => {
         }
         const text = "Let's check the remaining files.";
         onToken(text);
+        if (turn === 2) {
+          return {
+            text,
+            provider: "gemini",
+            model: "gemini-test",
+            finishReason: "stop",
+          };
+        }
         return {
-          text,
+          text: "",
           provider: "gemini",
           model: "gemini-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
 
+    const events: Array<{ type: string; text?: string }> = [];
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("find all files in this directory", {
       provider: "gemini",
       model: "gemini-test",
       maxSteps: 5,
+      onEvent: (event) => events.push(event),
     });
 
     expect(streamMock).toHaveBeenCalledTimes(3);
     const checkRequest = streamMock.mock.calls[2]![0] as CompletionRequest;
-    const checkMessage = checkRequest.messages.at(-1)!;
-    expect(checkMessage.role).toBe("user");
-    expect(checkMessage.content).toContain("CONTINUATION CHECK");
+    const checkIndex = turnEndCheckIndex(checkRequest);
+    expect(checkIndex).toBeGreaterThan(0);
+    expect(checkRequest.messages[checkIndex]).toMatchObject({ role: "user", internal: true });
+    expect(checkRequest.messages[checkIndex - 1]).toMatchObject({
+      role: "assistant",
+      content: "Let's check the remaining files.",
+    });
+    expect(turnEndCheckCount(checkRequest)).toBe(1);
     expect(answer).toBe("Let's check the remaining files.");
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "assistant-message" &&
+          event.text === "Let's check the remaining files.",
+      ),
+    ).toHaveLength(1);
   });
 
-  it("resumes work when the continuation check is answered with a tool call", async () => {
+  it("resumes work when the turn end check is answered with a tool call and finishes without another check", async () => {
     let turn = 0;
     streamMock.mockImplementation(
       async (request: CompletionRequest, onToken: (token: string) => void) => {
@@ -694,13 +741,24 @@ describe("native tool loop integration", () => {
             finishReason: "tool_calls",
           };
         }
-        const text = turn === 2 ? "Let me check the remaining files." : "All files listed.";
+        if (turn === 2) {
+          const text = "Let me check the remaining files.";
+          onToken(text);
+          return {
+            text,
+            provider: "gemini",
+            model: "gemini-test",
+            finishReason: "stop",
+          };
+        }
+        const text = "All files listed.";
         onToken(text);
         return {
           text,
           provider: "gemini",
           model: "gemini-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -713,10 +771,18 @@ describe("native tool loop integration", () => {
     });
 
     expect(streamMock).toHaveBeenCalledTimes(4);
+    const requests = streamMock.mock.calls.map(([request]) => request as CompletionRequest);
+    expect(turnEndCheckIndex(requests[2]!)).toBeGreaterThan(0);
+    expect(
+      requests[3]!.messages.some(
+        (message) => message.role === "tool" && message.toolCallId === "call_read_3",
+      ),
+    ).toBe(true);
+    expect(turnEndCheckCount(requests[3]!)).toBe(1);
     expect(answer).toBe("All files listed.");
   });
 
-  it("ends without a continuation check when the reply asks the user a question", async () => {
+  it("ends immediately without a turn end check when a question to the user declares needs_user_input", async () => {
     let turn = 0;
     streamMock.mockImplementation(
       async (request: CompletionRequest, onToken: (token: string) => void) => {
@@ -738,7 +804,8 @@ describe("native tool loop integration", () => {
           text,
           provider: "gemini",
           model: "gemini-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "needs_user_input")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -752,6 +819,164 @@ describe("native tool loop integration", () => {
 
     expect(streamMock).toHaveBeenCalledTimes(2);
     expect(answer).toContain("should I include hidden files?");
+    for (const [request] of streamMock.mock.calls as Array<[CompletionRequest]>) {
+      expect(turnEndCheckCount(request)).toBe(0);
+    }
+  });
+
+  it("ends a tool-free answer that declares answered with exactly one request", async () => {
+    streamMock.mockImplementation(
+      async (_request: CompletionRequest, onToken: (token: string) => void) => {
+        onToken("Alpha is the first letter.");
+        return {
+          text: "Alpha is the first letter.",
+          provider: "gemini",
+          model: "gemini-test",
+          toolCalls: [turnEnd("call_end", "answered")],
+          finishReason: "tool_calls",
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("what is alpha?", {
+      provider: "gemini",
+      model: "gemini-test",
+      maxSteps: 3,
+    });
+
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(answer).toBe("Alpha is the first letter.");
+  });
+
+  it("does not end the turn when turn.end is mixed with a real tool call", async () => {
+    let turn = 0;
+    streamMock.mockImplementation(
+      async (request: CompletionRequest, onToken: (token: string) => void) => {
+        turn += 1;
+        if (turn === 1) {
+          const text = "Listing the directory.";
+          onToken(text);
+          return {
+            text,
+            provider: "gemini",
+            model: "gemini-test",
+            toolCalls: [
+              { id: "call_list", name: "fs.read", args: { path: cwd } },
+              turnEnd("call_early_end", "completed"),
+            ],
+            finishReason: "tool_calls",
+          };
+        }
+        const text = "Directory listed.";
+        onToken(text);
+        return {
+          text,
+          provider: "gemini",
+          model: "gemini-test",
+          toolCalls: [turnEnd("call_final_end", "completed")],
+          finishReason: "tool_calls",
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("list this directory", {
+      provider: "gemini",
+      model: "gemini-test",
+      maxSteps: 5,
+    });
+
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(answer).toBe("Directory listed.");
+    const secondRequest = streamMock.mock.calls[1]![0] as CompletionRequest;
+    expect(
+      secondRequest.messages.some(
+        (message) => message.role === "tool" && message.toolCallId === "call_list",
+      ),
+    ).toBe(true);
+  });
+
+  it("treats turn.end with an invalid reason as a failed call that does not end the turn", async () => {
+    let turn = 0;
+    streamMock.mockImplementation(
+      async (request: CompletionRequest, onToken: (token: string) => void) => {
+        turn += 1;
+        if (turn === 1) {
+          const text = "All done.";
+          onToken(text);
+          return {
+            text,
+            provider: "gemini",
+            model: "gemini-test",
+            toolCalls: [turnEnd("call_bad_end", "finished_early")],
+            finishReason: "tool_calls",
+          };
+        }
+        const text = "All done, for real.";
+        onToken(text);
+        return {
+          text,
+          provider: "gemini",
+          model: "gemini-test",
+          toolCalls: [turnEnd("call_good_end", "completed")],
+          finishReason: "tool_calls",
+        };
+      },
+    );
+
+    const events: Array<{ type: string; id?: string; ok?: boolean }> = [];
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("say you are done", {
+      provider: "gemini",
+      model: "gemini-test",
+      maxSteps: 5,
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    const secondRequest = streamMock.mock.calls[1]![0] as CompletionRequest;
+    const failedResult = secondRequest.messages.find(
+      (message) => message.role === "tool" && message.toolCallId === "call_bad_end",
+    );
+    expect(failedResult).toBeDefined();
+    expect(failedResult!.content).toMatch(/reason/i);
+    expect(answer).toBe("All done, for real.");
+  });
+
+  it("starts every turn undeclared so a later plain-text reply is still checked", async () => {
+    let turn = 0;
+    streamMock.mockImplementation(
+      async (_request: CompletionRequest, onToken: (token: string) => void) => {
+        turn += 1;
+        const text = `reply ${turn}`;
+        onToken(text);
+        return {
+          text,
+          provider: "gemini",
+          model: "gemini-test",
+          ...(turn === 1
+            ? { toolCalls: [turnEnd("call_end", "answered")], finishReason: "tool_calls" }
+            : { finishReason: "stop" }),
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const options = {
+      provider: "gemini" as const,
+      model: "gemini-test",
+      maxSteps: 3,
+    };
+    const first = await runAgentLoop("first question", options);
+    expect(first).toBe("reply 1");
+    expect(streamMock).toHaveBeenCalledTimes(1);
+
+    const second = await runAgentLoop("second question", options);
+    expect(streamMock).toHaveBeenCalledTimes(3);
+    const checkRequest = streamMock.mock.calls[2]![0] as CompletionRequest;
+    expect(turnEndCheckCount(checkRequest)).toBe(1);
+    expect(second).toBe("reply 3");
   });
 
   it("does not append internal outcome diagnostics to a continue response", async () => {
@@ -787,7 +1012,8 @@ describe("native tool loop integration", () => {
           text: "answered",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "answered")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -878,7 +1104,8 @@ describe("native tool loop integration", () => {
           text: "The rendered pixel is transparent.",
           provider: "openai",
           model: "gpt-4o-mini",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -959,7 +1186,8 @@ describe("native tool loop integration", () => {
           text: "done",
           provider: "tokenrouter",
           model: "deepseek/deepseek-v4-flash-0731",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -1104,7 +1332,8 @@ describe("native tool loop integration", () => {
           text: "fixed and verified",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -1170,7 +1399,8 @@ describe("native tool loop integration", () => {
           text: "observed every change",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );
@@ -1266,7 +1496,8 @@ describe("native tool loop integration", () => {
           text: "used the existing listing",
           provider: "openai",
           model: "gpt-test",
-          finishReason: "stop",
+          toolCalls: [turnEnd("call_end", "completed")],
+          finishReason: "tool_calls",
         };
       },
     );

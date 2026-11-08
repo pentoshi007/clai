@@ -5,6 +5,8 @@ export interface RoundState {
   actionSequenceExecuted: number;
   roundSuppressedCount: number;
   actionSequenceEligible: boolean;
+  turnEndDeclared: boolean;
+  outcomesNeedReview: boolean;
   readonly recordedNativeIds: Set<string>;
   readonly actionSequenceOutcomes: Map<string, string>;
 }
@@ -19,6 +21,8 @@ export const createRoundState = (
   actionSequenceExecuted: 0,
   roundSuppressedCount: 0,
   actionSequenceEligible: callCount > 0,
+  turnEndDeclared: false,
+  outcomesNeedReview: false,
   recordedNativeIds: new Set<string>(),
   actionSequenceOutcomes: new Map<string, string>(),
 });

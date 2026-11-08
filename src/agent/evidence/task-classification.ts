@@ -30,6 +30,7 @@ export function isMetaPlanTool(name: string): boolean {
     name === "task.move" ||
     name === "job.read" ||
     name === "task.update" ||
+    name === "turn.end" ||
     name === "agent.handoff"
   );
 }

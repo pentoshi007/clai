@@ -140,6 +140,16 @@ const transportFactory: McpTransportFactory = (definition) =>
 
 type CapturedRequest = Pick<CompletionRequest, "messages" | "tools">;
 
+const REQUESTS_PER_UNDECLARED_ANSWER = 2;
+
+function isTurnEndCheck(request: CapturedRequest): boolean {
+  return JSON.stringify(request.messages.at(-1)).includes("TURN END CHECK");
+}
+
+function expectTurnEndChecks(requests: readonly CapturedRequest[], expectedIndices: readonly number[]): void {
+  expect(requests.flatMap((request, index) => (isTurnEndCheck(request) ? [index] : []))).toEqual(expectedIndices);
+}
+
 function withoutCacheControl(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutCacheControl);
   if (typeof value !== "object" || value === null) return value;
@@ -290,7 +300,8 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
     ): Promise<CompletionResult> => {
       requests.push({ messages: structuredClone(request.messages), ...(request.tools ? { tools: structuredClone(request.tools) } : {}) });
       options.onSuccessfulRequest?.(successfulRequestSnapshot("openai", "gpt-4o-mini", request));
-      const control = controls[requests.length - 2];
+      const answerRequests = requests.filter((captured) => !isTurnEndCheck(captured)).length;
+      const control = isTurnEndCheck(requests.at(-1)!) ? undefined : controls[answerRequests - 2];
       if (control) return {
         text: "", provider: "openai", model: "gpt-4o-mini", finishReason: "tool_calls",
         toolCalls: [{ id: `skill-${requests.length}`, ...control }],
@@ -305,26 +316,31 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
       maxSteps: 6, toolCalling, autoConfirm: true,
       onMessages: (messages) => { history = messages; },
     });
+    const secondTurnStart = REQUESTS_PER_UNDECLARED_ANSWER;
+    const skillLoadResultRequest = secondTurnStart + 1;
+    const referenceResultRequest = secondTurnStart + 2;
+    const thirdTurnStart = secondTurnStart + controls.length + REQUESTS_PER_UNDECLARED_ANSWER;
     await run("Review the supplied fixture evidence without using tools.");
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(secondTurnStart);
     skillState.skills = [skill];
     await run("Continue the controlled vulnerability research using the applicable security skill and its research reference.");
-    expect(requests).toHaveLength(4);
-    const load = requests[2]!.messages.find((message) => message.role === "tool" && message.name === "skill.load");
+    expect(requests).toHaveLength(thirdTurnStart);
+    const load = requests[skillLoadResultRequest]!.messages.find((message) => message.role === "tool" && message.name === "skill.load");
     expect(load?.ok).toBe(true);
     expect(load?.content).toContain("The investigation loop");
     expect(load?.content).not.toContain("A useful harness:");
-    const reference = requests[3]!.messages.find((message) => message.role === "tool" && message.name === "fs.read");
+    const reference = requests[referenceResultRequest]!.messages.find((message) => message.role === "tool" && message.name === "fs.read");
     expect(reference?.ok).toBe(true);
     expect(reference?.content).toContain("A useful harness:");
     const retained = structuredClone(history);
     await run("Continue the same fixture investigation without repeating skill or reference reads.");
-    expect(requests).toHaveLength(5);
-    expect(requests[4]!.messages.slice(1, retained.length + 1)).toEqual(retained);
-    expect(requests[4]!.messages.filter((message) => message.role === "tool" && message.name === "skill.load")).toHaveLength(1);
+    expect(requests).toHaveLength(thirdTurnStart + REQUESTS_PER_UNDECLARED_ANSWER);
+    expectTurnEndChecks(requests, [secondTurnStart - 1, thirdTurnStart - 1, thirdTurnStart + 1]);
+    expect(requests[thirdTurnStart]!.messages.slice(1, retained.length + 1)).toEqual(retained);
+    expect(requests[thirdTurnStart]!.messages.filter((message) => message.role === "tool" && message.name === "skill.load")).toHaveLength(1);
     expect(requests[0]!.messages[0]!.content).not.toContain(skill.name);
-    expect(requests[1]!.messages[0]).toEqual(requests[0]!.messages[0]);
-    expect(requests[1]!.messages.some((message) => message.content.includes(`load ${skill.name} before investigating`))).toBe(true);
+    expect(requests[secondTurnStart]!.messages[0]).toEqual(requests[0]!.messages[0]);
+    expect(requests[secondTurnStart]!.messages.some((message) => message.content.includes(`load ${skill.name} before investigating`))).toBe(true);
     for (let index = 1; index < requests.length; index += 1) {
       expect(requests[index]!.tools).toEqual(requests[0]!.tools);
       const previous = requests[index - 1]!.messages;
@@ -402,7 +418,9 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
     runtime.selectOff();
     await turn("Continue reviewing the retained evidence after catalog changes.");
 
-    expect(requests).toHaveLength(6);
+    const turns = 6;
+    expect(requests).toHaveLength(turns * REQUESTS_PER_UNDECLARED_ANSWER);
+    expectTurnEndChecks(requests, Array.from({ length: turns }, (_, turnIndex) => (turnIndex + 1) * REQUESTS_PER_UNDECLARED_ANSWER - 1));
     const stableTools = requests[0]!.tools;
     const stableSystem = requests[0]!.messages[0];
     if (toolCalling === "native") {
@@ -424,13 +442,14 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
         .reverse()
         .find((message) => message.content.includes("MCP TOOL CONTEXT"))
         ?.content ?? "";
-    expect(requests[1]!.messages.some((message) => message.content.includes("AVAILABLE SKILLS"))).toBe(true);
-    expect(latestMcpContext(0)).toContain("Selection: off");
-    expect(latestMcpContext(1)).toContain("mcp.docs.lookup");
-    expect(latestMcpContext(2)).toContain("mcp.search.query");
-    expect(latestMcpContext(3)).toContain("Selection: off");
-    expect(latestMcpContext(4)).toContain("mcp.docs.lookup");
-    expect(latestMcpContext(5)).toContain("Selection: off");
+    expect(requests[REQUESTS_PER_UNDECLARED_ANSWER]!.messages.some((message) => message.content.includes("AVAILABLE SKILLS"))).toBe(true);
+    const expectedContexts = ["Selection: off", "mcp.docs.lookup", "mcp.search.query", "Selection: off", "mcp.docs.lookup", "Selection: off"];
+    expect(expectedContexts).toHaveLength(turns);
+    expectedContexts.forEach((expected, turnIndex) => {
+      for (let offset = 0; offset < REQUESTS_PER_UNDECLARED_ANSWER; offset += 1) {
+        expect(latestMcpContext(turnIndex * REQUESTS_PER_UNDECLARED_ANSWER + offset)).toContain(expected);
+      }
+    });
     expectWirePrefixes(requests);
   });
 
@@ -485,15 +504,17 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
       onMessages: (messages) => { history = messages; },
     });
     await run();
-    expect(requests).toHaveLength(9);
+    const secondRunStart = controls.length + REQUESTS_PER_UNDECLARED_ANSWER;
+    expect(requests).toHaveLength(secondRunStart);
     expect(remoteCalls).toEqual([{ name: "lookup", args: { id: "one" } }]);
     const retained = structuredClone(history);
     extraTools.get("docs")!.push({ name: "new_record", description: "Newly published record lookup", inputSchema: { type: "object" } });
     await runtime.refresh({ force: true });
     await run();
-    expect(requests).toHaveLength(10);
-    expect(requests[9]!.messages.slice(1, retained.length + 1)).toEqual(retained);
-    expect(requests[9]!.messages.some((message) => message.content.includes("new_record"))).toBe(true);
+    expect(requests).toHaveLength(secondRunStart + REQUESTS_PER_UNDECLARED_ANSWER);
+    expectTurnEndChecks(requests, [secondRunStart - 1, secondRunStart + 1]);
+    expect(requests[secondRunStart]!.messages.slice(1, retained.length + 1)).toEqual(retained);
+    expect(requests[secondRunStart]!.messages.some((message) => message.content.includes("new_record"))).toBe(true);
     expectWirePrefixes(requests);
   });
   it.each(["native", "text"] satisfies ToolCallingMode[])("preserves every provider prefix through the complete REA lifecycle in %s mode", async (toolCalling) => {
@@ -541,7 +562,8 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
         onMessages: (messages) => { history = messages; },
       });
       expect(installed).toBe(true);
-      expect(requests).toHaveLength(10);
+      const secondRunStart = controls.length + REQUESTS_PER_UNDECLARED_ANSWER;
+      expect(requests).toHaveLength(secondRunStart);
       expect(remoteCalls).toEqual([{ name: "query", args: { query: "artifact" } }]);
       const tools = requests[0]!.tools;
       if (toolCalling === "native") expect(tools?.some((tool) => tool.name === "rea.manage")).toBe(true);
@@ -555,15 +577,17 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
         mcp: runtime, provider: "openai", model: "gpt-4o-mini", session, history,
         maxSteps: 1, toolCalling, autoConfirm: true,
       });
-      expect(requests).toHaveLength(11);
-      expect(requests[10]!.tools).toEqual(tools);
-      expect(requests[10]!.messages[0]).toEqual(requests[0]!.messages[0]);
-      expect(requests[10]!.messages.slice(1, retained.length + 1)).toEqual(retained);
-      expect(requests[10]!.messages.some((message) => message.content.includes("REA WORKFLOW"))).toBe(true);
+      expect(requests).toHaveLength(secondRunStart + REQUESTS_PER_UNDECLARED_ANSWER);
+      expectTurnEndChecks(requests, [secondRunStart - 1, secondRunStart + 1]);
+      const secondRunFirst = requests[secondRunStart]!;
+      expect(secondRunFirst.tools).toEqual(tools);
+      expect(secondRunFirst.messages[0]).toEqual(requests[0]!.messages[0]);
+      expect(secondRunFirst.messages.slice(1, retained.length + 1)).toEqual(retained);
+      expect(secondRunFirst.messages.some((message) => message.content.includes("REA WORKFLOW"))).toBe(true);
       expect(reaConnection(runtime).selected).toBe(true);
       const workflows = (messages: CompletionRequest["messages"]): number =>
         messages.filter((message) => typeof message.content === "string" && message.content.includes("REA WORKFLOW")).length;
-      expect(workflows(requests[10]!.messages)).toBe(workflows(retained));
+      expect(workflows(secondRunFirst.messages)).toBe(workflows(retained));
       expectWirePrefixes(requests);
     } finally {
       maintenance.mockRestore();
@@ -598,11 +622,15 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
     expect(reaConnection(runtime).server).toBeUndefined();
     await turn("@rea inspect the packaged artifact and keep the evidence.");
     expect(reaConnection(runtime).selected).toBe(true);
-    expect(carriers(requests[1]!.messages)).toBe(1);
+    const turnRequests = (turnIndex: number): CapturedRequest[] =>
+      requests.slice(turnIndex * REQUESTS_PER_UNDECLARED_ANSWER, (turnIndex + 1) * REQUESTS_PER_UNDECLARED_ANSWER);
+    for (const request of turnRequests(1)) expect(carriers(request.messages)).toBe(1);
     await turn("@rea compare it with the previous build.");
-    expect(carriers(requests[2]!.messages)).toBe(1);
+    for (const request of turnRequests(2)) expect(carriers(request.messages)).toBe(1);
     await turn("Thanks, now explain the first finding without using REA again.");
-    expect(carriers(requests[3]!.messages)).toBe(1);
+    for (const request of turnRequests(3)) expect(carriers(request.messages)).toBe(1);
+    expect(requests).toHaveLength(4 * REQUESTS_PER_UNDECLARED_ANSWER);
+    expectTurnEndChecks(requests, [1, 3, 5, 7]);
 
     for (const [index, request] of requests.entries()) {
       expect(request.tools).toEqual(requests[0]!.tools);

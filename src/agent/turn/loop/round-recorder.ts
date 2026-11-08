@@ -6,6 +6,8 @@ import { completedOperationObservationDigest } from "../../outcomes.js";
 import { applyToolEvidenceSignals } from "../evidence-flags.js";
 import { readToolEvidenceSignals } from "../tool-evidence-signals.js";
 import { resetToolRetryCounters } from "../turn-counters.js";
+import { TURN_END_TOOL_NAME } from "../../../tools/turn-end.js";
+import { RUNNER_META_TOOL_NAMES } from "../../../tools/definitions.js";
 
 export interface RecordedToolResult {
   readonly call: ToolCall;
@@ -103,6 +105,11 @@ export const createRoundRecorder =
       !res.aborted;
     if (res.ok && res.call.name === "plan.create") {
       round.planCreatedThisTurn = true;
+    }
+    if (res.call.name === TURN_END_TOOL_NAME) {
+      round.turnEndDeclared ||= res.ok;
+    } else if (!res.ok || !RUNNER_META_TOOL_NAMES.has(res.call.name)) {
+      round.outcomesNeedReview = true;
     }
     if (!res.suppressedRepeat) counters.productiveSteps += 1;
     ports.recordHistory({

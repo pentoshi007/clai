@@ -5,6 +5,11 @@ import { assessCompletion } from "../../turn/loop/answer-assessment.js";
 import { resolveFinalOutcome } from "../../turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "../../turn/loop/model-only-rounds.js";
 import { recoverMissingToolCall } from "../../turn/loop/tool-call-recovery.js";
+import {
+  isTurnEndChecked,
+  isTurnEndDeclared,
+  recordTurnEndCheck,
+} from "../turn-completion.js";
 import type { TurnOutcome } from "../../turn-outcome.js";
 import type { TurnLoopDeps } from "./deps.js";
 
@@ -26,6 +31,7 @@ export interface AnswerPathInput {
   readonly canonicalAssistantVisible: string;
   readonly bareArgsOnly: boolean;
   readonly toolsAttached: boolean;
+  readonly roundsRemain: boolean;
   readonly commitAssistantRetry: (historyText: string) => void;
 }
 
@@ -82,6 +88,8 @@ export const resolveAnswerPath = async (
       provider: deps.loop.provider,
       model: deps.loop.model,
       toolsAttached,
+      canDeclareTurnEnd:
+        input.roundsRemain && (toolsAttached || !deps.nativeToolsActive()),
       notify: deps.writeNotice,
       commitAssistantRetry,
       recoveryUserMessage: deps.recoveryUserMessage,
@@ -91,18 +99,26 @@ export const resolveAnswerPath = async (
     {
       assistantVisible: assistantText.visible,
       wantsAction: assessment.wantsAction,
-      narratedNextStep: assessment.narratedNextStep,
-      continuationEligible: assessment.continuationEligible,
-      continuationChecked:
-        deps.counters.continuationCheckStep === deps.counters.productiveSteps,
+      turnEndDeclared: isTurnEndDeclared(
+        deps.counters.completion,
+        deps.counters.productiveSteps,
+      ),
+      turnEndChecked: isTurnEndChecked(
+        deps.counters.completion,
+        deps.counters.productiveSteps,
+      ),
       consecutiveModelOnlyRounds: deps.counters.consecutiveModelOnlyRounds,
       plan: livePlanAtCompletion,
     },
   );
   if (modelOnly.kind === "continue-round") return { kind: "continue" };
-  if (modelOnly.kind === "continuation-check") {
-    deps.counters.continuationCheckStep = deps.counters.productiveSteps;
-    await auditLog("agent.continuation_check", {
+  if (modelOnly.kind === "turn-end-check") {
+    recordTurnEndCheck(
+      deps.counters.completion,
+      deps.counters.productiveSteps,
+      cleaned,
+    );
+    await auditLog("agent.turn_end_check", {
       provider: deps.loop.provider,
       model: deps.loop.model,
       productiveSteps: deps.counters.productiveSteps,
@@ -122,6 +138,21 @@ export const resolveAnswerPath = async (
     ));
   }
 
+  return finished(await finishWithAnswer(deps, {
+    answer: cleaned,
+    displayAnswer: deps.loop.interruptedVisible ? cleaned : displayCleaned,
+    turnEndReason: undefined,
+  }));
+};
+
+export const finishWithAnswer = async (
+  deps: TurnLoopDeps,
+  input: {
+    readonly answer: string;
+    readonly displayAnswer: string;
+    readonly turnEndReason: string | undefined;
+  },
+): Promise<TurnOutcome> => {
   const finalOutcome = await resolveFinalOutcome(
     {
       outcomeState: deps.outcomeState,
@@ -130,7 +161,7 @@ export const resolveAnswerPath = async (
         loadPlan(deps.session.sessionId),
       saveOutcomeState,
     },
-    cleaned,
+    input.answer,
   );
   const outcomeStatus = finalOutcome.status;
   const remainingCriteria = finalOutcome.remainingCriteria;
@@ -142,14 +173,15 @@ export const resolveAnswerPath = async (
     steps: deps.loop.step + 1,
     outcomeStatus,
     remainingCriteria,
+    turnEndReason: input.turnEndReason,
   });
-  deps.loop.lastAnswer = cleaned;
-  return finished(deps.finishTurn(
+  deps.loop.lastAnswer = input.answer;
+  return deps.finishTurn(
     deps.loop.lastAnswer,
     deps.loop.step + 1,
     outcomeStatus,
     remainingCriteria,
     finalOutcome.reason,
-    deps.loop.interruptedVisible ? cleaned : displayCleaned,
-  ));
+    input.displayAnswer,
+  );
 };

@@ -19,6 +19,11 @@ function frame(payload: object): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
+const turnEndDelta = {
+  index: 0, id: "call_turn_end", type: "function",
+  function: { name: "turn_end", arguments: JSON.stringify({ reason: "answered" }) },
+};
+
 beforeEach(() => {
   generation = 0;
   reportUsage = true;
@@ -45,7 +50,7 @@ beforeEach(() => {
         } })
       : "";
     return new Response(
-      frame({ choices: [{ delta: { content: "RIVER_USAGE_OK" }, finish_reason: "stop" }] }) +
+      frame({ choices: [{ delta: { content: "RIVER_USAGE_OK", tool_calls: [turnEndDelta] }, finish_reason: "tool_calls" }] }) +
       usage + "data: [DONE]\n\n",
       { headers: { "content-type": "text/event-stream" } },
     );

@@ -2,12 +2,14 @@ import type { ChatMessage, ProviderId } from "../../../types.js";
 import type { SessionPlan } from "../../../store/plan.js";
 import { foregroundRemaining } from "../../../store/plan.js";
 import { markDegradedToolModel } from "../../../llm/tool-protocol.js";
+import { TURN_END_CHECK_MESSAGE } from "../turn-completion.js";
 
 export interface ModelOnlyRoundPorts {
   readonly messages: ChatMessage[];
   readonly provider: ProviderId;
   readonly model: string;
   readonly toolsAttached: boolean;
+  readonly canDeclareTurnEnd: boolean;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly commitAssistantRetry: (text: string) => void;
   readonly recoveryUserMessage: (content: string) => ChatMessage;
@@ -18,9 +20,8 @@ export interface ModelOnlyRoundPorts {
 export interface ModelOnlyRoundInput {
   readonly assistantVisible: string;
   readonly wantsAction: boolean;
-  readonly narratedNextStep: boolean;
-  readonly continuationEligible: boolean;
-  readonly continuationChecked: boolean;
+  readonly turnEndDeclared: boolean;
+  readonly turnEndChecked: boolean;
   readonly consecutiveModelOnlyRounds: number;
   readonly plan: SessionPlan | undefined;
 }
@@ -35,7 +36,7 @@ export interface ModelOnlyStop {
 export type ModelOnlyRoundDecision =
   | { readonly kind: "proceed" }
   | { readonly kind: "continue-round" }
-  | { readonly kind: "continuation-check" }
+  | { readonly kind: "turn-end-check" }
   | ModelOnlyStop;
 
 const STALLED_MESSAGE =
@@ -64,36 +65,15 @@ const unreadResponderNudge = (unread: readonly string[]): string =>
   `You have ${unread.length} delivered Responder result(s) that remain unread: ${unread.join(", ")}. ` +
   "If analysis is incomplete, call only the bounded evidence tool needed now. If each result has been analyzed and is satisfactory, you MUST call job.read with its jobId or exact notificationId before giving a final response. job.read does not require an active plan; do not create or update a plan merely to acknowledge a result.";
 
-const EXECUTING_PLAN_STATUSES: ReadonlySet<SessionPlan["status"]> = new Set([
-  "approved",
-  "in_progress",
-]);
-
-const openPlanTasks = (plan: SessionPlan | undefined): string[] =>
-  plan && EXECUTING_PLAN_STATUSES.has(plan.status)
-    ? foregroundRemaining(plan).map((task) => `[${task.id}] ${task.title}`)
-    : [];
-
-const continuationCheckMessage = (openTasks: readonly string[]): string => {
-  const evidence =
-    openTasks.length > 0
-      ? `Your previous reply ended the turn without a tool call while the active plan still has open tasks:\n${openTasks.map((task) => `- ${task}`).join("\n")}`
-      : "Your previous reply described a next step but ended the turn without a tool call.";
-  return (
-    `CONTINUATION CHECK: ${evidence}\n` +
-    "If you meant to keep working on the user's current request, make the next tool call now without repeating your previous reply. " +
-    "If the work is complete, you are blocked, you need the user's input or confirmation, or the user's latest instructions say to pause or stop here, " +
-    "reply with your final message and no tool call; that reply ends the turn."
-  );
-};
-
 export const handleModelOnlyRound = (
   ports: ModelOnlyRoundPorts,
   input: ModelOnlyRoundInput,
 ): ModelOnlyRoundDecision => {
   const unread = ports.unreadResponderIds();
   const hasUnread = unread.length > 0;
-  if (input.continuationChecked && !hasUnread) return { kind: "proceed" };
+  if (!hasUnread && (input.turnEndDeclared || input.turnEndChecked)) {
+    return { kind: "proceed" };
+  }
   const actionable = input.wantsAction || hasUnread;
 
   if (
@@ -129,19 +109,10 @@ export const handleModelOnlyRound = (
     return { kind: "continue-round" };
   }
 
-  if (ports.toolsAttached && input.continuationEligible) {
-    const openTasks = openPlanTasks(input.plan);
-    if (openTasks.length > 0 || input.narratedNextStep) {
-      ports.commitAssistantRetry(input.assistantVisible);
-      ports.notify(
-        "info",
-        "reply ended without a tool call while work looks unfinished — asking the model to continue or confirm it is done",
-      );
-      ports.messages.push(
-        ports.recoveryUserMessage(continuationCheckMessage(openTasks)),
-      );
-      return { kind: "continuation-check" };
-    }
+  if (ports.canDeclareTurnEnd) {
+    ports.commitAssistantRetry(input.assistantVisible);
+    ports.messages.push(ports.recoveryUserMessage(TURN_END_CHECK_MESSAGE));
+    return { kind: "turn-end-check" };
   }
 
   return { kind: "proceed" };

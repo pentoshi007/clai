@@ -30,6 +30,13 @@ describe("quiet meta tools", () => {
       expect(shouldHideQuietMetaToolInChat(name, "blocked")).toBe(true);
     }
   });
+
+  it("always hides turn.end regardless of outcome", () => {
+    expect(isQuietMetaTool("turn.end")).toBe(true);
+    for (const status of ["ok", "running", "failed", "blocked"]) {
+      expect(shouldHideQuietMetaToolInChat("turn.end", status)).toBe(true);
+    }
+  });
 });
 
 describe("internal chat messages", () => {

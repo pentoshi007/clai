@@ -1,3 +1,8 @@
+import {
+  createTurnCompletionState,
+  type TurnCompletionState,
+} from "./turn-completion.js";
+
 export interface TurnCounters {
   productiveSteps: number;
   consecutiveModelOnlyRounds: number;
@@ -5,7 +10,7 @@ export interface TurnCounters {
   malformedFenceRetries: number;
   bareToolJsonRetries: number;
   sentinelToolRetries: number;
-  continuationCheckStep: number | undefined;
+  readonly completion: TurnCompletionState;
 }
 
 export const createTurnCounters = (): TurnCounters => ({
@@ -15,7 +20,7 @@ export const createTurnCounters = (): TurnCounters => ({
   malformedFenceRetries: 0,
   bareToolJsonRetries: 0,
   sentinelToolRetries: 0,
-  continuationCheckStep: undefined,
+  completion: createTurnCompletionState(),
 });
 
 export const resetToolRetryCounters = (counters: TurnCounters): void => {

@@ -41,6 +41,12 @@ function streamReply(text: string) {
   };
 }
 
+function declaredFinalReply(text: string) {
+  return streamReply(
+    `${text}\n\`\`\`tool\n{"name":"turn.end","args":{"reason":"answered"}}\n\`\`\``,
+  );
+}
+
 function session(sessionId: string) {
   return {
     sessionId,
@@ -70,7 +76,7 @@ describe("agent plan gate enforcement", () => {
           '```tool\n{"name":"shell.exec","args":{"command":"npm create vite@latest brand-new-todo-xyz -- --template react"}}\n```',
         ),
       )
-      .mockImplementationOnce(streamReply("Scaffold started."));
+      .mockImplementationOnce(declaredFinalReply("Scaffold started."));
 
     runTool.mockResolvedValue({ ok: true, output: "Scaffolding project..." });
 
@@ -156,7 +162,7 @@ describe("agent plan gate enforcement", () => {
         streamReply('```tool\n{"name":"fs.read","args":{"path":"/test"}}\n```')
       )
       .mockImplementationOnce(
-        streamReply('I see the files. Now I will stop.')
+        declaredFinalReply("I see the files. Now I will stop.")
       );
 
     runTool.mockResolvedValueOnce({ ok: true, output: "file1, file2" });
@@ -180,7 +186,7 @@ describe("agent plan gate enforcement", () => {
           `\`\`\`tool\n{"name":"fs.write","args":{"path":"${project}/src/App.tsx","content":"ok"}}\n\`\`\``,
         ),
       )
-      .mockImplementationOnce(streamReply("Done."));
+      .mockImplementationOnce(declaredFinalReply("Done."));
     runTool.mockResolvedValue({ ok: true, output: "written" });
 
     await runAgent("perform the requested operation", {
@@ -205,7 +211,7 @@ describe("agent plan gate enforcement", () => {
           `\`\`\`tool\n{"name":"fs.write","args":{"path":"${sibling}","content":"ok"}}\n\`\`\``,
         ),
       )
-      .mockImplementationOnce(streamReply("Done."));
+      .mockImplementationOnce(declaredFinalReply("Done."));
     runTool.mockResolvedValue({ ok: true, output: "written" });
 
     await runAgent("perform the requested operation", {
@@ -231,7 +237,7 @@ describe("agent plan gate enforcement", () => {
           `\`\`\`tool\n{"name":"fs.write","args":{"path":"${sibling}","content":"ok"}}\n\`\`\``,
         ),
       )
-      .mockImplementationOnce(streamReply("Done."));
+      .mockImplementationOnce(declaredFinalReply("Done."));
     runTool.mockResolvedValue({ ok: true, output: "written" });
 
     await runAgent("perform the requested operation", {
@@ -255,7 +261,7 @@ describe("agent plan gate enforcement", () => {
           `\`\`\`tool\n{"name":"fs.delete","args":{"path":"${project}/src/old.ts"}}\n\`\`\``,
         ),
       )
-      .mockImplementationOnce(streamReply("Done."));
+      .mockImplementationOnce(declaredFinalReply("Done."));
     runTool.mockResolvedValue({ ok: true, output: "deleted" });
 
     await runAgent("perform the requested operation", {
@@ -276,7 +282,7 @@ describe("agent plan gate enforcement", () => {
       .mockImplementationOnce(streamReply(repeated))
       .mockImplementationOnce(streamReply(repeated))
       .mockImplementationOnce(streamReply(repeated))
-      .mockImplementationOnce(streamReply("Inspection complete."));
+      .mockImplementationOnce(declaredFinalReply("Inspection complete."));
     runTool.mockResolvedValue({ ok: true, output: "file1, file2" });
 
     const answer = await runAgent("inspect files", {
@@ -327,7 +333,7 @@ describe("plan.clear runner dispatch", () => {
       .mockImplementationOnce(
         streamReply('```tool\n{"name":"plan.clear","args":{}}\n```'),
       )
-      .mockImplementationOnce(streamReply("Plan cleared."));
+      .mockImplementationOnce(declaredFinalReply("Plan cleared."));
 
     await runAgent("discard the active plan", {
       session: activeSession,

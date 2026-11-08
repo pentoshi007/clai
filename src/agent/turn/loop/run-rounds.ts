@@ -54,7 +54,9 @@ import { requestRound } from "./round-request.js";
 import { createStreamSession } from "./stream-session.js";
 import type { TurnOutcome } from "../../turn-outcome.js";
 import type { TurnLoopDeps } from "./deps.js";
-import { resolveAnswerPath } from "./answer-path.js";
+import { resolveAnswerPath, finishWithAnswer } from "./answer-path.js";
+import { isTurnEndCall, resolveDeclaredTurnEnd } from "./declared-turn-end.js";
+import { TURN_END_FINAL_MESSAGE_REQUEST } from "../turn-completion.js";
 import { SubagentInbox, SubagentInboxCapacityError } from "../subagent-inbox.js";
 import { retireRejectedReasoningReplay } from "../../../llm/routing/attempt-request.js";
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
@@ -510,6 +512,7 @@ export const runTurnRounds = async (
           canonicalAssistantVisible,
           bareArgsOnly,
           toolsAttached,
+          roundsRemain: iteration + 1 < deps.maxIterations,
           commitAssistantRetry,
         });
         if (answer.kind === "finished") return answer.outcome;
@@ -559,7 +562,7 @@ export const runTurnRounds = async (
       bound = reconciled.bound;
       toRun = reconciled.toRun;
       const allCalls = toRun.map((b) => b.call);
-      const actionSequenceCalls = bound.map((entry) => {
+      const actionSequenceCalls = bound.filter((entry) => !isTurnEndCall(entry.call)).map((entry) => {
         const candidate = entry.call;
         const stateKey = deps.probeStateKey(candidate);
         return {
@@ -709,6 +712,7 @@ export const runTurnRounds = async (
         Boolean(deps.activePlan && deps.activePlan.tasks.length > 0),
         allCalls.length,
       );
+      const stepsBeforeRound = deps.counters.productiveSteps;
 
       const planRemindedAt = new Set<number>();
       const toolResultRecorder = createToolResultRecorder({
@@ -895,6 +899,29 @@ export const runTurnRounds = async (
         deps.moveTurn("aborted", "turn aborted");
         deps.writeAbort();
         return deps.finishTurn(deps.loop.lastAnswer, deps.counters.productiveSteps, "aborted");
+      }
+
+      const declaredTurnEnd = resolveDeclaredTurnEnd(deps.counters.completion, {
+        declared: round.turnEndDeclared,
+        calls: allCalls,
+        outcomesNeedReview: round.outcomesNeedReview,
+        visibleText: beforeTool,
+        stepsBeforeRound,
+        productiveSteps: deps.counters.productiveSteps,
+        unreadResponders: deps.responderClaims.size > 0,
+      });
+      if (declaredTurnEnd.kind === "request-final-message") {
+        deps.messages.push(deps.recoveryUserMessage(TURN_END_FINAL_MESSAGE_REQUEST));
+      } else if (declaredTurnEnd.kind === "finish") {
+        if (!(await subagentInbox.beforeFinal(deps.options.signal, () => {
+          deps.emit({ type: "status", text: "waiting for delegated work" });
+        }))) {
+          return finishWithAnswer(deps, {
+            answer: declaredTurnEnd.answer,
+            displayAnswer: "",
+            turnEndReason: declaredTurnEnd.reason,
+          });
+        }
       }
 
       await deps.maybeAutoCompact("post-tool-token-budget");

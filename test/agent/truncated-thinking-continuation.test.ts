@@ -41,6 +41,9 @@ interface CapturedRound {
   readonly thinkingEnabled: boolean | undefined;
 }
 
+const TURN_END_CALL =
+  '\n```tool\n{"name":"turn.end","args":{"reason":"answered"}}\n```';
+
 function makeSession(id: string) {
   return {
     sessionId: id,
@@ -218,7 +221,7 @@ describe("truncated thinking continuation", () => {
         finishReason: "MAX_TOKENS",
       }),
       () => ({
-        text: prefix + suffix,
+        text: prefix + suffix + TURN_END_CALL,
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",
@@ -240,7 +243,7 @@ describe("truncated thinking continuation", () => {
     expect(answer).toContain(prefix + suffix);
     expect(answer.split(prefix).length - 1).toBe(1);
     const finalMessages = events.filter(
-      (event) => event.type === "assistant-message",
+      (event) => event.type === "assistant-message" && event.text !== "",
     );
     const finalText = finalMessages.at(-1);
     expect(finalText?.type === "assistant-message" ? finalText.text : "").toBe(
@@ -261,7 +264,7 @@ describe("truncated thinking continuation", () => {
         finishReason: "MAX_TOKENS",
       }),
       () => ({
-        text: overlap + tail,
+        text: overlap + tail + TURN_END_CALL,
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",
@@ -282,7 +285,7 @@ describe("truncated thinking continuation", () => {
     expect(answer).toBe(first + tail);
     expect(answer.split(overlap).length - 1).toBe(1);
     const finalMessage = events
-      .filter((event) => event.type === "assistant-message")
+      .filter((event) => event.type === "assistant-message" && event.text !== "")
       .at(-1);
     expect(
       finalMessage?.type === "assistant-message" ? finalMessage.text : "",
@@ -301,7 +304,7 @@ describe("truncated thinking continuation", () => {
         finishReason: "MAX_TOKENS",
       }),
       () => ({
-        text: overlap + tail,
+        text: overlap + tail + TURN_END_CALL,
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",
@@ -340,7 +343,7 @@ describe("truncated thinking continuation", () => {
         },
       }),
       () => ({
-        text: "done at the route ceiling",
+        text: "done at the route ceiling" + TURN_END_CALL,
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",

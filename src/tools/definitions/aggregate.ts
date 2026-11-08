@@ -8,6 +8,7 @@ import { TOOL_DEFINITIONS_TERMINAL } from "./terminal.js";
 import { TOOL_DEFINITIONS_SUBAGENTS } from "./subagents.js";
 import { TOOL_DEFINITIONS_WEB_1 } from "./web-1.js";
 import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
+import { TURN_END_REASONS, TURN_END_TOOL_NAME } from "../turn-end.js";
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_FILES,
@@ -193,6 +194,23 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
     { mutates: true },
+  ),
+  def(
+    TURN_END_TOOL_NAME,
+    "Declare that this turn is finished. Call it in the same response as your final message to the user, alone or with plan/job bookkeeping calls only, so the turn ends without another round. Judge only against the latest user message: call it when that request is fully handled (work done and verified, or the question answered, which needs no other tools), when you need the user's input, confirmation or decision, when a genuine blocker needs the user's attention, or when the user told you to stop at this point. Never call it to pause work you can still do yourself. The declaration covers only this response: any later tool work requires a new declaration, and every new user message starts undeclared.",
+    {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          enum: [...TURN_END_REASONS],
+          description:
+            "completed: requested work is done and verified; answered: the question or request was answered; needs_user_input: you need the user's input, confirmation or decision; blocked: a blocker needs the user's attention; stop_requested: the user asked you to stop here",
+        },
+      },
+      required: ["reason"],
+      additionalProperties: false,
+    },
   ),
   def(
     "job.read",

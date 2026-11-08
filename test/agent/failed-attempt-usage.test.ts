@@ -25,6 +25,9 @@ vi.mock("../../src/commands/providers.js", async (importActual) => {
   return { ...actual, ensureProviderConfigured: async () => {} };
 });
 
+const RECOVERED_REPLY =
+  'recovered answer\n```tool\n{"name":"turn.end","args":{"reason":"answered"}}\n```';
+
 function makeSession(id: string) {
   return {
     sessionId: id,
@@ -105,9 +108,9 @@ describe("failed attempt usage aggregation", () => {
         if (call === 1) {
           return Promise.reject(failedUsageError());
         }
-        onToken("recovered answer");
+        onToken(RECOVERED_REPLY);
         return Promise.resolve({
-          text: "recovered answer",
+          text: RECOVERED_REPLY,
           provider: "nvidia",
           model: "test-model",
           usage: {
@@ -163,9 +166,9 @@ describe("failed attempt usage aggregation", () => {
         if (call === 1) {
           return Promise.reject(new Error("connection glitch mid-request"));
         }
-        onToken("recovered answer");
+        onToken(RECOVERED_REPLY);
         return Promise.resolve({
-          text: "recovered answer",
+          text: RECOVERED_REPLY,
           provider: "nvidia",
           model: "test-model",
           usage: {

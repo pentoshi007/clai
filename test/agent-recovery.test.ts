@@ -33,6 +33,16 @@ function reply(text: string) {
   };
 }
 
+function snapshot(request: CompletionRequest): CompletionRequest {
+  return { ...request, messages: [...request.messages] };
+}
+
+function declaredFinalReply(text: string) {
+  return reply(
+    `${text}\n\`\`\`tool\n{"name":"turn.end","args":{"reason":"answered"}}\n\`\`\``,
+  );
+}
+
 function session(sessionId: string) {
   return {
     sessionId,
@@ -61,12 +71,12 @@ describe("agent recovery request shaping", () => {
     const requests: CompletionRequest[] = [];
     stream
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
+        requests.push(snapshot(request));
         return reply(`<think>${longReasoning}</think>`)(request, onToken);
       })
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
-        return reply("Visible recovery answer.")(request, onToken);
+        requests.push(snapshot(request));
+        return declaredFinalReply("Visible recovery answer.")(request, onToken);
       });
 
     await runAgent("Please answer this.", {
@@ -113,14 +123,14 @@ describe("agent recovery request shaping", () => {
     stream
       .mockImplementationOnce(
         (request: CompletionRequest, onToken: (token: string) => void) => {
-          requests.push(request);
+          requests.push(snapshot(request));
           return reply(`<think>${reasoning}</think>`)(request, onToken);
         },
       )
       .mockImplementationOnce(
         (request: CompletionRequest, onToken: (token: string) => void) => {
-          requests.push(request);
-          return reply("Visible Kiro recovery answer.")(request, onToken);
+          requests.push(snapshot(request));
+          return declaredFinalReply("Visible Kiro recovery answer.")(request, onToken);
         },
       );
 
@@ -156,10 +166,10 @@ describe("agent recovery request shaping", () => {
       "I retained the complete Kiro recovery state and the next action, but this simulated generation still did not emit a visible answer or tool call.";
     stream.mockImplementation(
       (request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
+        requests.push(snapshot(request));
         return requests.length <= 4
           ? reply(`<think>${reasoning}</think>`)(request, onToken)
-          : reply("Visible answer after repeated Kiro reasoning.")(request, onToken);
+          : declaredFinalReply("Visible answer after repeated Kiro reasoning.")(request, onToken);
       },
     );
 
@@ -184,7 +194,7 @@ describe("agent recovery request shaping", () => {
     const requests: CompletionRequest[] = [];
     stream.mockImplementation(
       (request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
+        requests.push(snapshot(request));
         if (requests.length <= 2) {
           return Promise.reject(
             new Error(
@@ -192,7 +202,7 @@ describe("agent recovery request shaping", () => {
             ),
           );
         }
-        return reply("Visible answer after repeated Kiro empty streams.")(request, onToken);
+        return declaredFinalReply("Visible answer after repeated Kiro empty streams.")(request, onToken);
       },
     );
 
@@ -222,16 +232,16 @@ describe("agent recovery request shaping", () => {
     const requests: CompletionRequest[] = [];
     stream
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
+        requests.push(snapshot(request));
         return reply(`<think>${firstReasoning}</think>`)(request, onToken);
       })
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
+        requests.push(snapshot(request));
         return reply(`<think>${secondReasoning}</think>`)(request, onToken);
       })
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
-        requests.push(request);
-        return reply("Visible recovery answer.")(request, onToken);
+        requests.push(snapshot(request));
+        return declaredFinalReply("Visible recovery answer.")(request, onToken);
       });
 
     await runAgent("Please answer this.", {

@@ -39,6 +39,10 @@ interface CapturedRound {
   readonly messages: readonly string[];
 }
 
+const TURN_END_CALLS = [
+  { id: "turn-end", name: "turn.end", args: { reason: "answered" } },
+];
+
 function makeSession(id: string) {
   return {
     sessionId: id,
@@ -94,6 +98,7 @@ describe("typed reasoning stream events through the agent runner", () => {
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",
+        toolCalls: TURN_END_CALLS,
       };
     });
 
@@ -130,6 +135,7 @@ describe("typed reasoning stream events through the agent runner", () => {
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",
+        toolCalls: TURN_END_CALLS,
       };
     });
 
@@ -153,6 +159,7 @@ describe("typed reasoning stream events through the agent runner", () => {
         provider: "nvidia",
         model: "test-model",
         finishReason: "stop",
+        toolCalls: TURN_END_CALLS,
         reasoningBlock: { text: "reasoning from the result" },
       };
     });
@@ -173,7 +180,7 @@ describe("typed reasoning stream events through the agent runner", () => {
       return {
         text, provider: "nvidia", model: "test-model", generationDurationMs: round * 2_000,
         usage: { promptTokens: 1_000, completionTokens: round * 100, reasoningTokens: 50, totalTokens: 1_000 + round * 100, exact: true },
-        ...(round === 1 ? { toolCalls: [{ id: "read-metrics", name: "fs.read", args: { path: "fixture.ts" } }], finishReason: "tool_calls" } : { finishReason: "stop" }),
+        ...(round === 1 ? { toolCalls: [{ id: "read-metrics", name: "fs.read", args: { path: "fixture.ts" } }], finishReason: "tool_calls" } : { finishReason: "stop", toolCalls: TURN_END_CALLS }),
       };
     });
     expect(round).toBe(2);
@@ -188,7 +195,7 @@ describe("typed reasoning stream events through the agent runner", () => {
   it("reports a missing measurement instead of inventing throughput from streamed text", async () => {
     const events = await driveAgent("session-typed-stream", (_req, onToken) => {
       onToken("An answer without reported usage.");
-      return { text: "An answer without reported usage.", provider: "nvidia", model: "test-model", generationDurationMs: 1_000, finishReason: "stop" };
+      return { text: "An answer without reported usage.", provider: "nvidia", model: "test-model", generationDurationMs: 1_000, finishReason: "stop", toolCalls: TURN_END_CALLS };
     });
     expect(events.filter((event) => event.type === "generation-completed")).toEqual([{ type: "generation-completed", metrics: undefined }]);
   });

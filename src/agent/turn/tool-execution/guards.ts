@@ -6,6 +6,7 @@ const NARROW_NMAP_ALLOWED: ReadonlySet<string> = new Set([
   "shell.jobs",
   "shell.wait",
   "job.read",
+  "turn.end",
 ]);
 
 const NARROW_NMAP_COMMAND =
