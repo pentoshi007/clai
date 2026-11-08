@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Context window default
+
+- Raise the fallback context window for models with no published or table limit from 200,000 to 250,000 tokens. Automatic compaction for these models now starts at 175,000 tokens instead of 140,000, and the context chip shows `250k`.
+
+### Mode badge colors
+
+- Color the mode badge on the intro card with the same background as the mode badge below the composer in Classic and OpenTUI (agent teal, ask indigo, plan amber). The intro card previously used a different color for each mode.
+
 ## v5.1.6 — 2026-11-01
 
 ### Explicit turn completion

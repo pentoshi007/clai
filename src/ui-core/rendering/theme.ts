@@ -1,4 +1,5 @@
 
+import type { Mode } from "../../types.js";
 import type { ThemeHint } from "../bootstrap/capabilities.js";
 
 export interface Theme {
@@ -168,4 +169,18 @@ const LIGHT_THEME: Theme = {
 
 export function themeFor(hint: ThemeHint): Theme {
   return hint === "light" ? LIGHT_THEME : DARK_THEME;
+}
+
+export type ThemeColorToken = keyof Theme;
+
+const MODE_BADGE_TOKENS: Readonly<Record<Mode, ThemeColorToken>> = {
+  agent: "chipTeal",
+  ask: "chipIndigo",
+  plan: "mode",
+};
+
+export function modeBadgeToken(mode: string): ThemeColorToken {
+  return Object.hasOwn(MODE_BADGE_TOKENS, mode)
+    ? MODE_BADGE_TOKENS[mode as Mode]
+    : MODE_BADGE_TOKENS.agent;
 }

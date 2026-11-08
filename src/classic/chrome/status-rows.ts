@@ -18,6 +18,7 @@ import { contextLimitEditorLabel } from "./context-limit-editor.js";
 import { alignEnds, clipToWidth } from "../render/ansi-text.js";
 import { layoutWidth } from "../render/measure.js";
 import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
+import { modeBadgeToken } from "../../ui-core/rendering/theme.js";
 import type { StatusRowsWanted } from "./row-budget.js";
 
 const HINT_LABELS: Readonly<Record<IdleHintId, string>> = {
@@ -100,14 +101,8 @@ export function contextLimitChipColumns(
   return { left: columns - STATUS_RIGHT_INSET_COLUMNS - width, width };
 }
 
-const MODE_PLATE: Readonly<Record<Mode, ThemeToken>> = {
-  agent: "chipTeal",
-  ask: "chipIndigo",
-  plan: "mode",
-};
-
 function modeBadge(input: StatusViewInput): string {
-  const token = MODE_PLATE[input.mode];
+  const token = modeBadgeToken(input.mode);
   const label = modeIndicatorPresentation(input.mode).label;
   if (input.ink.unicode && input.ink.inkColor(token) !== undefined) {
     return `${input.ink.fg(token, "▐")}${input.ink.plate(token, `${label} `)}`;

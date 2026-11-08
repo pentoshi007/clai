@@ -33,7 +33,7 @@ afterEach(() => {
 
 describe("reliability policy (E1–E6)", () => {
   it("E1: model/default windows retain their ratio and safe headroom", () => {
-    expect(autoCompactTriggerTokens()).toBe(140_000);
+    expect(autoCompactTriggerTokens()).toBe(175_000);
     expect(
       autoCompactTriggerTokens({
         provider: "modal",

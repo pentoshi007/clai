@@ -222,11 +222,11 @@ describe("auto-compaction trigger follows custom context limits", () => {
       expect(controller.getState()).toMatchObject({
         contextLimit: {
           source: "default",
-          tokens: 200_000,
+          tokens: 250_000,
           compactTriggerTokens: modules.autoCompactTriggerTokens({ provider, model }),
         },
-        contextUsage: { contextLimit: 200_000 },
-        contextChip: "ctx 0/200k 0%",
+        contextUsage: { contextLimit: 250_000 },
+        contextChip: "ctx 0/250k 0%",
       });
       controller.dispose();
     }
@@ -258,7 +258,7 @@ describe("auto-compaction trigger follows custom context limits", () => {
     );
 
     freeOne.setContextLimitTokens(undefined);
-    expect(freeOne.getState().contextUsage?.contextLimit).toBe(200_000);
+    expect(freeOne.getState().contextUsage?.contextLimit).toBe(250_000);
     expect(freeOne.getState().contextLimit?.compactTriggerTokens).toBe(
       modules.autoCompactTriggerTokens({ provider: "free", model: modelOne }),
     );
@@ -266,7 +266,7 @@ describe("auto-compaction trigger follows custom context limits", () => {
     freeTwo.setContextLimitTokens(undefined);
     expect(freeTwo.getState().contextLimit).toMatchObject({
       source: "default",
-      tokens: 200_000,
+      tokens: 250_000,
       compactTriggerTokens: modules.autoCompactTriggerTokens({ provider: "free", model: modelTwo }),
     });
     freeOne.dispose();

@@ -196,7 +196,7 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
   it("picks up session context-limit changes against the current request on the next round", async () => {
     const history = smallHistory(12);
     history.splice(1, 1, { role: "user", content: "x ".repeat(198_000) });
-    let liveLimit: number | undefined = undefined;
+    let liveLimit: number | undefined = 400_000;
     let call = 0;
     stream.mockImplementation(
       (
@@ -244,7 +244,7 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
       },
     );
     runTool.mockImplementation(async () => {
-      liveLimit = 175_000;
+      liveLimit = 165_000;
       return { ok: true, output: "tool-output" };
     });
 
@@ -259,10 +259,12 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
       onEvent: (e) => events.push(e),
     });
 
+    const eventTypes = events.map((e) => e.type);
     expect(
-      events.some((e) => e.type === "compaction-start"),
-      "expected compaction once the mid-run limit lowered the trigger below the current assembled request",
-    ).toBe(true);
+      eventTypes.indexOf("compaction-start"),
+      "expected compaction only after the mid-run limit lowered the trigger below the current assembled request",
+    ).toBeGreaterThan(eventTypes.indexOf("tool-result"));
+    expect(eventTypes.indexOf("tool-result")).toBeGreaterThan(-1);
     expect(
       events.some(
         (event) =>

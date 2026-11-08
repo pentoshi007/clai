@@ -57,9 +57,9 @@ describe("default and custom compaction targets", () => {
       .toMatchObject({ configured: 140_000, effectiveTrigger: 140_000, clampedByModel: false });
   });
 
-  it("falls back to the 200k default window when nothing better is known", () => {
+  it("falls back to the 250k default window when nothing better is known", () => {
     expect(resolveRequestBudget({ provider: "tokenrouter", model: "unlisted-model-xyz" }))
-      .toMatchObject({ windowTokens: 200_000, windowSource: "default", effectiveTrigger: 140_000 });
+      .toMatchObject({ windowTokens: 250_000, windowSource: "default", effectiveTrigger: 175_000 });
   });
 
   it("clamps small windows below 80% so output and compaction headroom still fit", () => {
@@ -69,7 +69,7 @@ describe("default and custom compaction targets", () => {
 
   it.each([NaN, Infinity, -Infinity])("ignores invalid custom limits: %s", (contextLimitTokens) => {
     expect(resolveRequestBudget({ contextLimitTokens }).effectiveTrigger)
-      .toBe(140_000);
+      .toBe(175_000);
   });
 });
 

@@ -7,7 +7,7 @@ import { renderWordmark, wordmarkWidth } from "./wordmark.js";
 import { DEFAULT_PERMISSION_MODE, permissionModeLabel } from "../../safety/permission-mode.js";
 import { CARD_BORDER_HEX, CARD_INSET_COLUMNS } from "./card-style.js";
 import { middleClipText, terminalWidth } from "./text-width.js";
-import { themeFor, type Theme } from "./theme.js";
+import { modeBadgeToken, themeFor, type Theme } from "./theme.js";
 
 const cardBorder = chalk.hex(CARD_BORDER_HEX);
 
@@ -104,8 +104,7 @@ function resolveCard(opts: IntroHeaderOptions): CardModel {
 }
 
 function modeBadge(card: CardModel): string {
-  const bg =
-    card.mode === "ask" ? card.theme.chipTeal : card.mode === "plan" ? card.theme.chipIndigo : card.theme.mode;
+  const bg = card.theme[modeBadgeToken(card.mode)];
   return chalk.bgHex(bg).whiteBright.bold(` ${card.mode.toUpperCase()} MODE `);
 }
 

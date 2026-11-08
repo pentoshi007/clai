@@ -275,7 +275,7 @@ describe("Free model context discovery", () => {
     }));
     const { freeProvider } = await import("../../src/llm/free.js");
     const { resolveContextWindow, modelMaxOutputTokens, nominalModelContextWindow } = await import("../../src/llm/context-windows.js");
-    expect(nominalModelContextWindow(addedId)).toBe(200_000);
+    expect(nominalModelContextWindow(addedId)).toBe(250_000);
     await freeProvider.listModels!({});
     added = true;
     vi.mocked(Date.now).mockReturnValue(START + MODEL_LIST_TTL_MS - 1);
@@ -376,7 +376,7 @@ describe("Free model context discovery", () => {
     expect(modelContextWindow("free-2/shared-free", "free")).toBe(262_144);
     expect(modelContextWindow("shared-free", "free")).toBe(1_048_576);
     expect(modelMaxOutputTokens("free", "mimo-v2.6-flash-free")).toBe(32_000);
-    expect(resolveContextWindow({ provider: "free", model: "unknown-free" })).toMatchObject({ tokens: 200_000, source: "default" });
+    expect(resolveContextWindow({ provider: "free", model: "unknown-free" })).toMatchObject({ tokens: 250_000, source: "default" });
   });
 
   it("follows live Zen limits across discovery, refresh and offline reload", async () => {
@@ -403,7 +403,7 @@ describe("Free model context discovery", () => {
     const { modelContextWindow, modelMaxOutputTokens, resolveContextWindow } = await import("../../src/llm/context-windows.js");
     const { clearModelCatalogFacts, displayReasoningEfforts, registerModelCatalogFacts } = await import("../../src/llm/capabilities.js");
     const { reloadRememberedModelLimits } = await import("../../src/llm/model-limit-store.js");
-    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(200_000);
+    expect(modelContextWindow(`free-1/${id}`, "free")).toBe(250_000);
     await freeProvider.listModels!({});
     expect(resolveContextWindow({ provider: "free", model: `free-1/${id}` }).tokens).toBe(250_000);
     expect(modelContextWindow(id, "free")).toBe(250_000);

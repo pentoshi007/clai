@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe("catalog-published limits", () => {
   it("reports the catalog number for a model absent from the regex table", () => {
-    expect(nominalModelContextWindow(UNKNOWN_MODEL)).toBe(200_000);
+    expect(nominalModelContextWindow(UNKNOWN_MODEL)).toBe(250_000);
     registerModelCatalogFacts(
       "tokenrouter",
       parseCatalogFacts({ id: UNKNOWN_MODEL, context_length: 393_216 })!,
@@ -36,8 +36,8 @@ describe("catalog-published limits", () => {
       "tokenrouter",
       parseCatalogFacts({ id: UNKNOWN_MODEL, context_length: 393_216 })!,
     );
-    expect(modelContextWindow(UNKNOWN_MODEL, "fireworks")).toBe(200_000);
-    expect(modelContextWindow(UNKNOWN_MODEL)).toBe(200_000);
+    expect(modelContextWindow(UNKNOWN_MODEL, "fireworks")).toBe(250_000);
+    expect(modelContextWindow(UNKNOWN_MODEL)).toBe(250_000);
   });
 
   it("keeps a gateway-served override above the published window", () => {

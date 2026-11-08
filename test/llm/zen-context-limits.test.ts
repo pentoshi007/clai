@@ -96,8 +96,8 @@ describe("source-backed Zen context limits", () => {
   it("does not infer 1M for Zen from the upstream model family when no source limit is known", async () => {
     const { modelContextWindow, resolveContextWindow } = await import("../../src/llm/context-windows.js");
     for (const model of ["deepseek-v4.1-flash-free", "free-1/mimo-v2.6-flash-free", "free-1/gemini-3-flash"]) {
-      expect(modelContextWindow(model, "free")).toBe(200_000);
-      expect(resolveContextWindow({ provider: "free", model })).toMatchObject({ tokens: 200_000, source: "default" });
+      expect(modelContextWindow(model, "free")).toBe(250_000);
+      expect(resolveContextWindow({ provider: "free", model })).toMatchObject({ tokens: 250_000, source: "default" });
     }
     expect(modelContextWindow("free-2/deepseek-v4.1-flash-free", "free")).toBe(1_000_000);
     expect(modelContextWindow("mimo-v2.6-flash", "mimo")).toBe(1_000_000);
