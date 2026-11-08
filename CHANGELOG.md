@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v5.2.0 — 2026-11-08
 
 ### Refuseless, Unrestricted, Unaligned, Respan and Silk Compute providers
 
@@ -17,16 +17,27 @@
 
 - Color the mode badge on the intro card with the same background as the mode badge below the composer in Classic and OpenTUI (agent teal, ask indigo, plan amber). The intro card previously used a different color for each mode.
 
-## v5.1.6 — 2026-11-01
-
 ### Explicit turn completion
 
 - Add the `turn.end` tool. The agent calls it with its final message and a reason (`completed`, `answered`, `needs_user_input`, `blocked` or `stop_requested`), judged only against your latest message, and the turn ends without another request. Tool-free answers, questions back to you, genuine blockers and explicit stop instructions are all valid ends. The declaration resets for every new prompt and counts only when the rest of the response is successful plan or job bookkeeping and no Responder result is unread.
 - When a reply ends without a tool call and without `turn.end`, ask the model once whether it is finished. It either declares the end, which keeps its earlier reply as the answer, or makes the next tool call. Some models, such as Muse Spark, end a round with a progress line like "Moving to the cross-pass diff." and the turn stopped with work unfinished. The check is a fixed message appended after the reply, so earlier cached context is reused, and further checks need more tool work first, so turns cannot loop.
 
+### Image retention
+
+- Release the oldest image payloads once the conversation carries more than the model's image retention limit (at most six images, within its byte budget), settling to half the limit so rewrites stay batched and near the tail of the cached prefix. Your latest prompt and the newest images keep their pixels; released ones become a note listing their paths, and the model can call `image.view` to look again. This runs before each agent round and each ask research round.
+- Restore saved history newest-first under the same limits, so a resumed session keeps the image set the live loop retained instead of spending the budget on the oldest message first.
+
 ### History picker
 
 - Keep the selected session in view in OpenTUI's history and option pickers when the list's layout arrives after the picker opens or the terminal is resized. The picker listened for a viewport event OpenTUI never emits, so the current session could open scrolled out of sight on a slow first frame or after shrinking the window.
+
+### Upgrade notes
+
+- No session migration is required. Sessions saved by v5.1.x resume unchanged, and images released from history are re-read from disk only if the model asks for them again.
+- Turns now end on the explicit `turn.end` declaration; a reply that stops without one is checked once before the turn closes.
+- Models with no published context limit now default to 250,000 tokens, so automatic compaction starts at 175,000 instead of 140,000.
+
+## v5.1.6 — 2026-11-01
 
 ### Image tool cards
 
