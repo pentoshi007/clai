@@ -27,7 +27,12 @@ export interface CompletionAssessment {
   readonly planHasOpenWorkNow: boolean;
   readonly completedPlanDuringThisTurn: boolean;
   readonly wantsAction: boolean;
+  readonly narratedNextStep: boolean;
+  readonly continuationEligible: boolean;
 }
+
+const endsWithQuestionToUser = (text: string): boolean =>
+  /\?["'”’)\]*_`\s]*$/.test(text.trimEnd());
 
 export const assessCompletion = (
   input: CompletionAssessmentInput,
@@ -55,6 +60,11 @@ export const assessCompletion = (
     (userExpectsWork ||
       (narratedAction && !input.informationalQuery) ||
       (narratedWebAction && !input.informationalQuery));
+  const workTurn = !input.informationalQuery && !input.idleOrSocialPrompt;
+  const continuationEligible =
+    workTurn &&
+    !completedPlanDuringThisTurn &&
+    !endsWithQuestionToUser(cleaned);
   return {
     displayCleaned,
     cleaned,
@@ -63,6 +73,8 @@ export const assessCompletion = (
     planHasOpenWorkNow,
     completedPlanDuringThisTurn,
     wantsAction,
+    narratedNextStep: narratedAction || narratedWebAction,
+    continuationEligible,
   };
 };
 

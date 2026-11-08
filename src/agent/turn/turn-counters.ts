@@ -5,6 +5,7 @@ export interface TurnCounters {
   malformedFenceRetries: number;
   bareToolJsonRetries: number;
   sentinelToolRetries: number;
+  continuationCheckStep: number | undefined;
 }
 
 export const createTurnCounters = (): TurnCounters => ({
@@ -14,6 +15,7 @@ export const createTurnCounters = (): TurnCounters => ({
   malformedFenceRetries: 0,
   bareToolJsonRetries: 0,
   sentinelToolRetries: 0,
+  continuationCheckStep: undefined,
 });
 
 export const resetToolRetryCounters = (counters: TurnCounters): void => {
