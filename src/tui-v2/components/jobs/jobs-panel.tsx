@@ -8,7 +8,7 @@ import type {
   BackgroundJob,
   ResponderNotification,
 } from "../../../app/ports/jobs-port.js";
-import { formatJobElapsed } from "../../../tools/jobs.js";
+import { formatJobElapsed, responderJobLabel } from "../../../tools/jobs.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
@@ -479,7 +479,7 @@ export const ResponderPanel = memo(function ResponderPanel(props: ResponderPanel
                 }}
               />
               <text
-                content={`    ${(job.name ?? job.commandDisplay).replace(/\s+/g, " ").trim()}`}
+                content={`    ${responderJobLabel(job)}`}
                 wrapMode="word"
                 style={{ width: "100%", fg: theme.foreground }}
               />

@@ -7,6 +7,8 @@ import {
   type ModelOnlyRoundPorts,
 } from "../../src/agent/turn/loop/model-only-rounds.js";
 import { TURN_END_CHECK_MESSAGE } from "../../src/agent/turn/turn-completion.js";
+import { awaitsResponderWake } from "../../src/agent/turn/responder-dependency.js";
+import type { BackgroundJob } from "../../src/tools/jobs.js";
 
 const plan: SessionPlan = {
   sessionId: "session-1",
@@ -25,6 +27,7 @@ const plan: SessionPlan = {
 const makePorts = (
   overrides: Partial<Pick<ModelOnlyRoundPorts, "toolsAttached" | "canDeclareTurnEnd">> & {
     readonly unread?: readonly string[];
+    readonly awaitingResponderWake?: boolean;
   } = {},
 ) => {
   const messages: ChatMessage[] = [];
@@ -40,6 +43,7 @@ const makePorts = (
     recoveryUserMessage: (content) => ({ role: "user", content, internal: true }),
     writeAssistantMessage: () => undefined,
     unreadResponderIds: () => overrides.unread ?? [],
+    awaitingResponderWake: () => overrides.awaitingResponderWake ?? false,
   };
   return { ports, messages, committed };
 };
@@ -114,5 +118,45 @@ describe("model-only turn end check", () => {
     expect(decision.kind).toBe("continue-round");
     expect(messages.at(-1)?.content).toContain("job-1");
     expect(messages.at(-1)?.content).not.toContain("TURN END CHECK");
+  });
+
+  it("yields without a check while a running Responder job will wake the agent", () => {
+    const { ports, messages, committed } = makePorts({ awaitingResponderWake: true });
+    const decision = handleModelOnlyRound(
+      ports,
+      input({ assistantVisible: "Delegated the suite to Responder; I'll analyze it when it lands." }),
+    );
+    expect(decision.kind).toBe("proceed");
+    expect(messages).toHaveLength(0);
+    expect(committed).toHaveLength(0);
+  });
+
+  it("still asks for unread Responder results while other Responder jobs run", () => {
+    const { ports, messages } = makePorts({ unread: ["job-1"], awaitingResponderWake: true });
+    expect(handleModelOnlyRound(ports, input()).kind).toBe("continue-round");
+    expect(messages.at(-1)?.content).toContain("job-1");
+  });
+
+  it("checks again once no Responder job can wake the agent", () => {
+    const { ports, messages } = makePorts({ awaitingResponderWake: false });
+    expect(handleModelOnlyRound(ports, input()).kind).toBe("turn-end-check");
+    expect(messages.at(-1)?.content).toBe(TURN_END_CHECK_MESSAGE);
+  });
+});
+
+describe("awaitsResponderWake", () => {
+  const job = (overrides: Partial<BackgroundJob> = {}): BackgroundJob =>
+    ({ id: "job-1", status: "running", responder: true, wakeOnCompletion: true, ...overrides }) as BackgroundJob;
+
+  it("is true only for a running wake-enabled Responder job with an active wake lease", () => {
+    expect(awaitsResponderWake([job()], true)).toBe(true);
+    expect(awaitsResponderWake([job()], false)).toBe(false);
+    expect(awaitsResponderWake([], true)).toBe(false);
+  });
+
+  it("ignores ordinary background jobs and Responder jobs whose wake was suppressed", () => {
+    expect(awaitsResponderWake([job({ responder: false })], true)).toBe(false);
+    expect(awaitsResponderWake([job({ wakeOnCompletion: false })], true)).toBe(false);
+    expect(awaitsResponderWake([job({ wakeOnCompletion: undefined })], true)).toBe(true);
   });
 });

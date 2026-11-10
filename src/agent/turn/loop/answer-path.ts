@@ -95,6 +95,7 @@ export const resolveAnswerPath = async (
       recoveryUserMessage: deps.recoveryUserMessage,
       writeAssistantMessage: deps.writeAssistantMessage,
       unreadResponderIds: () => deps.responderClaims.ids(),
+      awaitingResponderWake: deps.awaitingResponderWake,
     },
     {
       assistantVisible: assistantText.visible,

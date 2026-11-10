@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Turn completion while Responder works
+
+- Skip the turn-end check when a reply ends while a Responder job is still running and will wake the agent on completion. Delegating long work and yielding no longer triggers a "you stopped" nudge; unread Responder results are still raised first, and the check resumes once no Responder job can wake the agent.
+
+### Responder task titles
+
+- Title Responder subtasks in the task pane with the same label as the Responder block above the composer: the job name when one is given, otherwise the redacted command display. Delegation records no longer show the raw command input and are retitled from the launched job.
+
+### Image viewing
+
+- Let `image.view` open up to six images per call, matching the retained image limit and clamped to the model's image budget. Retention still settles to half the limit, so image releases stay batched and prompt caching is preserved.
+
 ## v5.2.0 — 2026-11-08
 
 ### Refuseless, Unrestricted, Unaligned, Respan and Silk Compute providers

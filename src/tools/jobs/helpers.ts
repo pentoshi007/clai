@@ -25,6 +25,23 @@ export function commandDisplay(command: string | BackgroundSpawnSpec): string {
   return command.display ?? [command.command, ...command.argv].map(displayArg).join(" ");
 }
 
+const RESPONDER_TASK_TITLE_LIMIT = 96;
+
+const collapseWhitespace = (value: string | undefined): string =>
+  value?.replace(/\s+/g, " ").trim() ?? "";
+
+export function responderJobLabel(
+  job: Pick<BackgroundJob, "name" | "commandDisplay">,
+): string {
+  return collapseWhitespace(job.name) || collapseWhitespace(job.commandDisplay);
+}
+
+export function responderTaskTitle(
+  job: Pick<BackgroundJob, "name" | "commandDisplay">,
+): string {
+  return `Responder · ${responderJobLabel(job).slice(0, RESPONDER_TASK_TITLE_LIMIT)}`;
+}
+
 export function launchFollowUp(id: string, responder: boolean): string {
   return responder
     ? "Responder owns completion tracking for this self-completing job. " +

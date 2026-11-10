@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../../types.js";
+import { MAX_RETAINED_IMAGE_COUNT } from "../../attachments/image-retention.js";
 import { def, emptyObject } from "./define.js";
 
 export const TOOL_DEFINITIONS_CONTEXT_2: ToolDefinition[] = [
@@ -42,7 +43,7 @@ export const TOOL_DEFINITIONS_CONTEXT_2: ToolDefinition[] = [
         paths: {
           type: "array",
           items: { type: "string" },
-          maxItems: 4,
+          maxItems: MAX_RETAINED_IMAGE_COUNT,
           description:
             "Several images to look at in one call (e.g. before/after screenshots). Use instead of path.",
         },

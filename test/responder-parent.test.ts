@@ -158,4 +158,24 @@ describe("explicit responder delegation", () => {
     });
     expect(long.length).toBe("Responder · ".length + 96);
   });
+
+  it("titles the child with the job name shown in the Responder block instead of the raw command", () => {
+    expect(
+      delegationTaskTitle({
+        name: "shell.exec",
+        args: { command: "npm test -- --reporter verbose --run test/long-suite", name: "  full  test suite " },
+      }),
+    ).toBe("Responder · full test suite");
+    expect(
+      delegationTaskTitle({ name: "shell.exec", args: { command: "npm test", name: "   " } }),
+    ).toBe("Responder · npm test");
+  });
+
+  it("never puts raw secrets from the command into the child title", () => {
+    const title = delegationTaskTitle({
+      name: "shell.exec",
+      args: { command: "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456' https://api" },
+    });
+    expect(title).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456");
+  });
 });

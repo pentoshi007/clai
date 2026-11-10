@@ -110,6 +110,7 @@ export interface TurnLoopDeps extends TurnWriters {
     model: string,
   ) => { dialect: ToolDialect; native: boolean };
   readonly refreshResponderInbox: () => ResponderDelivery | undefined;
+  readonly awaitingResponderWake: () => boolean;
   readonly refreshAgentInstructions: () => Promise<void>;
   readonly refreshSessionState: (
     plan?: SessionPlan | null | undefined,

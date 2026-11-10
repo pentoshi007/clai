@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResult } from "../../types.js";
 import type { PlanTask, SessionPlan } from "../../store/plan.js";
-import type { BackgroundJob } from "../../tools/jobs.js";
+import { responderTaskTitle, type BackgroundJob } from "../../tools/jobs.js";
 import { appendPlanTask, isPlanSuccessful, isPlanTerminal } from "../../store/plan.js";
 
 export interface ResponderLinkageJobPatch {
@@ -55,9 +55,6 @@ const noteFor = (job: BackgroundJob): string =>
   `job=${job.id} pid=${job.pid ?? "?"} status=${job.status} ` +
   `artifact=${job.stdoutArtifact}`;
 
-const titleFor = (job: BackgroundJob): string =>
-  `Responder · ${job.name ?? job.commandDisplay.slice(0, 96)}`;
-
 interface ChildMutationInput {
   readonly job: BackgroundJob;
   readonly parentTaskId: string | undefined;
@@ -88,7 +85,7 @@ const applyResponderChild = (
   const child =
     findResponderChild(draft, input.job) ??
     appendPlanTask(draft, {
-      title: titleFor(input.job),
+      title: responderTaskTitle(input.job),
       state: input.terminalState,
       note: input.note,
       dependencies: [],
@@ -105,6 +102,7 @@ const applyResponderChild = (
     child.state = input.terminalState;
     child.note = input.note;
   }
+  child.title = responderTaskTitle(input.job);
   child.jobId = input.job.id;
   child.processId = input.job.pid;
   child.responderOwned = true;

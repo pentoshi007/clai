@@ -1,6 +1,8 @@
 import type { SessionPlan } from "../store/plan.js";
 import type { ToolCall } from "../types.js";
 import { resolveShellExecBackgroundPolicy } from "../tools/command-intent.js";
+import { responderTaskTitle } from "../tools/jobs/helpers.js";
+import { redactSecrets } from "../llm/provider.js";
 
 // the child task id is generated at launch and is not caller-supplied.
 
@@ -95,5 +97,8 @@ export function delegationTaskTitle(call: ToolCall): string {
       : typeof call.args?.target === "string"
         ? `${call.name} ${call.args.target}`
         : call.name;
-  return `Responder · ${command.slice(0, 96)}`;
+  return responderTaskTitle({
+    name: typeof call.args?.name === "string" ? call.args.name : undefined,
+    commandDisplay: redactSecrets(command),
+  });
 }

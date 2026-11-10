@@ -14,6 +14,7 @@ import {
 } from "../attachments/image-prepare.js";
 import { modelSupportsVision } from "../llm/capabilities.js";
 import { readImageBytes } from "../attachments/read-image.js";
+import { imageRetentionLimits } from "../attachments/image-retention.js";
 import {
   LANG_PATTERN,
   MIN_RELIABLE_CONFIDENCE,
@@ -182,8 +183,6 @@ export async function imageOcr(
   return { ok: true, output: `${header}\n\n${result.text}` };
 }
 
-const MAX_VIEW_IMAGES = 4;
-
 function viewPaths(args: Record<string, unknown>): string[] | string {
   const raw = args.paths ?? args.path;
   const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
@@ -197,9 +196,6 @@ function viewPaths(args: Record<string, unknown>): string[] | string {
   }
   if (paths.length === 0) {
     return 'image.view expects { "path": "/path/to/image.png" } or { "paths": [...] }';
-  }
-  if (paths.length > MAX_VIEW_IMAGES) {
-    return `image.view accepts at most ${MAX_VIEW_IMAGES} images per call (got ${paths.length})`;
   }
   return paths;
 }
@@ -227,6 +223,14 @@ export async function imageView(
   }
 
   const budget = imageBudgetFor(provider, model);
+  const viewLimit = imageRetentionLimits(budget).maxCount;
+  if (paths.length > viewLimit) {
+    return {
+      ok: false,
+      output: `image.view accepts at most ${viewLimit} images per call (got ${paths.length})`,
+      exitCode: 1,
+    };
+  }
   const images: ChatImage[] = [];
   const notes: string[] = [];
   const failures: string[] = [];

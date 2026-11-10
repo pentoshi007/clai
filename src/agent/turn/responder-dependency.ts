@@ -48,6 +48,13 @@ const isLiveChild = (
   );
 };
 
+export const awaitsResponderWake = (
+  runningJobs: readonly BackgroundJob[],
+  wakeLeaseActive: boolean,
+): boolean =>
+  wakeLeaseActive &&
+  runningJobs.some((job) => job.responder && job.wakeOnCompletion !== false);
+
 export function shouldYieldForDeclaredResponderDependency(
   plan: SessionPlan | undefined,
   runningJobs: readonly BackgroundJob[],
