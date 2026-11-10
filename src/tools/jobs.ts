@@ -15,10 +15,10 @@ import { forgetProcessIdentity, processAlive, processIdentity } from "./jobs/pro
 import { RotatingRedactedWriter } from "./jobs/redacted-writer.js";
 import { responderPollingPolicy } from "./jobs/polling-policy.js";
 import { ARCHIVED_UNSETTLED_MAX_AGE_MS, DEFAULT_TAIL_BYTES, DURABLE_PROGRESS_FLUSH_MS, LIST_JOBS_MAX_LINES, LIVENESS_LOST_GRACE_MS, LIVENESS_PROBE_INTERVAL_MS, LIVENESS_WATCH_INTERVAL_MS, MAX_ARCHIVED_UNSETTLED_NOTIFICATIONS, MAX_DURABLE_TERMINAL_JOBS, MAX_SUPERSEDED_REVISIONS, PROGRESS_FLUSH_MS, REGISTRY_FILE, SETTLEMENT_DEAD_LETTER_MS, SETTLEMENT_MAX_BACKOFF_MS, TERMINAL_JOB_MAX_AGE_MS, TRANSIENT_V2_REGISTRY_FILE, WAIT_JOB_DEFAULT_TIMEOUT_MS, WAIT_JOB_INTERVAL_MS, WAIT_JOB_MAX_TIMEOUT_MS, WAIT_JOB_TAIL_BYTES } from "./jobs/limits.js";
-import { commandDisplay, formatJobElapsed, launchFollowUp, looksLikeEphemeralToolTrack, trailingIncompleteBytes } from "./jobs/helpers.js";
+import { commandDisplay, formatJobElapsed, launchFollowUp, looksLikeEphemeralToolTrack, responderJobLabel, responderTaskTitle, trailingIncompleteBytes } from "./jobs/helpers.js";
 import { BackgroundJob, BackgroundSpawnSpec, ConsumedResponderResult, JobArtifactReceipt, JobLinkMetadata, JobManagerChange, JobManagerListener, JobStatus, JobTerminalStatus, PendingSettlement, PersistedRegistry, PersistedRegistryV2, ResponderNotification, StartJobOptions } from "./jobs/types.js";
 export type { BackgroundJob, BackgroundSpawnSpec, JobArtifactReceipt, JobKind, JobLinkMetadata, JobManagerChange, JobManagerListener, JobMonitorMetadata, JobStatus, JobTerminalStatus, PendingSettlement, ResponderNotification, StartJobOptions, SupersededResultRevision } from "./jobs/types.js";
-export { formatJobElapsed };
+export { formatJobElapsed, responderJobLabel, responderTaskTitle };
 export { responderPollingPolicy };
 export type { ResponderPollingPolicyInput } from "./jobs/polling-policy.js";
 
