@@ -17,6 +17,8 @@ import {
 import type { ChatMessage } from "../src/types.js";
 import { shouldEnableImageOcr } from "../src/agent/runner.js";
 import { imageView } from "../src/tools/image.js";
+import { MAX_RETAINED_IMAGE_COUNT } from "../src/attachments/image-retention.js";
+import { TOOL_DEFINITIONS } from "../src/tools/definitions.js";
 
 // 1x1 transparent PNG.
 const PNG_HEX =
@@ -147,6 +149,33 @@ describe("image.view direct vision", () => {
     });
     expect(Buffer.from(result.images![0]!.dataBase64, "base64")).toEqual(expected);
     expect(result.output).toMatch(/actual|pixels|look at it directly/i);
+  });
+
+  it("views up to the retained image limit in one call and refuses more", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clai-view-"));
+    dirs.push(dir);
+    const paths = Array.from({ length: MAX_RETAINED_IMAGE_COUNT + 1 }, (_, index) => {
+      const png = join(dir, `shot-${index}.png`);
+      writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
+      return png;
+    });
+    const options = { llmProvider: "openai" as const, llmModel: "gpt-4o-mini" };
+
+    const within = await imageView({ paths: paths.slice(0, MAX_RETAINED_IMAGE_COUNT) }, options);
+    expect(within.ok).toBe(true);
+    expect(within.images).toHaveLength(MAX_RETAINED_IMAGE_COUNT);
+
+    const over = await imageView({ paths }, options);
+    expect(over.ok).toBe(false);
+    expect(over.images).toBeUndefined();
+    expect(over.output).toContain(`at most ${MAX_RETAINED_IMAGE_COUNT} images`);
+  });
+
+  it("advertises the same per-call image limit in its schema", () => {
+    const definition = TOOL_DEFINITIONS.find((entry) => entry.name === "image.view");
+    expect(definition?.parameters).toMatchObject({
+      properties: { paths: { maxItems: MAX_RETAINED_IMAGE_COUNT } },
+    });
   });
 
   it("refuses a model observed to be text-only instead of pretending it can see", async () => {

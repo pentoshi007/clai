@@ -15,6 +15,7 @@ export interface ModelOnlyRoundPorts {
   readonly recoveryUserMessage: (content: string) => ChatMessage;
   readonly writeAssistantMessage: (text: string) => void;
   readonly unreadResponderIds: () => readonly string[];
+  readonly awaitingResponderWake: () => boolean;
 }
 
 export interface ModelOnlyRoundInput {
@@ -109,7 +110,7 @@ export const handleModelOnlyRound = (
     return { kind: "continue-round" };
   }
 
-  if (ports.canDeclareTurnEnd) {
+  if (ports.canDeclareTurnEnd && !ports.awaitingResponderWake()) {
     ports.commitAssistantRetry(input.assistantVisible);
     ports.messages.push(ports.recoveryUserMessage(TURN_END_CHECK_MESSAGE));
     return { kind: "turn-end-check" };

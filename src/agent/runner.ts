@@ -66,7 +66,10 @@ import { setUpTaskGate } from "./turn/setup/task-gate-setup.js";
 import { createTurnCounters } from "./turn/turn-counters.js";
 import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
-import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
+import {
+  awaitsResponderWake,
+  shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields,
+} from "./turn/responder-dependency.js";
 import {
   loadTurnInstructions,
   orientTurnWorkspace,
@@ -830,6 +833,11 @@ export async function runAgentTurn(
       maybeAutoCompact,
       resolveNativeTools,
       refreshResponderInbox,
+      awaitingResponderWake: () =>
+        awaitsResponderWake(
+          jobManager.getRunningJobs(session.sessionId),
+          jobManager.getResponderLeaseId(session.sessionId) !== undefined,
+        ),
       refreshAgentInstructions,
       refreshSessionState,
       recoveryUserMessage,
