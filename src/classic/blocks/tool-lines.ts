@@ -1,6 +1,7 @@
 import { isItemExpanded, type ToolItem, type ToolStatus } from "../../ui-core/state/transcript-types.js";
 import { presentFsReadArgs, presentTool, toolStatusText } from "../../ui-core/rendering/tool-presenter.js";
 import { shouldShowToolElapsed } from "../../ui-core/rendering/duration.js";
+import { toolStatusBall } from "../../ui-core/rendering/tool-status-ball.js";
 import { pendingArgumentsText } from "../../ui-core/rendering/pending-arguments.js";
 import { restoredTerminalArgs } from "../../agent/parser/terminal-args.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
@@ -23,9 +24,7 @@ export const TOOL_STATUS_TOKEN: Readonly<Record<ToolStatus, ThemeToken>> = {
 };
 
 export function toolGlyph(ctx: BlockContext, status: ToolStatus): string {
-  if (status === "queued") return ctx.glyphs.toolQueued;
-  if (status === "blocked") return ctx.glyphs.toolBlocked;
-  return ctx.ink.unicode ? "•" : "*";
+  return toolStatusBall(status, ctx.now, ctx.ink.theme, ctx.ink.colorMode, ctx.ink.unicode);
 }
 
 export function toolElapsed(ctx: BlockContext, item: ToolItem): string | undefined {
@@ -54,7 +53,7 @@ function inputSource(item: ToolItem): string {
 
 function headline(ctx: BlockContext, item: ToolItem, input = ""): string {
   const token = TOOL_STATUS_TOKEN[item.status];
-  const title = `${ctx.ink.fg(token, toolGlyph(ctx, item.status))} ${ctx.ink.style(classicToolLabel(item), { fg: token, bold: true })}`;
+  const title = `${toolGlyph(ctx, item.pending ? "queued" : item.status)} ${ctx.ink.style(classicToolLabel(item), { fg: token, bold: true })}`;
   const suffix = toolSuffix(ctx, item, presentTool(item).statusLabel);
   const meta = suffix ? `${ctx.ink.fg("hint", separator(ctx))}${suffix}` : "";
   const budget = Math.max(1, ctx.width - layoutWidth(meta));

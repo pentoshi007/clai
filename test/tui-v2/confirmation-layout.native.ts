@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { act, createElement } from "react";
 import { writeFile } from "node:fs/promises";
 import { testRender } from "@opentui/react/test-utils";
-import { TextareaRenderable, type Renderable } from "@opentui/core";
+import { TextareaRenderable, RGBA, type Renderable } from "@opentui/core";
 import { App } from "../../src/tui-v2/app/App.js";
 import { ToolCard } from "../../src/tui-v2/components/transcript/tool-card.js";
 import { TerminalDimensionsContext } from "../../src/tui-v2/hooks/terminal-dimensions.js";
@@ -112,7 +112,12 @@ for (const mode of ["running", "ok", "failed", "queued", "blocked", "batch", "ou
     const frame = card.captureCharFrame();
     if (mode === "output") assert.match(frame, /actual command output: running failed done/);
     else assert.doesNotMatch(frame, /\b(running|failed|done)\b/);
-    if (mode === "failed") { assert.match(frame, /127 · not found/); assert.match(frame, /✗/); }
+    if (mode === "failed") {
+      assert.match(frame, /127 · not found/);
+      const marker = card.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("●"));
+      assert.ok(marker, "The failed tool keeps a status marker");
+      assert.deepEqual(marker.fg.toInts(), RGBA.fromHex(theme.diffDel).toInts(), "The failed marker uses the failure colour");
+    }
     if (mode === "queued" || mode === "blocked") assert.ok(frame.includes(mode));
     if (batch) { assert.match(frame, /exit 127/); assert.match(frame, /exit 0/); assert.match(frame, /●/); }
   } finally {

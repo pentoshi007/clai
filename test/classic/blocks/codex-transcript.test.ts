@@ -21,7 +21,7 @@ describe("Codex-style classic transcript", () => {
     const command = "python3 - <<'PY'\nprint('hidden input')\nPY";
     turn.spool.replace(item.toolCallId, Array.from({ length: 10 }, (_, i) => `OUTPUT_${i}`).join("\n"));
     const rows = buildToolLines(ctx, { ...item, argsDisplay: command }).map(stripAnsi);
-    expect(rows[0]).toBe("• Shell python3 - <<'PY' …");
+    expect(rows[0]).toBe("● Shell python3 - <<'PY' …");
     expect(rows.slice(1, 4)).toEqual(["  └ OUTPUT_0", "    OUTPUT_1", "    OUTPUT_2"]);
     expect(rows).toHaveLength(5);
     expect(rows[4]).toContain("+ click to expand");
@@ -47,7 +47,7 @@ describe("Codex-style classic transcript", () => {
       { path: "src/first.ts", offset: 30, limit: 8 },
       { path: "src/second.ts", pattern: "needle", context: 2 },
     ] }) }).map(stripAnsi);
-    expect(rows[0]).toBe("• Explored");
+    expect(rows[0]).toBe("● Explored");
     expect(rows[1]).toBe("  └ Read src/first.ts");
     expect(rows[2]).toBe("    Read src/second.ts");
     expect(rows.join("\n")).not.toMatch(/offset|limit|needle|options|file 1|\{"/);
@@ -70,7 +70,7 @@ describe("Codex-style classic transcript", () => {
     const { item, ctx } = fixture();
     const change = buildFileChange({ path: "src/app.ts", kind: "edit", before: "const old = 1;", after: "const next = 2;" });
     const rows = buildDiffLines(ctx, { ...item, name: "fs.edit", fileChanges: [change] }).map(stripAnsi);
-    expect(rows[0]).toBe("• Edited src/app.ts (+1 -1)");
+    expect(rows[0]).toBe("● Edited src/app.ts (+1 -1)");
     expect(rows[1]).toMatch(/^\s+1 - const old = 1;/);
     expect(rows[2]).toMatch(/^\s+1 \+ const next = 2;/);
     expect(rows.join("\n")).not.toContain("│");

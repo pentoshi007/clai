@@ -3,6 +3,7 @@ import { notify } from "../../ui-core/notify.js";
 import { contextLimitChipPressed, contextLimitInput } from "../chrome/context-limit-editor.js";
 import { formatPlanPagerDocument } from "../../ui-core/rendering/plan-view.js";
 import { openToolOutputPager } from "../../ui-core/rendering/open-tool-output.js";
+import { hasAnimatedTools } from "../../ui-core/rendering/tool-status-ball.js";
 import {
   itemSearchText,
   transcriptItems,
@@ -447,7 +448,7 @@ export const CARET_BLINK_IDLE_MS = 10_000;
 export function animationDemand(host: WiringHost): AnimationDemand {
   const state = sessionSnapshot(host);
   const now = host.now();
-  if (state.running || state.compacting || host.services.toast.getToasts().length > 0) {
+  if (state.running || state.compacting || hasAnimatedTools(host.services.transcript.getState()) || host.services.toast.getToasts().length > 0) {
     host.caretAwakeAt = now;
     return "frames";
   }

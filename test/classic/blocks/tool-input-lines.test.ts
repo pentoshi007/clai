@@ -30,7 +30,7 @@ describe("classic tool-input previews", () => {
   it("shows one input row without changing the shared presenter", () => {
     const command = "echo first\necho second\necho third\necho fourth\necho fifth";
     const item = tool(command);
-    expect(header(item, 80)).toEqual(["• Shell echo first …"]);
+    expect(header(item, 80)).toEqual(["● Shell echo first …"]);
     expect(item.argsDisplay).toBe(command);
     expect(presentTool(item).argsDisplay).toContain("click for full");
   });
@@ -104,7 +104,7 @@ describe("classic tool-input previews", () => {
 
   it("uses inline short inputs and leaves output independent of argument shape", () => {
     const item = tool("echo ok");
-    expect(header(item, 80)).toEqual(["• Shell echo ok"]);
+    expect(header(item, 80)).toEqual(["● Shell echo ok"]);
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
     expect(buildToolBodyLines(ctx, tool("first\nsecond\nthird\nfourth"))).toEqual(buildToolBodyLines(ctx, item));
   });

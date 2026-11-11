@@ -7,6 +7,7 @@ import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-siz
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
 import { readBranchFromGitDir } from "./git-branch.js";
 import { stepWheelFeed } from "./wiring-feed-scroll.js";
+import { hasAnimatedTools, TOOL_BALL_INTERVAL_MS } from "../../ui-core/rendering/tool-status-ball.js";
 import { nextPaintPacing, paintIntervalMs } from "./paint-pacing.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
@@ -117,6 +118,14 @@ export function attachWiring(host: WiringHost): void {
   host.resizeSource.on("resize", onResize);
   host.disposers.push(() => host.resizeSource.off("resize", onResize));
 
+  attachClockTimers(host);
+  void refreshBranch(host);
+  host.branchRefreshTimer = setInterval(() => void refreshBranch(host), BRANCH_REFRESH_INTERVAL_MS);
+  host.branchRefreshTimer.unref?.();
+}
+
+function attachClockTimers(host: WiringHost): void {
+  attachToolBallClock(host);
   host.tickTimer = setInterval(() => {
     if (!host.needsCadence()) return;
     host.feedNowValue = host.now();
@@ -124,7 +133,6 @@ export function attachWiring(host: WiringHost): void {
     host.schedulePaint();
   }, TICK_INTERVAL_MS);
   host.tickTimer.unref?.();
-
   host.animationTimer = setInterval(() => {
     const demand = host.animationDemand();
     if (demand === "none") {
@@ -138,10 +146,17 @@ export function attachWiring(host: WiringHost): void {
     host.schedulePaint();
   }, ANIMATION_INTERVAL_MS);
   host.animationTimer.unref?.();
+}
 
-  void refreshBranch(host);
-  host.branchRefreshTimer = setInterval(() => void refreshBranch(host), BRANCH_REFRESH_INTERVAL_MS);
-  host.branchRefreshTimer.unref?.();
+function attachToolBallClock(host: WiringHost): void {
+  if (host.services.capabilities.reducedMotion) return;
+  const timer = setInterval(() => {
+    if (!hasAnimatedTools(host.services.transcript.getState())) return;
+    host.feedNowValue = host.now();
+    host.schedulePaint();
+  }, TOOL_BALL_INTERVAL_MS);
+  timer.unref?.();
+  host.disposers.push(() => clearInterval(timer));
 }
 
 export function onSessionChange(host: WiringHost): void {

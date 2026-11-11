@@ -333,3 +333,9 @@ export function formatBatchForPager(
 export function cleanBatchBodyLines(body: string): string[] {
   return cleanToolOutputLines(body);
 }
+
+export function batchToolStatus(section: BatchSection): import("../state/transcript-types.js").ToolStatus {
+  if (section.status === "fail") return "failed";
+  if (section.status === "cancelled") return "blocked";
+  return section.status;
+}

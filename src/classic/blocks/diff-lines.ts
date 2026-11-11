@@ -37,7 +37,7 @@ export function diffTitleLine(ctx: BlockContext, item: ToolItem, change: FileCha
   const path = changes.length > 1 ? `${changes.length} files` : relativeDisplayPath(change?.path ?? item.argsDisplay);
   const label = ctx.ink.fg("inputBorder", sanitizeDisplayText(path));
   const suffix = change ? ` ${diffStatsSuffix(ctx, change)}` : "";
-  const head = `${ctx.ink.fg(token, toolGlyph(ctx, item.status))} ${title} ${label}`;
+  const head = `${toolGlyph(ctx, item.status)} ${title} ${label}`;
   const budget = Math.max(1, ctx.width - layoutWidth(suffix));
   return clipRow(ctx, `${clipToWidth(head, budget, ctx.glyphs.ellipsis)}${suffix}`);
 }

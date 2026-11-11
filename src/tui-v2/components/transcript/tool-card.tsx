@@ -9,6 +9,7 @@ import type { ToolItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   batchSummaryLine,
+  batchToolStatus,
   buildBatchCardsFromSpool,
   formatBatchSectionForPager,
   isBatchToolName,
@@ -51,6 +52,8 @@ import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.j
 import { ToolOutputBranch } from "./tool-output-branch.js";
 import { parseFsReadSections } from "../../../tools/fs/read-sections.js";
 import { middleClipText, renderColumns } from "../../../ui-core/rendering/text-width.js";
+import { ToolStatusBall } from "./tool-status-ball.js";
+import { useServices } from "../../../ui-core/react/providers.js";
 
 const MARKDOWN_PREVIEWS = new ObjectRenderCache<ToolItem, StyledLine[]>(24 * 1024 * 1024);
 
@@ -124,6 +127,7 @@ function BatchSubCard(props: {
   contentWidth: number;
 }): ReactNode {
   const { section, theme, expanded, parentExpanded, onOpen, contentWidth } = props;
+  const { capabilities } = useServices();
   const presented = presentBatchSection(section, expanded, contentWidth, "first-three");
   const statusText = toolStatusText(presented.statusLabel);
   const hasBody = section.body.trim().length > 0;
@@ -173,9 +177,10 @@ function BatchSubCard(props: {
       onMouseDown={click.onMouseDown}
       onMouseUp={click.onMouseUp}
     >
-      <box style={{ flexDirection: "row", width: "100%" }}>
+      <box style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0 }}>
+        <ToolStatusBall status={batchToolStatus(section)} theme={theme} colorMode={capabilities.colorMode} unicode={capabilities.unicode} reducedMotion={capabilities.reducedMotion} />
         <text selectable style={{ fg: statusFg, attributes: TextAttributes.BOLD }}>
-          {presented.glyph} {presented.name}
+          {` ${presented.name}`}
         </text>
         {statusText ? (
           <>
@@ -298,7 +303,7 @@ export function ToolCard(props: {
     onToggleFileDiff,
     contentWidth,
   } = props;
-  const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
+  const { statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
     presentTool(item);
   const statusText = toolStatusText(statusLabel);
   const isFsRead = item.name === "fs.read";
@@ -568,9 +573,10 @@ export function ToolCard(props: {
                }
              : {})}
         >
+          <ToolStatusBall status={item.pending ? "queued" : item.status} theme={theme} colorMode={services.capabilities.colorMode} unicode={services.capabilities.unicode} reducedMotion={services.capabilities.reducedMotion} />
           <text
             selectable
-            content={`${glyph} ${name}`}
+            content={` ${name}`}
             style={{
               fg: statusFg,
               attributes: TextAttributes.BOLD,

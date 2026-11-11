@@ -1,5 +1,5 @@
-import { buildBatchCardsFromSpool, parseBatchSections, batchSummaryLine, type BatchSection } from "../../ui-core/rendering/batch-sections.js";
-import { isItemExpanded, type ToolItem, type ToolStatus } from "../../ui-core/state/transcript-types.js";
+import { buildBatchCardsFromSpool, parseBatchSections, batchSummaryLine, batchToolStatus, type BatchSection } from "../../ui-core/rendering/batch-sections.js";
+import { isItemExpanded, type ToolItem } from "../../ui-core/state/transcript-types.js";
 import { parseFsReadSections } from "../../tools/fs/read-sections.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
@@ -45,11 +45,11 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   const lines = toolHeaderLines(ctx, item);
   const shown = expanded ? sections : sections.slice(0, BATCH_COLLAPSED_ROWS);
   for (const [index, section] of shown.entries()) {
-    const status: ToolStatus = section.status === "fail" ? "failed" : section.status === "cancelled" ? "blocked" : section.status;
+    const status = batchToolStatus(section);
     const token = section.status === "cancelled" ? "muted" : TOOL_STATUS_TOKEN[status];
     const tool = { ...item, name: section.name, status };
     const name = ctx.ink.fg(token, classicToolLabel(tool));
-    const glyph = ctx.ink.fg(token, toolGlyph(ctx, status));
+    const glyph = toolGlyph(ctx, status);
     const prefix = index === 0 ? `  ${ctx.glyphs.bodyBranch} ` : "    ";
     const exit = section.exitCode && section.exitCode !== 0 ? ` (exit ${section.exitCode})` : "";
     lines.push(clipRow(ctx, `${prefix}${glyph} ${name}${exit}`));

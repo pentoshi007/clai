@@ -40,7 +40,7 @@ describe.each(["dark", "light"] as const)("classic tool colors in the %s theme",
     for (const status of STATUSES) {
       const tool = { ...item, status, argsDisplay: "echo COLOR_INPUT" };
       const header = toolHeaderLines(ctx, tool).join("\n");
-      expect(header).toContain(ctx.ink.fg(STATUS_COLORS[status], toolGlyph(ctx, status)));
+      expect(header).toContain(toolGlyph(ctx, status));
       expect(header).toContain(ctx.ink.style(classicToolLabel(tool), { fg: STATUS_COLORS[status], bold: true }));
       expect(header).toContain(ctx.ink.fg("inputBorder", "echo COLOR_INPUT"));
       const output = buildToolBodyLines(ctx, tool).join("\n");
@@ -77,7 +77,7 @@ describe.each(["dark", "light"] as const)("classic tool colors in the %s theme",
     )!;
     for (const status of STATUSES) {
       const header = diffTitleLine(ctx, { ...item, status }, item.fileChanges![0]);
-      expect(header).toContain(ctx.ink.fg(STATUS_COLORS[status], toolGlyph(ctx, status)));
+      expect(header).toContain(toolGlyph(ctx, status));
       const verb = status === "ok" ? "Edited" : status === "failed" || status === "blocked" ? "Edit failed" : "Editing";
       expect(header).toContain(ctx.ink.style(verb, { fg: STATUS_COLORS[status], bold: true }));
       expect(header).toContain(ctx.ink.style("+3", { fg: "success", bold: true }));

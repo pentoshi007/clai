@@ -42,6 +42,7 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "components", "transcript", "tool-output-branch.ts"),
   join(tuiV2Root, "components", "transcript", "thinking-block.tsx"),
   join(tuiV2Root, "components", "transcript", "tool-card.tsx"),
+  join(tuiV2Root, "components", "transcript", "tool-status-ball.tsx"),
   join(tuiV2Root, "components", "transcript", "pending-arguments.tsx"),
   join(tuiV2Root, "components", "transcript", "file-diff-card.tsx"),
   join(tuiV2Root, "components", "transcript", "notice-row.tsx"),

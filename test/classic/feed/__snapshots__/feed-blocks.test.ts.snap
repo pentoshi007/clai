@@ -39,11 +39,11 @@ exports[`golden fixtures > renders the scripted turn at 40c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm ... - 127 · not found - 0.4s
+x Shell npm ... - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /et... - blocked
+x Delete failed · hosts /et... - blocked
   \\ path outside the authorized works...
     + click to expand - Ctrl+O
 ── diff closed
@@ -101,31 +101,31 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
   1. src/db/users.ts — add limit and
      offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm ru… · 127 · not found · 0.4s
+● Shell npm ru… · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/… · blocked
+● Delete failed · hosts /etc/… · blocked
   └ path outside the authorized workspa…
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users… (+3 -2)
+● Edited /repo/src/routes/users… (+3 -2)
     1   export async function listUsers…
     2 -   const rows = await db.users.f…
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -175,11 +175,11 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm [0m...[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm [0m...[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/et[0m...[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/et[0m...[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized works...[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -237,31 +237,31 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and[39m
   [38;2;74;222;128m   offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm ru[0m…[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm ru[0m…[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/[0m…[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/[0m…[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspa…[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users[0m… ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users[0m… ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m[0m…
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mf[0m[48;2;74;34;29m…[0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m               [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
@@ -309,11 +309,11 @@ exports[`golden fixtures > renders the scripted turn at 48c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm run build - 127 · not found - 0.4s
+x Shell npm run build - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /etc/hosts - blocked
+x Delete failed · hosts /etc/hosts - blocked
   \\ path outside the authorized workspace
     + click to expand - Ctrl+O
 ── diff closed
@@ -369,31 +369,31 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm run build · 127 · not found · 0.4s
+● Shell npm run build · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/hosts · blocked
+● Delete failed · hosts /etc/hosts · blocked
   └ path outside the authorized workspace
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users.ts (+3 -2)
+● Edited /repo/src/routes/users.ts (+3 -2)
     1   export async function listUsers(req, re…
     2 -   const rows = await db.users.findMany(…
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -441,11 +441,11 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -501,31 +501,31 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
 
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m([39m[38;2;248;250;252mreq[39m[38;2;148;163;184m,[39m[38;2;248;250;252m re[0m…
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mfindMany[39m[38;2;148;163;184m([0m[48;2;74;34;29m…[0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m                       [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
@@ -571,11 +571,11 @@ exports[`golden fixtures > renders the scripted turn at 68c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm run build - 127 · not found - 0.4s
+x Shell npm run build - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /etc/hosts - blocked
+x Delete failed · hosts /etc/hosts - blocked
   \\ path outside the authorized workspace
     + click to expand - Ctrl+O
 ── diff closed
@@ -628,31 +628,31 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm run build · 127 · not found · 0.4s
+● Shell npm run build · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/hosts · blocked
+● Delete failed · hosts /etc/hosts · blocked
   └ path outside the authorized workspace
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users.ts (+3 -2)
+● Edited /repo/src/routes/users.ts (+3 -2)
     1   export async function listUsers(req, res) {
     2 -   const rows = await db.users.findMany();
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -697,11 +697,11 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -754,31 +754,31 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
 
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m([39m[38;2;248;250;252mreq[39m[38;2;148;163;184m,[39m[38;2;248;250;252m res[39m[38;2;148;163;184m)[39m[38;2;248;250;252m [39m[38;2;148;163;184m{[39m
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mfindMany[39m[38;2;148;163;184m();[39m                   [0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m                                           [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
@@ -822,11 +822,11 @@ exports[`golden fixtures > renders the scripted turn at 80c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm run build - 127 · not found - 0.4s
+x Shell npm run build - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /etc/hosts - blocked
+x Delete failed · hosts /etc/hosts - blocked
   \\ path outside the authorized workspace
     + click to expand - Ctrl+O
 ── diff closed
@@ -878,31 +878,31 @@ exports[`golden fixtures > renders the scripted turn at 80c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm run build · 127 · not found · 0.4s
+● Shell npm run build · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/hosts · blocked
+● Delete failed · hosts /etc/hosts · blocked
   └ path outside the authorized workspace
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users.ts (+3 -2)
+● Edited /repo/src/routes/users.ts (+3 -2)
     1   export async function listUsers(req, res) {
     2 -   const rows = await db.users.findMany();
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -946,11 +946,11 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor ascii 1`] 
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -1002,31 +1002,31 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor unicode 1`
 
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m([39m[38;2;248;250;252mreq[39m[38;2;148;163;184m,[39m[38;2;248;250;252m res[39m[38;2;148;163;184m)[39m[38;2;248;250;252m [39m[38;2;148;163;184m{[39m
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mfindMany[39m[38;2;148;163;184m();[39m                               [0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m                                                       [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
@@ -1069,11 +1069,11 @@ exports[`golden fixtures > renders the scripted turn at 96c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm run build - 127 · not found - 0.4s
+x Shell npm run build - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /etc/hosts - blocked
+x Delete failed · hosts /etc/hosts - blocked
   \\ path outside the authorized workspace
     + click to expand - Ctrl+O
 ── diff closed
@@ -1124,31 +1124,31 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm run build · 127 · not found · 0.4s
+● Shell npm run build · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/hosts · blocked
+● Delete failed · hosts /etc/hosts · blocked
   └ path outside the authorized workspace
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users.ts (+3 -2)
+● Edited /repo/src/routes/users.ts (+3 -2)
     1   export async function listUsers(req, res) {
     2 -   const rows = await db.users.findMany();
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -1191,11 +1191,11 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -1246,31 +1246,31 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
 
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m([39m[38;2;248;250;252mreq[39m[38;2;148;163;184m,[39m[38;2;248;250;252m res[39m[38;2;148;163;184m)[39m[38;2;248;250;252m [39m[38;2;148;163;184m{[39m
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mfindMany[39m[38;2;148;163;184m();[39m                                               [0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m                                                                       [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
@@ -1313,11 +1313,11 @@ exports[`golden fixtures > renders the scripted turn at 120c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm run build - 127 · not found - 0.4s
+x Shell npm run build - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /etc/hosts - blocked
+x Delete failed · hosts /etc/hosts - blocked
   \\ path outside the authorized workspace
     + click to expand - Ctrl+O
 ── diff closed
@@ -1368,31 +1368,31 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm run build · 127 · not found · 0.4s
+● Shell npm run build · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/hosts · blocked
+● Delete failed · hosts /etc/hosts · blocked
   └ path outside the authorized workspace
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users.ts (+3 -2)
+● Edited /repo/src/routes/users.ts (+3 -2)
     1   export async function listUsers(req, res) {
     2 -   const rows = await db.users.findMany();
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -1435,11 +1435,11 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -1490,31 +1490,31 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
 
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m([39m[38;2;248;250;252mreq[39m[38;2;148;163;184m,[39m[38;2;248;250;252m res[39m[38;2;148;163;184m)[39m[38;2;248;250;252m [39m[38;2;148;163;184m{[39m
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mfindMany[39m[38;2;148;163;184m();[39m                                                                       [0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m                                                                                               [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
@@ -1557,11 +1557,11 @@ exports[`golden fixtures > renders the scripted turn at 200c none ascii 1`] = `
     Tests: 42 passed, 42 total
     + click to expand - Ctrl+O
 ── tool closed
-* Shell npm run build - 127 · not found - 0.4s
+x Shell npm run build - 127 · not found - 0.4s
   \\ sh: tsc: command not found
     + click to expand - Ctrl+O
 ── tool closed
-# Delete failed · hosts /etc/hosts - blocked
+x Delete failed · hosts /etc/hosts - blocked
   \\ path outside the authorized workspace
     + click to expand - Ctrl+O
 ── diff closed
@@ -1612,31 +1612,31 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-• Shell npm test -- --run · 0.8s
+● Shell npm test -- --run · 0.8s
   └ PASS src/routes/users.test.ts
     PASS src/db/users.test.ts
     Tests: 42 passed, 42 total
     + click to expand · Ctrl+O
 ── tool closed
-• Shell npm run build · 127 · not found · 0.4s
+● Shell npm run build · 127 · not found · 0.4s
   └ sh: tsc: command not found
     + click to expand · Ctrl+O
 ── tool closed
-⊘ Delete failed · hosts /etc/hosts · blocked
+● Delete failed · hosts /etc/hosts · blocked
   └ path outside the authorized workspace
     + click to expand · Ctrl+O
 ── diff closed
-• Edited /repo/src/routes/users.ts (+3 -2)
+● Edited /repo/src/routes/users.ts (+3 -2)
     1   export async function listUsers(req, res) {
     2 -   const rows = await db.users.findMany();
     3 -   res.json(rows);
     + click to expand (4 lines) · Ctrl+O
 ── batch open
-• Tools 3 tools · 52s
-  └ • Explored
+● Tools 3 tools · 52s
+  └ ● Explored
     12 lines
-    • Shell
-    • Explored
+    ● Shell
+    ● Explored
     8 lines
     2 ✓ · 1 ● · 3 total
     + click to expand · Ctrl+O
@@ -1679,11 +1679,11 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m*[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m - [39m[38;2;248;113;113m127 · not found[39m - [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m#[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113mx[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m - [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  \\ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m - Ctrl+O[39m
 ── diff closed
@@ -1734,31 +1734,31 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
 
   [38;2;74;222;128m[36m1.[39m[38;2;74;222;128m [36msrc/db/users.ts[39m[38;2;74;222;128m — add limit and offset[39m
 ── tool closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mShell[22m[39m [38;2;46;235;255mnpm test -- --run[39m[38;2;110;124;145m · [39m[38;2;74;222;128m0.8s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mPASS src/routes/users.test.ts[39m
     [38;2;125;211;252mPASS src/db/users.test.ts[39m
     [38;2;125;211;252mTests: 42 passed, 42 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m•[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mShell[22m[39m [38;2;46;235;255mnpm run build[39m[38;2;110;124;145m · [39m[38;2;248;113;113m127 · not found[39m · [38;2;248;113;113m0.4s[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252msh: tsc: command not found[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── tool closed
-[38;2;248;113;113m⊘[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
+[38;2;248;113;113m●[39m [38;2;248;113;113m[1mDelete failed · hosts[22m[39m [38;2;46;235;255m/etc/hosts[39m[38;2;110;124;145m · [39m[38;2;248;113;113mblocked[39m
 [38;2;125;211;252m  └ [39m[38;2;125;211;252mpath outside the authorized workspace[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m
 ── diff closed
-[38;2;74;222;128m•[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
+[38;2;74;222;128m●[39m [38;2;74;222;128m[1mEdited[22m[39m [38;2;46;235;255m/repo/src/routes/users.ts[39m ([38;2;74;222;128m[1m+3[22m[39m [38;2;248;113;113m[1m-2[22m[39m)
     [38;2;100;116;139m1   [39m[38;2;86;156;214mexport[39m[38;2;248;250;252m [39m[38;2;86;156;214masync[39m[38;2;248;250;252m [39m[38;2;86;156;214mfunction[39m[38;2;248;250;252m [39m[38;2;220;220;170mlistUsers[39m[38;2;148;163;184m([39m[38;2;248;250;252mreq[39m[38;2;148;163;184m,[39m[38;2;248;250;252m res[39m[38;2;148;163;184m)[39m[38;2;248;250;252m [39m[38;2;148;163;184m{[39m
 [48;2;74;34;29m    [38;2;248;113;113m2 - [39m[38;2;248;250;252m  [39m[38;2;86;156;214mconst[39m[38;2;248;250;252m rows [39m[38;2;212;212;212m=[39m[38;2;248;250;252m [39m[38;2;86;156;214mawait[39m[38;2;248;250;252m db[39m[38;2;148;163;184m.[39m[38;2;156;220;254musers[39m[38;2;148;163;184m.[39m[38;2;220;220;170mfindMany[39m[38;2;148;163;184m();[39m                                                                                                                                                       [0m
 [48;2;74;34;29m    [38;2;248;113;113m3 - [39m[38;2;248;250;252m  res[39m[38;2;148;163;184m.[39m[38;2;220;220;170mjson[39m[38;2;148;163;184m([39m[38;2;248;250;252mrows[39m[38;2;148;163;184m);[39m                                                                                                                                                                               [0m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m (4 lines) · Ctrl+O[39m
 ── batch open
-[38;2;250;204;21m•[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
-  └ [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+[38;2;250;204;21m●[39m [38;2;250;204;21m[1mTools[22m[39m [38;2;46;235;255m3 tools[39m[38;2;110;124;145m · [39m[38;2;250;204;21m52s[39m
+  └ [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m12 lines[39m
-    [38;2;250;204;21m•[39m [38;2;250;204;21mShell[39m
-    [38;2;74;222;128m•[39m [38;2;74;222;128mExplored[39m
+    [38;2;250;204;21m●[39m [38;2;250;204;21mShell[39m
+    [38;2;74;222;128m●[39m [38;2;74;222;128mExplored[39m
     [38;2;125;211;252m8 lines[39m
     [38;2;110;124;145m2 ✓ · 1 ● · 3 total[39m
     [38;2;110;124;145m+ click to expand[39m[38;2;110;124;145m · Ctrl+O[39m

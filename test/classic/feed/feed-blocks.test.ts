@@ -101,7 +101,7 @@ describe("buildFeedBlocks", () => {
       const header = rows.map(stripAnsi).join("\n");
       expect(rows).toHaveLength(1);
       expect(header).not.toMatch(/\b(running|failed|done)\b/);
-      expect(header).toContain("• Shell");
+      expect(header).toContain("● Shell");
       expect(header).toContain(toolElapsed(ctx, item)!);
       if (status === "failed") expect(header).toContain("127 · not found");
     }
@@ -112,7 +112,7 @@ describe("buildFeedBlocks", () => {
     const item = { ...source, name: "fs.read", argsDisplay: "src/app.ts\noffset=12 · limit=8 · lines=12–19" };
     const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
     const text = buildToolLines(ctx, item).map(stripAnsi).join("\n");
-    expect(text).toContain("• Explored");
+    expect(text).toContain("● Explored");
     expect(text).toContain("  └ Read src/app.ts");
     expect(text).toContain("+ click to expand");
     expect(text).not.toMatch(/options|offset|limit|PASS src\/routes/);

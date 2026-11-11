@@ -276,6 +276,10 @@ function TaskDisclosureButton(props: {
   );
 }
 
+function taskPanePrefix(task: PlanTask): string {
+  return task.state === "done" ? "" : `${taskGlyph(task)} `;
+}
+
 const TaskRow = memo(function TaskRow(props: {
   task: PlanTask;
   theme: Theme;
@@ -297,6 +301,8 @@ const TaskRow = memo(function TaskRow(props: {
   const expandable = hasTaskDetails(task);
   const titleLines = wrapTaskDisclosureTitle(title, width, expandable);
   const titleAttributes = task.state === "in_progress" || active ? TextAttributes.BOLD : TextAttributes.NONE;
+  const prefix = taskPanePrefix(task);
+  const continuation = " ".repeat(prefix.length);
 
   return (
     <box id={`plan-task-${task.id}`} style={{ flexDirection: "column", width: "100%", flexShrink: 0 }}>
@@ -314,7 +320,7 @@ const TaskRow = memo(function TaskRow(props: {
                   <text selectable
                     id={`plan-task-${task.id}-title-${last ? "end" : lineIndex}`}
                     wrapMode="none"
-                    content={`${lineIndex === 0 ? taskGlyph(task) : " "} ${line}`}
+                    content={`${lineIndex === 0 ? prefix : continuation}${line}`}
                     style={{ fg: titleColor, bg, height: 1, flexShrink: 0, attributes: titleAttributes }}
                   />
                   {last && expandable ? (
