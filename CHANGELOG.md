@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.3.0 — 2026-11-12
+
+### Tool status balls
+
+- Draw the tool status ball as a one-cell `●` in both the Classic and OpenTUI transcripts. The previous sphere was a Kitty inline image, and iTerm drops those placements whenever the screen is cleared, so the ball collapsed into a stray placeholder dot after a repaint or resize. A text glyph renders identically in every terminal and survives every redraw.
+- Cycle red → green → yellow every 600 ms while a tool is queued or running, then hold a static green (done) or red (failed, blocked) ball. Pending and running tools share the same animation, and terminals without Unicode fall back to `*` and `x`.
+- Sit the ball directly against the tool name with one cell and one space, instead of the two-column image placeholder that shifted the name right.
+
+### Task pane
+
+- Drop the completed `✓` from the OpenTUI task pane and start completed titles in the freed column, including wrapped lines, so every line of a finished task shares one left edge. Other states keep their glyphs.
+
 ## v5.2.1 — 2026-11-11
 
 ### Turn completion while Responder works
