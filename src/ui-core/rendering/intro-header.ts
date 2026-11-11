@@ -176,7 +176,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
 
   const totalWidth = Math.max(24, opts.width);
   const OVERHEAD = 7;
-  const available = Math.max(12, totalWidth - CARD_INSET_COLUMNS - OVERHEAD);
+  const available = Math.max(12, totalWidth - CARD_INSET_COLUMNS * 2 - OVERHEAD);
 
   const minSideBySide = Math.max(wordmarkWidth("clai") * 2, 36);
   if (available < minSideBySide) return renderCompactCard(card, totalWidth);
@@ -189,13 +189,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     size: leftWidth >= wordmarkWidth("clai", "large") ? "large" : "compact",
   }).split("\n");
 
-  const rightRows: string[] = [
-    "",
-    ...infoRows(card, rightWidth),
-    "",
-    ...badgeRows(card, rightWidth),
-    "",
-  ];
+  const rightRows = ["", ...infoRows(card, rightWidth), "", ...badgeRows(card, rightWidth), ""];
   const rowCount = Math.max(wmLines.length + 2, rightRows.length);
 
   const top = lead + paintBorder(`╭${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}╮`);
@@ -215,7 +209,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     );
   }
 
-  const boxOuterWidth = CARD_INSET_COLUMNS + leftWidth + rightWidth + OVERHEAD;
+  const boxOuterWidth = CARD_INSET_COLUMNS * 2 + leftWidth + rightWidth + OVERHEAD;
   const centered = (text: string): string =>
     " ".repeat(Math.max(0, Math.floor((boxOuterWidth - visibleWidth(text)) / 2))) + text;
 
@@ -238,7 +232,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
 function renderCompactCard(card: CardModel, totalWidth: number): string[] {
   const { paintBorder } = card;
   const lead = " ".repeat(CARD_INSET_COLUMNS);
-  const rule = Math.max(8, totalWidth - CARD_INSET_COLUMNS - 2);
+  const rule = Math.max(8, totalWidth - CARD_INSET_COLUMNS * 2 - 2);
   const inner = Math.max(6, rule - 2);
   const row = (content: string, align: "left" | "center" = "left"): string =>
     lead + paintBorder("│") + ` ${fitCell(content, inner, align)} ` + paintBorder("│");

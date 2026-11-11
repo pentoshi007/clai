@@ -16,6 +16,21 @@ const options = {
 };
 
 describe("intro header layout", () => {
+  it.each([24, 25, 32, 44, 59, 60, 71, 72, 79, 80, 81, 96, 120, 121, 144, 200])(
+    "centers every card row with equal outer margins at %s columns",
+    (width) => {
+      const lines = renderIntroHeaderLines({ ...options, width }).map(stripAnsi);
+      const cardRows = lines.filter((line) => /^\s*[╭│╰]/.test(line));
+      expect(cardRows.length).toBeGreaterThan(2);
+      for (const line of cardRows) {
+        const leftMargin = line.length - line.trimStart().length;
+        const rightMargin = width - stringWidth(line);
+        expect(leftMargin).toBe(2);
+        expect(rightMargin).toBe(leftMargin);
+      }
+    },
+  );
+
   it("uses a true half split and includes configured variant data when wide", () => {
     const lines = renderIntroHeaderLines({ ...options, width: 120 }).map(stripAnsi);
     const top = lines.find((line) => line.includes("╭") && line.includes("┬"))!;
