@@ -80,7 +80,7 @@ describe("update installation provenance", () => {
   });
 
   it.each(["src/index.ts", "dist/index.js", "bin/clai.mjs"])("keeps a genuine checkout entry %s on the source route", (entry) => {
-    expect(detectInstallMethod({ ...env, argv1: `/work/clai/${entry}` })).toMatchObject({ type: "dev", packageRoot: "/work/clai" });
+    expect(detectInstallMethod({ ...env, argv1: `/work/clai/${entry}`, execPath: "/clai-test-runtime/bin/node" })).toMatchObject({ type: "dev", packageRoot: "/work/clai" });
   });
 });
 
