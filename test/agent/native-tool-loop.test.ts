@@ -849,6 +849,40 @@ describe("native tool loop integration", () => {
     expect(answer).toBe("Alpha is the first letter.");
   });
 
+  it("ends a text-protocol answer written after its turn.end block with exactly one request", async () => {
+    const events: Array<{ type: string; text?: string }> = [];
+    streamMock.mockImplementation(
+      async (request: CompletionRequest, onToken: (token: string) => void) => {
+        expect(request.tools).toBeUndefined();
+        const text = `${turnEndFence("answered")}\n\nBeta is the second letter.`;
+        onToken(text);
+        return {
+          text,
+          provider: "gemini",
+          model: "gemini-test",
+          finishReason: "stop",
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("what is beta?", {
+      provider: "gemini",
+      model: "gemini-test",
+      maxSteps: 3,
+      toolCalling: "text",
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(answer).toBe("Beta is the second letter.");
+    expect(
+      events.some(
+        (event) => event.type === "assistant-message" && event.text?.includes("Beta is the second letter."),
+      ),
+    ).toBe(true);
+  });
+
   it("does not end the turn when turn.end is mixed with a real tool call", async () => {
     let turn = 0;
     streamMock.mockImplementation(

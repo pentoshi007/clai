@@ -67,7 +67,7 @@ const continuationNudge = (
     hasVisible
       ? "Your previous response was cut off by the output token limit. Continue from the exact stopping point without repeating any prior text."
       : "Your previous response spent the output budget before producing a visible answer. Do not restart the analysis; use the preserved conclusions and answer now.",
-    "Finish the reasoning briefly, then emit the next tool call or final answer directly.",
+    "Finish the reasoning briefly, then emit the next tool call, or the final answer with turn.end, directly.",
     interruptedReasoningBrief(reasoning),
   ]
     .filter((part): part is string => Boolean(part))

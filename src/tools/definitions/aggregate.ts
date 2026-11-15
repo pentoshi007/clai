@@ -197,7 +197,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     TURN_END_TOOL_NAME,
-    "Declare that this turn is finished. Call it in the same response as your final message to the user, alone or with plan/job bookkeeping calls only, so the turn ends without another round. Judge only against the latest user message: call it when that request is fully handled (work done and verified, or the question answered, which needs no other tools), when you need the user's input, confirmation or decision, when a genuine blocker needs the user's attention, or when the user told you to stop at this point. Never call it to pause work you can still do yourself. The declaration covers only this response: any later tool work requires a new declaration, and every new user message starts undeclared.",
+    "Declare that this turn is finished. The response that ends a turn must contain both your final message to the user and this call: write the message, then call turn.end in that same response, alone or with plan/job bookkeeping calls only. A final message sent without it costs an extra request to confirm the turn is over. Judge only against the latest user message: call it when that request is fully handled (work done and verified, or the question answered, which needs no other tools), when you need the user's input, confirmation or decision, when a genuine blocker needs the user's attention, or when the user told you to stop at this point. Never call it to pause work you can still do yourself. The declaration covers only this response: any later tool work requires a new declaration, and every new user message starts undeclared.",
     {
       type: "object",
       properties: {

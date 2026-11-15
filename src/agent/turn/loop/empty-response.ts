@@ -46,7 +46,7 @@ const baseNudgeFor = (
   }
   return ports.toolsAttached
     ? "No visible output. " + toolNudge(true)
-    : "No visible output. Emit a ```tool block or give your final answer. " +
+    : "No visible output. Emit a ```tool block, or give your final answer with the turn.end block. " +
         "Do NOT hide tool calls in <think> tags — put them in the visible response.";
 };
 
@@ -90,7 +90,7 @@ export const handleEmptyResponse = (
       reasoningBrief
         ? "Your previous response contained only reasoning and no visible answer or tool call. " +
             "Do not restart the analysis — your reasoning so far is preserved below. " +
-            "Build on it and act now: emit the next tool call or the final answer.\n\n" +
+            "Build on it and act now: emit the next tool call, or the final answer with turn.end.\n\n" +
             reasoningBrief +
             "\n\n" +
             baseNudge
