@@ -7,6 +7,7 @@ import { acknowledgeGenerationSubmission, withGenerationSubmission } from "../..
 import { streamAlreadyEmitted } from "../../../llm/stream-progress.js";
 import { auditLog } from "../../../store/logs.js";
 import { jobManager } from "../../../tools/jobs.js";
+import { routeDeclaresTurnEnd } from "../../../tools/turn-end.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../../../ui-core/rendering/sanitize-display.js";
 import { rememberThinking } from "../../../ui/thinking.js";
 import { RequestOverLimitError } from "../../request-accounting.js";
@@ -179,6 +180,7 @@ export const requestRound = async (
           messages: deps.messages,
           recoveryState: deps.recoveryState,
           provider: deps.loop.provider,
+          turnEnd: routeDeclaresTurnEnd(deps.loop.provider, deps.loop.model),
           notify: deps.writeNotice,
           emitStatus: (text) => deps.emit({ type: "status", text }),
           emitTokenUsage: (usage, usageProvider, usageModel) =>

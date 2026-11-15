@@ -12,6 +12,7 @@ import {
   renderCompactAgentSystemPrompt,
 } from "../../prompts/index.js";
 import { getReliabilityPolicy } from "../reliability-policy.js";
+import { routeDeclaresTurnEnd, TURN_END_TOOL_NAME } from "../../tools/turn-end.js";
 
 export interface ToolRoutingInput {
   readonly mode: Mode;
@@ -46,6 +47,7 @@ const nameAllowed = (
   model: string,
 ): boolean => {
   if (name === "image.view") return modelSupportsVision(provider, model);
+  if (name === TURN_END_TOOL_NAME) return routeDeclaresTurnEnd(provider, model);
   return true;
 };
 
@@ -74,10 +76,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
   ): ToolDefinition[] | undefined => {
     if (!native) return undefined;
     const base = getToolDefinitions();
-    const allow = new Set([
-      ...routeToolNames(provider, model),
-      ...RUNNER_META_TOOL_NAMES,
-    ]);
+    const allow = new Set(routeToolNames(provider, model));
     return base.filter((definition) => allow.has(definition.name));
   };
 
@@ -97,6 +96,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
       nativeTools: native,
       stableEnvironment: true,
       imageView: modelSupportsVision(provider, model),
+      turnEnd: routeDeclaresTurnEnd(provider, model),
       ...(native ? { slimNative: reliability.slimNativePrompt } : {}),
     });
   };

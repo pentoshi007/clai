@@ -303,6 +303,37 @@ export function applyImageViewAvailability(
     .join("\n");
 }
 
+const TURN_END_PROMPT_TEXT: ReadonlyArray<readonly [string, string]> = [
+  [" Stop in one response: your final message plus a turn.end call.", ""],
+  [
+    " When nothing you can still do remains for the latest user message, call turn.end in the same response as your final message; a final message without turn.end costs an extra request to confirm the turn is over.",
+    "",
+  ],
+  [
+    "- After tools run, read outputs, then next tools, or your final message followed by the turn.end block in the same message.",
+    "- After tools run, read outputs, then next tools or final prose.",
+  ],
+  [
+    ' When nothing you can still do remains for the latest user message (done, answered, need user input, blocked, or told to stop), write your final message and call turn.end {"reason":...} in that same response; a final message without turn.end costs an extra request.',
+    "",
+  ],
+  [
+    "After a tool result, next call, or a concise final message followed by the turn.end block in the same message.",
+    "After a tool result, next call or concise final answer.",
+  ],
+];
+
+export function applyTurnEndAvailability(
+  prompt: string,
+  available: boolean,
+): string {
+  if (available) return prompt;
+  return TURN_END_PROMPT_TEXT.reduce(
+    (text, [declared, plain]) => text.replace(declared, plain),
+    prompt,
+  ).replace(/^- turn\.end:.*\n/m, "");
+}
+
 export function currentDateTimeContext(now = new Date()): string {
   const floored = floorToLocalHour(now);
   const local = floored.toLocaleString(undefined, {
@@ -400,6 +431,7 @@ export function renderAgentSystemPrompt(
     slimNative?: boolean;
     stableEnvironment?: boolean;
     imageView?: boolean;
+    turnEnd?: boolean;
     pentest?: boolean;
   },
 ): string {
@@ -424,9 +456,9 @@ export function renderAgentSystemPrompt(
     { ...promptEnvironmentValues(stableEnvironment), tool_list: toolList },
     stableEnvironment,
   );
-  const stablePrompt = applyImageViewAvailability(
-    rendered,
-    options?.imageView !== false,
+  const stablePrompt = applyTurnEndAvailability(
+    applyImageViewAvailability(rendered, options?.imageView !== false),
+    options?.turnEnd === true,
   );
   return `${stablePrompt}\n\n${FS_EDIT_DISCIPLINE}`;
 }
@@ -438,6 +470,7 @@ export function renderCompactAgentSystemPrompt(
     nativeTools?: boolean;
     stableEnvironment?: boolean;
     imageView?: boolean;
+    turnEnd?: boolean;
   },
 ): string {
   const stableEnvironment = Boolean(options?.stableEnvironment);
@@ -446,11 +479,10 @@ export function renderCompactAgentSystemPrompt(
     { ...promptEnvironmentValues(stableEnvironment), tool_list: toolList },
     stableEnvironment,
   );
-  const stablePrompt = applyImageViewAvailability(
-    rendered,
-    options?.imageView !== false,
+  return applyTurnEndAvailability(
+    applyImageViewAvailability(rendered, options?.imageView !== false),
+    options?.turnEnd === true,
   );
-  return stablePrompt;
 }
 
 export function toolNudge(native: boolean): string {

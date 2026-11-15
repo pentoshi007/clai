@@ -12,6 +12,7 @@ import {
 } from "../turn-completion.js";
 import type { TurnOutcome } from "../../turn-outcome.js";
 import type { TurnLoopDeps } from "./deps.js";
+import { routeDeclaresTurnEnd } from "../../../tools/turn-end.js";
 
 export type AnswerPathResult =
   | { readonly kind: "continue" }
@@ -89,7 +90,9 @@ export const resolveAnswerPath = async (
       model: deps.loop.model,
       toolsAttached,
       canDeclareTurnEnd:
-        input.roundsRemain && (toolsAttached || !deps.nativeToolsActive()),
+        input.roundsRemain &&
+        (toolsAttached || !deps.nativeToolsActive()) &&
+        routeDeclaresTurnEnd(deps.loop.provider, deps.loop.model),
       notify: deps.writeNotice,
       commitAssistantRetry,
       recoveryUserMessage: deps.recoveryUserMessage,

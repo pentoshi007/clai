@@ -14,7 +14,8 @@ import { createTurnCounters } from "../../src/agent/turn/turn-counters.js";
 import { runMetaTool, type MetaToolPorts } from "../../src/agent/turn/tool-execution/meta-tools.js";
 import { getToolDefinitions, RUNNER_META_TOOL_NAMES } from "../../src/tools/definitions.js";
 import { isQuietMetaTool } from "../../src/app/adapters/quiet-meta-tools.js";
-import { TURN_END_REASONS, TURN_END_TOOL_NAME, isTurnEndReason } from "../../src/tools/turn-end.js";
+import { TURN_END_REASONS, TURN_END_TOOL_NAME, isTurnEndReason, routeDeclaresTurnEnd } from "../../src/tools/turn-end.js";
+import { createToolRouting } from "../../src/agent/turn/tool-routing.js";
 import { renderAgentSystemPrompt, renderCompactAgentSystemPrompt } from "../../src/prompts/index.js";
 
 const turnEnd = (reason: unknown = "completed"): ToolCall => ({
@@ -46,24 +47,78 @@ describe("turn.end registration", () => {
     });
   });
 
-  it("is documented for text-protocol prompts", () => {
-    expect(renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: false })).toContain("turn.end");
-    expect(renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: false })).toContain("turn.end");
-  });
+  const promptVariants = (turnEnd: boolean): string[] => [
+    renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: false, turnEnd }),
+    renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: true, turnEnd }),
+    renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: true, slimNative: false, turnEnd }),
+    renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: false, turnEnd }),
+    renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: true, turnEnd }),
+  ];
 
-  it("asks every prompt variant to send the final message and turn.end in one response", () => {
-    const prompts = [
-      renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: false }),
-      renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: true }),
-      renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: true, slimNative: false }),
-      renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: false }),
-      renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: true }),
-    ];
-    for (const prompt of prompts) {
+  it("asks every prompt variant to send the final message and turn.end in one response when enabled", () => {
+    for (const prompt of promptVariants(true)) {
       expect(prompt).toMatch(/final message[^\n]*turn\.end[^\n]*(same response|one response)|(same response|one response)[^\n]*final message[^\n]*turn\.end/);
     }
     const definition = getToolDefinitions().find((entry) => entry.name === TURN_END_TOOL_NAME);
     expect(definition?.description).toContain("then call turn.end in that same response");
+  });
+
+  it("leaves no turn.end guidance in any prompt variant when disabled", () => {
+    for (const prompt of promptVariants(false)) {
+      expect(prompt.replace("fs.read, turn.end", "fs.read")).not.toMatch(/turn[ .]end/i);
+      expect(prompt).not.toMatch(/\S {2}\S/);
+    }
+    expect(renderAgentSystemPrompt("fs.read", { nativeTools: false })).toContain(
+      "- After tools run, read outputs, then next tools or final prose.",
+    );
+    expect(renderCompactAgentSystemPrompt("fs.read", { nativeTools: false })).toContain(
+      "After a tool result, next call or concise final answer.",
+    );
+  });
+
+  it("is enabled only for Meta and Muse routes", () => {
+    for (const [provider, model] of [
+      ["meta", "muse-spark-1.2"],
+      ["meta", "muse-wonder-1.0"],
+      ["freebuff", "meta/muse-spark-1.3-contributor"],
+      ["omnirush", "meta-muse-spark"],
+      ["free", "free-1/muse-spark-1.2-contributor-free"],
+    ] as const) {
+      expect(routeDeclaresTurnEnd(provider, model)).toBe(true);
+    }
+    for (const [provider, model] of [
+      ["openai", "gpt-5"],
+      ["anthropic", "claude-sonnet-4-5"],
+      ["gemini", "gemini-2.5-pro"],
+      ["kiro", "claude-opus-5.5-thinking"],
+      ["nvidia", "openai/gpt-oss-20b"],
+    ] as const) {
+      expect(routeDeclaresTurnEnd(provider, model)).toBe(false);
+    }
+  });
+
+  it("is offered and documented only on turn.end routes", () => {
+    for (const toolCalling of ["native", "text"] as const) {
+      for (const compact of [false, true]) {
+        const routing = createToolRouting({
+          mode: "agent",
+          mcpPresent: false,
+          toolCalling,
+          useCompactSystemPrompt: () => compact,
+        });
+        const native = toolCalling === "native";
+        const meta = routing.buildStableSystemContent(native, "meta", "muse-spark-1.2");
+        const other = routing.buildStableSystemContent(native, "openai", "gpt-5");
+        expect(routing.routeToolNames("meta", "muse-spark-1.2")).toContain(TURN_END_TOOL_NAME);
+        expect(routing.routeToolNames("openai", "gpt-5")).not.toContain(TURN_END_TOOL_NAME);
+        expect(meta).toContain("turn.end");
+        expect(other).not.toMatch(/turn[ .]end/i);
+        if (native) {
+          expect(routing.selectToolDefs(true, compact, "meta", "muse-spark-1.2")!.map((tool) => tool.name)).toContain(TURN_END_TOOL_NAME);
+          expect(routing.selectToolDefs(true, compact, "openai", "gpt-5")!.map((tool) => tool.name)).not.toContain(TURN_END_TOOL_NAME);
+        }
+      }
+    }
   });
 
   it("accepts only the declared reasons", () => {

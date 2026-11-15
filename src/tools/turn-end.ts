@@ -1,3 +1,5 @@
+import type { ProviderId } from "../types.js";
+
 export const TURN_END_TOOL_NAME = "turn.end";
 
 export const TURN_END_REASONS = [
@@ -13,3 +15,6 @@ export type TurnEndReason = (typeof TURN_END_REASONS)[number];
 export const isTurnEndReason = (value: unknown): value is TurnEndReason =>
   typeof value === "string" &&
   (TURN_END_REASONS as readonly string[]).includes(value);
+
+export const routeDeclaresTurnEnd = (provider: ProviderId, model: string): boolean =>
+  provider === "meta" || /muse-(?:spark|wonder)/i.test(model);

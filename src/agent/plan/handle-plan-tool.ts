@@ -44,7 +44,7 @@ export interface PlanToolResult {
 export async function handlePlanTool(
   call: ToolCall,
   session: SessionPolicy,
-  ctx: { loopGuard: LoopGuard; step: number; autoApprove?: boolean },
+  ctx: { loopGuard: LoopGuard; step: number; autoApprove?: boolean; turnEnd?: boolean },
 ): Promise<PlanToolResult> {
   const autoApprove = Boolean(ctx.autoApprove);
   void ctx.loopGuard;
@@ -185,7 +185,10 @@ export async function handlePlanTool(
   let modelNote: string;
   if (committedSuccessful) {
     modelNote =
-      "Task updated. All required tasks succeeded or were explicitly skipped. Verify the result, then give your final summary and call turn.end in the same response. " +
+      "Task updated. All required tasks succeeded or were explicitly skipped. " +
+      (ctx.turnEnd
+        ? "Verify the result, then give your final summary and call turn.end in the same response. "
+        : "Verify the result and give your final summary. ") +
       "If a dev server was started: report URL, port, job id, and that it is still running.";
   } else if (committedTerminal) {
     const failed = plan.tasks.filter((task) => task.state === "failed");
