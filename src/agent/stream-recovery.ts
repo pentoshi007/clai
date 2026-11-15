@@ -86,7 +86,7 @@ export interface StreamRecoveryPlan {
 
 const EMPTY_NUDGE =
   "Your previous response was empty. Continue the task now: emit your next tool call, " +
-  "or give your final answer if every required step is already complete and verified. " +
+  "or give your final answer with turn.end if every required step is already complete and verified. " +
   "Do not reply with an empty message.";
 
 const STALL_NUDGE =

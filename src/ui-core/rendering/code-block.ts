@@ -13,9 +13,12 @@ import {
 } from "./syntax-highlight.js";
 
 export const CODE_BLOCK_CHROME = 4;
+export const CODE_BLOCK_WRAP_MARK = "↪";
+export const CODE_BLOCK_COPY_LABEL = "copy";
 
+const COPY_TAB = ` ${CODE_BLOCK_COPY_LABEL} `;
+const COPY_TAB_WIDTH = COPY_TAB.length + 1;
 const TAB_WIDTH = 2;
-const HANGING_INDENT = 2;
 const MIN_BODY = 8;
 const MIN_WIDTH = CODE_BLOCK_CHROME + MIN_BODY;
 const MAX_WIDTH = 120;
@@ -34,6 +37,7 @@ const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
 export interface CodeBlockAppearance {
   readonly theme?: Theme | undefined;
   readonly colorMode?: ColorMode | undefined;
+  readonly copyLabel?: boolean | undefined;
 }
 
 type Paint = (text: string) => string;
@@ -42,6 +46,7 @@ interface Palette {
   readonly identity: string;
   readonly border: Paint;
   readonly label: Paint;
+  readonly action: Paint;
   readonly syntax: Readonly<Record<SyntaxKind, Paint>>;
 }
 
@@ -64,6 +69,7 @@ function buildPalette(theme: Theme, level: 0 | 1 | 2 | 3): Palette {
     identity: `${themeIdentity(theme)}:${level}`,
     border: paint.hex(theme.diffGutter),
     label: paint.hex(theme.muted),
+    action: paint.hex(theme.accent),
     syntax: {
       plain: paint.hex(theme.foreground),
       keyword: paint.hex(theme.synKeyword),
@@ -230,13 +236,16 @@ export function codeBlockFitWidth(
   lines: readonly string[],
   label: string,
   available: number,
+  appearance?: CodeBlockAppearance,
 ): number {
   let widest = 0;
   for (const line of lines) {
     const width = renderColumns(expandTabs(line.replace(/\s+$/, "")));
     if (width > widest) widest = width;
   }
-  const labelNeeds = label ? renderColumns(label) + 6 : 0;
+  const labelNeeds =
+    (label ? renderColumns(label) + 6 : 0) +
+    (appearance?.copyLabel ? COPY_TAB_WIDTH : 0);
   const wanted = Math.max(widest + CODE_BLOCK_CHROME, labelNeeds);
   return codeBlockWidth(Math.min(codeBlockWidth(available), wanted));
 }
@@ -263,9 +272,12 @@ export function codeBlockTop(
   width: number,
   appearance?: CodeBlockAppearance,
 ): string {
-  const { border, label: paintLabel } = palette(appearance);
+  const { border, label: paintLabel, action } = palette(appearance);
   const span = codeBlockWidth(width) - 2;
-  const room = span - 4;
+  const reserve = appearance?.copyLabel && span - COPY_TAB_WIDTH >= 2 ? COPY_TAB_WIDTH : 0;
+  const usable = span - reserve;
+  const tail = reserve ? action(COPY_TAB) + border("─╮") : border("╮");
+  const room = usable - 4;
   const labelWidth = renderColumns(label);
   const text =
     room < 1
@@ -273,11 +285,12 @@ export function codeBlockTop(
       : labelWidth <= room
         ? label
         : `${truncateLabel(label, room - 1)}…`;
-  if (!text) return border(`╭${rule(span)}╮`);
+  if (!text) return border(`╭${rule(usable)}`) + tail;
   return (
     border("╭─") +
     paintLabel(` ${text} `) +
-    border(`${rule(span - 3 - renderColumns(text))}╮`)
+    border(rule(usable - 3 - renderColumns(text))) +
+    tail
   );
 }
 
@@ -357,7 +370,11 @@ function toCells(spans: readonly SyntaxSpan[]): Cell[] {
 }
 
 function breaksAfter(ch: string): boolean {
-  return ch === " " || ",;)]}>".includes(ch);
+  return ",;)]}>".includes(ch);
+}
+
+function startsSpaceRun(cells: readonly Cell[], index: number, start: number): boolean {
+  return index > start && cells[index]!.ch === " " && cells[index - 1]!.ch !== " ";
 }
 
 function sliceRows(cells: Cell[], firstBudget: number, restBudget: number): Cell[][] {
@@ -370,6 +387,7 @@ function sliceRows(cells: Cell[], firstBudget: number, restBudget: number): Cell
     let end = start;
     let soft = -1;
     while (end < cells.length && used + cells[end]!.w <= budget) {
+      if (used >= floor && startsSpaceRun(cells, end, start)) soft = end;
       used += cells[end]!.w;
       end += 1;
       if (used >= floor && breaksAfter(cells[end - 1]!.ch)) soft = end;
@@ -378,7 +396,11 @@ function sliceRows(cells: Cell[], firstBudget: number, restBudget: number): Cell
       rows.push(cells.slice(start));
       return rows;
     }
-    const cut = soft > start ? soft : Math.max(end, start + 1);
+    if (used >= floor && startsSpaceRun(cells, end, start)) soft = end;
+    let cut = soft > start ? soft : Math.max(end, start + 1);
+    if (soft <= start) {
+      while (cut > start + 1 && cells[cut - 1]!.ch === " ") cut -= 1;
+    }
     rows.push(cells.slice(start, cut));
     start = cut;
   }
@@ -472,22 +494,18 @@ export function codeBlockRows(
 
   const cells = toCells(highlightLineForPath(line, fence.langPath, fence.carry));
   const indent = Math.min(
-    leadingSpaces(line) + HANGING_INDENT,
+    leadingSpaces(line),
     Math.floor(inner / 2),
-    Math.max(0, inner - MIN_BODY),
+    Math.max(0, inner - MIN_BODY - 1),
   );
-  const hang = " ".repeat(indent);
-  const chunks = sliceRows(cells, inner, inner - indent);
+  const hang = " ".repeat(indent) + resolved.border(CODE_BLOCK_WRAP_MARK);
+  const chunks = sliceRows(cells, inner, inner - indent - 1);
 
   const content = chunks.map((chunk, i) => {
     const { text, width: bodyWidth } = paintCells(chunk, resolved);
-    const prefix = i === 0 ? "" : hang;
-    return codeBlockRowWithPalette(
-      prefix + text,
-      prefix.length + bodyWidth,
-      panel,
-      resolved,
-    );
+    return i === 0
+      ? codeBlockRowWithPalette(text, bodyWidth, panel, resolved)
+      : codeBlockRowWithPalette(hang + text, indent + 1 + bodyWidth, panel, resolved);
   });
   cacheRows(key, content, fence.carry);
   rows.push(...content);

@@ -3,6 +3,7 @@
 import { useSelectionHandler } from "@opentui/react";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import { transcriptScrollPort } from "./transcript-scroll-port.js";
+import { copyableSelectionText } from "../../../ui-core/rendering/code-block-copy.js";
 
 export function useNativeSelectionCopy(services: AppServices): void {
   useSelectionHandler((selection) => {
@@ -10,7 +11,7 @@ export function useNativeSelectionCopy(services: AppServices): void {
 
     transcriptScrollPort.stopAutoScroll();
 
-    const text = selection.getSelectedText().replace(/\r\n/g, "\n").trimEnd();
+    const text = copyableSelectionText(selection.getSelectedText().replace(/\r\n/g, "\n")).trimEnd();
     if (!text.trim()) return;
 
     void services.ports.clipboard.writeText(text).then(

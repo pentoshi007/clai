@@ -14,6 +14,7 @@ import type { FeedSnapshot } from "./use-feed.js";
 import type { MouseEvent } from "../input/key-event.js";
 import { handleTranscriptMouse } from "./wiring-selection.js";
 import { handleDisclosureMouse } from "./wiring-disclosure.js";
+import { handleCodeCopyMouse } from "./wiring-code-copy.js";
 import { handleComposerMouse } from "./wiring-composer-pointer.js";
 import { handleJumpToLatestMouse } from "./wiring-jump-to-latest.js";
 import type { AnimationDemand, WiringHost } from "./wiring-types.js";
@@ -181,7 +182,7 @@ export function handlePanelKey(
 }
 
 export function handleMouse(host: WiringHost, event: MouseEvent): void {
-  if (handleJumpToLatestMouse(host, event) || handleDisclosureMouse(host, event) || handleComposerMouse(host, event)) return;
+  if (handleJumpToLatestMouse(host, event) || handleDisclosureMouse(host, event) || handleCodeCopyMouse(host, event) || handleComposerMouse(host, event)) return;
   if (!host.panels.isOpen() && contextLimitChipPressed(host.contextLimitHitRegion, event)) {
     host.startContextLimitEditing();
     return;

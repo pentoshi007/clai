@@ -51,6 +51,21 @@ describe("turn.end registration", () => {
     expect(renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: false })).toContain("turn.end");
   });
 
+  it("asks every prompt variant to send the final message and turn.end in one response", () => {
+    const prompts = [
+      renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: false }),
+      renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: true }),
+      renderAgentSystemPrompt("fs.read, turn.end", { nativeTools: true, slimNative: false }),
+      renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: false }),
+      renderCompactAgentSystemPrompt("fs.read, turn.end", { nativeTools: true }),
+    ];
+    for (const prompt of prompts) {
+      expect(prompt).toMatch(/final message[^\n]*turn\.end[^\n]*(same response|one response)|(same response|one response)[^\n]*final message[^\n]*turn\.end/);
+    }
+    const definition = getToolDefinitions().find((entry) => entry.name === TURN_END_TOOL_NAME);
+    expect(definition?.description).toContain("then call turn.end in that same response");
+  });
+
   it("accepts only the declared reasons", () => {
     for (const reason of TURN_END_REASONS) expect(isTurnEndReason(reason)).toBe(true);
     expect(isTurnEndReason("done")).toBe(false);

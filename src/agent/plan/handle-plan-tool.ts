@@ -185,7 +185,7 @@ export async function handlePlanTool(
   let modelNote: string;
   if (committedSuccessful) {
     modelNote =
-      "Task updated. All required tasks succeeded or were explicitly skipped. Verify the result and give your final summary. " +
+      "Task updated. All required tasks succeeded or were explicitly skipped. Verify the result, then give your final summary and call turn.end in the same response. " +
       "If a dev server was started: report URL, port, job id, and that it is still running.";
   } else if (committedTerminal) {
     const failed = plan.tasks.filter((task) => task.state === "failed");

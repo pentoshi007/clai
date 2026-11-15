@@ -53,6 +53,8 @@ import {
   transcriptScrollPort,
 } from "./transcript-scroll-port.js";
 import { useNativeSelectionCopy } from "./use-native-selection-copy.js";
+import { codeBlockAtPointer } from "./code-block-copy-click.js";
+import { copyCodeBlock } from "../../../ui-core/actions/copy-code-block.js";
 import { pointInRect, startSnappedSelection } from "./selection-snap.js";
 import { patchOpenTuiSelection } from "../../bootstrap/patch-opentui-selection.js";
 import { useTranscriptSelection } from "./use-transcript-selection.js";
@@ -298,6 +300,12 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   function onTranscriptMouseDown(event: MouseEvent): void {
     if (event.button !== 0) return;
     if (event.defaultPrevented) return;
+    const code = codeBlockAtPointer(event);
+    if (code !== undefined) {
+      event.preventDefault();
+      copyCodeBlock(services, code);
+      return;
+    }
     stopDragRefresh();
     transcriptScrollPort.stopWheel();
     services.transcript.blurThinking();

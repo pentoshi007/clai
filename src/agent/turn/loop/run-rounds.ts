@@ -907,11 +907,15 @@ export const runTurnRounds = async (
         return deps.finishTurn(deps.loop.lastAnswer, deps.counters.productiveSteps, "aborted");
       }
 
+      const trailingDeclaredText =
+        !beforeTool && round.turnEndDeclared && !recoveredFromBareJson
+          ? stripToolCallSurfaces(toolDisplayText).trim()
+          : "";
       const declaredTurnEnd = resolveDeclaredTurnEnd(deps.counters.completion, {
         declared: round.turnEndDeclared,
         calls: allCalls,
         outcomesNeedReview: round.outcomesNeedReview,
-        visibleText: beforeTool,
+        visibleText: beforeTool || trailingDeclaredText,
         stepsBeforeRound,
         productiveSteps: deps.counters.productiveSteps,
         unreadResponders: deps.responderClaims.size > 0,
@@ -924,7 +928,7 @@ export const runTurnRounds = async (
         }))) {
           return finishWithAnswer(deps, {
             answer: declaredTurnEnd.answer,
-            displayAnswer: "",
+            displayAnswer: trailingDeclaredText,
             turnEndReason: declaredTurnEnd.reason,
           });
         }
