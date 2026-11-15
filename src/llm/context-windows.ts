@@ -26,7 +26,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /o3/i, tokens: 200_000 },
   { pattern: /o4/i, tokens: 200_000 },
   { pattern: /o1/i, tokens: 200_000 },
-  { pattern: /gemini-3/i, tokens: 1_048_576 },
+  { pattern: /gemini-(?:[3-9]|[1-9]\d)/i, tokens: 1_048_576 },
   { pattern: /gemini-2\.5/i, tokens: 1_048_576 },
   { pattern: /gemini-2\.0/i, tokens: 1_048_576 },
   { pattern: /gemini-1\.5/i, tokens: 1_048_576 },

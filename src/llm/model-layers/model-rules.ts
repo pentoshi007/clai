@@ -74,65 +74,6 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
       },
     },
   ],
-  gemini: [
-    {
-      pattern: /gemini-3(?:\.\d+)?-pro/i,
-      layer: {
-        evidence: codeFact("gemini-3-thinking-level-pro-has-no-minimal"),
-        reasoning: {
-          generation: "optional",
-          acceptedEfforts: ["low", "medium", "high"],
-        },
-      },
-    },
-    {
-      pattern: /gemini-3(?:[.-]|$)/i,
-      layer: {
-        evidence: codeFact("gemini-3-thinking-level"),
-        reasoning: {
-          generation: "optional",
-          acceptedEfforts: ["minimal", "low", "medium", "high"],
-        },
-      },
-    },
-    {
-      pattern: /gemini-2\.5-(?:flash|flash-lite)/i,
-      layer: {
-        evidence: codeFact("gemini-2p5-thinking-budget"),
-        reasoning: {
-          generation: "optional",
-          acceptedEfforts: ["low", "medium", "high"],
-          disable: "supported",
-          disableForm: "thinking-budget-zero",
-        },
-      },
-    },
-    {
-      pattern: /gemini-2\.5/i,
-      layer: {
-        evidence: codeFact("gemini-2p5-pro-cannot-disable-thinking"),
-        reasoning: {
-          generation: "mandatory",
-          acceptedEfforts: ["low", "medium", "high"],
-          disable: "unsupported",
-        },
-      },
-    },
-    {
-      pattern: /gemini/i,
-      layer: {
-        evidence: codeFact("gemini-pre-2p5-has-no-thinking-config"),
-        reasoning: {
-          generation: "none",
-          control: {
-            dialect: "none",
-            status: "unsupported",
-            evidence: codeFact("gemini-pre-2p5-has-no-thinking-config"),
-          },
-        },
-      },
-    },
-  ],
   ollama: [
     {
       pattern: /deepseek-r1|qwen3|qwq/i,
