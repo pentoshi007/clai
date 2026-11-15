@@ -19,6 +19,13 @@ function parsePause(value: unknown): PersistedGoalPause | undefined {
   return { reason: value.reason, resumeOnPrompt: value.resumeOnPrompt };
 }
 
+function parseCounter(value: Record<string, unknown>, key: "turns" | "tokens" | "elapsedMs"): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) throw new Error(`invalid goal ${key}`);
+  return Math.floor(raw);
+}
+
 function parseGoal(value: unknown): PersistedGoal {
   if (!value || typeof value !== "object" || !("id" in value) || typeof value.id !== "string" || !value.id ||
       !("objective" in value) || typeof value.objective !== "string" || !value.objective.trim() ||
@@ -28,12 +35,21 @@ function parseGoal(value: unknown): PersistedGoal {
     throw new Error("invalid session goal");
   }
   const pause = parsePause("pause" in value ? value.pause : undefined);
+  const fields = value as Record<string, unknown>;
+  const turns = parseCounter(fields, "turns");
+  const tokens = parseCounter(fields, "tokens");
+  const elapsedMs = parseCounter(fields, "elapsedMs");
+  const lastReason = typeof fields.lastReason === "string" && fields.lastReason ? fields.lastReason : undefined;
   return {
     id: value.id,
     objective: value.objective,
     status: value.status,
     createdAt: value.createdAt,
     ...(value.status === "paused" && pause ? { pause } : {}),
+    ...(turns === undefined ? {} : { turns }),
+    ...(tokens === undefined ? {} : { tokens }),
+    ...(elapsedMs === undefined ? {} : { elapsedMs }),
+    ...(lastReason ? { lastReason } : {}),
   };
 }
 
@@ -65,6 +81,7 @@ export function saveSessionGoal(sessionId: string, goal: PersistedGoal | undefin
     ...goal,
     objective: redactSecretsCached(goal.objective),
     ...(goal.pause ? { pause: { ...goal.pause, reason: redactSecretsCached(goal.pause.reason) } } : {}),
+    ...(goal.lastReason ? { lastReason: redactSecretsCached(goal.lastReason) } : {}),
   };
   try {
     writeFileSync(temporary, JSON.stringify({ version: 1, sessionId, goal: safeGoal }), { flag: "wx", mode: 0o600, flush: true });
