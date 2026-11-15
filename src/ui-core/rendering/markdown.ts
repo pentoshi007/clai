@@ -108,7 +108,7 @@ function renderCodeBlock(
 ): string[] {
   const fence = openCodeFence(open.marker, open.info);
   const body = trimCodeBlockBody(bodyLines);
-  const width = codeBlockFitWidth(body, fence.label, wrapWidth);
+  const width = codeBlockFitWidth(body, fence.label, wrapWidth, context.appearance);
   const out = [codeBlockTop(fence.label, width, context.appearance)];
   for (const line of body) {
     out.push(...codeBlockRows(line, fence, width, context.appearance));

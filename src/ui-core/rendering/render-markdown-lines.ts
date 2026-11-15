@@ -15,6 +15,7 @@ export interface RenderMarkdownLinesOptions {
   readonly literalQuotes?: boolean | undefined;
   readonly lineChangeColors?: boolean | undefined;
   readonly diffLines?: boolean | undefined;
+  readonly copyLabel?: boolean | undefined;
 }
 
 export function preprocessAssistantMarkdown(text: string): string {
@@ -45,6 +46,7 @@ export function renderMarkdownLines(
     literalQuotes: options.literalQuotes,
     lineChangeColors: options.lineChangeColors,
     diffLines: options.diffLines,
+    copyLabel: options.copyLabel,
   }).replace(/\n+$/, "");
   if (!rendered) return [];
 

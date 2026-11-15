@@ -34,6 +34,6 @@ describe("code render cache memory", () => {
     expect(render(source)).toEqual(first);
     expect(first.carry.inBlockComment).toBe(true);
     const complete = first.rows.map((row) => stripAnsiSequences(row).slice(2, -2).trimEnd()).join("");
-    expect(complete.replaceAll(" ", "")).toBe(source.replaceAll(" ", ""));
+    expect(complete.replaceAll("↪", "").replaceAll(" ", "")).toBe(source.replaceAll(" ", ""));
   });
 });

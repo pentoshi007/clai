@@ -45,6 +45,7 @@ export function AssistantMessage(props: {
       stripOuterIndent: true,
       theme,
       colorMode,
+      copyLabel: true,
     };
     if (!item.text) return [];
     if (!item.streaming) {
