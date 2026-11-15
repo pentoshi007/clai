@@ -6,6 +6,7 @@ import type {
 import type { SubagentRun } from "../../agent/subagents/types.js";
 import { sumLineChanges, type LineChangeTotals } from "../../app/controllers/session-changes.js";
 import { generationTokensPerSecond, type GenerationMetrics } from "../../llm/generation-metrics.js";
+import { formatTokenCount } from "../../llm/token-usage.js";
 
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -93,6 +94,11 @@ export function turnSummaryLabel(
   return changes && sumLineChanges([changes])
     ? `${statusLabel} · +${changes.added} -${changes.removed} · /changes`
     : statusLabel;
+}
+
+export function turnTokensLabel(tokens: number | undefined): string | undefined {
+  if (tokens === undefined || !Number.isFinite(tokens) || tokens <= 0) return undefined;
+  return `${formatTokenCount(tokens, true)} tokens`;
 }
 
 export function tokensPerSecondLabel(generation: GenerationMetrics | undefined): string | undefined {

@@ -147,9 +147,9 @@ export interface AppEventPayloads {
     readonly attempt?: ContextAttemptReference | undefined;
     readonly auxiliary?: true | undefined;
   };
-  "turn-ended": { readonly finalAnswer: string; readonly steps: number; readonly generation?: GenerationMetrics | undefined };
-  "turn-aborted": { readonly reason?: string | undefined; readonly generation?: GenerationMetrics | undefined };
-  "turn-error": { readonly message: string; readonly generation?: GenerationMetrics | undefined };
+  "turn-ended": { readonly finalAnswer: string; readonly steps: number; readonly generation?: GenerationMetrics | undefined; readonly tokens?: number | undefined };
+  "turn-aborted": { readonly reason?: string | undefined; readonly generation?: GenerationMetrics | undefined; readonly tokens?: number | undefined };
+  "turn-error": { readonly message: string; readonly generation?: GenerationMetrics | undefined; readonly tokens?: number | undefined };
   "goal-updated": GoalUpdate;
 }
 

@@ -163,6 +163,7 @@ export function hydrateFromClassicTranscript(
           kind: "turn-summary",
           ...(validLineChangeTotals(raw.changes) ? { changes: { added: raw.changes.added, removed: raw.changes.removed } } : {}),
           ...(validGenerationMetrics(raw.generation) ? { generation: { outputTokens: raw.generation.outputTokens, durationMs: raw.generation.durationMs } } : {}),
+          ...(typeof raw.tokens === "number" && Number.isFinite(raw.tokens) && raw.tokens > 0 ? { tokens: Math.floor(raw.tokens) } : {}),
           durationMs:
             typeof rawDur === "number" && Number.isFinite(rawDur) ? rawDur : 0,
           status:

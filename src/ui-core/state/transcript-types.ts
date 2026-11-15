@@ -118,6 +118,7 @@ export interface TurnSummaryItem extends ItemBase {
   readonly status: "completed" | "aborted" | "error";
   readonly changes?: LineChangeTotals | undefined;
   readonly generation?: GenerationMetrics | undefined;
+  readonly tokens?: number | undefined;
 }
 
 export type TranscriptItem =

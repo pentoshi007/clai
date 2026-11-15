@@ -66,7 +66,7 @@ import {
 } from "./session-compact-helper.js";
 import { settlePersistedResponderResults } from "./responder-settlement.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../ports/transcript-item.js";
-import { asSessionId, type AnyAppEvent, type SessionId, type TurnId } from "../events/app-event.js";
+import { asSessionId, type AnyAppEvent, type SessionId, type TurnId, type TypedAppEvent } from "../events/app-event.js";
 import { EventSequencer, type Clock, type IdFactory } from "../events/sequencer.js";
 import { OutputSpool } from "../events/event-buffer.js";
 import type { AgentPort, RunTurnRequest } from "../ports/agent-port.js";
@@ -220,6 +220,7 @@ export class SessionController implements Disposable {
   private lastTurnResult: TurnResult | undefined;
   private restoredPreviousTurn: PreviousTurnSignal | undefined;
   private activeTurnGeneration: number | undefined;
+  private turnTokenBaseline: number | undefined;
   private closing = false;
   private readonly settledWaiters = new Set<() => void>();
   private readonly projectContext = createContextProjector((snapshot) =>
@@ -1085,6 +1086,7 @@ export class SessionController implements Disposable {
         this.settledWaiters.delete(finish);
       }
     }
+    this.goal.checkpoint();
     await this.persistNow();
   }
 
@@ -1457,8 +1459,10 @@ export class SessionController implements Disposable {
         this.activeTurnGeneration === this.lifecycleGeneration) {
       this.changeLedger.record(`${event.turnId}:${event.payload.toolCallId}`, event.payload.fileChanges);
     }
-    if (event.type === "turn-started") this.goal.noteTurnStarted();
-    else if (event.type === "tool-call") this.goal.noteToolCall();
+    if (event.type === "turn-started") {
+      this.goal.noteTurnStarted();
+      this.turnTokenBaseline = this.usageLedger.report().totals.totalTokens;
+    } else if (event.type === "tool-call") this.goal.noteToolCall();
     if (event.type === "compaction-started") {
       this.activeCompactions.add(event.payload.compactionId);
       this.notifyState();
@@ -1478,7 +1482,17 @@ export class SessionController implements Disposable {
         this.activeCompactions.clear();
         this.notifyState();
       }
+      this.deps.emit(this.withTurnTokens(event));
+      return;
     }
     this.deps.emit(event);
+  }
+
+  private withTurnTokens<E extends TypedAppEvent<"turn-ended" | "turn-aborted" | "turn-error">>(event: E): E {
+    const baseline = this.turnTokenBaseline;
+    this.turnTokenBaseline = undefined;
+    if (baseline === undefined || event.payload.tokens !== undefined) return event;
+    const tokens = Math.max(0, this.usageLedger.report().totals.totalTokens - baseline);
+    return tokens > 0 ? { ...event, payload: { ...event.payload, tokens } } : event;
   }
 }
