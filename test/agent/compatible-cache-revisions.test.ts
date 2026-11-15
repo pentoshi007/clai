@@ -20,9 +20,6 @@ vi.mock("../../src/commands/providers.js", async (importActual) => ({
   ensureProviderConfigured: async () => undefined,
 }));
 
-const REQUESTS_PER_TURN = 2;
-const TURNS = 3;
-
 afterEach(() => {
   vi.unstubAllGlobals();
   resetResponsesWireStatesForTesting();
@@ -93,7 +90,7 @@ describe("compatible provider revisions through the agent runner", () => {
     try {
       const session = createSessionPolicy(`cache-${id}`);
       let history: ChatMessage[] = [];
-      for (let turn = 1; turn <= TURNS; turn += 1) {
+      for (let turn = 1; turn <= 3; turn += 1) {
         writeFileSync(join(root, ".clai", "CLAI.md"), `Instruction revision ${turn}: explain clearly.\n`);
         const prompt = mode === "agent"
           ? `Revise the TCP explanation, revision ${turn}. Return the revised prose without using tools.`
@@ -105,15 +102,10 @@ describe("compatible provider revisions through the agent runner", () => {
         });
         expect(result.answer).toBe("Here is the explanation.");
         expect(history.at(-1)).toMatchObject({ role: "assistant", content: result.answer });
-        if (turn < TURNS) pauseOffset += 4 * 60 * 1_000;
+        if (turn < 3) pauseOffset += 4 * 60 * 1_000;
       }
-      expect(bodies).toHaveLength(TURNS * REQUESTS_PER_TURN);
+      expect(bodies).toHaveLength(3);
       const timeline = (body: typeof bodies[number]) => body.messages ?? body.input!;
-      bodies.forEach((body, index) => {
-        const lastEntry = JSON.stringify(timeline(body).at(-1));
-        if (index % REQUESTS_PER_TURN === 1) expect(lastEntry).toContain("TURN END CHECK");
-        else expect(lastEntry).not.toContain("TURN END CHECK");
-      });
       for (let i = 1; i < bodies.length; i += 1) {
         expect(Boolean(bodies[i]!.input)).toBe(Boolean(bodies[i - 1]!.input));
         expect(timeline(bodies[i]!).slice(0, timeline(bodies[i - 1]!).length)).toEqual(timeline(bodies[i - 1]!));
@@ -139,9 +131,8 @@ describe("compatible provider revisions through the agent runner", () => {
       if (id === "agentrouter-responses") for (const body of bodies) {
         expect(body.prompt_cache_key).toBe(affinities[0]);
       }
-      const lastTurnRequest = bodies[(TURNS - 1) * REQUESTS_PER_TURN]!;
-      expect(JSON.stringify(lastTurnRequest)).toContain("Instruction revision 1");
-      expect(JSON.stringify(lastTurnRequest)).toContain(`Instruction revision ${TURNS}`);
+      expect(JSON.stringify(bodies[2])).toContain("Instruction revision 1");
+      expect(JSON.stringify(bodies[2])).toContain("Instruction revision 3");
     } finally {
       nowSpy.mockRestore();
       updateConfig({ customProviders });

@@ -57,6 +57,7 @@ import type { TurnLoopDeps } from "./deps.js";
 import { resolveAnswerPath, finishWithAnswer } from "./answer-path.js";
 import { isTurnEndCall, resolveDeclaredTurnEnd } from "./declared-turn-end.js";
 import { TURN_END_FINAL_MESSAGE_REQUEST } from "../turn-completion.js";
+import { routeDeclaresTurnEnd } from "../../../tools/turn-end.js";
 import { SubagentInbox, SubagentInboxCapacityError } from "../subagent-inbox.js";
 import { retireRejectedReasoningReplay } from "../../../llm/routing/attempt-request.js";
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
@@ -452,6 +453,7 @@ export const runTurnRounds = async (
             messages: deps.messages,
             toolsAttached,
             planModeWithoutPlan: deps.isPlanMode && !deps.activePlan,
+            turnEnd: routeDeclaresTurnEnd(deps.loop.provider, deps.loop.model),
             maxRetries: deps.loop.provider === "kiro" ? 4 : undefined,
             notify: deps.writeNotice,
             commitAssistantRetry,

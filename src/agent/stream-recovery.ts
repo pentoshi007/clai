@@ -84,9 +84,9 @@ export interface StreamRecoveryPlan {
   readonly notice?: string | undefined;
 }
 
-const EMPTY_NUDGE =
+const emptyNudge = (turnEnd: boolean): string =>
   "Your previous response was empty. Continue the task now: emit your next tool call, " +
-  "or give your final answer with turn.end if every required step is already complete and verified. " +
+  `or give your final answer${turnEnd ? " with turn.end" : ""} if every required step is already complete and verified. ` +
   "Do not reply with an empty message.";
 
 const STALL_NUDGE =
@@ -266,6 +266,7 @@ export function planStreamRecovery(input: {
   state: StreamRecoveryState;
   limits?: StreamRecoveryLimits;
   progressed?: boolean | undefined;
+  turnEnd?: boolean | undefined;
 }): StreamRecoveryPlan {
   const limits = input.limits ?? DEFAULT_STREAM_RECOVERY_LIMITS;
   const kind = input.kind ?? classifyStreamFailure(input.error);
@@ -299,7 +300,7 @@ export function planStreamRecovery(input: {
         delayMs: pick([500, 1000, 1500, 2000], n, cap),
         forceCompact: false,
         allowModelFallback: n >= 2,
-        nudge: EMPTY_NUDGE,
+        nudge: emptyNudge(input.turnEnd === true),
         notice:
           n === 0
             ? "model returned an empty response — retrying with a nudge"

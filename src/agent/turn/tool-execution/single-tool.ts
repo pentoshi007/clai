@@ -15,6 +15,7 @@ import { runToolCall } from "../../../tools/registry.js";
 import { canonicalizeTurnCall } from "../loop/canonicalize-turn-call.js";
 import { stdioSecretRequester } from "../../confirm-port.js";
 import { saveOutcomeState } from "../../outcomes.js";
+import { routeDeclaresTurnEnd } from "../../../tools/turn-end.js";
 import { handlePlanTool, removePlanContextMessage } from "../../plan-tool.js";
 import { extractProjectRootFromPlan, getActiveProjectRoot, setActiveProjectRootIfValid } from "../../project-root.js";
 import { outOfScopeToolMessage } from "../../scope-context.js";
@@ -239,6 +240,7 @@ export const runSingleTool = async (
           loopGuard: deps.loopGuard,
           step: deps.step(),
           autoApprove: !deps.isPlanMode,
+          turnEnd: routeDeclaresTurnEnd(deps.provider(), deps.model()),
         }),
       recordAttempt: (attemptedCall, ok) =>
         deps.loopGuard.recordAttempt(

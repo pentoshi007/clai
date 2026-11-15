@@ -48,6 +48,7 @@ export interface StreamFailurePorts {
   readonly messages: ChatMessage[];
   readonly recoveryState: StreamRecoveryState;
   readonly provider: ProviderId;
+  readonly turnEnd: boolean;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly emitStatus: (text: string) => void;
   readonly emitTokenUsage: (
@@ -257,6 +258,7 @@ export const recoverFromStreamFailure = async (
     ...(input.error !== undefined ? { error: input.error } : {}),
     state: ports.recoveryState,
     progressed: meaningfulProgress,
+    turnEnd: ports.turnEnd,
     ...(recoveryLimits ? { limits: recoveryLimits } : {}),
   });
   const terminalFailure = plan.action === "give-up";

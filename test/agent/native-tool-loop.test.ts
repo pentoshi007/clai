@@ -668,8 +668,8 @@ describe("native tool loop integration", () => {
         if (turn === 1) {
           return {
             text: "",
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             toolCalls: [
               { id: "call_list_first", name: "fs.read", args: { path: cwd } },
             ],
@@ -681,15 +681,15 @@ describe("native tool loop integration", () => {
         if (turn === 2) {
           return {
             text,
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             finishReason: "stop",
           };
         }
         return {
           text: "",
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           toolCalls: [turnEnd("call_end", "completed")],
           finishReason: "tool_calls",
         };
@@ -699,8 +699,8 @@ describe("native tool loop integration", () => {
     const events: Array<{ type: string; text?: string }> = [];
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("find all files in this directory", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 5,
       onEvent: (event) => events.push(event),
     });
@@ -733,8 +733,8 @@ describe("native tool loop integration", () => {
         if (turn === 1 || turn === 3) {
           return {
             text: "",
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             toolCalls: [
               { id: `call_read_${turn}`, name: "fs.read", args: { path: cwd } },
             ],
@@ -746,8 +746,8 @@ describe("native tool loop integration", () => {
           onToken(text);
           return {
             text,
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             finishReason: "stop",
           };
         }
@@ -755,8 +755,8 @@ describe("native tool loop integration", () => {
         onToken(text);
         return {
           text,
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           toolCalls: [turnEnd("call_end", "completed")],
           finishReason: "tool_calls",
         };
@@ -765,8 +765,8 @@ describe("native tool loop integration", () => {
 
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("find all files in this directory", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 6,
     });
 
@@ -790,8 +790,8 @@ describe("native tool loop integration", () => {
         if (turn === 1) {
           return {
             text: "",
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             toolCalls: [
               { id: "call_list_first", name: "fs.read", args: { path: cwd } },
             ],
@@ -802,8 +802,8 @@ describe("native tool loop integration", () => {
         onToken(text);
         return {
           text,
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           toolCalls: [turnEnd("call_end", "needs_user_input")],
           finishReason: "tool_calls",
         };
@@ -812,8 +812,8 @@ describe("native tool loop integration", () => {
 
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("find all files in this directory", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 5,
     });
 
@@ -830,8 +830,8 @@ describe("native tool loop integration", () => {
         onToken("Alpha is the first letter.");
         return {
           text: "Alpha is the first letter.",
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           toolCalls: [turnEnd("call_end", "answered")],
           finishReason: "tool_calls",
         };
@@ -840,14 +840,46 @@ describe("native tool loop integration", () => {
 
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("what is alpha?", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 3,
     });
 
     expect(streamMock).toHaveBeenCalledTimes(1);
     expect(answer).toBe("Alpha is the first letter.");
   });
+
+  it.each(["native", "text"] as const)(
+    "ends a %s plain-text answer on routes without turn.end in one request without mentioning it",
+    async (toolCalling) => {
+      const requests: CompletionRequest[] = [];
+      streamMock.mockImplementation(
+        async (request: CompletionRequest, onToken: (token: string) => void) => {
+          requests.push(request);
+          onToken("Gamma is the third letter.");
+          return {
+            text: "Gamma is the third letter.",
+            provider: "gemini",
+            model: "gemini-test",
+            finishReason: "stop",
+          };
+        },
+      );
+
+      const { runAgentLoop } = await import("../../src/agent/runner.js");
+      const answer = await runAgentLoop("what is gamma?", {
+        provider: "gemini",
+        model: "gemini-test",
+        maxSteps: 3,
+        toolCalling,
+      });
+
+      expect(answer).toBe("Gamma is the third letter.");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.tools?.map((tool) => tool.name) ?? []).not.toContain("turn.end");
+      expect(JSON.stringify(requests[0]!.messages)).not.toMatch(/turn[ .]end/i);
+    },
+  );
 
   it("ends a text-protocol answer written after its turn.end block with exactly one request", async () => {
     const events: Array<{ type: string; text?: string }> = [];
@@ -858,8 +890,8 @@ describe("native tool loop integration", () => {
         onToken(text);
         return {
           text,
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           finishReason: "stop",
         };
       },
@@ -867,8 +899,8 @@ describe("native tool loop integration", () => {
 
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("what is beta?", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 3,
       toolCalling: "text",
       onEvent: (event) => events.push(event),
@@ -893,8 +925,8 @@ describe("native tool loop integration", () => {
           onToken(text);
           return {
             text,
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             toolCalls: [
               { id: "call_list", name: "fs.read", args: { path: cwd } },
               turnEnd("call_early_end", "completed"),
@@ -906,8 +938,8 @@ describe("native tool loop integration", () => {
         onToken(text);
         return {
           text,
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           toolCalls: [turnEnd("call_final_end", "completed")],
           finishReason: "tool_calls",
         };
@@ -916,8 +948,8 @@ describe("native tool loop integration", () => {
 
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("list this directory", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 5,
     });
 
@@ -941,8 +973,8 @@ describe("native tool loop integration", () => {
           onToken(text);
           return {
             text,
-            provider: "gemini",
-            model: "gemini-test",
+            provider: "meta",
+            model: "muse-spark-1.2",
             toolCalls: [turnEnd("call_bad_end", "finished_early")],
             finishReason: "tool_calls",
           };
@@ -951,8 +983,8 @@ describe("native tool loop integration", () => {
         onToken(text);
         return {
           text,
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           toolCalls: [turnEnd("call_good_end", "completed")],
           finishReason: "tool_calls",
         };
@@ -962,8 +994,8 @@ describe("native tool loop integration", () => {
     const events: Array<{ type: string; id?: string; ok?: boolean }> = [];
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const answer = await runAgentLoop("say you are done", {
-      provider: "gemini",
-      model: "gemini-test",
+      provider: "meta",
+      model: "muse-spark-1.2",
       maxSteps: 5,
       onEvent: (event) => events.push(event),
     });
@@ -987,8 +1019,8 @@ describe("native tool loop integration", () => {
         onToken(text);
         return {
           text,
-          provider: "gemini",
-          model: "gemini-test",
+          provider: "meta",
+          model: "muse-spark-1.2",
           ...(turn === 1
             ? { toolCalls: [turnEnd("call_end", "answered")], finishReason: "tool_calls" }
             : { finishReason: "stop" }),
@@ -998,8 +1030,8 @@ describe("native tool loop integration", () => {
 
     const { runAgentLoop } = await import("../../src/agent/runner.js");
     const options = {
-      provider: "gemini" as const,
-      model: "gemini-test",
+      provider: "meta" as const,
+      model: "muse-spark-1.2",
       maxSteps: 3,
     };
     const first = await runAgentLoop("first question", options);
@@ -1011,6 +1043,41 @@ describe("native tool loop integration", () => {
     const checkRequest = streamMock.mock.calls[2]![0] as CompletionRequest;
     expect(turnEndCheckCount(checkRequest)).toBe(1);
     expect(second).toBe("reply 3");
+  });
+
+  it("keeps the Meta turn end check an append-only extension of the answered request", async () => {
+    const sent: Array<{ readonly tools: string; readonly messages: CompletionRequest["messages"] }> = [];
+    streamMock.mockImplementation(
+      async (request: CompletionRequest, onToken: (token: string) => void) => {
+        sent.push({ tools: JSON.stringify(request.tools), messages: structuredClone(request.messages) });
+        const first = sent.length === 1;
+        const text = first ? "Delta is the fourth letter." : "";
+        onToken(text);
+        return {
+          text,
+          provider: "meta",
+          model: "muse-spark-1.2",
+          ...(first
+            ? { finishReason: "stop" }
+            : { toolCalls: [turnEnd("call_end", "answered")], finishReason: "tool_calls" }),
+        };
+      },
+    );
+
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const answer = await runAgentLoop("what is delta?", {
+      provider: "meta",
+      model: "muse-spark-1.2",
+      maxSteps: 3,
+    });
+
+    expect(answer).toBe("Delta is the fourth letter.");
+    expect(sent).toHaveLength(2);
+    const [answered, check] = sent as [typeof sent[number], typeof sent[number]];
+    expect(check.tools).toBe(answered.tools);
+    expect(check.messages.slice(0, answered.messages.length)).toEqual(answered.messages);
+    expect(check.messages.length).toBeGreaterThan(answered.messages.length);
+    expect(isTurnEndCheck(check.messages.at(-1)!)).toBe(true);
   });
 
   it("does not append internal outcome diagnostics to a continue response", async () => {

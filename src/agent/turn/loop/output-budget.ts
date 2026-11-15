@@ -1,5 +1,6 @@
 import type { ChatMessage, CompletionResult, ProviderId } from "../../../types.js";
 import { routeOutputTokenLimit } from "../../../llm/provider-profiles.js";
+import { routeDeclaresTurnEnd } from "../../../tools/turn-end.js";
 import { outputBudgetWasExhausted } from "../../reliability-policy.js";
 import {
   appendInterruptedReasoning,
@@ -62,12 +63,15 @@ export const outputBudgetExhausted = (input: {
 const continuationNudge = (
   hasVisible: boolean,
   reasoning: string,
+  turnEnd: boolean,
 ): string =>
   [
     hasVisible
       ? "Your previous response was cut off by the output token limit. Continue from the exact stopping point without repeating any prior text."
       : "Your previous response spent the output budget before producing a visible answer. Do not restart the analysis; use the preserved conclusions and answer now.",
-    "Finish the reasoning briefly, then emit the next tool call, or the final answer with turn.end, directly.",
+    turnEnd
+      ? "Finish the reasoning briefly, then emit the next tool call, or the final answer with turn.end, directly."
+      : "Finish the reasoning briefly, then emit the next tool call or final answer directly.",
     interruptedReasoningBrief(reasoning),
   ]
     .filter((part): part is string => Boolean(part))
@@ -110,6 +114,7 @@ const preserveAndContinue = (
       continuationNudge(
         hasVisible,
         state.interruptedReasoning,
+        routeDeclaresTurnEnd(ports.provider, ports.model),
       ),
     ),
   );
