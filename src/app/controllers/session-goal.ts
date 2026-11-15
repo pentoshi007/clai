@@ -246,6 +246,7 @@ export class SessionGoal {
     const interrupted = this.interrupted;
     this.toolCalls = 0;
     this.interrupted = false;
+    this.checkpoint();
     const goal = this.goal;
     if (!goal || goal.status !== "active") return;
     if (usedTools) goal.toolsSinceEvaluation = true;
@@ -302,6 +303,10 @@ export class SessionGoal {
     if (!persisted) return;
     this.goal = this.record(persisted, false);
     this.changed();
+  }
+
+  checkpoint(): void {
+    if (this.goal) this.persist();
   }
 
   halt(): void {
@@ -427,6 +432,7 @@ export class SessionGoal {
   private async continueGoal(goal: GoalRecord, verdict: GoalVerdict, progressed: boolean): Promise<void> {
     goal.lastReason = verdict.reason;
     goal.stalls = progressed ? 0 : goal.stalls + 1;
+    this.persist();
     if (goal.stalls >= GOAL_MAX_STALLS) {
       this.hold(goal, `no progress: ${GOAL_MAX_STALLS} turns in a row made no tool calls`, true);
       this.deps.idle();
@@ -606,14 +612,14 @@ export class SessionGoal {
       id: source.id,
       objective: source.objective,
       createdAt: source.createdAt,
-      startedAt: this.deps.now(),
-      tokenBaseline: this.deps.tokens(),
+      startedAt: this.deps.now() - (source.elapsedMs ?? 0),
+      tokenBaseline: this.deps.tokens() - (source.tokens ?? 0),
       status: source.status,
       pause: source.status === "paused" ? source.pause ?? { reason: "paused", resumeOnPrompt: true } : undefined,
-      turns: 0,
+      turns: source.turns ?? 0,
       automaticTurns: 0,
       stalls: 0,
-      lastReason: undefined,
+      lastReason: source.lastReason,
       kickoffPending: kickoff,
       evaluationDue: false,
       toolsSinceEvaluation: false,
@@ -635,6 +641,10 @@ export class SessionGoal {
           status: goal.status,
           createdAt: goal.createdAt,
           ...(goal.status === "paused" && goal.pause ? { pause: goal.pause } : {}),
+          turns: goal.turns,
+          tokens: this.spent(goal),
+          elapsedMs: Math.max(0, this.deps.now() - goal.startedAt),
+          ...(goal.lastReason ? { lastReason: goal.lastReason } : {}),
         }
       : undefined);
   }

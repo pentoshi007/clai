@@ -42,6 +42,10 @@ export interface PersistedGoal {
   readonly status: "active" | "paused";
   readonly createdAt: number;
   readonly pause?: PersistedGoalPause | undefined;
+  readonly turns?: number | undefined;
+  readonly tokens?: number | undefined;
+  readonly elapsedMs?: number | undefined;
+  readonly lastReason?: string | undefined;
 }
 
 export interface PersistencePort {

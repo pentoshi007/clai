@@ -35,7 +35,12 @@ function appendTurnSummary(
     id: `turn-summary-${event.id}`, sequence: event.sequence, turnId: event.turnId,
     timestamp: event.timestamp, kind: "turn-summary", durationMs: Math.max(0, event.timestamp - startedAt), status,
     ...(changes ? { changes } : {}), ...(event.payload.generation ? { generation: event.payload.generation } : {}),
+    ...(validTurnTokens(event.payload.tokens) ? { tokens: event.payload.tokens } : {}),
   });
+}
+
+function validTurnTokens(tokens: unknown): tokens is number {
+  return typeof tokens === "number" && Number.isFinite(tokens) && tokens > 0;
 }
 
 function closePending(state: TranscriptState, event: AnyAppEvent): TranscriptState {

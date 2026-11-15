@@ -17,7 +17,7 @@ import { ThinkingBlock } from "./thinking-block.js";
 import { ToolCard } from "./tool-card.js";
 import { NoticeRow } from "./notice-row.js";
 import { CompactedRow } from "./compacted-row.js";
-import { turnSummaryLabel } from "../../../ui-core/rendering/duration.js";
+import { turnSummaryLabel, turnTokensLabel } from "../../../ui-core/rendering/duration.js";
 import { lineChangeLabels } from "../../../ui-core/rendering/line-change-labels.js";
 import { wrapAnsiLine } from "../../../ui-core/rendering/markdown.js";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
@@ -180,7 +180,8 @@ function TurnSummaryRow(props: {
   const { item, theme } = props;
   const { width } = useTerminalDimensionsContext();
   const changes = lineChangeLabels(item.changes);
-  const label = `✻ ${turnSummaryLabel(item.durationMs, item.status, item.changes)}`;
+  const tokens = turnTokensLabel(item.tokens);
+  const label = `✻ ${turnSummaryLabel(item.durationMs, item.status, item.changes)}${tokens ? ` · ${tokens}` : ""}`;
   const lines = wrapAnsiLine(label, Math.max(1, props.contentWidth ?? width - 6));
   return (
     <box style={{ flexDirection: "column", width: "100%", marginBottom: 1 }}>

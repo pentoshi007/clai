@@ -52,7 +52,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /mistral/i,
     /reason/i,
   ],
-  gemini: [/gemini-2\.5/i, /gemini-3/i, /gemini-3\.5/i],
+  gemini: [/gemini-(?:2\.[5-9]|[3-9]|[1-9]\d)/i, /gemini-[a-z]/i],
   openrouter: [
     /:thinking/i,
     /deepseek-r1/i,

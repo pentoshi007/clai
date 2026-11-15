@@ -169,6 +169,7 @@ function serializeTranscriptItem(
         timestamp: item.timestamp,
         ...(item.changes ? { changes: item.changes } : {}),
         ...(item.generation ? { generation: item.generation } : {}),
+        ...(item.tokens !== undefined ? { tokens: item.tokens } : {}),
         done: true,
       };
     case "compacted":

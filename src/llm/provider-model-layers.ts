@@ -12,6 +12,7 @@ import { MODEL_RULES } from "./model-layers/model-rules.js";
 import { nvidiaModelLayer } from "./model-layers/nvidia-layer.js";
 import { modelCatalogFacts } from "./capabilities.js";
 import { constellationModelLayer } from "./constellation-profile.js";
+import { geminiModelLayer } from "./gemini-thinking.js";
 import { hinokiModelLayer } from "./hinoki-profile.js";
 import { openAiEffortCatalogLayer } from "./catalog-effort-layer.js";
 import { catalogDrivesEffortLayer } from "./capability/catalog-trust.js";
@@ -294,6 +295,9 @@ export function modelLayerFor(
           : {}),
       },
     };
+  }
+  if (provider === "gemini") {
+    return geminiModelLayer(model, modelCatalogFacts(provider, model)?.reasoning?.supported);
   }
   if (provider === "nvidia") return nvidiaModelLayer(model);
   if (provider === "bynara") return bynaraModelLayer(model);

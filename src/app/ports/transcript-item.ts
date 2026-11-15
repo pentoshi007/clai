@@ -83,6 +83,7 @@ export interface TurnSummaryItem {
   status: "completed" | "aborted" | "error";
   changes?: LineChangeTotals | undefined;
   generation?: GenerationMetrics | undefined;
+  tokens?: number | undefined;
   timestamp?: number | undefined;
   done: boolean;
 }

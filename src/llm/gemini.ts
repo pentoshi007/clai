@@ -2,6 +2,7 @@ import type {
   ChatMessage,
   CompletionRequest,
   CompletionResult,
+  ReasoningEffort,
   ReasoningPreference,
   TokenUsage,
 } from "../types.js";
@@ -42,6 +43,13 @@ import {
   createReasoningArtifactProvenance,
 } from "./reasoning-artifacts.js";
 import { compileRequestPlan, type RequestPlanV1 } from "./request-plan.js";
+import { displayReasoningEfforts, modelCatalogFacts } from "./capabilities.js";
+import { nearestAcceptedEffort } from "./reasoning-controls.js";
+import {
+  GEMINI_UNSIGNED_TOOL_CALL_SIGNATURE,
+  geminiThinkingSpec,
+  type GeminiThinkingSpec,
+} from "./gemini-thinking.js";
 
 const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -95,6 +103,9 @@ function geminiContents(
       target,
       observe,
     },
+    geminiModelThinkingSpec(model).requiresToolCallSignatures
+      ? { unsignedToolCallSignature: GEMINI_UNSIGNED_TOOL_CALL_SIGNATURE }
+      : undefined,
   ) as Array<{
     role: "user" | "model";
     parts: GeminiPart[];
@@ -110,8 +121,18 @@ function systemInstruction(
   return parts.length > 0 ? { parts } : undefined;
 }
 
-function isGemini3Model(model: string): boolean {
-  return /gemini-3(?:[.-]|$)/i.test(model);
+const GEMINI_THINKING_BUDGETS: Partial<Record<ReasoningEffort, number>> = {
+  low: 1_024,
+  medium: 4_096,
+  high: 16_384,
+};
+
+function geminiAcceptedEfforts(
+  model: string,
+  spec: GeminiThinkingSpec,
+): readonly string[] {
+  const known = displayReasoningEfforts("gemini", model);
+  return known?.length ? known : spec.efforts;
 }
 
 function geminiThinkingConfig(
@@ -119,41 +140,35 @@ function geminiThinkingConfig(
   model: string,
 ): Record<string, unknown> | undefined {
   if (!reasoning) return undefined;
-  if (isGemini3Model(model)) {
-    const effort = reasoning?.effort ?? "medium";
-    const wantsMinimal = !reasoning?.enabled || effort === "none" || effort === "minimal";
-    const isPro = /gemini-3(?:\.\d)?-pro/i.test(model);
-    const thinkingLevel = wantsMinimal
-      ? isPro
-        ? "low"
-        : "minimal"
-      : effort === "low"
-        ? "low"
-        : effort === "high" || effort === "xhigh" || effort === "max"
-          ? "high"
-          : "medium";
-    return {
-      thinkingLevel,
-      ...(reasoning?.enabled ? { includeThoughts: true } : {}),
-    };
+  const spec = geminiModelThinkingSpec(model);
+  if (spec.control === "none") return undefined;
+  const efforts = geminiAcceptedEfforts(model, spec);
+  const enabled = reasoning.enabled && reasoning.effort !== "none";
+  if (spec.control === "level") {
+    const thinkingLevel = nearestAcceptedEffort(
+      enabled ? reasoning.effort ?? "medium" : "none",
+      efforts,
+    );
+    if (!thinkingLevel) return undefined;
+    return { thinkingLevel, ...(enabled ? { includeThoughts: true } : {}) };
   }
+  if (!enabled) return spec.canDisable ? { thinkingBudget: 0 } : undefined;
+  const level = nearestAcceptedEffort(
+    reasoning.effort ?? "medium",
+    efforts,
+  ) as ReasoningEffort | undefined;
+  return {
+    thinkingBudget:
+      GEMINI_THINKING_BUDGETS[level ?? "medium"] ?? GEMINI_THINKING_BUDGETS.medium,
+    includeThoughts: true,
+  };
+}
 
-  if (!/gemini-2\.5/i.test(model)) return undefined;
-  if (!reasoning?.enabled) {
-    return /gemini-2\.5-(?:flash|flash-lite)/i.test(model)
-      ? { thinkingBudget: 0 }
-      : undefined;
-  }
-  switch (reasoning.effort) {
-    case "low":
-      return { thinkingBudget: 1_024, includeThoughts: true };
-    case "high":
-    case "xhigh":
-    case "max":
-      return { thinkingBudget: 16_384, includeThoughts: true };
-    default:
-      return { thinkingBudget: 4_096, includeThoughts: true };
-  }
+function geminiModelThinkingSpec(model: string): GeminiThinkingSpec {
+  return geminiThinkingSpec(
+    model,
+    modelCatalogFacts("gemini", model)?.reasoning?.supported,
+  );
 }
 
 /**
@@ -273,13 +288,26 @@ export const geminiProvider: LlmProvider = {
         models?: Array<{
           name?: string;
           supportedGenerationMethods?: string[];
+          thinking?: boolean;
           [field: string]: unknown;
         }>;
         nextPageToken?: string;
       }>(response);
       for (const model of data.models ?? []) {
         if (!model.name || !model.supportedGenerationMethods?.includes("generateContent")) continue;
-        entries.push({ ...model, id: model.name.replace(/^models\//, "") });
+        const id = model.name.replace(/^models\//, "");
+        entries.push({
+          ...model,
+          id,
+          ...(typeof model.thinking === "boolean"
+            ? {
+                reasoning: {
+                  supported: model.thinking,
+                  supported_efforts: [...geminiThinkingSpec(id, model.thinking).efforts],
+                },
+              }
+            : {}),
+        });
       }
       const nextPageToken = data.nextPageToken?.trim();
       if (!nextPageToken || seenPageTokens.has(nextPageToken)) break;

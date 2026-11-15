@@ -7,6 +7,7 @@ import type { ToolCallingMode } from "./tool-protocol.js";
 import { WIRE_EFFORT_SCALE } from "./reasoning-controls.js";
 import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
+import { geminiThinkingSpec } from "./gemini-thinking.js";
 import { GATEWAY_FAMILY_EXCLUDED_PROVIDERS } from "./provider-profile-layers.js";
 import {
   endpointAcceptedEfforts,
@@ -441,6 +442,7 @@ function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
   const facts = modelCatalogFacts(provider, model);
   if (facts?.reasoning?.supported !== undefined) return facts.reasoning.supported;
   if (catalogAdvertisedEfforts(provider, model) !== undefined) return true;
+  if (provider === "gemini") return geminiThinkingSpec(model).control !== "none";
   if (familyForProvider(provider, model)) return true;
   const patterns = REASONING_PATTERNS[provider];
   if (patterns === undefined) return true;
@@ -613,6 +615,13 @@ export function modelReasoningEfforts(
   }
   const advertised = catalogAdvertisedEfforts(provider, model);
   if (advertised !== undefined) return advertised;
+  if (provider === "gemini") {
+    const { efforts } = geminiThinkingSpec(
+      model,
+      modelCatalogFacts(provider, model)?.reasoning?.supported,
+    );
+    return efforts.length > 0 ? efforts : undefined;
+  }
   const family = familyForProvider(provider, model);
   return family && family.acceptedEfforts.length > 0
     ? family.acceptedEfforts

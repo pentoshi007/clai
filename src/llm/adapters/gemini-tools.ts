@@ -232,9 +232,14 @@ function assistantReasoningParts(
   };
 }
 
+export interface GeminiToolContentOptions {
+  readonly unsignedToolCallSignature?: string | undefined;
+}
+
 export function toGeminiToolContents(
   messages: ChatMessage[],
   replay?: GeminiReasoningReplayOptions,
+  options?: GeminiToolContentOptions,
 ): Array<{ role: "user" | "model"; parts: GeminiPart[] }> {
   const contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }> = [];
 
@@ -284,7 +289,9 @@ export function toGeminiToolContents(
         if (toolCallIndex > 0) {
           parts.push(...(thoughtsByTool.get(toolCallIndex) ?? []));
         }
-        const thoughtSignature = reasoning.signatureForTool(tc, toolCallIndex);
+        const thoughtSignature =
+          reasoning.signatureForTool(tc, toolCallIndex) ??
+          (toolCallIndex === 0 ? options?.unsignedToolCallSignature : undefined);
         parts.push({
           functionCall: {
             name: toWireName(tc.name),
