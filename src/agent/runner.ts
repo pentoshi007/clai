@@ -620,6 +620,8 @@ export async function runAgentTurn(
       emitToolStart: (eventId) => emit({ type: "tool-start", id: eventId }),
       writeToolOutput: (eventId, chunk) => writeToolOutput(eventId, chunk),
       emitToolResult,
+      signature: (call) => loopGuard.canonicalize(call.name, call.args),
+      changeEpoch: () => loopGuard.changeEpoch,
     });
 
     const promptMutex = createPromptMutex();

@@ -5,6 +5,7 @@ import { copyString } from "../os/copy-string.js";
 import {
   completedOperationObservationDigest,
   completedOperationSignature,
+  isCompletedReadOperation,
   normalizeOperationArgs,
   type CompletedOperation,
 } from "./outcomes.js";
@@ -19,6 +20,14 @@ export interface ToolAttempt {
 }
 
 const MAX_ATTEMPT_HISTORY = 400;
+
+function rememberBounded(map: Map<string, string>, key: string, value: string): void {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size <= MAX_ATTEMPT_HISTORY) return;
+  const oldest = map.keys().next().value;
+  if (oldest !== undefined) map.delete(oldest);
+}
 
 const READ_ONLY_TOOLS = new Set([
   "web.fetch",
@@ -128,8 +137,11 @@ export class LoopGuard {
   private sequenceRunCounts = new Map<string, number>();
   private sequenceOutcomes = new Map<
     string,
-    { fingerprint: string; unchangedRuns: number }
+    { fingerprint: string; unchangedRuns: number; epoch: number }
   >();
+  private epoch = 0;
+  private sequenceObservedEpoch = 0;
+  private lastObservations = new Map<string, string>();
   private sequenceReadOnly = new Map<string, boolean>();
   private emptySuccessfulCalls = new Map<
     string,
@@ -179,6 +191,31 @@ export class LoopGuard {
       digest,
       repeats: prior?.digest === digest ? prior.repeats + 1 : 0,
     });
+  }
+
+  get changeEpoch(): number {
+    return this.epoch;
+  }
+
+  private observesOnly(name: string, args: Record<string, unknown>): boolean {
+    return (
+      READ_ONLY_TOOLS.has(name) ||
+      STATE_POLLING_TOOLS.has(name) ||
+      isCompletedReadOperation(name, args)
+    );
+  }
+
+  private recordObservedChange(
+    name: string,
+    args: Record<string, unknown>,
+    sig: string,
+    observation: string,
+  ): void {
+    const prior = this.lastObservations.get(sig);
+    rememberBounded(this.lastObservations, sig, observation);
+    const changed =
+      prior === undefined ? !this.observesOnly(name, args) : prior !== observation;
+    if (changed) this.epoch += 1;
   }
 
   identicalPollRepeats(name: string, args: Record<string, unknown>): number {
@@ -305,6 +342,7 @@ export class LoopGuard {
     }
     const signature = this.sequenceSignature(calls);
     const currentCount = this.sequenceRunCounts.get(signature) ?? 0;
+    this.sequenceObservedEpoch = this.epoch;
 
     if (signature !== this.lastActionSequence) {
       this.lastActionSequence = signature;
@@ -314,7 +352,8 @@ export class LoopGuard {
       this.unchangedActionSequenceRuns = 0;
       this.consecutiveSequenceRepeats = 0;
       if (this.sequenceIsStatePolling(calls)) return none;
-      const prior = this.sequenceOutcomes.get(signature);
+      const recorded = this.sequenceOutcomes.get(signature);
+      const prior = recorded?.epoch === this.epoch ? recorded : undefined;
       if (prior && prior.unchangedRuns >= 3) {
         this.totalSequenceSuppressions += 1;
         return {
@@ -452,10 +491,13 @@ export class LoopGuard {
         : 1;
       this.lastActionSequenceOutcome = comparableOutcome;
       const prior = this.sequenceOutcomes.get(signature);
+      const repeatsUnchanged =
+        prior?.fingerprint === comparableOutcome &&
+        prior.epoch === this.sequenceObservedEpoch;
       this.sequenceOutcomes.set(signature, {
         fingerprint: comparableOutcome,
-        unchangedRuns:
-          prior?.fingerprint === comparableOutcome ? prior.unchangedRuns + 1 : 1,
+        unchangedRuns: repeatsUnchanged ? prior.unchangedRuns + 1 : 1,
+        epoch: this.epoch,
       });
     }
     this.sequenceRunCounts.set(signature, (this.sequenceRunCounts.get(signature) ?? 0) + 1);
@@ -549,17 +591,13 @@ export class LoopGuard {
       this.attempts.splice(0, this.attempts.length - MAX_ATTEMPT_HISTORY);
     }
     this.recordPollObservation(name, sig, ok, observationDigest);
+    if (observationDigest !== undefined) {
+      this.recordObservedChange(name, args, sig, `${ok}:${exitCode ?? ""}:${observationDigest}`);
+    }
     this.signatureCount.set(sig, (this.signatureCount.get(sig) ?? 0) + 1);
     if (ok) {
       this.signatureSuccess.set(sig, true);
-      if (observation) {
-        this.successfulOutputs.delete(sig);
-        this.successfulOutputs.set(sig, observation);
-        if (this.successfulOutputs.size > MAX_ATTEMPT_HISTORY) {
-          const oldest = this.successfulOutputs.keys().next().value;
-          if (oldest !== undefined) this.successfulOutputs.delete(oldest);
-        }
-      }
+      if (observation) rememberBounded(this.successfulOutputs, sig, observation);
       if (name !== "task.update" && name !== "plan.create") {
         this.lastSuccessfulNonMetaStep = step;
       }

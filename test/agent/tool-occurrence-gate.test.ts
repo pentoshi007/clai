@@ -282,6 +282,53 @@ describe("tool occurrence execution gate (T620)", () => {
     expect(streamMock).toHaveBeenCalledTimes(3);
   });
 
+  it("re-executes a reused call id after an intervening fix", async () => {
+    const counter = join(cwd, "run-counter.txt");
+    const marker = join(cwd, "fixed.txt");
+    const command = `node -e 'const fs=require("fs");const p=${JSON.stringify(counter)};const n=Number(fs.existsSync(p)?fs.readFileSync(p,"utf8"):0)+1;fs.writeFileSync(p,String(n));console.log("run "+n)'`;
+    let turn = 0;
+    streamMock.mockImplementation(
+      async (request: CompletionRequest): Promise<CompletionResult> => {
+        turn += 1;
+        const call = (
+          name: string,
+          args: Record<string, unknown>,
+        ): CompletionResult => ({
+          text: "",
+          provider: "openai",
+          model: "gpt-test",
+          toolCalls: [{ id: "call_0", name, args }],
+          finishReason: "tool_calls",
+        });
+        if (turn === 1) return call("shell.exec", { command, cwd });
+        if (turn === 2) return call("fs.write", { path: marker, content: "fixed\n" });
+        if (turn === 3) return call("shell.exec", { command, cwd });
+        expect(
+          request.messages.some((message) =>
+            message.content.includes("did not run again"),
+          ),
+        ).toBe(false);
+        return {
+          text: "ran twice around the fix",
+          provider: "openai",
+          model: "gpt-test",
+          toolCalls: [turnEnd("call_end")],
+          finishReason: "tool_calls",
+        };
+      },
+    );
+
+    await expect(
+      runAgentLoop("run, fix, and run again", {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        maxSteps: 6,
+      }),
+    ).resolves.toBe("ran twice around the fix");
+    await expect(readFile(marker, "utf8")).resolves.toBe("fixed\n");
+    await expect(readFile(counter, "utf8")).resolves.toBe("2");
+  });
+
   it("never executes truncated tool arguments even with terminal confirmation", async () => {
     let turn = 0;
     const truncated = `{"path":${JSON.stringify(cwd)}`;
