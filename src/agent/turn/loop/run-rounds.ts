@@ -776,7 +776,7 @@ export const runTurnRounds = async (
           aborted?: boolean | undefined;
           suppressedRepeat?: boolean | undefined;
         },
-      ): void => deps.wireOccurrences.remember(bc.wireId, res);
+      ): void => deps.wireOccurrences.remember(bc.wireId, bc.call, res);
 
       const groups = groupToolCallsForExecution(
         allCalls,
@@ -805,6 +805,7 @@ export const runTurnRounds = async (
         },
         groups,
       );
+      deps.wireOccurrences.settleRound();
 
       settleUnrunCalls(
         {

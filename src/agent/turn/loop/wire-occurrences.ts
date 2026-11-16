@@ -22,6 +22,8 @@ export interface WireOccurrencePorts {
     result: ToolResult,
     contextOutput: string,
   ) => void;
+  readonly signature: (call: ToolCall) => string;
+  readonly changeEpoch: () => number;
 }
 
 export const DUPLICATE_WIRE_CALL_NOTICE =
@@ -36,6 +38,7 @@ export interface WireOccurrenceLedger {
   ) => ReplayedOccurrence | undefined;
   readonly remember: (
     wireId: string | undefined,
+    call: ToolCall,
     executed: {
       call: ToolCall;
       result: ToolResult;
@@ -45,16 +48,29 @@ export interface WireOccurrenceLedger {
       suppressedRepeat?: boolean | undefined;
     },
   ) => void;
+  readonly settleRound: () => void;
+}
+
+interface RememberedOccurrence extends ExecutedOccurrence {
+  readonly signature: string;
+  readonly epoch: number;
 }
 
 export const createWireOccurrenceLedger = (
   ports: WireOccurrencePorts,
 ): WireOccurrenceLedger => {
-  const executed = new Map<string, ExecutedOccurrence>();
+  const executed = new Map<string, RememberedOccurrence>();
+  const rememberedThisRound = new Set<string>();
   return {
     replay: (wireId, call, eventId) => {
       const prior = wireId ? executed.get(wireId) : undefined;
-      if (!prior) return undefined;
+      if (
+        !prior ||
+        prior.signature !== ports.signature(call) ||
+        prior.epoch !== ports.changeEpoch()
+      ) {
+        return undefined;
+      }
       const output = `${DUPLICATE_WIRE_CALL_NOTICE}\n\n${prior.contextOutput}`;
       const result: ToolResult = {
         ...prior.result,
@@ -79,15 +95,26 @@ export const createWireOccurrenceLedger = (
         suppressedRepeat: true,
       };
     },
-    remember: (wireId, result) => {
-      if (!wireId || executed.has(wireId)) return;
+    remember: (wireId, call, result) => {
+      if (!wireId) return;
       if (!result.ok || result.aborted || result.suppressedRepeat) return;
       executed.set(wireId, {
         call: result.call,
         result: result.result,
         contextOutput: result.contextOutput,
         ok: result.ok,
+        signature: ports.signature(call),
+        epoch: ports.changeEpoch(),
       });
+      rememberedThisRound.add(wireId);
+    },
+    settleRound: () => {
+      const epoch = ports.changeEpoch();
+      for (const wireId of rememberedThisRound) {
+        const occurrence = executed.get(wireId);
+        if (occurrence) executed.set(wireId, { ...occurrence, epoch });
+      }
+      rememberedThisRound.clear();
     },
   };
 };
