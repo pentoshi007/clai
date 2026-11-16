@@ -43,8 +43,8 @@ export function baseLineFg(line: string, theme: Theme): string {
 export const parseDiffLine = parseModalDiffLine;
 
 function matchStyle(kind: PagerLineSegment["kind"], theme: Theme): { fg: string; bg: string; attributes: number } | undefined {
-  if (kind === "active") return { fg: theme.background, bg: theme.activity, attributes: TextAttributes.BOLD };
-  if (kind === "match") return { fg: theme.white, bg: theme.selection, attributes: TextAttributes.BOLD };
+  if (kind === "active") return { fg: theme.searchActiveText, bg: theme.searchActive, attributes: TextAttributes.BOLD };
+  if (kind === "match") return { fg: theme.searchMatchText, bg: theme.searchMatch, attributes: TextAttributes.NONE };
   return undefined;
 }
 
@@ -79,6 +79,7 @@ export function bodyOnlyForCopy(full: string): string {
 export const PagerLine = memo(PagerLineImpl);
 
 function PagerLineImpl(props: {
+  id?: string | undefined;
   line: string;
   index: number;
   theme: Theme;
@@ -95,6 +96,7 @@ function PagerLineImpl(props: {
   tone?: PagerCommandTone | undefined;
 }): ReactNode {
   const {
+    id: rowId,
     line,
     index,
     theme,
@@ -115,7 +117,7 @@ function PagerLineImpl(props: {
   if (subagentSpans) {
     return (
       <text
-        id={`pager-line-${index}`}
+        id={rowId ?? `pager-line-${index}`}
         selectable
         wrapMode="word"
         style={{ width: "100%", bg: theme.background }}
@@ -135,7 +137,7 @@ function PagerLineImpl(props: {
     if (styled && lineHasMatch) {
       return (
         <text
-          id={`pager-line-${index}`}
+          id={rowId ?? `pager-line-${index}`}
           content={styledWithMatches(styled, segmentPagerLine(body, index, matches, activeMatchIndex), theme)}
           selectable
           wrapMode="word"
@@ -146,7 +148,7 @@ function PagerLineImpl(props: {
     if (styled) {
       return (
         <text
-          id={`pager-line-${index}`}
+          id={rowId ?? `pager-line-${index}`}
           content={styled}
           selectable
           wrapMode="word"
@@ -154,28 +156,29 @@ function PagerLineImpl(props: {
         />
       );
     }
-    const isMatchLine =
-      hasQuery &&
-      matches.length > 0 &&
-      matches.some((m) => m.line === index);
+    if (lineHasMatch) {
+      return (
+        <text
+          id={rowId ?? `pager-line-${index}`}
+          selectable
+          wrapMode="word"
+          style={{ width: "100%", fg: theme.foreground, bg: theme.background }}
+        >
+          {segmentPagerLine(body, index, matches, activeMatchIndex).map((segment, i) => (
+            <span key={i} style={matchStyle(segment.kind, theme) ?? { fg: theme.foreground }}>
+              {segment.text}
+            </span>
+          ))}
+        </text>
+      );
+    }
     return (
       <text
-        id={`pager-line-${index}`}
+        id={rowId ?? `pager-line-${index}`}
         content={body}
         selectable
         wrapMode="word"
-        style={{
-          width: "100%",
-          fg: isActiveLine ? theme.background : theme.foreground,
-          ...(isActiveLine
-            ? {
-                bg: theme.activity,
-                attributes: TextAttributes.BOLD,
-              }
-            : isMatchLine
-              ? { bg: theme.selection }
-              : { bg: theme.background }),
-        }}
+        style={{ width: "100%", fg: theme.foreground, bg: theme.background }}
       />
     );
   }
@@ -210,7 +213,7 @@ function PagerLineImpl(props: {
 
     return (
       <box
-        id={`pager-line-${index}`}
+        id={rowId ?? `pager-line-${index}`}
         style={{
           flexDirection: "row",
           width: "100%",
@@ -267,7 +270,7 @@ function PagerLineImpl(props: {
     if (codeSpans && codeSpans.length > 0) {
       return (
         <text
-          id={`pager-line-${index}`}
+          id={rowId ?? `pager-line-${index}`}
           selectable
           style={{
             width: "100%",
@@ -284,7 +287,7 @@ function PagerLineImpl(props: {
     }
     return (
       <text
-        id={`pager-line-${index}`}
+        id={rowId ?? `pager-line-${index}`}
         selectable
         {...wrapProps}
         style={{
@@ -302,7 +305,7 @@ function PagerLineImpl(props: {
   if (codeSpans && codeSpans.length > 0) {
     return (
       <text
-        id={`pager-line-${index}`}
+        id={rowId ?? `pager-line-${index}`}
         selectable
         style={{ width: "100%", bg: isActiveLine ? theme.rowA : theme.background }}
       >
@@ -312,7 +315,7 @@ function PagerLineImpl(props: {
   }
   return (
     <text
-      id={`pager-line-${index}`}
+      id={rowId ?? `pager-line-${index}`}
       selectable
       {...wrapProps}
       style={{
@@ -321,41 +324,11 @@ function PagerLineImpl(props: {
         bg: isActiveLine ? theme.rowA : theme.background,
       }}
     >
-      {segments.map((seg, i) => {
-        if (seg.kind === "plain") {
-          return (
-            <span key={i} style={{ fg: baseFg }}>
-              {seg.text}
-            </span>
-          );
-        }
-        if (seg.kind === "active") {
-          return (
-            <span
-              key={i}
-              style={{
-                fg: theme.background,
-                bg: theme.activity,
-                attributes: TextAttributes.BOLD,
-              }}
-            >
-              {seg.text}
-            </span>
-          );
-        }
-        return (
-          <span
-            key={i}
-            style={{
-              fg: theme.white,
-              bg: theme.selection,
-              attributes: TextAttributes.BOLD,
-            }}
-          >
-            {seg.text}
-          </span>
-        );
-      })}
+      {segments.map((seg, i) => (
+        <span key={i} style={matchStyle(seg.kind, theme) ?? { fg: baseFg }}>
+          {seg.text}
+        </span>
+      ))}
     </text>
   );
 }

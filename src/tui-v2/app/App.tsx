@@ -67,6 +67,7 @@ import {
   appWidthBudget,
   focusAfterPlanSuppression,
 } from "./layout-widths.js";
+import { consumePagerEscape } from "../components/pager/pager-escape-port.js";
 
 
 export function App(): ReactNode {
@@ -249,6 +250,7 @@ export function App(): ReactNode {
     if (overlay.kind !== "none") {
       if (chord === "escape") {
         key.preventDefault();
+        if (overlay.kind === "pager" && consumePagerEscape()) return;
         services.overlay.close();
         handleEscapeCancellation(true);
         return;

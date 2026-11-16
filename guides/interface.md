@@ -24,7 +24,7 @@ Code blocks in responses have a **copy** tab at the right end of their header; c
 
 Large pastes collapse into a line or character count inside the composer while retaining the full text for submission. In both interfaces, place the cursor near a shortened block and press `Ctrl+E` to expand just that block for editing. `Alt+E` also works. When no shortened block is present, `Ctrl+E` moves to the end of the current line. In OpenTUI, hovering over an inline placeholder opens a preview that stays visible while the pointer remains inside the composer; double-clicking the placeholder or preview also expands it. Pasted transcripts remain one draft, including when a terminal sends unbracketed text in bursts over SSH. Press `Enter` after the paste has finished to submit it.
 
-Type `/` at the start of the draft or after a space to browse commands. Use the arrow keys to select, `Tab` to complete, and `Enter` to run the command. A leading command retains its arguments, such as `/model model-name`; an inline command runs while preserving the surrounding draft. Completed commands also run after the suggestion menu is dismissed. Unknown leading commands show a local warning, and paths such as `/tmp/notes.txt` remain ordinary prompts.
+Type `/` at the start of the draft or after a space to browse commands. Use the arrow keys to select, `Tab` to complete, and `Enter` to run the command. A leading command retains its arguments, such as `/model model-name`; an inline command runs while preserving the surrounding draft. Completed commands also run after the suggestion menu is dismissed. Unknown leading commands show a local warning, and paths such as `/tmp/notes.txt`, or an existing directory such as `/tmp` on its own, remain ordinary prompts. Commands still open the menu and run when the draft begins with invisible characters copied from another app, or with the full-width `／` that Japanese and Chinese input methods produce for the slash key.
 
 `/settings` works in both interfaces. Use `↑`/`↓`, `Tab`, or `Shift+Tab` to select a preference; `←` turns a toggle off and `→` turns it on. `Enter` or `Space` toggles it without closing settings, typing filters the list, and `Esc` closes it. Changes persist immediately. Automatic output saving starts off; see [configuration and privacy](configuration.md).
 
@@ -45,7 +45,7 @@ In OpenTUI, the compact `esc: cancel` button stays the same width on hover. Clic
 | Background jobs | `Ctrl+J` |
 | Expand thinking / tool output | `Ctrl+T` / `Ctrl+O` |
 | Return to the latest transcript content | `Ctrl+D` or click the contextual **Jump to latest** control |
-| Search transcript when focused | `Ctrl+R` |
+| Search the transcript or the open pager | `Ctrl+R` |
 | Repaint screen | `F5` or `/redraw` |
 | Help / full shortcut reference | `Ctrl+G` / `/shortcuts` |
 
@@ -60,3 +60,11 @@ Classic transcripts show shell calls as **Shell**, file reads as **Explored** wi
 OpenTUI tool-output previews also show only their first three lines, connected directly beneath the command row without an `OUTPUT` label. `Ctrl+O` expands them and the full-output pager remains available. Saved-output paths appear only when an output file exists. Structured file lists and diffs retain their dedicated presentation.
 
 In OpenTUI, task titles and statuses keep their original colors and formatting while extra information starts collapsed. Click the small shaded `+` / `−` button immediately after a task title, or use **Expand all** / **Collapse all** beside the progress bar. Buttons center their glyphs and change background on hover or keyboard focus without brackets or underlines; mouse clicks leave no persistent highlight. Expanded information keeps the original muted text without added fields or headers; controls follow the end of wrapped titles in narrow panes. Scrolling keeps wrapped titles together when they fit the viewport, and keyboard selection reveals the whole title without unrelated progress updates moving your reading position. With the task pane focused, `↑` / `↓` select a task, `Enter` toggles its details, `→` / `←` expand or collapse it, `E` / `C` expand or collapse all, and `PageUp` / `PageDown` scroll. `Ctrl+P` still opens the full plan view.
+
+## Searching the transcript and pagers
+
+`Ctrl+R` opens the same search in both interfaces on macOS, Linux, and Windows, whether the composer, transcript, or task pane has focus. It also works on non-Latin keyboard layouts in terminals that report the base key, such as Kitty, WezTerm, Ghostty, and foot. Search is case-insensitive, matches the text as typed (special characters are literal), and lets a space in the query match any run of spaces or line breaks.
+
+As you type, every visible match is highlighted in the transcript and the view moves to the closest match above where you were reading. The current match uses a brighter highlight, and the search bar shows its position, such as `3/17`. While typing, `↑` or `Ctrl+R` moves to the previous match and `↓` to the next; each wraps around at the ends with a short notice. `Enter` closes the input and keeps the highlights; with the transcript focused, `n` and `N` then step forward and back, and other typing returns to the composer. `Ctrl+R` reopens the input with the same query, and `Esc` clears the search. OpenTUI searches the full message text, opening collapsed reasoning and long prompts to show a match. Classic searches the transcript as it is displayed.
+
+The same keys work inside a pager: `Ctrl+R` searches it from the top visible line, `n`/`N` step through matches, and `Esc` clears the search before a second `Esc` closes the pager. Only the matched text is highlighted, including on long lines that wrap. In paged artifact viewers, stepping past the last match on a page continues on the next page that contains one.

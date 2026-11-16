@@ -32,6 +32,9 @@ import { completionOverlayRows } from "../panels/completion-rows.js";
 import { overlaySize } from "../../ui-core/layout/overlay-size.js";
 import { createClassicAppWiring, overlayDemandContext, type ClassicAppWiring } from "./app-wiring.js";
 import { introInputFor, useFeed } from "./use-feed.js";
+import { FindBar } from "../panels/FindBar.js";
+import { FIND_BAR_ROWS } from "../panels/find-bar.js";
+import { feedHighlight } from "../feed/feed-search.js";
 
 const EXIT_HINT = "ctrl+c twice to exit";
 
@@ -60,6 +63,7 @@ export function ClassicApp(
     return () => wiring.dispose();
   }, [providedWiring, wiring]);
   const snapshot = useSyncExternalStore(wiring.subscribe, wiring.getSnapshot, wiring.getSnapshot);
+  const find = useSyncExternalStore(wiring.find.subscribe, wiring.find.getSnapshot, wiring.find.getSnapshot);
   const { session, composer, panel, plan, columns, rows } = snapshot;
   const expanded = panel.kind === "picker" || panel.kind === "pager";
   const expandedSize = overlaySize(columns, rows);
@@ -67,11 +71,14 @@ export function ClassicApp(
   const shellWidth = innerShellWidth(columns);
   const completionOpen = panel.kind === "none" && composer.menu.kind !== "none";
   const panelContext = overlayDemandContext(panel);
+  const findVisible = !panelContext && !completionOpen && find.open;
   const overlay = panelContext
     ? { kind: panelContext, rowsWanted: wiring.panels.rowsWanted() }
     : completionOpen
       ? { kind: "picker" as const, rowsWanted: completionOverlayRows(rows) }
-      : undefined;
+      : findVisible
+        ? { kind: "transcript-search" as const, rowsWanted: FIND_BAR_ROWS, minRows: FIND_BAR_ROWS }
+        : undefined;
   const composerTextRows = useMemo(
     () => composerTextRowsWanted({ columns: shellWidth, text: composer.state.text }),
     [shellWidth, composer.state.text],
@@ -123,6 +130,12 @@ export function ClassicApp(
     [wiring, feed.blocks],
   );
   const selection = services.selection.getState();
+  const findMatches = useMemo(() => wiring.find.matches(feed.blocks), [wiring, feed.blocks, find.query]);
+  const findActive = useMemo(() => wiring.find.activeIndex(findMatches), [wiring, findMatches, find.active]);
+  const highlight = useMemo(
+    () => (find.open && findMatches.length > 0 ? feedHighlight(findMatches, findActive) : undefined),
+    [find.open, findMatches, findActive],
+  );
   const standaloneLabel = providedWiring === undefined ? "clai classic · Ctrl+C twice to exit" : undefined;
   const phase = wiring.contextLimitEditingValue ? "suspended" : session.running ? "running" : "idle";
   const metaLabel = formatComposerMeta(
@@ -209,16 +222,18 @@ export function ClassicApp(
   }, [wiring, expanded, shellPadding, composerTop]);
 
   const panelSlot = panelContext ? (
-    <PanelHost controller={wiring.panels} ink={feed.ink} columns={expanded ? expandedSize.width : shellWidth} rows={expanded ? expandedSize.height : layout.overlay} jobs={snapshot.jobs} transcript={snapshot.transcript} now={snapshot.now} />
+    <PanelHost controller={wiring.panels} ink={feed.ink} columns={expanded ? expandedSize.width : shellWidth} rows={expanded ? expandedSize.height : layout.overlay} jobs={snapshot.jobs} now={snapshot.now} />
   ) : completionOpen ? (
     <CompletionPanel ink={feed.ink} menu={composer.menu} active={composer.active} columns={shellWidth} rows={layout.overlay} />
+  ) : findVisible ? (
+    <FindBar ink={feed.ink} columns={shellWidth} rows={layout.overlay} find={find} matchCount={findMatches.length} activeIndex={findActive} />
   ) : undefined;
 
   if (expanded) return <Box width={columns} height={rows} paddingX={expandedSize.marginX} paddingY={expandedSize.marginY}>{panelSlot}</Box>;
 
   return <Box width={columns} paddingX={shellPadding} flexDirection="column">
     {standaloneLabel === undefined ? null : <Text wrap="truncate">{standaloneLabel}</Text>}
-    <Chrome layout={layout} columns={shellWidth} liveTail={<LiveTail window={feed.window} rows={layout.liveTail} columns={shellWidth} document={selectionDocument} selection={selection} />} slots={{
+    <Chrome layout={layout} columns={shellWidth} liveTail={<LiveTail window={feed.window} rows={layout.liveTail} columns={shellWidth} document={selectionDocument} selection={selection} ink={feed.ink} highlight={highlight} />} slots={{
       plan: plan && snapshot.planVisible ? <PlanPanel ink={feed.ink} columns={shellWidth} rows={layout.plan} plan={plan} state={panel.plan} focused={services.focus.activeContext() === "plan"} /> : undefined,
       overlay: panelSlot,
       queue: snapshot.queueVisible ? <QueuePanel ink={feed.ink} columns={shellWidth} allocatedRows={layout.queue} queued={session.queued} selected={snapshot.queueSelected} /> : undefined,

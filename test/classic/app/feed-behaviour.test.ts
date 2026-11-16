@@ -143,19 +143,31 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
     expect(harness.services.overlay.getState().kind).toBe("none");
   });
 
-  it("opens the search panel and captures transcript-search focus", () => {
+  it("opens transcript find and captures transcript-search focus", () => {
     harness = createHarness();
     act("transcript.search", "ctrl+r");
-    expect(harness.wiring.panels.getSnapshot().search).toBeDefined();
+    expect(harness.wiring.find.getSnapshot()).toMatchObject({ open: true, editing: true });
+    expect(harness.wiring.panels.isOpen()).toBe(false);
     expect(harness.services.focus.activeContext()).toBe("transcript-search");
   });
 
-  it("restores focus when the search panel closes", () => {
+  it("restores focus when transcript find closes", () => {
     harness = createHarness();
     act("transcript.search", "ctrl+r");
-    harness.wiring.panels.closeSearch();
-    expect(harness.wiring.panels.getSnapshot().search).toBeUndefined();
+    expect(harness.wiring.closePanel()).toBe(true);
+    expect(harness.wiring.find.getSnapshot().open).toBe(false);
     expect(harness.services.focus.activeContext()).toBe("composer");
+  });
+
+  it("opens transcript find with Ctrl+R from every focus region", () => {
+    for (const region of ["composer", "transcript", "plan"] as const) {
+      harness?.dispose();
+      harness = createHarness();
+      harness.services.focus.focusRegion(region);
+      harness.wiring.handleData("\x12");
+      expect(harness.wiring.find.getSnapshot().editing, region).toBe(true);
+      expect(harness.services.focus.activeContext(), region).toBe("transcript-search");
+    }
   });
 
   it("toggles thinking globally and reports the new state", () => {

@@ -1,5 +1,4 @@
 import type { BackgroundJob } from "../../app/ports/jobs-port.js";
-import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import { jobsKey } from "./jobs-panel.js";
 import { keysKey } from "./keys-panel.js";
 import { pagerPaintOptions, pagerKey, pagerSubagentPaint, pagerViewModel } from "./pager-panel.js";
@@ -8,12 +7,10 @@ import type { PanelSnapshot } from "./panel-controller.js";
 import { pickerKey } from "./picker-panel.js";
 import { promptActionsKey, promptLines } from "./prompt-actions-panel.js";
 import { scopeKey } from "./scope-panel.js";
-import { searchKey } from "./search-panel.js";
 
 export interface PanelWheelDeps {
   readonly rows: number;
   readonly columns: number;
-  readonly transcript: () => TranscriptState;
   readonly jobs: readonly BackgroundJob[];
 }
 
@@ -110,11 +107,5 @@ export function panelWheelMove(
       break;
   }
 
-  if (snapshot.search !== undefined) {
-    const moved = run(snapshot.search, (state) =>
-      searchKey({ state, chord, transcript: deps.transcript(), rows }),
-    );
-    return moved ? { patch: { search: moved.state }, effects: moved.effects } : undefined;
-  }
   return undefined;
 }

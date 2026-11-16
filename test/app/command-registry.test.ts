@@ -101,3 +101,37 @@ describe("V2-024 command registry", () => {
     ).toThrow();
   });
 });
+
+describe("command input normalization", () => {
+  const registry = buildDefaultCommandRegistry({ pathExists: (path) => path === "/tmp" || path === "/etc" });
+
+  it("dispatches commands preceded by invisible format characters", () => {
+    for (const prefix of ["\u200b", "\u2060", "\ufeff", "\u200e", "\u00ad", "\u200b \u200d"]) {
+      const line = `${prefix}/model kimi-k2`;
+      expect(registry.looksLikeCommand(line), JSON.stringify(line)).toBe(true);
+      expect(registry.parse(line), JSON.stringify(line)).toEqual({ name: "model", args: "kimi-k2", context: "global" });
+    }
+    expect(registry.parse("/mo\u200bdel")?.name).toBe("model");
+  });
+
+  it("accepts IME slash look-alikes only for registered commands", () => {
+    for (const slash of ["\uff0f", "\u2215", "\u2044", "\u29f8"]) {
+      expect(registry.parse(`${slash}model gpt`), slash).toEqual({ name: "model", args: "gpt", context: "global" });
+      expect(registry.looksLikeCommand(`${slash}hel`), slash).toBe(true);
+      expect(registry.looksLikeCommand(`${slash}zzz`), slash).toBe(false);
+      expect(registry.parse(`${slash}zzz`), slash).toBeUndefined();
+    }
+  });
+
+  it("keeps existing filesystem roots and nested paths as prompts", () => {
+    for (const line of ["/tmp", "/etc explain this directory", "/usr/var/etc.txt", "/Users/me/notes.md", "\u200b/usr/bin/env"]) {
+      expect(registry.looksLikeCommand(line), line).toBe(false);
+      expect(registry.parse(line), line).toBeUndefined();
+    }
+  });
+
+  it("still reports unknown command-shaped input that is not an existing path", () => {
+    expect(registry.looksLikeCommand("/not-a-real-command")).toBe(true);
+    expect(registry.parse("/not-a-real-command")).toBeUndefined();
+  });
+});

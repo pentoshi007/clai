@@ -26,6 +26,8 @@ import { PanelController, type PanelSnapshot } from "../panels/panel-controller.
 import { ClassicActionHandlers, panelContextFor } from "./action-handlers.js";
 import * as interactions from "./wiring-interactions.js";
 import * as feedScroll from "./wiring-feed-scroll.js";
+import { createTranscriptFind, routePaste } from "./wiring-find.js";
+import type { TranscriptFind } from "../feed/transcript-find.js";
 import * as lifecycle from "./wiring-lifecycle.js";
 import { cancelTranscriptPointer } from "./wiring-selection.js";
 import { INITIAL_PAINT_PACING, type PaintPacing } from "./paint-pacing.js";
@@ -49,6 +51,7 @@ export interface ClassicAppWiringOptions {
 export class ClassicAppWiring implements WiringHost {
   readonly composer: ComposerController;
   readonly panels: PanelController;
+  readonly find: TranscriptFind;
   readonly ladder: CancelLadder;
   readonly input: InputPipeline;
   readonly router: InputRouter;
@@ -105,7 +108,7 @@ export class ClassicAppWiring implements WiringHost {
   escapeTimer: ReturnType<typeof setTimeout> | undefined;
   tickTimer: ReturnType<typeof setInterval> | undefined;
   animationTimer: ReturnType<typeof setInterval> | undefined;
-  searchFocusRelease: (() => void) | undefined;
+  feedBlocks: readonly FeedBlock[] = [];
   selectionPointerCell: SemanticCell | undefined;
   selectionPointerMoved = false;
   selectionPointerX = 0;
@@ -150,7 +153,6 @@ export class ClassicAppWiring implements WiringHost {
       overlay: this.services.overlay,
       clipboard: this.services.ports.clipboard,
       jobs: this.services.ports.jobs,
-      transcript: () => this.services.transcript.getState(),
       plan: () => this.services.plan.current(),
       columns: () => this.services.overlay.getState().kind === "picker" || this.services.overlay.getState().kind === "pager"
         ? overlaySize(this.columns, this.rows).width : innerShellWidth(this.columns),
@@ -162,9 +164,9 @@ export class ClassicAppWiring implements WiringHost {
         this.services.focus.focusRegion("composer");
       },
       onHidePlan: () => this.setPlanVisible(false),
-      onRevealItem: (itemId) => this.revealItem(itemId),
       now: this.now,
     });
+    this.find = createTranscriptFind(this);
 
     this.ladder = new CancelLadder({
       coordinator: this.services.cancel,
@@ -234,14 +236,9 @@ export class ClassicAppWiring implements WiringHost {
         this.services.focus.focusRegion("composer");
         this.composer.insertText(text);
       },
-      onPaste: (text) => {
-        if (this.panels.isOpen()) {
-          this.panels.handlePaste(text);
-          return;
-        }
-        this.services.focus.focusRegion("composer");
-        this.composer.paste(text);
-      },
+      onPaste: (text) => routePaste(this, text),
+      onSearchKey: (key, chord) => this.find.handleKey(chord, key.text),
+      onOverlayEscape: () => this.panels.handleEscape(),
       onMouse: (event) => this.handleMouse(event),
       onKeyboardInput: () => cancelTranscriptPointer(this),
       onToast: (text) => notify(this.services, text),
@@ -252,6 +249,7 @@ export class ClassicAppWiring implements WiringHost {
       dismissCompletion: () => this.composer.menuOpen() && this.composer.handleChord("escape"),
       acceptsPaste: () =>
         this.panels.isOpen() ||
+        this.find.capturesInput() ||
         this.services.focus.activeContext() === "composer" ||
         this.services.focus.activeContext() === "transcript",
       acceptsText: () => {
@@ -386,10 +384,6 @@ export class ClassicAppWiring implements WiringHost {
 
   openSearch(): void {
     interactions.openSearch(this);
-  }
-
-  syncSearchFocus(): void {
-    interactions.syncSearchFocus(this);
   }
 
   closePanel(): boolean {

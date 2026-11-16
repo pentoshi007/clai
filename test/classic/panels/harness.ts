@@ -39,7 +39,6 @@ export interface Harness {
   readonly toasts: string[];
   readonly copied: string[];
   readonly edited: string[];
-  readonly revealed: string[];
   readonly hidden: number[];
   readonly stopped: string[];
   jobs: BackgroundJob[];
@@ -87,7 +86,6 @@ export function createHarness(
   const toasts: string[] = [];
   const copied: string[] = [];
   const edited: string[] = [];
-  const revealed: string[] = [];
   const hidden: number[] = [];
   const stopped: string[] = [];
 
@@ -107,14 +105,12 @@ export function createHarness(
       },
     },
     jobs: createJobsPort(() => state.jobs, stopped),
-    transcript: () => state.transcript,
     plan: () => state.plan,
     columns: () => state.columns,
     rows: () => Math.max(0, state.rows - 6),
     onToast: (text) => toasts.push(text),
     onEditPrompt: (text) => edited.push(text),
     onHidePlan: () => hidden.push(1),
-    onRevealItem: (id) => revealed.push(id),
   });
 
   return {
@@ -124,7 +120,6 @@ export function createHarness(
     toasts,
     copied,
     edited,
-    revealed,
     hidden,
     stopped,
     get jobs() {

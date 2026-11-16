@@ -206,3 +206,36 @@ describe("CommandRegistry slash parse / looksLikeCommand", () => {
     expect(registry.looksLikeCommand("hello")).toBe(false);
   });
 });
+
+describe("slash completion with invisible and look-alike characters", () => {
+  const registry = buildDefaultCommandRegistry();
+
+  it("opens the command menu after invisible format characters", () => {
+    const value = "\u200b\u2060/mod";
+    expect(detectSlashToken(value, value.length)).toEqual({ token: "/mod", start: 2, end: 6 });
+    const menu = resolveCompletionMenu(registry, value, value.length);
+    expect(menu.kind).toBe("slash");
+    expect(activateSlashCompletion(menu, value, 0)).toEqual({ command: "/model", value: "", cursorOffset: 0 });
+  });
+
+  it("opens the command menu for a leading full-width slash", () => {
+    expect(resolveCompletionMenu(registry, "\uff0f", 1)).toMatchObject({ kind: "slash", start: 0, end: 1 });
+    const menu = resolveCompletionMenu(registry, "\uff0fmod", 4);
+    expect(menu.kind).toBe("slash");
+    expect(menu.kind === "slash" ? menu.items[0]?.name : undefined).toBe("model");
+    expect(activateSlashCompletion(menu, "\uff0fmod gpt", 0)?.command).toBe("/model gpt");
+  });
+
+  it("ignores look-alike slashes inside prose", () => {
+    expect(detectSlashToken("A \uff0fmod", 6)).toBeUndefined();
+    expect(resolveCompletionMenu(registry, "A \uff0fmod", 6).kind).toBe("none");
+  });
+
+  it("does not store commands hidden behind invisible characters in prompt history", async () => {
+    const { shouldStoreInPromptHistory } = await import("../../../src/ui-core/composer/input-history.js");
+    expect(shouldStoreInPromptHistory("\u200b/model")).toBe(false);
+    expect(shouldStoreInPromptHistory("\uff0fhelp")).toBe(false);
+    expect(shouldStoreInPromptHistory("\u200b")).toBe(false);
+    expect(shouldStoreInPromptHistory("/usr/var/etc.txt")).toBe(true);
+  });
+});

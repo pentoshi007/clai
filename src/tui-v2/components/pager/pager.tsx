@@ -11,10 +11,14 @@ import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import type { ArtifactPage, ArtifactPagerSource } from "../../../ui-core/rendering/artifact-pager-source.js";
 import {
   findPagerMatches,
+  nearestPagerMatch,
   nextPagerMatch,
   prevPagerMatch,
   type PagerMatch,
 } from "../../../ui-core/state/pager-search.js";
+import { hasSearchQuery, matchCounterLabel } from "../../../ui-core/state/text-search.js";
+import { contentTopOfRenderable } from "../transcript/transcript-anchor.js";
+import { registerPagerEscape } from "./pager-escape-port.js";
 import {
   fitOneLine,
   padChromeRow,
@@ -40,6 +44,8 @@ import {
   buildPagerRows,
   groupPagerMatches,
   NO_MATCHES,
+  pagerRowForMatch,
+  pagerRowId,
   pagerRowSearch,
   pagerRowWindow,
   slicePagerSpans,
@@ -181,7 +187,7 @@ export function Pager(props: PagerProps): ReactNode {
     top: 0,
     height: Math.max(1, innerH - Number(innerH >= 3) - Number(innerH >= 2)),
   });
-  const hasQuery = query.trim().length > 0;
+  const hasQuery = hasSearchQuery(query);
   const rowHighlightPath = viewMode === "raw" && highlightPath ? highlightPath : "";
   const commandTone = source?.commandTone?.() ?? regions?.inputTone;
   const commandText = source?.commandText?.();
@@ -221,6 +227,7 @@ export function Pager(props: PagerProps): ReactNode {
   }, [body, source, canFollow]);
 
   const artifactOffset = useRef(0);
+  const pendingPageMatch = useRef<"first" | "last" | undefined>(undefined);
   const pendingPageScroll = useRef<"top" | "bottom" | undefined>(undefined);
   artifactOffset.current = artifactPage?.offset ?? 0;
 
@@ -377,6 +384,31 @@ export function Pager(props: PagerProps): ReactNode {
     refreshScrollHint();
   }
 
+  function topVisibleLine(): number {
+    const sb = scrollRef.current;
+    if (!sb) return 0;
+    if (continuous) return rowModels[Math.max(0, Math.min(rowModels.length - 1, Math.floor(sb.scrollTop)))]?.index ?? 0;
+    for (const row of rowModels) {
+      const top = contentTopOfRenderable(sb, sb.content.findDescendantById(pagerRowId(row)));
+      if (top !== undefined && top >= sb.scrollTop) return row.index;
+    }
+    return 0;
+  }
+
+  function revealPagerRow(rowIndex: number): void {
+    const sb = scrollRef.current;
+    const row = rowModels[rowIndex];
+    if (!sb || !row) return;
+    const height = Math.max(1, sb.viewport.height);
+    const top = continuous ? rowIndex : contentTopOfRenderable(sb, sb.content.findDescendantById(pagerRowId(row)));
+    if (top === undefined) {
+      sb.scrollChildIntoView(pagerRowId(row));
+    } else if (top < sb.scrollTop || top >= sb.scrollTop + height) {
+      sb.scrollTo(Math.max(0, Math.min(Math.max(0, sb.scrollHeight - height), top - Math.floor(height / 3))));
+    }
+    refreshScrollHint();
+  }
+
   function jumpToMatch(index: number, matchList: readonly PagerMatch[] = matches): void {
     if (index < 0 || matchList.length === 0) {
       setMatchIndex(-1);
@@ -384,24 +416,51 @@ export function Pager(props: PagerProps): ReactNode {
     }
     setMatchIndex(index);
     const match = matchList[index];
-    if (match) {
-      setFollowing(false);
-      queueMicrotask(() => {
-        if (continuous) {
-          const row = rowModels.findIndex((entry) =>
-            entry.index === match.line && (entry.textOffset ?? 0) + entry.line.length > match.column,
-          );
-          scrollRef.current?.scrollTo(Math.max(0, row));
-        } else {
-          scrollRef.current?.scrollChildIntoView(`pager-line-${match.line}`);
-        }
-        refreshScrollHint();
-      });
+    if (!match) return;
+    setFollowing(false);
+    queueMicrotask(() => revealPagerRow(pagerRowForMatch(rowModels, match)));
+  }
+
+  function changeQuery(value: string): void {
+    const previous = matches[matchIndex];
+    setQuery(value);
+    const found = findPagerMatches(searchLines, value);
+    const index = previous
+      ? nearestPagerMatch(found, previous.line, previous.column)
+      : nearestPagerMatch(found, topVisibleLine());
+    if (index < 0) {
+      setMatchIndex(-1);
+      return;
     }
+    jumpToMatch(index, found);
+  }
+
+  function stepMatch(delta: 1 | -1): void {
+    if (source && !continuous && hasQuery && !searchOpen) {
+      const atEdge = matches.length === 0 || matchIndex < 0
+        || (delta > 0 ? matchIndex >= matches.length - 1 : matchIndex <= 0);
+      if (atEdge) {
+        void moveArtifactSearch(delta < 0);
+        return;
+      }
+    }
+    if (matches.length === 0) {
+      if (hasQuery) flash("no matches");
+      return;
+    }
+    const index = matchIndex < 0
+      ? nearestPagerMatch(matches, topVisibleLine())
+      : delta > 0
+        ? nextPagerMatch(matches, matchIndex)
+        : prevPagerMatch(matches, matchIndex);
+    if (matchIndex >= 0 && matches.length > 1 && (delta > 0 ? index < matchIndex : index > matchIndex)) {
+      flash(delta > 0 ? "search wrapped to the first match" : "search wrapped to the last match", 1400);
+    }
+    jumpToMatch(index);
   }
 
   async function submitSearch(): Promise<void> {
-    if (source && !continuous && query.trim()) {
+    if (source && !continuous && hasQuery && matches.length === 0) {
       setFollowing(false);
       setPageBusy(true);
       try {
@@ -410,6 +469,7 @@ export function Pager(props: PagerProps): ReactNode {
           setArtifactPage(page);
           setDisplayBody(page.body);
           setMatchIndex(-1);
+          pendingPageMatch.current = "first";
           setSearchOpen(false);
           queueMicrotask(() => scrollRef.current?.scrollTo(0));
         } else {
@@ -420,10 +480,16 @@ export function Pager(props: PagerProps): ReactNode {
       }
       return;
     }
+    if (!hasQuery) {
+      clearSearch();
+      return;
+    }
     const found = findPagerMatches(searchLines, query);
-    if (found.length === 0) return;
-    const next = nextPagerMatch(found, matchIndex);
-    jumpToMatch(next, found);
+    if (found.length === 0) {
+      flash("no matches");
+      return;
+    }
+    if (matchIndex < 0 || matchIndex >= found.length) jumpToMatch(nearestPagerMatch(found, topVisibleLine()), found);
     setSearchOpen(false);
   }
 
@@ -440,11 +506,19 @@ export function Pager(props: PagerProps): ReactNode {
       setArtifactPage(page);
       setDisplayBody(page.body);
       setMatchIndex(-1);
+      pendingPageMatch.current = reverse ? "last" : "first";
       queueMicrotask(() => scrollRef.current?.scrollTo(0));
     } finally {
       setPageBusy(false);
     }
   }
+
+  useEffect(() => {
+    const pending = pendingPageMatch.current;
+    if (!pending || matches.length === 0) return;
+    pendingPageMatch.current = undefined;
+    jumpToMatch(pending === "first" ? 0 : matches.length - 1);
+  }, [matches]);
 
   function clearSearch(): void {
     setSearchOpen(false);
@@ -452,16 +526,26 @@ export function Pager(props: PagerProps): ReactNode {
     setMatchIndex(-1);
   }
 
+  const escapeSearch = useRef<() => boolean>(() => false);
+  escapeSearch.current = () => {
+    if (!searchOpen && !hasQuery) return false;
+    clearSearch();
+    return true;
+  };
+  useEffect(() => registerPagerEscape(() => escapeSearch.current()), []);
+
   useKeyboard((key) => {
     if (key.defaultPrevented || key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
     pendingPageScroll.current = undefined;
 
     if (searchOpen) {
-      if (chord === "escape") {
-        key.preventDefault();
-        clearSearch();
-      }
+      const searchChord = services.router.resolve(chord, "pager") === "pager.search";
+      if (chord === "escape") clearSearch();
+      else if (searchChord || chord === "up") stepMatch(-1);
+      else if (chord === "down") stepMatch(1);
+      else return;
+      key.preventDefault();
       return;
     }
 
@@ -531,12 +615,10 @@ export function Pager(props: PagerProps): ReactNode {
         setSearchOpen(true);
         break;
       case "pager.next-match":
-        if (source && !continuous && hasQuery) void moveArtifactSearch(false);
-        else if (matches.length > 0) jumpToMatch(nextPagerMatch(matches, matchIndex));
+        stepMatch(1);
         break;
       case "pager.prev-match":
-        if (source && !continuous && hasQuery) void moveArtifactSearch(true);
-        else if (matches.length > 0) jumpToMatch(prevPagerMatch(matches, matchIndex));
+        stepMatch(-1);
         break;
       case "pager.copy":
         void fullBody()
@@ -599,12 +681,7 @@ export function Pager(props: PagerProps): ReactNode {
           ? "bottom"
           : scrollHint;
 
-  const matchStatus =
-    hasQuery && matches.length > 0
-      ? `${Math.max(0, matchIndex) + 1}/${matches.length}`
-      : hasQuery
-        ? "no matches"
-        : "";
+  const matchStatus = matchCounterLabel(query, matches.length, matchIndex);
 
   const lineCountRight = artifactPage && !continuous
     ? `${lines.length} lines · page ${artifactPage.pageNumber}/${artifactPage.pageCount}${pageBusy ? " · loading" : ""}`
@@ -666,11 +743,11 @@ export function Pager(props: PagerProps): ReactNode {
   const filterHint = fitOneLine(
     [
       matches.length > 0
-        ? `${matchStatus}  ·  enter:jump  ·  esc:close`
-        : query.trim()
-          ? "no matches · esc:close"
-          : "type to search  ·  esc:close",
-      matches.length > 0 ? `${matchStatus} · enter · esc:close` : "esc:close",
+        ? `${matchStatus}  ·  ↑↓ prev/next  ·  enter done  ·  esc clear`
+        : hasQuery
+          ? "no matches  ·  esc clear"
+          : "type to search  ·  esc close",
+      matches.length > 0 ? `${matchStatus} · ↑↓ · enter · esc` : "esc",
       matches.length > 0 ? matchStatus : "esc",
     ],
     Math.max(8, Math.floor(chromeCols * 0.4)),
@@ -682,14 +759,13 @@ export function Pager(props: PagerProps): ReactNode {
     () =>
       rowModels.slice(rowWindow.start, rowWindow.end).map((row) => {
         const offset = row.textOffset ?? 0;
-        const search = continuous
-          ? pagerRowSearch(lineSearch.get(row.index), offset, row.line.length)
-          : lineSearch.get(row.index);
+        const search = pagerRowSearch(lineSearch.get(row.index), offset, row.textLength ?? row.line.length);
         const styled = row.kind === "markdown" ? display.lines[row.index]?.styled : undefined;
         const spans = row.kind === "markdown" || row.kind === "subagent" ? subagentSpans?.[row.index] : undefined;
         const line = (
           <PagerLine
             key={row.key}
+            id={pagerRowId(row)}
             line={row.line}
             index={row.index}
             theme={theme}
@@ -768,10 +844,7 @@ export function Pager(props: PagerProps): ReactNode {
             <input
               focused
               value={query}
-              onInput={(value) => {
-                setQuery(value);
-                setMatchIndex(-1);
-              }}
+              onInput={changeQuery}
               onSubmit={submitSearch}
               textColor={theme.foreground}
               backgroundColor={theme.rowB}

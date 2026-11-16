@@ -18,8 +18,9 @@ export function UserMessage(props: {
   theme: Theme;
   onOpen: (prompt: string) => void;
   contentWidth?: number | undefined;
+  revealed?: boolean | undefined;
 }): ReactNode {
-  const { item, theme, onOpen, contentWidth } = props;
+  const { item, theme, onOpen, contentWidth, revealed } = props;
   const [expanded, setExpanded] = useState(false);
   const { width: termWidth } = useTerminalDimensionsContext();
   const wrapBudget = Math.max(20, contentWidth ?? Math.max(40, termWidth - 8));
@@ -29,7 +30,7 @@ export function UserMessage(props: {
   );
   const click = useClickWithoutDrag(() => onOpen(item.text));
   const collapsible = lines.length > USER_PROMPT_COLLAPSE_ROWS;
-  const visibleLines = collapsible && !expanded ? lines.slice(0, USER_PROMPT_KEPT_ROWS) : lines;
+  const visibleLines = collapsible && !expanded && !revealed ? lines.slice(0, USER_PROMPT_KEPT_ROWS) : lines;
 
   return (
     <box
@@ -65,7 +66,7 @@ export function UserMessage(props: {
           <PromptDisclosure
             id={`${item.id}-disclosure`}
             theme={theme}
-            expanded={expanded}
+            expanded={expanded || revealed === true}
             hiddenLines={lines.length - visibleLines.length}
             onToggle={() => setExpanded((value) => !value)}
           />

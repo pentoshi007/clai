@@ -5,6 +5,8 @@ import type { SelectionState } from "../../ui-core/controllers/selection-control
 import type { SemanticDocument } from "../../ui-core/state/semantic-document.js";
 import { selectionSpanForRow } from "./transcript-selection.js";
 import { layoutWidth } from "../render/measure.js";
+import type { InkTheme } from "../render/ink-theme.js";
+import { paintFeedRow, type FeedHighlight } from "./feed-search.js";
 
 export const LiveTail = memo(function LiveTail(props: {
   readonly window: TranscriptWindow;
@@ -12,13 +14,19 @@ export const LiveTail = memo(function LiveTail(props: {
   readonly columns?: number | undefined;
   readonly document?: SemanticDocument | undefined;
   readonly selection?: SelectionState | undefined;
+  readonly ink?: InkTheme | undefined;
+  readonly highlight?: FeedHighlight | undefined;
 }): ReactNode {
+  const { ink, highlight } = props;
   const filler = Math.max(0, props.rows - props.window.height);
   const lines: ReactNode[] = props.window.rows.map((row) => {
     const span = props.document && props.selection
       ? selectionSpanForRow(row, props.document, props.selection)
       : undefined;
-    if (!span) return row.line === "" ? " " : row.line;
+    if (!span) {
+      const line = ink && highlight ? paintFeedRow(ink, row.line, row.key, highlight) : row.line;
+      return line === "" ? " " : line;
+    }
     return (
       <Text key={row.key}>
         {span.text.slice(0, span.start)}

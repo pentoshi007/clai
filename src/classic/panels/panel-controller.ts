@@ -28,7 +28,6 @@ import type {
 } from "./panel-types.js";
 import { panelWheelMove } from "./panel-wheel.js";
 import { scopeInitialState, scopeKey } from "./scope-panel.js";
-import { searchKey, SEARCH_INITIAL_STATE } from "./search-panel.js";
 import { secretInitialState, secretKey, secretPaste } from "./secret-panel.js";
 import {
   textEditorInitialState,
@@ -55,7 +54,6 @@ export class PanelController {
       kind: this.tracked.kind,
       secret: secretInitialState(),
       textEditor: textEditorInitialState(),
-      search: undefined,
     };
     this.pagerSource = new PagerSourceController({
       overlay: deps.overlay,
@@ -90,15 +88,6 @@ export class PanelController {
     return this.snapshot.kind !== "none";
   }
 
-  openSearch(): void {
-    this.publish({ ...this.snapshot, search: SEARCH_INITIAL_STATE });
-  }
-
-  closeSearch(): void {
-    if (this.snapshot.search === undefined) return;
-    this.publish({ ...this.snapshot, search: undefined });
-  }
-
   rowsWanted(): number {
     const snapshot = this.snapshot;
     const columns = this.deps.columns();
@@ -106,7 +95,7 @@ export class PanelController {
     const generous = Math.max(OVERLAY_MIN_ROWS, Math.floor(terminalRows * 0.92));
     switch (snapshot.overlay.kind) {
       case "none":
-        return snapshot.search === undefined ? 0 : generous;
+        return 0;
       case "confirm":
         return confirmRowsWanted(snapshot.overlay.request, columns);
       case "secret":
@@ -137,6 +126,12 @@ export class PanelController {
       return true;
     }
     return this.handleKey("", text);
+  }
+
+  handleEscape(): boolean {
+    const { overlay, pager } = this.snapshot;
+    if (overlay.kind !== "pager" || (!pager.finding && pager.query === "")) return false;
+    return this.handleKey("escape");
   }
 
   handlePlanKey(chord: string, focused: boolean): boolean {
@@ -277,19 +272,6 @@ export class PanelController {
         break;
     }
 
-    if (snapshot.search !== undefined) {
-      const result = searchKey({
-        state: snapshot.search,
-        chord,
-        text,
-        transcript: this.deps.transcript(),
-        rows,
-      });
-      if (!result.handled) return false;
-      this.publish({ ...snapshot, search: result.state });
-      this.apply(result.effects);
-      return true;
-    }
     return false;
   }
   handleWheel(direction: 1 | -1, steps = 3): boolean {
@@ -298,7 +280,6 @@ export class PanelController {
       {
         rows: this.deps.rows(),
         columns: this.deps.columns(),
-        transcript: this.deps.transcript,
         jobs: this.jobList(),
       },
       direction,
@@ -328,7 +309,7 @@ export class PanelController {
     const base: PanelSnapshot = {
       ...this.snapshot,
       overlay: state,
-      kind: state.kind === "none" && this.snapshot.search !== undefined ? "search" : state.kind,
+      kind: state.kind,
     };
     switch (state.kind) {
       case "picker": {
@@ -403,20 +384,13 @@ export class PanelController {
     applyPanelEffects(effects, {
       deps: this.deps,
       snapshot: this.snapshot,
-      closeSearch: () => this.closeSearch(),
       openJobTail: (jobId) => openPanelJobTail(this.deps, jobId),
       loadPagerPage: (offset) => this.pagerSource.load(this.snapshot.overlay, offset),
     });
   }
 
   private publish(snapshot: PanelSnapshot): void {
-    this.snapshot = {
-      ...snapshot,
-      kind:
-        snapshot.overlay.kind === "none" && snapshot.search !== undefined
-          ? "search"
-          : snapshot.overlay.kind,
-    };
+    this.snapshot = { ...snapshot, kind: snapshot.overlay.kind };
     for (const listener of this.listeners) listener();
   }
 }

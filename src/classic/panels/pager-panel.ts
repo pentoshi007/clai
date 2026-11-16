@@ -13,11 +13,13 @@ import {
 } from "../../ui-core/rendering/subagent-presentation.js";
 import {
   findPagerMatches,
+  nearestPagerMatch,
   nextPagerMatch,
   prevPagerMatch,
   segmentPagerLine,
   type PagerMatch,
 } from "../../ui-core/state/pager-search.js";
+import { hasSearchQuery, matchCounterLabel } from "../../ui-core/state/text-search.js";
 import { stripAnsi } from "../render/measure.js";
 import { wrapAnsiLine } from "../render/wrap.js";
 import { expandTabs, padStartToWidth, sealStyle } from "../render/ansi-text.js";
@@ -53,8 +55,12 @@ export const PAGER_INITIAL_STATE: PagerPanelState = {
   finding: false,
   draft: "",
   query: "",
-  matchIndex: 0,
+  matchIndex: -1,
 };
+
+export function pagerActiveQuery(state: Pick<PagerPanelState, "finding" | "draft" | "query">): string {
+  return state.finding ? state.draft : state.query;
+}
 
 export function resolvePagerMarkdownMode(
   body: string,
@@ -259,6 +265,10 @@ export function pagerViewModel(
   return view;
 }
 
+function centeredTop(caret: number, height: number, count: number): number {
+  return Math.max(0, Math.min(caret - Math.floor(height / 2), Math.max(0, count - height)));
+}
+
 function clampTop(caret: number, top: number, height: number, count: number): number {
   const max = Math.max(0, count - height);
   let next = Math.max(0, Math.min(top, max));
@@ -284,28 +294,71 @@ export function pagerKey(input: PagerKeyInput): PanelKeyResult<PagerPanelState> 
   const height = Math.max(1, panelBodyHeight(input.rows));
   const count = input.lines.length;
 
+  const focusMatch = (next: PagerPanelState, matches: readonly PagerMatch[], index: number): PanelKeyResult<PagerPanelState> => {
+    const match = matches[index];
+    if (!match) return handled({ ...next, matchIndex: -1 });
+    return handled({
+      ...next,
+      matchIndex: index,
+      caret: match.line,
+      top: centeredTop(match.line, height, count),
+      follow: false,
+    });
+  };
+
+  const stepMatch = (next: PagerPanelState, query: string, delta: 1 | -1): PanelKeyResult<PagerPanelState> => {
+    const matches = findPagerMatches(searchLines, query);
+    if (matches.length === 0) return handled(next);
+    const valid = next.matchIndex >= 0 && next.matchIndex < matches.length;
+    const index = !valid
+      ? nearestPagerMatch(matches, next.caret)
+      : delta > 0
+        ? nextPagerMatch(matches, next.matchIndex)
+        : prevPagerMatch(matches, next.matchIndex);
+    return focusMatch(next, matches, index);
+  };
+
+  const refine = (draft: string): PanelKeyResult<PagerPanelState> => {
+    const previous = findPagerMatches(searchLines, state.draft)[state.matchIndex];
+    const matches = findPagerMatches(searchLines, draft);
+    const index = previous
+      ? nearestPagerMatch(matches, previous.line, previous.column)
+      : nearestPagerMatch(matches, state.caret);
+    return focusMatch({ ...state, draft }, matches, index);
+  };
+
   if (state.finding) {
     if (chord === "enter") {
       const query = state.draft;
+      if (!hasSearchQuery(query)) return handled({ ...state, finding: false, draft: "", query: "", matchIndex: -1 });
       const matches = findPagerMatches(searchLines, query);
-      const first = matches[0];
-      const caret = first ? first.line : state.caret;
+      const committed = { ...state, finding: false, query };
+      if (state.matchIndex >= 0 && state.matchIndex < matches.length) return handled(committed);
+      return matches.length > 0
+        ? focusMatch(committed, matches, nearestPagerMatch(matches, state.caret))
+        : handled({ ...committed, matchIndex: -1 });
+    }
+    if (chord === "escape") {
+      const matches = findPagerMatches(searchLines, state.query);
       return handled({
         ...state,
         finding: false,
-        query,
-        matchIndex: 0,
-        caret,
-        top: clampTop(caret, state.top, height, count),
+        draft: "",
+        matchIndex: Math.min(state.matchIndex, matches.length - 1),
       });
     }
-    if (chord === "escape") return handled({ ...state, finding: false, draft: "" });
-    if (chord === "backspace") return handled({ ...state, draft: state.draft.slice(0, -1) });
-    if (isPrintable(chord, input.text)) {
-      return handled({ ...state, draft: `${state.draft}${input.text ?? ""}` });
+    if (chord === "up" || chord === "ctrl+r") return stepMatch(state, state.draft, -1);
+    if (chord === "down") return stepMatch(state, state.draft, 1);
+    if (chord === "backspace") return refine(state.draft.slice(0, -1));
+    if (chord === "ctrl+u") return refine("");
+    if (chord === "ctrl+w" || chord === "alt+backspace" || chord === "ctrl+backspace") {
+      return refine(state.draft.replace(/\s*\S+\s*$/u, ""));
     }
+    if (isPrintable(chord, input.text)) return refine(`${state.draft}${input.text ?? ""}`);
     return handled(state);
   }
+
+  if (chord === "escape" && state.query !== "") return handled({ ...state, query: "", matchIndex: -1 });
 
   const moveTo = (caret: number): PanelKeyResult<PagerPanelState> => {
     const next = Math.max(0, Math.min(caret, Math.max(0, count - 1)));
@@ -326,20 +379,8 @@ export function pagerKey(input: PagerKeyInput): PanelKeyResult<PagerPanelState> 
   if (chord === "ctrl+r") return handled({ ...state, finding: true, draft: state.query });
 
   if (chord === "n" || chord === "shift+n") {
-    if (state.query === "") return handled(state);
-    const matches: readonly PagerMatch[] = findPagerMatches(searchLines, state.query);
-    if (matches.length === 0) return handled(state);
-    const index =
-      chord === "n"
-        ? nextPagerMatch(matches, state.matchIndex)
-        : prevPagerMatch(matches, state.matchIndex);
-    const caret = matches[index]?.line ?? state.caret;
-    return handled({
-      ...state,
-      matchIndex: index,
-      caret,
-      top: clampTop(caret, state.top, height, count),
-    });
+    if (!hasSearchQuery(state.query)) return handled(state);
+    return stepMatch(state, state.query, chord === "n" ? 1 : -1);
   }
 
   if (chord === "f") return handled({ ...state, format: "formatted" });
@@ -367,7 +408,8 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
   const height = panelBodyHeight(input.rows);
   const count = input.lines.length;
   const searchLines = input.searchLines ?? pagerSearchLines(input.lines);
-  const matches = state.query === "" ? [] : findPagerMatches(searchLines, state.query);
+  const query = pagerActiveQuery(state);
+  const matches = hasSearchQuery(query) ? findPagerMatches(searchLines, query) : [];
   const top = clampTop(state.caret, state.top, Math.max(1, height), count);
   const subagentSpans = input.subagent ? pagerSubagentSpans(searchLines) : undefined;
   const body: string[] = [];
@@ -379,7 +421,7 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
     const spans = raw.includes("\x1b[") ? undefined : subagentSpans?.[index];
     const styled = spans ? spans.map((span) => ink.style(span.text, span)).join("") : raw;
     const painted =
-      state.query === ""
+      matches.length === 0
         ? sealStyle(styled)
         : paintSearchMatches(ink, styled, segmentPagerLine(plain, index, matches, state.matchIndex));
     const caret = index === state.caret ? ink.fg("inputBorder", ink.glyphs.caret) : " ";
@@ -389,18 +431,26 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
   const tags: string[] = [state.format === "raw" ? "raw" : "md"];
   if (state.follow) tags.push("follow");
 
+  const counter = matchCounterLabel(query, matches.length, state.matchIndex);
   const hints = state.finding
-    ? [`find: ${state.draft}`, `${ink.glyphs.enter} search`, "esc cancel"]
-    : [
-        `${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} jk`,
-        "^R find",
-        "n/N",
-        "f fmt",
-        "r raw",
-        ...(input.live === true ? ["l follow"] : []),
-        "c copy",
-        "q",
-      ];
+    ? [
+        `find: ${state.draft}${ink.glyphs.caret}`,
+        ...(counter ? [counter] : []),
+        `${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} prev/next`,
+        `${ink.glyphs.enter} done`,
+        "esc cancel",
+      ]
+    : hasSearchQuery(state.query)
+      ? [`find: ${state.query}`, ...(counter ? [counter] : []), "n/N next/prev", "^R edit", "esc clear", "q"]
+      : [
+          `${ink.glyphs.scrollUp}${ink.glyphs.scrollDown} jk`,
+          "^R find",
+          "f fmt",
+          "r raw",
+          ...(input.live === true ? ["l follow"] : []),
+          "c copy",
+          "q",
+        ];
 
   return {
     ink,

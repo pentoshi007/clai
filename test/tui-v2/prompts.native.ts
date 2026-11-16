@@ -16,7 +16,7 @@ import { SessionPromptStore } from "../../src/store/session-prompts.js";
 for (const provider of ["free", "openai"] as const) {
   spyOn(getProvider(provider), "listModels").mockResolvedValue([]);
 }
-const requests = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Native prompt fixture must not access the network"));
+const requests = spyOn(globalThis, "fetch").mockImplementation((() => Promise.reject(new Error("Native prompt fixture must not access the network"))) as unknown as typeof fetch);
 
 const closed = new SessionPromptStore("closed-native-session");
 await closed.append({ content: "Earlier request\n    Keep indentation" });

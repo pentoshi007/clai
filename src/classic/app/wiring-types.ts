@@ -13,6 +13,7 @@ import type { InputPipeline } from "../input/input-pipeline.js";
 import type { InputRouter } from "../input/input-router.js";
 import type { KeyEvent } from "../input/key-event.js";
 import type { PanelController, PanelSnapshot } from "../panels/panel-controller.js";
+import type { TranscriptFind } from "../feed/transcript-find.js";
 import type { FeedSnapshot } from "./use-feed.js";
 import type { FeedBlock } from "../feed/feed-blocks.js";
 import type { SemanticAnchor, SemanticCell, SemanticDocument } from "../../ui-core/state/semantic-document.js";
@@ -67,6 +68,7 @@ export interface WiringHost {
   readonly resizeSource: ResizeSource;
   readonly composer: ComposerController;
   readonly panels: PanelController;
+  readonly find: TranscriptFind;
   readonly ladder: CancelLadder;
   readonly input: InputPipeline;
   readonly router: InputRouter;
@@ -87,6 +89,7 @@ export interface WiringHost {
   maxLiveOffset: number;
   feedLayoutPending: boolean;
   feedViewportRows: number;
+  feedBlocks: readonly FeedBlock[];
   selectedFeedItemId: string | undefined;
   scrollAboveValue: number;
   scrollBelowValue: number;
@@ -116,7 +119,6 @@ export interface WiringHost {
   escapeTimer: ReturnType<typeof setTimeout> | undefined;
   tickTimer: ReturnType<typeof setInterval> | undefined;
   animationTimer: ReturnType<typeof setInterval> | undefined;
-  searchFocusRelease: (() => void) | undefined;
   selectionPointerCell: SemanticCell | undefined;
   selectionPointerMoved: boolean;
   selectionPointerX: number;
@@ -132,7 +134,6 @@ export interface WiringHost {
   disposed: boolean;
   schedulePaint(interactive?: boolean): void;
   scheduleEscapeExpiry(): void;
-  syncSearchFocus(): void;
   closePanel(): boolean;
   setPlanVisible(visible: boolean): void;
   openPlanDetail(): Promise<void>;

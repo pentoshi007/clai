@@ -55,6 +55,10 @@ export interface Theme {
   readonly synProperty: string;
   readonly synOperator: string;
   readonly synRegex: string;
+  readonly searchMatch: string;
+  readonly searchMatchText: string;
+  readonly searchActive: string;
+  readonly searchActiveText: string;
 }
 
 const DARK_THEME: Theme = {
@@ -110,6 +114,10 @@ const DARK_THEME: Theme = {
   synProperty: "#9CDCFE",
   synOperator: "#D4D4D4",
   synRegex: "#D16969",
+  searchMatch: "#6B4F12",
+  searchMatchText: "#FEF3C7",
+  searchActive: "#FACC15",
+  searchActiveText: "#0B0E14",
 };
 
 const LIGHT_THEME: Theme = {
@@ -165,6 +173,10 @@ const LIGHT_THEME: Theme = {
   synProperty: "#001080",
   synOperator: "#000000",
   synRegex: "#811f3f",
+  searchMatch: "#FDE68A",
+  searchMatchText: "#1C1F24",
+  searchActive: "#F59E0B",
+  searchActiveText: "#000000",
 };
 
 export function themeFor(hint: ThemeHint): Theme {

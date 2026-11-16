@@ -11,10 +11,8 @@ import type { PanelController, PanelSnapshot } from "./panel-controller.js";
 import { PickerPanel } from "./PickerPanel.js";
 import { PromptActionsPanel } from "./PromptActionsPanel.js";
 import { ScopePanel } from "./ScopePanel.js";
-import { SearchPanel } from "./SearchPanel.js";
 import { SecretPanel } from "./SecretPanel.js";
 import { TextEditorPanel } from "./TextEditorPanel.js";
-import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 
 export interface PanelHostProps {
   readonly controller: PanelController;
@@ -22,7 +20,6 @@ export interface PanelHostProps {
   readonly columns: number;
   readonly rows: number;
   readonly jobs: readonly BackgroundJob[];
-  readonly transcript: TranscriptState;
   readonly now: number;
 }
 
@@ -98,8 +95,5 @@ export function PanelHost(props: PanelHostProps): ReactNode {
       break;
   }
 
-  if (snapshot.search !== undefined) {
-    return <SearchPanel {...shared} transcript={props.transcript} state={snapshot.search} />;
-  }
   return null;
 }

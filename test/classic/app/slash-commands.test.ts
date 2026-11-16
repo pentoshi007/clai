@@ -90,3 +90,22 @@ describe("Classic slash command input", () => {
     expect(prompts).toEqual(["/tmp/notes.txt", "and/or this text", "explain /help usage"]);
   });
 });
+
+describe("Classic slash commands behind invisible or IME characters", () => {
+  it("opens the menu and dispatches after a zero-width prefix", async () => {
+    harness.wiring.handleData("\u200b");
+    harness.wiring.handleData("/");
+    expect(harness.wiring.composer.menuOpen()).toBe(true);
+    for (const char of "model") harness.wiring.handleData(char);
+    await enter();
+    expect(commands.at(-1)?.name).toBe("model");
+    expect(prompts).toEqual([]);
+  });
+
+  it("dispatches a full-width slash command typed through an IME", async () => {
+    paste("\uff0fmodel custom");
+    await enter();
+    expect(commands.at(-1)).toMatchObject({ name: "model", args: "custom" });
+    expect(prompts).toEqual([]);
+  });
+});

@@ -1,4 +1,8 @@
-import { normalizeChord, type KeyEventLike } from "../../ui-core/actions/chord.js";
+import {
+  layoutIndependentKeyName,
+  normalizeChord,
+  type KeyEventLike,
+} from "../../ui-core/actions/chord.js";
 
 export type { KeyEventLike };
 
@@ -53,7 +57,11 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   const isBacktab = key.name === "backtab";
   const ctrl = key.ctrl || isLinefeed;
   const alt = Boolean(key.option || key.meta);
-  const baseName = isBacktab ? "tab" : baseKeyName(key);
+  const baseName = layoutIndependentKeyName(
+    isBacktab ? "tab" : baseKeyName(key),
+    key.baseCode,
+    Boolean(ctrl || alt || key.super),
+  );
   const isUpper =
     baseName.length === 1 && baseName >= "A" && baseName <= "Z";
   const hasShiftSequence =

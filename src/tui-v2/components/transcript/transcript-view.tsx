@@ -12,7 +12,7 @@ import {
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { countRender } from "../../perf/render-counters.js";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
-import type { KeyEvent, MouseEvent, Renderable, ScrollAcceleration, ScrollBoxRenderable } from "@opentui/core";
+import type { KeyEvent, MouseEvent, OptimizedBuffer, Renderable, ScrollAcceleration, ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
@@ -24,6 +24,7 @@ import {
   isFileDiffExpanded,
   isItemExpanded,
   transcriptItems,
+  type TranscriptItem,
 } from "../../../ui-core/state/transcript-types.js";
 import {
   DEFAULT_TRANSCRIPT_MOUNT_ROWS,
@@ -37,11 +38,21 @@ import {
 import { copyFocusedThinking } from "../../../ui-core/state/thinking-copy.js";
 import {
   findMatches,
-  nextMatchIndex,
-  prevMatchIndex,
+  nearestMatchAtOrBefore,
+  type TranscriptMatch,
+  type TranscriptMatchPosition,
 } from "../../../ui-core/state/transcript-search.js";
+import { compileSearchQuery, stepMatchIndex } from "../../../ui-core/state/text-search.js";
+import { shouldHideQuietMetaToolInChat } from "../../../app/adapters/quiet-meta-tools.js";
 import { TranscriptRow } from "./transcript-row.js";
 import { SearchBar } from "./search-bar.js";
+import {
+  occurrenceCell,
+  paintSearchHighlights,
+  renderedOccurrence,
+  searchHighlightColors,
+  type ScreenCell,
+} from "./search-highlight.js";
 import { notify } from "../../../ui-core/notify.js";
 import { IntroCard } from "./intro-card.js";
 import {
@@ -62,6 +73,8 @@ import { transcriptFollowKey } from "../../../ui-core/state/transcript-follow-ke
 import {
   applyTranscriptWindowJump,
   captureTranscriptAnchor,
+  contentTopOf,
+  contentTopOfRenderable,
   settleTranscriptLayout,
   type TranscriptWindowJump,
 } from "./transcript-anchor.js";
@@ -120,6 +133,22 @@ function selectSessionId(state: SessionState): SessionState["sessionId"] {
   return state.sessionId;
 }
 
+function isSearchableItem(item: TranscriptItem): boolean {
+  if (item.kind === "turn-summary") return false;
+  return item.kind !== "tool" || !shouldHideQuietMetaToolInChat(item.name, item.status);
+}
+
+interface ActiveSearchMatch {
+  readonly itemId: string;
+  readonly occurrence: number;
+}
+
+interface PendingSearchReveal extends ActiveSearchMatch {
+  attempts: number;
+}
+
+const SEARCH_REVEAL_ATTEMPTS = 24;
+
 export const TranscriptView = memo(TranscriptViewImpl);
 
 function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
@@ -169,20 +198,25 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
 
   const followKey = useTranscriptFollowKey(state, sessionRunning);
 
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchEditing, setSearchEditing] = useState(false);
   const [query, setQuery] = useState("");
-  const [matchIndex, setMatchIndex] = useState(-1);
-  const matches = useMemo(() => findMatches(state, query), [state, query]);
-  const matchedItemIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const m of matches) set.add(m.itemId);
-    return set;
-  }, [matches]);
-  const activeMatchItemId =
-    matchIndex >= 0 && matchIndex < matches.length
-      ? matches[matchIndex]!.itemId
-      : undefined;
-  const searchActive = query.trim().length > 0;
+  const [activeMatch, setActiveMatch] = useState<ActiveSearchMatch | undefined>(undefined);
+  const searchPattern = useMemo(() => compileSearchQuery(query), [query]);
+  const matches = useMemo(() => findMatches(state, query, isSearchableItem), [state, query]);
+  const matchIndex = activeMatch
+    ? matches.findIndex((match) => match.itemId === activeMatch.itemId && match.occurrence === activeMatch.occurrence)
+    : -1;
+  const activeMatchItemId = matchIndex >= 0 ? activeMatch?.itemId : undefined;
+  const searchActive = searchPattern !== undefined;
+  const searchPatternRef = useRef(searchPattern);
+  searchPatternRef.current = searchPattern;
+  const searchPaint = useRef<{ readonly pattern: RegExp; readonly active: ActiveSearchMatch | undefined } | undefined>(undefined);
+  searchPaint.current = searchPattern ? { pattern: searchPattern, active: matchIndex >= 0 ? activeMatch : undefined } : undefined;
+  const searchOrigin = useRef<TranscriptMatchPosition | undefined>(undefined);
+  const pendingReveal = useRef<PendingSearchReveal | undefined>(undefined);
+  const revealScheduled = useRef(false);
+  const unmounted = useRef(false);
+  const highlightColors = useMemo(() => searchHighlightColors(theme), [theme]);
 
   useNativeSelectionCopy(services);
   const renderer = useRenderer();
@@ -646,11 +680,40 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     publishScrollRemainder(sb, mountWindow.newerCount > 0);
   }
 
+  function releaseSearchFocus(): void {
+    const release = closeOverlay.current;
+    closeOverlay.current = undefined;
+    release?.();
+  }
+
+  function matchPosition(match: TranscriptMatch | undefined): TranscriptMatchPosition | undefined {
+    return match ? { itemIndex: match.itemIndex, start: match.start } : undefined;
+  }
+
+  function lastVisibleItemIndex(): number {
+    const sb = scrollRef.current;
+    if (!sb || followBottom.current) return itemCount - 1;
+    const bottom = sb.scrollTop + (sb.viewport?.height ?? 0);
+    for (let index = mountedItems.length - 1; index >= 0; index -= 1) {
+      const item = mountedItems[index]!;
+      const top = contentTopOf(sb, item.id);
+      if (top !== undefined && top < bottom) return state.order.indexOf(item.id);
+    }
+    return Math.max(0, mountWindow.start - 1);
+  }
+
+  function searchReference(): TranscriptMatchPosition {
+    return matchPosition(matches[matchIndex])
+      ?? searchOrigin.current
+      ?? { itemIndex: lastVisibleItemIndex(), start: Number.MAX_SAFE_INTEGER };
+  }
+
   function openSearch(): void {
-    if (searchOpen) return;
-    if (services.focus.hasOverlay() && services.focus.activeContext() !== "transcript-search") {
+    if (searchEditing) {
+      stepSearch(-1);
       return;
     }
+    if (services.focus.hasOverlay() && services.focus.activeContext() !== "transcript-search") return;
     if (!closeOverlay.current) {
       try {
         closeOverlay.current = services.focus.pushOverlay("transcript-search");
@@ -658,57 +721,24 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
         return;
       }
     }
-    setSearchOpen(true);
-    setFollowing(false);
+    searchOrigin.current = matchPosition(matches[matchIndex])
+      ?? { itemIndex: lastVisibleItemIndex(), start: Number.MAX_SAFE_INTEGER };
+    setSearchEditing(true);
   }
 
   function clearSearch(): void {
-    setSearchOpen(false);
+    setSearchEditing(false);
     setQuery("");
-    setMatchIndex(-1);
-    closeOverlay.current?.();
-    closeOverlay.current = undefined;
+    setActiveMatch(undefined);
+    searchOrigin.current = undefined;
+    pendingReveal.current = undefined;
+    searchPatternRef.current = undefined;
+    releaseSearchFocus();
+    renderer.requestRender();
   }
 
-  function leaveFilterKeepQuery(): void {
-    setSearchOpen(false);
-    closeOverlay.current?.();
-    closeOverlay.current = undefined;
-    services.focus.focusRegion("transcript");
-  }
-
-  function jumpToMatch(index: number): void {
-    if (index < 0 || matches.length === 0) {
-      setMatchIndex(-1);
-      return;
-    }
-    setMatchIndex(index);
-    const match = matches[index];
-    if (!match) return;
-    transcriptScrollPort.stopWheel();
-    clearNativeSelection();
-    setFollowing(false);
-    const itemIndex = state.order.indexOf(match.itemId);
-    if (
-      itemIndex >= 0 &&
-      (itemIndex < mountWindow.start || itemIndex >= mountWindow.end)
-    ) {
-      const start = transcriptWindowStartForItem(
-        itemCount,
-        itemIndex,
-        DEFAULT_TRANSCRIPT_MOUNT_ROWS,
-      );
-      if (changeWindow(start, { kind: "item", itemId: match.itemId })) return;
-    }
-    queueMicrotask(() => {
-      scrollRef.current?.scrollChildIntoView(match.itemId);
-      publishScrollRemainder(scrollRef.current, mountWindow.newerCount > 0);
-    });
-  }
-
-  function submitSearch(): void {
-    const needle = query.trim();
-    if (!needle) {
+  function acceptSearch(): void {
+    if (!searchActive) {
       clearSearch();
       return;
     }
@@ -716,24 +746,149 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       notify(services, "No matches", { key: "find", level: "warn", durationMs: 1400 });
       return;
     }
-    const index = nextMatchIndex(matches, matchIndex);
-    jumpToMatch(index);
-    leaveFilterKeepQuery();
-    notify(services, `Find · ${index + 1}/${matches.length}`, {
-      key: "find",
-      durationMs: 1200,
+    if (matchIndex < 0) revealMatch(matches[nearestMatchAtOrBefore(matches, searchReference())]!);
+    setSearchEditing(false);
+    releaseSearchFocus();
+    services.focus.focusRegion("transcript");
+  }
+
+  function changeQuery(value: string): void {
+    const reference = searchReference();
+    setQuery(value);
+    searchPatternRef.current = compileSearchQuery(value);
+    const next = findMatches(state, value, isSearchableItem);
+    const index = nearestMatchAtOrBefore(next, reference);
+    if (index < 0) {
+      setActiveMatch(undefined);
+      pendingReveal.current = undefined;
+      return;
+    }
+    revealMatch(next[index]!);
+  }
+
+  function stepSearch(delta: 1 | -1): void {
+    if (matches.length === 0) {
+      if (searchActive) notify(services, "No matches", { key: "find", level: "warn", durationMs: 1400 });
+      return;
+    }
+    const index = matchIndex < 0
+      ? nearestMatchAtOrBefore(matches, searchReference())
+      : stepMatchIndex(matches.length, matchIndex, delta);
+    if (matchIndex >= 0 && matches.length > 1 && (delta > 0 ? index < matchIndex : index > matchIndex)) {
+      notify(services, delta > 0 ? "Search wrapped to the first match" : "Search wrapped to the last match", {
+        key: "find",
+        durationMs: 1400,
+      });
+    }
+    revealMatch(matches[index]!);
+  }
+
+  function revealMatch(match: TranscriptMatch): void {
+    setActiveMatch({ itemId: match.itemId, occurrence: match.occurrence });
+    transcriptScrollPort.stopWheel();
+    clearNativeSelection();
+    setFollowing(false);
+    const item = state.byId.get(match.itemId);
+    if (item?.kind === "thinking" && !isItemExpanded(state, item)) {
+      services.transcript.toggleThinkingItem(item.id, state.expandThinkingGlobal);
+    }
+    pendingReveal.current = { itemId: match.itemId, occurrence: match.occurrence, attempts: 0 };
+    if (match.itemIndex < mountWindow.start || match.itemIndex >= mountWindow.end) {
+      const start = transcriptWindowStartForItem(itemCount, match.itemIndex, DEFAULT_TRANSCRIPT_MOUNT_ROWS);
+      changeWindow(start, { kind: "item", itemId: match.itemId });
+    }
+    scheduleReveal();
+  }
+
+  function scheduleReveal(): void {
+    if (revealScheduled.current) return;
+    revealScheduled.current = true;
+    requestAnimationFrame(() => {
+      revealScheduled.current = false;
+      if (!unmounted.current) applyReveal();
     });
   }
 
-  function nextSearchMatch(): void {
-    if (!searchActive || matches.length === 0) return;
-    jumpToMatch(nextMatchIndex(matches, matchIndex));
+  function retryReveal(pending: PendingSearchReveal): void {
+    pending.attempts += 1;
+    if (pending.attempts < SEARCH_REVEAL_ATTEMPTS) scheduleReveal();
+    else if (pendingReveal.current === pending) pendingReveal.current = undefined;
   }
 
-  function prevSearchMatch(): void {
-    if (!searchActive || matches.length === 0) return;
-    jumpToMatch(prevMatchIndex(matches, matchIndex));
+  function applyReveal(): void {
+    const pending = pendingReveal.current;
+    const sb = scrollRef.current;
+    const pattern = searchPatternRef.current;
+    if (!pending || !sb || !pattern) return;
+    if (windowShiftPending.current || pendingWindowJump.current) {
+      retryReveal(pending);
+      return;
+    }
+    settleTranscriptLayout(renderer);
+    const node = sb.content.findDescendantById(pending.itemId);
+    const hit = node ? renderedOccurrence(node, pattern, pending.occurrence) : undefined;
+    if (!node || (!hit && pending.attempts < 3)) {
+      retryReveal(pending);
+      return;
+    }
+    const top = hit ? contentTopOfRenderable(sb, hit.renderable) : contentTopOf(sb, pending.itemId);
+    if (top === undefined) {
+      retryReveal(pending);
+      return;
+    }
+    pendingReveal.current = undefined;
+    const row = top + (hit?.row ?? 0);
+    const height = Math.max(1, sb.viewport?.height ?? 1);
+    if (row < sb.scrollTop || row >= sb.scrollTop + height) {
+      sb.scrollTo(Math.max(0, Math.min(maxScrollTop(sb), row - Math.floor(height / 3))));
+    }
+    publishScrollRemainder(sb, mountWindow.newerCount > 0);
+    renderer.requestRender();
   }
+
+  function activeSearchCell(sb: ScrollBoxRenderable, pattern: RegExp, active: ActiveSearchMatch): ScreenCell | undefined {
+    const node = sb.content.findDescendantById(active.itemId);
+    const hit = node ? renderedOccurrence(node, pattern, active.occurrence) : undefined;
+    return hit ? occurrenceCell(hit) : undefined;
+  }
+
+  useEffect(() => {
+    const paint = (buffer: OptimizedBuffer): void => {
+      const current = searchPaint.current;
+      const sb = scrollRef.current;
+      if (!current || !sb?.viewport) return;
+      if (services.focus.hasOverlay() && services.focus.activeContext() !== "transcript-search") return;
+      const viewport = sb.viewport;
+      paintSearchHighlights({
+        buffer,
+        root: sb.content,
+        viewport: { x: viewport.screenX, y: viewport.screenY, width: viewport.width, height: viewport.height },
+        pattern: current.pattern,
+        active: current.active ? activeSearchCell(sb, current.pattern, current.active) : undefined,
+        colors: highlightColors,
+      });
+    };
+    renderer.addPostProcessFn(paint);
+    return () => renderer.removePostProcessFn(paint);
+  }, [renderer, highlightColors]);
+
+  useEffect(() => {
+    renderer.requestRender();
+  }, [renderer, searchPattern, matchIndex]);
+
+  useEffect(() => services.focus.onChange((context) => {
+    if (context === "transcript-search" || !closeOverlay.current) return;
+    closeOverlay.current = undefined;
+    setSearchEditing(false);
+  }), [services]);
+
+  useEffect(() => {
+    unmounted.current = false;
+    return () => {
+      unmounted.current = true;
+      closeOverlay.current?.();
+    };
+  }, []);
 
   const openUserPrompt = useCallback(
     (prompt: string): void => {
@@ -750,39 +905,33 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     transcriptScrollPort.wheel(wheelNotches(event.scroll.direction, event.scroll.delta));
   }
 
-  function handleSearchKey(key: KeyEvent, chord: string): boolean {
-    if (searchOpen) {
-      if (chord === "escape") {
-        key.preventDefault();
-        clearSearch();
-      }
-      return true;
-    }
-    const overlayActive =
-      services.focus.hasOverlay() &&
-      services.focus.activeContext() !== "transcript-search";
-    if (overlayActive) return false;
-    if (chord === "ctrl+r") {
-      key.preventDefault();
-      openSearch();
-      return true;
-    }
-    if (!searchActive) return false;
-    switch (chord) {
-      case "escape":
-        clearSearch();
-        break;
-      case "n":
-        nextSearchMatch();
-        break;
-      case "shift+n":
-        prevSearchMatch();
-        break;
-      default:
-        return false;
-    }
+  function consumeSearchKey(key: KeyEvent): true {
     key.preventDefault();
+    key.stopPropagation();
     return true;
+  }
+
+  function handleSearchKey(key: KeyEvent, chord: string): boolean {
+    const context = services.focus.activeContext();
+    const searchChord = services.router.resolve(chord, "transcript") === "transcript.search";
+    if (searchEditing && context === "transcript-search") {
+      if (chord === "escape") clearSearch();
+      else if (searchChord || chord === "up") stepSearch(-1);
+      else if (chord === "down") stepSearch(1);
+      else return true;
+      return consumeSearchKey(key);
+    }
+    if (services.focus.hasOverlay() && context !== "transcript-search") return false;
+    if (searchChord) {
+      openSearch();
+      return consumeSearchKey(key);
+    }
+    if (!searchActive || context !== "transcript") return false;
+    if (chord === "escape") clearSearch();
+    else if (chord === "n") stepSearch(1);
+    else if (chord === "shift+n") stepSearch(-1);
+    else return false;
+    return consumeSearchKey(key);
   }
 
   function handleThinkingCopy(key: KeyEvent, chord: string): boolean {
@@ -883,18 +1032,16 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       onMouseDragEnd={onTranscriptMouseDragEnd}
       onMouseScroll={onWheelScroll}
     >
-      {searchOpen || searchActive ? (
+      {searchEditing || searchActive ? (
         <SearchBar
           theme={theme}
           query={query}
           matchCount={matches.length}
-          activeOrdinal={matchIndex >= 0 ? matchIndex + 1 : 0}
-          editing={searchOpen}
-          onQueryChange={(value) => {
-            setQuery(value);
-            setMatchIndex(-1);
-          }}
-          onSubmit={submitSearch}
+          activeIndex={matchIndex}
+          editing={searchEditing}
+          width={paneWidth}
+          onQueryChange={changeQuery}
+          onSubmit={acceptSearch}
         />
       ) : null}
       <scrollbox
@@ -940,7 +1087,6 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
             services={services}
             onOpenUserPrompt={openUserPrompt}
             contentWidth={paneWidth}
-            searchMatched={searchActive && matchedItemIds.has(item.id)}
             searchActiveMatch={item.id === activeMatchItemId}
             thinkingFocused={state.focusedThinkingId === item.id}
           />
