@@ -1,5 +1,38 @@
 # Changelog
 
+## v5.4.0 — 2026-11-16
+
+### Transcript search and slash commands
+
+- Ctrl+R opens transcript search from any focus on every OS, including non-Latin layouts that report the base key. Matches highlight in place in the chat transcript, the active match is revealed and centred, and up/down, Ctrl+R and n/N step through matches with wraparound. Pagers share the same incremental search and highlight only the matched text; Escape clears a search before closing the pager.
+- Slash commands open their menu and dispatch when the draft starts with invisible format characters or an IME full-width slash, while ordinary paths such as `/tmp` stay prompts.
+
+### Code block copying
+
+- Wrapped code rows start with a ↪ mark and break before space runs so a selection maps back to the exact source. Mouse selections in both interfaces drop code block frames and wrap marks and rejoin wrapped lines, including selections that start or end inside a block. Response code blocks get a copy tab that copies the whole block and shows a toast.
+
+### Turn completion
+
+- Declare `turn.end` in the same response as the final message, removing the extra TURN END CHECK request and its second thinking block on every finished turn. All guidance lives in the static prompt, tool schema or appended messages, so request prefixes stay cache-stable across turns, compaction and goals.
+- Limit `turn.end` to Meta's Muse models, the only routes that stopped mid-task. Other routes no longer carry the tool or pay the extra check request.
+- Keep a later response's reasoning below earlier answers instead of hoisting it above the first assistant row of the turn.
+
+### Loop guard
+
+- Track a change epoch so fix-and-rerun iteration always runs. The epoch advances when a non-read-only action produces a result it has not produced before, or when any action observes a different result; a cycle counts as unchanged only while the epoch holds. Duplicate call replay now also requires no state change since the round it ran in.
+
+### Goals
+
+- Persist goal turns, tokens, elapsed time and last verdict in `goal.json`, so reopening clai restores the counters instead of rebuilding them from zero.
+
+### Providers
+
+- Sign Gemini 3+ tool calls with a `thought_signature`, and derive thinking support and efforts from one versioned spec so Gemini 4 and later resolve efforts per model.
+
+### Turn summary
+
+- Show the tokens used by each prompt on the turn summary, measured from the session usage ledger between turn start and end.
+
 ## v5.3.0 — 2026-11-12
 
 ### Tool status balls
