@@ -159,6 +159,43 @@ describe("thinking rows are owned by a reasoning id, not guessed by suffix", () 
     expect(thinkingRows(state)[0]?.content).toContain("private on Meta Model API");
   });
 
+  it("keeps a later response's reasoning below an earlier response that had none", () => {
+    const call = asToolCallId("call-1");
+    const state = run((event) => [
+      event("status", { text: "waiting" }),
+      event("assistant-delta", { text: "Let me look." }),
+      event("tool-call", { toolCallId: call, name: "fs.read", argsDisplay: "", pending: true }),
+      event("assistant-message", { messageId: "m1" as never, text: "Let me look." }),
+      event("tool-call", { toolCallId: call, name: "fs.read", argsDisplay: "{}" }),
+      event("tool-started", { toolCallId: call }),
+      event("tool-result", { toolCallId: call, ok: true, summary: "read" }),
+      event("status", { text: "step 2", step: 2 }),
+      event("thinking-delta", { text: "now I know", reasoningId: "reasoning-1" }),
+      event("thinking-delta", { text: " the answer", reasoningId: "reasoning-1" }),
+      event("assistant-delta", { text: "Done." }),
+      event("assistant-message", { messageId: "m2" as never, text: "Done." }),
+    ]);
+    expect(kinds(state)).toEqual(["assistant", "tool", "thinking", "assistant"]);
+    expect(thinkingRows(state)[0]?.content).toBe("now I know the answer");
+  });
+
+  it("puts a private-reasoning note above its own answer when that response also calls tools", () => {
+    const state = run((event) => [
+      event("assistant-delta", { text: "Reading the file." }),
+      event("tool-call", {
+        toolCallId: asToolCallId("call-1"),
+        name: "fs.read",
+        argsDisplay: "",
+        pending: true,
+      }),
+      event("thinking-delta", {
+        text: "Reasoning is private on Meta Model API: the model reasoned and used 12 reasoning tokens, but the API returns no reasoning text to display.",
+        reasoningId: "reasoning-1",
+      }),
+    ]);
+    expect(kinds(state)).toEqual(["thinking", "assistant", "tool"]);
+  });
+
   it("still hoists over an empty assistant placeholder", () => {
     const state = run((event) => [
       event("thinking-delta", { text: "thought", reasoningId: "reasoning-1" }),

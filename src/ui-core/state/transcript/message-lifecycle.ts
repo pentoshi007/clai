@@ -138,25 +138,14 @@ function turnHasThinkingRow(
   return false;
 }
 
-function firstAssistantIdInTurn(
-  state: TranscriptState,
-  turnId: string | undefined,
-): string | undefined {
-  for (const id of state.order) {
-    const item = state.byId.get(id);
-    if (item?.kind === "assistant" && item.turnId === turnId) return id;
-  }
-  return undefined;
-}
-
 function thinkingHoistTarget(
   state: TranscriptState,
   turnId: string | undefined,
 ): string | undefined {
   const pending = state.pendingAssistantId;
-  if (pending && isEmptyAssistantPlaceholder(state, pending)) return pending;
-  if (turnHasThinkingRow(state, turnId)) return undefined;
-  return firstAssistantIdInTurn(state, turnId);
+  if (!pending) return undefined;
+  if (isEmptyAssistantPlaceholder(state, pending)) return pending;
+  return turnHasThinkingRow(state, turnId) ? undefined : pending;
 }
 
 export function appendDelta(
