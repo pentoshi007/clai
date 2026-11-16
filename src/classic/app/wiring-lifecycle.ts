@@ -62,8 +62,7 @@ export function disposeWiring(host: WiringHost): void {
   host.selectionAutoScrollTimer = undefined;
   if (host.branchRefreshTimer) clearInterval(host.branchRefreshTimer);
   host.branchRefreshRequest += 1;
-  host.searchFocusRelease?.();
-  host.searchFocusRelease = undefined;
+  host.find.dispose();
   for (const dispose of host.disposers.splice(0)) dispose();
   host.panels.dispose();
   host.listeners.clear();
@@ -77,10 +76,8 @@ export function attachWiring(host: WiringHost): void {
       host.schedulePaint();
     }),
     host.composer.subscribe(() => host.schedulePaint(true)),
-    host.panels.subscribe(() => {
-      host.syncSearchFocus();
-      host.schedulePaint(true);
-    }),
+    host.panels.subscribe(() => host.schedulePaint(true)),
+    host.find.subscribe(() => host.schedulePaint(true)),
     host.services.session.subscribe(() => host.onSessionChange()),
     host.services.transcript.subscribe(() => host.onTranscriptChange()),
     host.services.plan.subscribe(() => host.onPlanChange()),

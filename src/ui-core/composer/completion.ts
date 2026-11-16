@@ -3,6 +3,7 @@ import { getMentionQuery, findFileSuggestions, type FileSuggestion } from "../..
 import { REA_TOKEN } from "../../rea/workflow.js";
 import type { CommandRegistry } from "../../app/commands/registry.js";
 import type { CommandDefinition } from "../../app/commands/command.js";
+import { isBlankInput, isSlashLookalike } from "../../app/commands/command-input.js";
 
 export interface SlashToken {
   readonly token: string;
@@ -10,10 +11,14 @@ export interface SlashToken {
   readonly end: number;
 }
 
+const SLASH_TOKEN_TAIL = /(?:^|[\s\p{Cf}\u180e])([/\uff0f\u2215\u2044\u29f8])[^/\s]*\s*$/u;
+
 export function detectSlashToken(value: string, cursorOffset: number): SlashToken | undefined {
   const upto = value.slice(0, cursorOffset);
-  if (!/(^|\s)\/[^\/\s]*\s*$/.test(upto)) return undefined;
-  const slash = upto.lastIndexOf("/");
+  const match = SLASH_TOKEN_TAIL.exec(upto);
+  if (!match) return undefined;
+  const slash = match.index + match[0].indexOf(match[1]!);
+  if (isSlashLookalike(value[slash]) && !isBlankInput(value.slice(0, slash))) return undefined;
   const lineEnd = value.indexOf("\n", slash);
   const searchEnd = lineEnd === -1 ? value.length : lineEnd;
   const rest = value.slice(slash, searchEnd);
@@ -82,7 +87,7 @@ export function activateSlashCompletion(
   if (menu.kind !== "slash") return undefined;
   const item = menu.items[index];
   if (!item) return undefined;
-  if (!value.slice(0, menu.start).trim()) {
+  if (isBlankInput(value.slice(0, menu.start))) {
     return {
       command: `/${item.name}${value.slice(menu.end)}`.trimEnd(),
       value: "",
@@ -142,7 +147,7 @@ export function resolveCompletionMenu(
   const slashToken = detectSlashToken(value, cursorOffset);
   if (slashToken) {
     const items = commandSuggestions(registry, slashToken.token);
-    if (items.length > 0 || slashToken.token === "/") {
+    if (items.length > 0 || slashToken.token.length === 1) {
       return {
         kind: "slash",
         start: slashToken.start,

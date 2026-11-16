@@ -173,3 +173,34 @@ describe("chordFromKey normalisation", () => {
     expect(chordFromKey(key({ name: "PageUp" }))).toBe("pageup");
   });
 });
+
+describe("Ctrl+R transcript search routing", () => {
+  const router = new ActionRouter(defaultKeymap);
+
+  function decode(bytes: string): string {
+    const decoder = new RawDecoder();
+    const event = [...decoder.push(bytes), ...decoder.flush()].find((entry) => entry.type === "key");
+    if (event?.type !== "key") throw new Error(`no key decoded for ${JSON.stringify(bytes)}`);
+    return chordFromKey(event.key);
+  }
+
+  it("decodes Ctrl+R from legacy, kitty and modifyOtherKeys terminals", () => {
+    expect(decode("\x12")).toBe("ctrl+r");
+    expect(decode("\x1b[114;5u")).toBe("ctrl+r");
+    expect(decode("\x1b[27;5;114~")).toBe("ctrl+r");
+  });
+
+  it("decodes Ctrl+R from non-Latin keyboard layouts through the base layout key", () => {
+    expect(decode("\x1b[1082::114;5u")).toBe("ctrl+r");
+    expect(decode("\x1b[961::114;5u")).toBe("ctrl+r");
+    expect(decode("\x1b[1082::114u")).toBe("к");
+  });
+
+  it("opens transcript search from every non-modal focus", () => {
+    for (const context of ["composer", "transcript", "plan"] as const) {
+      expect(router.resolve("ctrl+r", context), context).toBe("transcript.search");
+    }
+    expect(router.resolve("ctrl+r", "pager")).toBe("pager.search");
+    expect(router.resolve("ctrl+r", "picker")).toBeUndefined();
+  });
+});

@@ -34,6 +34,7 @@ export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
   host.maxLiveOffset = window.maxOffset;
   host.feedLayoutPending = window.layoutPending;
   host.feedViewportRows = window.viewportRows;
+  host.feedBlocks = feed.blocks;
   host.scrollAboveValue = window.scrollAbove;
   host.scrollBelowValue = window.offset;
   host.selectedFeedItemId = window.lastItemId ?? feed.blocks.at(-1)?.itemId;
@@ -261,22 +262,8 @@ export async function openPlanDetail(host: WiringHost): Promise<void> {
 }
 
 export function openSearch(host: WiringHost): void {
-  if (host.services.overlay.isOpen() || host.panels.getSnapshot().search !== undefined) return;
-  try {
-    host.searchFocusRelease = host.services.focus.pushOverlay("transcript-search");
-    host.panels.openSearch();
-  } catch {
-    host.searchFocusRelease?.();
-    host.searchFocusRelease = undefined;
-  }
-}
-
-export function syncSearchFocus(host: WiringHost): void {
-  const open = host.panels.getSnapshot().search !== undefined;
-  if (!open && host.searchFocusRelease) {
-    host.searchFocusRelease();
-    host.searchFocusRelease = undefined;
-  }
+  if (host.services.overlay.isOpen()) return;
+  host.find.open();
 }
 
 export function closePanel(host: WiringHost): boolean {
@@ -284,12 +271,7 @@ export function closePanel(host: WiringHost): boolean {
     host.services.overlay.close();
     return true;
   }
-  if (host.panels.getSnapshot().search !== undefined) {
-    host.panels.closeSearch();
-    syncSearchFocus(host);
-    return true;
-  }
-  return false;
+  return host.find.close();
 }
 
 export function toggleSelectedItem(host: WiringHost): void {

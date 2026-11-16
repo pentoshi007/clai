@@ -17,6 +17,7 @@ export type StatusRowsWanted = 1 | 2 | 3;
 export interface ChromeOverlayDemand {
   readonly kind: OverlayContext;
   readonly rowsWanted: number;
+  readonly minRows?: number | undefined;
 }
 
 export interface ChromeDemand {
@@ -83,7 +84,7 @@ export function allocateChrome(demand: ChromeDemand): ChromeLayout {
 
   const overlayWanted = demand.overlay ? whole(demand.overlay.rowsWanted) : 0;
   const overlay = demand.overlay
-    ? clamp(overlayWanted, OVERLAY_MIN_ROWS, Math.floor(rows * 0.6), budget)
+    ? clamp(overlayWanted, demand.overlay.minRows ?? OVERLAY_MIN_ROWS, Math.floor(rows * 0.6), budget)
     : 0;
   budget -= overlay;
 

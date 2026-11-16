@@ -29,7 +29,7 @@ it("renders changing elapsed time and a frozen duration in the Classic inspector
   }, run.id);
   const harness = createHarness({ columns: 120, rows: 46 });
   harness.overlay.openPager(run.title, formatSubagentRun(run), source, undefined, "force");
-  const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
+  const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} now={0} />);
   try {
     await vi.advanceTimersByTimeAsync(50);
     expect(view.lastFrame()).toContain("Elapsed 0.0s");
@@ -64,7 +64,7 @@ it("renders readable subagent activity and one evidence report in Classic", asyn
   const harness = createHarness({ columns: 120, rows: 46 });
   const body = formatSubagentRun(run);
   harness.overlay.openPager(run.title, body, createTextPagerSource(body, `memory://subagent/${run.id}`), undefined, "force");
-  const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
+  const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} now={0} />);
   try {
     const frame = view.lastFrame() ?? "";
     expect(frame).toContain("\x1b[1mExplored");
@@ -143,7 +143,7 @@ it("keeps the complete durable subagent transcript readable and continuously nav
     expect(page.pageCount).toBe(1);
     expect(page.nextOffset).toBe(page.totalBytes);
     harness.overlay.openPager(restored.title, formatSubagentRun(restored), source, undefined, "force");
-    view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
+    view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={120} rows={40} jobs={[]} now={0} />);
     await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerBody).toBe(complete));
     await vi.waitFor(() => expect(view!.lastFrame()).toContain("FIRST_DURABLE_FINDING"));
     expect(view.lastFrame()).toContain("Explored");
@@ -165,6 +165,17 @@ it("keeps the complete durable subagent transcript readable and continuously nav
     expect(harness.press("backspace")).toBe(true);
     expect(harness.press("backspace")).toBe(true);
     expect(harness.press("backspace")).toBe(true);
+    expect(harness.press("enter")).toBe(true);
+    expect(lines[harness.panels.getSnapshot().pager.caret]).toContain("DURABLE_EVIDENCE_110");
+    expect(harness.press("n")).toBe(true);
+    expect(lines[harness.panels.getSnapshot().pager.caret]).toContain("DURABLE_EVIDENCE_111");
+    expect(harness.press("shift+n")).toBe(true);
+    expect(lines[harness.panels.getSnapshot().pager.caret]).toContain("DURABLE_EVIDENCE_110");
+    expect(harness.press("escape")).toBe(true);
+    expect(harness.panels.getSnapshot().pager.query).toBe("");
+    expect(harness.press("home")).toBe(true);
+    expect(harness.press("ctrl+r")).toBe(true);
+    expect(harness.handlePasteThroughPanels("DURABLE_EVIDENCE_")).toBe(true);
     expect(harness.press("enter")).toBe(true);
     expect(lines[harness.panels.getSnapshot().pager.caret]).toContain("DURABLE_EVIDENCE_000");
     expect(harness.press("n")).toBe(true);
@@ -201,7 +212,7 @@ it.each([80, 120])("keeps live named usage compact, styled and output-free at %i
   }, run.id);
   const harness = createHarness({ columns, rows: 46 });
   harness.overlay.openPager(run.title, formatSubagentRun(run), source, undefined, "force");
-  const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={columns} rows={40} jobs={[]} transcript={harness.transcript} now={0} />);
+  const view = render(<PanelHost controller={harness.panels} ink={colorInk} columns={columns} rows={40} jobs={[]} now={0} />);
   Object.defineProperty(view.stdout, "columns", { value: columns });
   view.stdout.emit("resize");
   const emit = (kind: "tool" | "assistant", text: string): void => {

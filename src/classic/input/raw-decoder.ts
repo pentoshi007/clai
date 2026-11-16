@@ -3,6 +3,7 @@ import { keyEvent } from "./key-event.js";
 import { sanitizePasteText } from "./paste-decoder.js";
 import { parseSgrMouse } from "./sgr-mouse.js";
 import { PASTE_BURST_BULK_CHARS } from "../../ui-core/input/paste-burst.js";
+import { layoutIndependentKeyName } from "../../ui-core/actions/chord.js";
 import {
   BEL,
   CSI_FINAL_KEYS,
@@ -79,7 +80,7 @@ function namedKey(name: string, modifiers: KeyModifiers): KeyEvent {
   return keyEvent(name, modifiers);
 }
 
-function csiUKey(code: number, modifiers: KeyModifiers): KeyEvent | undefined {
+function csiUKey(code: number, modifiers: KeyModifiers, baseLayoutCode?: number): KeyEvent | undefined {
   if (!Number.isInteger(code) || code < 0) return undefined;
   const named = CSI_U_KEYS[code];
   if (named) return keyEvent(named, modifiers);
@@ -89,6 +90,9 @@ function csiUKey(code: number, modifiers: KeyModifiers): KeyEvent | undefined {
   } catch {
     return undefined;
   }
+  const shortcut = Boolean(modifiers.ctrl || modifiers.alt || modifiers.meta);
+  const layoutChar = layoutIndependentKeyName(char, Number.isNaN(baseLayoutCode) ? undefined : baseLayoutCode, shortcut);
+  if (layoutChar !== char) return keyEvent(layoutChar, modifiers);
   const lower = char.toLowerCase();
   const printable = code >= 32 && code !== 127;
   const bare = !modifiers.ctrl && !modifiers.alt && !modifiers.meta;
@@ -290,11 +294,13 @@ export class RawDecoder {
       if (event && this.mouse) events.push({ type: "mouse", event });
       return;
     }
-    const params = body.split(";").map((part) => Number(part.split(":")[0]));
+    const fields = body.split(";");
+    const params = fields.map((part) => Number(part.split(":")[0]));
     const modifiers = modifiersFromCsi(params[1]);
     const modifiedKey = finalByte === "~" && params[0] === 27 && params.length === 3;
     if (finalByte === "u" || modifiedKey) {
-      const key = csiUKey(params[modifiedKey ? 2 : 0] as number, modifiers);
+      const baseLayoutCode = modifiedKey ? undefined : Number(fields[0]?.split(":")[2]);
+      const key = csiUKey(params[modifiedKey ? 2 : 0] as number, modifiers, baseLayoutCode);
       if (key) events.push({ type: "key", key });
       return;
     }

@@ -20,6 +20,8 @@ import { colorInk, createHarness, ink, rowsOf } from "./harness.js";
 import type { ArtifactPagerSource } from "../../../src/ui-core/rendering/artifact-pager-source.js";
 
 const BODY = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n");
+const SEARCH_MATCH_OPEN = colorInk.style("\u0000", { bg: "searchMatch", fg: "searchMatchText" }).split("\u0000")[0]!;
+const SEARCH_ACTIVE_OPEN = colorInk.style("\u0000", { bg: "searchActive", fg: "searchActiveText", bold: true }).split("\u0000")[0]!;
 
 function render(state: PagerPanelState, rows = 8, columns = 80, live = false) {
   const lines = pagerLines(BODY, columns, rows, state.format);
@@ -263,7 +265,7 @@ describe("pager source normalization and width", () => {
       lines,
       state,
     });
-    expect(panelFrameRows(frame).rows[1]).toContain("\x1b[7m");
+    expect(panelFrameRows(frame).rows[1]).toContain(SEARCH_ACTIVE_OPEN);
   });
 });
 
@@ -308,7 +310,7 @@ describe("pager keys", () => {
     expect(escaped.query).toBe("line");
   });
 
-  it("paints matches inverse", () => {
+  it("paints matches with the search highlight colours", () => {
     const colored = pagerView({
       ink: colorInk,
       columns: 80,
@@ -317,7 +319,7 @@ describe("pager keys", () => {
       lines: pagerLines(BODY, 80, 8, PAGER_INITIAL_STATE.format),
       state: { ...PAGER_INITIAL_STATE, query: "line 1" },
     });
-    expect(panelFrameRows(colored).rows[1]).toContain("\x1b[7m");
+    expect(panelFrameRows(colored).rows[1]).toContain(SEARCH_MATCH_OPEN);
   });
 
   it("toggles format and follow", () => {

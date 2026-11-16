@@ -15,7 +15,14 @@ export function settleTranscriptLayout(renderer: CliRenderer): void {
 }
 
 export function contentTopOf(sb: ScrollBoxRenderable, itemId: string): number | undefined {
-  let node: Renderable | null | undefined = sb.content.findDescendantById(itemId);
+  return contentTopOfRenderable(sb, sb.content.findDescendantById(itemId));
+}
+
+export function contentTopOfRenderable(
+  sb: ScrollBoxRenderable,
+  start: Renderable | null | undefined,
+): number | undefined {
+  let node: Renderable | null | undefined = start;
   let top = 0;
   while (node && node !== sb.content) {
     top += node.getLayoutNode().getComputedTop();

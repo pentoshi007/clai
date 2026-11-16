@@ -19,6 +19,7 @@ export interface PagerRow {
   readonly line: string;
   readonly kind: PagerRowKind;
   readonly textOffset?: number | undefined;
+  readonly textLength?: number | undefined;
   readonly spans?: readonly SyntaxSpan[] | undefined;
   readonly tone?: PagerCommandTone | undefined;
 }
@@ -66,6 +67,7 @@ export function buildPagerRows(input: {
         { preserveWhitespace: true },
       );
       const mark = parsed.tone === "add" ? "+" : parsed.tone === "del" ? "−" : " ";
+      let codeOffset = 0;
       chunks.forEach((chunk, part) => {
         const gutter = part === 0 ? parsed.gutter : " ".repeat(parsed.gutter.length);
         const header = parsed.tone === "header";
@@ -74,10 +76,13 @@ export function buildPagerRows(input: {
           index,
           line: header ? `${gutter} │ ${chunk}` : `${gutter} │ ${mark} ${chunk}`,
           kind: "diff",
+          textOffset: codeOffset,
+          textLength: chunk.length,
           spans: header
             ? [{ kind: "plain", text: chunk }]
             : highlightLineForPath(chunk, highlightPath, carry),
         });
+        codeOffset += chunk.length;
       });
       continue;
     }
@@ -102,6 +107,7 @@ export function buildPagerRows(input: {
         index,
         line: chunk,
         kind: "plain",
+        textOffset: spanOffset,
         ...(tone ? { tone } : {}),
         ...(spans ? { spans: slicePagerSpans(spans, spanOffset, chunk.length) } : {}),
       });
@@ -131,6 +137,22 @@ export function slicePagerSpans<T extends { readonly text: string }>(
     if (offset >= end) break;
   }
   return result;
+}
+
+export function pagerRowId(row: Pick<PagerRow, "key">): string {
+  return `pager-row-${row.key}`;
+}
+
+export function pagerRowForMatch(rows: readonly PagerRow[], match: PagerMatch): number {
+  let fallback = -1;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!;
+    if (row.index !== match.line) continue;
+    if (fallback < 0) fallback = index;
+    const offset = row.textOffset ?? 0;
+    if (match.column < offset + (row.textLength ?? row.line.length)) return index;
+  }
+  return fallback;
 }
 
 export function pagerRowWindow(count: number, top: number, height: number): { start: number; end: number } {

@@ -2,7 +2,6 @@ import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { PanelHost } from "../../../src/classic/panels/panel-host.js";
 import { OVERLAY_MIN_ROWS } from "../../../src/classic/chrome/row-budget.js";
-import { EMPTY_TRANSCRIPT_STATE } from "../../../src/ui-core/state/transcript-types.js";
 import { createHarness, ink, job } from "./harness.js";
 
 const PICKER = {
@@ -18,7 +17,6 @@ function mount(harness: ReturnType<typeof createHarness>, rows = 7) {
       columns={80}
       rows={rows}
       jobs={harness.jobs}
-      transcript={harness.transcript}
       now={0}
     />,
   );
@@ -71,13 +69,6 @@ describe("panel host", () => {
       expect(frame, expected).toContain(expected);
       expect(frame.split("\n")).toHaveLength(7);
     }
-  });
-
-  it("renders the search panel when no overlay owns the slot", () => {
-    const harness = createHarness();
-    harness.transcript = EMPTY_TRANSCRIPT_STATE;
-    harness.panels.openSearch();
-    expect(mount(harness).lastFrame()).toContain("Find in transcript");
   });
 
   it("re-renders when the panel controller publishes", async () => {

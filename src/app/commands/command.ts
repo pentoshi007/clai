@@ -1,3 +1,4 @@
+import { stripInvisibleFormat, stripLeadingSlashes } from "./command-input.js";
 
 export type CommandContext =
   | "global"
@@ -28,5 +29,5 @@ export type CommandHandler = (
 ) => void | Promise<void>;
 
 export function normalizeCommandName(nameOrAlias: string): string {
-  return nameOrAlias.trim().replace(/^\/+/, "").toLowerCase();
+  return stripLeadingSlashes(stripInvisibleFormat(nameOrAlias).trim()).toLowerCase();
 }

@@ -42,6 +42,7 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("ctrl+s", "queue.send-now", "global"),
   binding("ctrl+]", "queue.edit", "global"),
   binding("ctrl+_", "queue.remove", "global"),
+  binding("ctrl+r", "transcript.search", "global"),
 
   binding("enter", "editor.submit", "composer"),
   binding("shift+enter", "editor.newline", "composer"),
@@ -63,7 +64,6 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("ctrl+d", "transcript.bottom", "transcript"),
   binding("home", "transcript.top", "transcript"),
   binding("end", "transcript.bottom", "transcript"),
-  binding("ctrl+r", "transcript.search", "transcript"),
   binding("c", "transcript.copy-thinking", "transcript"),
   binding("enter", "transcript.expand-toggle", "transcript"),
   binding("ctrl+shift+c", "selection.copy", "transcript"),

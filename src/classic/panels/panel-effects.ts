@@ -12,7 +12,6 @@ import {
 export interface PanelEffectContext {
   readonly deps: PanelControllerDeps;
   readonly snapshot: PanelSnapshot;
-  readonly closeSearch: () => void;
   readonly openJobTail: (jobId: string) => void;
   readonly loadPagerPage: (offset: number) => void;
 }
@@ -29,8 +28,7 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
   const overlay = deps.overlay;
   switch (effect.kind) {
     case "close":
-      if (snapshot.overlay.kind === "none") context.closeSearch();
-      else overlay.close();
+      if (snapshot.overlay.kind !== "none") overlay.close();
       return;
     case "picker-select":
       overlay.selectPicker(effect.value);
@@ -94,10 +92,6 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
       context.loadPagerPage(effect.offset);
       return;
     case "pager-search":
-      return;
-    case "search-open":
-      context.closeSearch();
-      deps.onRevealItem(effect.itemId);
       return;
     case "plan-hide":
       deps.onHidePlan();

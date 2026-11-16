@@ -35,7 +35,6 @@ export function TranscriptRowImpl(props: {
   expandOutputGlobal: boolean;
   expandFileDiffsGlobal: boolean;
   contentWidth?: number | undefined;
-  searchMatched?: boolean | undefined;
   searchActiveMatch?: boolean | undefined;
   thinkingFocused?: boolean | undefined;
 }): ReactNode {
@@ -53,7 +52,6 @@ export function TranscriptRowImpl(props: {
     expandOutputGlobal,
     expandFileDiffsGlobal,
     contentWidth,
-    searchMatched,
     searchActiveMatch,
     thinkingFocused,
   } = props;
@@ -67,6 +65,7 @@ export function TranscriptRowImpl(props: {
           theme={theme}
           onOpen={onOpenUserPrompt}
           contentWidth={contentWidth}
+          revealed={searchActiveMatch ?? false}
         />
       );
       break;
@@ -114,9 +113,7 @@ export function TranscriptRowImpl(props: {
           onToggleFileDiff={() =>
             store.toggleFileDiffOverride(item.id, expandFileDiffsGlobal)
           }
-          contentWidth={
-            searchMatched && contentWidth != null ? contentWidth - 2 : contentWidth
-          }
+          contentWidth={contentWidth}
         />
       );
       break;
@@ -152,22 +149,7 @@ export function TranscriptRowImpl(props: {
     }
   }
 
-  if (!searchMatched) return body;
-  return (
-    <box
-      border
-      borderStyle="rounded"
-      style={{
-        width: "100%",
-        flexDirection: "column",
-        backgroundColor: searchActiveMatch ? theme.selection : theme.rowA,
-        borderColor: searchActiveMatch ? theme.activity : theme.cyan,
-        marginBottom: 0,
-      }}
-    >
-      {body}
-    </box>
-  );
+  return body;
 }
 
 export const TranscriptRow = memo(TranscriptRowImpl);

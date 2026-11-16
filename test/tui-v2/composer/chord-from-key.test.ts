@@ -209,3 +209,16 @@ describe("escape cancellation decisions", () => {
     expect(preserveEscapeArmAfterTurn(false)).toBe(false);
   });
 });
+describe("layout-independent shortcuts", () => {
+  it("maps Ctrl+R on non-Latin layouts to the base layout key", () => {
+    expect(chordFromKeyEvent({ name: "к", ctrl: true, baseCode: 114 })).toBe("ctrl+r");
+    expect(chordFromKeyEvent({ name: "ρ", ctrl: true, baseCode: 114 })).toBe("ctrl+r");
+    expect(chordFromKeyEvent({ name: "к", option: true, baseCode: 114 })).toBe("alt+r");
+  });
+
+  it("keeps typed text and Latin shortcuts unchanged", () => {
+    expect(chordFromKeyEvent({ name: "к", baseCode: 114 })).toBe("к");
+    expect(chordFromKeyEvent({ name: "r", ctrl: true, baseCode: 114 })).toBe("ctrl+r");
+    expect(chordFromKeyEvent({ name: "escape", ctrl: true, baseCode: 27 })).toBe("ctrl+escape");
+  });
+});

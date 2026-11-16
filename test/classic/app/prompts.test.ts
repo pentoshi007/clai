@@ -123,7 +123,8 @@ describe("Classic /prompts", () => {
     for (const char of "MIDDLE_NEEDLE") h.wiring.handleData(char);
     await new Promise((resolve) => setTimeout(resolve, 40));
     h.wiring.handleData("\r");
-    await expect.poll(frame).not.toContain("find:");
+    await expect.poll(frame).not.toContain("esc cancel");
+    await expect.poll(frame).toContain("n/N next/prev");
     await expect.poll(frame).toContain("MIDDLE_NEEDLE");
     h.wiring.handleData("c");
     await expect.poll(() => copy.mock.calls.length).toBe(1);

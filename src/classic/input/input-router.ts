@@ -25,6 +25,8 @@ export interface InputRouterDeps {
   readonly onPanelKey: (key: KeyEvent, chord: string, context: ActionContext) => void;
   readonly onText: (text: string) => void;
   readonly onPaste: (text: string) => void;
+  readonly onSearchKey?: ((key: KeyEvent, chord: string) => boolean) | undefined;
+  readonly onOverlayEscape?: (() => boolean) | undefined;
   readonly onMouse: (event: MouseEvent) => void;
   readonly onKeyboardInput?: (() => void) | undefined;
   readonly onToast: (text: string) => void;
@@ -92,7 +94,16 @@ export class InputRouter {
       return;
     }
 
+    if ((context === "transcript-search" || context === "transcript") && this.deps.onSearchKey?.(key, chord)) {
+      if (chord === "escape") this.deps.ladder.disarmEscape();
+      return;
+    }
+
     if (OVERLAY_CONTEXTS.has(context)) {
+      if (chord === "escape" && this.deps.onOverlayEscape?.()) {
+        this.deps.ladder.disarmEscape();
+        return;
+      }
       if (chord === "ctrl+c" || chord === "escape") {
         this.deps.ladder.disarmEscape();
         this.deps.closeOverlay();

@@ -1,4 +1,10 @@
+import { existsSync } from "node:fs";
 import { slashCommands } from "./catalog.js";
+import {
+  isCommandShapedToken,
+  isSlashLookalike,
+  splitCommandInput,
+} from "./command-input.js";
 import {
   normalizeCommandName,
   type CommandContext,
@@ -26,10 +32,16 @@ export interface CommandHelpEntry {
 }
 
 
+export interface CommandRegistryOptions {
+  readonly pathExists?: ((path: string) => boolean) | undefined;
+}
+
 export class CommandRegistry {
   private readonly byName = new Map<string, CommandDefinition>();
   private readonly aliasToName = new Map<string, string>();
   private readonly handlers = new Map<string, CommandHandler>();
+
+  constructor(private readonly options: CommandRegistryOptions = {}) {}
 
   register(definition: CommandDefinition): void {
     const name = normalizeCommandName(definition.name);
@@ -94,17 +106,11 @@ export class CommandRegistry {
     line: string,
     context: CommandContext = "global",
   ): CommandInvocation | undefined {
-    if (!line.startsWith("/")) return undefined;
-    const rest = line.slice(1);
-    const boundary = rest.search(/\s/);
-    const rawName = boundary === -1 ? rest : rest.slice(0, boundary);
-    const args = boundary === -1 ? "" : rest.slice(boundary + 1).trim();
-    if (!rawName || rawName.includes("/") || rawName.includes("\\")) {
-      return undefined;
-    }
+    const parts = this.commandParts(line);
+    if (!parts) return undefined;
+    const { token: rawName, args } = parts;
     const exact = this.resolve(rawName);
     if (exact) return { name: exact, args, context };
-    if (rawName.length === 0) return undefined;
     const matches = this.suggestions(rawName);
     if (matches.length === 1) {
       return { name: matches[0]!.name, args, context };
@@ -121,16 +127,25 @@ export class CommandRegistry {
     return undefined;
   }
 
-  
   looksLikeCommand(line: string): boolean {
-    if (!line.startsWith("/") || line.length < 2) return false;
-    const firstToken = line.slice(1).split(/\s/)[0] ?? "";
-    if (!firstToken || firstToken.includes("/") || firstToken.includes("\\")) {
-      return false;
-    }
-    if (this.resolve(firstToken)) return true;
-    if (this.suggestions(firstToken).length > 0) return true;
-    return /^[a-z][a-z0-9-]*$/i.test(firstToken);
+    const parts = this.commandParts(line);
+    if (!parts) return false;
+    if (this.knows(parts.token)) return true;
+    if (!isCommandShapedToken(parts.token)) return false;
+    return this.options.pathExists?.(`/${parts.token}`) !== true;
+  }
+
+  private knows(token: string): boolean {
+    return this.resolve(token) !== undefined || this.suggestions(token).length > 0;
+  }
+
+  private commandParts(line: string): { readonly token: string; readonly args: string } | undefined {
+    const parts = splitCommandInput(line);
+    if (!parts) return undefined;
+    const { slash, token, rest } = parts;
+    if (!token || token.includes("/") || token.includes("\\")) return undefined;
+    if (isSlashLookalike(slash) && !this.knows(token)) return undefined;
+    return { token, args: rest.trim() };
   }
 
   async dispatch(invocation: {
@@ -152,8 +167,10 @@ export class CommandRegistry {
 }
 
 
-export function buildDefaultCommandRegistry(): CommandRegistry {
-  const registry = new CommandRegistry();
+export function buildDefaultCommandRegistry(
+  options: CommandRegistryOptions = { pathExists: existsSync },
+): CommandRegistry {
+  const registry = new CommandRegistry(options);
   const aliasNames = new Set<string>();
   for (const aliases of Object.values(ALIAS_GROUPS)) {
     for (const alias of aliases) aliasNames.add(alias);

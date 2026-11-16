@@ -331,8 +331,6 @@ export function panelContextFor(kind: string): OverlayContext | undefined {
       return "pager";
     case "jobs":
       return "jobs";
-    case "search":
-      return "transcript-search";
     default:
       return undefined;
   }

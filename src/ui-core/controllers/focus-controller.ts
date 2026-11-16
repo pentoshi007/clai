@@ -58,7 +58,7 @@ export class FocusController {
   }
 
   pushOverlay(context: OverlayContext): () => void {
-    if (this.overlay) {
+    if (this.overlay && this.overlay !== "transcript-search") {
       throw new Error(
         `a blocking overlay (${this.overlay}) is already open; close it before opening ${context}`,
       );

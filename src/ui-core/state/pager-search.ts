@@ -1,3 +1,4 @@
+import { compileSearchQuery, searchRanges, stepMatchIndex } from "./text-search.js";
 
 export interface PagerMatch {
   readonly line: number;
@@ -6,30 +7,44 @@ export interface PagerMatch {
 }
 
 export function findPagerMatches(lines: readonly string[], query: string): PagerMatch[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
+  const pattern = compileSearchQuery(query);
+  if (!pattern) return [];
   const matches: PagerMatch[] = [];
   for (let line = 0; line < lines.length; line += 1) {
-    const haystack = lines[line]!.toLowerCase();
-    let from = 0;
-    for (;;) {
-      const at = haystack.indexOf(needle, from);
-      if (at === -1) break;
-      matches.push({ line, column: at, length: needle.length });
-      from = at + needle.length;
+    for (const range of searchRanges(lines[line]!, pattern)) {
+      matches.push({ line, column: range.start, length: range.end - range.start });
     }
   }
   return matches;
 }
 
 export function nextPagerMatch(matches: readonly PagerMatch[], current: number): number {
-  if (matches.length === 0) return -1;
-  return (current + 1 + matches.length) % matches.length;
+  return stepMatchIndex(matches.length, current, 1);
 }
 
 export function prevPagerMatch(matches: readonly PagerMatch[], current: number): number {
+  return stepMatchIndex(matches.length, current, -1);
+}
+
+export function nearestPagerMatch(
+  matches: readonly PagerMatch[],
+  line: number,
+  column = 0,
+): number {
   if (matches.length === 0) return -1;
-  return (current - 1 + matches.length) % matches.length;
+  const index = matches.findIndex(
+    (match) => match.line > line || (match.line === line && match.column >= column),
+  );
+  return index === -1 ? 0 : index;
+}
+
+export function pagerMatchIndexAfterChange(
+  previous: PagerMatch | undefined,
+  matches: readonly PagerMatch[],
+  fallbackLine: number,
+): number {
+  if (previous) return nearestPagerMatch(matches, previous.line, previous.column);
+  return nearestPagerMatch(matches, fallbackLine);
 }
 
 export interface PagerLineSegment {

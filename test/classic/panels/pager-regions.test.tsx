@@ -83,7 +83,7 @@ describe("classic pager regions", () => {
       status,
     } as never);
     const frame = render(
-      <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={12} jobs={harness.jobs} transcript={harness.transcript} now={0} />,
+      <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={12} jobs={harness.jobs} now={0} />,
     ).lastFrame() ?? "";
     expect(frame).toContain(opening((text) => colorInk.fg(token, text), "command: npm run build"));
     expect(frame).toContain(opening((text) => colorInk.fg("foreground", text), "built ok"));
@@ -98,7 +98,7 @@ describe("classic pager regions", () => {
     const services = { overlay: harness.overlay, session: { notice() {}, spool: { tail: () => "" } } } as never;
     await openToolOutputPager(services, { toolCallId: "fs-classic", name: "fs.read", argsDisplay: path, artifactPath: undefined } as never);
     const frame = render(
-      <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={12} jobs={harness.jobs} transcript={harness.transcript} now={0} />,
+      <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={12} jobs={harness.jobs} now={0} />,
     ).lastFrame() ?? "";
     expect(frame).toContain(opening(keyword, "export"));
     expect(frame).toContain(opening((text) => colorInk.hex(syntaxColor("number", colorInk.theme), text), "42"));
@@ -113,7 +113,7 @@ describe("classic pager regions", () => {
     harness.overlay.openPager("seq", first.body, source, undefined, "plain", { inputEnd: 1 });
     await vi.waitFor(() => expect(harness.panels.getSnapshot().pagerBody).toBe(first.body));
     const mount = () => render(
-      <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={220} jobs={harness.jobs} transcript={harness.transcript} now={0} />,
+      <PanelHost controller={harness.panels} ink={colorInk} columns={100} rows={220} jobs={harness.jobs} now={0} />,
     ).lastFrame() ?? "";
     expect(mount()).toContain(opening((text) => colorInk.fg("userBorder", text), "command: seq"));
     harness.press("shift+g");
@@ -129,7 +129,7 @@ describe("classic pager regions", () => {
 
 describe("classic pager search keeps colours", () => {
   const keywordOpen = colorInk.hex(syntaxColor("keyword", colorInk.theme), "\u0000").split("\u0000")[0]!;
-  const inverseOpen = colorInk.inverse("\u0000").split("\u0000")[0]!;
+  const matchOpen = colorInk.style("\u0000", { bg: "searchMatch", fg: "searchMatchText" }).split("\u0000")[0]!;
   const body = ["file: sample.ts", "", "export const answer = 42;", "export function other() {}", ""].join("\n");
   const paint = { path: "sample.ts", ink: colorInk, regions: { codeStart: 2, codeEnd: 4 } };
 
@@ -141,9 +141,9 @@ describe("classic pager search keeps colours", () => {
     const matchRow = rows.find((row) => stripAnsi(row).includes("export const answer"))!;
     const otherRow = rows.find((row) => stripAnsi(row).includes("export function other"))!;
     expect(matchRow).toContain(`${keywordOpen}export`);
-    expect(matchRow).toContain(`${inverseOpen}answer`);
+    expect(matchRow).toContain(`${matchOpen}answer`);
     expect(otherRow).toContain(`${keywordOpen}export`);
-    expect(otherRow).not.toContain(inverseOpen);
+    expect(otherRow).not.toContain(matchOpen);
     expect(rows.map(stripAnsi).join("\n")).toContain(plain[2]!);
   });
 
@@ -152,8 +152,8 @@ describe("classic pager search keeps colours", () => {
     const painted = paintSearchMatches(colorInk, styled, [{ text: "a", kind: "plain" }, { text: "bcde", kind: "match" }, { text: "f", kind: "plain" }]);
     expect(stripAnsi(painted)).toBe("abcdef");
     const resetAt = painted.indexOf("\u001b[0m");
-    expect(painted.slice(resetAt, resetAt + 4 + inverseOpen.length)).toBe(`\u001b[0m${inverseOpen}`);
-    expect(painted.indexOf(inverseOpen)).toBeLessThan(painted.indexOf("b"));
+    expect(painted.slice(resetAt, resetAt + 4 + matchOpen.length)).toBe(`\u001b[0m${matchOpen}`);
+    expect(painted.indexOf(matchOpen)).toBeLessThan(painted.indexOf("b"));
     expect(paintSearchMatches(ink, styled, [{ text: "abcdef", kind: "match" }])).toBe(styled);
   });
 });
