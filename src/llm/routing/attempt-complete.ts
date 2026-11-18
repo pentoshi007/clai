@@ -114,6 +114,7 @@ export async function tryCompleteOnce(
     }
     return result;
   } catch (error) {
+    if (provider.isKeyScopedError?.(error)) throw error;
     const recoveredEffort = await recoverRejectedMainEffort({
       provider, providerId, model, request: activeRequest, auth, singleDispatch, onStatus,
     }, error);

@@ -10,7 +10,7 @@ import type {
   ToolChoice,
   ToolDefinition,
 } from "../types.js";
-import { mapToolChoiceToOpenAi, toWireName } from "./tool-protocol.js";
+import { isTextOnlyModel, mapToolChoiceToOpenAi, toWireName } from "./tool-protocol.js";
 import { wireToolArguments } from "./tool-wire/argument-repair.js";
 import {
   reasoningArtifactItems,
@@ -18,6 +18,7 @@ import {
   selectReasoningArtifactsForReplay,
 } from "./reasoning-artifacts.js";
 import { compileRequestPlan } from "./request-plan.js";
+import { modelCatalogFacts } from "./capabilities.js";
 import { hasMainEffortKnowledge, mainEffortProbe } from "./main-effort-discovery.js";
 import type { RequestPlanV1 } from "./request-plan.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
@@ -241,6 +242,7 @@ function toResponsesInput(
   supportsVision: boolean,
   replay: ResponsesReplayOptions,
   config?: ResponsesDialectConfig | undefined,
+  supportsTools = true,
 ): Array<Record<string, unknown>> {
   const input: Array<Record<string, unknown>> = [];
   const visibleMessages = supportsVision
@@ -250,6 +252,8 @@ function toResponsesInput(
   const skipSystemInInput = config?.instructionsField === "instructions";
   const systemRole = config?.systemRole ?? "system";
   for (const [index, message] of visibleMessages.entries()) {
+    const portable = invalidHistory.has(index) ||
+      (!supportsTools && (message.role === "tool" || Boolean(message.toolCalls?.length)));
     if (message.role === "system") {
       if (!skipSystemInInput && !(config?.instructionsField === "leading-instructions" && index === 0)) {
         input.push(systemInputItem(message, systemRole));
@@ -257,14 +261,14 @@ function toResponsesInput(
     } else if (message.role === "user") {
       appendUserInput(input, message, supportsVision);
     } else if (message.role === "assistant") {
-      const originalItems = invalidHistory.has(index)
+      const originalItems = portable
         ? undefined
         : responsesReplayItems(message, replay.target.provider, replay.target.model);
       if (originalItems) {
         input.push(...originalItems);
         continue;
       }
-      if (invalidHistory.has(index)) {
+      if (portable) {
         input.push({
           type: "message",
           id: assistantMessageId(message),
@@ -275,7 +279,7 @@ function toResponsesInput(
         appendAssistantInput(input, message, replay);
       }
     } else if (message.role === "tool") {
-      if (invalidHistory.has(index)) {
+      if (portable) {
         appendUserInput(
           input,
           {
@@ -355,9 +359,12 @@ export function buildResponsesBody(
     : config.reasoningPayload(plan.controls.reasoning, options.model);
   const exactEffort = mainEffortProbe(config.providerId, options.model);
   if (exactEffort !== undefined) reasoning = { effort: exactEffort };
-  else if (config.providerId !== "meta" && hasMainEffortKnowledge(config.providerId, options.model) && plan.controls.reasoning && !plan.controls.controlSuppression) {
+  else if (config.providerId !== "meta" && config.providerId !== "sarvam" && hasMainEffortKnowledge(config.providerId, options.model) && plan.controls.reasoning && !plan.controls.controlSuppression) {
     reasoning = { ...reasoning, effort: plan.controls.reasoning.enabled ? plan.controls.reasoning.effort : "none" };
   }
+  const supportsTools = config.providerId !== "sarvam" ||
+    (modelCatalogFacts(config.providerId, options.model)?.tools !== false &&
+      !isTextOnlyModel(config.providerId, options.model));
   const input = toResponsesInput(
     [...plan.timeline.messages],
     plan.images.visionAccepted,
@@ -366,9 +373,10 @@ export function buildResponsesBody(
       observe: options.reasoningArtifactReplayObserver,
     },
     config,
+    supportsTools,
   );
   const tools = toResponsesTools(
-    plan.tools.definitions.length ? [...plan.tools.definitions] : undefined,
+    supportsTools && plan.tools.definitions.length ? [...plan.tools.definitions] : undefined,
     config.toolStrict,
   );
   const body: Record<string, unknown> = { model: options.model, input };

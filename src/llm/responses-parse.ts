@@ -47,10 +47,10 @@ function reasoningTextParts(value: unknown): string {
   return out;
 }
 
-function extractReasoningSummary(item: unknown): string {
+function extractReasoningSummary(item: unknown, reasoningContent = false): string {
   if (!item || typeof item !== "object") return "";
   const obj = item as Record<string, unknown>;
-  for (const field of [obj.summary, obj.reasoning, obj.text]) {
+  for (const field of [obj.summary, obj.reasoning, obj.text, reasoningContent ? obj.content : undefined]) {
     const text = reasoningTextParts(field);
     if (text) return text;
   }
@@ -115,7 +115,7 @@ export function parseResponsesOutput(data: {
   output?: unknown;
   usage?: unknown;
   id?: string;
-}): ParsedResponsesOutput {
+}, reasoningContent = false): ParsedResponsesOutput {
   const output = Array.isArray(data.output) ? data.output : [];
   let text = "";
   let reasoningSummary = "";
@@ -130,7 +130,7 @@ export function parseResponsesOutput(data: {
     if (obj.type === "message" && obj.role === "assistant") {
       text = appendAssistantMessageText(obj, text);
     } else if (obj.type === "reasoning") {
-      const s = extractReasoningSummary(obj);
+      const s = extractReasoningSummary(obj, reasoningContent);
       if (s) reasoningSummary += s;
       if (typeof obj.encrypted_content === "string" && obj.encrypted_content) {
         reasoningItems.push({ ...obj });

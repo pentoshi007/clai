@@ -341,7 +341,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       requestedTemperature: options.temperature,
     }),
   };
-  const reasoningModel = isOpenAiReasoningModel(options.model);
+  const reasoningModel = options.providerId !== "sarvam" && isOpenAiReasoningModel(options.model);
   const emitTemperature =
     sampling.temperature !== undefined &&
     (options.resolvedSampling !== undefined || !reasoningModel);
@@ -353,9 +353,11 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   const claudeFloored = claudeThinking
     ? Math.max(requestedMaxTokens, 32_000)
     : requestedMaxTokens;
-  const effectiveMaxTokens = reasoningOn
-    ? outputBudgetWithReasoning(claudeFloored, options)
-    : claudeFloored;
+  const effectiveMaxTokens = options.providerId === "sarvam"
+    ? Math.min(requestedMaxTokens, options.outputTokenLimit ?? requestedMaxTokens)
+    : reasoningOn
+      ? outputBudgetWithReasoning(claudeFloored, options)
+      : claudeFloored;
   const affinitySession = currentSessionAffinity();
   const affinityKey =
     providerIn(AFFINITY_KEY_PROVIDERS, options.providerId)
@@ -400,7 +402,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     );
   }
   const acceptsTools =
-    !((options.providerId === "mistral" || options.providerId === "river" || options.providerId === "hinoki") &&
+    !((options.providerId === "mistral" || options.providerId === "river" || options.providerId === "hinoki" || options.providerId === "sarvam") &&
       modelCatalogFacts(options.providerId, options.model)?.tools === false) &&
     !(options.providerId === "openrouter" &&
       options.control?.profile.capabilities.acceptedParameters !== undefined &&
@@ -503,7 +505,7 @@ function portableToolHistory(
     );
     if (
       isTextOnlyModel(plan.route.provider, plan.route.model) ||
-      ((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "hinoki") &&
+      ((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "hinoki" || plan.route.provider === "sarvam") &&
         modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) ||
       (foreignArtifact && !hasCompatibleArtifact) ||
       (forceReasoningReplay && !replayableText)
@@ -542,7 +544,7 @@ export function chatCompletionsBodyFromPlan(
     Boolean(extras.forceReasoningReplay),
   );
   const allowTools =
-    !((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "constellation" || plan.route.provider === "hinoki") &&
+    !((plan.route.provider === "mistral" || plan.route.provider === "river" || plan.route.provider === "constellation" || plan.route.provider === "hinoki" || plan.route.provider === "sarvam") &&
       modelCatalogFacts(plan.route.provider, plan.route.model)?.tools === false) &&
     (plan.route.provider !== "openrouter" ||
     plan.policy.acceptedParameters === undefined ||

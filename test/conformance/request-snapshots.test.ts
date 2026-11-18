@@ -37,10 +37,12 @@ function redactBody(body: unknown): unknown {
 
 beforeEach(() => {
   resetReasoningKnowledge();
+  vi.stubEnv("SARVAM_WIRE_API", "chat-completions");
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("serialized request snapshots", () => {
@@ -74,6 +76,7 @@ describe("serialized request snapshots", () => {
           "ws-conformance",
           "wk-conformance",
           "sk-conformance",
+          "sarvam-conformance-key",
           "AIzaConformanceKey0000",
         ]) {
           expect(serialized).not.toContain(secret);

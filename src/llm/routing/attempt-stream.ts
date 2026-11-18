@@ -229,6 +229,7 @@ export async function tryStreamOnce(
     learnVisionOnSuccess();
     return result;
   } catch (error) {
+    if (provider.isKeyScopedError?.(error)) throw markStreamEmittedBytes(error, emittedBytes);
     if (emittedBytes === 0) {
       const recoveredEffort = await recoverRejectedMainEffort({
         provider, providerId, model, request: activeRequest, auth, singleDispatch, onStatus,

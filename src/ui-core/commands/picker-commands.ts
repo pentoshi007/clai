@@ -347,6 +347,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
   river: "https://api.river.ai/v1",
+  sarvam: "https://api.sarvam.ai/v2",
   mistral: "https://api.mistral.ai/v1",
   hinoki: "https://inference.hinoki.security/v1",
   nvidia: "https://integrate.api.nvidia.com/v1",

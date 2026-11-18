@@ -46,6 +46,7 @@ export async function responsesComplete(
   validate?.(data);
   const parsed = parseResponsesOutput(
     data as { output?: unknown; usage?: unknown },
+    config.reasoningContent,
   );
   const reasoningArtifacts = responsesReasoningArtifacts(
     config,

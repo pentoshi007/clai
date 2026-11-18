@@ -163,6 +163,7 @@ function handleResponseCompleted(
     resp,
     ctx.emitVisible,
     ctx.emitReasoningDelta,
+    ctx.config.reasoningContent,
   );
 }
 
@@ -180,6 +181,7 @@ function handleResponseIncomplete(
     resp,
     ctx.emitVisible,
     ctx.emitReasoningDelta,
+    ctx.config.reasoningContent,
   );
   ctx.state.finishReason =
     reason === "max_output_tokens" ? "length" : "incomplete";
@@ -420,6 +422,7 @@ export function maybeAppendPrivateReasoning(ctx: StreamEventContext): void {
 export function processStreamPayload(
   ctx: StreamEventContext,
   payload: string,
+  eventType?: string | undefined,
 ): CompletionResult | undefined {
   if (payload === "[DONE]") {
     maybeAppendPrivateReasoning(ctx);
@@ -434,9 +437,10 @@ export function processStreamPayload(
   } catch {
     return undefined;
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
   if (typeof parsed.type !== "string" && parsed.choices !== undefined) {
     throw new ChatShapedResponsesPayload();
   }
-  dispatchStreamEvent(ctx, parsed, payload);
+  dispatchStreamEvent(ctx, typeof parsed.type !== "string" && eventType ? { ...parsed, type: eventType } : parsed, payload);
   return undefined;
 }

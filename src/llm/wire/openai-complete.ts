@@ -45,6 +45,8 @@ export async function openAiCompatibleComplete(options: {
   maxTokens?: number | undefined;
   temperature?: number | undefined;
   headers?: Record<string, string> | undefined;
+  redirect?: RequestRedirect | undefined;
+  forwardSessionAffinity?: boolean | undefined;
   signingHeaders?: ((body: string) => Promise<Record<string, string>> | Record<string, string>) | undefined;
   signal?: AbortSignal | undefined;
   reasoning?: ReasoningPreference | undefined;
@@ -102,6 +104,7 @@ export async function openAiCompatibleComplete(options: {
   try {
     response = await generationFetch(`${options.baseUrl}/chat/completions`, {
       method: "POST",
+      ...(options.redirect ? { redirect: options.redirect } : {}),
       signal: options.signal ?? null,
       headers: {
         "content-type": "application/json",
@@ -114,7 +117,7 @@ export async function openAiCompatibleComplete(options: {
       },
       body: requestBody,
       verbose: process.env.CLAI_VERBOSE === "true",
-    } as any);
+    } as any, options.forwardSessionAffinity);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
     if (isOperationPolicyError(error)) throw error;

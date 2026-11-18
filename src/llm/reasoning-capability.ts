@@ -67,6 +67,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   anthropic: [/claude-(?:opus|sonnet|haiku)-(?:3-7|4|4-\d)/i, /claude-3-7/i],
   mistral: [],
   river: [],
+  sarvam: [],
   nvidia: [
     /kimi-k2/i,
     /deepseek-r1/i,

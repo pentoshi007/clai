@@ -287,9 +287,10 @@ export function completeGenerationAttempt(
 export async function generationFetch(
   input: string | URL | Request,
   init?: RequestInit,
+  forwardSessionAffinity = true,
 ): Promise<Response> {
   const affinity = currentSessionAffinity();
-  if (affinity) init = withSessionAffinityHeaders(init, affinity);
+  if (affinity && forwardSessionAffinity) init = withSessionAffinityHeaders(init, affinity);
   const unrecorded = unrecordedTransportStorage.getStore();
   if (unrecorded) {
     if (unrecorded.maxOutputTokens !== undefined && typeof init?.body === "string") {

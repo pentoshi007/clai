@@ -154,7 +154,7 @@ async function completeWithProviderOperation(
         ? (request.model ?? provider.defaultModel)
         : provider.defaultModel;
     const routeRequest: CompletionRequest = {
-      ...requestForRoute(request, providerId, model),
+      ...(provider.withModelMetadata ? request : requestForRoute(request, providerId, model)),
       attemptUsage: ledger,
     };
 
@@ -312,7 +312,7 @@ async function streamWithProviderOperation(
         ? (request.model ?? provider.defaultModel)
         : provider.defaultModel;
     const routeRequest: CompletionRequest = {
-      ...requestForRoute(request, providerId, model),
+      ...(provider.withModelMetadata ? request : requestForRoute(request, providerId, model)),
       attemptUsage: operation,
       ...(downstreamToolDelta
         ? {

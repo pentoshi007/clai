@@ -45,6 +45,7 @@ import {
 import { authForSlot } from "./provider-selection.js";
 import { withRequestPurpose } from "../request-purpose.js";
 import { isolatedSessionRoute } from "../session-route.js";
+import { streamAlreadyEmitted } from "../stream-progress.js";
 
 function failureReason(error: unknown): string {
   if (isRateLimited(error)) return "rate limited";
@@ -125,6 +126,11 @@ export async function runWithKeyRotation<T>(opts: {
   const enabledCount = plan.length;
   if (sessionRoute) sessionRoute.keyId = slots[plan[0]!]!.id;
   const multiKey = enabledCount > 1;
+  const isImmediateSwitch = (error: unknown): boolean =>
+    isImmediateKeySwitchError(error) || (multiKey && provider.isKeyScopedError?.(error) === true);
+  const describeFailure = (error: unknown): string => provider.isKeyScopedError?.(error)
+    ? "model unavailable for this key"
+    : failureReason(error);
   const maxPerKey = singleDispatch
     ? 1
     : attemptsPerKey(enabledCount, (opts.maxRetries ?? MAX_RETRIES) + 1);
@@ -172,7 +178,7 @@ export async function runWithKeyRotation<T>(opts: {
         maskedTail: tail,
         keyIndex,
         keyCount: slots.length,
-        ...(lastError ? { reason: failureReason(lastError) } : {}),
+        ...(lastError ? { reason: describeFailure(lastError) } : {}),
       });
     }
 
@@ -181,7 +187,7 @@ export async function runWithKeyRotation<T>(opts: {
       const attemptReason =
         planIdx === 0 && attempt === 0 ? opts.initialAttemptReason : "retry";
       try {
-        const result = await withRequestPurpose(request.purpose, () =>
+        const run = () => withRequestPurpose(request.purpose, () =>
           opts.mode === "stream"
             ? tryStreamOnce(
                 provider,
@@ -206,6 +212,9 @@ export async function runWithKeyRotation<T>(opts: {
                 singleDispatch,
               ),
         );
+        const result = await (provider.withModelMetadata
+          ? provider.withModelMetadata(model, auth, request.signal, run)
+          : run());
         if (sessionRoute) {
           sessionRoute.keyId = slot.id;
           if (auth.baseUrl) sessionRoute.endpoint = auth.baseUrl;
@@ -242,20 +251,18 @@ export async function runWithKeyRotation<T>(opts: {
           throw previousError;
         }
 
-        if (isKeyCircleStopError(error)) {
-          throw error;
-        }
+        if (singleDispatch || streamAlreadyEmitted(error)) throw error;
+        const switchImmediately = isImmediateSwitch(error);
+        if (isKeyCircleStopError(error) && !switchImmediately) throw error;
 
-        if (singleDispatch) throw error;
-
-        if (isImmediateKeySwitchError(error)) {
+        if (switchImmediately) {
           if (endpointCount > 1 && endpointOffset + 1 < endpointCount) {
             endpointOffset += 1;
             emitKey({
               type: "endpoint",
               provider: providerId,
               maskedTail: tail,
-              reason: failureReason(error),
+              reason: describeFailure(error),
             });
             planIdx = -1;
             break;
@@ -298,7 +305,7 @@ export async function runWithKeyRotation<T>(opts: {
             type: "retry",
             provider: providerId,
             maskedTail: tail,
-            reason: failureReason(error),
+            reason: describeFailure(error),
             waitMs: wait,
             keyIndex,
             keyCount: slots.length,
@@ -322,14 +329,14 @@ export async function runWithKeyRotation<T>(opts: {
       endpointCount > 1 &&
       planIdx + 1 < plan.length &&
       lastError &&
-      !isImmediateKeySwitchError(lastError)
+      !isImmediateSwitch(lastError)
     ) {
       endpointOffset += 1;
       emitKey({
         type: "endpoint",
         provider: providerId,
         maskedTail: tail,
-        reason: failureReason(lastError),
+        reason: describeFailure(lastError),
       });
     }
   }
@@ -344,7 +351,7 @@ export async function runWithKeyRotation<T>(opts: {
       provider: providerId,
       maskedTail: maskSecretTail(slots[plan[0]!]!.value),
       keyCount: slots.length,
-      reason: lastError ? failureReason(lastError) : undefined,
+      reason: lastError ? describeFailure(lastError) : undefined,
     });
   }
 

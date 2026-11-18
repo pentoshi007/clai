@@ -19,7 +19,7 @@ function handleReasoningItemAdded(
   outputIndex: number | undefined,
 ): void {
   noteReasoningItem(ctx.state, item, outputIndex);
-  const s = extractReasoningSummary(item);
+  const s = extractReasoningSummary(item, ctx.config.reasoningContent);
   if (s && !ctx.state.reasoningSeen.includes(s)) {
     ctx.watchdog.resetIdleTimer();
     ctx.emitReasoningDelta(s);
@@ -111,7 +111,7 @@ export function handleOutputItemDone(
       item,
       typeof parsed.output_index === "number" ? parsed.output_index : undefined,
     );
-    const summary = extractReasoningSummary(item);
+    const summary = extractReasoningSummary(item, ctx.config.reasoningContent);
     if (summary && !ctx.state.reasoningSeen.includes(summary)) {
       const remaining = summary.startsWith(ctx.state.reasoningSeen)
         ? summary.slice(ctx.state.reasoningSeen.length)

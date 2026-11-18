@@ -44,6 +44,13 @@ export interface LlmProvider {
     onStatus?: ((message: string) => void) | undefined,
   ): Promise<CompletionResult>;
   listModels?(auth: ProviderAuth): Promise<string[]>;
+  isKeyScopedError?(error: unknown): boolean;
+  withModelMetadata?<T>(
+    model: string,
+    auth: ProviderAuth,
+    signal: AbortSignal | undefined,
+    run: () => Promise<T>,
+  ): Promise<T>;
   sortModels?(models: string[]): string[];
 }
 
@@ -116,7 +123,7 @@ function isRootResponsesHost(value: string): boolean {
   }
 }
 
-export function normalizeEndpointUrl(url: string): string {
+export function normalizeEndpointUrl(url: string, provider?: ProviderId): string {
   let value = url.trim();
   if (!value) return "";
   if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
@@ -126,7 +133,7 @@ export function normalizeEndpointUrl(url: string): string {
     .replace(/\/models$/i, "")
     .replace(/\/responses$/i, "");
   if (!/\/v\d+$/i.test(value) && !isRootResponsesHost(value)) {
-    value = `${value}/v1`;
+    value = `${value}/${provider === "sarvam" ? "v2" : "v1"}`;
   }
   return value;
 }
