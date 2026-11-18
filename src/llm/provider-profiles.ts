@@ -27,6 +27,8 @@ import { providerContextOverrideTokens } from "./token-usage.js";
 import { modelMaxOutputTokens } from "./context-windows.js";
 import { modelLayerFor } from "./provider-model-layers.js";
 import { catalogDeclaresReasoningSupport } from "./capability/catalog-trust.js";
+import { sarvamWireApi } from "./sarvam-models.js";
+import { sarvamProviderLayer } from "./sarvam-profile.js";
 import {
   FAMILY_LAYERS,
   FAMILYLESS_ENDPOINT_LAYERS,
@@ -44,6 +46,7 @@ const NATIVE_WIRE_API: Partial<Record<ProviderId, WireApi>> = {
 };
 
 export function providerWireApi(provider: ProviderId, model: string): WireApi {
+  if (provider === "sarvam") return sarvamWireApi();
   if (provider === "aws-mantle" || provider === "copilot") {
     return /(?:^|[./-])(?:anthropic|claude)(?:[./-]|$)/i.test(model)
       ? "anthropic-messages"
@@ -146,7 +149,7 @@ export function modelFamilyLayerFor(
   model: string,
   endpointDialect?: ReasoningControlDialect | undefined,
 ): ProviderProfileLayer | undefined {
-  if (provider === "mistral" || provider === "river" || provider === "constellation" || provider === "hinoki") return undefined;
+  if (provider === "mistral" || provider === "river" || provider === "sarvam" || provider === "constellation" || provider === "hinoki") return undefined;
   const family = modelFamilyFor(model);
   if (!family) return undefined;
   const providerExcluded = family.id === "mimo-v2" && provider !== "mimo";
@@ -215,7 +218,7 @@ export function builtInProfileLayers(
   provider: ProviderId,
   model: string,
 ): ProviderProfileSourceLayers {
-  const family = FAMILY_LAYERS[provider];
+  const family = provider === "sarvam" ? sarvamProviderLayer() : FAMILY_LAYERS[provider];
   const modelLayer = modelLayerFor(provider, model);
   const modelFamilyLayer = modelFamilyLayerFor(
     provider,

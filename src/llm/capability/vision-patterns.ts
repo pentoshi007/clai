@@ -61,6 +61,7 @@ export const universalVisionPatterns: RegExp[] = [
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
   hinoki: [/^hinoki-offensive$/i],
   constellation: [],
+  sarvam: [],
   river: [
     /^deepseek-ai\/DeepSeek-V4\.1-Flash(?:-1017)?$/i,
     /^zai-org\/GLM-5\.3-Flash$/i,
@@ -258,6 +259,7 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   river: "deepseek-ai/DeepSeek-V4.1-Flash",
+  sarvam: "glm5.3-flash",
   free: "free-1/muse-spark-1.2-contributor-free",
   freebuff: "openai/gpt-5.6-luna",
   gemini: "gemini-3.5-flash",

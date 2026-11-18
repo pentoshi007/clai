@@ -341,7 +341,7 @@ async function appendLlmKey(
     return;
   }
   if (providerUsesEndpoints(id) && /^https?:\/\//i.test(keyVal.trim())) {
-    const endpoint = normalizeEndpointUrl(keyVal.trim());
+    const endpoint = normalizeEndpointUrl(keyVal.trim(), id);
     try {
       const { endpoints, added } = appendProviderEndpoint(id, endpoint);
       notice(

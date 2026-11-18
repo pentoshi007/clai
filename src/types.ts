@@ -7,6 +7,7 @@ export const providerIds = [
   "mistral",
   "hinoki",
   "river",
+  "sarvam",
   "nvidia",
   "agentrouter",
   "constellation",

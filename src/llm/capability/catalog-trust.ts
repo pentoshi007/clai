@@ -3,6 +3,7 @@ import type { ProviderId } from "../../types.js";
 const CATALOG_VISION_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>([
   "mistral",
   "river",
+  "sarvam",
   "constellation",
   "hinoki",
   "refuseless",
@@ -11,11 +12,12 @@ const CATALOG_VISION_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>([
 ]);
 
 const CATALOG_MANDATORY_REASONING_PROVIDERS: ReadonlySet<ProviderId> =
-  new Set<ProviderId>(["cline", "river", "hinoki", "refuseless", "silkcompute"]);
+  new Set<ProviderId>(["cline", "river", "sarvam", "hinoki", "refuseless", "silkcompute"]);
 
 const CATALOG_REASONING_SUPPORT_PROVIDERS: ReadonlySet<string> = new Set<ProviderId>([
   "cline",
   "meta",
+  "sarvam",
   "unaligned",
 ]);
 

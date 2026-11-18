@@ -71,11 +71,12 @@ export async function postResponses(
   try {
     return await generationFetch(resolveResponsesUrl(config.baseUrl), {
       method: "POST",
+      ...(config.redirect ? { redirect: config.redirect } : {}),
       signal,
       headers: config.buildHeaders(auth, accept, context),
       body,
       verbose: process.env.CLAI_VERBOSE === "true",
-    } as unknown as RequestInit);
+    } as unknown as RequestInit, config.forwardSessionAffinity);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
     if (isOperationPolicyError(error)) throw error;

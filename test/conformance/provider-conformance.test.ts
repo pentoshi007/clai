@@ -72,6 +72,7 @@ async function run(
   mode: WireMode,
   scenario: ConformanceScenario,
 ): Promise<CompletionResult> {
+  if (route.provider === "sarvam") vi.stubEnv("SARVAM_WIRE_API", "chat-completions");
   const provider = providers[route.provider];
   const request = requestFor(route, scenario);
   if (mode === "complete") return provider.complete(request, route.auth);
@@ -129,6 +130,7 @@ function skipReason(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("provider conformance matrix", () => {

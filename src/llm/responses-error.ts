@@ -12,6 +12,13 @@ const ERROR_STATUS: Readonly<Record<string, number>> = {
   invalid_encrypted_content: 400,
   authentication_error: 401,
   invalid_api_key: 401,
+  invalid_api_key_error: 403,
+  insufficient_quota_error: 402,
+  not_found_error: 404,
+  rate_limit_exceeded_error: 429,
+  model_rate_limit_exceeded_error: 429,
+  model_call_failed: 502,
+  model_overloaded: 503,
   permission_denied: 403,
 };
 

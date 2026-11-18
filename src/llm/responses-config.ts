@@ -24,6 +24,9 @@ export interface ResponsesDialectConfig {
   readonly displayName: string;
   readonly artifactDialect: ReasoningArtifactDialect;
   readonly terminalPolicy: StreamTerminalPolicy;
+  readonly redirect?: RequestRedirect | undefined;
+  readonly forwardSessionAffinity?: boolean | undefined;
+  readonly reasoningContent?: boolean | undefined;
   readonly omitSampling?: boolean | undefined;
   readonly maxTokensField?: "max_tokens" | "omit" | undefined;
   readonly omitParallelToolCalls?: boolean | undefined;

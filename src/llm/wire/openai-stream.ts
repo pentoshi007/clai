@@ -17,6 +17,7 @@ import { generationFetch, observeStreamUsage } from "../operation-usage.js";
 import type { StreamTerminalProof } from "../provider-profile.js";
 import { visibleReasoningDetailText } from "../reasoning-artifacts.js";
 import { inBandBadRequestStatus } from "../reasoning-errors.js";
+import { responsesError } from "../responses-error.js";
 import { compileRequestPlan } from "../request-plan.js";
 import {
   emitStreamReasoningArtifacts,
@@ -76,6 +77,8 @@ export async function openAiCompatibleStream(request: {
   maxTokens?: number | undefined;
   temperature?: number | undefined;
   headers?: Record<string, string> | undefined;
+  redirect?: RequestRedirect | undefined;
+  forwardSessionAffinity?: boolean | undefined;
   signingHeaders?: ((body: string) => Promise<Record<string, string>> | Record<string, string>) | undefined;
   signal?: AbortSignal | undefined;
   onToken: (token: string) => void;
@@ -220,6 +223,7 @@ export async function openAiCompatibleStream(request: {
   try {
     response = await generationFetch(`${options.baseUrl}/chat/completions`, {
       method: "POST",
+      ...(options.redirect ? { redirect: options.redirect } : {}),
       signal: idleController.signal,
       headers: {
         "content-type": "application/json",
@@ -233,7 +237,7 @@ export async function openAiCompatibleStream(request: {
       },
       body: requestBody,
       verbose: process.env.CLAI_VERBOSE === "true",
-    } as any);
+    } as any, options.forwardSessionAffinity);
   } catch (error) {
     clearIdleTimers();
     options.signal?.removeEventListener("abort", onCallerAbort);
@@ -729,8 +733,10 @@ export async function openAiCompatibleStream(request: {
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
           continue;
         }
-        const inBandError = parsed.error ?? (options.providerId === "mistral" && parsed.object === "error" ? parsed : undefined);
+        const directError = (options.providerId === "mistral" || options.providerId === "sarvam") && parsed.object === "error";
+        const inBandError = parsed.error ?? (directError ? parsed : undefined);
         if (inBandError) {
+          if (options.providerId === "sarvam") throw responsesError(options.provider, inBandError, payload);
           const detail =
             typeof inBandError === "string"
               ? inBandError

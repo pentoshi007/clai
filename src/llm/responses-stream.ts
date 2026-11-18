@@ -63,11 +63,12 @@ async function openResponsesStream(
     try {
       response = await generationFetch(resolveResponsesUrl(config.baseUrl), {
         method: "POST",
+        ...(config.redirect ? { redirect: config.redirect } : {}),
         signal: watchdog.controller.signal,
         headers: config.buildHeaders(auth, "text/event-stream", context),
         body,
         verbose: process.env.CLAI_VERBOSE === "true",
-      } as unknown as RequestInit);
+      } as unknown as RequestInit, config.forwardSessionAffinity);
       lastFetchError = undefined;
       break;
     } catch (error) {
@@ -155,7 +156,7 @@ function jsonFallbackResult(
   ctx: JsonFallbackContext,
   data: { output?: unknown; usage?: unknown; id?: string; requestId?: string },
 ): CompletionResult | undefined {
-  const parsed = parseResponsesOutput(data);
+  const parsed = parseResponsesOutput(data, ctx.config.reasoningContent);
   const reasoningArtifacts = responsesReasoningArtifacts(
     ctx.config,
     ctx.model,
@@ -256,6 +257,7 @@ async function runResponsesStreamLoop(
     once: true,
   });
   const sseFrames = createSseFrameAssembler();
+  let eventType: string | undefined;
   try {
     while (true) {
       throwIfStreamAborted(request, watchdog.controller);
@@ -270,9 +272,12 @@ async function runResponsesStreamLoop(
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) {
+        if (line.startsWith("event:")) eventType = line.slice(6).trim();
+        else if (!line.trim()) eventType = undefined;
         const payload = sseFrames.pushLine(line);
         if (payload === undefined) continue;
-        const finished = processStreamPayload(ctx, payload);
+        const finished = processStreamPayload(ctx, payload, eventType);
+        eventType = undefined;
         if (finished) return finished;
       }
     }

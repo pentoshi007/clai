@@ -42,7 +42,7 @@ export async function openEndpointsEditor(
 
   const byId = new Map(urls.map((url, index) => [String(index), url]));
   const detailed = resolveEditorRowsDetailed(answer.rows, byId).map((row) => ({
-    value: normalizeEndpointUrl(row.value),
+    value: normalizeEndpointUrl(row.value, id),
     disabled: row.disabled,
   }));
   const resolved = detailed.map((row) => row.value);

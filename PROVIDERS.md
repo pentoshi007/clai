@@ -98,6 +98,7 @@ An environment credential is also used directly when no stored credentials take 
 | Kimi / Moonshot | `kimi` | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY` |
+| Sarvam Token Factory | `sarvam` | `SARVAM_API_KEY` |
 | Xiaomi MiMo | `mimo` | `MIMO_API_KEY` |
 | NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
@@ -181,6 +182,16 @@ clai set mistral --url https://api.eu.mistral.ai/v1
 ```
 
 `https://api.us.mistral.ai/v1` selects the US endpoint. Availability is discovered against the selected endpoint, and model catalogs are cached separately by endpoint and credential. Mistral uses clai's existing key rotation, request cancellation, stream validation, local tools, and subagent lifecycle.
+
+### Sarvam Token Factory
+
+Set `SARVAM_API_KEY` or run `clai set sarvam`, then select the provider with `clai use sarvam`. Add more keys with `clai set sarvam` or `/set sarvam`. clai uses its regular key rotation for expired or rejected keys, quota exhaustion, and rate limits. The default model is `glm5.3-flash`.
+
+`/model refresh` reads Sarvam's V2 catalog and fetches model details where needed. Context windows, supported image input, tools, and `/effort` follow model metadata. When the API omits metadata for a documented model, clai uses Sarvam's published capabilities. Provisioned models require access on the selected subscription. [Model catalog](https://docs.sarvam.ai/api-reference/chat/models-v2)
+
+The default API is Chat Completions V2 at `https://api.sarvam.ai/v2`. Set `SARVAM_WIRE_API=responses` to use the stateless Responses API. Function tools, streaming, and inline images work on models that support them. Reasoning settings follow the selected API. Set `SARVAM_BASE_URL` or use `clai set sarvam --url <url>` for a compatible endpoint. [Chat Completions V2](https://docs.sarvam.ai/api-reference/chat/chat-completions-v2) · [Responses](https://docs.sarvam.ai/api-reference/responses/create)
+
+clai keeps a stable, opaque session affinity ID on Gemma 4 Chat Completions. Both transports preserve conversation prefixes and report cached-input tokens when Sarvam supplies usage data. Cache hits depend on Sarvam's backend. [Session affinity](https://docs.sarvam.ai/api/token-factory/chat-completions#session-affinity-for-multi-turn-conversations)
 
 ### Local and configurable endpoints
 

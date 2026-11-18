@@ -102,7 +102,7 @@ function urlList(url: SetKeyOptions["url"]): string[] {
 }
 
 function addEndpoint(provider: ProviderId, raw: string): void {
-  const url = normalizeEndpointUrl(raw);
+  const url = normalizeEndpointUrl(raw, provider);
   const { endpoints, added } = appendProviderEndpoint(provider, url);
   const position = `#${endpoints.activeIndex + 1}/${endpoints.urls.length}`;
   const label = getProvider(provider).displayName;

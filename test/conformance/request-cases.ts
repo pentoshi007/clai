@@ -185,6 +185,7 @@ export function requestForCase(
 const SECRET_HEADERS = new Set([
   "authorization",
   "x-api-key",
+  "api-subscription-key",
   "modal-key",
   "modal-secret",
   "modal-session-id",

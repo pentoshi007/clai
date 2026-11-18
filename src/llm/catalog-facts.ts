@@ -21,6 +21,7 @@ export interface CatalogFacts {
   readonly modalities?: readonly string[] | undefined;
   readonly vision?: boolean | undefined;
   readonly tools?: boolean | undefined;
+  readonly toolChoices?: readonly string[] | undefined;
 }
 
 const REASONING_FEATURE_RE =

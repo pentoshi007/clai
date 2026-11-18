@@ -114,6 +114,7 @@ export function absorbResponseOutput(
   resp: Record<string, unknown>,
   emitVisible: (text: string) => void,
   emitReasoningDelta: (text: string) => void,
+  reasoningContent = false,
 ): void {
   if (!Array.isArray(resp.output)) return;
   for (const [index, item] of resp.output.entries()) {
@@ -121,6 +122,7 @@ export function absorbResponseOutput(
   }
   const out = parseResponsesOutput(
     resp as { output?: unknown; usage?: unknown },
+    reasoningContent,
   );
   for (const [index, item] of out.reasoningItems.entries()) {
     const position = out.reasoningItemPositions[index];

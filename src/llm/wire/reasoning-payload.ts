@@ -68,6 +68,11 @@ export function buildReasoningPayload(
     const enabled = reasoning.enabled && reasoning.effort !== "none";
     return { reasoning_effort: enabled ? reasoning.effort : "none", enable_thinking: enabled };
   }
+  if (providerId === "sarvam") {
+    const efforts = control?.profile.reasoning.acceptedEfforts;
+    if (!reasoning || (reasoning.enabled && reasoning.effort !== "none" &&
+      efforts?.length === 1 && efforts[0] === "none")) return {};
+  }
   if (control) {
     return {
       ...emitReasoningControls({

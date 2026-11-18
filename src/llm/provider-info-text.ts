@@ -76,6 +76,23 @@ Docs: https://docs.constellationgate.ai/guides/openai-sdk/`,
 Setup: clai set river · clai use river · /model
 Keys: https://console.river.ai/keys
 Docs: https://docs.river.ai/guides/inference/`,
+  sarvam: `Sarvam Token Factory
+
+  API          https://api.sarvam.ai/v2
+  Credential   SARVAM_API_KEY or clai set sarvam
+  Default      glm5.3-flash
+  Models       /model refresh reads the live catalog and model details
+
+  Supports streaming, function tools, inline images on vision models, and
+  model-specific reasoning shown in /effort. Add multiple keys with /set sarvam.
+  Chat Completions uses per-session cache affinity on gemma4. Both APIs report
+  cached-input tokens when the service supplies them.
+
+  Set SARVAM_WIRE_API=responses to select the stateless Responses API.
+  SARVAM_BASE_URL or clai set sarvam --url <url> overrides the endpoint.
+
+Setup: clai set sarvam · clai use sarvam · /model
+Docs: https://docs.sarvam.ai/api/token-factory`,
   mistral: `Mistral — native chat, multimodal input, tools, and reasoning
 
   API          https://api.mistral.ai/v1

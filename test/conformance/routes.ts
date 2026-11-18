@@ -57,6 +57,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "sarvam",
+    provider: "sarvam",
+    family: "chat_completions",
+    model: "glm5.3-flash",
+    auth: { apiKey: "sarvam-conformance-key", baseUrl: "https://api.sarvam.ai/v2" },
+    urlContains: "/v2/chat/completions",
+  },
+  {
     id: "openai",
     provider: "openai",
     family: "chat_completions",

@@ -158,7 +158,13 @@ export function reasoningOptionValues(
     return ["off"];
   }
   const accepted = displayReasoningEfforts(provider, model) ?? [];
-  const published = provider === "cline" || provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
+  const published = provider === "cline" || provider === "meta" || provider === "sarvam"
+    ? modelCatalogFacts(provider, model)?.reasoning
+    : undefined;
+  if (provider === "sarvam" && accepted.every((effort) => effort === "none") && published?.supported !== false) {
+    if (published?.mandatory) return [];
+    return ["off", "on"];
+  }
   if (published?.supported === true && accepted.length === 0) {
     return published.mandatory === false ? ["off", "on"] : [];
   }
@@ -189,7 +195,9 @@ function familyReasoningIsMandatory(
 
 function reasoningPickerTitle(provider: ProviderId, model: string): string {
   const evidence = modelReasoningEvidence(provider, model);
-  const published = provider === "cline" || provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning : undefined;
+  const published = provider === "cline" || provider === "meta" || provider === "sarvam"
+    ? modelCatalogFacts(provider, model)?.reasoning
+    : undefined;
   const status =
     familyReasoningIsMandatory(provider, model, published) || routeReasoningIsMandatory(provider, model)
       ? "always on"

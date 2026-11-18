@@ -356,7 +356,7 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
   const samplingOmit = new Set(profile.sampling.omit ?? []);
   let emittedTemperature = samplingOmit.has("temperature") ? undefined : sampling.temperature;
   let emittedTopP = samplingOmit.has("top_p") ? undefined : sampling.topP;
-  if (input.provider === "freebuff") {
+  if (input.provider === "freebuff" || input.provider === "sarvam") {
     emittedTemperature = input.temperature;
     emittedTopP = undefined;
   }
@@ -380,7 +380,7 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
         ? ("capability-denied" as const)
         : undefined;
   const acceptedEfforts =
-    (input.provider === "mistral" || input.provider === "river") && reasoningEnabled && input.reasoning?.effort !== "none"
+    (input.provider === "mistral" || input.provider === "river" || input.provider === "sarvam") && reasoningEnabled && input.reasoning?.effort !== "none"
     ? profile.reasoning.acceptedEfforts.filter((effort) => effort !== "none")
     : profile.reasoning.acceptedEfforts;
   const prefersPublishedEfforts = input.provider === "meta" &&

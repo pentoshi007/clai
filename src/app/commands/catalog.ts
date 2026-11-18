@@ -1,4 +1,5 @@
 import { nvidiaFallbackModels } from "../../llm/nvidia.js";
+import { SARVAM_MODELS } from "../../llm/sarvam-models.js";
 
 export interface SlashCommand {
   command: string;
@@ -217,6 +218,7 @@ export const slashCommands: SlashCommand[] = [
 
 export const knownModels: Record<string, string[]> = {
   mistral: ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"],
+  sarvam: [...SARVAM_MODELS],
   gemini: [
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",

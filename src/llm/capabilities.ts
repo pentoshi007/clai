@@ -51,10 +51,12 @@ import { currentIsolatedSessionAffinity } from "./session-affinity.js";
 import { documentedMistralReasoning } from "./mistral-models.js";
 import { metaModelReasoning } from "./meta-models.js";
 import { riverModelFacts } from "./river-models.js";
+import { sarvamModelFacts, sarvamReasoningEfforts } from "./sarvam-models.js";
 import { resetMainEffortKnowledge, resolvedMainEffort } from "./main-effort-discovery.js";
 import { scopedModelCatalogFacts } from "./catalog-context.js";
 import {
   rememberModelLimits,
+  rememberedModelLimits,
   resetRememberedModelLimits,
 } from "./model-limit-store.js";
 export { resolveToolDialect };
@@ -186,18 +188,23 @@ export function effectiveThinkingEffort(
   model: string,
   thinking: ReasoningPreference | undefined,
 ): ReasoningEffort | undefined {
+  if (provider === "sarvam" && !thinking?.enabled) {
+    const efforts = displayReasoningEfforts(provider, model);
+    return routeReasoningIsMandatory(provider, model) && efforts?.length
+      ? clampEffortToRoute("none", efforts)
+      : undefined;
+  }
   if (!thinking?.enabled) return undefined;
   if (isReasoningUnsupported(provider, model)) return undefined;
   if (!modelSupportsThinking(provider, model)) return undefined;
   const efforts = displayReasoningEfforts(provider, model);
   const published = provider === "meta" ? modelCatalogFacts(provider, model)?.reasoning?.supportedEfforts : undefined;
   if (Array.isArray(published)) return clampEffortToRoute(thinking.effort, efforts);
-  return resolvedMainEffort(provider, model, thinking.effort) ?? clampEffortToRoute(
-    thinking.effort,
-    provider === "mistral" && thinking.effort !== "none"
-      ? efforts?.filter((effort) => effort !== "none")
-      : efforts,
-  );
+  const enabledEfforts = (provider === "mistral" || provider === "sarvam") && thinking.effort !== "none"
+    ? efforts?.filter((effort) => effort !== "none")
+    : efforts;
+  if (provider === "sarvam" && enabledEfforts?.length === 0) return undefined;
+  return resolvedMainEffort(provider, model, thinking.effort) ?? clampEffortToRoute(thinking.effort, enabledEfforts);
 }
 
 export function registerRouteAcceptedEfforts(
@@ -371,7 +378,7 @@ export type ReasoningEvidence =
   "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
 function familyForProvider(provider: ProviderId, model: string) {
-  if (provider === "mistral" || provider === "river" || provider === "constellation" || provider === "hinoki") return undefined;
+  if (provider === "mistral" || provider === "river" || provider === "sarvam" || provider === "constellation" || provider === "hinoki") return undefined;
   const family = modelFamilyFor(model);
   const providerExcluded =
     family?.id === "mimo-v2" && provider !== "mimo";
@@ -406,7 +413,7 @@ export function modelSupportsThinking(
   model: string,
 ): boolean {
   if (
-    (provider === "meta" || provider === "mistral" || provider === "cline" || provider === "river" || provider === "constellation" || provider === "hinoki") &&
+    (provider === "meta" || provider === "mistral" || provider === "cline" || provider === "river" || provider === "sarvam" || provider === "constellation" || provider === "hinoki") &&
     modelCatalogFacts(provider, model)?.reasoning?.supported === false
   ) return false;
   loadLearnedCapabilities();
@@ -428,6 +435,7 @@ function declaredThinkingSupport(provider: ProviderId, model: string): boolean {
     const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
     if (declared !== undefined) return declared;
   }
+  if (provider === "sarvam") return modelCatalogFacts(provider, model)?.reasoning?.supported === true;
   if (provider === "cline") {
     const declared = modelCatalogFacts(provider, model)?.reasoning?.supported;
     if (declared !== undefined) return declared;
@@ -461,6 +469,7 @@ export function displayReasoningEfforts(
     return learnedRouteEfforts(provider, model) ?? modelReasoningEfforts(provider, model);
   }
   const scoped = scopedKnowledge(provider, model);
+  if (provider === "sarvam" && modelCatalogFacts(provider, model)?.reasoning?.supported === false) return [];
   if (scoped) return scoped.acceptedEfforts ?? scoped.displayEfforts;
   if (provider === "mistral") {
     return modelCatalogFacts(provider, model)?.reasoning?.supported === false
@@ -514,7 +523,12 @@ export function modelCatalogFacts(
   const facts = scope
     ? scope.get(model.trim().toLowerCase())
     : catalogFactsByRoute.get(catalogFactsKey(provider, model));
-  return provider === "river" ? riverModelFacts(model, facts) : facts;
+  if (provider === "river") return riverModelFacts(model, facts);
+  if (provider === "sarvam") {
+    const remembered = !scope && facts?.contextTokens === undefined ? rememberedModelLimits(provider, model) : undefined;
+    return sarvamModelFacts(model, remembered ? { ...remembered, ...facts, id: model } : facts);
+  }
+  return facts;
 }
 
 export function registerModelCatalogLimits(
@@ -574,6 +588,7 @@ export function catalogAdvertisedEfforts(
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     return reasoning?.supported === false ? [] : catalogEffortList(reasoning?.supportedEfforts);
   }
+  if (provider === "sarvam") return sarvamReasoningEfforts(modelCatalogFacts(provider, model));
   if (provider === "cline") {
     const reasoning = modelCatalogFacts(provider, model)?.reasoning;
     if (reasoning?.supported === false) return [];

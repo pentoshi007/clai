@@ -29,6 +29,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   mistral: "openai",
   hinoki: "openai",
   river: "openai",
+  sarvam: "openai",
   "aws-mantle": "openai",
   gemini: "gemini",
   ollama: "ollama",

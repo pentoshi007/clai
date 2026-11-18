@@ -11,12 +11,14 @@ import {
 import type { VisionEvidence, VisionSupport } from "../capabilities.js";
 import { scopedModelCatalogFacts } from "../catalog-context.js";
 import { catalogDeclaresVision } from "./catalog-trust.js";
+import { sarvamModelFacts } from "../sarvam-models.js";
 import {
   clearPersistedLearnedVision,
   persistLearnedVision,
 } from "../learned-capabilities.js";
 import {
   capabilityKey,
+  catalogFactsByRoute,
   configuredVisionModel,
   isSelectableModel,
   loadLearnedCapabilities,
@@ -125,6 +127,13 @@ export function modelVisionSupport(
   let cached = visionCapabilityCache.get(capabilityKey(provider, model));
   if (cached && cached.source === "user") return cached.vision ? "yes" : "no";
   const scope = scopedModelCatalogFacts(provider);
+  if (provider === "sarvam") {
+    const facts = scope
+      ? scope.get(model.trim().toLowerCase())
+      : catalogFactsByRoute.get(capabilityKey(provider, model));
+    const vision = sarvamModelFacts(model, facts)?.vision;
+    if (vision !== undefined) return vision ? "yes" : "no";
+  }
   if (scope) {
     const vision = scope.get(model.trim().toLowerCase())?.vision;
     if (vision !== undefined) return vision ? "yes" : "no";

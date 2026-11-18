@@ -288,6 +288,12 @@ const GATEWAY_BUDGET: ImageBudget = {
   label: "gateway",
 };
 
+const SARVAM_BUDGET: ImageBudget = {
+  ...GATEWAY_BUDGET,
+  maxTotalBytes: 6_000_000,
+  label: "Sarvam Token Factory",
+};
+
 function budgetForModelFamily(model: string): ImageBudget | undefined {
   if (/claude|anthropic/i.test(model)) return ANTHROPIC_BUDGET;
   if (/gemini|gemma/i.test(model)) return GEMINI_BUDGET;
@@ -308,6 +314,8 @@ export function imageBudgetFor(
       return GEMINI_BUDGET;
     case "ollama":
       return LOCAL_BUDGET;
+    case "sarvam":
+      return SARVAM_BUDGET;
     default:
       return budgetForModelFamily(model) ?? GATEWAY_BUDGET;
   }
