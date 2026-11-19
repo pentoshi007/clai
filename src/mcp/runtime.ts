@@ -94,6 +94,10 @@ function serverSelected(selection: McpRuntimeSelection, name: string): boolean {
   return selection.mode === "all" || (selection.mode === "servers" && selection.serverNames.includes(name));
 }
 
+export function selectsAllMcpServers(target: string | readonly string[] | undefined): boolean {
+  return target === undefined || target === "all" || (typeof target === "string" && target.trim() === "");
+}
+
 function activeTools(snapshot: McpSnapshot, selection: McpRuntimeSelection): McpToolMetadata[] {
   if (selection.mode === "off") return [];
   return snapshot.tools
@@ -697,10 +701,12 @@ export class McpRuntime {
     try {
       const { args: coercedArgs, coerced } = coerceArgumentsForSchema(args, tool.inputSchema);
       const { onProgress } = options;
-      const secrets = onProgress ? this.secretsFor(tool.serverName) : [];
+      const initialSecrets = onProgress ? this.secretsFor(tool.serverName) : [];
       const result = await this.manager.callTool(tool.canonicalName, coercedArgs, onProgress ? {
         ...options,
         onProgress: (message) => {
+          const secrets = [...new Set([...initialSecrets, ...this.secretsFor(tool.serverName)])]
+            .sort((left, right) => right.length - left.length);
           const text = sanitizeDisplayText(redactSecrets(message, secrets)).replace(/\s+/g, " ").trim().slice(0, 400);
           if (text) onProgress(text);
         },
@@ -827,11 +833,7 @@ export class McpRuntime {
     await this.ensureReady();
     try {
       signal?.throwIfAborted();
-      if (
-        target === undefined ||
-        target === "all" ||
-        (typeof target === "string" && target.trim().length === 0)
-      ) {
+      if (selectsAllMcpServers(target)) {
         const state = this.selectAll();
         return {
           ok: true,
