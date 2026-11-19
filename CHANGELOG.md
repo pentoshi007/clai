@@ -10,10 +10,17 @@
 
 - Select a Node.js version that satisfies REA's package requirements. Bootstrap a verified private runtime when needed and keep the active REA session available if an update fails.
 - Start the managed REA lazily through `mcp.enable` with `clai-rea`. Improve provider-selection guidance, report progress during long analysis calls, and forward cancellation to REA.
+- Keep plan mode read-only when an aggregate `mcp.enable` would select the managed REA server, while still allowing unrelated servers.
+
+### MCP
+
+- Redact credentials that a server refreshes mid-call from progress text, not only the ones present when the call started.
 
 ### Terminal and context
 
 - Render Markdown tables with optional edge pipes in streamed and completed responses. Wrap long cells, preserve escaped pipes and Unicode characters, and stack fields when a table cannot fit the terminal.
+- Keep inline-code spacing intact when a colour change splits a wrapped line, and keep whitespace-only table cells inside the table borders.
+- Recognise a table that starts immediately after a `<p>` tag.
 - Preserve literal markup in code examples and render HTML line breaks in lists and quotes.
 - Estimate post-compaction context from the retained messages and current request overhead. The next provider usage report replaces the estimate in the context counter.
 
