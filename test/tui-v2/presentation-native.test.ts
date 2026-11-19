@@ -8,6 +8,7 @@ import { findBunExecutable } from "../../src/os/bun-runtime.js";
 
 const bun = findBunExecutable();
 const cases = [
+  ["assistant-tables", "Native assistant tables passed"],
   ["attachment-flow", "Native attachment flow passed"],
   ["composer-chip-colors", "Native composer chip colors passed"],
   ["jump-to-latest", "Native jump-to-latest passed"],

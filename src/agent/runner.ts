@@ -44,7 +44,7 @@ import {
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildSystemSections } from "./turn/system-sections.js";
 import { orchestrationContext } from "./subagents/tools.js";
-import { createToolRouting } from "./turn/tool-routing.js";
+import { createToolRouting, shouldUseCompactSystemPrompt } from "./turn/tool-routing.js";
 import { runSingleTool } from "./turn/tool-execution/single-tool.js";
 import { runTurnRounds } from "./turn/loop/run-rounds.js";
 import type { TurnLoopDeps } from "./turn/loop/deps.js";
@@ -389,8 +389,7 @@ export async function runAgentTurn(
       loop.model,
       currentContextLimitTokens(),
     );
-    const useCompactSystemPrompt =
-      inputTokenBudget !== undefined || effectiveLimit <= 65_536;
+    const useCompactSystemPrompt = shouldUseCompactSystemPrompt(inputTokenBudget, effectiveLimit);
     const selectToolDefs = (
       native: boolean,
       compact: boolean,
@@ -466,6 +465,7 @@ export async function runAgentTurn(
           mcpRuntime?.promptContext({
             nativeTools: nativeToolsActive,
             ...(agentMode === "ask" ? { askMode: true } : {}),
+            ...(isPlanMode ? { planMode: true } : {}),
           }),
         getProjectRoot: getActiveProjectRoot,
         getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),

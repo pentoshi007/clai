@@ -51,6 +51,14 @@ describe("extractFsReadFileBody", () => {
 });
 
 describe("looksLikeMarkdown", () => {
+  it("uses the same table syntax as the response renderer", () => {
+    const source = "Column | Value\n:--- | ---:\nFirst | done |";
+    const display = preparePagerDisplay({ body: source, width: 70 });
+    expect(display.mode).toBe("markdown");
+    expect(display.lines.map((line) => line.plain)).toContain("│ First  │  done │");
+    expect(looksLikeMarkdown("| A | B |\n| --- |\na | b")).toBe(false);
+    expect(looksLikeMarkdown("| first | line |\n| second | line |")).toBe(false);
+  });
   it("accepts structured docs", () => {
     expect(
       looksLikeMarkdown("# Title\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n"),

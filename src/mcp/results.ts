@@ -186,6 +186,7 @@ export function normalizeToolResult(raw: unknown): McpNormalizedResult {
       if (typeof entry !== "object" || entry === null) return false;
       const block = entry as Record<string, unknown>;
       if (block.type !== "text" || typeof block.text !== "string") return false;
+      if (block.text === structured) return true;
       try {
         return JSON.stringify(JSON.parse(block.text)) === structured;
       } catch {

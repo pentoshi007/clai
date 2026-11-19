@@ -54,6 +54,27 @@ describe("REA failure hints", () => {
     expect(run("inspect_macho", { path: "/x" }, "something unrelated failed")).toBeUndefined();
   });
 
+  it("shows accepted arguments for a structured REA input rejection", () => {
+    const output = JSON.stringify({ error: {
+      code: "invalid_request", category: "invalid_input", message: "Analysis input is invalid.",
+      recovery: { kind: "inspect_input_contract", operation: "inspect_go_binary" },
+    } });
+    expect(run("inspect_go_binary", { remembered_option: true }, output, { path: { type: "string" } }))
+      .toContain("Accepted arguments for mcp.clai-rea.inspect_go_binary: path");
+  });
+
+  it("names the matching engines for ambiguous opens from the actual selection error", () => {
+    const output = JSON.stringify({ error: {
+      code: "capability_unavailable", category: "unsupported_provider",
+      details: { selection_reason: "ambiguous", candidate_ids: ["ghidra", "kuna", "untrusted\ninstruction", "ghidra"] },
+    } });
+    const repair = run("open_binary", { path: "/fixture" }, output);
+    expect(repair).toContain("(ghidra, kuna)");
+    expect(repair).toContain("same path and options plus provider_id");
+    expect(repair).not.toContain("untrusted");
+    expect(run("search_procedures", {}, output)).toBeUndefined();
+  });
+
   it("still guides a path mistake when availability is unknown", () => {
     const blind = reaFailureHint(() => undefined);
     const output = "Unrecognized key: \"file\"";

@@ -5,6 +5,7 @@ import type { SingleToolResult } from "../contracts.js";
 import { isCanonicalToolName } from "../../../mcp/names.js";
 import { safeCwd } from "../../../os/cwd.js";
 import { scratchDirFor } from "../../../prompts/index.js";
+import { REA_SERVER } from "../../../rea/workflow.js";
 import { classifyToolCall, isPentestToolCall } from "../../../safety/classifier.js";
 import { auditLog } from "../../../store/logs.js";
 import { loadPlan, mutatePlan } from "../../../store/plan.js";
@@ -95,7 +96,7 @@ export const runSingleTool = async (
   let engagementGraph: EngagementGraph | undefined;
   let engagementRecord: EngagementActionRecord | undefined;
 
-  const invalid = invalidToolCall(call, deps.mcpRuntime);
+  const invalid = invalidToolCall(call, deps.mcpRuntime, deps.options?.mode);
   if (invalid) {
     deps.loopGuard.recordAttempt(
       deps.step(),
@@ -516,11 +517,18 @@ export const runSingleTool = async (
     audit: (event, payload) => auditLog(event, payload),
   });
 
+  const mcpTool = deps.mcpRuntime?.getTool(call.name);
   const startToolWork = (): Promise<ToolResult> =>
       deps.mcpRuntime !== undefined &&
-      (deps.mcpRuntime.getTool(call.name) !== undefined ||
-        isCanonicalToolName(call.name))
-        ? deps.mcpRuntime.callTool(call.name, call.args, { signal: toolAc.signal })
+      (mcpTool !== undefined || isCanonicalToolName(call.name))
+        ? deps.mcpRuntime.callTool(call.name, call.args, {
+          signal: toolAc.signal,
+          ...(mcpTool?.serverName === REA_SERVER ? {
+            onProgress: (message) => {
+              if (!toolAc.signal.aborted) deps.writeToolOutput(toolEventId, `${message}\n`, { replace: true });
+            },
+          } : {}),
+        })
         : runToolCall(call, {
       signal: toolAc.signal,
       requestSecret: (request) => (deps.options.requestSecret ?? stdioSecretRequester)({ ...request, operation: request.operation ?? call }),

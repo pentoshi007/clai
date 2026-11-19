@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { VERSION } from "../version.generated.js";
 import { createNotification, createRequest, JsonRpcError, resultOrThrow } from "./jsonrpc.js";
 import { normalizeToolResult, parseToolDescriptor } from "./results.js";
@@ -17,6 +18,7 @@ import {
 } from "./types.js";
 
 const MAX_TOOL_PAGES = 100;
+const PROGRESS_INTERVAL_MS = 250;
 
 export interface McpClientOptions {
   readonly clientName?: string | undefined;
@@ -33,6 +35,7 @@ export class McpClient {
   private serverInfo: McpServerInfo | undefined;
   private serverCapabilities: Readonly<Record<string, unknown>> = {};
   private readonly toolListeners = new Set<() => void>();
+  private readonly progressListeners = new Map<string, (progress: number, message: string) => void>();
 
   constructor(
     private readonly transport: McpTransport,
@@ -44,8 +47,18 @@ export class McpClient {
         if (notification.method === "notifications/tools/list_changed") {
           for (const listener of this.toolListeners) listener();
         }
+        if (notification.method === "notifications/progress") this.reportProgress(notification.params);
       },
     });
+  }
+
+  private reportProgress(params: unknown): void {
+    if (typeof params !== "object" || params === null) return;
+    const { progressToken, progress, message } = params as Record<string, unknown>;
+    if (typeof progressToken === "string" && typeof progress === "number" && Number.isFinite(progress) &&
+        typeof message === "string" && message.length > 0) {
+      this.progressListeners.get(progressToken)?.(progress, message);
+    }
   }
 
   onToolsChanged(listener: () => void): () => void {
@@ -207,12 +220,29 @@ export class McpClient {
     options: McpRequestOptions = {},
   ): Promise<McpNormalizedResult> {
     this.assertInitialized();
-    const response = await this.transport.request(
-      createRequest(0, "tools/call", { name, arguments: args }),
-      options,
-    );
-    const result = resultOrThrow(response);
-    return normalizeToolResult(result);
+    const { onProgress, signal } = options;
+    const params = { name, arguments: args };
+    const token = onProgress ? randomUUID() : undefined;
+    if (token && onProgress) {
+      let previous = -Infinity;
+      let lastReport = -Infinity;
+      this.progressListeners.set(token, (progress, message) => {
+        if (signal?.aborted || progress <= previous) return;
+        previous = progress;
+        const now = performance.now();
+        if (now - lastReport < PROGRESS_INTERVAL_MS) return;
+        lastReport = now;
+        onProgress(message);
+      });
+    }
+    try {
+      const response = await this.transport.request(createRequest(0, "tools/call", {
+        ...params, ...(token ? { _meta: { progressToken: token } } : {}),
+      }), options);
+      return normalizeToolResult(resultOrThrow(response));
+    } finally {
+      if (token) this.progressListeners.delete(token);
+    }
   }
 
   async ping(options: McpRequestOptions = {}): Promise<void> {
@@ -223,6 +253,7 @@ export class McpClient {
   async close(): Promise<void> {
     this.initialized = false;
     this.toolListeners.clear();
+    this.progressListeners.clear();
     await this.transport.close();
   }
 

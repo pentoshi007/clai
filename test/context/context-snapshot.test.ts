@@ -14,7 +14,9 @@ import {
   type ContextUsageTarget,
 } from "../../src/app/controllers/session-context-usage.js";
 import { persistedContextUsage } from "../../src/app/controllers/session-persistence.js";
-import type { TokenUsage } from "../../src/types.js";
+import { estimateMessagesTokens } from "../../src/agent/request-accounting.js";
+import { calibratedRequestTokens } from "../../src/llm/token-estimate-calibration.js";
+import type { ChatMessage, TokenUsage } from "../../src/types.js";
 
 const target: ContextUsageTarget = {
   provider: "openai",
@@ -94,6 +96,18 @@ describe("ContextSnapshotV1", () => {
       });
     },
   );
+
+  it("uses retained messages alone when a compaction has no estimate", () => {
+    const history: ChatMessage[] = [{ role: "user", content: "Retained request" }];
+    const fallback = compactedContextSnapshot(target, undefined, history, undefined, "assembled-request");
+    const knownEmpty = compactedContextSnapshot(target, undefined, history, 0, "assembled-request");
+    expect(fallback).toMatchObject({
+      contextTokens: calibratedRequestTokens(target.provider, target.model, estimateMessagesTokens(history)),
+      scope: "message-history",
+      precision: "estimate",
+    });
+    expect(knownEmpty).toMatchObject({ contextTokens: 0, scope: "assembled-request" });
+  });
 
   it("records provider cache/reasoning telemetry and projects the frozen legacy shape", () => {
     const attempt = contextAttemptFromOperationUsage(operationUsage);

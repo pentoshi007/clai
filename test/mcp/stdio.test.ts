@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StdioTransport } from "../../src/mcp/transport-stdio.js";
@@ -52,6 +52,20 @@ describe("stdio transport handshake and tool calls", () => {
     expect(result.ok).toBe(true);
     expect(result.isError).toBe(false);
     expect(result.text).toBe("echo: hello");
+  });
+
+  it("routes progress to the matching concurrent tool calls over stdio", async () => {
+    const client = new McpClient(makeTransport());
+    await client.initialize();
+    const first = vi.fn();
+    const second = vi.fn();
+    const results = await Promise.all([
+      client.callTool("echo", { text: "one" }, { onProgress: first }),
+      client.callTool("echo", { text: "two" }, { onProgress: second }),
+    ]);
+    expect(results.map((result) => result.text)).toEqual(["echo: one", "echo: two"]);
+    expect(first.mock.calls).toEqual([["working on one"]]);
+    expect(second.mock.calls).toEqual([["working on two"]]);
   });
 
   it("passes configured env into the spawned process", async () => {

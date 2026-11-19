@@ -25,8 +25,8 @@ import {
 } from "../../agent/context-manager.js";
 import { projectToolHistory } from "../../agent/tool-history.js";
 import { buildContextBreakdown } from "../../agent/context-breakdown.js";
-import { estimateToolSchemaTokens } from "../../agent/request-accounting.js";
-import { isRequestContextSystemMessage } from "../../llm/system-messages.js";
+import { isDurableInjectedBlock } from "../../agent/durable-blocks.js";
+import { accountAssembledRequest } from "../../agent/request-accounting.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { effectiveContextWindowTokens } from "../../llm/context-windows.js";
 import { contextAttemptFromOperationUsage } from "../../llm/context-snapshot.js";
@@ -40,6 +40,7 @@ import type {
   AppEventPayloads,
 } from "../events/app-event.js";
 import type { EventSequencer } from "../events/sequencer.js";
+import type { AgentRequestPrefix } from "../ports/agent-port.js";
 
 export async function summarizeForSessionCompact(
   prompt: string,
@@ -99,6 +100,7 @@ interface RunSessionCompactionOptions {
   readonly model: string | undefined;
   readonly successfulRequest?: SuccessfulRequestSnapshot | undefined;
   readonly requestSettings?: Omit<SuccessfulRequestSnapshot, "messages"> | undefined;
+  readonly requestPrefix?: AgentRequestPrefix | undefined;
   readonly contextLimitTokens?: number | undefined;
   readonly requestTokensBefore?: number | undefined;
   readonly requestTokensBeforeMeasurement?:
@@ -116,30 +118,16 @@ interface RunSessionCompactionOptions {
 
 export interface ReportedCompaction {
   readonly beforeTokens: number;
-  readonly afterTokens: number | undefined;
+  readonly afterTokens: number;
   readonly measurement: "provider-reported" | "estimated";
   readonly scope: "message-history" | "assembled-request";
 }
 
-export function retainedRequestOverheadTokens(
-  request: SuccessfulRequestSnapshot | undefined,
-  history: readonly ChatMessage[],
-): number | undefined {
-  if (!request) return undefined;
-  const historyHead = history[0];
-  const fixed = request.messages.filter((message, index) =>
-    index === 0
-      ? message.role === "system" &&
-        !(historyHead?.role === "system" && historyHead.content === message.content)
-      : isRequestContextSystemMessage(message),
-  );
-  if (fixed.length === 0 && !request.tools?.length) return undefined;
-  return estimateMessagesTokens(fixed) + estimateToolSchemaTokens(request.tools);
-}
+export type SessionCompactResult = CompactResult & { readonly report?: ReportedCompaction };
 
 export async function runSessionCompaction(
   options: RunSessionCompactionOptions,
-): Promise<CompactResult> {
+): Promise<SessionCompactResult> {
   type CompactionEventType =
     | "token-usage"
     | "compaction-started"
@@ -156,7 +144,6 @@ export async function runSessionCompaction(
   };
 
   const history = projectToolHistory(options.history).messages;
-  const historyTokensBefore = estimateMessagesTokens(history);
   const successfulRequest = options.successfulRequest;
   const replayRequest = successfulRequest
     ? projectToolHistory(successfulRequest.messages).changed
@@ -183,56 +170,53 @@ export async function runSessionCompaction(
         stream: true,
       })
     : undefined;
-  const continuationAccounting = replayPlan?.continuationAccounting;
-  const snapshotRequestTokensBefore =
+  const measuredBeforeTokens =
     typeof options.requestTokensBefore === "number" &&
     Number.isFinite(options.requestTokensBefore) &&
     options.requestTokensBefore > 0
       ? Math.floor(options.requestTokensBefore)
       : undefined;
-  const useContinuationAccounting =
-    snapshotRequestTokensBefore === undefined &&
-    continuationAccounting !== undefined;
-  const requestTokensBefore =
-    snapshotRequestTokensBefore ?? continuationAccounting?.requestTokens;
-  const scope =
-    requestTokensBefore === undefined
-      ? "message-history"
-      : "assembled-request";
-  const calibrationProvider = successfulRequest?.provider ?? options.provider;
-  const calibrationModel = successfulRequest?.model ?? options.model;
-  const calibrated = (tokens: number): number =>
-    calibratedRequestTokens(calibrationProvider, calibrationModel, Math.max(0, tokens));
-  const beforeTokens = requestTokensBefore ?? calibrated(historyTokensBefore);
-  const retainedOverheadTokens = retainedRequestOverheadTokens(successfulRequest, history);
-  const reportedFor = (result: CompactResult): ReportedCompaction => {
-    const measurement =
-      options.requestTokensBeforeMeasurement ?? "estimated";
-    if (retainedOverheadTokens !== undefined) {
-      return {
-        beforeTokens,
-        afterTokens: calibrated(result.afterTokens + retainedOverheadTokens),
-        measurement,
-        scope: "assembled-request",
-      };
+  const provider = options.provider ?? successfulRequest?.provider;
+  const sameProvider = successfulRequest?.provider === provider;
+  const model = options.model ?? (sameProvider ? successfulRequest?.model : undefined);
+  const routeRequest = sameProvider && successfulRequest?.model === model ? successfulRequest : undefined;
+  const sentSystem = routeRequest?.messages[0];
+  const stableSystem = sentSystem?.role === "system" &&
+    !isDurableInjectedBlock(sentSystem) && !isCompactionMemoryMessage(sentSystem);
+  const systemPrompt = options.requestPrefix?.systemPrompt ?? (stableSystem ? sentSystem.content : undefined);
+  const requestPrefix = options.requestPrefix ?? routeRequest;
+  const tools = requestPrefix?.tools;
+  const scope = provider && model && (systemPrompt !== undefined || tools?.length)
+    ? "assembled-request"
+    : "message-history";
+  const estimate = (retained: readonly ChatMessage[]): number => {
+    if (!provider || !model) {
+      return calibratedRequestTokens(provider, model, estimateMessagesTokens(retained));
     }
-    const retainedHistoryTokens = calibrated(result.afterTokens);
-    const overheadTokens = (assembledTokens: number): number =>
-      Math.max(0, assembledTokens - calibrated(result.beforeTokens));
-    const afterTokens =
-      useContinuationAccounting && continuationAccounting
-        ? retainedHistoryTokens +
-          overheadTokens(calibrated(continuationAccounting.rawRequestTokens))
-        : requestTokensBefore === undefined
-          ? retainedHistoryTokens
-          : retainedHistoryTokens + overheadTokens(requestTokensBefore);
-    return { beforeTokens, afterTokens, measurement, scope };
+    const head = retained[0];
+    const hasSystemPrompt = head?.role === "system" && head.content === systemPrompt;
+    const messages = systemPrompt !== undefined && !hasSystemPrompt
+      ? [{ role: "system" as const, content: systemPrompt }, ...retained]
+      : retained;
+    return accountAssembledRequest({
+      provider,
+      model,
+      messages,
+      stream: true,
+      tools,
+      reasoning: requestPrefix?.thinking,
+    }).accounting.requestTokens;
   };
+  const beforeTokens = measuredBeforeTokens ?? replayPlan?.continuationAccounting.requestTokens ??
+    estimate(history);
+  const measurement = measuredBeforeTokens !== undefined
+    ? options.requestTokensBeforeMeasurement ?? "estimated"
+    : "estimated";
   if (options.persist) {
     emit("compaction-started", {
       compactionId: options.compactionId,
       beforeTokens,
-      ...(options.requestTokensBeforeMeasurement === "provider-reported"
+      ...(measurement === "provider-reported"
         ? { measurement: "provider-reported" as const }
         : {}),
     });
@@ -333,7 +317,12 @@ export async function runSessionCompaction(
     }
 
     if (!options.isCurrent()) return result;
-    const reported = reportedFor(result);
+    const reported: ReportedCompaction = {
+      beforeTokens,
+      afterTokens: estimate(result.messages),
+      measurement,
+      scope,
+    };
     options.commit(result, reported);
     if (options.persist && result.summarized) {
       const summary =
@@ -345,9 +334,7 @@ export async function runSessionCompaction(
         compactionId: options.compactionId,
         summary,
         beforeTokens: reported.beforeTokens,
-        ...(reported.afterTokens !== undefined
-          ? { afterTokens: reported.afterTokens }
-          : {}),
+        afterTokens: reported.afterTokens,
         ...(reported.measurement === "provider-reported"
           ? { measurement: "provider-reported" as const }
           : {}),
@@ -358,7 +345,7 @@ export async function runSessionCompaction(
         compactionId: options.compactionId,
         message: "There was no closed history to compact.",
         retainedTokens: beforeTokens,
-        ...(options.requestTokensBeforeMeasurement === "provider-reported"
+        ...(measurement === "provider-reported"
           ? { measurement: "provider-reported" as const }
           : {}),
       });
@@ -367,7 +354,7 @@ export async function runSessionCompaction(
     if (options.persist && result.summarized) {
       await options.persistNow();
     }
-    return result;
+    return { ...result, report: reported };
   } catch (error) {
     if (options.persist && !settled && options.isCurrent()) {
       const message = error instanceof Error ? error.message : String(error);
@@ -375,7 +362,7 @@ export async function runSessionCompaction(
         compactionId: options.compactionId,
         message: /aborted/i.test(message) ? "Compaction was cancelled." : message,
         retainedTokens: beforeTokens,
-        ...(options.requestTokensBeforeMeasurement === "provider-reported"
+        ...(measurement === "provider-reported"
           ? { measurement: "provider-reported" as const }
           : {}),
       });

@@ -510,7 +510,7 @@ describe("SessionController parity helpers (V2-080)", () => {
         { role: "user", content: "follow-up after resume" },
         { role: "assistant", content: "follow-up answer" },
       ],
-      { sessionId: "sess-hist-compact" },
+      { sessionId: "sess-hist-compact", provider: "nvidia", model: "test-model" },
     );
 
     const visual =
@@ -956,6 +956,8 @@ describe("SessionController parity helpers (V2-080)", () => {
       ]).flat(),
       {
         sessionId: "sess-ordered-compact",
+        provider: "nvidia",
+        model: "test-model",
         persistenceRevision: 7,
         contextUsage: {
           contextTokens: 88_000,

@@ -13,16 +13,19 @@ import {
   type CodeBlockAppearance,
   type CodeFenceState,
 } from "./code-block.js";
-import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdown, renderTableBlock } from "./markdown/tables.js";
+import { renderInlineMarkdown, renderTableBlock } from "./markdown/tables.js";
+import { matchTableHeader, parseTableRow, type TableHeader } from "./markdown/table-syntax.js";
+import { splitMarkdownBreaks } from "./markdown/markup.js";
 import { splitBoldLines } from "./markdown/bold-lines.js";
 
-import { renderColumns } from "./text-width.js";
+import { terminalWidth } from "./text-width.js";
 import { wrapPagerLine } from "./pager-chrome.js";
 import { paintLineChangeCounts } from "./line-change-labels.js";
 import { diffMarkdownRows, emptyDiffRowState } from "./markdown-diff-rows.js";
 import { detectThemeHint } from "../bootstrap/capabilities.js";
 import { themeFor } from "./theme.js";
 export { renderInlineMarkdown };
+export { terminalWidth as visibleWidth } from "./text-width.js";
 
 export const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
   none: 0,
@@ -61,10 +64,6 @@ function paintChangeCounts(text: string, context: RenderContext): string {
     (value) => theme ? context.paint.hex(theme.success)(value) : context.paint.green(value),
     (value) => theme ? context.paint.hex(theme.diffDel)(value) : context.paint.red(value),
   );
-}
-
-function repeat(char: string, count: number): string {
-  return char.repeat(Math.max(0, count));
 }
 
 interface BlockState {
@@ -138,73 +137,10 @@ function fencePanelRows(
   return [openFencePanel(state, open.marker, open.info, context)];
 }
 
-function renderBlockLine(
-  line: string,
-  state: BlockState,
-  context: RenderContext,
-): string {
-  const { paint } = context;
-  const heading = line.match(/^(#{1,6})\s+(.*)$/);
-  if (heading) {
-    const level = heading[1]!.length;
-    const body = heading[2]!.trim();
-    if (level <= 2) {
-      return paint.bold.magenta(renderInlineMarkdown(body, paint));
-    }
-    if (level === 3) {
-      return paint.bold.cyan(renderInlineMarkdown(body, paint));
-    }
-    return paint.bold(renderInlineMarkdown(body, paint));
-  }
-
-  if (/^\s*[-*_]{3,}\s*$/.test(line)) {
-    return paint.dim(repeat("─", 60));
-  }
-
-  if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
-    return paint.dim(repeat("─", Math.max(20, line.length)));
-  }
-
-  if (/^\s*\|.*\|\s*$/.test(line)) {
-    const cells = line
-      .replace(/^\s*\|/, "")
-      .replace(/\|\s*$/, "")
-      .split("|")
-      .map((cell) => renderInlineMarkdown(cell.trim(), paint));
-    return (
-      paint.dim("│ ") + cells.join(paint.dim(" │ ")) + paint.dim(" │")
-    );
-  }
-
-  if (line.startsWith("> ")) {
-    return (
-      paint.dim("│ ") +
-      paint.dim.italic(renderInlineMarkdown(line.slice(2), paint))
-    );
-  }
-
-  const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
-  if (task) {
-    const checked = /[xX]/.test(task[2]!);
-    const box = checked ? paint.green("☑") : paint.dim("☐");
-    const body = renderInlineMarkdown(task[3]!, paint);
-    return `${task[1]}${box} ${checked ? paint.dim(body) : body}`;
-  }
-
-  const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
-  if (ordered) {
-    return `${ordered[1]}${paint.cyan(`${ordered[2]}.`)} ${renderInlineMarkdown(ordered[3]!, paint)}`;
-  }
-
-  const unordered = line.match(/^(\s*)[-*+]\s+(.*)$/);
-  if (unordered) {
-    return `${unordered[1]}${paint.cyan("•")} ${renderInlineMarkdown(unordered[2]!, paint)}`;
-  }
-
-  return renderInlineMarkdown(line, paint);
-}
-
 const OUTPUT_INDENT = "  ";
+const THEMATIC_BREAK = /^[ \t]*(?:-(?:[ \t]*-){2,}|\*(?:[ \t]*\*){2,}|_(?:[ \t]*_){2,})[ \t]*$/;
+const QUOTE = /^ {0,3}>[ \t]?(.*)$/;
+const LIST_ITEM = /^([ \t]*)([-*+]|\d{1,9}[.)])[ \t]+(.*)$/;
 
 export function indentAndWrapText(text: string, indent = "  "): string {
   if (!text) return text;
@@ -223,94 +159,75 @@ function markdownSegments(text: string, context: RenderContext): string[] {
   return context.appearance?.isolateBold ? splitBoldLines(text) : [text];
 }
 
-function wrapInlineMarkdown(text: string, width: number, context: RenderContext): string[] {
-  return markdownSegments(text, context).flatMap((segment) =>
-    wrapAnsiLine(renderInlineMarkdown(segment, context.paint), width),
-  );
+function wrapInlineMarkdown(
+  text: string,
+  width: number,
+  context: RenderContext,
+  dim = false,
+): string[] {
+  return splitMarkdownBreaks(text, "\n").flatMap((line) => markdownSegments(line, context).flatMap((segment) => {
+    const rendered = renderInlineMarkdown(segment, context.paint);
+    return wrapAnsiLine(dim ? context.paint.dim(rendered) : rendered, width);
+  }));
 }
 
 function wrapMarkdownLine(
   line: string,
   wrapWidth: number,
-  state: BlockState,
   context: RenderContext,
 ): string[] {
   const { paint } = context;
-  state.fenceWidth = wrapWidth;
-  const fenceRows = fencePanelRows(line, state, context);
-  if (fenceRows) return fenceRows;
-
-  if (/^\s*[-*_]{3,}\s*$/.test(line)) {
-    return [renderBlockLine(line, state, context)];
+  if (THEMATIC_BREAK.test(line)) {
+    return [paint.dim("─".repeat(Math.min(60, wrapWidth)))];
   }
 
-  if (line.startsWith("> ")) {
-    const content = line.slice(2);
+  const quote = QUOTE.exec(line);
+  if (quote) {
+    const content = quote[1]!;
     const prefix = paint.dim(context.appearance?.quotePrefix ?? "│ ");
+    const width = Math.max(2, wrapWidth - terminalWidth(prefix));
     if (context.appearance?.literalQuotes) {
-      const width = Math.max(1, wrapWidth - renderColumns(prefix));
       const rows = context.appearance.lineChangeColors
         ? wrapAnsiLine(paintChangeCounts(content, context), width)
         : wrapPagerLine(content, width, { preserveWhitespace: true });
       return rows.map((row) => prefix + paint.dim(row));
     }
-    const wrapped = wrapInlineMarkdown(content, Math.max(10, wrapWidth - renderColumns(prefix)), context);
-    return wrapped.map((wl) => prefix + paint.dim.italic(wl));
+    return wrapInlineMarkdown(content, width, context).map((row) => prefix + paint.dim.italic(row));
   }
 
-  const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
-  if (task) {
-    const indent = task[1] ?? "";
-    const checked = /[xX]/.test(task[2]!);
-    const box = checked ? paint.green("☑") : paint.dim("☐");
-    const content = task[3] ?? "";
-    const prefix = `${indent}${box} `;
-    const prefixLength = indent.length + 2;
-    const wrapped = markdownSegments(content, context).flatMap((segment) => {
-      const rendered = renderInlineMarkdown(segment, paint);
-      return wrapAnsiLine(checked ? paint.dim(rendered) : rendered, Math.max(10, wrapWidth - prefixLength));
-    });
-    return wrapped.map((wl, idx) => {
-      if (idx === 0) return prefix + wl;
-      return " ".repeat(prefixLength) + wl;
-    });
+  const list = LIST_ITEM.exec(line);
+  if (list) {
+    const marker = list[2]!;
+    const task = marker.length === 1 ? /^\[([ xX])\](?:[ \t]+(.*)|$)/.exec(list[3]!) : null;
+    const checked = task?.[1]?.toLowerCase() === "x";
+    const bullet = task
+      ? (checked ? paint.green("☑") : paint.dim("☐"))
+      : paint.cyan(marker.length === 1 ? "•" : marker);
+    const indent = list[1]!.replaceAll("\t", "    ").slice(0, Math.max(0, wrapWidth - marker.length - 3));
+    const prefix = `${indent}${bullet} `;
+    const prefixLength = terminalWidth(prefix);
+    const content = task ? task[2] ?? "" : list[3]!;
+    const rows = wrapInlineMarkdown(content, Math.max(2, wrapWidth - prefixLength), context, checked);
+    return rows.map((row, index) => (index === 0 ? prefix : " ".repeat(prefixLength)) + row);
   }
 
-  const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
-  if (ordered) {
-    const indent = ordered[1] ?? "";
-    const num = ordered[2] ?? "";
-    const content = ordered[3] ?? "";
-    const prefix = `${indent}${paint.cyan(`${num}.`)} `;
-    const prefixLength = indent.length + num.length + 2;
-    const wrapped = wrapInlineMarkdown(content, Math.max(10, wrapWidth - prefixLength), context);
-    return wrapped.map((wl, idx) => {
-      if (idx === 0) return prefix + wl;
-      return " ".repeat(prefixLength) + wl;
-    });
+  const pieces = splitMarkdownBreaks(line);
+  if (pieces.length > 1) {
+    return pieces.flatMap((part) => wrapMarkdownLine(part, wrapWidth, context));
+  }
+  const text = pieces[0]!;
+  const heading = /^(?: {0,3})(#{1,6})(?:[ \t]+(.*)|$)/.exec(text);
+  if (heading) {
+    const level = heading[1]!.length;
+    const body = (heading[2] ?? "").replace(/(?:^|[ \t]+)#+[ \t]*$/, "").trim();
+    const style = level <= 2 ? paint.bold.magenta : level === 3 ? paint.bold.cyan : paint.bold;
+    return wrapAnsiLine(paintChangeCounts(style(renderInlineMarkdown(body, paint)), context), wrapWidth);
   }
 
-  const unordered = line.match(/^(\s*)[-*+]\s+(.*)$/);
-  if (unordered) {
-    const indent = unordered[1] ?? "";
-    const content = unordered[2] ?? "";
-    const prefix = `${indent}${paint.cyan("•")} `;
-    const prefixLength = indent.length + 2;
-    const wrapped = wrapInlineMarkdown(content, Math.max(10, wrapWidth - prefixLength), context);
-    return wrapped.map((wl, idx) => {
-      if (idx === 0) return prefix + wl;
-      return " ".repeat(prefixLength) + wl;
-    });
-  }
-
-  const segments = /^#{1,6}\s/.test(line) ? [line] : markdownSegments(line, context);
-  return segments.flatMap((segment) => {
-    const rendered = paintChangeCounts(renderBlockLine(segment, state, context), context);
-    return wrapAnsiLine(rendered, wrapWidth);
-  });
+  return markdownSegments(text, context).flatMap((segment) =>
+    wrapAnsiLine(paintChangeCounts(renderInlineMarkdown(segment, paint), context), wrapWidth),
+  );
 }
-
-const BR_RE = /<br\s*\/?>/i;
 
 export function renderMarkdown(
   text: string,
@@ -319,8 +236,7 @@ export function renderMarkdown(
 ): string {
   if (!text) return text;
   const context = renderContext(appearance);
-  const state: BlockState = { inFence: false };
-  const lines = text.split("\n");
+  const lines = text.split(/\r?\n/);
   const resultLines: string[] = [];
 
   const hasWidth = typeof width === "number";
@@ -355,46 +271,29 @@ export function renderMarkdown(
       continue;
     }
 
-    if (
-      !state.inFence &&
-      isTableRowLine(line) &&
-      i + 1 < lines.length &&
-      isTableSeparatorLine(lines[i + 1]!)
-    ) {
-      const block: string[] = [line, lines[i + 1]!];
+    const separator = lines[i + 1];
+    const table = separator?.includes("-") ? matchTableHeader(parseTableRow(line), separator) : undefined;
+    if (table) {
+      const rows: string[][] = [];
       let j = i + 2;
-      while (
-        j < lines.length &&
-        lines[j]!.trim().length > 0 &&
-        (isTableRowLine(lines[j]!) || isTableSeparatorLine(lines[j]!))
-      ) {
-        block.push(lines[j]!);
-        j++;
+      for (; j < lines.length; j += 1) {
+        const row = parseTableRow(lines[j]!);
+        if (!row) break;
+        rows.push(row);
       }
-      for (const rendered of renderTableBlock(
-        block,
-        wrapWidth,
-        context.paint,
-      )) {
+      for (const rendered of renderTableBlock(table, rows, wrapWidth, context.paint, wrapAnsiLine)) {
         resultLines.push(`${OUTPUT_INDENT}${rendered}`);
       }
       i = j;
       continue;
     }
 
-    const pieces =
-      !state.inFence && !(appearance?.literalQuotes && line.startsWith("> ")) && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
-    for (const piece of pieces) {
-      for (const wl of wrapMarkdownLine(piece, wrapWidth, state, context)) {
-        resultLines.push(`${OUTPUT_INDENT}${wl}`);
-      }
+    for (const rendered of wrapMarkdownLine(line, wrapWidth, context)) {
+      resultLines.push(`${OUTPUT_INDENT}${rendered}`);
     }
     i++;
   }
 
-  if (state.inFence) {
-    resultLines.push(`${OUTPUT_INDENT}${closeFencePanel(state, context)}`);
-  }
   return resultLines.join("\n");
 }
 
@@ -406,13 +305,13 @@ export function createMarkdownStreamWriter(
   finish(): void;
 } {
   const context = renderContext(appearance);
-  const state: BlockState = { inFence: false };
-  let buffer = "";
-  let outputEndsWithNewline = true;
-  let tableBuffer: string[] = [];
-
   const cols = process.stdout.columns || 80;
   const wrapWidth = Math.max(40, cols - 6);
+  const state: BlockState = { inFence: false, fenceWidth: wrapWidth };
+  let buffer = "";
+  let outputEndsWithNewline = true;
+  let pendingHeader: { line: string; cells: string[]; withNewline: boolean } | undefined;
+  let table: { header: TableHeader; rows: string[][]; withNewline: boolean } | undefined;
 
   const emit = (chunk: string): void => {
     if (!chunk) return;
@@ -420,54 +319,45 @@ export function createMarkdownStreamWriter(
     outputEndsWithNewline = chunk.endsWith("\n");
   };
 
-  const emitLine = (line: string, withNewline: boolean): void => {
-    const pieces =
-      !state.inFence && !(appearance?.literalQuotes && line.startsWith("> ")) && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
-    for (let p = 0; p < pieces.length; p++) {
-      const piece = pieces[p]!;
-      const lastPiece = p === pieces.length - 1;
-      const physical = wrapMarkdownLine(piece, wrapWidth, state, context);
-      for (let q = 0; q < physical.length; q++) {
-        emit(`${OUTPUT_INDENT}${physical[q]!}`);
-        const isVeryLast = lastPiece && q === physical.length - 1;
-        if (!isVeryLast || withNewline) emit("\n");
-      }
+  const emitRows = (rows: readonly string[], withNewline: boolean): void => {
+    for (const [index, row] of rows.entries()) {
+      emit(`${OUTPUT_INDENT}${row}`);
+      if (withNewline || index < rows.length - 1) emit("\n");
     }
   };
 
   const flushTable = (): void => {
-    if (tableBuffer.length === 0) return;
-    const looksLikeTable =
-      tableBuffer.length >= 2 &&
-      isTableRowLine(tableBuffer[0]!) &&
-      isTableSeparatorLine(tableBuffer[1]!);
-    if (looksLikeTable) {
-      for (const rendered of renderTableBlock(
-        tableBuffer,
-        wrapWidth,
-        context.paint,
-      )) {
-        emit(`${OUTPUT_INDENT}${rendered}\n`);
-      }
-    } else {
-      for (const line of tableBuffer) emitLine(line, true);
-    }
-    tableBuffer = [];
+    if (!table) return;
+    emitRows(renderTableBlock(table.header, table.rows, wrapWidth, context.paint, wrapAnsiLine), table.withNewline);
+    table = undefined;
+  };
+
+  const flushHeader = (): void => {
+    if (!pendingHeader) return;
+    emitRows(wrapMarkdownLine(pendingHeader.line, wrapWidth, context), pendingHeader.withNewline);
+    pendingHeader = undefined;
   };
 
   const handleLine = (line: string, withNewline: boolean): void => {
-    const collecting = tableBuffer.length > 0;
-    const isTableLine =
-      !state.inFence &&
-      (collecting
-        ? isTableRowLine(line) || isTableSeparatorLine(line)
-        : isTableRowLine(line));
-    if (isTableLine) {
-      tableBuffer.push(line);
+    const fenceRows = fencePanelRows(line, state, context);
+    const cells = fenceRows ? undefined : parseTableRow(line);
+    if (table && cells) {
+      table.rows.push(cells);
+      table.withNewline = withNewline;
       return;
     }
     flushTable();
-    emitLine(line, withNewline);
+
+    const header = fenceRows ? undefined : matchTableHeader(pendingHeader?.cells, line);
+    if (header) {
+      table = { header, rows: [], withNewline };
+      pendingHeader = undefined;
+      return;
+    }
+
+    flushHeader();
+    if (cells) pendingHeader = { line, cells, withNewline };
+    else emitRows(fenceRows ?? wrapMarkdownLine(line, wrapWidth, context), withNewline);
   };
 
   return {
@@ -475,7 +365,7 @@ export function createMarkdownStreamWriter(
       buffer += token;
       let newlineIndex = buffer.indexOf("\n");
       while (newlineIndex !== -1) {
-        const line = buffer.slice(0, newlineIndex);
+        const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
         buffer = buffer.slice(newlineIndex + 1);
         handleLine(line, true);
         newlineIndex = buffer.indexOf("\n");
@@ -487,6 +377,7 @@ export function createMarkdownStreamWriter(
         buffer = "";
       }
       flushTable();
+      flushHeader();
       if (state.inFence) {
         const separator = outputEndsWithNewline ? "" : "\n";
         emit(`${separator}${OUTPUT_INDENT}${closeFencePanel(state, context)}`);
@@ -495,333 +386,129 @@ export function createMarkdownStreamWriter(
   };
 }
 
-export function visibleWidth(str: string): number {
-  return renderColumns(str);
+const SGR = /\x1b\[[0-9;]*m/g;
+const WRAP_PART = /\x1b\[[0-9;]*m| +|[^ \x1b]+|\x1b/g;
+const WORD_PART = /\x1b\[[0-9;]*m|[^\x1b]+|\x1b/g;
+const NON_ASCII = /[^ -~]/;
+const SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+interface Style {
+  readonly attributes: Set<number>;
+  fg: string;
+  bg: string;
 }
-type Token = { type: "space" | "ansi" | "char"; value: string; width: number };
-interface SgrCarry {
-  bold: boolean;
-  dim: boolean;
-  italic: boolean;
-  underline: boolean;
-  fg?: string | undefined;
-  bg?: string | undefined;
+
+const ATTRIBUTE_CLOSES: Readonly<Record<number, readonly number[]>> = {
+  22: [1, 2],
+  23: [3],
+  24: [4],
+  29: [9],
+};
+
+function applyStyle(style: Style, sequence: string): void {
+  const codes = sequence.slice(2, -1).split(";").map(Number);
+  for (let i = 0; i < codes.length; i += 1) {
+    const code = codes[i]!;
+    if (code === 0) {
+      style.attributes.clear();
+      style.fg = "";
+      style.bg = "";
+    } else if (code === 38 || code === 48) {
+      const mode = codes[i + 1];
+      const args = mode === 2 ? 4 : mode === 5 ? 2 : 0;
+      if (args > 0 && i + args < codes.length) {
+        style[code === 38 ? "fg" : "bg"] = `\x1b[${codes.slice(i, i + args + 1).join(";")}m`;
+        i += args;
+      }
+    } else if (code === 39) {
+      style.fg = "";
+    } else if (code === 49) {
+      style.bg = "";
+    } else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
+      style.fg = `\x1b[${code}m`;
+    } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
+      style.bg = `\x1b[${code}m`;
+    } else if ((code >= 1 && code <= 4) || code === 9) {
+      style.attributes.add(code);
+    } else {
+      for (const attribute of ATTRIBUTE_CLOSES[code] ?? []) style.attributes.delete(attribute);
+    }
+  }
 }
-function emptySgr(): SgrCarry {
-  return {
-    bold: false,
-    dim: false,
-    italic: false,
-    underline: false,
-  };
-}
-function sgrOpen(state: SgrCarry): string {
-  let out = "";
-  if (state.bold) out += "\x1b[1m";
-  if (state.dim) out += "\x1b[2m";
-  if (state.italic) out += "\x1b[3m";
-  if (state.underline) out += "\x1b[4m";
-  if (state.fg) out += state.fg;
-  if (state.bg) out += state.bg;
-  return out;
-}
-function sgrHasStyle(state: SgrCarry): boolean {
-  return Boolean(
-    state.bold ||
-      state.dim ||
-      state.italic ||
-      state.underline ||
-      state.fg ||
-      state.bg,
-  );
-}
-function applySgrSequence(state: SgrCarry, sequence: string): void {
-  if (!sequence.startsWith("\x1b[") || !sequence.endsWith("m")) return;
-  const body = sequence.slice(2, -1);
-  if (body.length === 0) {
-    Object.assign(state, emptySgr());
+
+function* glyphs(text: string): Iterable<string> {
+  if (!NON_ASCII.test(text)) {
+    yield* text;
     return;
   }
-  const parts = body.split(";").map((p) => Number(p));
-  let i = 0;
-  while (i < parts.length) {
-    const code = parts[i]!;
-    if (!Number.isFinite(code)) {
-      i += 1;
-      continue;
-    }
-    if (code === 0) {
-      Object.assign(state, emptySgr());
-      i += 1;
-      continue;
-    }
-    if (code === 1) {
-      state.bold = true;
-      i += 1;
-      continue;
-    }
-    if (code === 2) {
-      state.dim = true;
-      i += 1;
-      continue;
-    }
-    if (code === 3) {
-      state.italic = true;
-      i += 1;
-      continue;
-    }
-    if (code === 4) {
-      state.underline = true;
-      i += 1;
-      continue;
-    }
-    if (code === 22) {
-      state.bold = false;
-      state.dim = false;
-      i += 1;
-      continue;
-    }
-    if (code === 23) {
-      state.italic = false;
-      i += 1;
-      continue;
-    }
-    if (code === 24) {
-      state.underline = false;
-      i += 1;
-      continue;
-    }
-    if (code === 39) {
-      state.fg = undefined;
-      i += 1;
-      continue;
-    }
-    if (code === 49) {
-      state.bg = undefined;
-      i += 1;
-      continue;
-    }
-    if (code === 38) {
-      const mode = parts[i + 1];
-      if (mode === 5 && parts[i + 2] !== undefined) {
-        state.fg = `\x1b[38;5;${parts[i + 2]}m`;
-        i += 3;
-        continue;
-      }
-      if (
-        mode === 2 &&
-        parts[i + 2] !== undefined &&
-        parts[i + 3] !== undefined &&
-        parts[i + 4] !== undefined
-      ) {
-        state.fg = `\x1b[38;2;${parts[i + 2]};${parts[i + 3]};${parts[i + 4]}m`;
-        i += 5;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if (code === 48) {
-      const mode = parts[i + 1];
-      if (mode === 5 && parts[i + 2] !== undefined) {
-        state.bg = `\x1b[48;5;${parts[i + 2]}m`;
-        i += 3;
-        continue;
-      }
-      if (
-        mode === 2 &&
-        parts[i + 2] !== undefined &&
-        parts[i + 3] !== undefined &&
-        parts[i + 4] !== undefined
-      ) {
-        state.bg = `\x1b[48;2;${parts[i + 2]};${parts[i + 3]};${parts[i + 4]}m`;
-        i += 5;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
-      state.fg = `\x1b[${code}m`;
-      i += 1;
-      continue;
-    }
-    if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
-      state.bg = `\x1b[${code}m`;
-      i += 1;
-      continue;
-    }
-    i += 1;
-  }
+  for (const { segment } of SEGMENTER.segment(text)) yield segment;
 }
-function applySgrInText(state: SgrCarry, text: string): void {
-  let i = 0;
-  while (i < text.length) {
-    if (text.startsWith("\x1b[", i)) {
-      const end = text.indexOf("m", i + 2);
-      if (end === -1) {
-        i += 1;
-        continue;
-      }
-      applySgrSequence(state, text.slice(i, end + 1));
-      i = end + 1;
-      continue;
-    }
-    i += 1;
-  }
-}
-function splitWord(
-  tokens: Token[],
-  maxWidth: number,
-): { text: string; visibleLength: number }[] {
-  const segments: { text: string; visibleLength: number }[] = [];
-  let currentSegmentText = "";
-  let currentSegmentVisibleLength = 0;
-  const style = emptySgr();
 
-  for (const token of tokens) {
-    if (token.type === "ansi") {
-      currentSegmentText += token.value;
-      applySgrSequence(style, token.value);
-    } else {
-      if (
-        currentSegmentVisibleLength > 0 &&
-        currentSegmentVisibleLength + token.width > maxWidth
-      ) {
-        const open = sgrOpen(style);
-        const closed = sgrHasStyle(style)
-          ? `${currentSegmentText}\x1b[0m`
-          : currentSegmentText;
-        segments.push({
-          text: closed,
-          visibleLength: currentSegmentVisibleLength,
-        });
-        currentSegmentText = open;
-        currentSegmentVisibleLength = 0;
-      }
-      currentSegmentText += token.value;
-      currentSegmentVisibleLength += token.width;
-    }
-  }
-  if (currentSegmentText) {
-    segments.push({
-      text: currentSegmentText,
-      visibleLength: currentSegmentVisibleLength,
-    });
-  }
-  return segments;
-}
-export function wrapAnsiLine(line: string, maxWidth: number): string[] {
-  const visibleLength = visibleWidth(line);
-  if (visibleLength <= maxWidth) return [line];
-
-  const tokens: Token[] = [];
-  let i = 0;
-  while (i < line.length) {
-    if (line.startsWith("\x1b[", i)) {
-      let j = i + 2;
-      while (j < line.length && !/[a-zA-Z]/.test(line[j]!)) {
-        j++;
-      }
-      const val = line.slice(i, j + 1);
-      tokens.push({ type: "ansi", value: val, width: 0 });
-      i = j + 1;
-    } else if (/\s/.test(line[i]!)) {
-      let j = i;
-      while (j < line.length && /\s/.test(line[j]!)) {
-        j++;
-      }
-      const val = line.slice(i, j);
-      tokens.push({ type: "space", value: val, width: val.length });
-      i = j;
-    } else {
-      const codePoint = line.codePointAt(i)!;
-      const charLength = codePoint > 0xffff ? 2 : 1;
-      const val = line.slice(i, i + charLength);
-      tokens.push({
-        type: "char",
-        value: val,
-        width: Math.max(1, visibleWidth(val)),
-      });
-      i += charLength;
-    }
-  }
-
-  const words: { text: string; visibleLength: number }[] = [];
-  let currentWordTokens: Token[] = [];
-  let currentWordVisibleLength = 0;
-
-  const pushWord = () => {
-    if (currentWordTokens.length === 0) return;
-    if (currentWordVisibleLength > maxWidth) {
-      const segments = splitWord(currentWordTokens, maxWidth);
-      words.push(...segments);
-    } else {
-      const text = currentWordTokens.map((t) => t.value).join("");
-      words.push({ text, visibleLength: currentWordVisibleLength });
-    }
-    currentWordTokens = [];
-    currentWordVisibleLength = 0;
-  };
-
-  for (const token of tokens) {
-    if (token.type === "space") {
-      pushWord();
-      words.push({ text: token.value, visibleLength: token.width });
-    } else {
-      currentWordTokens.push(token);
-      if (token.type === "char") {
-        currentWordVisibleLength += token.width;
-      }
-    }
-  }
-  pushWord();
+export function wrapAnsiLine(source: string, maxWidth: number): string[] {
+  const width = Math.max(1, Math.floor(maxWidth));
+  const text = source.includes("\t") ? source.replaceAll("\t", "    ") : source;
+  if (terminalWidth(text) <= width) return [text];
 
   const lines: string[] = [];
-  let currentLineText = "";
-  let currentLineVisibleLength = 0;
-  const lineStyle = emptySgr();
+  const style: Style = { attributes: new Set(), fg: "", bg: "" };
+  let line = "";
+  let used = 0;
+  let word = "";
+  let gap = "";
 
-  const flushLine = (): void => {
-    const trimmed = currentLineText.replace(/\s+$/, "");
-    if (!trimmed && lines.length === 0) return;
-    const closed =
-      sgrHasStyle(lineStyle) && !trimmed.endsWith("\x1b[0m")
-        ? `${trimmed}\x1b[0m`
-        : trimmed;
-    lines.push(closed || " ");
+  const flush = (): void => {
+    const attributes = Array.from(style.attributes, (code) => `\x1b[${code}m`).join("");
+    const reopen = attributes + style.fg + style.bg;
+    lines.push(reopen ? `${line}\x1b[0m` : line);
+    line = reopen;
+    used = 0;
   };
 
-  for (const word of words) {
-    if (/^\s+$/.test(word.text)) {
-      if (currentLineVisibleLength > 0) {
-        currentLineText += word.text;
-        currentLineVisibleLength += word.visibleLength;
-        applySgrInText(lineStyle, word.text);
+  const writeWord = (): void => {
+    if (!word) return;
+    const columns = terminalWidth(word);
+    if (columns > 0) {
+      if (used > 0 && used + gap.length + columns > width) flush();
+      if (used > 0) {
+        line += gap;
+        used += gap.length;
       }
-      continue;
+      gap = "";
     }
 
-    if (currentLineVisibleLength === 0) {
-      const reopen = sgrOpen(lineStyle);
-      currentLineText = reopen + word.text;
-      currentLineVisibleLength = word.visibleLength;
-      applySgrInText(lineStyle, word.text);
-    } else if (currentLineVisibleLength + word.visibleLength <= maxWidth) {
-      currentLineText += word.text;
-      currentLineVisibleLength += word.visibleLength;
-      applySgrInText(lineStyle, word.text);
+    if (columns <= width) {
+      line += word;
+      used += columns;
+      if (word.includes("\x1b")) {
+        for (const [sequence] of word.matchAll(SGR)) applyStyle(style, sequence);
+      }
     } else {
-      flushLine();
-      const reopen = sgrOpen(lineStyle);
-      currentLineText = reopen + word.text;
-      currentLineVisibleLength = word.visibleLength;
-      applySgrInText(lineStyle, word.text);
+      for (const [part] of word.matchAll(WORD_PART)) {
+        if (part.startsWith("\x1b")) {
+          line += part;
+          if (part.endsWith("m")) applyStyle(style, part);
+          continue;
+        }
+        for (const glyph of glyphs(part)) {
+          const size = terminalWidth(glyph);
+          if (used > 0 && used + size > width) flush();
+          line += glyph;
+          used += size;
+        }
+      }
+    }
+    word = "";
+  };
+
+  for (const [part] of text.matchAll(WRAP_PART)) {
+    if (part.startsWith(" ")) {
+      writeWord();
+      gap = part;
+    } else {
+      word += part;
     }
   }
-  if (currentLineVisibleLength > 0 || currentLineText.length > 0) {
-    flushLine();
-  }
-
-  return lines.length > 0 ? lines : [line];
+  writeWord();
+  if (used > 0) flush();
+  return lines.length > 0 ? lines : [text];
 }

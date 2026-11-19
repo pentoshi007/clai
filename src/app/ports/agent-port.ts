@@ -49,7 +49,15 @@ export interface RunTurnHandlers {
   readonly session?: SessionPolicy | undefined;
 }
 
+export type AgentRequestPrefix = Pick<SuccessfulRequestSnapshot, "tools" | "thinking"> & {
+  readonly systemPrompt: string;
+};
+
 export interface AgentPort {
   readonly reportsModelSubmission?: boolean;
+  requestPrefix?(
+    target: Pick<RunTurnRequest, "mode" | "contextLimitTokens"> & { provider: ProviderId; model: string },
+    session: SessionPolicy,
+  ): AgentRequestPrefix;
   runTurn(request: RunTurnRequest, handlers: RunTurnHandlers): Promise<TurnOutcome>;
 }

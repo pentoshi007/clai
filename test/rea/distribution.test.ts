@@ -142,6 +142,17 @@ describe("REA verified distribution", () => {
     await expect(npmRelease("rea-agents")).rejects.toThrow(/metadata/);
   });
 
+  it("validates the Node requirement when the release declares one", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const metadata = { name: "rea-agents", version: "6.9.0", dist: { tarball: "https://registry.npmjs.org/rea-agents/-/rea-agents-6.9.0.tgz", integrity: "sha512-YQ==" } };
+    const node = "^22.23.4 || ^24.22.1 || >=26.12.1";
+    fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...metadata, engines: { node } })));
+    await expect(npmRelease("rea-agents")).resolves.toMatchObject({ nodeRange: node });
+    fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...metadata, engines: { node: "latest" } })));
+    await expect(npmRelease("rea-agents")).rejects.toThrow(/Invalid Node\.js requirement/);
+  });
+
   it("extracts npm packages without requiring tar or a shell", async () => {
     const destination = await directory();
     await extractPackage(tarBytes("package/bin/npm-cli.js", "console.log('npm')"), destination, "package");

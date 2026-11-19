@@ -33,7 +33,7 @@ try {
   console.log(JSON.stringify({ phase: "install", rea: installed.installation.version, node: await runReaNode(installed.installation.node, ["--version"]), ms: Math.round(performance.now() - started) }));
   const status = await manageRea(runtime, "status");
   if (!status.ok || runtime.getState().snapshot.statuses.length !== 0) throw new Error("Status unexpectedly started a server");
-  const enabled = await manageRea(runtime, "enable");
+  const enabled = await runtime.agentEnable(REA_SERVER);
   if (!enabled.ok) throw new Error(enabled.output);
   const tools = reaTools(runtime);
   const index = enabled.output.slice(enabled.output.indexOf("REA TOOLS ("));

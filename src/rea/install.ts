@@ -41,7 +41,7 @@ function inside(parent: string, path: string): boolean {
   return local !== "" && !isAbsolute(local) && local !== ".." && !local.startsWith("../") && !local.startsWith("..\\");
 }
 
-export async function detectRea(root = reaRoot(), verify = false): Promise<ReaStatus> {
+export async function detectRea(root = reaRoot(), verify = false, signal?: AbortSignal): Promise<ReaStatus> {
   let text: string;
   try {
     text = await readFile(join(root, "current.json"), "utf8");
@@ -60,9 +60,10 @@ export async function detectRea(root = reaRoot(), verify = false): Promise<ReaSt
     }
     const installation: ReaInstallation = { version, node, entry, directory };
     await Promise.all([access(node), access(entry)]);
-    if (verify) await verifyInstallation(installation);
+    if (verify) await verifyInstallation(installation, signal);
     return { state: "ready", installation };
   } catch (error) {
+    signal?.throwIfAborted();
     return { state: "broken", reason: `${describe(error)} · repair with /rea install` };
   }
 }
@@ -105,7 +106,8 @@ async function verifyInstallation(installation: ReaInstallation, signal?: AbortS
 async function install(action: ReaMaintenanceAction, root: string, options: ReaInstallOptions): Promise<ReaMaintenanceResult> {
   const { signal, onProgress } = options;
   signal?.throwIfAborted();
-  const before = await detectRea(root, true);
+  const before = await detectRea(root, true, signal);
+  signal?.throwIfAborted();
   if (action === "install" && before.state === "ready") return { ok: true, installation: before.installation, changed: false };
   onProgress?.({ phase: "resolving", message: "Checking the latest official REA release" });
   const release = await npmRelease("rea-agents", "latest", signal);
@@ -118,7 +120,7 @@ async function install(action: ReaMaintenanceAction, root: string, options: ReaI
   const pointer = join(root, `current-${randomUUID()}.json`);
   let published = false;
   try {
-    const runtime = await resolveReaNode(join(directory, "runtime"), options);
+    const runtime = await resolveReaNode(join(directory, "runtime"), { ...options, nodeRange: release.nodeRange });
     signal?.throwIfAborted();
     onProgress?.({ phase: "downloading", message: `Downloading REA ${release.version}` });
     const bytes = await fetchBytes(release.tarball, 64 * 1024 * 1024, signal, (receivedBytes, totalBytes) => {
@@ -136,7 +138,7 @@ async function install(action: ReaMaintenanceAction, root: string, options: ReaI
     ]);
     onProgress?.({ phase: "installing", message: `Installing REA ${release.version} and its dependencies privately` });
     await runReaNode(runtime.node, [runtime.npm, "install", archive,
-      "--ignore-scripts", "--no-audit", "--no-fund", "--no-update-notifier", "--loglevel=error",
+      "--ignore-scripts", "--no-audit", "--no-fund", "--no-update-notifier", "--loglevel=error", "--color=false",
       "--registry=https://registry.npmjs.org", `--userconfig=${userConfig}`, `--globalconfig=${globalConfig}`,
       `--cache=${join(root, "npm-cache")}`, "--engine-strict", "--fetch-retries=2", "--fetch-timeout=120000",
     ], { cwd: directory, ...(signal ? { signal } : {}), timeout: 600_000 });
@@ -155,7 +157,7 @@ async function install(action: ReaMaintenanceAction, root: string, options: ReaI
     return { ok: true, installation, changed: true };
   } finally {
     await rm(pointer, { force: true }).catch(() => undefined);
-    if (!published) await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+    if (!published) await rm(directory, { force: true, recursive: true, maxRetries: 4, retryDelay: 100 }).catch(() => undefined);
   }
 }
 

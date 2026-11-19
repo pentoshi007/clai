@@ -39,7 +39,7 @@ import {
 import { formatSessionUsage } from "../rendering/format-usage.js";
 import { createUsagePagerSource } from "../rendering/usage-pager-source.js";
 import { serializeTranscriptForCompaction } from "../state/transcript-compaction.js";
-import { conversationItemCount } from "../state/transcript-types.js";
+import { compactionTokenLabel, conversationItemCount } from "../state/transcript-types.js";
 
 import { notify } from "../notify.js";
 
@@ -471,18 +471,13 @@ export async function handleCompact(services: AppServices): Promise<void> {  if 
       (toolCallId) => services.session.spool.tail(toolCallId),
     );
     const result = await services.session.compact(transcript || undefined, 2);
-    if (!result.summarized || result.after === result.before) {
+    if (!result.summarized || !result.report) {
       notice(services, "info", "nothing to compact yet — more conversation is needed");
       return;
     }
-    const freed = Math.max(0, result.beforeTokens - result.afterTokens);
-    const pct =
-      result.beforeTokens > 0 ? Math.round((freed / result.beforeTokens) * 100) : 0;
-    flash(
-      services,
-      `compacted · −${pct}% · ~${result.beforeTokens.toLocaleString()}→~${result.afterTokens.toLocaleString()} (−${freed.toLocaleString()} tok)`,
-      { key: "compact", durationMs: 2200 },
-    );
+    flash(services, `compacted · ${compactionTokenLabel(result.report)}`, {
+      key: "compact", durationMs: 2200,
+    });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       notice(services, "info", "compaction cancelled");

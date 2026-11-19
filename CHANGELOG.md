@@ -1,5 +1,22 @@
 # Changelog
 
+## v5.5.0 — 2026-11-19
+
+### Providers
+
+- Add Sarvam Token Factory with Chat Completions V2, an optional Responses API, and model discovery for context windows, images, tools, and reasoning settings.
+
+### REA
+
+- Select a Node.js version that satisfies REA's package requirements. Bootstrap a verified private runtime when needed and keep the active REA session available if an update fails.
+- Start the managed REA lazily through `mcp.enable` with `clai-rea`. Improve provider-selection guidance, report progress during long analysis calls, and forward cancellation to REA.
+
+### Terminal and context
+
+- Render Markdown tables with optional edge pipes in streamed and completed responses. Wrap long cells, preserve escaped pipes and Unicode characters, and stack fields when a table cannot fit the terminal.
+- Preserve literal markup in code examples and render HTML line breaks in lists and quotes.
+- Estimate post-compaction context from the retained messages and current request overhead. The next provider usage report replaces the estimate in the context counter.
+
 ## v5.4.0 — 2026-11-16
 
 ### Transcript search and slash commands

@@ -1,21 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  preprocessAssistantMarkdown,
-  renderMarkdownLines,
-} from "../../../src/ui-core/rendering/render-markdown-lines.js";
+import { renderMarkdownLines } from "../../../src/ui-core/rendering/render-markdown-lines.js";
 
 const SGR = /\x1b\[[0-9;]*m/g;
 
 function plain(lines: ReturnType<typeof renderMarkdownLines>): string {
   return lines.map((line) => line.replace(SGR, "")).join("\n");
 }
-
-describe("preprocessAssistantMarkdown", () => {
-  it("normalizes br variants and paragraph tags", () => {
-    expect(preprocessAssistantMarkdown("a<br/>b")).toContain("<br>");
-    expect(preprocessAssistantMarkdown("a</p><p>b")).toContain("\n\n");
-  });
-});
 
 describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
   it("omits the quote bar only when the pager source requests it", () => {
@@ -26,7 +16,7 @@ describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
     expect(prompt).not.toContain("│");
   });
   it("expands <br> into separate lines (no literal br tag)", () => {
-    const lines = renderMarkdownLines("alpha<br>beta", {
+    const lines = renderMarkdownLines("alpha<BR />beta", {
       width: 80,
       stripOuterIndent: true,
     });
@@ -35,6 +25,20 @@ describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
     expect(text).toContain("alpha");
     expect(text).toContain("beta");
     expect(lines.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("expands paragraph tags while preserving HTML in code and unrelated tags", () => {
+    const md = [
+      'first</p><p class="note">second',
+      "Use `` <p>`<br> `` and <path>.",
+      "```xml",
+      "<path/><p>literal</p><hr><br>",
+      "```",
+    ].join("\n");
+    const rendered = plain(renderMarkdownLines(md, { width: 80, stripOuterIndent: true, colorMode: "none" }));
+    expect(rendered).toContain("first\n \nsecond");
+    expect(rendered).toContain("Use <p>`<br> and <path>.");
+    expect(rendered).toContain("│ <path/><p>literal</p><hr><br> │");
   });
 
   it("renders markdown tables with box borders", () => {

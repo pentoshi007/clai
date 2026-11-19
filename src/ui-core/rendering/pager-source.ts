@@ -1,4 +1,5 @@
 import { isFsReadMultiOutput } from "../../tools/fs/read-sections.js";
+import { hasMarkdownTable } from "./markdown/table-syntax.js";
 
 export function stripPagerLineGutters(body: string): string {
   if (!body) return body;
@@ -46,7 +47,7 @@ export function looksLikeMarkdown(text: string): boolean {
   let score = 0;
   if (/^#{1,6}\s+\S/m.test(text)) score += 2;
   if (/^```[\w-]*\s*$/m.test(text)) score += 2;
-  if (/^\|.+\|/m.test(text) && /^\|?[\s:|-]{3,}/m.test(text)) score += 2;
+  if (score < 2 && hasMarkdownTable(text)) return true;
   if (/^>\s+\S/m.test(text)) score += 1;
   const bold = text.match(/\*\*[^*\n]{1,80}\*\*/g);
   if (bold && bold.length >= 2) score += 1;

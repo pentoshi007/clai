@@ -133,8 +133,8 @@ export const createCompactionServices = (
   });
 
   const estimateNextRequestTokens = createCompactionRequestEstimator({
-    provider: input.provider(),
-    model: input.model(),
+    provider: input.provider,
+    model: input.model,
     selectTools: input.selectToolsForResolvedDialect,
   });
 

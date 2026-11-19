@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isNodeExecutable, nodeTarget, reaEnvironment, supportsReaNode } from "../../src/rea/node.js";
+import { isNodeExecutable, nodeTarget, reaEnvironment, resolveReaNode, runReaNode, supportsReaNode } from "../../src/rea/node.js";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("REA runtime selection", () => {
   it.each(["22.19.0", "v22.22.2", "24.15.0", "v24.22.0", "26.0.0", "27.1.0"])("supports compatible Node %s", (version) => {
@@ -9,6 +12,19 @@ describe("REA runtime selection", () => {
   });
   it.each(["18.20.0", "20.19.0", "22.18.0", "24.10.0", "25.0.0", "1.3.5", "node 24.1", "24.15.0-rc.1"])("rejects unsupported runtime %s", (version) => {
     expect(supportsReaNode(version)).toBe(false);
+  });
+  it.each([
+    ["22.23.3", false], ["22.23.4", true], ["24.19.0", false], ["24.22.0", false], ["24.22.1", true],
+    ["26.12.0", false], ["26.12.1", true],
+  ])("checks Node %s against REA's published patch-level requirement", (version, compatible) => {
+    expect(supportsReaNode(version, "^22.23.4 || ^24.22.1 || >=26.12.1")).toBe(compatible);
+  });
+  it("looks for a private build when the configured Node cannot run the release", async () => {
+    vi.stubEnv("CLAI_REA_NODE", process.execPath);
+    const fetch = vi.fn(async () => new Response("[]"));
+    vi.stubGlobal("fetch", fetch);
+    await expect(resolveReaNode("unused", { nodeRange: ">=999.0.0" })).rejects.toThrow(/No official .*Node\.js >=999\.0\.0/);
+    expect(fetch).toHaveBeenCalledOnce();
   });
   it.each([
     ["darwin", "arm64", "darwin-arm64"], ["darwin", "x64", "darwin-x64"],
@@ -23,8 +39,7 @@ describe("REA runtime selection", () => {
     expect(() => nodeTarget("freebsd", "x64")).toThrow(/supported portable/);
   });
   it("tells users how to supply their own Node when no portable runtime fits the host", () => {
-    expect(() => nodeTarget("linux", "riscv64")).toThrow(/CLAI_REA_NODE/);
-    expect(() => nodeTarget("freebsd", "x64")).toThrow(/Node\.js 22\.19\+, 24\.15\+ or 26\+/);
+    expect(() => nodeTarget("linux", "riscv64")).toThrow(/compatible Node\.js with npm.*CLAI_REA_NODE/);
   });
   it.each(["/usr/local/bin/node", "C:\\Program Files\\nodejs\\node.exe", "/opt/NODE.EXE"])("probes %s as a Node executable", (path) => {
     expect(isNodeExecutable(path)).toBe(true);
@@ -41,5 +56,10 @@ describe("REA runtime selection", () => {
     expect(env.NODE_OPTIONS).toBeUndefined();
     expect(env.NODE_PATH).toBeUndefined();
     expect(Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1]).toContain(process.execPath.replace(/[\\/][^\\/]+$/, ""));
+  });
+
+  it("reports the subprocess error instead of the command and its arguments", async () => {
+    const script = "console.error('npm error code EBADENGINE'); process.exitCode = 1;";
+    await expect(runReaNode(process.execPath, ["-e", script])).rejects.toHaveProperty("message", "npm error code EBADENGINE");
   });
 });

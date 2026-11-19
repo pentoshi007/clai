@@ -1,6 +1,5 @@
-import { estimateMessagesTokens } from "../../agent/context-manager.js";
+import { estimateMessagesTokens } from "../../agent/request-accounting.js";
 import { autoCompactTriggerTokens } from "../../agent/request-budget.js";
-import { resolveEffectiveContextLimit } from "../../agent/request-accounting.js";
 import {
   resolveContextWindow,
   type ContextWindowSource,
@@ -116,26 +115,6 @@ function reportedReasoning(
 ): ContextSnapshotReasoning | undefined {
   if (usage.reasoningTokens === undefined) return undefined;
   return { kind: "reported", outputTokens: usage.reasoningTokens };
-}
-
-function estimateHistoryRequestTokens(
-  target: ContextUsageTarget,
-  history: readonly ChatMessage[],
-): number {
-  const raw = estimateMessagesTokens(history as ChatMessage[]);
-  if (raw <= 0) return 0;
-  const limit = resolveEffectiveContextLimit({
-    provider: target.provider,
-    model: target.model,
-    ...(target.contextLimitTokens !== undefined
-      ? { contextLimitTokens: target.contextLimitTokens }
-      : {}),
-  }).reservedOutputTokens;
-  return calibratedRequestTokens(
-    target.provider,
-    target.model,
-    raw + Math.max(0, Math.floor(limit / 4)),
-  );
 }
 
 export function resolveContextSnapshot(
@@ -260,16 +239,17 @@ export function compactedContextSnapshot(
   scope: Extract<ContextSnapshotScope, "message-history" | "assembled-request">,
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 {
-  const contextTokens =
-    typeof afterTokens === "number" && Number.isFinite(afterTokens) && afterTokens > 0
-      ? Math.floor(afterTokens)
-      : estimateHistoryRequestTokens(target, history);
+  const hasEstimate =
+    typeof afterTokens === "number" && Number.isFinite(afterTokens) && afterTokens >= 0;
+  const contextTokens = hasEstimate
+    ? Math.floor(afterTokens)
+    : calibratedRequestTokens(target.provider, target.model, estimateMessagesTokens(history));
   return createContextSnapshot({
     contextTokens,
     lastCompletionTokens: 0,
     sessionPromptTokens: current?.sessionPromptTokens,
     sessionCompletionTokens: current?.sessionCompletionTokens,
-    scope,
+    scope: hasEstimate ? scope : "message-history",
     precision: "estimate",
     limit: limitFor(target),
     observedAt: now(),

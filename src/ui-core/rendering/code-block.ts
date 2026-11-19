@@ -188,7 +188,10 @@ export function matchCodeFenceOpen(
 ): { marker: string; info: string } | undefined {
   const match = FENCE_OPEN_RE.exec(line);
   if (!match) return undefined;
-  return { marker: match[1]!, info: (match[2] ?? "").trim() };
+  const marker = match[1]!;
+  const info = (match[2] ?? "").trim();
+  if (marker.startsWith("`") && info.includes("`")) return undefined;
+  return { marker, info };
 }
 
 export function isCodeFenceClose(line: string, marker: string): boolean {

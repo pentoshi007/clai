@@ -17,6 +17,7 @@ vi.mock("node:fs/promises", async (importActual) => {
 
 let root: string;
 let releaseVersion = "6.7.0";
+let nodeRange = "^22.19.0 || ^24.11.0 || >=26.0.0";
 const packageBytes = Buffer.from("verified package tarball");
 const fetchMock = vi.fn();
 const node = vi.mocked(runReaNode);
@@ -24,6 +25,7 @@ const node = vi.mocked(runReaNode);
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "clai-rea-install-"));
   releaseVersion = "6.7.0";
+  nodeRange = "^22.19.0 || ^24.11.0 || >=26.0.0";
   vi.mocked(resolveReaNode).mockResolvedValue({ node: process.execPath, npm: join(root, "npm-cli.js") });
   node.mockReset();
   vi.mocked(rename).mockClear();
@@ -38,7 +40,7 @@ beforeEach(async () => {
   });
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: URL) => new Response(url.pathname.endsWith(".tgz") ? packageBytes : JSON.stringify({
-    name: "rea-agents", version: releaseVersion,
+    name: "rea-agents", version: releaseVersion, engines: { node: nodeRange },
     dist: { tarball: `https://registry.npmjs.org/rea-agents/-/rea-agents-${releaseVersion}.tgz`, integrity: `sha512-${createHash("sha512").update(packageBytes).digest("base64")}` },
   })));
   vi.stubGlobal("fetch", fetchMock);
@@ -98,11 +100,14 @@ describe("managed REA installation", () => {
 
   it("atomically updates while retaining the prior installation for active servers", async () => {
     const previous = await seed();
+    releaseVersion = "6.9.0";
+    nodeRange = "^22.23.4 || ^24.22.1 || >=26.12.1";
     node.mockImplementationOnce(async () => "6.6.0");
     const result = await runReaMaintenance("update", { root });
-    expect(result).toMatchObject({ ok: true, changed: true, installation: { version: "6.7.0" } });
+    expect(result).toMatchObject({ ok: true, changed: true, installation: { version: "6.9.0" } });
+    expect(resolveReaNode).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ nodeRange }));
     expect(await readFile(previous.entry, "utf8")).toBe("rea");
-    expect((await detectRea(root))).toMatchObject({ installation: { version: "6.7.0" } });
+    expect(await detectRea(root)).toMatchObject({ installation: { version: "6.9.0" } });
   });
 
   it("does not replace a working installation when package installation fails", async () => {
