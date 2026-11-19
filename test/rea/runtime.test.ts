@@ -32,8 +32,53 @@ describe("native REA capability", () => {
   });
 
   it("reports missing installation without installing or starting anything", async () => {
-    expect(await manageRea(host.runtime, "enable")).toMatchObject({ ok: false, output: expect.stringContaining("rea.manage action=setup") });
+    const setup = expect.stringContaining('rea.manage {"action":"setup"}');
+    expect(await manageRea(host.runtime, "enable")).toMatchObject({ ok: false, output: setup });
+    expect(await host.runtime.agentEnable(REA_SERVER)).toMatchObject({ ok: false, output: setup });
     expect(host.starts).toEqual([]);
+    expect(host.runtime.getState().selection.mode).toBe("off");
+  });
+
+  it("advertises a lazy REA and gives exact recovery for early discovery or calls without starting it", async () => {
+    seedRea();
+    const enable = 'rea.manage {"action":"enable"}';
+    const name = `mcp.${REA_SERVER}.inspect_go_binary`;
+    expect(host.runtime.promptContext({ nativeTools: true })).toContain(enable);
+    expect((await host.runtime.agentList()).output).toContain(enable);
+    expect((await host.runtime.agentTools(REA_SERVER)).output).toContain(enable);
+    expect((await host.runtime.callTool(name, {})).output).toContain(enable);
+    expect(host.runtime.unavailableToolMessage(name, true)).toContain("/rea use");
+    const ask = await host.runtime.agentTools(REA_SERVER, { askMode: true });
+    expect(ask.output).toContain("/rea use");
+    expect(ask.output).not.toContain(enable);
+    const plan = host.runtime.promptContext({ nativeTools: true, planMode: true });
+    expect(plan).toContain("/rea use");
+    expect(plan).not.toContain(enable);
+    await host.runtime.agentEnable("all");
+    await host.runtime.agentEnable("off");
+    expect(host.starts).toEqual([]);
+    expect(host.calls).toEqual([]);
+  });
+
+  it("enables REA in a mixed explicit selection and validates the other server names before starting it", async () => {
+    seedRea();
+    mkdirSync(join(root, ".clai"));
+    writeFileSync(join(root, ".clai", "mcp.json"), JSON.stringify({ servers: { docs: { command: "docs" } } }));
+    const invalid = await host.runtime.agentEnable([REA_SERVER, "unknown"]);
+    expect(invalid).toMatchObject({ ok: false, output: expect.stringContaining('Unknown MCP server "unknown"') });
+    expect(host.starts).toEqual(["docs"]);
+    expect(host.runtime.getState().selection.mode).toBe("off");
+    const enabled = await host.runtime.agentEnable(["docs", REA_SERVER]);
+    expect(enabled).toMatchObject({ ok: true, output: expect.stringContaining("REA TOOLS (151;") });
+    expect(host.runtime.getState().selection).toEqual({ mode: "servers", serverNames: ["docs", REA_SERVER] });
+    host.runtime.selectOff();
+    expect((await host.runtime.agentTools(REA_SERVER, { query: "inspect_go_binary" })).output).toContain('inactive; enable with rea.manage {"action":"enable"}');
+    expect((await host.runtime.agentEnable(REA_SERVER)).output).toContain("already connected");
+    expect(host.starts).toEqual(["docs", REA_SERVER]);
+    expect(host.runtime.getState().selection).toEqual({ mode: "servers", serverNames: [REA_SERVER] });
+    await manageRea(host.runtime, "disable");
+    expect((await host.runtime.agentEnable(REA_SERVER)).ok).toBe(true);
+    expect(host.starts).toEqual(["docs", REA_SERVER, REA_SERVER]);
   });
 
   it("enables during a turn and calls freshly discovered tools without changing native schemas", async () => {
@@ -80,11 +125,11 @@ describe("native REA capability", () => {
     const before = await manageRea(host.runtime, "guide");
     expect(before.output).toContain("REA WORKFLOW");
     expect(before.output).not.toContain("REA TOOLS (");
-    expect(before.output).toContain("rea.manage action=enable");
+    expect(before.output).toContain("available after activation");
     await manageRea(host.runtime, "enable");
     const after = await manageRea(host.runtime, "guide");
     expect(after.output).toContain("REA TOOLS (151;");
-    expect(after.output).not.toContain("rea.manage action=enable");
+    expect(after.output).not.toContain("available after activation");
   });
 
   it("deduplicates activation, reuses the analysis, and stops only its own server", async () => {
@@ -123,6 +168,9 @@ describe("native REA capability", () => {
     expect((await manageRea(host.runtime, "disable")).ok).toBe(false);
     expect(host.closes).toEqual([]);
     expect(host.runtime.getState().selection.mode).toBe("off");
+    expect(host.runtime.promptContext({ nativeTools: true })).not.toContain('rea.manage {"action":"enable"}');
+    expect((await host.runtime.agentEnable(REA_SERVER)).output).toContain(`Enabled MCP servers: ${REA_SERVER}.`);
+    expect(host.starts).toEqual([REA_SERVER]);
   });
 
   it("enforces ask/plan boundaries and confirmation for state changes", async () => {
@@ -135,10 +183,41 @@ describe("native REA capability", () => {
     expect(confirm).not.toHaveBeenCalled();
     const plan = createMcpAgentToolExecutor({ ...ports, askMode: false, planMode: true });
     expect((await plan(host.runtime, call("setup"), "setup")).ok).toBe(false);
+    const enableMcp: ToolCall = { id: "enable-mcp", name: "mcp.enable", args: { server: REA_SERVER } };
+    seedRea();
+    expect((await plan(host.runtime, enableMcp, "plan-enable-mcp")).ok).toBe(false);
+    expect((await run(host.runtime, enableMcp, "ask-enable-mcp")).ok).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
     const declined = createMcpAgentToolExecutor({ ...ports, askMode: false, confirm: async () => false });
     expect(await declined(host.runtime, call("enable"), "enable")).toMatchObject({ ok: false, blockOrCancel: true });
+    expect(await declined(host.runtime, enableMcp, "declined-enable-mcp")).toMatchObject({ ok: false, blockOrCancel: true });
+    expect(host.starts).toEqual([]);
     expect(classifyToolCall(call("status")).level).toBe("safe");
     expect(classifyToolCall(call("install")).level).toBe("confirm");
+  });
+
+  it("blocks aggregate enable in plan mode when it would select managed REA", async () => {
+    const confirm = vi.fn(async () => true);
+    const plan = createMcpAgentToolExecutor({
+      askMode: false, planMode: true, confirm, showCall: vi.fn(),
+      writeOutput: vi.fn(), emitResult: vi.fn(), recordAttempt: vi.fn(),
+    });
+    const enable = (args: Record<string, unknown>) =>
+      plan(host.runtime, { id: "enable", name: "mcp.enable", args }, "enable");
+    expect((await enable({ server: "all" })).ok).toBe(true);
+    expect(confirm).toHaveBeenCalledOnce();
+
+    seedRea();
+    await manageRea(host.runtime, "enable");
+    host.runtime.selectOff();
+    for (const args of [{ server: "all" }, { server: " " }, {}]) {
+      expect((await enable(args)).result).toMatchObject({
+        ok: false,
+        output: expect.stringContaining("require agent mode"),
+      });
+    }
+    expect(reaConnection(host.runtime).selected).toBe(false);
+    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it("keeps the practical upstream workflow compact and distinguishes provider failures", () => {
@@ -150,7 +229,7 @@ describe("native REA capability", () => {
   });
 
   it("teaches strict arguments, the index and the recovery path without naming a missing tool", () => {
-    for (const phrase of ["every REA schema is strict", "REA TOOLS index", "open_binary does not accept it", "rea.manage setup"]) {
+    for (const phrase of ["every REA schema is strict", "REA TOOLS index", "open_binary does not accept it", 'rea.manage {"action":"setup"}']) {
       expect(REA_WORKFLOW).toContain(phrase);
     }
   });
@@ -192,7 +271,7 @@ describe("@rea turn context", () => {
 
   it("is a short directive when REA is not installed, and starts nothing", async () => {
     const context = await reaMentionContext(host.runtime, { root: join(root, "absent") });
-    expect(context).toContain("rea.manage action=setup");
+    expect(context).toContain('rea.manage {"action":"setup"}');
     expect(context).not.toContain("REA TOOLS");
     expect(context.length).toBeLessThan(400);
     expect(host.starts).toEqual([]);

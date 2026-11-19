@@ -278,4 +278,5 @@ export interface McpSnapshot {
 export interface McpRequestOptions {
   readonly signal?: AbortSignal | undefined;
   readonly timeoutMs?: number | undefined;
+  readonly onProgress?: ((message: string) => void) | undefined;
 }

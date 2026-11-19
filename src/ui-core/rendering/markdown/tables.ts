@@ -1,6 +1,10 @@
 import chalk, { type ChalkInstance } from "chalk";
-import { visibleWidth, wrapAnsiLine } from "../markdown.js";
-export { visibleWidth, wrapAnsiLine };
+import { terminalWidth } from "../text-width.js";
+import { backtickRunEnd, matchCodeSpan } from "./code-spans.js";
+import { splitMarkdownBreaks } from "./markup.js";
+import type { TableHeader } from "./table-syntax.js";
+
+const ESCAPABLE = /[!-/:-@\x5b-\x60{-~]/;
 
 export function renderInlineMarkdown(
   text: string,
@@ -9,22 +13,22 @@ export function renderInlineMarkdown(
   let out = "";
   let i = 0;
   while (i < text.length) {
-    if (text.startsWith("``", i)) {
-      const end = text.indexOf("``", i + 2);
-      if (end > i + 2) {
-        out += paint.cyan(`\`${text.slice(i + 2, end)}\``);
-        i = end + 2;
-        continue;
-      }
+    if (text[i] === "\\" && ESCAPABLE.test(text[i + 1] ?? "")) {
+      out += text[i + 1];
+      i += 2;
+      continue;
     }
 
     if (text[i] === "`") {
-      const end = text.indexOf("`", i + 1);
-      if (end > i + 1) {
-        out += paint.cyan(text.slice(i + 1, end));
-        i = end + 1;
-        continue;
-      }
+      const openEnd = backtickRunEnd(text, i);
+      const span = matchCodeSpan(text, i, openEnd);
+      if (span) {
+        const content = span.content;
+        const padded = content.startsWith(" ") && content.endsWith(" ") && /[^ ]/.test(content);
+        out += paint.cyan(padded ? content.slice(1, -1) : content);
+      } else out += text.slice(i, openEnd);
+      i = span?.end ?? openEnd;
+      continue;
     }
 
     if (text.startsWith("***", i)) {
@@ -124,66 +128,23 @@ export function renderInlineMarkdown(
   return out;
 }
 
-export const BR_RE_GLOBAL = /<br\s*\/?>/gi;
-
-type ColumnAlign = "left" | "center" | "right";
-
-export function isTableRowLine(line: string): boolean {
-  return /^\s*\|.*\|\s*$/.test(line);
-}
-
-export function isTableSeparatorLine(line: string): boolean {
-  const t = line.trim();
-  if (!t.includes("|") || !t.includes("-")) return false;
-  return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(t);
-}
-
-function splitTableCells(line: string): string[] {
-  const body = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  const cells: string[] = [];
-  let cur = "";
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i]!;
-    if (ch === "\\" && body[i + 1] === "|") {
-      cur += "|";
-      i++;
-      continue;
-    }
-    if (ch === "|") {
-      cells.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += ch;
-  }
-  cells.push(cur);
-  return cells.map((c) => c.trim());
-}
-
-function parseColumnAligns(separator: string, columns: number): ColumnAlign[] {
-  const cells = splitTableCells(separator);
-  const aligns: ColumnAlign[] = [];
-  for (let c = 0; c < columns; c++) {
-    const cell = (cells[c] ?? "").trim();
-    const left = cell.startsWith(":");
-    const right = cell.endsWith(":");
-    if (left && right) aligns.push("center");
-    else if (right) aligns.push("right");
-    else aligns.push("left");
-  }
-  return aligns;
-}
-
 interface CellLine {
   rendered: string;
   width: number;
+}
+
+type WrapCellLine = (line: string, width: number) => string[];
+const EMPTY_CELL_LINE: CellLine = { rendered: "", width: 0 };
+
+function cellLine(rendered: string): CellLine {
+  return { rendered, width: terminalWidth(rendered) };
 }
 
 function padCell(
   rendered: string,
   contentWidth: number,
   columnWidth: number,
-  align: ColumnAlign,
+  align: TableHeader["aligns"][number],
 ): string {
   const slack = Math.max(0, columnWidth - contentWidth);
   if (align === "right") return " ".repeat(slack) + rendered;
@@ -194,104 +155,114 @@ function padCell(
   return rendered + " ".repeat(slack);
 }
 
+function fitColumns(preferred: number[], budget: number): number[] | undefined {
+  const minimum = preferred.reduce((total, width) => total + Math.min(2, width), 0);
+  if (minimum > budget) return undefined;
+  if (preferred.reduce((total, width) => total + width, 0) <= budget) return preferred;
+
+  let low = 2;
+  let high = budget;
+  while (low < high) {
+    const cap = Math.ceil((low + high) / 2);
+    const total = preferred.reduce((sum, width) => sum + Math.min(cap, width), 0);
+    if (total <= budget) low = cap;
+    else high = cap - 1;
+  }
+
+  const widths = preferred.map((width) => Math.min(low, width));
+  let spare = budget - widths.reduce((total, width) => total + width, 0);
+  for (let i = widths.length - 1; i >= 0 && spare > 0; i -= 1) {
+    if (widths[i]! < preferred[i]!) {
+      widths[i]! += 1;
+      spare -= 1;
+    }
+  }
+  return widths;
+}
+
+function renderCell(text: string, paint: ChalkInstance): CellLine[] {
+  return splitMarkdownBreaks(text, "\n").map((part) => {
+    const trimmed = part.trim();
+    const list = /^(?<marker>[-*+]|\d+[.)])[ \t]+(?<content>.*)$/.exec(trimmed)?.groups;
+    const rendered = list
+      ? `${paint.cyan(list.marker!.length === 1 ? "•" : list.marker!)} ${renderInlineMarkdown(list.content!, paint)}`
+      : renderInlineMarkdown(trimmed, paint);
+    return cellLine(rendered.replaceAll("\t", "    "));
+  });
+}
+
+function renderStackedRows(
+  header: readonly CellLine[][],
+  rows: readonly CellLine[][][],
+  width: number,
+  paint: ChalkInstance,
+  wrap: WrapCellLine,
+): string[] {
+  const labels = header.map((cell) => paint.bold(cell.map(({ rendered }) => rendered).join(" ").trim()));
+  if (rows.length === 0) return labels.flatMap((label) => wrap(label, width));
+
+  const out: string[] = [];
+  for (const row of rows) {
+    if (out.length > 0) out.push("");
+    for (const [column, cell] of row.entries()) {
+      const [first, ...rest] = cell;
+      const field = [labels[column], first?.rendered].filter(Boolean).join("  ");
+      if (field) out.push(...wrap(field, width));
+      for (const line of rest) {
+        for (const chunk of wrap(line.rendered, width - 2)) out.push(`  ${chunk}`);
+      }
+    }
+  }
+  return out;
+}
+
 export function renderTableBlock(
-  rawLines: string[],
+  header: TableHeader,
+  rows: readonly string[][],
   availWidth: number,
   paint: ChalkInstance,
+  wrap: WrapCellLine,
 ): string[] {
-  const separatorIndex = rawLines.findIndex(isTableSeparatorLine);
-  const headerLines =
-    separatorIndex > 0
-      ? rawLines.slice(0, separatorIndex)
-      : [rawLines[0] ?? ""];
-  const separatorLine = separatorIndex >= 0 ? rawLines[separatorIndex]! : "";
-  const bodyLines = (
-    separatorIndex >= 0 ? rawLines.slice(separatorIndex + 1) : rawLines.slice(1)
-  ).filter((l) => l.trim().length > 0);
-
-  const headerCellRows = headerLines.map(splitTableCells);
-  const bodyCellRows = bodyLines.map(splitTableCells);
-  const columns = Math.max(
-    1,
-    ...headerCellRows.map((r) => r.length),
-    ...bodyCellRows.map((r) => r.length),
-  );
-  const aligns = parseColumnAligns(separatorLine, columns);
-
-  const toCell = (text: string): CellLine[] =>
-    text.split(BR_RE_GLOBAL).map((part) => {
-      const trimmed = part.trim();
-      const bulletMatch = trimmed.match(/^([-\*+])\s+(.*)$/);
-      if (bulletMatch) {
-        const content = renderInlineMarkdown(bulletMatch[2]!, paint);
-        const rendered = `${paint.cyan("•")} ${content}`;
-        return { rendered, width: visibleWidth(rendered) };
-      }
-      const numberMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
-      if (numberMatch) {
-        const content = renderInlineMarkdown(numberMatch[2]!, paint);
-        const rendered = `${paint.cyan(`${numberMatch[1]}.`)} ${content}`;
-        return { rendered, width: visibleWidth(rendered) };
-      }
-      const rendered = renderInlineMarkdown(trimmed, paint);
-      return { rendered, width: visibleWidth(rendered) };
-    });
-
-  const buildRow = (cells: string[]): CellLine[][] => {
-    const row: CellLine[][] = [];
-    for (let c = 0; c < columns; c++) row.push(toCell(cells[c] ?? ""));
-    return row;
-  };
-
-  const headerRows = headerCellRows.map(buildRow);
-  const bodyRows = bodyCellRows.map(buildRow);
-
-  const colWidths = new Array<number>(columns).fill(1);
-  for (const row of [...headerRows, ...bodyRows]) {
-    for (let c = 0; c < columns; c++) {
-      for (const cell of row[c] ?? []) {
-        if (cell.width > colWidths[c]!) colWidths[c] = cell.width;
-      }
-    }
-  }
-
-  const budget = Math.max(columns, availWidth - (3 * columns + 1) - 1);
-  let total = colWidths.reduce((a, b) => a + b, 0);
-  while (total > budget) {
-    let widest = 0;
-    for (let c = 1; c < columns; c++) {
-      if (colWidths[c]! > colWidths[widest]!) widest = c;
-    }
-    if (colWidths[widest]! <= 1) break;
-    colWidths[widest]!--;
-    total--;
-  }
+  const columns = header.cells.length;
+  const preferred = new Array<number>(columns).fill(1);
+  const buildRow = (cells: readonly string[]): CellLine[][] => header.cells.map((_, column) => {
+    const source = column === columns - 1 && cells.length > columns
+      ? cells.slice(column).join(" | ")
+      : cells[column] ?? "";
+    const lines = renderCell(source, paint);
+    for (const cell of lines) preferred[column] = Math.max(preferred[column]!, cell.width);
+    return lines;
+  });
+  const headerRow = buildRow(header.cells);
+  const bodyRows = rows.map(buildRow);
+  const colWidths = fitColumns(preferred, availWidth - 3 * columns - 2);
+  if (!colWidths) return renderStackedRows(headerRow, bodyRows, availWidth, paint, wrap);
 
   const wrapCell = (cell: CellLine[], width: number): CellLine[] => {
     const out: CellLine[] = [];
     for (const line of cell) {
-      for (const piece of wrapAnsiLine(line.rendered, width)) {
+      for (const piece of wrap(line.rendered, width)) {
         const trimmed = piece.replace(/ +$/, "");
-        out.push({ rendered: trimmed, width: visibleWidth(trimmed) });
+        out.push(cellLine(trimmed));
       }
     }
-    return out.length > 0 ? out : [{ rendered: "", width: 0 }];
+    return out;
   };
 
   const dim = paint.dim;
   const renderRow = (row: CellLine[][], bold: boolean): string[] => {
     const wrapped = row.map((cell, c) => wrapCell(cell, colWidths[c]!));
-    const height = Math.max(1, ...wrapped.map((w) => w.length));
+    const height = wrapped.reduce((max, cell) => Math.max(max, cell.length), 1);
     const lines: string[] = [];
     for (let h = 0; h < height; h++) {
       let s = dim("│");
       for (let c = 0; c < columns; c++) {
-        const piece = wrapped[c]![h] ?? { rendered: "", width: 0 };
+        const piece = wrapped[c]![h] ?? EMPTY_CELL_LINE;
         const content =
           bold && piece.rendered ? paint.bold(piece.rendered) : piece.rendered;
         s +=
           " " +
-          padCell(content, piece.width, colWidths[c]!, aligns[c]!) +
+          padCell(content, piece.width, colWidths[c]!, header.aligns[c]!) +
           " " +
           dim("│");
       }
@@ -310,16 +281,12 @@ export function renderTableBlock(
   };
 
   const out: string[] = [border("┌", "┬", "┐")];
-  for (const row of headerRows) out.push(...renderRow(row, true));
-  out.push(border("├", "┼", "┤"));
+  for (const line of renderRow(headerRow, true)) out.push(line);
+  if (bodyRows.length > 0) out.push(border("├", "┼", "┤"));
+  const spacer = dim("│") + colWidths.map((width) => " ".repeat(width + 2) + dim("│")).join("");
   for (let i = 0; i < bodyRows.length; i++) {
-    if (i > 0) {
-      const spacer = Array.from({ length: columns }, () => [
-        { rendered: "", width: 0 },
-      ]);
-      out.push(...renderRow(spacer, false));
-    }
-    out.push(...renderRow(bodyRows[i]!, false));
+    if (i > 0) out.push(spacer);
+    for (const line of renderRow(bodyRows[i]!, false)) out.push(line);
   }
   out.push(border("└", "┴", "┘"));
   return out;

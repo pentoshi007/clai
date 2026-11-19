@@ -51,6 +51,11 @@ const nameAllowed = (
   return true;
 };
 
+export const shouldUseCompactSystemPrompt = (
+  inputTokenBudget: number | undefined,
+  effectiveLimit: number,
+): boolean => inputTokenBudget !== undefined || effectiveLimit <= 65_536;
+
 export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
   const compactPromptModes = input.compactPromptModes ?? new Map<string, boolean>();
   const routeToolNames = (provider: ProviderId, model: string): string[] =>

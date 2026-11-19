@@ -55,6 +55,23 @@ describe("streaming markdown rendering (TUI-004)", () => {
     expect(cache.stableSource.length).toBeGreaterThan(0);
   });
 
+  it("renders each streamed frame like the full renderer across tables and multiple blank lines", () => {
+    const prefix = PROSE.slice(0, PROSE.indexOf("\n\nParagraph 9"));
+    const source = prefix + [
+      "", "", "Key | Outcome", ":- | -:", "First | pass |", "| Second | pending",
+      "", " ", "", "```text", "one", "", "two", "```", "", "A new section.",
+    ].join("\r\n");
+    let cache = EMPTY_MARKDOWN_STREAM_CACHE;
+    for (let end = prefix.length; end <= source.length; end += 1) {
+      const text = source.slice(0, end);
+      const rendered = renderStreamingMarkdown({ text, streaming: true, options: OPTIONS, cache });
+      expect(rendered.lines, JSON.stringify(text.slice(prefix.length))).toEqual(renderMarkdownLines(text, OPTIONS));
+      cache = rendered.cache;
+    }
+    expect(cache.stableSource).toContain("First | pass |");
+    expect(cache.stableSource).toContain("```");
+  });
+
   it("keeps the re-rendered tail small while the stable prefix grows", () => {
     const split = stableMarkdownSplit(PROSE);
     expect(split.stable.length).toBeGreaterThan(PROSE.length * 0.8);
@@ -137,5 +154,14 @@ describe("streaming markdown appearance cache", () => {
     expect(recolored.cache.stableLines).not.toBe(first.cache.stableLines);
     expect(colorless.cache.signature).not.toBe(first.cache.signature);
     expect(colorless.cache.stableLines).not.toBe(first.cache.stableLines);
+  });
+
+  it("invalidates cached rows when quote and code block presentation changes", () => {
+    const text = "> quoted **text**\n\n```text\nhello\n```\n\n" + PROSE;
+    const first = renderStreamingMarkdown({ text, streaming: true, options: OPTIONS, cache: EMPTY_MARKDOWN_STREAM_CACHE });
+    const options = { ...OPTIONS, quotePrefix: "", literalQuotes: true, copyLabel: true };
+    const next = renderStreamingMarkdown({ text, streaming: true, options, cache: first.cache });
+    expect(next.cache.stableLines).not.toBe(first.cache.stableLines);
+    expect(next.lines).toEqual(renderMarkdownLines(text, options));
   });
 });

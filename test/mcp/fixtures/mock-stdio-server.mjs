@@ -132,6 +132,12 @@ rl.on("line", (line) => {
       return;
     }
     if (name === "echo") {
+      const token = params?._meta?.progressToken;
+      if (typeof token === "string") {
+        send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: "unrelated", progress: 1, message: "wrong request" } });
+        send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: 1, message: `working on ${args.text}` } });
+        send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: 1, message: "duplicate sequence" } });
+      }
       send({
         jsonrpc: "2.0",
         id,

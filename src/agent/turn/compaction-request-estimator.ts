@@ -2,8 +2,8 @@ import type { ChatMessage, ProviderId, ToolDefinition } from "../../types.js";
 import { accountAssembledRequest } from "../request-accounting.js";
 
 export interface CompactionRequestEstimatorPorts {
-  readonly provider: ProviderId;
-  readonly model: string;
+  readonly provider: () => ProviderId;
+  readonly model: () => string;
   readonly selectTools: () => ToolDefinition[] | undefined;
 }
 
@@ -13,8 +13,8 @@ const estimate = (
 ): number => {
   const tools = ports.selectTools();
   return accountAssembledRequest({
-    provider: ports.provider,
-    model: ports.model,
+    provider: ports.provider(),
+    model: ports.model(),
     messages,
     stream: true,
     ...(tools?.length ? { tools } : {}),

@@ -693,7 +693,8 @@ export class McpManager {
       timeoutMs,
     );
     try {
-      return await awaitMcpOperation(this.callConnectedTool(tool, args, state.client, signal), signal);
+      const request = { ...options, signal, timeoutMs: 0 };
+      return await awaitMcpOperation(this.callConnectedTool(tool, args, state.client, request), signal);
     } finally {
       dispose();
     }
@@ -703,9 +704,9 @@ export class McpManager {
     tool: McpToolMetadata,
     args: Record<string, unknown>,
     client: McpClient,
-    signal: AbortSignal,
+    options: McpRequestOptions & { readonly signal: AbortSignal },
   ): Promise<McpNormalizedResult> {
-    const options = { signal, timeoutMs: 0 };
+    const { signal } = options;
     try {
       return await client.callTool(tool.toolName, args, options);
     } catch (error) {

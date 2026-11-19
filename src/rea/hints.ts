@@ -86,18 +86,31 @@ function outsideSchema(context: McpFailureContext): string[] {
   return Object.keys(context.args).filter((key) => !known.has(key));
 }
 
+function ambiguousProvider(error: Record<string, unknown>): string | undefined {
+  const details = error.details;
+  if (!isRecord(details) || details.selection_reason !== "ambiguous" || !Array.isArray(details.candidate_ids)) return undefined;
+  const candidates = [...new Set(details.candidate_ids.filter((id): id is string => typeof id === "string" && PROVIDER_ID.test(id)))];
+  if (candidates.length < 2) return undefined;
+  return `Multiple analysis engines support this target (${candidates.join(", ")}). Call open_binary again with the same path and options plus provider_id set to the engine you want to use.`;
+}
+
 export function reaFailureHint(availability: () => ReaAvailability | undefined): McpFailureHint {
   return (context) => {
     const { tool, output } = context;
     const error = errorOf(output);
+    if (tool.toolName === OPEN_TOOL && error?.code === "capability_unavailable") return ambiguousProvider(error);
     if (error?.code === "provider_unavailable") return providerFailure(tool.toolName, error);
     if (error?.code === "target_unavailable") {
       return `${output}\nNo target is open. If the user already named a target, call mcp.clai-rea.${OPEN_TOOL} with its absolute path now, then retry this call.`;
     }
-    if (!isArgumentRejection(output)) return undefined;
-    const stray = outsideSchema(context).filter((key) => PATH_KEYS.test(key));
+    const invalidInput = error?.code === "invalid_request" && error.category === "invalid_input" &&
+      isRecord(error.recovery) && error.recovery.kind === "inspect_input_contract";
+    if (!invalidInput && !isArgumentRejection(output)) return undefined;
+    const path = outsideSchema(context).find((key) => PATH_KEYS.test(key));
     const marks = availability();
-    if (stray.length === 0 || (marks && !marks.open.has(tool.toolName))) return undefined;
-    return `${output}\n${argumentHint(tool)}\n${tool.toolName} acts on the binary opened by ${OPEN_TOOL} and takes no ${stray[0]} argument: call mcp.clai-rea.${OPEN_TOOL} once with {"path": <absolute path>}, then call ${tool.toolName} again without ${stray[0]}.`;
+    if (path === undefined || (marks && !marks.open.has(tool.toolName))) {
+      return invalidInput ? `${output}\n${argumentHint(tool)}` : undefined;
+    }
+    return `${output}\n${argumentHint(tool)}\n${tool.toolName} acts on the binary opened by ${OPEN_TOOL} and takes no ${path} argument: call mcp.clai-rea.${OPEN_TOOL} once with {"path": <absolute path>}, then call ${tool.toolName} again without ${path}.`;
   };
 }

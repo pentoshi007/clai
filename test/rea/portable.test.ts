@@ -30,10 +30,12 @@ async function archive(prefix: string, file: string, content: string): Promise<B
   return await readFile(tar);
 }
 
-function serve(file: string, bytes: Buffer, extra = new Map<string, Buffer>()): void {
+const node24 = { version: "v24.22.0", lts: "Krypton", npm: "11.19.1", files: ["linux-arm64", "linux-x64", "osx-arm64-tar", "win-x64-zip", "win-arm64-zip"] };
+
+function serve(file: string, bytes: Buffer, extra = new Map<string, Buffer>(), index: readonly (typeof node24)[] = [node24]): void {
   const sha = createHash("sha256").update(bytes).digest("hex");
   fetchMock.mockImplementation(async (url: URL) => {
-    if (url.pathname.endsWith("index.json")) return new Response(JSON.stringify([{ version: "v24.22.0", lts: "Krypton", npm: "11.19.1" }]));
+    if (url.pathname.endsWith("index.json")) return new Response(JSON.stringify(index));
     if (url.pathname.endsWith("SHASUMS256.txt")) return new Response(`${sha}  ${file}\n`);
     if (url.pathname.endsWith(file)) return new Response(bytes);
     const body = extra.get(url.href);
@@ -65,6 +67,23 @@ describe("REA portable runtime without an OS package manager", () => {
     expect(await readFile(installed.npm, "utf8")).toBe("portable npm");
   });
 
+  it("selects a compatible LTS release with a build for the host", async () => {
+    const file = "node-v22.23.4-linux-arm64.tar.gz";
+    const bytes = await archive("node-v22.23.4-linux-arm64", "bin/node", "compatible node");
+    serve(file, bytes, undefined, [
+      { ...node24, version: "v26.13.1", lts: "Lithium", files: ["linux-x64"] },
+      node24,
+      { ...node24, version: "v22.23.4", lts: "Jod" },
+    ]);
+    const installed = await downloadReaNode(join(root, "runtime"), { platform: "linux", arch: "arm64" }, {
+      nodeRange: "^22.23.4 || ^24.22.1 || >=26.12.1",
+    });
+    expect(await readFile(installed.node, "utf8")).toBe("compatible node");
+    expect(fetchMock.mock.calls.map(([url]) => url.pathname)).toEqual([
+      "/dist/index.json", "/dist/v22.23.4/SHASUMS256.txt", `/dist/v22.23.4/${file}`,
+    ]);
+  });
+
   it("refuses a corrupted Node runtime before extraction", async () => {
     serve("node-v24.22.0-linux-arm64.tar.gz", Buffer.from("corrupt"));
     const implementation = fetchMock.getMockImplementation()!;
@@ -76,6 +95,8 @@ describe("REA portable runtime without an OS package manager", () => {
 
   it("reports unsupported host builds rather than running a mismatched binary", async () => {
     serve("node-v24.22.0-linux-x64.tar.gz", Buffer.from("node"));
-    await expect(downloadReaNode(join(root, "runtime"), { platform: "linux", arch: "arm64", musl: true })).rejects.toThrow(/no verified linux-arm64-musl build\. Install Node\.js .*CLAI_REA_NODE/);
+    await expect(downloadReaNode(join(root, "runtime"), { platform: "linux", arch: "arm64", musl: true }))
+      .rejects.toThrow(/No official linux-arm64-musl build for Node\.js .*CLAI_REA_NODE/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

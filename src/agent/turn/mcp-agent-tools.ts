@@ -1,8 +1,10 @@
 import type { ToolCall, ToolResult } from "../../types.js";
-import type { McpRuntime } from "../../mcp/runtime.js";
+import { selectsAllMcpServers, type McpRuntime } from "../../mcp/runtime.js";
 import type { SingleToolResult } from "./contracts.js";
 import { formatToolContext, saveToolOutput } from "../tool-output-formatting.js";
-import { manageRea } from "../../rea/runtime.js";
+import { canManageRea, manageRea } from "../../rea/runtime.js";
+import { reaConnection } from "../../rea/connection.js";
+import { REA_SERVER } from "../../rea/workflow.js";
 
 export interface McpAgentToolPorts {
   readonly askMode: boolean;
@@ -35,13 +37,14 @@ export const mcpAgentToolTarget = (
 export const runMcpAgentTool = async (
   mcp: McpRuntime,
   call: ToolCall,
-  options: { readonly askMode?: boolean; readonly signal?: AbortSignal | undefined } = {},
+  options: { readonly askMode?: boolean; readonly planMode?: boolean; readonly signal?: AbortSignal | undefined } = {},
 ): Promise<ToolResult> => {
   const args = call.args ?? {};
   if (call.name === "rea.manage") return manageRea(mcp, typeof args.action === "string" ? args.action : "status", {
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  if (call.name === "mcp.list") return mcp.agentList();
+  const mode = { ...(options.askMode ? { askMode: true } : {}), ...(options.planMode ? { planMode: true } : {}) };
+  if (call.name === "mcp.list") return mcp.agentList(mode);
   if (call.name === "mcp.tools") {
     return mcp.agentTools(
       typeof args.server === "string" ? args.server : undefined,
@@ -49,11 +52,11 @@ export const runMcpAgentTool = async (
         ...(typeof args.query === "string" ? { query: args.query } : {}),
         ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}),
         ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
-        ...(options.askMode !== undefined ? { askMode: options.askMode } : {}),
+        ...mode,
       },
     );
   }
-  if (call.name === "mcp.enable") return mcp.agentEnable(mcpAgentToolTarget(args));
+  if (call.name === "mcp.enable") return mcp.agentEnable(mcpAgentToolTarget(args), options.signal);
   if (call.name === "mcp.connect") {
     return mcp.agentConnect(typeof args.server === "string" ? args.server : "");
   }
@@ -77,6 +80,16 @@ export const mcpAgentOutput = (call: ToolCall, result: ToolResult): string => {
 export const isReadOnlyMcpAgentTool = (call: ToolCall): boolean =>
   call.name === "mcp.list" || call.name === "mcp.tools" ||
   (call.name === "rea.manage" && (call.args.action === "status" || call.args.action === "guide" || call.args.action === undefined));
+
+async function selectsManagedRea(runtime: McpRuntime, target: ReturnType<typeof mcpAgentToolTarget>): Promise<boolean> {
+  const all = selectsAllMcpServers(target);
+  const named = typeof target === "string" ? target === REA_SERVER : target?.includes(REA_SERVER);
+  if (!all && !named) return false;
+  if (!canManageRea((await runtime.ensureReady()).snapshot)) return false;
+  if (named) return true;
+  const { server, selected } = reaConnection(runtime);
+  return server?.status === "ready" && !selected;
+}
 
 const failCall = (
   ports: McpAgentToolPorts,
@@ -114,14 +127,21 @@ const execute = async (
       `${call.name} is not available in ask mode because it changes MCP session state. Switch to agent mode.`,
     );
   }
-  if (!readOnly && ports.planMode && call.name === "rea.manage") {
-    return failCall(ports, toolEventId, call, "REA installation and session changes require agent mode; use status or guide while planning.");
+  if (!readOnly && ports.planMode) {
+    if (call.name === "rea.manage" ||
+      (call.name === "mcp.enable" && await selectsManagedRea(runtime, mcpAgentToolTarget(call.args)))) {
+      return failCall(ports, toolEventId, call, "REA installation and session changes require agent mode; use status or guide while planning.");
+    }
   }
   if (!readOnly && !(await ports.confirm(call))) {
     return failCall(ports, toolEventId, call, "Cancelled.", true);
   }
   ports.showCall(toolEventId, call);
-  const result = await runMcpAgentTool(runtime, call, { askMode: ports.askMode, signal: ports.signal });
+  const result = await runMcpAgentTool(runtime, call, {
+    askMode: ports.askMode,
+    ...(ports.planMode ? { planMode: true } : {}),
+    signal: ports.signal,
+  });
   const shown = mcpAgentOutput(call, result);
   const artifactPath = shown.length > 24_000 ? await saveToolOutput(call, shown) : undefined;
   const framed = { ...result, output: shown, ...(artifactPath ? { outputPath: artifactPath } : {}) };

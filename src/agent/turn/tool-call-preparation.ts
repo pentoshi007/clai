@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import type { ToolCall, ToolResult } from "../../types.js";
+import type { Mode, ToolCall, ToolResult } from "../../types.js";
 import type { SalvagedWrite } from "../tool-call-parser.js";
 import {
   elidedStubReuseMessage,
@@ -17,6 +17,7 @@ export interface InvalidToolCall {
 export const invalidToolCall = (
   call: ToolCall,
   mcpRuntime?: McpRuntime,
+  mode?: Mode,
 ): InvalidToolCall | undefined => {
   if (call.args?.__nativeParseError) {
     const raw = String(call.args._raw ?? "").slice(0, 200);
@@ -38,7 +39,7 @@ export const invalidToolCall = (
       const tool = mcpRuntime.getTool(name);
       detail = tool
         ? `Use the exact target name ${JSON.stringify(tool.canonicalName)} with the same arguments.`
-        : mcpRuntime.unavailableToolMessage(name);
+        : mcpRuntime.unavailableToolMessage(name, mode === "ask" || mode === "plan");
     } else {
       detail = "The MCP runtime is unavailable for this turn.";
     }

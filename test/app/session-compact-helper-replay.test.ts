@@ -326,7 +326,9 @@ describe("runSessionCompaction cache-preserving replay", () => {
     const tools = [{ name: "fs.read", description: "read a file ".repeat(400), parameters: { type: "object", properties: { path: { type: "string" } } } }];
     const history: ChatMessage[] = [
       { role: "user", content: "screenshot review", images: [{ mediaType: "image/png", dataBase64: "", path: "/tmp/a.png" }] },
+      { role: "system", content: `REQUEST CONTEXT\n${"prior turn instructions ".repeat(1_500)}` },
       { role: "assistant", content: "reviewed ".repeat(20_000) },
+      { role: "system", content: `REQUEST CONTEXT\n${"prior follow-up instructions ".repeat(1_100)}` },
       { role: "user", content: "now compact" },
     ];
     const successfulRequest = { ...SNAPSHOT, messages: [systemPrompt, ...history.slice(0, -1)], tools };
@@ -346,10 +348,34 @@ describe("runSessionCompaction cache-preserving replay", () => {
     });
 
     const completed = events.find((event) => event.type === "compaction-completed");
+    expect(committed[0]!.some((message) => message.content.startsWith("REQUEST CONTEXT"))).toBe(false);
     expect(completed?.type === "compaction-completed" ? completed.payload : undefined).toMatchObject({
       beforeTokens: providerReported,
       afterTokens: estimateMessagesTokens(committed[0]!) + overhead,
       contextScope: "assembled-request",
+    });
+  });
+
+  it("does not carry old request totals into a history-only estimate", async () => {
+    complete.mockResolvedValueOnce(okResult());
+    const history: ChatMessage[] = [
+      { role: "user", content: "Review the sample" },
+      { role: "assistant", content: "The sample passed review." },
+      { role: "user", content: "Summarize the findings" },
+      { role: "assistant", content: "All findings are resolved." },
+    ];
+    const result = await runSessionCompaction({
+      ...harness(history).options,
+      successfulRequest: undefined,
+      requestTokensBefore: 200_000,
+      requestTokensBeforeMeasurement: "provider-reported",
+    });
+    expect(result.summarized).toBe(true);
+    expect(result.report).toEqual({
+      beforeTokens: 200_000,
+      afterTokens: estimateMessagesTokens(result.messages),
+      measurement: "provider-reported",
+      scope: "message-history",
     });
   });
 });

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import semver from "semver";
 
 const ORIGINS = new Set(["https://nodejs.org", "https://registry.npmjs.org"]);
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -13,6 +14,7 @@ export interface NpmRelease {
   readonly version: string;
   readonly tarball: string;
   readonly integrity: string;
+  readonly nodeRange?: string;
 }
 
 export function officialUrl(value: string): URL {
@@ -108,7 +110,11 @@ export async function npmRelease(name: "rea-agents" | "npm", tag = "latest", sig
   if (url.origin !== "https://registry.npmjs.org" || !url.pathname.startsWith(`/${name}/-/`)) {
     throw new Error(`Invalid official ${name} package URL`);
   }
-  return { name, version: metadata.version, tarball: url.href, integrity: dist.integrity };
+  const nodeRange = metadata.engines === undefined ? undefined : jsonObject(metadata.engines).node;
+  if (nodeRange !== undefined && (typeof nodeRange !== "string" || semver.validRange(nodeRange) === null)) {
+    throw new Error(`Invalid Node.js requirement for ${name} ${metadata.version}`);
+  }
+  return { name, version: metadata.version, tarball: url.href, integrity: dist.integrity, ...(nodeRange === undefined ? {} : { nodeRange }) };
 }
 
 export function verifyIntegrity(bytes: Buffer, integrity: string): void {

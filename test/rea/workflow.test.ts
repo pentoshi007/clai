@@ -25,7 +25,8 @@ describe("REA engine line", () => {
   it("warns about universal Mach-O files only when every ready engine needs a thin slice", () => {
     expect(reaEngineLine(availability(engine("ghidra", true)))).toBe("ENGINE: ghidra ready. Universal Mach-O files must be thinned to one slice first.");
     expect(reaEngineLine(availability(engine("ghidra", true), engine("kuna", true)))).toContain("thinned");
-    expect(reaEngineLine(availability(engine("ghidra", true), engine("hopper", true)))).toBe("ENGINE: ghidra, hopper ready.");
+    expect(reaEngineLine(availability(engine("ghidra", true), engine("hopper", true)))).toMatch(/^ENGINE: ghidra, hopper ready\..*explicit provider_id/);
+    expect(reaEngineLine(availability(engine("ghidra", true), engine("hopper", true)))).not.toContain("thinned");
     expect(reaEngineLine(availability(engine("hopper", true), engine("ghidra", false)))).toBe("ENGINE: hopper ready.");
     expect(reaEngineLine(availability(engine("ida", true)))).toBe("ENGINE: ida ready.");
   });
@@ -34,18 +35,18 @@ describe("REA engine line", () => {
 describe("REA workflow text", () => {
   it("teaches the open-then-inspect flow, universal binaries and who installs engines", () => {
     for (const phrase of [
-      "call open_binary(path) once",
-      "Tools marked # then act on the open target and take no path argument",
-      "never pass path to a # tool",
-      "target_unavailable means open_binary first",
+      "Call open_binary(path) once",
+      "Tools marked # act on the open target and take no path argument",
+      "call close_binary when finished to release engine resources",
+      "target_unavailable error means open_binary first",
       "mach-o-universal",
       "lipo <path> -thin <arch> -output <scratch dir>/<name>-<arch>",
       "Hopper opens universal files itself",
-      "tools marked ^",
-      "Tools marked % need a prerequisite",
-      "tell the user to run /rea engines",
-      "never install or configure one yourself",
-      "continue with # tools that lack ^",
+      "Tools marked ^ need an analysis engine",
+      "Skip % tools until their prerequisites are available",
+      "ask the user to run /rea engines and continue with supported tools",
+      "Only the user installs or configures engines",
+      "Ghidra's first ^ call can import and analyze the whole target",
     ]) {
       expect(REA_WORKFLOW).toContain(phrase);
     }

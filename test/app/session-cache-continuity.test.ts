@@ -28,6 +28,7 @@ vi.mock("../../src/llm/catalog-prefetch.js", () => ({ prefetchProviderCatalog: a
 
 const summary = "## Work completed\n- Reviewed the supplied evidence and explained the findings.\n\n## Remaining work\n- No outstanding questions.";
 const originalThinking = getConfig().thinking;
+const originalToolCalling = getConfig().toolCalling;
 let cwd: string;
 let directory: string;
 let session: SessionController | undefined;
@@ -44,7 +45,7 @@ beforeEach(async () => {
 afterEach(async () => {
   session?.dispose();
   session = undefined;
-  updateConfig({ thinking: originalThinking });
+  updateConfig({ thinking: originalThinking, toolCalling: originalToolCalling });
   process.chdir(cwd);
   await rm(directory, { recursive: true, force: true });
 });
@@ -232,4 +233,46 @@ describe("production session cache continuity", () => {
       expect(next.thinking).toEqual(previous.thinking);
     }
   }, 60_000);
+
+  it.each(["native", "text"] as const)("projects a resumed compaction using the next %s request's prefix", async (toolCalling) => {
+    updateConfig({ toolCalling });
+    const provider = "openai";
+    const model = "gpt-5";
+    const requests: CompletionRequest[] = [];
+    const response = { provider, model, text: summary, finishReason: "stop" as const };
+    complete.mockResolvedValue(response);
+    stream.mockImplementation(async (request: CompletionRequest, onToken: (text: string) => void) => {
+      requests.push(request);
+      onToken(summary);
+      return response;
+    });
+    session = new SessionController({
+      agent: createCurrentAgentPort(), mode: "ask", provider, model, emit: () => {}, noHistory: true,
+      persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
+    });
+    session.loadHistory([
+      { role: "user", content: "Review the sample." },
+      { role: "system", content: `REQUEST CONTEXT\n${"Obsolete turn details. ".repeat(2_000)}` },
+      { role: "assistant", content: "The sample passed review." },
+    ], { provider, model, contextUsage: { contextTokens: 110_000, contextLimit: 250_000, exact: true } });
+
+    const result = await session.compact();
+    expect(result.summarized).toBe(true);
+    expect(result.report).toMatchObject({ beforeTokens: 110_000, scope: "assembled-request" });
+    expect(session.getState().contextSnapshot).toMatchObject({
+      contextTokens: result.report?.afterTokens,
+      precision: "estimate",
+    });
+
+    expect((await session.submit("What was the conclusion? Answer without tools.")).status).toBe("completed");
+    const next = requests.find((request) => request.purpose === "turn")!;
+    expect(Boolean(next.tools?.length)).toBe(toolCalling === "native");
+    expect(next.messages.slice(1, result.messages.length + 1)).toEqual(result.messages);
+    const retained = accountAssembledRequest({
+      provider, model, messages: next.messages.slice(0, result.messages.length + 1),
+      tools: next.tools, reasoning: next.thinking, stream: true,
+    }).accounting;
+    expect(result.report?.afterTokens).toBe(retained.requestTokens);
+    expect(retained.requestTokens).toBeLessThan(110_000);
+  });
 });

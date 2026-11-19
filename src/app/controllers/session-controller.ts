@@ -8,9 +8,6 @@ import type {
   ToolResult,
 } from "../../types.js";
 import {
-  type CompactResult,
-} from "../../agent/context-manager.js";
-import {
   projectToolHistory,
   repairToolProtocol,
 } from "../../agent/tool-history.js";
@@ -63,6 +60,7 @@ import { safeCwd } from "../../os/cwd.js";
 import { materializeHistoryImages } from "../../store/history.js";
 import {
   runSessionCompaction,
+  type SessionCompactResult,
 } from "./session-compact-helper.js";
 import { settlePersistedResponderResults } from "./responder-settlement.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../ports/transcript-item.js";
@@ -935,12 +933,14 @@ export class SessionController implements Disposable {
       purpose?: "default" | "plan-implement" | undefined;
       persist?: boolean | undefined;
     } = {},
-  ): Promise<CompactResult> {
+  ): Promise<SessionCompactResult> {
     if (this.turn.running) throw new Error("a turn is already running");
     if (this.compactingFlag) throw new Error("compaction already in progress");
 
     const cfg = getConfig();
-    const provider = this.provider ?? (cfg.defaultProvider as ProviderId | undefined);
+    const provider = this.provider ?? cfg.defaultProvider;
+    const model = this.model ?? getProviderModel(provider);
+    const contextLimitTokens = customContextLimit(provider, model);
     const history = [...this.history];
     const persist = options.persist !== false;
     const requestTokensBefore = this.requestScopedContextTokens();
@@ -955,12 +955,12 @@ export class SessionController implements Disposable {
     this.notifyState();
 
     const requestSettings: Omit<SuccessfulRequestSnapshot, "messages"> | undefined = provider === "codex"
-      ? { provider, model: this.model ?? getProviderModel(provider), thinking: { ...cfg.thinking } }
+      ? { provider, model, thinking: { ...cfg.thinking } }
       : undefined;
     const resumedRequest: SuccessfulRequestSnapshot | undefined =
       this.lastMainRequestSnapshot ??
-      (provider !== undefined && requestTokensBefore !== undefined
-        ? { provider, model: this.model ?? getProviderModel(provider), messages: history, ...requestSettings }
+      (requestTokensBefore !== undefined
+        ? { provider, model, messages: history, ...requestSettings }
         : undefined);
 
     try {
@@ -974,12 +974,14 @@ export class SessionController implements Disposable {
           purpose: options.purpose,
           ...(durableEnvelope ? { durableEnvelope } : {}),
           provider,
-          model: this.model ?? getProviderModel(provider ?? cfg.defaultProvider),
+          model,
           ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
           ...(requestSettings ? { requestSettings } : {}),
-          ...(this.contextLimitTokens
-            ? { contextLimitTokens: this.contextLimitTokens }
-            : {}),
+          requestPrefix: this.deps.agent.requestPrefix?.(
+            { provider, model, mode: this.mode, contextLimitTokens },
+            this.policy,
+          ),
+          contextLimitTokens,
           ...(requestTokensBefore !== undefined ? { requestTokensBefore } : {}),
           ...(requestTokensBeforeMeasurement
             ? { requestTokensBeforeMeasurement }

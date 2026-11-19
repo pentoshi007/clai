@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -262,6 +262,31 @@ describe("McpRuntime catalog", () => {
 });
 
 describe("McpRuntime calls and guidance", () => {
+  it("redacts both initial and refreshed credentials from progress text", async () => {
+    const runtime = makeRuntime();
+    const initialToken = "fixture-token";
+    let currentToken = initialToken;
+    const currentSecrets = vi.spyOn(McpManager.prototype, "liveSecrets").mockImplementation(() => [currentToken]);
+    const callTool = McpManager.prototype.callTool;
+    const progressCall = vi.spyOn(McpManager.prototype, "callTool").mockImplementation(function (this: McpManager, name, args, options) {
+      currentToken = "fixture-token-refreshed";
+      options?.onProgress?.(`Progress ${initialToken} and ${currentToken}`);
+      return callTool.call(this, name, args, options);
+    });
+    try {
+      await runtime.refresh();
+      runtime.selectAll();
+      const onProgress = vi.fn();
+      const result = await runtime.callTool("mcp.alpha.lookup", { id: "1" }, { onProgress });
+      expect(result.ok).toBe(true);
+      expect(onProgress).toHaveBeenCalledExactlyOnceWith("Progress *** and ***");
+    } finally {
+      currentSecrets.mockRestore();
+      progressCall.mockRestore();
+      await runtime.closeAll();
+    }
+  });
+
   it("routes canonical and wire calls, maps images, and redacts configured secrets", async () => {
     const runtime = makeRuntime();
     await runtime.refresh();

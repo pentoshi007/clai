@@ -1,5 +1,8 @@
 import { runAgentTurn } from "../../agent/runner.js";
+import { createToolRouting, shouldUseCompactSystemPrompt } from "../../agent/turn/tool-routing.js";
+import { effectiveContextWindowTokens, providerInputTokenBudget } from "../../llm/context-windows.js";
 import type { McpRuntime } from "../../mcp/runtime.js";
+import { getConfig } from "../../store/config.js";
 import type { AgentPort } from "../ports/agent-port.js";
 
 export interface CurrentAgentPortOptions {
@@ -11,6 +14,26 @@ export function createCurrentAgentPort(
 ): AgentPort {
   return {
     reportsModelSubmission: true,
+    requestPrefix({ provider, model, mode, contextLimitTokens }, session) {
+      const config = getConfig();
+      const useCompactSystemPrompt = shouldUseCompactSystemPrompt(
+        providerInputTokenBudget(provider, model),
+        effectiveContextWindowTokens(provider, model, contextLimitTokens),
+      );
+      const routing = createToolRouting({
+        mode,
+        mcpPresent: Boolean(options.mcp),
+        toolCalling: config.toolCalling,
+        useCompactSystemPrompt: () => useCompactSystemPrompt,
+        compactPromptModes: new Map(session.compactPromptModes),
+      });
+      const { native } = routing.resolveNativeTools(provider, model);
+      return {
+        systemPrompt: routing.buildStableSystemContent(native, provider, model),
+        tools: routing.selectToolDefs(native, useCompactSystemPrompt, provider, model),
+        thinking: config.thinking,
+      };
+    },
     runTurn(request, handlers) {
       return runAgentTurn(request.prompt, {
         ...(options.mcp ? { mcp: options.mcp } : {}),

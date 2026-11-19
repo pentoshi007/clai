@@ -15,7 +15,7 @@ import { META_STREAM_TERMINAL } from "../../src/llm/stream-terminal.js";
 import type { ToolCallingMode } from "../../src/llm/tool-protocol.js";
 import { McpManager, type McpTransportFactory } from "../../src/mcp/manager.js";
 import { McpRuntime } from "../../src/mcp/runtime.js";
-import type { McpTransport } from "../../src/mcp/transport.js";
+import type { McpTransport, McpTransportHandlers } from "../../src/mcp/transport.js";
 import type {
   JsonRpcNotification,
   JsonRpcRequest,
@@ -61,11 +61,16 @@ vi.mock("../../src/skills/registry.js", async (importActual) => ({
 
 class CatalogTransport implements McpTransport {
   readonly kind = "stdio" as const;
+  private handlers: McpTransportHandlers | undefined;
 
   constructor(private readonly serverName: string) {}
 
   start(): Promise<void> {
     return Promise.resolve();
+  }
+
+  setHandlers(handlers: McpTransportHandlers): void {
+    this.handlers = handlers;
   }
 
   request(message: JsonRpcRequest): Promise<JsonRpcResponse> {
@@ -109,8 +114,14 @@ class CatalogTransport implements McpTransport {
       });
     }
     if (message.method === "tools/call") {
-      const params = message.params as { name: string; arguments: Record<string, unknown> };
+      const params = message.params as { name: string; arguments: Record<string, unknown>; _meta?: { progressToken: string } };
       remoteCalls.push({ name: params.name, args: params.arguments });
+      if (this.serverName === "clai-rea" && params._meta?.progressToken) {
+        this.handlers?.notification({
+          jsonrpc: "2.0", method: "notifications/progress",
+          params: { progressToken: params._meta.progressToken, progress: 1, message: "fixture startup progress" },
+        });
+      }
       return Promise.resolve({
         jsonrpc: "2.0",
         id: message.id,
@@ -191,6 +202,7 @@ function expectWirePrefixes(requests: readonly CapturedRequest[]): void {
           ["openai", "gpt-4o-mini"],
           ["mistral", "mistral-large-latest"],
           ["openrouter", "gpt-4o-mini"],
+          ["sarvam", "deepseekv4.1-flash-1017-interactive"],
           ["explabs", "gpt-4o-mini"],
           ["fireworks", "gpt-4o-mini"],
           ["cline", "anthropic/claude-sonnet-4.6"],
@@ -200,6 +212,7 @@ function expectWirePrefixes(requests: readonly CapturedRequest[]): void {
         ] as const).map(([providerId, model]) => {
           const chat = JSON.parse(buildChatBody({
             ...request, providerId, model, stream: false,
+            ...(providerId === "sarvam" ? { forwardSessionAffinity: false } : {}),
             ...(providerId === "tokenharbor" ? { ephemeralCacheBreakpoints: tokenHarborBreakpointMode(model) } : {}),
           }));
           return {
@@ -498,6 +511,7 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
   });
   it.each(["native", "text"] satisfies ToolCallingMode[])("preserves every provider prefix through the complete REA lifecycle in %s mode", async (toolCalling) => {
     const requests: CapturedRequest[] = [];
+    const progress: string[] = [];
     let installed = false;
     const maintenance = vi.spyOn(reaInstaller, "runReaMaintenance").mockImplementation(async (action) => {
       seedRea(action === "update" ? "6.8.0" : "6.7.0");
@@ -509,7 +523,7 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
     const controls = [
       { name: "rea.manage", args: { action: "status" } },
       { name: "rea.manage", args: { action: "install" } },
-      { name: "rea.manage", args: { action: "enable" } },
+      { name: "mcp.enable", args: { server: "clai-rea" } },
       { name: "mcp.tools", args: { server: "clai-rea", query: "query", limit: 1 } },
       { name: "mcp.call", args: { name: "mcp.clai-rea.query", arguments: { query: "artifact" } } },
       { name: "rea.manage", args: { action: "guide" } },
@@ -525,10 +539,17 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
       requests.push({ messages: structuredClone(request.messages), ...(request.tools ? { tools: structuredClone(request.tools) } : {}) });
       options.onSuccessfulRequest?.(successfulRequestSnapshot("openai", "gpt-4o-mini", request));
       const control = controls[requests.length - 1];
-      if (control) return {
-        text: "", provider: "openai", model: "gpt-4o-mini", finishReason: "tool_calls",
-        toolCalls: [{ id: `rea-${requests.length}`, ...control }],
-      };
+      if (control) {
+        if (toolCalling === "text") {
+          const text = `<tool_call>${JSON.stringify(control)}</tool_call>`;
+          onToken(text);
+          return { text, provider: "openai", model: "gpt-4o-mini", finishReason: "stop" };
+        }
+        return {
+          text: "", provider: "openai", model: "gpt-4o-mini", finishReason: "tool_calls",
+          toolCalls: [{ id: `rea-${requests.length}`, ...control }],
+        };
+      }
       onToken("REA evidence reviewed.");
       return { text: "REA evidence reviewed.", provider: "openai", model: "gpt-4o-mini", finishReason: "stop" };
     });
@@ -539,10 +560,18 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
         mcp: runtime, provider: "openai", model: "gpt-4o-mini", session, history,
         maxSteps: 14, toolCalling, autoConfirm: true,
         onMessages: (messages) => { history = messages; },
+        onEvent: (event) => {
+          if (event.type === "tool-output" && event.chunk.includes("fixture startup progress")) progress.push(event.chunk);
+        },
       });
       expect(installed).toBe(true);
       expect(requests).toHaveLength(10);
+      expect(requests[0]!.messages.at(-1)?.content).toContain('rea.manage {"action":"enable"}');
+      expect(requests[3]!.messages.at(-1)?.content).toContain("REA 6.7.0 connected as clai-rea");
+      expect(requests[3]!.messages.at(-1)?.content).toContain("REA TOOLS (");
       expect(remoteCalls).toEqual([{ name: "query", args: { query: "artifact" } }]);
+      expect(progress).toEqual(["fixture startup progress\n"]);
+      expect(JSON.stringify(requests)).not.toContain("fixture startup progress");
       const tools = requests[0]!.tools;
       if (toolCalling === "native") expect(tools?.some((tool) => tool.name === "rea.manage")).toBe(true);
       for (const [index, request] of requests.entries()) {
@@ -624,7 +653,7 @@ describe("stable skill and MCP catalogs preserve agent request cache prefixes", 
       maxSteps: 1, toolCalling: "native", autoConfirm: true,
     });
     expect(reaConnection(runtime).server).toBeUndefined();
-    const context = requests[0]!.messages.filter((message) => typeof message.content === "string" && message.content.includes("rea.manage action=setup"));
+    const context = requests[0]!.messages.filter((message) => typeof message.content === "string" && message.content.includes('rea.manage {"action":"setup"}'));
     expect(context).toHaveLength(1);
     expect(requests[0]!.messages.some((message) => typeof message.content === "string" && message.content.includes("REA TOOLS ("))).toBe(false);
   });

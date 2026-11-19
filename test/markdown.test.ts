@@ -127,6 +127,75 @@ describe("markdown extras", () => {
     expect(out).toContain("│ 1 │ 2 │");
   });
 
+  it("keeps rows with any combination of edge pipes under one header", () => {
+    const md = [
+      "| File | State",
+      "--- | ---:",
+      "`sample.ts:12` | done |",
+      "| second | pending",
+      "third | queued",
+      "A paragraph starts here.",
+    ].join("\r\n");
+    const lines = strip(renderMarkdown(md, 72)).split("\n");
+    expect(lines).toEqual([
+      "  ┌──────────────┬─────────┐",
+      "  │ File         │   State │",
+      "  ├──────────────┼─────────┤",
+      "  │ sample.ts:12 │    done │",
+      "  │              │         │",
+      "  │ second       │ pending │",
+      "  │              │         │",
+      "  │ third        │  queued │",
+      "  └──────────────┴─────────┘",
+      "  A paragraph starts here.",
+    ]);
+  });
+
+  it("keeps escaped edge pipes, code spans and uneven row content in the declared columns", () => {
+    const md = [
+      "Field | Value",
+      "- | -",
+      "| `a|b` | end\\|",
+      "| `\\|` | `<br>` | extra |",
+      "| missing |",
+    ].join("\n");
+    const lines = strip(renderMarkdown(md, 80)).split("\n");
+    expect(lines[0]).toMatch(/^  ┌[^┬]+┬[^┬]+┐$/);
+    expect(lines).toContain("  │ a|b     │ end|         │");
+    expect(lines).toContain("  │ |       │ <br> | extra │");
+    expect(lines).toContain("  │ missing │              │");
+  });
+
+  it("leaves mismatched headers and standalone pipes readable", () => {
+    const md = "| A | B |\n| --- |\na | b\n\n| separated | text |";
+    expect(strip(renderMarkdown(md, 72))).toBe(
+      "  | A | B |\n  | --- |\n  a | b\n  \n  | separated | text |",
+    );
+  });
+
+  it("keeps formatting for tables indented under list items", () => {
+    const md = "1. Details\n    | Option | State |\n    | --- | --- |\n    Fallback | ready |";
+    const rendered = strip(renderMarkdown(md, 72));
+    expect(rendered).toContain("1. Details\n  ┌");
+    expect(rendered).toContain("│ Fallback │ ready │");
+  });
+
+  it("ends a table before a new block even when that block has a pipe", () => {
+    const md = "A | B\n--- | ---\none | two\n> quote | note\n\n```text\nx | y\n```";
+    const rendered = strip(renderMarkdown(md, 72));
+    expect(rendered).toMatch(/└[─┴]+┘\n  │ quote \| note/);
+    expect(rendered).toMatch(/│ x \| y +│/);
+  });
+
+  it("stacks an oversized table at small widths without clipping any fields", () => {
+    const md = "One | Two | Three | Four | Five\n- | - | - | - | -\nα | 👩🏽‍💻 | 三 | demo | last value";
+    const lines = strip(renderMarkdown(md, 24)).split("\n");
+    expect(lines.map((line) => line.trim())).toEqual([
+      "One  α", "Two  👩🏽‍💻", "Three  三", "Four  demo", "Five  last value",
+    ]);
+    expect(lines.every((line) => stringWidth(line) <= 24)).toBe(true);
+  });
+
   it("draws aligned box borders around a table", () => {
     const md = "| a | b |\n| --- | --- |\n| 1 | 2 |";
     const out = strip(renderMarkdown(md));
@@ -181,7 +250,7 @@ describe("markdown extras", () => {
   });
 
   it("renders tables identically through the streaming writer", () => {
-    const md = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    const md = "prose | here\r\n| a | b |\r\n:--- | ---:\r\n1 | 2 |\r\n";
     let streamed = "";
     const writer = createMarkdownStreamWriter((chunk) => {
       streamed += chunk;
@@ -189,9 +258,7 @@ describe("markdown extras", () => {
     for (const ch of md) writer.push(ch);
     writer.finish();
     const out = strip(streamed);
-    expect(out).toContain("│ a │ b │");
-    expect(out).toContain("│ 1 │ 2 │");
-    expect(out).toContain("┌");
+    expect(out).toBe(strip(renderMarkdown(md.slice(0, -2))) + "\n");
   });
 
   it("strips bold markers in real-world phrases like **Word:**", () => {
@@ -229,6 +296,36 @@ describe("markdown extras", () => {
     }
   });
 
+  it("keeps combined ANSI styles and graphemes intact in a wrapped long word", () => {
+    const word = "👩🏽‍💻e\u0301🇺🇸".repeat(5);
+    const wrapped = wrapAnsiLine("\x1b[1m\x1b[9mtext \x1b[36m" + word + "\x1b[39m\x1b[29m\x1b[22m", 6);
+    expect(wrapped.slice(1).map(strip).join("")).toBe(word);
+    expect(wrapped.every((line) => stringWidth(line) <= 6)).toBe(true);
+    for (const line of wrapped.slice(1)) {
+      expect(line).toContain("\x1b[1m");
+      expect(line).toContain("\x1b[9m");
+      expect(line).toContain("\x1b[36m");
+      expect(strip(line)).toMatch(/^(?:👩🏽‍💻|e\u0301|🇺🇸)+$/u);
+    }
+  });
+
+  it("preserves spaces around color changes when wrapping inline code", () => {
+    const input = `A \`  B\` ${"x".repeat(48)}`;
+    const colored = strip(renderMarkdown(input, 20, { colorMode: "16" }));
+    const plain = renderMarkdown(input, 20, { colorMode: "none" });
+    expect(colored).toBe(plain);
+    expect(colored.split("\n")[0]).toBe("  A   B");
+  });
+
+  it("contains a whitespace-only highlighted cell within the table borders", () => {
+    const table = `| A | abcdefghij |\n| --- | --- |\n| \`${" ".repeat(12)}\` | value |`;
+    const rendered = renderMarkdown(table, 20, { colorMode: "16" });
+    const widths = rendered.split("\n").map((line) => stringWidth(line));
+    expect(strip(rendered)).toMatch(/^  ┌[^\n]+\n[\s\S]+│[^\n]+value[^\n]+│\n  └/);
+    expect(new Set(widths).size).toBe(1);
+    expect(widths[0]).toBeLessThanOrEqual(20);
+  });
+
   it("renders list items formatted inside table cells", () => {
     const md =
       "| Key points |\n| --- |\n| * item one<br>- item two<br>1. item three |";
@@ -262,6 +359,23 @@ describe("markdown extras", () => {
           line.endsWith("┤"),
       ).toBe(true);
     }
+  });
+
+  it("aligns narrow columns when CJK and composed glyphs wrap across several lines", () => {
+    const md = "Item | Note\n--- | ---\n日本語👩🏽‍💻🇺🇸 | " + "e\u0301".repeat(10);
+    const lines = strip(renderMarkdown(md, 17)).split("\n");
+    const widths = lines.map((line) => stringWidth(line));
+    expect(new Set(widths).size).toBe(1);
+    expect(widths[0]).toBeLessThanOrEqual(17);
+    expect(lines.some((line) => line.includes("👩🏽‍💻"))).toBe(true);
+    expect(lines.some((line) => line.includes("🇺🇸"))).toBe(true);
+  });
+
+  it("honors the available width for thematic breaks and closing heading markers", () => {
+    const lines = strip(renderMarkdown("## Title ##\n\n- - -\n\nA-*-B", 24)).split("\n");
+    expect(lines[0]).toBe("  Title");
+    expect(lines[2]).toBe("  " + "─".repeat(22));
+    expect(lines[4]).toBe("  A-*-B");
   });
 
   it("never renders a table wider than the requested width, even with wide glyphs", () => {
@@ -306,5 +420,12 @@ describe("markdown extras", () => {
     for (const l of lines) {
       expect(strip(l)).toContain("│");
     }
+  });
+
+  it("retains list and quote indentation across HTML line breaks", () => {
+    const source = "1) first<br>second\n- [x] passed<br>verified\n> hello<br>world";
+    expect(strip(renderMarkdown(source, 30))).toBe(
+      "  1) first\n     second\n  ☑ passed\n    verified\n  │ hello\n  │ world",
+    );
   });
 });
