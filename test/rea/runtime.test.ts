@@ -196,6 +196,30 @@ describe("native REA capability", () => {
     expect(classifyToolCall(call("install")).level).toBe("confirm");
   });
 
+  it("blocks aggregate enable in plan mode when it would select managed REA", async () => {
+    const confirm = vi.fn(async () => true);
+    const plan = createMcpAgentToolExecutor({
+      askMode: false, planMode: true, confirm, showCall: vi.fn(),
+      writeOutput: vi.fn(), emitResult: vi.fn(), recordAttempt: vi.fn(),
+    });
+    const enable = (args: Record<string, unknown>) =>
+      plan(host.runtime, { id: "enable", name: "mcp.enable", args }, "enable");
+    expect((await enable({ server: "all" })).ok).toBe(true);
+    expect(confirm).toHaveBeenCalledOnce();
+
+    seedRea();
+    await manageRea(host.runtime, "enable");
+    host.runtime.selectOff();
+    for (const args of [{ server: "all" }, { server: " " }, {}]) {
+      expect((await enable(args)).result).toMatchObject({
+        ok: false,
+        output: expect.stringContaining("require agent mode"),
+      });
+    }
+    expect(reaConnection(host.runtime).selected).toBe(false);
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
   it("keeps the practical upstream workflow compact and distinguishes provider failures", () => {
     expect(REA_WORKFLOW.length).toBeLessThan(5_000);
     expect(REA_WORKFLOW).toContain("summary");

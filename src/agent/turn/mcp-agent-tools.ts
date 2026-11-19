@@ -1,8 +1,9 @@
 import type { ToolCall, ToolResult } from "../../types.js";
-import type { McpRuntime } from "../../mcp/runtime.js";
+import { selectsAllMcpServers, type McpRuntime } from "../../mcp/runtime.js";
 import type { SingleToolResult } from "./contracts.js";
 import { formatToolContext, saveToolOutput } from "../tool-output-formatting.js";
 import { canManageRea, manageRea } from "../../rea/runtime.js";
+import { reaConnection } from "../../rea/connection.js";
 import { REA_SERVER } from "../../rea/workflow.js";
 
 export interface McpAgentToolPorts {
@@ -80,6 +81,16 @@ export const isReadOnlyMcpAgentTool = (call: ToolCall): boolean =>
   call.name === "mcp.list" || call.name === "mcp.tools" ||
   (call.name === "rea.manage" && (call.args.action === "status" || call.args.action === "guide" || call.args.action === undefined));
 
+async function selectsManagedRea(runtime: McpRuntime, target: ReturnType<typeof mcpAgentToolTarget>): Promise<boolean> {
+  const all = selectsAllMcpServers(target);
+  const named = typeof target === "string" ? target === REA_SERVER : target?.includes(REA_SERVER);
+  if (!all && !named) return false;
+  if (!canManageRea((await runtime.ensureReady()).snapshot)) return false;
+  if (named) return true;
+  const { server, selected } = reaConnection(runtime);
+  return server?.status === "ready" && !selected;
+}
+
 const failCall = (
   ports: McpAgentToolPorts,
   toolEventId: string,
@@ -117,9 +128,8 @@ const execute = async (
     );
   }
   if (!readOnly && ports.planMode) {
-    const target = call.name === "mcp.enable" ? mcpAgentToolTarget(call.args) : undefined;
-    const targetsRea = typeof target === "string" ? target === REA_SERVER : target?.includes(REA_SERVER);
-    if (call.name === "rea.manage" || (targetsRea && canManageRea((await runtime.ensureReady()).snapshot))) {
+    if (call.name === "rea.manage" ||
+      (call.name === "mcp.enable" && await selectsManagedRea(runtime, mcpAgentToolTarget(call.args)))) {
       return failCall(ports, toolEventId, call, "REA installation and session changes require agent mode; use status or guide while planning.");
     }
   }
