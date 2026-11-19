@@ -309,6 +309,23 @@ describe("markdown extras", () => {
     }
   });
 
+  it("preserves spaces around color changes when wrapping inline code", () => {
+    const input = `A \`  B\` ${"x".repeat(48)}`;
+    const colored = strip(renderMarkdown(input, 20, { colorMode: "16" }));
+    const plain = renderMarkdown(input, 20, { colorMode: "none" });
+    expect(colored).toBe(plain);
+    expect(colored.split("\n")[0]).toBe("  A   B");
+  });
+
+  it("contains a whitespace-only highlighted cell within the table borders", () => {
+    const table = `| A | abcdefghij |\n| --- | --- |\n| \`${" ".repeat(12)}\` | value |`;
+    const rendered = renderMarkdown(table, 20, { colorMode: "16" });
+    const widths = rendered.split("\n").map((line) => stringWidth(line));
+    expect(strip(rendered)).toMatch(/^  ┌[^\n]+\n[\s\S]+│[^\n]+value[^\n]+│\n  └/);
+    expect(new Set(widths).size).toBe(1);
+    expect(widths[0]).toBeLessThanOrEqual(20);
+  });
+
   it("renders list items formatted inside table cells", () => {
     const md =
       "| Key points |\n| --- |\n| * item one<br>- item two<br>1. item three |";

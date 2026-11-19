@@ -455,6 +455,7 @@ export function wrapAnsiLine(source: string, maxWidth: number): string[] {
   let used = 0;
   let word = "";
   let gap = "";
+  let gapWidth = 0;
 
   const flush = (): void => {
     const attributes = Array.from(style.attributes, (code) => `\x1b[${code}m`).join("");
@@ -464,24 +465,30 @@ export function wrapAnsiLine(source: string, maxWidth: number): string[] {
     used = 0;
   };
 
+  const writeStyled = (value: string): void => {
+    line += value;
+    if (value.includes("\x1b")) {
+      for (const [sequence] of value.matchAll(SGR)) applyStyle(style, sequence);
+    }
+  };
+
   const writeWord = (): void => {
     if (!word) return;
     const columns = terminalWidth(word);
-    if (columns > 0) {
-      if (used > 0 && used + gap.length + columns > width) flush();
-      if (used > 0) {
-        line += gap;
-        used += gap.length;
-      }
-      gap = "";
+    if (columns === 0) {
+      gap += word;
+      word = "";
+      return;
     }
+    if (used > 0 && used + gapWidth + columns > width) flush();
+    writeStyled(used > 0 ? gap : gap.replace(/ +/g, ""));
+    if (used > 0) used += gapWidth;
+    gap = "";
+    gapWidth = 0;
 
     if (columns <= width) {
-      line += word;
+      writeStyled(word);
       used += columns;
-      if (word.includes("\x1b")) {
-        for (const [sequence] of word.matchAll(SGR)) applyStyle(style, sequence);
-      }
     } else {
       for (const [part] of word.matchAll(WORD_PART)) {
         if (part.startsWith("\x1b")) {
@@ -503,12 +510,16 @@ export function wrapAnsiLine(source: string, maxWidth: number): string[] {
   for (const [part] of text.matchAll(WRAP_PART)) {
     if (part.startsWith(" ")) {
       writeWord();
-      gap = part;
+      gap += part;
+      gapWidth += part.length;
     } else {
       word += part;
     }
   }
   writeWord();
-  if (used > 0) flush();
-  return lines.length > 0 ? lines : [text];
+  if (used > 0) {
+    writeStyled(gap.replace(/ +/g, ""));
+    flush();
+  }
+  return lines.length > 0 ? lines : [" ".repeat(width)];
 }

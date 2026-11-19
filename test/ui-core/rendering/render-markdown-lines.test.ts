@@ -20,11 +20,7 @@ describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
       width: 80,
       stripOuterIndent: true,
     });
-    const text = plain(lines);
-    expect(text).not.toContain("<br>");
-    expect(text).toContain("alpha");
-    expect(text).toContain("beta");
-    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(plain(lines)).toBe("alpha\nbeta");
   });
 
   it("expands paragraph tags while preserving HTML in code and unrelated tags", () => {
@@ -52,6 +48,13 @@ describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
     expect(text).toContain("1");
     expect(text).toContain("2");
     expect(text).toMatch(/[┌├└]/);
+  });
+
+  it("recognizes a table that starts immediately after a paragraph tag", () => {
+    const table = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const options = { width: 80, stripOuterIndent: true };
+    const wrapped = `<p class="note">${table}</p>`;
+    expect(plain(renderMarkdownLines(wrapped, options))).toBe(plain(renderMarkdownLines(table, options)));
   });
 
   it("shrinks wide tables to the chat wrap budget (plan pane adjacent)", () => {

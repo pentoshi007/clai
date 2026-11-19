@@ -38,7 +38,9 @@ function splitCells(row: string): string[] | undefined {
 
 export function parseTableRow(line: string): string[] | undefined {
   if (!line.includes("|")) return undefined;
-  const row = line.trim();
+  const row = line.trim()
+    .replace(/^<p(?:[ \t][^>\n]*)?>[ \t]*/i, "")
+    .replace(/[ \t]*(?<!\\)<\/p>$/i, "");
   if (BLOCK_START.test(row) || matchCodeFenceOpen(row)) return undefined;
   return splitCells(row);
 }
