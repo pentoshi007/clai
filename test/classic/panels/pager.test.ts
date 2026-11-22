@@ -276,6 +276,8 @@ describe("pager keys", () => {
     expect(press(PAGER_INITIAL_STATE, "pagedown").state.caret).toBe(6);
     expect(press(PAGER_INITIAL_STATE, "shift+g").state.caret).toBe(11);
     expect(press({ ...PAGER_INITIAL_STATE, caret: 5 }, "g").state.caret).toBe(0);
+    expect(press(PAGER_INITIAL_STATE, "ctrl+d").state.caret).toBe(11);
+    expect(press({ ...PAGER_INITIAL_STATE, caret: 5 }, "ctrl+u").state.caret).toBe(0);
   });
 
   it("keeps the caret inside the window", () => {

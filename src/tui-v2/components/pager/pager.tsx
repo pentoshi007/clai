@@ -22,6 +22,10 @@ import { registerPagerEscape } from "./pager-escape-port.js";
 import {
   fitOneLine,
   padChromeRow,
+  PAGER_HELP_FULL,
+  PAGER_HELP_MED,
+  PAGER_HELP_MIN,
+  PAGER_HELP_SHORT,
 } from "../../../ui-core/rendering/pager-chrome.js";
 import {
   preparePagerDisplay,
@@ -69,14 +73,6 @@ const HIDDEN_SCROLLBARS = {
   showArrows: false,
 } as const;
 const PAGER_RESIZE_EVENTS = ["resize", LayoutEvents.RESIZED] as const;
-
-const PAGER_HELP_FULL =
-  "↑↓:scroll  ·  pg↑↓:scroll  ·  home/end  ·  ^r:search  ·  q/esc:close";
-const PAGER_HELP_MED =
-  "↑↓:scroll  ·  ^r:search  ·  q/esc:close";
-const PAGER_HELP_SHORT =
-  "↑↓ · ^r:search · q:close";
-const PAGER_HELP_MIN = "^r:search  ·  q/esc:close";
 
 const PAGER_FOOTER_FULL =
   "f:format  ·  r:raw  ·  c:copy  ·  drag:select";

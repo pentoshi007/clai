@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { centerChromeRow, padChromeRow, wrapPagerLine } from "../src/ui-core/rendering/pager-chrome.js";
+import {
+  centerChromeRow,
+  padChromeRow,
+  PAGER_HELP_FULL,
+  PAGER_HELP_MED,
+  PAGER_HELP_SHORT,
+  wrapPagerLine,
+} from "../src/ui-core/rendering/pager-chrome.js";
 import { renderColumns } from "../src/ui-core/rendering/text-width.js";
+
+describe("pager help hints", () => {
+  it.each([PAGER_HELP_FULL, PAGER_HELP_MED, PAGER_HELP_SHORT])(
+    "advertises ^u:top and ^d:bottom instead of home/end",
+    (hint) => {
+      expect(hint).toContain("^u:top");
+      expect(hint).toContain("^d:bottom");
+      expect(hint).not.toContain("home/end");
+    },
+  );
+});
 
 describe("padChromeRow", () => {
   it("returns exactly width columns", () => {

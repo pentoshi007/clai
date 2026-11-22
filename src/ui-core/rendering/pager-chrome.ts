@@ -1,6 +1,14 @@
 
 import { renderColumns } from "./text-width.js";
 
+export const PAGER_HELP_FULL =
+  "↑↓:scroll  ·  pg↑↓  ·  ^u:top  ·  ^d:bottom  ·  ^r:search  ·  q/esc:close";
+export const PAGER_HELP_MED =
+  "↑↓:scroll  ·  ^u:top  ·  ^d:bottom  ·  ^r:search  ·  q/esc:close";
+export const PAGER_HELP_SHORT =
+  "↑↓ · ^u:top · ^d:bottom · ^r:search · q:close";
+export const PAGER_HELP_MIN = "^r:search  ·  q/esc:close";
+
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
 });

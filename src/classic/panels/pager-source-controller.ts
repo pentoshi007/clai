@@ -65,8 +65,8 @@ export class PagerSourceController {
     const atBottom = pager.caret >= view.lines.length - 1;
     let offset: number | undefined;
     let bottom = false;
-    if (["home", "g"].includes(chord) && page.offset > 0) offset = 0;
-    else if (["end", "shift+g"].includes(chord) && page.nextOffset < page.totalBytes) {
+    if (["home", "g", "ctrl+u"].includes(chord) && page.offset > 0) offset = 0;
+    else if (["end", "shift+g", "ctrl+d"].includes(chord) && page.nextOffset < page.totalBytes) {
       offset = Math.max(0, page.totalBytes - source.pageBytes);
       bottom = true;
     } else if (["up", "k", "pageup"].includes(chord) && atTop && page.offset > 0) {

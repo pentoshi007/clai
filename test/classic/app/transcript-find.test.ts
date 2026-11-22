@@ -54,9 +54,9 @@ function send(data: string): void {
   h!.wiring.handleData(data);
 }
 
-async function escape(): Promise<void> {
+async function escapeUntil(assertion: () => void): Promise<void> {
   send("\x1b");
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  await vi.waitFor(assertion, { timeout: 5_000 });
 }
 
 function type(text: string): void {
@@ -179,14 +179,11 @@ describe("Classic transcript find", () => {
     send("n");
     expect(pager().caret).toBe(47);
     send("\x12");
-    await escape();
-    expect(pager()).toMatchObject({ finding: false, query: "target" });
+    await escapeUntil(() => expect(pager()).toMatchObject({ finding: false, query: "target" }));
     expect(h.services.overlay.getState().kind).toBe("pager");
-    await escape();
-    expect(pager().query).toBe("");
+    await escapeUntil(() => expect(pager().query).toBe(""));
     expect(h.services.overlay.getState().kind).toBe("pager");
-    await escape();
-    expect(h.services.overlay.getState().kind).toBe("none");
+    await escapeUntil(() => expect(h.services.overlay.getState().kind).toBe("none"));
   });
 
   it("yields its focus to blocking prompts without losing the query", async () => {

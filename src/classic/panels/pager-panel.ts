@@ -374,8 +374,8 @@ export function pagerKey(input: PagerKeyInput): PanelKeyResult<PagerPanelState> 
   if (chord === "down" || chord === "j") return moveTo(state.caret + 1);
   if (chord === "pageup") return moveTo(state.caret - height);
   if (chord === "pagedown" || chord === "space") return moveTo(state.caret + height);
-  if (chord === "home" || chord === "g") return moveTo(0);
-  if (chord === "end" || chord === "shift+g") return moveTo(count - 1);
+  if (chord === "home" || chord === "g" || chord === "ctrl+u") return moveTo(0);
+  if (chord === "end" || chord === "shift+g" || chord === "ctrl+d") return moveTo(count - 1);
   if (chord === "ctrl+r") return handled({ ...state, finding: true, draft: state.query });
 
   if (chord === "n" || chord === "shift+n") {
