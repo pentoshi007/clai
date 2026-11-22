@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.6.0 — 2026-11-22
+
+### Kiro
+
+- Adopt the kiro-cli 3.5.0 wire protocol: send the exact `KiroCLI/3.5.0 KAS/0.66.119` client identity and use `POST /v1/responses` (CreateResponse) as the primary API, falling back to `generateAssistantResponse` when the operation is unavailable.
+- Stream text, reasoning, tool calls, refusals, context usage and credits from CreateResponse SSE events as they arrive, including parallel tool calls and multi-turn tool results.
+- Keep images, prompt caching, conversation identity and usage accounting working on both APIs. The system prompt rides in the first user turn because `instructions` is account-gated.
+- Restore reasoning blocks for thinking models: carry the thinking directive into CreateResponse turns and split `<thinking>` tags that arrive across stream deltas.
+- Keep login, token refresh, 401 retry and credential persistence unchanged.
+
+### Pagers
+
+- Show `^U`/`^D` for jump-to-top and jump-to-bottom instead of `home/end`, and accept both chords in the classic pager and paged artifact sources.
+
+### Fixes
+
+- Accept usable compaction summaries and copy completed selections.
+- Deflake the classic transcript-find escape test by waiting for the pager state instead of a fixed delay.
+
 ## v5.5.0 — 2026-11-19
 
 ### Providers
