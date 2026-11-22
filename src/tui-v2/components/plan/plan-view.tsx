@@ -18,7 +18,7 @@ import {
   planStatusColor,
   progressBar,
   progressView,
-  taskGlyph,
+  taskPaneGlyph,
   taskRowColor,
   taskOwnerChip,
   wrapPlanText,
@@ -277,7 +277,8 @@ function TaskDisclosureButton(props: {
 }
 
 function taskPanePrefix(task: PlanTask): string {
-  return task.state === "done" ? "" : `${taskGlyph(task)} `;
+  const glyph = taskPaneGlyph(task);
+  return task.state === "done" || !glyph ? "" : `${glyph} `;
 }
 
 const TaskRow = memo(function TaskRow(props: {

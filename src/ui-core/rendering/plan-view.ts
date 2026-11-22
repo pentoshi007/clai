@@ -189,17 +189,20 @@ export function taskGlyph(task: PlanTask): string {
   return glyphs[task.state] ?? "○";
 }
 
-const RESPONDER_PHASE: Record<TaskState, string> = {
+export function taskPaneGlyph(task: PlanTask): string {
+  return task.responderOwned && task.state === "failed" ? "" : taskGlyph(task);
+}
+
+const RESPONDER_PHASE: Partial<Record<TaskState, string>> = {
   pending: "QUEUED",
   in_progress: "RUNNING",
-  done: "DELIVERED",
-  failed: "FAILED",
   skipped: "DROPPED",
 };
 
 export function taskOwnerChip(task: PlanTask): string | undefined {
   if (!task.responderOwned) return undefined;
-  return `RESPONDER · ${RESPONDER_PHASE[task.state] ?? "BACKGROUND"}`;
+  const phase = RESPONDER_PHASE[task.state];
+  return phase === undefined ? undefined : `RESPONDER · ${phase}`;
 }
 
 export function wrapPlanText(text: string, width: number): string[] {

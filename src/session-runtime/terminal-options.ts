@@ -3,7 +3,7 @@ import { TERMINAL_IDENTITY_ENV_KEYS } from "../ui-core/bootstrap/capabilities.js
 
 const TERMINAL_ENV_KEYS = new Set([
   ...TERMINAL_IDENTITY_ENV_KEYS, "COLORFGBG", "CLAI_THEME",
-  "NO_COLOR", "FORCE_COLOR", "CLAI_CLASSIC_MOUSE", "CLAI_KITTY_KEYBOARD", "TMUX",
+  "NO_COLOR", "FORCE_COLOR", "CLAI_CLASSIC_MOUSE", "CLAI_KITTY_KEYBOARD", "TMUX", "SSH_TTY",
 ]);
 
 export function runtimeTerminalOptions(

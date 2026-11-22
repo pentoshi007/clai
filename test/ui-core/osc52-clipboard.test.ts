@@ -95,6 +95,34 @@ describe("OSC 52 clipboard adapter (V2-064)", () => {
   });
 });
 
+it("serializes overlapping writes and lets paste observe the newest completed write", async () => {
+  const firstWrite = Promise.withResolvers<void>();
+  const writes: string[] = [];
+  const clipboard = createOsc52ClipboardPort({
+    renderer: renderer(),
+    enabled: true,
+    preferSystem: true,
+    fallback: {
+      async writeText(text) {
+        if (text === "first") await firstWrite.promise;
+        writes.push(text);
+      },
+      async readText() { return writes.at(-1); },
+    },
+  });
+
+  const first = clipboard.writeText("first");
+  const second = clipboard.writeText("second");
+  const paste = clipboard.readText?.();
+  await Promise.resolve();
+  expect(writes).toEqual([]);
+  firstWrite.resolve();
+
+  await Promise.all([first, second]);
+  expect(writes).toEqual(["first", "second"]);
+  await expect(paste).resolves.toBe("second");
+});
+
 it.each([true, false])("preserves system clipboard reads with OSC 52 enabled=%s", async (enabled) => {
   const system = { ...fallback(), text: "file:///tmp/original.png", async readText() { return this.text; } };
   const clipboard = createOsc52ClipboardPort({ renderer: renderer(), fallback: system, enabled });

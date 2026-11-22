@@ -20,10 +20,10 @@ export function createInMemoryClipboardPort(): InMemoryClipboard {
   };
 }
 
-export function createSystemClipboardPort(): InMemoryClipboard {
+export function createSystemClipboardPort(mode: "best-effort" | "require-system" = "best-effort"): InMemoryClipboard {
   let last: string | undefined;
 
-  async function writeSystem(text: string): Promise<void> {
+  async function writeSystem(text: string): Promise<boolean> {
     const platform = process.platform;
     let attempts: Array<[string, string[]]> = [];
     if (platform === "darwin") {
@@ -46,11 +46,12 @@ export function createSystemClipboardPort(): InMemoryClipboard {
           stdio: ["pipe", "ignore", "ignore"],
           windowsHide: true,
         });
-        return;
+        return true;
       } catch {
         continue;
       }
     }
+    return false;
   }
 
   async function readSystem(): Promise<string | undefined> {
@@ -94,8 +95,9 @@ export function createSystemClipboardPort(): InMemoryClipboard {
       return last;
     },
     async writeText(text: string) {
+      const written = await writeSystem(text);
+      if (!written && mode === "require-system") throw new Error("System clipboard is unavailable");
       last = text;
-      await writeSystem(text);
     },
     async readText() {
       const sysText = await readSystem();

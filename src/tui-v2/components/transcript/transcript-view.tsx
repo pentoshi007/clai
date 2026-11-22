@@ -189,7 +189,6 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   const dragPointer = useRef<{ x: number; y: number } | undefined>(undefined);
   const dragFrame = useRef<number | undefined>(undefined);
   const pointerGestureActive = useRef(false);
-  const copySemanticOnRelease = useRef(false);
   const scrollSnapshot = useRef<
     { scrollTop: number; scrollHeight: number; viewportHeight: number } | undefined
   >(undefined);
@@ -291,24 +290,6 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     sb.updateAutoScroll(x, y);
   }
 
-  function copyHandedOffSelection(): void {
-    if (!copySemanticOnRelease.current) return;
-    copySemanticOnRelease.current = false;
-    if (!services.selection.hasSelection()) return;
-    void services.selection.copy().then((result) => {
-      if (result.status === "copied") {
-        services.toast.success("Copied to clipboard", {
-          key: "clipboard",
-          durationMs: 1600,
-        });
-      } else if (result.status === "failed") {
-        services.toast.error("Copy failed", {
-          key: "clipboard",
-          durationMs: 2200,
-        });
-      }
-    });
-  }
   useLayoutEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
@@ -344,7 +325,6 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     transcriptScrollPort.stopWheel();
     services.transcript.blurThinking();
     pointerGestureActive.current = true;
-    copySemanticOnRelease.current = false;
     selection.onMouseDown(event);
     const sb = scrollRef.current;
     if (sb && pointInRect(sb.viewport, event.x, event.y)) {
@@ -362,7 +342,6 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     stopDragRefresh();
     pointerGestureActive.current = false;
     selection.onMouseUp(event);
-    copyHandedOffSelection();
     scrollRef.current?.stopAutoScroll();
   }
 
@@ -370,7 +349,6 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     stopDragRefresh();
     pointerGestureActive.current = false;
     selection.onMouseDragEnd();
-    copyHandedOffSelection();
     scrollRef.current?.stopAutoScroll();
   }
 
@@ -647,13 +625,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       update(x, y) {
         updateTranscriptDrag(x, y);
       },
-      stop() {
-        stopDragRefresh();
-        pointerGestureActive.current = false;
-        selection.onMouseDragEnd();
-        copyHandedOffSelection();
-        scrollRef.current?.stopAutoScroll();
-      },
+      stop: onTranscriptMouseDragEnd,
     });
     return () => {
       stopDragRefresh();
@@ -1012,12 +984,14 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     const chord = chordFromKeyEvent(key);
     if (handleSearchKey(key, chord)) return;
     if (handleThinkingCopy(key, chord)) return;
-    if (selection.handleKey(key, chord)) return;
-    if (chord === "escape" && renderer.hasSelection) {
+    if (chord === "escape" && renderer.hasSelection && !services.focus.hasOverlay()) {
       key.preventDefault();
       clearNativeSelection();
+      services.selection.clear();
+      onTranscriptMouseDragEnd();
       return;
     }
+    if (selection.handleKey(key, chord)) return;
     if (services.focus.activeContext() === "transcript") {
       handleTranscriptNavigation(key, chord);
     }

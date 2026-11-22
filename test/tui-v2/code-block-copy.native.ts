@@ -51,6 +51,18 @@ for (const width of [60, 100]) {
     await settle(() => setup.mockMouse.drag(left, header + 1, right, bottom - 1));
     await act(async () => { await setup.waitFor(() => clipboard.lastText !== ""); });
     assert.equal(clipboard.lastText, CODE, "a drag selection over wrapped rows copies the source without frames");
+
+    await clipboard.writeText("unchanged after cancellation");
+    await settle(async () => {
+      await setup.mockMouse.pressDown(left, header + 1);
+      await setup.mockMouse.moveTo(right, bottom - 1);
+    });
+    assert.ok(setup.renderer.getSelection()?.isDragging);
+    await settle(() => setup.mockInput.pressKey("\x1b[27u"));
+    assert.equal(setup.renderer.hasSelection, false, "escape clears the native gesture before release");
+    await settle(() => setup.mockMouse.release(right, bottom - 1));
+    assert.equal(setup.renderer.hasSelection, false);
+    assert.equal(clipboard.lastText, "unchanged after cancellation", "releasing an escaped gesture does not copy");
   } finally {
     await act(async () => {
       services.dispose();

@@ -3,6 +3,7 @@ import {
   activeTaskId,
   taskGlyph,
   taskOwnerChip,
+  taskPaneGlyph,
   taskRowColor,
   TASK_GLYPH,
 } from "../../../src/ui-core/rendering/plan-view.js";
@@ -59,9 +60,21 @@ describe("responder rows in the plan pane (TUI-006)", () => {
     expect(taskOwnerChip(task({ id: "c2", state: "pending", responderOwned: true }))).toBe(
       "RESPONDER · QUEUED",
     );
-    expect(taskOwnerChip(task({ id: "c3", state: "done", responderOwned: true }))).toBe(
-      "RESPONDER · DELIVERED",
-    );
+  });
+
+  it.each<{ state: TaskState; glyph: string }>([
+    { state: "done", glyph: "✓" },
+    { state: "failed", glyph: "✗" },
+  ])("keeps the $state glyph without a Responder text badge", ({ state, glyph }) => {
+    const responderTask = task({ id: "c3", state, responderOwned: true });
+    expect(taskGlyph(responderTask)).toBe(glyph);
+    expect(taskOwnerChip(responderTask)).toBeUndefined();
+  });
+
+  it("hides only the failed responder glyph in the task pane", () => {
+    expect(taskPaneGlyph(task({ id: "c3", state: "failed", responderOwned: true }))).toBe("");
+    expect(taskPaneGlyph(task({ id: "c4", state: "done", responderOwned: true }))).toBe("✓");
+    expect(taskPaneGlyph(task({ id: "t1", state: "failed" }))).toBe("✗");
   });
 
   it("scrolls/highlights only the foreground task while responders run", () => {

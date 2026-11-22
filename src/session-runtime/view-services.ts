@@ -1,6 +1,5 @@
 import { buildDefaultCommandRegistry } from "../app/commands/registry.js";
 import { CancelCoordinator } from "../app/controllers/cancel-coordinator.js";
-import { createSystemClipboardPort } from "../app/adapters/in-memory-clipboard-adapter.js";
 import type { AppServices } from "../ui-core/bootstrap/composition-root.js";
 import { ActionRouter } from "../ui-core/actions/action-router.js";
 import { FocusController } from "../ui-core/controllers/focus-controller.js";
@@ -10,7 +9,7 @@ import { ToastController, type ToastItem } from "../ui-core/controllers/toast-co
 import { InterruptibleController } from "../ui-core/controllers/interruptible-controller.js";
 import { detectCapabilities } from "../ui-core/bootstrap/capabilities.js";
 import { createOverlayConfirmPort, createOverlaySecretPort } from "../ui-core/bootstrap/overlay-ports.js";
-import { createOsc52ClipboardPort } from "../ui-core/ports/clipboard-osc52.js";
+import { createTerminalClipboardPort } from "../ui-core/ports/clipboard-osc52.js";
 import { createOsc52Renderer } from "../classic/bootstrap/osc52-renderer.js";
 import { attachCommandHandlers } from "../ui-core/commands/command-handlers.js";
 import type { RuntimeTerminalOptions } from "./types.js";
@@ -38,10 +37,11 @@ export function createRuntimeViewServices(options: RuntimeViewServicesOptions): 
   const overlay = new OverlayController(focus);
   const toast = new ToastController();
   const interruptible = new InterruptibleController();
-  const clipboard = createOsc52ClipboardPort({
-    renderer: createOsc52Renderer({ session: { write: (text) => { options.terminal.stdout.write(text); } }, supported: capabilities.osc52, env: options.options.env }),
-    fallback: createSystemClipboardPort(), enabled: capabilities.osc52,
-  });
+  const clipboard = createTerminalClipboardPort(
+    createOsc52Renderer({ session: { write: (text) => { options.terminal.stdout.write(text); } }, supported: capabilities.osc52, env: options.options.env }),
+    capabilities.osc52,
+    options.options.env,
+  );
   const selection = new SelectionController(clipboard);
   const methods = new Map<PropertyKey, unknown>();
   const session = new Proxy(shared.session, {

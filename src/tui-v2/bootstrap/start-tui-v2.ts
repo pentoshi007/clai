@@ -1,7 +1,6 @@
 import { createElement } from "react";
 import { createCliRenderer, RendererControlState, type KeyEvent } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import type { Mode, ProviderId } from "../../types.js";
 import { App } from "../app/App.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
@@ -32,7 +31,7 @@ import {
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { installTerminalRescue } from "../../os/terminal-rescue.js";
 import { getLogsDirRoot } from "../../store/paths.js";
-import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
+import { createTerminalClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { patchOpenTuiFrameLoop } from "./patch-opentui-frame-loop.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { patchOpenTuiSelection } from "./patch-opentui-selection.js";
@@ -85,7 +84,6 @@ export async function startTuiV2(
     detectedCapabilities.colorMode === "truecolor"
       ? { forwardEnvKeys: OPEN_TUI_TERMINAL_ENV_KEYS }
       : {};
-  const fallbackClipboard = createSystemClipboardPort();
   let markRendererFinalized = (): void => undefined;
   const rendererFinalized = new Promise<void>((resolve) => {
     markRendererFinalized = resolve;
@@ -168,11 +166,7 @@ export async function startTuiV2(
     requestRedraw: requestRepaint,
     requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
       runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
-    clipboard: createOsc52ClipboardPort({
-      renderer,
-      fallback: fallbackClipboard,
-      enabled: capabilities.osc52,
-    }),
+    clipboard: createTerminalClipboardPort(renderer, capabilities.osc52),
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   attachCommandHandlers(services);

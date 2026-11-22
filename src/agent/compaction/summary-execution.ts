@@ -8,7 +8,17 @@ import { isInvalidReasoningContentError } from "../../llm/reasoning-errors.js";
 import { withoutReasoningReplay } from "../../llm/routing/attempt-request.js";
 import type { ChatMessage, CompletionRequest, CompletionResult, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
 import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
-import { buildCompactionRetryPrompt, COMPACTION_INPUT_SAFETY_TOKENS, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
+import {
+  buildCompactionRetryPrompt,
+  COMPACTION_INPUT_SAFETY_TOKENS,
+  compactionSummaryError,
+  compactionSummaryIssue,
+  isCompactionCompletionTruncated,
+  looksLikeTranscriptReplay,
+  normalizeCompactionSummary,
+  type CompactionRetryReason,
+  type CompactionSummaryIssue,
+} from "../compaction-summary.js";
 import { accountAssembledRequest, RequestOverLimitError } from "../request-accounting.js";
 import type { RequestAccounting } from "../request-accounting.js";
 import { isAbortError } from "../session-policy.js";
@@ -243,36 +253,76 @@ export interface CompactionSummaryExecution {
   readonly onUsage?: ((completion: CompletionResult) => void) | undefined;
 }
 
-const FAIL_CLOSED_BY_REASON = {
-  truncated: "compaction failed: model hit the summary output limit — original context retained",
-  "reasoning-only":
-    "compaction failed: model returned no visible summary — original context retained",
-  replayed:
-    "compaction failed: model replayed the transcript — original context retained",
-  incomplete:
-    "compaction failed: model returned an incomplete summary — original context retained",
-} as const;
-
+const OUTPUT_LIMIT_DESCRIPTION = "model hit the summary output limit";
 const MIN_SALVAGEABLE_SUMMARY_CHARS = 600;
 const MAX_SALVAGE_TRIMMED_LINES = 40;
 
 const TRUNCATION_NOTICE =
   "\n\n(This memory was cut short by the model's summary output limit; some session details may be missing.)";
 
-export function salvageTruncatedSummary(summary: string): string | undefined {
-  const lines = normalizeCompactionSummary(summary).split("\n");
-  let trimmed = 0;
-  while (lines.length > 0 && trimmed <= MAX_SALVAGE_TRIMMED_LINES) {
-    const candidate = lines.join("\n").trim();
-    if (candidate && !looksLikeIncompleteCompactionSummary(candidate)) {
-      return candidate.length >= MIN_SALVAGEABLE_SUMMARY_CHARS
-        ? `${candidate}${TRUNCATION_NOTICE}`
-        : undefined;
+function salvageTruncatedSummary(summary: string, failure: string): string {
+  if (!looksLikeTranscriptReplay(summary)) {
+    const lines = summary.split("\n");
+    for (let removed = 0; removed < MAX_SALVAGE_TRIMMED_LINES; removed++) {
+      lines.pop();
+      const candidate = lines.join("\n").trim();
+      if (candidate.length < MIN_SALVAGEABLE_SUMMARY_CHARS) break;
+      if (!compactionSummaryIssue(candidate)) return `${candidate}${TRUNCATION_NOTICE}`;
     }
-    lines.pop();
-    trimmed += 1;
   }
-  return undefined;
+  throw compactionSummaryError(failure);
+}
+
+type SummaryCompletion = Pick<CompletionResult, "text" | "finishReason" | "toolCalls" | "usage">;
+
+function assessSummaryDraft(completion: SummaryCompletion, maxTokens: number): {
+  visible: string;
+  issue: CompactionSummaryIssue | undefined;
+} {
+  const visible = normalizeCompactionSummary(stripThinking(completion.text).visible);
+  if (completion.toolCalls?.length && !visible) {
+    throw compactionSummaryError("model returned tool calls instead of a summary");
+  }
+  const finish = completion.finishReason?.toLowerCase();
+  if (finish === "content_filter" || finish === "refusal") {
+    throw compactionSummaryError("provider blocked the summary");
+  }
+  if (finish === "incomplete" || finish === "pause_turn") {
+    return { visible, issue: { reason: "incomplete", description: "provider ended the summary before completion" } };
+  }
+  if (isCompactionCompletionTruncated(completion, maxTokens)) {
+    return { visible, issue: { reason: "truncated", description: OUTPUT_LIMIT_DESCRIPTION } };
+  }
+  return { visible, issue: compactionSummaryIssue(visible) };
+}
+
+async function executeSummaryAttempts(
+  execution: CompactionSummaryExecution,
+  request: CompletionRequest,
+  runAttempt: (request: CompletionRequest, replace?: boolean) => Promise<CompletionResult>,
+  retryRequestFor: (reason: CompactionRetryReason) => CompletionRequest | undefined,
+): Promise<string> {
+  const completion = await runAttempt(request).catch((error: unknown): SummaryCompletion => {
+    if (execution.qualityRetry === false || !isEmptyCompletionError(error)) throw error;
+    return { text: "", finishReason: "stop" };
+  });
+  const first = assessSummaryDraft(completion, request.maxTokens ?? execution.maxTokens);
+  if (!first.issue) return first.visible;
+
+  const { reason, description } = first.issue;
+  const canRetry = reason === "truncated" ? execution.retryOnTruncation : execution.qualityRetry;
+  if (canRetry === false) throw compactionSummaryError(description);
+
+  const retryRequest = retryRequestFor(reason);
+  if (!retryRequest) return salvageTruncatedSummary(first.visible, description);
+  const result = await runAttempt(retryRequest, true);
+  const retry = assessSummaryDraft(result, retryRequest.maxTokens ?? execution.maxTokens);
+  if (!retry.issue) return retry.visible;
+  if (retry.issue.reason === "truncated") {
+    const failure = reason === "truncated" ? `${OUTPUT_LIMIT_DESCRIPTION} twice` : OUTPUT_LIMIT_DESCRIPTION;
+    return salvageTruncatedSummary(retry.visible, failure);
+  }
+  throw compactionSummaryError(retry.issue.description);
 }
 
 export function comparableMessage(message: ChatMessage): string {
@@ -609,105 +659,18 @@ export async function executeCompactionSummary(
   };
 
   const sizedRequest = withReasoningHeadroom(request);
-  const first = await runAttempt(sizedRequest).catch((error: unknown) => {
-    if (execution.qualityRetry === false || !isEmptyCompletionError(error)) {
-      throw error;
-    }
-    return { text: "", toolCalls: undefined, finishReason: "stop" };
+  return executeSummaryAttempts(execution, sizedRequest, runAttempt, (reason) => {
+    if (reason === "truncated") return truncationRetryRequest(sizedRequest);
+    const lowerReasoning = !preserveCodexEffort && reason === "reasoning-only" &&
+      sizedRequest.thinking?.enabled === true;
+    return {
+      ...sizedRequest,
+      messages: attemptMessages(
+        buildCompactionRetryPrompt(execution.prompt, reason),
+        `${execution.systemContent}${RETRY_SYSTEM_SUFFIX}`,
+      ),
+      temperature: 0,
+      ...(lowerReasoning ? { thinking: COMPACTION_THINKING } : {}),
+    };
   });
-  let visible = normalizeCompactionSummary(
-    stripThinking(first.text).visible,
-  );
-  if (first.toolCalls?.length && !visible) {
-    throw new Error(
-      "compaction failed: model returned tool calls instead of a summary — original context retained",
-    );
-  }
-  let retryReason:
-    | "truncated"
-    | "incomplete"
-    | "reasoning-only"
-    | "replayed"
-    | undefined;
-  if (
-    isCompactionCompletionTruncated(
-      first,
-      sizedRequest.maxTokens ?? execution.maxTokens,
-    )
-  ) {
-    retryReason = "truncated";
-  } else if (!visible) {
-    retryReason = "reasoning-only";
-  } else if (looksLikeTranscriptReplay(visible)) {
-    retryReason = "replayed";
-  } else if (looksLikeIncompleteCompactionSummary(visible)) {
-    retryReason = "incomplete";
-  }
-
-  if (retryReason) {
-    if (
-      (execution.qualityRetry === false && retryReason !== "truncated") ||
-      (execution.retryOnTruncation === false && retryReason === "truncated")
-    ) {
-      throw new Error(FAIL_CLOSED_BY_REASON[retryReason]);
-    }
-    const retryRequest =
-      retryReason === "truncated"
-        ? truncationRetryRequest(sizedRequest)
-        : {
-            ...sizedRequest,
-            messages: attemptMessages(
-              buildCompactionRetryPrompt(execution.prompt, retryReason),
-              `${execution.systemContent}${RETRY_SYSTEM_SUFFIX}`,
-            ),
-            temperature: 0,
-            ...(!preserveCodexEffort && retryReason === "reasoning-only" &&
-            sizedRequest.thinking?.enabled === true
-              ? { thinking: COMPACTION_THINKING }
-              : {}),
-          };
-    if (!retryRequest) {
-      const salvaged = salvageTruncatedSummary(visible);
-      if (salvaged) return salvaged;
-      throw new Error(FAIL_CLOSED_BY_REASON.truncated);
-    }
-    const retry = await runAttempt(retryRequest, true);
-    visible = normalizeCompactionSummary(
-      stripThinking(retry.text).visible,
-    );
-    if (retry.toolCalls?.length && !visible) {
-      throw new Error(
-        "compaction failed: model returned tool calls instead of a summary — original context retained",
-      );
-    }
-    if (
-      isCompactionCompletionTruncated(
-        retry,
-        retryRequest.maxTokens ?? execution.maxTokens,
-      )
-    ) {
-      const salvaged = salvageTruncatedSummary(visible);
-      if (!salvaged) {
-        throw new Error(
-          "compaction failed: model hit the summary output limit twice — original context retained",
-        );
-      }
-      return salvaged;
-    }
-    if (!visible) {
-      throw new Error("compaction failed: model returned an empty summary");
-    }
-    if (looksLikeTranscriptReplay(visible)) {
-      throw new Error(
-        "compaction failed: model replayed the transcript twice — original context retained",
-      );
-    }
-    if (looksLikeIncompleteCompactionSummary(visible)) {
-      throw new Error(
-        "compaction failed: model returned an incomplete summary twice — original context retained",
-      );
-    }
-  }
-
-  return visible;
 }

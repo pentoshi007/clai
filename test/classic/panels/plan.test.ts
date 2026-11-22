@@ -45,8 +45,6 @@ describe("plan rows", () => {
   it.each([
     { state: "pending", color: "foreground", phase: "QUEUED" },
     { state: "in_progress", color: "activity", phase: "RUNNING" },
-    { state: "done", color: "success", phase: "DELIVERED" },
-    { state: "failed", color: "diffDel", phase: "FAILED" },
     { state: "skipped", color: "muted", phase: "DROPPED" },
   ] as const)("colors the $state responder label like its task glyph", ({ state, color, phase }) => {
     const frame = planView({
@@ -54,6 +52,20 @@ describe("plan rows", () => {
       plan: plan([task({ id: "c1", title: "Background proof", state, responderOwned: true })]),
     });
     expect(panelFrameRows(frame).rows.join("\n")).toContain(colorInk.fg(color, `RESPONDER · ${phase}`));
+  });
+
+  it("shows completed and failed responder tasks without extra status text, rows, or failure glyph", () => {
+    const finished = plan([
+      task({ id: "c1", title: "Background proof", state: "done", responderOwned: true }),
+      task({ id: "c2", title: "Background check", state: "failed", responderOwned: true }),
+    ]);
+    const frame = planView({ ink, columns: 80, rows: 9, state: PLAN_INITIAL_STATE, focused: false, plan: finished });
+    const body = rowsOf(panelFrameRows(frame).rows).join("\n");
+    expect(body).toContain("✓ Background proof");
+    expect(body).toContain("Background check");
+    expect(body).not.toContain("RESPONDER ·");
+    expect(body).not.toContain("✗");
+    expect(planBodyRowsWanted(finished, 80)).toBe(3);
   });
 
   it("downgrades the bar and glyphs without Unicode", () => {

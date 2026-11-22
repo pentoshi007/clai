@@ -108,7 +108,7 @@ describe("responder claim ledger", () => {
     expect(settleClaim.mock.calls.map(([id]) => id)).toEqual(["n-delivered"]);
   });
 
-  it("keeps a claim whose delivery started and was never consumed", () => {
+  it("releases an interrupted foreground claim even when delivery already started", () => {
     const releaseClaim = vi.fn();
     const ledger = new ResponderClaimLedger({
       getPendingNotifications: () => [
@@ -121,8 +121,28 @@ describe("responder claim ledger", () => {
     });
     ledger.add("n-inflight");
     ledger.release();
+    ledger.release();
 
+    expect(releaseClaim).toHaveBeenCalledExactlyOnceWith("n-inflight");
+    expect(ledger.has("n-inflight")).toBe(false);
+  });
+
+  it("keeps a wake receipt readable while leaving its release and settlement to the controller", () => {
+    const releaseClaim = vi.fn();
+    const settleClaim = vi.fn();
+    const ledger = new ResponderClaimLedger({
+      getPendingNotifications: () => [notification("n-wake", { deliveredAt: "2026-01-01T00:00:03.000Z" })],
+      releaseClaim,
+      settleClaim,
+    });
+    ledger.add("n-wake", "wake");
+    expect(ledger.ids()).toEqual(["n-wake"]);
+    ledger.settleDelivered();
+    ledger.release();
+
+    expect(settleClaim).not.toHaveBeenCalled();
     expect(releaseClaim).not.toHaveBeenCalled();
+    expect(ledger.has("n-wake")).toBe(false);
   });
 
   it("releases consumed, unstarted, and no-longer-pending claims", () => {

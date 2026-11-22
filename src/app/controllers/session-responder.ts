@@ -4,9 +4,11 @@ import type {
   ResponderNotification,
 } from "../ports/jobs-port.js";
 import type { PersistencePort } from "../ports/persistence-port.js";
+import type { TurnOutcome } from "../../agent/turn-outcome.js";
 
 interface ResponderTurnResult {
   readonly status: "completed" | "aborted" | "error";
+  readonly outcome?: Pick<TurnOutcome, "status"> | undefined;
 }
 
 export type ResponderListeningMode = "off" | "idle" | "listening";
@@ -160,11 +162,7 @@ export class SessionResponder {
       .finally(() => {
         if (this.wakeDrain !== drain) return;
         this.wakeDrain = undefined;
-        if (
-          this.wakeRequested &&
-          generation === this.generation &&
-          !this.deps.isBusy()
-        ) {
+        if (this.wakeRequested && !this.deps.isBusy()) {
           queueMicrotask(() => this.scheduleWake());
         }
       });
@@ -172,99 +170,68 @@ export class SessionResponder {
   }
 
   private async drainOne(generation: number): Promise<void> {
-    if (generation !== this.generation || !this.leaseId) return;
-    if (this.deps.isBusy()) return;
+    const leaseId = this.leaseId;
+    if (!leaseId || generation !== this.generation || this.deps.isBusy()) return;
+    this.wakeRequested = false;
     if (this.deps.hasQueuedWork()) {
-      this.wakeRequested = false;
       await this.deps.continueQueue();
       return;
     }
 
-    this.wakeRequested = false;
     const sessionId = this.deps.sessionId();
-    const leaseId = this.leaseId;
-    const notification = this.deps.jobs.claimNextResponderNotification(
-      sessionId,
-      leaseId,
-    );
+    const notification = this.deps.jobs.claimNextResponderNotification(sessionId, leaseId, "wake");
     if (!notification) {
       this.deps.notifyState();
       return;
     }
-
-    this.deps.notifyState();
-    const preview = await this.preview(notification);
-    const foreground = await this.foregroundTask(sessionId);
-    if (
-      generation !== this.generation ||
-      leaseId !== this.leaseId ||
-      sessionId !== this.deps.sessionId() ||
-      this.deps.isBusy()
-    ) {
-      this.deps.jobs.releaseResponderNotificationClaim?.(notification.id);
-      this.deps.notifyState();
-      return;
-    }
-    let result: ResponderTurnResult;
+    const isCurrent = () => generation === this.generation && sessionId === this.deps.sessionId();
     try {
-      result = await this.deps.runTurn(
-        deliveryPrompt(notification, preview, foreground),
-        () => {
-          if (!this.deps.jobs.markDeliveryStarted(notification.id, sessionId)) {
-            throw new Error(
-              `failed to persist responder delivery attempt ${notification.id}`,
-            );
-          }
-          this.deps.notifyState();
-          this.deps.notifyDelivery?.(summarizeDelivery(notification));
-        },
-      );
+      this.deps.notifyState();
+      await this.deliverClaimedResult(notification, isCurrent);
     } catch {
-      result = { status: "error" };
-    }
-
-    if (
-      result.status !== "completed" ||
-      generation !== this.generation ||
-      leaseId !== this.leaseId ||
-      sessionId !== this.deps.sessionId()
-    ) {
-      if (!notification.deliveryStartedAt) {
+      if (isCurrent()) this.wakeRequested = false;
+    } finally {
+      if (isCurrent()) {
         this.deps.jobs.releaseResponderNotificationClaim?.(notification.id);
+        this.deps.notifyState();
       }
-      this.wakeRequested = false;
-      this.deps.notifyState();
-      return;
     }
-    if (!this.deps.jobs.markDelivered(notification.id, sessionId)) {
-      this.deps.jobs.releaseResponderNotificationClaim?.(notification.id);
-      this.deps.notifyState();
-      return;
-    }
+  }
 
-    if (!notification.readAt) this.settleUnread(notification.id, sessionId);
-    this.deps.notifyState();
-    if (this.hasDeliverable(sessionId, leaseId)) {
-      this.wakeRequested = true;
+  private async deliverClaimedResult(
+    notification: ResponderNotification,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    const sessionId = notification.ownerSessionId;
+    const [preview, foreground] = await Promise.all([
+      this.preview(notification),
+      this.foregroundTask(sessionId),
+    ]);
+    if (!isCurrent() || this.deps.isBusy()) return;
+
+    const result = await this.deps.runTurn(deliveryPrompt(notification, preview, foreground), () => {
+      if (!this.deps.jobs.markDeliveryStarted(notification.id, sessionId)) {
+        throw new Error(`failed to persist responder delivery attempt ${notification.id}`);
+      }
+      this.deps.notifyState();
+      this.deps.notifyDelivery?.(summarizeDelivery(notification));
+    });
+    if (!isCurrent()) return;
+
+    if (result.status !== "completed" || result.outcome?.status === "aborted") {
+      this.wakeRequested = false;
+      return;
     }
+    if (!notification.readAt && this.deps.jobs.markDelivered(notification.id, sessionId)) {
+      this.settleUnread(notification.id, sessionId);
+    }
+    this.wakeRequested = true;
   }
 
   private settleUnread(notificationId: string, sessionId: string): void {
     if (this.deps.jobs.markAnalyzed(notificationId, sessionId)) {
       this.deps.jobs.acknowledge(notificationId, sessionId);
     }
-  }
-
-  private hasDeliverable(sessionId: string, leaseId: string): boolean {
-    return this.deps.jobs.pendingNotifications(sessionId).some(
-      (notification) =>
-        notification.responder &&
-        notification.responderLeaseId === leaseId &&
-        !notification.archivedAt &&
-        !notification.deliveredAt &&
-        !notification.readAt &&
-        !notification.analyzedAt,
-    );
   }
 
   private async preview(notification: ResponderNotification): Promise<string> {

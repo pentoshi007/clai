@@ -512,7 +512,7 @@ export async function runAgentTurn(
     const responderWakeResultRevision = responderWakeSetup.resultRevision;
     const matchesWakeRevision = responderWakeSetup.matchesRevision;
     if (responderWakeSetup.claimedNotificationId) {
-      responderClaims.add(responderWakeSetup.claimedNotificationId);
+      responderClaims.add(responderWakeSetup.claimedNotificationId, "wake");
     }
     const refreshResponderInbox = createResponderInboxRefresher({
       messages,

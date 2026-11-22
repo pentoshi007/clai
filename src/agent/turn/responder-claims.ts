@@ -6,16 +6,6 @@ export interface ResponderClaimPorts {
   readonly settleClaim: (notificationId: string) => void;
 }
 
-const deliveryInFlight = (
-  notification: ResponderNotification | undefined,
-): boolean =>
-  Boolean(
-    notification?.deliveryStartedAt &&
-      !notification.readAt &&
-      !notification.analyzedAt &&
-      !notification.acknowledgedAt,
-  );
-
 const stillUnread = (
   notification: ResponderNotification | undefined,
 ): boolean =>
@@ -30,12 +20,12 @@ const stillUnread = (
   );
 
 export class ResponderClaimLedger {
-  private readonly claimed = new Set<string>();
+  private readonly claimed = new Map<string, "foreground" | "wake">();
 
   constructor(private readonly ports: ResponderClaimPorts) {}
 
-  add(notificationId: string): void {
-    this.claimed.add(notificationId);
+  add(notificationId: string, owner: "foreground" | "wake" = "foreground"): void {
+    this.claimed.set(notificationId, owner);
   }
 
   delete(notificationId: string): void {
@@ -53,7 +43,7 @@ export class ResponderClaimLedger {
 
   ids(): string[] {
     this.dropSettled();
-    return [...this.claimed];
+    return [...this.claimed.keys()];
   }
 
   private dropSettled(): void {
@@ -63,10 +53,10 @@ export class ResponderClaimLedger {
         .getPendingNotifications()
         .map((notification) => [notification.id, notification]),
     );
-    for (const notificationId of [...this.claimed]) {
-      if (stillUnread(pending.get(notificationId))) continue;
-      this.claimed.delete(notificationId);
-      this.ports.releaseClaim(notificationId);
+    for (const [id, owner] of this.claimed) {
+      if (stillUnread(pending.get(id))) continue;
+      this.claimed.delete(id);
+      if (owner === "foreground") this.ports.releaseClaim(id);
     }
   }
 
@@ -77,22 +67,17 @@ export class ResponderClaimLedger {
         .getPendingNotifications()
         .map((notification) => [notification.id, notification]),
     );
-    for (const notificationId of this.claimed) {
-      const notification = pending.get(notificationId);
-      if (!notification?.deliveredAt || !stillUnread(notification)) continue;
-      this.ports.settleClaim(notificationId);
+    for (const [id, owner] of this.claimed) {
+      const notification = pending.get(id);
+      if (owner !== "foreground" || !notification?.deliveredAt || !stillUnread(notification)) continue;
+      this.ports.settleClaim(id);
     }
   }
 
   release(): void {
-    const pending = new Map(
-      this.ports
-        .getPendingNotifications()
-        .map((notification) => [notification.id, notification]),
-    );
-    for (const notificationId of this.claimed) {
-      if (deliveryInFlight(pending.get(notificationId))) continue;
-      this.ports.releaseClaim(notificationId);
+    for (const [id, owner] of this.claimed) {
+      if (owner === "foreground") this.ports.releaseClaim(id);
     }
+    this.claimed.clear();
   }
 }

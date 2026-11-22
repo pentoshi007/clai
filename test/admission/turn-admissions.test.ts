@@ -66,8 +66,8 @@ const { compactMessagesWithSummary } = await import(
 );
 const {
   buildCompactionRetryPrompt,
+  compactionSummaryIssue,
   isCompactionCompletionTruncated,
-  looksLikeIncompleteCompactionSummary,
   normalizeCompactionSummary,
 } = await import("../../src/agent/compaction-summary.js");
 
@@ -81,7 +81,7 @@ const USABLE_SUMMARY = [
   "- Remaining work: replace per-layer caps with one ledger.",
 ].join("\n");
 
-const UNUSABLE_SUMMARY = "- Goal: keep the baseline reproducible and";
+const UNUSABLE_SUMMARY = "- Goal: keep the baseline reproducible\n## Current state and next steps";
 
 function installScript(
   ...args:
@@ -260,8 +260,7 @@ describe("compaction fan-out admissions", () => {
         const visible = normalizeCompactionSummary(first.text);
         const unusable =
           isCompactionCompletionTruncated(first, SUMMARY_MAX_TOKENS) ||
-          !visible ||
-          looksLikeIncompleteCompactionSummary(visible);
+          compactionSummaryIssue(visible) !== undefined;
         if (!unusable) return first.text;
         return summarizeThroughRouter(
           buildCompactionRetryPrompt(prompt, "truncated"),

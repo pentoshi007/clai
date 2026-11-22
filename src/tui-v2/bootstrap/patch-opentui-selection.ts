@@ -11,12 +11,18 @@ export function inclusiveSelectionFocus(anchor: CellPoint, focus: CellPoint): Ce
 }
 
 let patched = false;
+const selectionPress = new WeakMap<NonNullable<ReturnType<CliRenderer["getSelection"]>>, CellPoint>();
+
+function mousePosition(renderer: CliRenderer): CellPoint {
+  return (renderer as unknown as { readonly _latestPointer: CellPoint })._latestPointer;
+}
 
 export function patchOpenTuiSelection(): void {
   if (patched) return;
   patched = true;
 
   const proto = CliRenderer.prototype as unknown as {
+    startSelection: CliRenderer["startSelection"];
     updateSelection(
       this: CliRenderer,
       current: Renderable | undefined,
@@ -26,6 +32,13 @@ export function patchOpenTuiSelection(): void {
     ): void;
     finishSelection(this: CliRenderer): void;
   };
+  const startSelection = proto.startSelection;
+  proto.startSelection = function (this: CliRenderer, renderable, x, y) {
+    startSelection.call(this, renderable, x, y);
+    const selection = this.getSelection();
+    if (selection) selectionPress.set(selection, { ...mousePosition(this) });
+  };
+
   const updateSelection = proto.updateSelection;
   proto.updateSelection = function (current, x, y, options) {
     const anchor = this.getSelection()?.anchor;
@@ -35,9 +48,14 @@ export function patchOpenTuiSelection(): void {
 
   const finishSelection = proto.finishSelection;
   proto.finishSelection = function () {
-    finishSelection.call(this);
     const selection = this.getSelection();
-    if (selection && !selection.isDragging && selection.getSelectedText().length === 0) {
+    if (!selection?.isDragging) return;
+    const press = selectionPress.get(selection);
+    const release = mousePosition(this);
+    const moved = press && (press.x !== release.x || press.y !== release.y);
+    if (moved || !selection.isStart) this.requestSelectionUpdate();
+    finishSelection.call(this);
+    if (this.getSelection() === selection && selection.getSelectedText().length === 0) {
       this.clearSelection();
     }
   };

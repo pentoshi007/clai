@@ -183,6 +183,11 @@ export function handlePanelKey(
 }
 
 export function handleMouse(host: WiringHost, event: MouseEvent): void {
+  const transcriptOwnsGesture = host.selectionPointerCell && (event.drag || event.release);
+  if (transcriptOwnsGesture) {
+    handleTranscriptMouse(host, event);
+    return;
+  }
   if (handleJumpToLatestMouse(host, event) || handleDisclosureMouse(host, event) || handleCodeCopyMouse(host, event) || handleComposerMouse(host, event)) return;
   if (!host.panels.isOpen() && contextLimitChipPressed(host.contextLimitHitRegion, event)) {
     host.startContextLimitEditing();

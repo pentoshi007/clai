@@ -41,6 +41,7 @@ for (const task of source.tasks) {
   task.note = Array.from({ length: 12 }, (_, index) => `Finding ${task.id}:${index + 1} remains reachable.`).join(" ");
 }
 source.tasks[5] = { ...source.tasks[5]!, parentTaskId: "t5", responderOwned: true, jobId: "viewport-fixture", processId: 123 };
+source.tasks[6] = { ...source.tasks[6]!, state: "failed", parentTaskId: "t5", responderOwned: true, jobId: "viewport-failed", processId: 124 };
 const before = JSON.stringify(source);
 interface ViewState { plan: SessionPlan; width: number; height: number; focused: boolean; theme: ThemeHint }
 let view: ViewState = { plan: source, width: 48, height: 26, focused: false, theme: "dark" };
@@ -157,6 +158,11 @@ try {
   await settle(() => scrollbox().scrollTo(0));
   const selected = binding!.state.selectedId;
   const priorFrame = setup.captureCharFrame();
+  const taskText = viewportText().replace(/\s+/g, " ");
+  check(taskText.includes("↳ Verify nested responder tasks and their complete titles"), "The completed Responder task title must stay visible");
+  check(taskText.includes("↳ Retain every expanded finding during wheel scrolling"), "The failed Responder task title must stay visible");
+  check(!taskText.includes("✗ ↳"), "Failed Responder rows must not show a failure glyph in the task pane");
+  check(!/\[RESPONDER · (?:DELIVERED|FAILED)\]/.test(taskText), "Terminal Responder badges must not render in the task pane");
   const priorStyles = JSON.stringify(setup.captureSpans());
   services.focus.focusRegion("composer");
   const priorFocus = setup.renderer.currentFocusedRenderable;

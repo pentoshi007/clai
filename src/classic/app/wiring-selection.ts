@@ -68,27 +68,28 @@ async function copySelection(host: WiringHost): Promise<void> {
 function releaseTranscriptSelection(
   host: WiringHost,
   cell: WiringHost["selectionPointerCell"],
-  event: MouseEvent,
 ): void {
-  const shouldCopy = host.selectionPointerCell !== undefined && host.selectionPointerMoved;
-  if (host.selectionPointerCell && cell) {
-    if (host.selectionPointerMoved) {
-      host.services.selection.dragCellTo("transcript", host.selectionPointerCell, cell, event);
-    }
-    host.services.selection.finishDrag();
-  }
+  const pressed = host.selectionPointerCell;
+  if (!pressed) return;
+  const wasDragging = host.selectionPointerMoved;
   stopAutoScroll(host);
   host.selectionPointerCell = undefined;
   host.selectionPointerMoved = false;
-  if (shouldCopy && host.services.selection.hasSelection()) void copySelection(host);
-  if (shouldCopy) host.services.focus.focusRegion("composer");
+  if (cell) {
+    const changedCell = cell.start.blockId !== pressed.start.blockId || cell.start.offset !== pressed.start.offset;
+    if (changedCell && !wasDragging) host.services.selection.beginDrag("transcript", pressed.start);
+    if (changedCell || wasDragging) host.services.selection.dragCellTo("transcript", pressed, cell);
+  }
+  host.services.selection.finishDrag();
+  if (cell && host.services.selection.hasSelection()) void copySelection(host);
+  host.services.focus.focusRegion("composer");
   host.schedulePaint();
 }
 
 function handleTranscriptSelection(host: WiringHost, event: MouseEvent): void {
   const window = host.selectionWindow;
   if (!window || host.panels.isOpen()) {
-    stopAutoScroll(host);
+    cancelTranscriptPointer(host);
     return;
   }
   host.selectionPointerX = event.x;
@@ -101,10 +102,10 @@ function handleTranscriptSelection(host: WiringHost, event: MouseEvent): void {
     host.selectionPointerCell !== undefined,
   );
   if (event.release) {
-    releaseTranscriptSelection(host, cell, event);
+    releaseTranscriptSelection(host, cell);
     return;
   }
-  if (event.button !== "left" || !cell) return;
+  if (!cell) return;
   host.services.focus.focusRegion("composer");
   if (!event.drag) {
     stopAutoScroll(host);
@@ -127,8 +128,10 @@ function handleTranscriptSelection(host: WiringHost, event: MouseEvent): void {
 }
 
 export function handleTranscriptMouse(host: WiringHost, event: MouseEvent): void {
-  if (event.scroll !== "up" && event.scroll !== "down") {
-    handleTranscriptSelection(host, event);
+  if (event.scroll === undefined) {
+    if (event.button === "left" || (event.release && event.button === "none")) {
+      handleTranscriptSelection(host, event);
+    }
     return;
   }
   if (host.panels.isOpen()) {

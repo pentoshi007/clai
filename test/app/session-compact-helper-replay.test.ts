@@ -105,6 +105,75 @@ describe("runSessionCompaction cache-preserving replay", () => {
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
   });
 
+  it.each([
+    ["a technical name", "- Keep C++"],
+    ["a natural label", "- Auth action: sign in"],
+    ["a path ending in punctuation", "- Workspace: /tmp/test-"],
+    ["inline backticks", "- The Markdown delimiter is `` ``` ``"],
+    ["an empty optional section", "- Rerun the suite.\n\n## Issues and risks"],
+    ["an exact diagnostic reference", "- Check `sha256_12=` and `(exit=0, ok=true)` in the receipt"],
+  ])("commits a summary ending in %s without another generation", async (_label, ending) => {
+    const text = `## Current state and next steps\n${ending}`;
+    complete.mockResolvedValue({ ...okResult(), text });
+    const { options, committed } = harness([
+      ...SNAPSHOT.messages,
+      { role: "assistant", content: "done — feature built" },
+      { role: "user", content: "now compact" },
+    ]);
+
+    await expect(runSessionCompaction(options)).resolves.toMatchObject({ summarized: true });
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(committed[0]?.find(isCompactionMemoryMessage)?.content).toContain(ending.split("\n")[0]);
+    expect(committed[0]?.find(isCompactionMemoryMessage)?.content).not.toContain("## Issues and risks");
+  });
+
+  it("retains literal Markdown headings inside a complete fenced example", async () => {
+    const example = "````md\n```\n## Last 3 user prompts (latest first)\nLiteral fixture contents\n````";
+    complete.mockResolvedValue({ ...okResult(), text: `## Context gathered\nFixture example:\n${example}` });
+    const { options, committed } = harness([
+      ...SNAPSHOT.messages,
+      { role: "assistant", content: "done — feature built" },
+      { role: "user", content: "now compact" },
+    ]);
+
+    await runSessionCompaction(options);
+
+    expect(committed[0]?.find(isCompactionMemoryMessage)?.content).toContain(example);
+  });
+
+  it.each([
+    ["an unfinished section", "## Work done\nUpdated the parser.\n## Current state and next steps", "stop", /incomplete summary.*heading/],
+    ["an unclosed tilde fence", "## Work done\n~~~ts\nconst value = 1;", "stop", /incomplete summary.*fence/],
+    ["a provider output limit", "## Work done\nUpdated the parser.", "max_tokens", /summary output limit/],
+  ] as const)("retains the original history after %s", async (_label, text, finishReason, error) => {
+    stream.mockResolvedValue({ ...okResult(), text, finishReason });
+    const history: ChatMessage[] = [
+      ...SNAPSHOT.messages,
+      { role: "assistant", content: "done — feature built" },
+      { role: "user", content: "now compact" },
+    ];
+    const original = structuredClone(history);
+    const { options, committed } = harness(history);
+    const events: AnyAppEvent[] = [];
+
+    await expect(runSessionCompaction({
+      ...options,
+      persist: true,
+      requestTokensBefore: 186_885,
+      requestTokensBeforeMeasurement: "provider-reported",
+      emit: (event) => events.push(event),
+    })).rejects.toThrow(error);
+
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(committed).toEqual([]);
+    expect(history).toEqual(original);
+    expect(events.find((event) => event.type === "compaction-failed")).toMatchObject({
+      payload: { message: expect.stringMatching(error), retainedTokens: 186_885, measurement: "provider-reported" },
+    });
+    expect(events.some((event) => event.type === "compaction-completed")).toBe(false);
+  });
+
   it("appends recent research guidance after the cached prefix and commits memory without completed raw turns", async () => {
     complete.mockResolvedValueOnce(okResult());
     const history: ChatMessage[] = [

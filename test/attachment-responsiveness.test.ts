@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clearImagePreparationCache, prepareImageForModel } from "../src/attachments/image-prepare.js";
@@ -111,16 +111,21 @@ describe("attachment lifecycle", () => {
 
   it("captures raw clipboard images without blocking timers", async () => {
     const dir = workspace();
-    const executable = join(dir, "wl-paste");
-    writeFileSync(executable, `#!${process.execPath}\nsetTimeout(() => process.stdout.write(Buffer.from('${png.toString("base64")}', 'base64')), 150);\n`);
-    chmodSync(executable, 0o755);
-    vi.stubEnv("PATH", `${dir}:${process.env.PATH ?? ""}`);
+    const isMac = process.platform === "darwin";
+    const executable = join(dir, isMac ? "osascript" : "wl-paste");
+    const deliverPng = isMac
+      ? "require('node:fs').writeFileSync(process.argv.at(-1), png)"
+      : "process.stdout.write(png)";
+    writeFileSync(executable, `#!${process.execPath}\nconst png = Buffer.from('${png.toString("base64")}', 'base64');\nsetTimeout(() => ${deliverPng}, 150);\n`, { mode: 0o755 });
+    vi.stubEnv("PATH", dir);
     let heartbeat = false;
     const timer = setTimeout(() => { heartbeat = true; }, 20);
     try {
       const result = await captureClipboardImage(dir);
-      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.reason);
       expect(heartbeat).toBe(true);
+      expect(result).toMatchObject({ mediaType: "image/png", byteLength: png.length });
+      expect(await readFile(result.path)).toEqual(png);
     } finally {
       clearTimeout(timer);
     }

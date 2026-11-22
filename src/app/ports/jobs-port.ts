@@ -32,6 +32,7 @@ export interface JobsPort {
   claimNextResponderNotification(
     sessionId: string,
     leaseId: string,
+    mode?: "foreground" | "wake",
   ): ResponderNotification | undefined;
   releaseResponderNotificationClaim?(notificationId: string): void;
   markDeliveryStarted(notificationId: string, sessionId?: string): boolean;

@@ -1,5 +1,4 @@
 import { render, type Instance, type RenderOptions } from "ink";
-import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import type { Mode, ProviderId } from "../../types.js";
 import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
 import { readCapabilitiesFromProcess } from "../../ui-core/bootstrap/capabilities.js";
@@ -21,7 +20,7 @@ import {
   resolveResumeTarget,
   type ResumeTarget,
 } from "../../ui-core/bootstrap/session-resume.js";
-import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
+import { createTerminalClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
@@ -118,11 +117,10 @@ export async function startClassic(
     requestRedraw: requestRepaint,
     requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
       runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
-    clipboard: createOsc52ClipboardPort({
-      renderer: createOsc52Renderer({ session, supported: capabilities.osc52 }),
-      fallback: createSystemClipboardPort(),
-      enabled: capabilities.osc52,
-    }),
+    clipboard: createTerminalClipboardPort(
+      createOsc52Renderer({ session, supported: capabilities.osc52 }),
+      capabilities.osc52,
+    ),
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   servicesRef.current = services;

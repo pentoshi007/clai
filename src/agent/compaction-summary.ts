@@ -1,6 +1,8 @@
 import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
 import { requestTokenCalibration } from "../llm/token-estimate-calibration.js";
 import type { ProviderId } from "../types.js";
+import { nextMarkdownFence } from "./compaction/markdown-fence.js";
+import type { CompactionRetryReason } from "./compaction/compaction-prompt.js";
 import { DSML_ANY_RE } from "./parser/dsml.js";
 
 export {
@@ -126,15 +128,47 @@ export function normalizeCompactionSummary(summary: string): string {
   return output.join("\n").trim();
 }
 
-export function looksLikeIncompleteCompactionSummary(summary: string): boolean {
-  const text = summary.trim();
-  if (!text) return true;
-  if ((text.match(/```/g)?.length ?? 0) % 2 !== 0) return true;
-  const last = text.split("\n").at(-1)?.trim() ?? "";
-  if (/^#{1,6}\s+\S/.test(last)) return true;
-  if (/[,;:(\[{=+\-–—]$/.test(last)) return true;
-  return /\b(?:and|or|the|a|an|to|with|without|has|have|had|is|are|was|were|from|for|of|in|on|at|by|as|that|which|whose|because|so)$/i.test(last);
+const MARKDOWN_HEADING = /^#{1,6}(?:\s|$)/;
+const EMPTY_LIST_ITEM = /^(?:[-*+]|\d{1,9}[.)])$/;
+const OPTIONAL_ISSUES_HEADING = /^##\s+issues\s+and\s+risks$/i;
+
+function incompleteSummaryStructure(summary: string): string | undefined {
+  let fence: string | undefined;
+  let last = "";
+  for (const line of summary.split("\n")) {
+    fence = nextMarkdownFence(line, fence);
+    const trimmed = line.trim();
+    if (trimmed && !OPTIONAL_ISSUES_HEADING.test(trimmed)) last = trimmed;
+  }
+  if (fence) return "unclosed Markdown code fence";
+  if (!last || MARKDOWN_HEADING.test(last)) return "trailing heading has no body";
+  if (EMPTY_LIST_ITEM.test(last)) return "trailing list item has no body";
+  return undefined;
 }
+
+export interface CompactionSummaryIssue {
+  readonly reason: CompactionRetryReason;
+  readonly description: string;
+}
+
+export function compactionSummaryIssue(summary: string): CompactionSummaryIssue | undefined {
+  if (!summary.trim()) return { reason: "reasoning-only", description: "model returned no visible summary" };
+  if (looksLikeTranscriptReplay(summary)) return { reason: "replayed", description: "model replayed the transcript" };
+  const detail = incompleteSummaryStructure(summary);
+  return detail ? { reason: "incomplete", description: `model returned an incomplete summary (${detail})` } : undefined;
+}
+
+export function assertUsableCompactionSummary(summary: string): void {
+  const issue = compactionSummaryIssue(summary);
+  if (issue) throw compactionSummaryError(issue.description);
+}
+
+export function compactionSummaryError(description: string): Error {
+  return new Error(`compaction failed: ${description} — original context retained`);
+}
+
+const OUTPUT_LIMIT_REASONS = new Set(["length", "max_tokens", "max_output_tokens", "model_context_window_exceeded"]);
+const NORMAL_FINISH_REASONS = new Set(["stop", "end_turn", "stop_sequence", "completed", "tool_calls"]);
 
 export function isCompactionCompletionTruncated(
   response: {
@@ -143,25 +177,23 @@ export function isCompactionCompletionTruncated(
   },
   maxTokens: number,
 ): boolean {
-  const finish = response.finishReason?.toLowerCase();
-  if (finish === "length") return true;
-  if (finish === "stop") return false;
+  const finish = response.finishReason?.toLowerCase() ?? "";
+  if (OUTPUT_LIMIT_REASONS.has(finish)) return true;
+  if (NORMAL_FINISH_REASONS.has(finish)) return false;
   const used = response.usage?.completionTokens;
   return typeof used === "number" && used >= Math.max(1, maxTokens - 32);
 }
 
 export function looksLikeTranscriptReplay(summary: string): boolean {
   const hardMarkers = [
-    /sha256_12\s*=/i,
-    /Do NOT re-read this file/i,
-    /\(\s*exit\s*=\s*-?\d+\s*,\s*ok\s*=\s*(?:true|false)\s*\)/i,
+    /^[ \t]*(?:TOOL:[ \t]*)?Tool [^\n]+ result \(\s*exit\s*=\s*-?\d+\s*,\s*ok\s*=\s*(?:true|false)\s*\):/im,
     /<tool_calls?(?::[^>]+)?>|<arg_key>|<arg_value>|<\/tool_call/i,
     /[\ue000\ue001]/,
     /<\|tool_(?:calls_section|call|call_argument)_(?:begin|end)\|>/i,
     /<[|｜]+tool[_▁](?:calls?[_▁](?:begin|end)|sep)[|｜]+>/i,
     DSML_ANY_RE,
     /<[|｜]+(?:open|close|sep)[|｜]+>/i,
-    /\bbytes\s*=\s*\d+\s+lines\s*=\s*\d+/i,
+    /^[ \t]*(?:Wrote [^\n]+ )?bytes\s*=\s*\d+\s+lines\s*=\s*\d+\b/im,
   ];
   if (hardMarkers.some((re) => re.test(summary))) return true;
 

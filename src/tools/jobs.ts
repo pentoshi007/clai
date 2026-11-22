@@ -1171,6 +1171,7 @@ export class JobManager {
   claimNextResponderNotification(
     sessionId: string,
     leaseId: string,
+    mode: "foreground" | "wake" = "foreground",
   ): ResponderNotification | undefined {
     if (this.responderLeases.get(sessionId) !== leaseId) return undefined;
     let adopted = false;
@@ -1196,6 +1197,7 @@ export class JobManager {
           !candidate.readAt &&
           !candidate.analyzedAt &&
           !candidate.acknowledgedAt &&
+          (mode === "foreground" || !candidate.deliveryStartedAt) &&
           !this.claimedNotifications.has(candidate.id),
       )
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];

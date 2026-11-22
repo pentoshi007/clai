@@ -132,7 +132,7 @@ const QUALITY = [
   "- Approval and mode gates: plan-mode gather-only or wait-for-approval limits end only when the user accepts the plan; research-only or no-implementation limits the user set for the current topic stay in force. Compaction never grants approval, and an answered question never authorizes new work.",
   "- Record names and exact paths of still-relevant skills and references, not copies of their instructions. A prior load is historical, not proof that its full body survives compaction; never tell the next agent not to reload content that was lost. The application appends authoritative skill-recovery guidance.",
   "- Refer to credentials and secrets by purpose only; their values are carried separately.",
-  "- Length: as long as needed to lose nothing that matters and no longer, usually 1,500 to 4,000 tokens and up to about 6,000 for long sessions with several tasks. Plain Markdown with bullets, no code fences around the whole memory. Finish every section and end on a complete sentence.",
+  "- Length: as long as needed to lose nothing that matters and no longer, usually 1,500 to 4,000 tokens and up to about 6,000 for long sessions with several tasks. Plain Markdown with bullets, no code fences around the whole memory. Finish each heading and bullet you start; concise bullet fragments are fine.",
 ];
 
 function sourceLines(source: CompactionSource): string[] {
@@ -220,9 +220,9 @@ const RETRY_ISSUES: Record<CompactionRetryReason, string> = {
   truncated: "The previous draft hit its output limit.",
   "reasoning-only": "The previous draft contained no visible memory.",
   replayed: "The previous draft copied transcript lines or tool-call syntax.",
-  incomplete: "The previous draft ended abruptly or missed required sections.",
+  incomplete: "The previous draft did not finish cleanly.",
 };
 
 export function buildCompactionRetryPrompt(prompt: string, reason: CompactionRetryReason): string {
-  return `${prompt}\n\nQUALITY RETRY: ${RETRY_ISSUES[reason]} Write the complete memory again from the source, not as a continuation of the failed draft. Use every required section, keep every consequential fact once, and end on a complete sentence.`;
+  return `${prompt}\n\nQUALITY RETRY: ${RETRY_ISSUES[reason]} Write the complete memory again from the source, not as a continuation of the failed draft. Use every required section, keep each consequential fact once, and leave no started heading, bullet or code block unfinished.`;
 }

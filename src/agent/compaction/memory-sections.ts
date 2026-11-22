@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../../types.js";
+import { nextMarkdownFence } from "./markdown-fence.js";
 
 export const COMPACTION_MEMORY_PREFIX = "Session memory from compacted earlier turns:";
 
@@ -56,24 +57,24 @@ function normalizedHeading(line: string): string {
 
 export function sectionRanges(text: string, heading: string): SectionRange[] {
   const wanted = normalizedHeading(heading);
-  const lines = text.split("\n");
   const ranges: SectionRange[] = [];
-  const offsets: number[] = [];
+  let fence: string | undefined;
+  let start: number | undefined;
+  let bodyStart = 0;
   let offset = 0;
-  for (const line of lines) {
-    offsets.push(offset);
-    offset += line.length + 1;
+  for (const line of text.split("\n")) {
+    const previousFence = fence;
+    fence = nextMarkdownFence(line, fence);
+    const endOfLine = offset + line.length + 1;
+    const trimmed = line.trim();
+    if (!previousFence && !fence && SECTION_BOUNDARY.test(trimmed)) {
+      if (start !== undefined) ranges.push({ start, end: offset, body: text.slice(bodyStart, offset).trim() });
+      start = normalizedHeading(trimmed) === wanted ? offset : undefined;
+      bodyStart = endOfLine;
+    }
+    offset = endOfLine;
   }
-  for (let index = 0; index < lines.length; index += 1) {
-    if (normalizedHeading(lines[index]!) !== wanted) continue;
-    let end = index + 1;
-    while (end < lines.length && !SECTION_BOUNDARY.test(lines[end]!.trim())) end += 1;
-    ranges.push({
-      start: offsets[index]!,
-      end: end < lines.length ? offsets[end]! : text.length,
-      body: lines.slice(index + 1, end).join("\n").trim(),
-    });
-  }
+  if (start !== undefined) ranges.push({ start, end: text.length, body: text.slice(bodyStart).trim() });
   return ranges;
 }
 
@@ -115,17 +116,17 @@ interface MemorySection {
   readonly body: string;
 }
 
-const FENCE = /^(```|~~~)/;
 const EMPTY_ISSUES = /^(none|n\/a|no (known |genuine |open )?(issues|risks)( or risks)?)\.?$/i;
 
 function splitSections(text: string): { preamble: string; sections: MemorySection[] } {
   const preamble: string[] = [];
   const sections: { heading: string; body: string[] }[] = [];
-  let fenced = false;
+  let fence: string | undefined;
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
-    if (FENCE.test(trimmed)) fenced = !fenced;
-    if (!fenced && /^##\s/.test(trimmed)) sections.push({ heading: trimmed, body: [] });
+    const previousFence = fence;
+    fence = nextMarkdownFence(trimmed, fence);
+    if (!previousFence && !fence && /^##\s/.test(trimmed)) sections.push({ heading: trimmed, body: [] });
     else if (sections.length > 0) sections.at(-1)!.body.push(line);
     else preamble.push(line);
   }
@@ -141,9 +142,10 @@ function headingRank(heading: string): number {
 }
 
 function isDiscarded(section: MemorySection): boolean {
+  if (!section.body) return true;
   const heading = normalizedHeading(section.heading);
   if (heading === normalizedHeading(RECENT_PROMPTS_HEADING)) return true;
-  return heading === normalizedHeading(ISSUES_HEADING) && (section.body === "" || EMPTY_ISSUES.test(section.body.replace(/^[-*]\s*/, "")));
+  return heading === normalizedHeading(ISSUES_HEADING) && EMPTY_ISSUES.test(section.body.replace(/^[-*]\s*/, ""));
 }
 
 export function canonicalMemoryLayout(text: string): string {
@@ -163,6 +165,6 @@ export function canonicalMemoryLayout(text: string): string {
     .filter((section) => !isDiscarded(section))
     .map((section, index) => ({ section, index }))
     .sort((a, b) => headingRank(a.section.heading) - headingRank(b.section.heading) || a.index - b.index)
-    .map(({ section }) => (section.body ? `${section.heading}\n${section.body}` : section.heading));
+    .map(({ section }) => `${section.heading}\n${section.body}`);
   return [preamble, ...ordered].filter(Boolean).join("\n\n");
 }

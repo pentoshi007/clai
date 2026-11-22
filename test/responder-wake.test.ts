@@ -263,57 +263,34 @@ describe("runtime responder listening lease", () => {
     ctx.unsubscribe();
   });
 
-  it("keeps an aborted responder analysis durable without auto-retrying", async () => {
+  it.each([
+    { status: "aborted" },
+    { status: "completed", outcome: { status: "aborted" } },
+  ] as const)("keeps aborted analysis ($status) available to foreground without auto-retrying", async (result) => {
     const { manager } = await fixture();
     const ctx = buildResponder(manager, "no-retry");
-    ctx.runTurn.mockImplementation(
-      async (_prompt: string, onStarted: () => void) => {
-        onStarted();
-        return { status: "aborted" as const };
-      },
-    );
+    const release = vi.spyOn(manager, "releaseResponderNotificationClaim");
+    ctx.runTurn.mockImplementationOnce(async (_prompt: string, onStarted: () => void) => {
+      onStarted();
+      return result;
+    });
     ctx.responder.activate();
-    await startResponderJob(
-      manager,
-      "no-retry",
-      ctx.jobs.getResponderLeaseId("no-retry"),
-    );
-    await waitFor(() => ctx.runTurn.mock.calls.length === 1);
-    await sleep(300);
+    const lease = ctx.jobs.getResponderLeaseId("no-retry")!;
+    await startResponderJob(manager, "no-retry", lease);
+    await waitFor(() => release.mock.calls.length === 1);
 
     expect(ctx.runTurn).toHaveBeenCalledTimes(1);
     const first = manager.getPendingNotifications("no-retry")[0];
     expect(first).toMatchObject({ deliveryStartedAt: expect.any(String) });
     expect(first?.deliveredAt).toBeUndefined();
 
-    ctx.runTurn.mockImplementation(
-      async (prompt: string, onStarted: () => void) => {
-        onStarted();
-        ctx.acknowledgePrompt(prompt);
-        return { status: "completed" as const };
-      },
-    );
-    await startResponderJob(
-      manager,
-      "no-retry",
-      ctx.jobs.getResponderLeaseId("no-retry"),
-    );
-    await waitFor(() => ctx.runTurn.mock.calls.length === 2);
-    await sleep(100);
-
-    // The aborted receipt is not re-presented in this runtime, but it was never
-    // consumed either: a fresh lease can still claim it.
+    await startResponderJob(manager, "no-retry", lease);
+    await waitFor(() => release.mock.calls.length === 2);
     expect(ctx.runTurn).toHaveBeenCalledTimes(2);
     expect(ctx.runTurn.mock.calls[1]?.[0]).not.toContain(`job=${first?.jobId}`);
-    const retained = manager
-      .getPendingNotifications("no-retry")
-      .find((candidate) => candidate.id === first?.id);
-    expect(retained?.deliveredAt).toBeUndefined();
-    manager.releaseResponderLease("no-retry", ctx.jobs.getResponderLeaseId("no-retry"));
-    const freshLease = manager.activateResponderLease("no-retry");
-    expect(
-      manager.claimNextResponderNotification("no-retry", freshLease)?.id,
-    ).toBe(first?.id);
+    expect(manager.getPendingNotifications("no-retry")).toEqual([first]);
+    expect(manager.claimNextResponderNotification("no-retry", lease, "wake")).toBeUndefined();
+    expect(manager.claimNextResponderNotification("no-retry", lease)?.id).toBe(first?.id);
     ctx.unsubscribe();
   });
 

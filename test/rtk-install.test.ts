@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   compareSemver,
   currentTarget,
@@ -15,6 +15,8 @@ import {
   parseSemver,
   pathContains,
   resolveLatestTag,
+  RTK_RELEASES,
+  RTK_REPO,
   verifyChecksum,
 } from "../src/tools/rtk/release.js";
 import { planInstall, planUpdate, pathGuidance } from "../src/tools/rtk/install.js";
@@ -273,9 +275,47 @@ describe("rtk download hardening", () => {
   }, 20_000);
 });
 
+function mockReleaseFetch() {
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(null, { status: 404 }));
+  onTestFinished(() => { fetch.mockRestore(); });
+  return fetch;
+}
+
 describe("rtk latest release resolution", () => {
-  it("resolves the live latest tag from GitHub", async () => {
-    const tag = await resolveLatestTag();
-    expect(tag).toMatch(/^v\d+\.\d+\.\d+/);
-  }, 30_000);
+  it("uses the release redirect without consuming GitHub API quota", async () => {
+    const fetch = mockReleaseFetch().mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: { location: `${RTK_RELEASES}/tag/v0.50.1` },
+    }));
+    const onAttempt = vi.fn();
+
+    await expect(resolveLatestTag(onAttempt)).resolves.toBe("v0.50.1");
+
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(`${RTK_RELEASES}/latest`, expect.objectContaining({ redirect: "manual" }));
+    expect(onAttempt).not.toHaveBeenCalled();
+  });
+
+  it("uses the GitHub API when the release redirect is unavailable", async () => {
+    const fetch = mockReleaseFetch()
+      .mockRejectedValueOnce(new TypeError("network unavailable"))
+      .mockResolvedValueOnce(Response.json({ tag_name: "v0.50.2" }));
+    const onAttempt = vi.fn();
+
+    await expect(resolveLatestTag(onAttempt)).resolves.toBe("v0.50.2");
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenNthCalledWith(2, `https://api.github.com/repos/${RTK_REPO}/releases/latest`, expect.objectContaining({
+      headers: expect.objectContaining({ Accept: "application/vnd.github+json" }),
+    }));
+    expect(onAttempt).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it("rejects an API result with no release tag instead of using a non-release redirect", async () => {
+    const fetch = mockReleaseFetch()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/login" } }))
+      .mockResolvedValueOnce(Response.json({ name: "No release tag" }));
+
+    await expect(resolveLatestTag()).rejects.toThrow(/could not read the latest rtk release/i);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });

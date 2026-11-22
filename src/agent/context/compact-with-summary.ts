@@ -23,6 +23,7 @@ import {
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import {
+  assertUsableCompactionSummary,
   buildCompactionChunkPrompt,
   buildCompactionReducePrompt,
   buildCompactionUserPrompt,
@@ -32,8 +33,6 @@ import {
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
   COMPACTION_MAX_COMPLETION_TOKENS,
   COMPACTION_SYSTEM_PROMPT,
-  looksLikeIncompleteCompactionSummary,
-  looksLikeTranscriptReplay,
   normalizeCompactionSummary,
 } from "../compaction-summary.js";
 import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../durable-envelope.js";
@@ -327,19 +326,7 @@ export async function compactMessagesWithSummary(
     const visible = normalizeCompactionSummary(
       stripThinking(first ?? "").visible,
     );
-    if (!visible) {
-      throw new Error("compaction failed: model returned an empty summary");
-    }
-    if (looksLikeTranscriptReplay(visible)) {
-      throw new Error(
-        "compaction failed: model replayed the transcript instead of summarizing — original context retained",
-      );
-    }
-    if (looksLikeIncompleteCompactionSummary(visible)) {
-      throw new Error(
-        "compaction failed: model returned an incomplete summary — original context retained",
-      );
-    }
+    assertUsableCompactionSummary(visible);
     return visible;
   };
 
@@ -498,19 +485,7 @@ export async function compactMessagesWithSummary(
   const instructionMemory = reconcileCompactionUserInstructions(withoutRecentUserPrompts(normalizedSummary), messages);
   const summary = canonicalMemoryLayout(withoutSkillRecovery(instructionMemory.summary));
   const skills = compactedSkills(messages);
-  if (!summary) {
-    throw new Error("compaction failed: model returned an empty summary");
-  }
-  if (looksLikeTranscriptReplay(summary)) {
-    throw new Error(
-      "compaction failed: model replayed the transcript instead of summarizing — retry /compact or switch model",
-    );
-  }
-  if (looksLikeIncompleteCompactionSummary(summary)) {
-    throw new Error(
-      "compaction failed: model returned an incomplete summary — retry /compact or switch model",
-    );
-  }
+  assertUsableCompactionSummary(summary);
 
   const head = preserveSystemHead ? [messages[0]!] : [];
   const protectedUser = completedTurn ? undefined : latestUserMessage(messages);

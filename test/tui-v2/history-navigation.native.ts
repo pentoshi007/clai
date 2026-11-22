@@ -51,6 +51,9 @@ async function settle(action: () => unknown = () => undefined): Promise<void> {
   });
   await act(async () => { await setup.flush(); });
 }
+async function settleUntil(predicate: () => boolean, attempts = 20): Promise<void> {
+  for (let index = 0; index < attempts && !predicate(); index += 1) await settle();
+}
 function picker(): ScrollBoxRenderable {
   const value = setup.renderer.root.findDescendantById("picker-options");
   assert.ok(value instanceof ScrollBoxRenderable);
@@ -193,6 +196,7 @@ try {
     }
   }
   await open(options.map((option, index) => ({ ...option, active: index === 50 })));
+  await settleUntil(() => selectedIndex() === 50);
   assertSelected(50, "initial active session");
   await settle(() => setup.mockInput.pressArrow("up"));
   assertSelected(49, "navigation from the active session");

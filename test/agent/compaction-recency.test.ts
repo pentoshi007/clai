@@ -140,7 +140,7 @@ describe('compaction sees the end of the session', () => {
     for (const bad of [
       '',
       'TOOL: Tool result\n[tools: fs.read]\nbytes = 12 lines = 3',
-      '## Work completed\n- we did the',
+      '## Work completed\n- Verified the parser.\n## Current state and next steps',
     ]) {
       let calls = 0;
       await expect(

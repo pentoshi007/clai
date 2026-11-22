@@ -5,8 +5,8 @@ import {
   orderPlanTasksForDisplay,
   progressBar,
   progressView,
-  taskGlyph,
   taskOwnerChip,
+  taskPaneGlyph,
   taskStateColor,
   wrapPlanText,
 } from "../../ui-core/rendering/plan-view.js";
@@ -93,7 +93,7 @@ function taskRows(input: PlanViewInput, width: number): readonly PlanRow[] {
   const { ink } = input;
   const rows: PlanRow[] = [];
   planTasks(input.plan).forEach((task, index) => {
-    const glyph = adaptPresenterGlyphs(taskGlyph(task), ink.unicode);
+    const glyph = adaptPresenterGlyphs(taskPaneGlyph(task), ink.unicode) || " ";
     const token = taskStateColor(task.state);
     taskTitleLines(task, width).forEach((line, offset) => {
       const head = offset === 0 ? ink.fg(token, glyph) : " ";

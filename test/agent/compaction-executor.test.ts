@@ -123,6 +123,36 @@ describe("shared compaction executor", () => {
     expect(stream).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["an unclosed fence", "## Work done\n```ts\nconst value =", "stop"],
+    ["provider-reported interruption", "## Work done\nLooks complete.", "incomplete"],
+  ])("retries once after %s and accepts a concise recovered summary", async (_label, text, finish) => {
+    const recovered = "## Current state and next steps\n- Verify sign in";
+    complete.mockResolvedValueOnce(completion(text, finish)).mockResolvedValueOnce(completion(recovered));
+
+    await expect(executeCompactionSummary(baseExecution())).resolves.toBe(recovered);
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0].messages.at(-1).content).toContain("QUALITY RETRY");
+  });
+
+  it("reports the actual failure after a retry rather than saying it happened twice", async () => {
+    complete.mockResolvedValueOnce(completion(""))
+      .mockResolvedValueOnce(completion("## Work done\nTOOL: Tool fs.read result (exit=0, ok=true):"));
+
+    await expect(executeCompactionSummary(baseExecution())).rejects.toThrow(
+      "model replayed the transcript — original context retained",
+    );
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["end_turn", "stop_sequence", "completed"])("accepts a normal %s exactly at the token budget", async (finish) => {
+    complete.mockResolvedValue({ ...completion("## Work done\nFinished.", finish), usage: { completionTokens: 4096 } });
+
+    await expect(executeCompactionSummary(baseExecution())).resolves.toContain("Finished.");
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
   it("retries an output-limited summary with more room and the same prompt", async () => {
     stream
       .mockResolvedValueOnce(completion("", "length"))
@@ -178,6 +208,17 @@ describe("shared compaction executor", () => {
     await expect(
       executeCompactionSummary(baseExecution()),
     ).rejects.toThrow(/summary output limit twice/i);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not salvage a long truncated replay by dropping its last receipt", async () => {
+    complete.mockResolvedValue(completion([
+      "## Work done",
+      ...Array.from({ length: 24 }, (_, index) => `- Verified the behavior of module ${index} with the regression suite.`),
+      "TOOL: Tool fs.read result (exit=0, ok=true):",
+    ].join("\n"), "length"));
+
+    await expect(executeCompactionSummary(baseExecution())).rejects.toThrow(/summary output limit twice.*original context retained/);
     expect(complete).toHaveBeenCalledTimes(2);
   });
 

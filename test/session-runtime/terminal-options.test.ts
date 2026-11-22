@@ -5,8 +5,8 @@ import { createInkTheme } from "../../src/classic/render/ink-theme.js";
 
 describe("per-attachment terminal settings", () => {
   it("forwards terminal capabilities without forwarding unrelated environment secrets", () => {
-    const options = runtimeTerminalOptions("classic", { TERM: "xterm-256color", TERM_PROGRAM: "termux", TMUX: "/tmp/tmux/session", OPENAI_API_KEY: "secret", CLAI_RUNTIME_TOKEN: "secret" });
-    expect(options).toEqual({ ui: "classic", env: { TERM: "xterm-256color", TERM_PROGRAM: "termux", TMUX: "/tmp/tmux/session" } });
+    const options = runtimeTerminalOptions("classic", { TERM: "xterm-256color", TERM_PROGRAM: "termux", TMUX: "/tmp/tmux/session", SSH_TTY: "/dev/pts/2", SSH_CONNECTION: "address fixture", OPENAI_API_KEY: "secret", CLAI_RUNTIME_TOKEN: "secret" });
+    expect(options).toEqual({ ui: "classic", env: { TERM: "xterm-256color", TERM_PROGRAM: "termux", TMUX: "/tmp/tmux/session", SSH_TTY: "/dev/pts/2" } });
     expect(parseRuntimeTerminalOptions(options)).toEqual(options);
   });
 

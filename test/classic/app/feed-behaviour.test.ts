@@ -10,6 +10,7 @@ import {
 } from "../../../src/app/events/sequencer.js";
 import type { ActionId } from "../../../src/ui-core/actions/action-id.js";
 import { keyEvent, type MouseEvent } from "../../../src/classic/input/key-event.js";
+import { layoutEditor } from "../../../src/classic/chrome/editor-view.js";
 import type { FeedBlock } from "../../../src/classic/feed/feed-blocks.js";
 import { planTranscriptWindow } from "../../../src/classic/feed/transcript-window.js";
 import { TranscriptViewport } from "../../../src/classic/feed/transcript-viewport.js";
@@ -270,7 +271,7 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
     );
   });
 
-  it("copies a non-empty mouse drag and leaves ordinary clicks uncopied", async () => {
+  it.each(["transcript", "composer", "without a drag packet"])("copies one mouse selection when released over %s", async (releaseTarget) => {
     harness = createHarness();
     const block: FeedBlock = {
       key: "0:a",
@@ -292,11 +293,20 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
     } as never);
     harness.wiring.setTranscriptSelectionGeometry({ left: 2, top: 1 });
     const write = vi.spyOn(harness.services.ports.clipboard, "writeText");
+    const draft = { text: "draft", cursor: 0 };
+    harness.wiring.observeComposer({ state: draft, layout: layoutEditor(draft, 40), scrollTop: 0, height: 1 });
+    harness.wiring.composerPointerGeometry = { left: 2, top: 3 };
 
     harness.wiring.handleMouse(mouse({ x: 3, y: 1 }));
-    harness.wiring.handleMouse(mouse({ x: 6, y: 1, drag: true }));
-    harness.wiring.handleMouse(mouse({ x: 6, y: 1, release: true }));
-    await vi.waitFor(() => expect(write).toHaveBeenCalledWith("lpha"));
+    if (releaseTarget !== "without a drag packet") {
+      harness.wiring.handleMouse(mouse({ x: 6, y: 1, drag: true }));
+    }
+    expect(write).not.toHaveBeenCalled();
+    const release = mouse({ x: 6, y: releaseTarget === "composer" ? 3 : 1, release: true });
+    harness.wiring.handleMouse(release);
+    harness.wiring.handleMouse(release);
+    expect(write).toHaveBeenCalledExactlyOnceWith(releaseTarget === "composer" ? "lpha bravo\ncharl" : "lpha");
+    expect(harness.services.selection.getState().dragging).toBe(false);
     await vi.waitFor(() => expect(harness!.toastTexts()).toContain("Copied selection"));
     expect(harness.services.focus.activeContext()).toBe("composer");
     harness.wiring.router.handle({ type: "key", key: keyEvent("x", {}, "x") });
