@@ -141,6 +141,7 @@ describe("Kiro token refresh routing", () => {
     const calls = stubFetch((url, init) => {
       if (url.endsWith("/refreshToken")) return json({ accessToken: "fresh", expiresIn: 3600 });
       if (fixtures.isKiroCatalogRequest(url, init)) return fixtures.kiroCatalogResponse([]);
+      if (url.endsWith("/v1/responses")) return new Response("not found", { status: 404 });
       return fixtures.kiroStreamResponse([
         fixtures.encodeKiroFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
       ]);

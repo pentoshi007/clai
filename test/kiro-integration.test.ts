@@ -109,12 +109,26 @@ function emptyKiroModelCatalogResponse(): Response {
   });
 }
 
+function legacyKiroFetch(
+  handler: (input: unknown, init?: RequestInit) => Response | Promise<Response>,
+) {
+  return vi.fn(async (input: unknown, init?: RequestInit) => {
+    if (String(input).endsWith("/v1/responses")) {
+      return new Response("not found", { status: 404 });
+    }
+    return handler(input, init);
+  });
+}
+
 function stubKiroGeneration(
   handler: (input: unknown, init?: RequestInit) => Response | Promise<Response>,
 ) {
-  const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+  const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
     if (isKiroModelCatalogRequest(input, init)) {
       return emptyKiroModelCatalogResponse();
+    }
+    if (String(input).endsWith("/v1/responses")) {
+      return new Response("not found", { status: 404 });
     }
     return handler(input, init);
   });
@@ -254,7 +268,7 @@ describe("Kiro provider integration", () => {
   });
 
   it("dynamically fetches models and generates thinking/agentic variants", async () => {
-    const fetchMock = vi.fn(async () => {
+    const fetchMock = legacyKiroFetch(async () => {
       return new Response(
         JSON.stringify({
           models: [
@@ -298,7 +312,7 @@ describe("Kiro provider integration", () => {
   it("falls back to the real current catalog when discovery fails", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("boom", { status: 500 })),
+      legacyKiroFetch(async () => new Response("boom", { status: 500 })),
     );
     const models = await kiroProvider.listModels!({ apiKey: "key-that-fails" });
 
@@ -312,7 +326,7 @@ describe("Kiro provider integration", () => {
 
   it("fetches live account quota via GetUsageLimits", async () => {
     let captured: { url: string; target: string; body: Record<string, unknown> } | undefined;
-    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
       captured = {
         url: String(input),
         target: String(
@@ -411,7 +425,7 @@ describe("Kiro provider integration", () => {
       { stopReason: "stop" },
     );
 
-    const fetchMock = vi.fn(async () => createStreamResponse([frame1, frame2, frame3]));
+    const fetchMock = legacyKiroFetch(async () => createStreamResponse([frame1, frame2, frame3]));
     vi.stubGlobal("fetch", fetchMock);
 
     const tokens: string[] = [];
@@ -463,7 +477,7 @@ describe("Kiro provider integration", () => {
       { ":event-type": "messageStopEvent" },
       { stopReason: "stop" },
     );
-    vi.stubGlobal("fetch", vi.fn(async () => createStreamResponse([frame1, frame2, frame3, frame4])));
+    vi.stubGlobal("fetch", legacyKiroFetch(async () => createStreamResponse([frame1, frame2, frame3, frame4])));
 
     const events: Array<{ type: string; text?: string }> = [];
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
@@ -500,7 +514,7 @@ describe("Kiro provider integration", () => {
       { stopReason: "tool_use" },
     );
 
-    const fetchMock = vi.fn(async () => createStreamResponse([frame1, frame2]));
+    const fetchMock = legacyKiroFetch(async () => createStreamResponse([frame1, frame2]));
     vi.stubGlobal("fetch", fetchMock);
 
     const tools: ToolDefinition[] = [
@@ -536,7 +550,7 @@ describe("Kiro provider integration", () => {
 
   it("pairs prior toolUses with their toolResults across a tool round-trip", async () => {
     let capturedBody: Record<string, unknown> | undefined;
-    const fetchMock = vi.fn(async (_i: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (_i: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const frame = encodeFrame(
         { ":event-type": "assistantResponseEvent" },
@@ -591,7 +605,7 @@ describe("Kiro provider integration", () => {
   it("settles a failed post-200 admission before endpoint fallback", async () => {
     const generationBodies: string[] = [];
     let generationCount = 0;
-    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
       if (isKiroModelCatalogRequest(input, init)) {
         return emptyKiroModelCatalogResponse();
       }
@@ -662,7 +676,7 @@ describe("Kiro provider integration", () => {
 
   it("handles automatic token refresh on 401 error", async () => {
     let callCount = 0;
-    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       if (isKiroModelCatalogRequest(input, init)) {
         return emptyKiroModelCatalogResponse();
@@ -715,7 +729,7 @@ describe("Kiro provider integration", () => {
 
   it("sends the required chatTriggerType/origin fields in the request body", async () => {
     let capturedBody: Record<string, unknown> | undefined;
-    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (_input: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const frame = encodeFrame(
         { ":event-type": "assistantResponseEvent" },
@@ -742,7 +756,7 @@ describe("Kiro provider integration", () => {
     expect(convState?.chatTriggerType).toBe("MANUAL");
     const current = convState?.currentMessage as Record<string, unknown>;
     const uim = current?.userInputMessage as Record<string, unknown>;
-    expect(uim?.origin).toBe("AI_EDITOR");
+    expect(uim?.origin).toBe("KIRO_CLI");
     expect(uim?.modelId).toBe("claude-haiku-4.5");
   });
 
@@ -875,7 +889,7 @@ describe("Kiro provider integration", () => {
   it("derives deterministic conversation ID when session affinity is present", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 
-    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const frame = encodeFrame(
         { ":event-type": "assistantResponseEvent" },
@@ -910,7 +924,7 @@ describe("Kiro provider integration", () => {
 
   it("derives a content-stable conversation ID when no session affinity is set", async () => {
     const ids: string[] = [];
-    const fetchMock = vi.fn(async (_i: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (_i: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       ids.push(String((body.conversationState as Record<string, unknown>).conversationId));
       const frame = encodeFrame(
@@ -991,7 +1005,7 @@ describe("Kiro provider integration", () => {
     const serverError =
       '{"message":"additionalModelRequestFields is not supported\nfor this model","reason":"REQUEST_BODY_INVALID"}';
     const bodies: Record<string, unknown>[] = [];
-    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (_input: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       bodies.push(body);
       if ("additionalModelRequestFields" in body) {
@@ -1265,7 +1279,7 @@ describe("Kiro provider integration", () => {
         cacheWriteInputTokens: 300,
       },
     );
-    const fetchMock = vi.fn(async () => createStreamResponse([frame1, frame2]));
+    const fetchMock = legacyKiroFetch(async () => createStreamResponse([frame1, frame2]));
     vi.stubGlobal("fetch", fetchMock);
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
 
@@ -1296,7 +1310,7 @@ describe("Kiro provider integration", () => {
       { ":event-type": "meteringEvent" },
       { cacheReadInputTokens: 700, cacheWriteInputTokens: 200 },
     );
-    const fetchMock = vi.fn(async () => createStreamResponse([frame1, frame2, frame3]));
+    const fetchMock = legacyKiroFetch(async () => createStreamResponse([frame1, frame2, frame3]));
     vi.stubGlobal("fetch", fetchMock);
     const cred = encodeKiroKey({ accessToken: "tok", authMethod: "builder-id" });
 
@@ -1318,7 +1332,7 @@ describe("Kiro provider integration", () => {
   it("extracts code and exchanges social token from kiro:// redirect URL", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 
-    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return new Response(
         JSON.stringify({
@@ -1344,7 +1358,7 @@ describe("Kiro provider integration", () => {
   });
 
   it("extracts code from query string and rejects redirect errors", async () => {
-    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    const fetchMock = legacyKiroFetch(async (_input: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return new Response(
         JSON.stringify({
@@ -1453,7 +1467,7 @@ describe("Kiro provider integration", () => {
     it("exchanges a portal code with kiro-cli's token body and UA", async () => {
       let capturedBody: Record<string, unknown> | undefined;
       let capturedHeaders: Headers | undefined;
-      const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const fetchMock = legacyKiroFetch(async (input: unknown, init?: RequestInit) => {
         capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
         capturedHeaders = new Headers(init?.headers);
         return new Response(
@@ -1649,7 +1663,7 @@ describe("Kiro 9router parity hardening", () => {
     )).rejects.toThrow(/duplicate.*header/i);
   });
 
-  it("fails closed on a filtered terminal reason without publishing partial output", async () => {
+  it("streams deltas live and still fails closed on a filtered terminal reason", async () => {
     const tokens: string[] = [];
     stubKiroGeneration(() => createStreamResponse([
       encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "private partial" }),
@@ -1662,10 +1676,10 @@ describe("Kiro 9router parity hardening", () => {
       { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
       (token) => tokens.push(token),
     )).rejects.toThrow(/content safety policy.*content_filtered/i);
-    expect(tokens).toEqual([]);
+    expect(tokens).toEqual(["private partial"]);
   });
 
-  it("treats an ellipsis-only final as empty without publishing it", async () => {
+  it("streams an ellipsis-only final live but rejects it as empty", async () => {
     const tokens: string[] = [];
     stubKiroGeneration(() => createStreamResponse([
       encodeFrame({ ":event-type": "assistantResponseEvent" }, { content: "..." }),
@@ -1676,7 +1690,7 @@ describe("Kiro 9router parity hardening", () => {
       { apiKey: encodeKiroKey({ accessToken: "token", authMethod: "builder-id" }) },
       (token) => tokens.push(token),
     )).rejects.toThrow(/without a visible answer/i);
-    expect(tokens).toEqual([]);
+    expect(tokens).toEqual(["..."]);
   });
 
   it("forwards deferred tool-result images with the paired result turn", async () => {

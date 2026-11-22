@@ -11,6 +11,7 @@ import {
   readKiroIdeProfileArn,
   validateExternalIdpTokenEndpoint,
 } from "./kiro-import-sources.js";
+import { kiroCliUserAgent, KIRO_CLI_ORIGIN } from "./kiro-wire.js";
 
 export const KIRO_DEFAULT_REGION = "us-east-1";
 export const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
@@ -1611,10 +1612,12 @@ function parseModelInfo(value: unknown): KiroModelInfo | undefined {
 }
 
 function kiroCatalogHeaders(credential: KiroCredential): Record<string, string> {
+  const userAgent = kiroCliUserAgent();
   const headers: Record<string, string> = {
     Accept: "application/json",
-    "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-    "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+    "User-Agent": userAgent,
+    "X-Amz-User-Agent": userAgent,
+    "x-amzn-kiro-origin": KIRO_CLI_ORIGIN,
   };
   if (credential.authMethod === "api_key" && credential.apiKey) {
     headers["Authorization"] = `Bearer ${credential.apiKey}`;
@@ -1721,6 +1724,9 @@ export async function getKiroUsageLimits(
     "Content-Type": "application/x-amz-json-1.0",
     "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
     Accept: "application/json",
+    "User-Agent": kiroCliUserAgent(),
+    "X-Amz-User-Agent": kiroCliUserAgent(),
+    "x-amzn-kiro-origin": KIRO_CLI_ORIGIN,
     ...(credential.authMethod === "api_key" && credential.apiKey
       ? { Authorization: `Bearer ${credential.apiKey}`, TokenType: "API_KEY" }
       : { Authorization: `Bearer ${credential.accessToken}` }),

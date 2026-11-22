@@ -87,3 +87,24 @@ export function installKiroFetch(
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
+
+export function kiroSseResponse(events: readonly unknown[]): Response {
+  const text = events
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
+  return new Response(text, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+export function isKiroCreateResponseRequest(input: unknown): boolean {
+  return String(input).endsWith("/v1/responses");
+}
+
+export function kiroCreateResponseText(text: string): Response {
+  return kiroSseResponse([
+    { type: "response.output_text.delta", delta: text },
+    { type: "response.completed", response: { status: "completed" } },
+  ]);
+}

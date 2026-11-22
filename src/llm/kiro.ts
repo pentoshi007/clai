@@ -1,14 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type {
-  ChatMessage,
   CompletionRequest,
   CompletionResult,
-  NativeToolCall,
   ReasoningEffort,
   TokenUsage,
-  ToolCallStreamDelta,
-  ToolDefinition,
-  UsageCharge,
 } from "../types.js";
 import {
   defaultModels,
@@ -36,24 +31,31 @@ import { nearestAcceptedEffort } from "./reasoning-controls.js";
 import {
   completeGenerationAttempt,
   generationFetch,
+  withUnrecordedTransport,
 } from "./operation-usage.js";
 import { learnModelVisionCapability } from "./capability/vision-registry.js";
 import { emitStreamReasoningDelta } from "./stream-events.js";
+import { createReasoningArtifactProvenance } from "./reasoning-artifacts.js";
 import {
-  createReasoningArtifactProvenance,
-  createReasoningArtifactReplayTarget,
-  reasoningArtifactSignature,
-  reasoningArtifactText,
-  reasoningArtifactsForMessage,
-  selectReasoningArtifactsForReplay,
-} from "./reasoning-artifacts.js";
-import {
-  createKiroReasoningAccumulator,
   kiroPrivateReasoningNote,
   kiroCatalogEfforts,
   kiroReasoningResult,
   sentKiroReasoningEffort,
 } from "./kiro-reasoning.js";
+import {
+  buildKiroConversationState,
+  buildKiroCreateResponseBody,
+  formatKiroTools,
+  kiroCliUserAgent,
+  kiroConversationId,
+  kiroCreateResponseHeaders,
+  kiroLegacyHeaders,
+  normalizeKiroTurns,
+  KIRO_AGENT_MODE,
+  KIRO_MODE_IDENTIFIER,
+} from "./kiro-wire.js";
+import { parseKiroCreateResponseSse } from "./kiro-sse.js";
+import { createKiroStreamAccumulator } from "./kiro-stream.js";
 import {
   registerModelCatalogLimits,
   registerModelReasoningEfforts,
@@ -615,56 +617,6 @@ function getCandidateEndpoints(
     : [codewhisperer, modern, q];
 }
 
-function uuidFromHex(hex: string): string {
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
-function kiroConversationId(seedContent: string): string {
-  const affinity = currentSessionAffinity();
-  if (affinity) {
-    return uuidFromHex(createHash("md5").update(`kiro-${affinity}`).digest("hex"));
-  }
-  const seed = seedContent.trim();
-  if (seed) {
-    return uuidFromHex(
-      createHash("md5").update(`kiro-${seed.slice(0, 4000)}`).digest("hex"),
-    );
-  }
-  return randomUUID();
-}
-
-function sanitizeToolName(name: string): string {
-  return name.slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, "_") || "tool";
-}
-
-function formatKiroTools(tools?: ToolDefinition[]): Array<{
-  toolSpecification: {
-    name: string;
-    description: string;
-    inputSchema: { json: Record<string, unknown> };
-  };
-}> {
-  if (!tools || tools.length === 0) return [];
-  return tools.map((tool) => ({
-    toolSpecification: {
-      name: sanitizeToolName(tool.wireName || tool.name),
-      description: (tool.description || `Tool: ${tool.name}`).slice(0, 10237),
-      inputSchema: {
-        json: tool.parameters as unknown as Record<string, unknown>,
-      },
-    },
-  }));
-}
-
-function imageFormatFromMediaType(mediaType: string): string {
-  const lower = mediaType.toLowerCase();
-  if (lower.includes("jpeg") || lower.includes("jpg")) return "jpeg";
-  if (lower.includes("png")) return "png";
-  if (lower.includes("gif")) return "gif";
-  if (lower.includes("webp")) return "webp";
-  return "png";
-}
-
 export function buildKiroRequestBody(
   request: CompletionRequest,
   credential: KiroCredential,
@@ -672,207 +624,11 @@ export function buildKiroRequestBody(
   agentic: boolean,
   thinking: boolean,
 ): Record<string, unknown> {
-  const agenticInstruction = agentic
-    ? "When modifying or creating files, keep writes concise:\n- Maximum 350 lines per file write/tool call (recommended 300 lines or fewer).\n- Prefer targeted, incremental edits instead of rewriting entire files.\n- For large files, write or append in chunks across multiple tool calls."
-    : "";
-
-  const systemParts: string[] = [];
-  if (agenticInstruction) systemParts.push(agenticInstruction);
-
-  let sawLeadingSystem = false;
-  const nonSystemMessages: ChatMessage[] = [];
-  for (const msg of request.messages) {
-    if (msg.role !== "system") {
-      nonSystemMessages.push(msg);
-      continue;
-    }
-    if (!sawLeadingSystem) {
-      sawLeadingSystem = true;
-      if (msg.content.trim()) systemParts.push(msg.content.trim());
-      continue;
-    }
-    if (msg.content.trim()) {
-      nonSystemMessages.push({
-        ...msg,
-        role: "user",
-        content: msg.content.startsWith("[SYSTEM]")
-          ? msg.content
-          : `[SYSTEM]\n${msg.content}`,
-      });
-    }
-  }
-
-  const systemPrompt = systemParts.join("\n\n").trim();
-
-  interface NormalizedTurn {
-    role: "user" | "assistant";
-    content: string;
-    reasoningContent?:
-      | { reasoningText: { text: string; signature: string } }
-      | { redactedContent: string }
-      | undefined;
-    toolCalls?: NativeToolCall[] | undefined;
-    toolResults?: Array<{
-      toolUseId: string;
-      content: Array<{ text: string }>;
-      status: "success" | "error";
-    }> | undefined;
-    toolUses?: Array<{
-      toolUseId: string;
-      name: string;
-      input: Record<string, unknown>;
-    }> | undefined;
-    images?: Array<{
-      format: string;
-      source: { bytes: string };
-    }> | undefined;
-  }
-
-  const turns: NormalizedTurn[] = [];
-
-  for (const msg of nonSystemMessages) {
-    if (msg.role === "user") {
-      const images = (msg.images ?? []).map((img) => ({
-        format: imageFormatFromMediaType(img.mediaType),
-        source: { bytes: img.dataBase64 },
-      }));
-
-      const last = turns[turns.length - 1];
-      if (last && last.role === "user") {
-        if (msg.content) {
-          last.content = last.content
-            ? `${last.content}\n\n${msg.content}`
-            : msg.content;
-        }
-        if (images.length > 0) {
-          last.images = [...(last.images ?? []), ...images];
-        }
-      } else {
-        turns.push({
-          role: "user",
-          content: msg.content || "",
-          images: images.length > 0 ? images : undefined,
-        });
-      }
-    } else if (msg.role === "assistant") {
-      const replayTarget = createReasoningArtifactReplayTarget({
-        provider: "kiro",
-        model: upstreamModel,
-        dialect: "kiro-eventstream",
-      });
-      const replayedReasoning = request.forceReasoningReplay === false
-        ? []
-        : selectReasoningArtifactsForReplay({
-            artifacts: reasoningArtifactsForMessage(msg),
-            target: replayTarget,
-            context: {
-              hasToolCalls: Boolean(msg.toolCalls?.length),
-              forceScope: request.forceReasoningReplay === true,
-            },
-            observe: request.onReasoningArtifactReplayDecision,
-          });
-      const signedReasoning = replayedReasoning.find((artifact) =>
-        reasoningArtifactText(artifact) && reasoningArtifactSignature(artifact)
-      );
-      const redactedReasoning = replayedReasoning.find((artifact) => {
-        const raw = asKiroRecord(artifact.raw);
-        return artifact.kind === "encrypted" && typeof raw?.redactedContent === "string";
-      });
-      const redactedRaw = redactedReasoning
-        ? asKiroRecord(redactedReasoning.raw)
-        : undefined;
-      const reasoningContent = signedReasoning
-        ? {
-            reasoningText: {
-              text: reasoningArtifactText(signedReasoning)!,
-              signature: reasoningArtifactSignature(signedReasoning)!,
-            },
-          }
-        : typeof redactedRaw?.redactedContent === "string"
-          ? { redactedContent: redactedRaw.redactedContent }
-          : undefined;
-      const toolUses = (msg.toolCalls ?? [])
-        .filter((tc) => tc.id)
-        .map((tc) => ({
-          toolUseId: tc.id,
-          name: sanitizeToolName(tc.name),
-          input: tc.args ?? {},
-        }));
-
-      const last = turns[turns.length - 1];
-      if (last && last.role === "assistant") {
-        if (msg.content) {
-          last.content = last.content
-            ? `${last.content}\n\n${msg.content}`
-            : msg.content;
-        }
-        if (reasoningContent && !last.reasoningContent) {
-          last.reasoningContent = reasoningContent;
-        }
-        if (toolUses.length > 0) {
-          last.toolUses = [...(last.toolUses ?? []), ...toolUses];
-        }
-      } else {
-        turns.push({
-          role: "assistant",
-          content: msg.content || "",
-          reasoningContent,
-          toolUses: toolUses.length > 0 ? toolUses : undefined,
-        });
-      }
-    } else if (msg.role === "tool") {
-      const toolResult = {
-        toolUseId: msg.toolCallId || "tool_result",
-        content: [{ text: msg.content || "" }],
-        status: msg.ok === false ? ("error" as const) : ("success" as const),
-      };
-
-      const last = turns[turns.length - 1];
-      if (last && last.role === "user") {
-        last.toolResults = [...(last.toolResults ?? []), toolResult];
-      } else {
-        turns.push({
-          role: "user",
-          content: "",
-          toolResults: [toolResult],
-        });
-      }
-    }
-  }
-
-  if (turns.length === 0) {
-    turns.push({ role: "user", content: "continue" });
-  }
-
-  if (systemPrompt && turns[0] && turns[0].role === "user") {
-    turns[0].content = turns[0].content
-      ? `${systemPrompt}\n\n${turns[0].content}`
-      : systemPrompt;
-  }
-
-  if (turns[turns.length - 1]?.role !== "user") {
-    turns.push({ role: "user", content: "continue" });
-  }
-
-  for (const turn of turns) {
-    if (turn.role === "user" && !turn.content.trim()) {
-      turn.content =
-        turn.toolResults && turn.toolResults.length > 0
-          ? "Tool results provided."
-          : "continue";
-    }
-  }
-
+  const conversation = normalizeKiroTurns(request, upstreamModel, { agentic });
   const modelInfo = kiroModelCatalog().find((info) => info.modelId === upstreamModel);
-  const kiroTools = formatKiroTools(request.tools);
   const wantsThinking =
-    (request.thinking?.enabled ?? thinking) &&
-    request.thinking?.effort !== "none";
-  const additionalFields = kiroAdditionalModelFields(
-    request,
-    modelInfo,
-    wantsThinking,
-  );
+    (request.thinking?.enabled ?? thinking) && request.thinking?.effort !== "none";
+  const additionalFields = kiroAdditionalModelFields(request, modelInfo, wantsThinking);
   const thinkingDirective =
     !additionalFields &&
     wantsThinking &&
@@ -880,91 +636,23 @@ export function buildKiroRequestBody(
     !modelInfo?.additionalModelRequestFieldsSchema
       ? legacyThinkingDirective(request.thinking?.effort)
       : "";
-  if (thinkingDirective) {
-    for (const turn of turns) {
-      if (turn.role === "user") {
-        turn.content = `${thinkingDirective}\n\n${turn.content}`;
-      }
-    }
-  }
-
-  const history: Array<Record<string, unknown>> = [];
-  for (let i = 0; i < turns.length - 1; i++) {
-    const turn = turns[i]!;
-    if (turn.role === "user") {
-      const userContext: Record<string, unknown> = {};
-      if (turn.toolResults && turn.toolResults.length > 0) {
-        userContext.toolResults = turn.toolResults;
-      }
-      history.push({
-        userInputMessage: {
-          content: turn.content,
-          modelId: upstreamModel,
-          origin: "AI_EDITOR",
-          userInputMessageContext: userContext,
-          ...(turn.images && turn.images.length > 0
-            ? { images: turn.images }
-            : {}),
-        },
-      });
-    } else {
-      history.push({
-        assistantResponseMessage: {
-          content: turn.content,
-          ...(turn.reasoningContent
-            ? { reasoningContent: turn.reasoningContent }
-            : {}),
-          ...(turn.toolUses && turn.toolUses.length > 0
-            ? { toolUses: turn.toolUses }
-            : {}),
-        },
-      });
-    }
-  }
-
-  const lastTurn = turns[turns.length - 1]!;
-  const currentContext: Record<string, unknown> = {};
-  if (kiroTools.length > 0) {
-    currentContext.tools = kiroTools;
-  }
-  if (lastTurn.toolResults && lastTurn.toolResults.length > 0) {
-    currentContext.toolResults = lastTurn.toolResults;
-  }
-
-  const currentMessage = {
-    userInputMessage: {
-      content: lastTurn.content,
-      modelId: upstreamModel,
-      origin: "AI_EDITOR",
-      userInputMessageContext: currentContext,
-      ...(lastTurn.images && lastTurn.images.length > 0
-        ? { images: lastTurn.images }
-        : {}),
-    },
-  };
-
   const firstUserContent =
-    turns.find((t) => t.role === "user" && t.content.trim())?.content ?? "";
-  const conversationId = kiroConversationId(firstUserContent);
+    conversation.turns.find((turn) => turn.role === "user" && turn.content.trim())
+      ?.content ?? "";
+  const state = buildKiroConversationState({
+    conversation,
+    modelId: upstreamModel,
+    conversationId: kiroConversationId(firstUserContent, currentSessionAffinity()),
+    tools: formatKiroTools(request.tools),
+    mergeSystemPrompt: true,
+    userTurnPrefix: thinkingDirective,
+  });
 
-  const payload: Record<string, unknown> = {
-    conversationState: {
-      conversationId,
-      chatTriggerType: "MANUAL",
-      history,
-      currentMessage,
-    },
+  return {
+    conversationState: state,
+    ...(credential.profileArn ? { profileArn: credential.profileArn } : {}),
+    ...(additionalFields ? { additionalModelRequestFields: additionalFields } : {}),
   };
-
-  if (credential.profileArn) {
-    payload.profileArn = credential.profileArn;
-  }
-
-  if (additionalFields) {
-    payload.additionalModelRequestFields = additionalFields;
-  }
-
-  return payload;
 }
 
 let cachedKiroModels: string[] | null = null;
@@ -972,6 +660,7 @@ let cachedKiroModelInfo: readonly KiroModelInfo[] = [];
 let cachedKiroApiGeneration: KiroApiGeneration | undefined;
 let cachedKiroCredentialId = "";
 let lastKiroModelFetch = 0;
+const createResponseSupport = new Map<string, boolean>();
 const MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
 
 function kiroCredentialId(credential: KiroCredential): string {
@@ -1038,6 +727,7 @@ export function resetKiroModelCacheForTesting(): void {
   cachedKiroApiGeneration = undefined;
   cachedKiroCredentialId = "";
   lastKiroModelFetch = 0;
+  createResponseSupport.clear();
 }
 
 export async function fetchKiroUsageLimits(
@@ -1053,6 +743,318 @@ const KIRO_MODEL_RANK = (id: string): number => {
   if (/^claude-/.test(base)) return 1;
   return 2;
 };
+
+interface KiroRequestPlan {
+  conversation: ReturnType<typeof normalizeKiroTurns>;
+  conversationState: ReturnType<typeof buildKiroConversationState>;
+  legacyBody: Record<string, unknown>;
+  responsesBody: ReturnType<typeof buildKiroCreateResponseBody>;
+  additionalFields: Record<string, unknown> | undefined;
+}
+
+function buildKiroRequestPlan(
+  request: CompletionRequest,
+  credential: KiroCredential,
+  upstream: string,
+  agentic: boolean,
+  thinking: boolean,
+): KiroRequestPlan {
+  const conversation = normalizeKiroTurns(request, upstream, { agentic });
+  const tools = formatKiroTools(request.tools);
+  const modelInfo = kiroModelCatalog().find((info) => info.modelId === upstream);
+  const wantsThinking =
+    (request.thinking?.enabled ?? thinking) && request.thinking?.effort !== "none";
+  const additionalFields = kiroAdditionalModelFields(request, modelInfo, wantsThinking);
+  const thinkingDirective =
+    !additionalFields &&
+    wantsThinking &&
+    isLegacyThinkingDirectiveModel(upstream) &&
+    !modelInfo?.additionalModelRequestFieldsSchema
+      ? legacyThinkingDirective(request.thinking?.effort)
+      : "";
+  const firstUserContent =
+    conversation.turns.find((turn) => turn.role === "user" && turn.content.trim())
+      ?.content ?? "";
+  const conversationId = kiroConversationId(firstUserContent, currentSessionAffinity());
+  const conversationState = buildKiroConversationState({
+    conversation,
+    modelId: upstream,
+    conversationId,
+    tools,
+  });
+  const legacyState = buildKiroConversationState({
+    conversation,
+    modelId: upstream,
+    conversationId,
+    tools,
+    mergeSystemPrompt: true,
+    userTurnPrefix: thinkingDirective,
+  });
+
+  return {
+    conversation,
+    conversationState,
+    legacyBody: {
+      conversationState: legacyState,
+      ...(credential.profileArn ? { profileArn: credential.profileArn } : {}),
+      ...(additionalFields ? { additionalModelRequestFields: additionalFields } : {}),
+    },
+    responsesBody: buildKiroCreateResponseBody({
+      conversation,
+      conversationState,
+      modelId: upstream,
+      profileArn: credential.profileArn,
+      agentMode: KIRO_AGENT_MODE,
+      modeIdentifier: KIRO_MODE_IDENTIFIER,
+      tools,
+      additionalModelRequestFields: additionalFields,
+      userTurnPrefix: thinkingDirective,
+    }),
+    additionalFields,
+  };
+}
+
+function kiroBearerToken(credential: KiroCredential): string {
+  return credential.apiKey || credential.accessToken;
+}
+
+function kiroTokenType(credential: KiroCredential): string | undefined {
+  if (credential.authMethod === "api_key") return "API_KEY";
+  if (credential.authMethod === "external_idp") return "EXTERNAL_IDP";
+  return undefined;
+}
+
+function kiroHttpError(status: number, body: string): ProviderError {
+  if (status === 401 || status === 403) {
+    return new ProviderError(`Kiro authentication failed (${status}): ${body}`, status);
+  }
+  if (status === 400) {
+    return new ProviderError(`Kiro request invalid (${status}): ${body}`, status, body);
+  }
+  return new ProviderError(`Kiro endpoint error (${status}): ${body}`, status);
+}
+
+function kiroRuntimeBaseUrl(credential: KiroCredential): string {
+  return `https://runtime.${resolveKiroRuntimeRegion(credential)}.kiro.dev`;
+}
+
+function isMissingCreateResponseOperation(status: number, body: string): boolean {
+  if (status === 404 || status === 405 || status === 501) return true;
+  return status === 400 && /unknown operation|not found|unsupported|invalid action/i.test(body);
+}
+
+type KiroCreateResponseAttempt = {
+  response?: Response | undefined;
+  requestId?: string | undefined;
+  error?: ProviderError | undefined;
+  fallback: boolean;
+};
+
+async function tryKiroCreateResponse(
+  plan: KiroRequestPlan,
+  credential: KiroCredential,
+  signal: AbortSignal | undefined,
+): Promise<KiroCreateResponseAttempt> {
+  const capabilityKey = kiroCredentialId(credential);
+  if (createResponseSupport.get(capabilityKey) === false) {
+    return { fallback: true };
+  }
+  const response = await withUnrecordedTransport(() =>
+    generationFetch(
+      `${kiroRuntimeBaseUrl(credential)}/v1/responses`,
+      {
+        method: "POST",
+        headers: kiroCreateResponseHeaders({
+          accessToken: kiroBearerToken(credential),
+          profileArn: credential.profileArn,
+          tokenType: kiroTokenType(credential),
+          userAgent: kiroCliUserAgent(),
+        }),
+        body: JSON.stringify(plan.responsesBody),
+        ...(signal ? { signal } : {}),
+      },
+    )
+  );
+  if (response.ok) {
+    createResponseSupport.set(capabilityKey, true);
+    return {
+      response,
+      requestId: response.headers.get("x-amzn-requestid") ?? undefined,
+      fallback: false,
+    };
+  }
+  const body = await response.text().catch(() => "");
+  const fallback = isMissingCreateResponseOperation(response.status, body);
+  if (fallback) createResponseSupport.set(capabilityKey, false);
+  return { error: kiroHttpError(response.status, body), fallback };
+}
+
+function flushKiroDeltas(
+  accumulator: ReturnType<typeof createKiroStreamAccumulator>,
+  request: CompletionRequest,
+  onToken: (token: string) => void,
+): void {
+  for (const event of accumulator.drain()) {
+    if (event.kind === "token") onToken(event.text);
+    else if (event.kind === "reasoning") {
+      emitStreamReasoningDelta(request.onStreamEvent, event.text);
+    } else request.onToolCallDelta?.(event.delta);
+  }
+}
+
+interface KiroConsumeInput {
+  response: Response;
+  api: "create-response" | "generate-assistant-response";
+  requestId?: string | undefined;
+  request: CompletionRequest;
+  onToken: (token: string) => void;
+  upstream: string;
+  requestedModel: string;
+  additionalFields: Record<string, unknown> | undefined;
+}
+
+async function consumeKiroResponse(input: KiroConsumeInput): Promise<CompletionResult> {
+  const { response, request, onToken, upstream, requestedModel } = input;
+  if (!response.body) {
+    throw new ProviderError("Empty response body from Kiro endpoint", 500);
+  }
+
+  const accumulator = createKiroStreamAccumulator();
+  if (input.api === "create-response") {
+    for await (const event of parseKiroCreateResponseSse(response.body, {
+      requestId: input.requestId,
+    })) {
+      accumulator.applySseEvent(event);
+      flushKiroDeltas(accumulator, request, onToken);
+    }
+  } else {
+    for await (const frame of parseEventStream(response.body)) {
+      accumulator.applyLegacyFrame(frame);
+      flushKiroDeltas(accumulator, request, onToken);
+    }
+  }
+
+  accumulator.finish();
+  flushKiroDeltas(accumulator, request, onToken);
+
+  const toolCalls = accumulator.toolCalls;
+  const reasoning = accumulator.reasoning;
+  const stopReason = accumulator.stopReason;
+  const stopDisposition = kiroStopDisposition(stopReason, toolCalls.length > 0);
+  if (stopDisposition === "blocked") {
+    throw new ProviderError(
+      `Kiro blocked the response under its content safety policy (${stopReason})`,
+      400,
+    );
+  }
+  if (
+    stopDisposition === "retryable" ||
+    stopDisposition === "incomplete" ||
+    stopDisposition === "unknown"
+  ) {
+    throw new ProviderError(`Kiro ended with non-success stop reason: ${stopReason}`, 502);
+  }
+
+  const hasReasoningEvidence = Boolean(
+    reasoning.text.trim() || reasoning.signature || reasoning.redactedContent,
+  );
+  if (!accumulator.text.trim() && !hasReasoningEvidence && toolCalls.length === 0) {
+    throw new ProviderError("Kiro completed without a visible answer.");
+  }
+  if (toolCalls.length === 0 && ["...", "\u2026"].includes(accumulator.text.trim())) {
+    throw new ProviderError("Kiro completed without a visible answer.");
+  }
+  if (reasoning.opaque && (accumulator.text.trim() || toolCalls.length > 0)) {
+    emitStreamReasoningDelta(
+      request.onStreamEvent,
+      kiroPrivateReasoningNote({
+        model: upstream,
+        effort: sentKiroReasoningEffort(input.additionalFields),
+        signatureChars: reasoning.signature.length,
+      }),
+    );
+  }
+
+  let finishReason = accumulator.finishReason;
+  if (stopDisposition === "length") finishReason = "length";
+  else if (toolCalls.length > 0) finishReason = "tool_calls";
+
+  const advertisedWindow = kiroModelCatalog().find(
+    (info) => info.modelId === upstream,
+  )?.maxInputTokens;
+  const catalogWindow =
+    advertisedWindow !== undefined && Number.isFinite(advertisedWindow) && advertisedWindow > 0
+      ? Math.floor(advertisedWindow)
+      : undefined;
+  const contextUsagePercentage = accumulator.contextUsagePercentage;
+  const estimatedPromptTokens = providerRatioPromptTokens(
+    contextUsagePercentage,
+    catalogWindow ?? modelContextWindow(upstream, "kiro"),
+  );
+
+  const { promptTokens, completionTokens, cachedTokens, cacheCreationTokens, charges } =
+    accumulator.usage;
+  const tokenUsage: TokenUsage | undefined =
+    promptTokens > 0 || completionTokens > 0
+      ? {
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          exact: true,
+          cachedPromptTokens: cachedTokens > 0 ? cachedTokens : undefined,
+          cacheCreationTokens: cacheCreationTokens > 0 ? cacheCreationTokens : undefined,
+          uncachedPromptTokens:
+            cachedTokens > 0 ? Math.max(0, promptTokens - cachedTokens) : promptTokens,
+        }
+      : catalogWindow !== undefined
+        ? providerRatioUsage({
+            percentUsed: contextUsagePercentage,
+            windowTokens: catalogWindow,
+          })
+        : estimatedPromptTokens !== undefined
+          ? {
+              promptTokens: estimatedPromptTokens,
+              completionTokens: 0,
+              totalTokens: estimatedPromptTokens,
+              exact: false,
+            }
+          : undefined;
+  const usage: TokenUsage | undefined = tokenUsage
+    ? { ...tokenUsage, ...(charges.length > 0 ? { charges } : {}) }
+    : charges.length > 0
+      ? {
+          promptTokens: 0,
+          promptTokensKnown: false,
+          completionTokens: 0,
+          totalTokens: 0,
+          exact: false,
+          charges,
+        }
+      : undefined;
+
+  const reasoningResult = kiroReasoningResult({
+    reasoning,
+    provenance: createReasoningArtifactProvenance({
+      provider: "kiro",
+      model: upstream,
+      dialect: "kiro-eventstream",
+    }),
+    hasToolCalls: toolCalls.length > 0,
+  });
+
+  return {
+    text: accumulator.text,
+    provider: "kiro",
+    model: requestedModel,
+    api: input.api,
+    finishReason,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    usage,
+    reasoningArtifacts:
+      reasoningResult.artifacts.length > 0 ? reasoningResult.artifacts : undefined,
+    reasoningBlock: reasoningResult.block,
+  };
+}
 
 export const kiroProvider: LlmProvider = {
   id: "kiro",
@@ -1131,577 +1133,104 @@ export const kiroProvider: LlmProvider = {
       auth,
       async (credential) => {
         await ensureKiroModelCatalog(credential).catch(() => {});
-        const body = buildKiroRequestBody(
-          request,
-          credential,
-          upstream,
-          agentic,
-          thinking,
-        );
+        const plan = buildKiroRequestPlan(request, credential, upstream, agentic, thinking);
+
+        let lastError: Error | undefined;
+        const createResponse = await tryKiroCreateResponse(plan, credential, request.signal)
+          .catch((error: unknown) => {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            return undefined;
+          });
+
+        if (createResponse?.response) {
+          try {
+            return await consumeKiroResponse({
+              response: createResponse.response,
+              api: "create-response",
+              requestId: createResponse.requestId,
+              request,
+              onToken,
+              upstream,
+              requestedModel,
+              additionalFields: plan.additionalFields,
+            });
+          } catch (error) {
+            if (request.signal?.aborted) {
+              completeGenerationAttempt("cancelled");
+              throw error;
+            }
+            const status = error instanceof ProviderError ? error.status : undefined;
+            completeGenerationAttempt("failure", undefined, status);
+            throw error;
+          }
+        }
+        if (createResponse?.error) {
+          if (!createResponse.fallback) throw createResponse.error;
+          lastError = createResponse.error;
+        }
+
         const catalogIsFresh = hasFreshKiroCatalog(kiroCredentialId(credential));
         const endpoints = getCandidateEndpoints(
           credential,
           catalogIsFresh ? cachedKiroApiGeneration : undefined,
         );
 
-        let lastError: Error | undefined;
-
         for (const endpoint of endpoints) {
           try {
-            const headers: Record<string, string> = {
-              "Content-Type": endpoint.awsTarget
-                ? "application/x-amz-json-1.0"
-                : "application/json",
-              Accept: "application/vnd.amazon.eventstream",
-              "Amz-Sdk-Request": "attempt=1; max=3",
-              "Amz-Sdk-Invocation-Id": randomUUID(),
-              "User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
-              "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
-              "x-amzn-kiro-agent-mode": "vibe",
-              "x-amzn-codewhisperer-optout": "true",
-              "x-amzn-codewhisperer-machine-id": "kiro-desktop",
-            };
-
-            if (endpoint.awsTarget) {
-              headers["X-Amz-Target"] =
-                "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
-            }
-
-            if (credential.authMethod === "api_key" && credential.apiKey) {
-              headers["Authorization"] = `Bearer ${credential.apiKey}`;
-              headers["TokenType"] = "API_KEY";
-            } else if (credential.accessToken) {
-              headers["Authorization"] = `Bearer ${credential.accessToken}`;
-              headers["x-amz-sso-bearer"] = credential.accessToken;
-              if (credential.authMethod === "external_idp") {
-                headers["TokenType"] = "EXTERNAL_IDP";
-              }
-              if (credential.profileArn) {
-                headers["x-amzn-codewhisperer-profile-arn"] = credential.profileArn;
-              }
-            }
-
             const response = await generationFetch(endpoint.url, {
               method: "POST",
-              headers,
-              body: JSON.stringify(body),
+              headers: kiroLegacyHeaders({
+                accessToken: kiroBearerToken(credential),
+                profileArn: credential.profileArn,
+                tokenType: kiroTokenType(credential),
+                userAgent: kiroCliUserAgent(),
+                awsTarget: endpoint.awsTarget,
+              }),
+              body: JSON.stringify(plan.legacyBody),
               ...(request.signal ? { signal: request.signal } : {}),
             });
 
             if (!response.ok) {
               const errorText = await response.text().catch(() => "");
+              const error = kiroHttpError(response.status, errorText);
               if (response.status === 401 || response.status === 403) {
-                const authError = new ProviderError(
-                  `Kiro authentication failed (${response.status}): ${errorText}`,
-                  response.status,
-                );
-                if (response.status === 401 && credential.refreshToken) {
-                  throw authError;
-                }
-                lastError = authError;
+                if (response.status === 401 && credential.refreshToken) throw error;
+                lastError = error;
                 continue;
               }
-              if (response.status === 400) {
-                throw new ProviderError(
-                  `Kiro request invalid (${response.status}): ${errorText}`,
-                  response.status,
-                  errorText,
-                );
-              }
-              lastError = new ProviderError(
-                `Kiro endpoint error (${response.status}): ${errorText}`,
-                response.status,
-              );
+              if (response.status === 400) throw error;
+              lastError = error;
               continue;
             }
-
             if (!response.body) {
               throw new ProviderError("Empty response body from Kiro endpoint", 500);
             }
 
-            let fullText = "";
-            type PendingKiroStreamEvent =
-              | { kind: "token"; text: string }
-              | { kind: "reasoning"; text: string }
-              | { kind: "tool"; delta: ToolCallStreamDelta };
-            const pendingStreamEvents: PendingKiroStreamEvent[] = [];
-            const reasoning = createKiroReasoningAccumulator((text) =>
-              pendingStreamEvents.push({ kind: "reasoning", text })
-            );
-            let insideThinkingTag = false;
-            let finishReason: string = "stop";
-            let stopReason = "";
-
-            interface PartialToolCall {
-              id: string;
-              name: string;
-              rawArgs: string;
-              syntheticId: boolean;
-            }
-            const accumulatedTools: PartialToolCall[] = [];
-            let currentToolIndex = -1;
-
-            let promptTokens = 0;
-            let completionTokens = 0;
-            let cachedTokens = 0;
-            let cacheCreationTokens = 0;
-            const usageCharges: UsageCharge[] = [];
-            let contextUsagePercentage: number | undefined;
-
-            for await (const frame of parseEventStream(response.body)) {
-              const messageType =
-                typeof frame.headers[":message-type"] === "string"
-                  ? frame.headers[":message-type"]
-                  : "event";
-              const headerExceptionType =
-                typeof frame.headers[":exception-type"] === "string"
-                  ? frame.headers[":exception-type"]
-                  : "";
-              const eventType =
-                (typeof frame.headers[":event-type"] === "string"
-                  ? frame.headers[":event-type"]
-                  : undefined) ||
-                headerExceptionType ||
-                Object.keys(frame.payload).find((key) =>
-                  key.endsWith("Event") || key.endsWith("Exception")
-                ) ||
-                "";
-
-              const nestedPayload = asKiroRecord(frame.payload[eventType]);
-              const eventPayload = nestedPayload ?? frame.payload;
-              if (messageType === "exception" || headerExceptionType || eventType.endsWith("Exception")) {
-                const message =
-                  typeof eventPayload.message === "string"
-                    ? eventPayload.message
-                    : typeof eventPayload.reason === "string"
-                      ? eventPayload.reason
-                      : "Kiro stream exception";
-                throw new ProviderError(
-                  `${headerExceptionType || eventType || "Kiro stream exception"}: ${message}`,
-                  inBandBadRequestStatus({
-                    type: headerExceptionType || eventType,
-                    code: eventPayload.code,
-                    message,
-                  }) ??
-                    (/THINKING_SIGNATURE_INVALID|THINKING_SIGNATURE_MISMATCH/i.test(
-                      `${headerExceptionType} ${eventType} ${message}`,
-                    )
-                      ? 400
-                      : 502),
-                  JSON.stringify(eventPayload),
-                );
-              }
-
-              if (
-                typeof eventPayload.usage === "number" &&
-                Number.isFinite(eventPayload.usage) &&
-                eventPayload.usage >= 0 &&
-                typeof eventPayload.unit === "string" &&
-                eventPayload.unit.trim()
-              ) {
-                usageCharges.push({
-                  amount: eventPayload.usage,
-                  unit:
-                    typeof eventPayload.unitPlural === "string" &&
-                    eventPayload.unitPlural.trim()
-                      ? eventPayload.unitPlural.trim()
-                      : eventPayload.unit.trim(),
-                  ...(typeof eventPayload.currency === "string"
-                    ? { currency: eventPayload.currency }
-                    : {}),
-                });
-              }
-
-              if (
-                eventType === "assistantResponseEvent" ||
-                eventType.includes("Response")
-              ) {
-                if (typeof eventPayload.contextUsagePercentage === "number") {
-                  contextUsagePercentage = eventPayload.contextUsagePercentage;
-                }
-                const chunk =
-                  typeof eventPayload.content === "string"
-                    ? eventPayload.content
-                    : "";
-                if (chunk) {
-                  let visibleChunk = "";
-                  let reasoningChunk = "";
-                  let i = 0;
-                  while (i < chunk.length) {
-                    if (!insideThinkingTag) {
-                      const tagStart = chunk.indexOf("<thinking>", i);
-                      if (tagStart !== -1) {
-                        visibleChunk += chunk.slice(i, tagStart);
-                        insideThinkingTag = true;
-                        i = tagStart + 10;
-                      } else {
-                        visibleChunk += chunk.slice(i);
-                        break;
-                      }
-                    } else {
-                      const tagEnd = chunk.indexOf("</thinking>", i);
-                      if (tagEnd !== -1) {
-                        reasoningChunk += chunk.slice(i, tagEnd);
-                        insideThinkingTag = false;
-                        i = tagEnd + 11;
-                      } else {
-                        reasoningChunk += chunk.slice(i);
-                        break;
-                      }
-                    }
-                  }
-
-                  reasoning.push(reasoningChunk);
-                  if (visibleChunk) {
-                    fullText += visibleChunk;
-                    pendingStreamEvents.push({ kind: "token", text: visibleChunk });
-                  }
-                }
-              } else if (
-                eventType === "reasoningContentEvent" ||
-                /reasoning/i.test(eventType) ||
-                eventPayload.reasoningText !== undefined
-              ) {
-                const reasoningPayload = asKiroRecord(eventPayload.reasoningText);
-                const chunk =
-                  typeof eventPayload.text === "string"
-                    ? eventPayload.text
-                    : typeof eventPayload.content === "string"
-                      ? eventPayload.content
-                      : typeof eventPayload.reasoningText === "string"
-                        ? eventPayload.reasoningText
-                        : typeof reasoningPayload?.text === "string"
-                          ? reasoningPayload.text
-                          : typeof reasoningPayload?.Text === "string"
-                            ? reasoningPayload.Text
-                            : "";
-                reasoning.sign(
-                  typeof eventPayload.signature === "string"
-                    ? eventPayload.signature
-                    : typeof eventPayload.Signature === "string"
-                      ? eventPayload.Signature
-                      : typeof reasoningPayload?.signature === "string"
-                        ? reasoningPayload.signature
-                        : typeof reasoningPayload?.Signature === "string"
-                          ? reasoningPayload.Signature
-                          : "",
-                );
-                reasoning.redact(
-                  typeof eventPayload.redactedContent === "string"
-                    ? eventPayload.redactedContent
-                    : "",
-                );
-                reasoning.push(chunk);
-              } else if (eventType === "codeEvent") {
-                const chunk =
-                  typeof eventPayload.content === "string"
-                    ? eventPayload.content
-                    : "";
-                if (chunk) {
-                  fullText += chunk;
-                  pendingStreamEvents.push({ kind: "token", text: chunk });
-                }
-              } else if (eventType === "toolUseEvent") {
-                const explicitToolId =
-                  typeof eventPayload.toolUseId === "string"
-                    ? eventPayload.toolUseId
-                    : typeof eventPayload.tool_use_id === "string"
-                      ? eventPayload.tool_use_id
-                      : undefined;
-                const name =
-                  typeof eventPayload.name === "string" ? eventPayload.name : "";
-                const input = eventPayload.input;
-                const stopped = eventPayload.stop === true;
-                let existing = explicitToolId
-                  ? accumulatedTools.find((tool) => tool.id === explicitToolId)
-                  : accumulatedTools[currentToolIndex];
-
-                if (
-                  explicitToolId &&
-                  !existing &&
-                  currentToolIndex >= 0 &&
-                  accumulatedTools[currentToolIndex]?.syntheticId
-                ) {
-                  const activeTool = accumulatedTools[currentToolIndex]!;
-                  activeTool.id = explicitToolId;
-                  activeTool.syntheticId = false;
-                  existing = activeTool;
-                }
-                if (!existing && (explicitToolId || name || input !== undefined)) {
-                  existing = {
-                    id: explicitToolId ?? `tool_${accumulatedTools.length + 1}`,
-                    name,
-                    rawArgs: "",
-                    syntheticId: explicitToolId === undefined,
-                  };
-                  accumulatedTools.push(existing);
-                }
-                if (!existing) {
-                  if (stopped) currentToolIndex = -1;
-                  continue;
-                }
-
-                if (typeof input === "string") {
-                  existing.rawArgs += input;
-                } else if (input && typeof input === "object") {
-                  existing.rawArgs = JSON.stringify(input);
-                }
-                if (name && !existing.name) existing.name = name;
-                currentToolIndex = accumulatedTools.indexOf(existing);
-                const argumentsBytes = Buffer.byteLength(existing.rawArgs, "utf8");
-                const delta: ToolCallStreamDelta = {
-                  index: currentToolIndex,
-                  id: existing.id,
-                  name: existing.name,
-                  argumentsBytes,
-                };
-                pendingStreamEvents.push({ kind: "tool", delta });
-                finishReason = "tool_calls";
-                if (stopped) currentToolIndex = -1;
-              } else if (eventType === "messageStopEvent") {
-                stopReason = mergeKiroStopReason(
-                  stopReason,
-                  normalizeKiroStopReason(
-                    eventPayload.stopReason ?? eventPayload.stop_reason,
-                  ),
-                );
-              } else if (eventType === "contextUsageEvent") {
-                if (typeof eventPayload.contextUsagePercentage === "number") {
-                  contextUsagePercentage = eventPayload.contextUsagePercentage;
-                }
-              } else if (
-                eventType === "metricsEvent" ||
-                eventType === "meteringEvent" ||
-                eventType === "metadataEvent" ||
-                eventType === "MetadataEvent"
-              ) {
-                const usagePayload = asKiroRecord(eventPayload.usage);
-                const tokenUsagePayload = asKiroRecord(eventPayload.tokenUsage);
-                const usageSources = [
-                  eventPayload,
-                  ...(usagePayload ? [usagePayload] : []),
-                  ...(tokenUsagePayload ? [tokenUsagePayload] : []),
-                ];
-                const inputTokens = firstKiroMetric(usageSources, [
-                  "inputTokens",
-                  "input_tokens",
-                  "promptTokens",
-                  "prompt_tokens",
-                ]);
-                const outputTokens = firstKiroMetric(usageSources, [
-                  "outputTokens",
-                  "output_tokens",
-                  "completionTokens",
-                  "completion_tokens",
-                ]);
-                const cacheReadTokens = firstKiroMetric(usageSources, [
-                  "cacheReadTokens",
-                  "cache_read_tokens",
-                  "cacheReadInputTokens",
-                  "cache_read_input_tokens",
-                  "cachedTokens",
-                ]);
-                const cacheWriteTokens = firstKiroMetric(usageSources, [
-                  "cacheCreationTokens",
-                  "cache_creation_tokens",
-                  "cacheWriteTokens",
-                  "cache_write_tokens",
-                  "cacheWriteInputTokens",
-                  "cacheCreationInputTokens",
-                  "cache_creation_input_tokens",
-                ]);
-                if (inputTokens !== undefined) promptTokens = inputTokens;
-                if (outputTokens !== undefined) completionTokens = outputTokens;
-                if (cacheReadTokens !== undefined) {
-                  cachedTokens = Math.max(cachedTokens, cacheReadTokens);
-                }
-                if (cacheWriteTokens !== undefined) {
-                  cacheCreationTokens = Math.max(
-                    cacheCreationTokens,
-                    cacheWriteTokens,
-                  );
-                }
-                if (/^metadataevent$/i.test(eventType)) {
-                  stopReason = mergeKiroStopReason(
-                    stopReason,
-                    normalizeKiroStopReason(
-                      eventPayload.stopReason ?? eventPayload.stop_reason,
-                    ),
-                  );
-                }
-              }
-            }
-
-            const toolCalls: NativeToolCall[] = accumulatedTools.map((t) => {
-              let parsedArgs: Record<string, unknown> = {};
-              try {
-                parsedArgs = JSON.parse(t.rawArgs || "{}");
-              } catch {
-                parsedArgs = { raw: t.rawArgs };
-              }
-              return {
-                id: t.id,
-                name: t.name,
-                args: parsedArgs,
-                rawArguments: t.rawArgs,
-              };
+            return await consumeKiroResponse({
+              response,
+              api: "generate-assistant-response",
+              request,
+              onToken,
+              upstream,
+              requestedModel,
+              additionalFields: plan.additionalFields,
             });
-
-            reasoning.finish();
-            const hasReasoningEvidence = Boolean(
-              reasoning.text.trim() || reasoning.signature || reasoning.redactedContent,
-            );
-            const stopDisposition = kiroStopDisposition(stopReason, toolCalls.length > 0);
-            if (stopDisposition === "blocked") {
-              throw new ProviderError(
-                `Kiro blocked the response under its content safety policy (${stopReason})`,
-                400,
-              );
-            }
-            if (
-              stopDisposition === "retryable" ||
-              stopDisposition === "incomplete" ||
-              stopDisposition === "unknown"
-            ) {
-              throw new ProviderError(`Kiro ended with non-success stop reason: ${stopReason}`, 502);
-            }
-            if (
-              !fullText.trim() &&
-              !hasReasoningEvidence &&
-              toolCalls.length === 0
-            ) {
-              throw new ProviderError("Kiro completed without a visible answer.");
-            }
-            if (toolCalls.length === 0 && ["...", "…"].includes(fullText.trim())) {
-              throw new ProviderError("Kiro completed without a visible answer.");
-            }
-            if (reasoning.opaque && (fullText.trim() || toolCalls.length > 0)) {
-              pendingStreamEvents.push({
-                kind: "reasoning",
-                text: kiroPrivateReasoningNote({
-                  model: upstream,
-                  effort: sentKiroReasoningEffort(
-                    asKiroRecord(body.additionalModelRequestFields),
-                  ),
-                  signatureChars: reasoning.signature.length,
-                }),
-              });
-            }
-
-            if (stopDisposition === "length") {
-              finishReason = "length";
-            } else if (toolCalls.length > 0) {
-              finishReason = "tool_calls";
-            }
-
-            const advertisedWindow =
-              kiroModelCatalog().find((info) => info.modelId === upstream)
-                ?.maxInputTokens;
-            const catalogWindow =
-              advertisedWindow !== undefined &&
-              Number.isFinite(advertisedWindow) &&
-              advertisedWindow > 0
-                ? Math.floor(advertisedWindow)
-                : undefined;
-            const estimatedPromptTokens = providerRatioPromptTokens(
-              contextUsagePercentage,
-              catalogWindow ?? modelContextWindow(upstream, "kiro"),
-            );
-
-            const tokenUsage: TokenUsage | undefined =
-              promptTokens > 0 || completionTokens > 0
-                ? {
-                    promptTokens,
-                    completionTokens,
-                    totalTokens: promptTokens + completionTokens,
-                    exact: true,
-                    cachedPromptTokens: cachedTokens > 0 ? cachedTokens : undefined,
-                    cacheCreationTokens:
-                      cacheCreationTokens > 0 ? cacheCreationTokens : undefined,
-                    uncachedPromptTokens:
-                      cachedTokens > 0
-                        ? Math.max(0, promptTokens - cachedTokens)
-                        : promptTokens,
-                  }
-                : catalogWindow !== undefined
-                  ? providerRatioUsage({
-                      percentUsed: contextUsagePercentage,
-                      windowTokens: catalogWindow,
-                    })
-                  : estimatedPromptTokens !== undefined
-                    ? {
-                        promptTokens: estimatedPromptTokens,
-                        completionTokens: 0,
-                        totalTokens: estimatedPromptTokens,
-                        exact: false,
-                      }
-                    : undefined;
-            const usage: TokenUsage | undefined = tokenUsage
-              ? {
-                  ...tokenUsage,
-                  ...(usageCharges.length > 0 ? { charges: usageCharges } : {}),
-                }
-              : usageCharges.length > 0
-                ? {
-                    promptTokens: 0,
-                    promptTokensKnown: false,
-                    completionTokens: 0,
-                    totalTokens: 0,
-                    exact: false,
-                    charges: usageCharges,
-                  }
-                : undefined;
-            const reasoningResult = kiroReasoningResult({
-              reasoning,
-              provenance: createReasoningArtifactProvenance({
-                provider: "kiro",
-                model: upstream,
-                dialect: "kiro-eventstream",
-              }),
-              hasToolCalls: toolCalls.length > 0,
-            });
-
-            for (const event of pendingStreamEvents) {
-              if (event.kind === "token") {
-                onToken(event.text);
-              } else if (event.kind === "reasoning") {
-                emitStreamReasoningDelta(request.onStreamEvent, event.text);
-              } else {
-                request.onToolCallDelta?.(event.delta);
-              }
-            }
-
-            return {
-              text: fullText,
-              provider: "kiro",
-              model: requestedModel,
-              api: "kiro-eventstream",
-              finishReason,
-              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-              usage,
-              reasoningArtifacts: reasoningResult.artifacts.length > 0
-                ? reasoningResult.artifacts
-                : undefined,
-              reasoningBlock: reasoningResult.block,
-            };
-          } catch (err) {
+          } catch (error) {
             if (request.signal?.aborted) {
               completeGenerationAttempt("cancelled");
-              throw err;
+              throw error;
             }
-            const status = err instanceof ProviderError ? err.status : undefined;
+            const status = error instanceof ProviderError ? error.status : undefined;
             completeGenerationAttempt("failure", undefined, status);
             if (
-              err instanceof ProviderError &&
-              (
-                status === 400 ||
+              error instanceof ProviderError &&
+              (status === 400 ||
                 status === undefined ||
-                (status === 401 && Boolean(credential.refreshToken))
-              )
+                (status === 401 && Boolean(credential.refreshToken)))
             ) {
-              throw err;
+              throw error;
             }
-            lastError = err instanceof Error ? err : new Error(String(err));
+            lastError = error instanceof Error ? error : new Error(String(error));
           }
         }
 

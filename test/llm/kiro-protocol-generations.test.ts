@@ -9,17 +9,20 @@ import {
   encodeKiroFrame,
   installKiroFetch,
   isKiroCatalogRequest,
+  isKiroCreateResponseRequest,
   kiroCatalogResponse,
+  kiroSseResponse,
   kiroStreamResponse,
   requestBody,
 } from "../helpers/kiro-fixtures.js";
 
 const KEY = "kiro-protocol-test-key";
-const RESPONSE = kiroStreamResponse([
-  encodeKiroFrame(
-    { ":event-type": "assistantResponseEvent" },
-    { content: "ok" },
-  ),
+const RESPONSE = kiroSseResponse([
+  { type: "response.output_text.delta", delta: "ok" },
+  { type: "response.completed", response: { status: "completed" } },
+]);
+const LEGACY_RESPONSE = kiroStreamResponse([
+  encodeKiroFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),
 ]);
 
 const claudeSchema = {
@@ -79,12 +82,10 @@ function catalogModels() {
   ];
 }
 
-function generationBodies(
+function generationCalls(
   calls: readonly [unknown, RequestInit | undefined][],
-): Record<string, unknown>[] {
-  return calls
-    .filter(([input, init]) => !isKiroCatalogRequest(input, init))
-    .map(([, init]) => requestBody(init));
+): [unknown, RequestInit | undefined][] {
+  return calls.filter(([input, init]) => !isKiroCatalogRequest(input, init));
 }
 
 afterEach(() => {
@@ -94,7 +95,7 @@ afterEach(() => {
 });
 
 describe("Kiro catalog generations and reasoning wire fields", () => {
-  it("uses modern management discovery and runtime routing with schema metadata", async () => {
+  it("uses modern management discovery and CreateResponse routing with schema metadata", async () => {
     const calls: Array<[unknown, RequestInit | undefined]> = [];
     installKiroFetch(async (input, init) => {
       calls.push([input, init]);
@@ -141,7 +142,6 @@ describe("Kiro catalog generations and reasoning wire fields", () => {
       },
       { apiKey: KEY },
     );
-
     await kiroProvider.complete(
       {
         model: "claude-opus-5-thinking",
@@ -162,39 +162,43 @@ describe("Kiro catalog generations and reasoning wire fields", () => {
       "AmazonCodeWhispererService.ListAvailableModels",
     );
     expect(requestBody(catalogCall?.[1])).toEqual({ origin: "KIRO_CLI" });
-
-    const generationCalls = calls.filter(([input, init]) =>
-      !isKiroCatalogRequest(input, init),
+    expect(catalogHeaders.get("user-agent")).toMatch(
+      /^KiroCLI\/3\.5\.0 KAS\/0\.66\.119 /,
     );
-    expect(generationCalls).toHaveLength(5);
-    for (const [input, init] of generationCalls) {
-      expect(String(input)).toBe("https://runtime.us-east-1.kiro.dev/");
+    expect(catalogHeaders.get("x-amzn-kiro-origin")).toBe("KIRO_CLI");
+
+    const generations = generationCalls(calls);
+    expect(generations).toHaveLength(5);
+    for (const [input, init] of generations) {
+      expect(String(input)).toBe("https://runtime.us-east-1.kiro.dev/v1/responses");
       const headers = new Headers(init?.headers);
-      expect(headers.get("content-type")).toBe("application/x-amz-json-1.0");
-      expect(headers.get("x-amz-target")).toBe(
-        "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
-      );
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-amz-target")).toBeNull();
+      expect(headers.get("x-amzn-kiro-origin")).toBe("KIRO_CLI");
+      expect(headers.get("user-agent")).toMatch(/^KiroCLI\/3\.5\.0 KAS\/0\.66\.119 /);
     }
 
-    const bodies = generationBodies(calls);
-    expect(bodies[0]?.additionalModelRequestFields).toEqual({
-      thinking: { type: "adaptive", display: "summarized" },
-      output_config: { effort: "max" },
-      max_tokens: 64_000,
+    const bodies = generations.map(([, init]) => requestBody(init));
+    expect(bodies[0]?.model).toBe("claude-opus-5");
+    expect(bodies[0]?.stream).toBe(true);
+    expect(bodies[0]?.origin).toBe("KIRO_CLI");
+    expect(bodies[0]?.input).toEqual([{ role: "user", content: "solve" }]);
+    expect(bodies[0]?.reasoning).toEqual({
+      type: "adaptive",
+      effort: "max",
+      summary: "summarized",
     });
-    expect(bodies[1]?.additionalModelRequestFields).toEqual({
-      thinking: { type: "adaptive", display: "summarized" },
-      output_config: { effort: "low" },
+    expect(bodies[1]?.reasoning).toEqual({
+      type: "adaptive",
+      effort: "low",
+      summary: "summarized",
     });
-    expect(bodies[2]?.additionalModelRequestFields).toEqual({
-      reasoning: { effort: "none" },
-    });
-    expect(bodies[3]?.additionalModelRequestFields).toEqual({
-      reasoning: { effort: "high" },
-    });
-    expect(bodies[4]?.additionalModelRequestFields).toEqual({
-      thinking: { type: "adaptive", display: "summarized" },
-      output_config: { effort: "low" },
+    expect(bodies[2]?.reasoning).toEqual({ effort: "none" });
+    expect(bodies[3]?.reasoning).toEqual({ effort: "high" });
+    expect(bodies[4]?.reasoning).toEqual({
+      type: "adaptive",
+      effort: "low",
+      summary: "summarized",
     });
     expect(kiroModelCatalog()[0]?.promptCaching).toEqual({
       supportsPromptCaching: true,
@@ -203,7 +207,7 @@ describe("Kiro catalog generations and reasoning wire fields", () => {
     });
   });
 
-  it("falls back from modern management to legacy catalog and generation", async () => {
+  it("falls back to the legacy endpoint when /v1/responses is unavailable", async () => {
     const calls: Array<[unknown, RequestInit | undefined]> = [];
     installKiroFetch(async (input, init) => {
       calls.push([input, init]);
@@ -214,7 +218,10 @@ describe("Kiro catalog generations and reasoning wire fields", () => {
       if (url.includes("ListAvailableModels")) {
         return kiroCatalogResponse([{ modelId: "claude-sonnet-4.5" }]);
       }
-      return RESPONSE.clone();
+      if (isKiroCreateResponseRequest(input)) {
+        return new Response("not found", { status: 404 });
+      }
+      return LEGACY_RESPONSE.clone();
     });
 
     const result = await kiroProvider.complete(
@@ -226,15 +233,42 @@ describe("Kiro catalog generations and reasoning wire fields", () => {
     );
 
     expect(result.text).toBe("ok");
+    expect(result.api).toBe("generate-assistant-response");
     expect(String(calls[0]?.[0])).toBe("https://management.us-east-1.kiro.dev/");
     expect(String(calls[1]?.[0])).toContain(
       "https://q.us-east-1.amazonaws.com/ListAvailableModels?",
     );
     expect(calls[1]?.[1]?.method).toBe("GET");
     expect(String(calls[2]?.[0])).toBe(
+      "https://runtime.us-east-1.kiro.dev/v1/responses",
+    );
+    expect(String(calls[3]?.[0])).toBe(
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
     );
-    expect(new Headers(calls[2]?.[1]?.headers).get("x-amz-target")).toBeNull();
+    expect(new Headers(calls[3]?.[1]?.headers).get("x-amz-target")).toBeNull();
+  });
+
+  it("remembers a missing CreateResponse operation instead of re-probing", async () => {
+    const calls: Array<[unknown, RequestInit | undefined]> = [];
+    installKiroFetch(async (input, init) => {
+      calls.push([input, init]);
+      if (isKiroCatalogRequest(input, init)) return kiroCatalogResponse([]);
+      if (isKiroCreateResponseRequest(input)) {
+        return new Response("not found", { status: 404 });
+      }
+      return LEGACY_RESPONSE.clone();
+    });
+
+    const request = {
+      model: "claude-sonnet-4.5",
+      messages: [{ role: "user" as const, content: "cached" }],
+    };
+    await kiroProvider.complete(request, { apiKey: KEY });
+    await kiroProvider.complete(request, { apiKey: KEY });
+
+    expect(
+      calls.filter(([input]) => isKiroCreateResponseRequest(input)),
+    ).toHaveLength(1);
   });
 
   it("caches a successful empty modern catalog and its runtime generation", async () => {
@@ -262,7 +296,7 @@ describe("Kiro catalog generations and reasoning wire fields", () => {
       !isKiroCatalogRequest(input, init),
     );
     expect(String(generationCall?.[0])).toBe(
-      "https://runtime.us-east-1.kiro.dev/",
+      "https://runtime.us-east-1.kiro.dev/v1/responses",
     );
   });
 });

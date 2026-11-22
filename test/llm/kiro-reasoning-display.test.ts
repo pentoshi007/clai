@@ -10,12 +10,24 @@ import {
   encodeKiroFrame,
   installKiroFetch,
   isKiroCatalogRequest,
+  isKiroCreateResponseRequest,
   kiroCatalogResponse,
   kiroStreamResponse,
   requestBody,
 } from "../helpers/kiro-fixtures.js";
 
 const KEY = "kiro-reasoning-display-key";
+
+function legacyFetch(
+  handler: (input: unknown, init?: RequestInit) => Response | Promise<Response>,
+) {
+  return installKiroFetch(async (input, init) => {
+    if (isKiroCreateResponseRequest(input)) {
+      return new Response("not found", { status: 404 });
+    }
+    return handler(input, init);
+  });
+}
 
 function catalog(): Response {
   return kiroCatalogResponse([
@@ -75,7 +87,7 @@ afterEach(() => {
 describe("Kiro reasoning display", () => {
   it("does not display GPT placeholder reasoning and replays the signed opaque block exactly", async () => {
     const bodies: Record<string, unknown>[] = [];
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalog();
       bodies.push(requestBody(init));
       if (bodies.length === 1) {
@@ -154,7 +166,7 @@ describe("Kiro reasoning display", () => {
   });
 
   it("streams Claude summaries, keeps mid-stream ellipses, and preserves exact signed bytes", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalog();
       return kiroStreamResponse([
         encodeKiroFrame({ ":event-type": "reasoningContentEvent" }, { text: "..." }),
@@ -195,7 +207,7 @@ describe("Kiro reasoning display", () => {
   });
 
   it("recognizes bare reasoningText payloads without an event-type header", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalog();
       return kiroStreamResponse([
         encodeKiroFrame({}, {
@@ -222,7 +234,7 @@ describe("Kiro reasoning display", () => {
   });
 
   it("preserves a signature-only Claude completion instead of throwing an empty-response error", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalog();
       return kiroStreamResponse([
         encodeKiroFrame(
@@ -250,7 +262,7 @@ describe("Kiro reasoning display", () => {
   });
 
   it("publishes live Kiro catalog efforts for every model variant", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalog();
       return kiroStreamResponse([]);
     });
@@ -264,7 +276,7 @@ describe("Kiro reasoning display", () => {
   });
 
   it("reads snake_case prompt-cache usage metrics", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalog();
       return kiroStreamResponse([
         encodeKiroFrame({ ":event-type": "assistantResponseEvent" }, { content: "ok" }),

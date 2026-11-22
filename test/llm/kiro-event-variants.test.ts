@@ -16,6 +16,7 @@ import {
   encodeKiroFrame,
   installKiroFetch,
   isKiroCatalogRequest,
+  isKiroCreateResponseRequest,
   kiroCatalogResponse,
   kiroStreamResponse,
   requestBody,
@@ -23,6 +24,17 @@ import {
 
 const KEY = "kiro-stream-variant-key";
 const MODEL = "claude-opus-5";
+
+function legacyFetch(
+  handler: (input: unknown, init?: RequestInit) => Response | Promise<Response>,
+) {
+  return installKiroFetch(async (input, init) => {
+    if (isKiroCreateResponseRequest(input)) {
+      return new Response("not found", { status: 404 });
+    }
+    return handler(input, init);
+  });
+}
 
 function catalogResponse(): Response {
   return kiroCatalogResponse([
@@ -53,7 +65,7 @@ describe("Kiro current event variants and recovery", () => {
   it("assembles split tools, captures redacted reasoning, and replays it only to the same model", async () => {
     const generationBodies: Record<string, unknown>[] = [];
     let generation = 0;
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalogResponse();
       generationBodies.push(requestBody(init));
       generation += 1;
@@ -167,7 +179,7 @@ describe("Kiro current event variants and recovery", () => {
 
   it("serializes current-turn image bytes without changing text content", async () => {
     let generationBody: Record<string, unknown> | undefined;
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalogResponse();
       generationBody = requestBody(init);
       return kiroStreamResponse([
@@ -204,7 +216,7 @@ describe("Kiro current event variants and recovery", () => {
 
   it("returns an empty completion to outer recovery without trying regional endpoints", async () => {
     const generationUrls: string[] = [];
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalogResponse();
       generationUrls.push(String(input));
       return kiroStreamResponse([]);
@@ -222,7 +234,7 @@ describe("Kiro current event variants and recovery", () => {
   it("retries a semantic signature rejection with replayed reasoning removed", async () => {
     const bodies: Record<string, unknown>[] = [];
     let generation = 0;
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) return catalogResponse();
       bodies.push(requestBody(init));
       generation += 1;
@@ -293,7 +305,7 @@ describe("Kiro current event variants and recovery", () => {
   });
 
   it("converts Kiro context percentage against the catalog window the UI reports", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) {
         return kiroCatalogResponse([
           {
@@ -337,7 +349,7 @@ describe("Kiro current event variants and recovery", () => {
   });
 
   it("keeps percentage usage estimated when the catalog window is unavailable", async () => {
-    installKiroFetch(async (input, init) => {
+    legacyFetch(async (input, init) => {
       if (isKiroCatalogRequest(input, init)) {
         return new Response("catalog unavailable", { status: 503 });
       }
