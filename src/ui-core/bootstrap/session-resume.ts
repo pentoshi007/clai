@@ -161,6 +161,7 @@ export async function applySessionResume(
     ...(record.unsyncedItemIds?.length ? { unsyncedItemIds: record.unsyncedItemIds } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
+    alreadyPersisted: true,
     ...(record.workspaceFolder
       ? {
           workspaceFolder: record.workspaceFolder,

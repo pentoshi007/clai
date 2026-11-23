@@ -1060,7 +1060,7 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     await older.persistNow();
     await newer.persistNow();
-    // The old process saves again during a later shutdown.
+    older.setModel("shared-model");
     await older.persistNow();
 
     expect(identitiesA.map((identity) => identity.revision)).toEqual([1, 2]);
