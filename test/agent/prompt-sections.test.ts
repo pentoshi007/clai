@@ -79,7 +79,9 @@ describe("prompt sections", () => {
       mode: "plan",
     });
 
-    expect(sections).toHaveLength(3);
-    expect(sections.at(-1)!.kind).toBe("scope");
+    expect(sections.map((section) => section.kind)).toEqual(["outcome", "plan", "scope", "context"]);
+    expect(sections.at(-1)).toMatchObject({ mandatory: true });
+    expect(sections.at(-1)?.content).toContain("Never mark an unfinished or unverified task done, even in a batch.");
+    expect(sections.at(-1)?.content).toContain("SHELL JOB TITLES");
   });
 });

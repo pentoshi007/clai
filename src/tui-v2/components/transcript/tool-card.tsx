@@ -22,7 +22,7 @@ import {
   presentImageArgs,
   collapseOutputLines,
   presentOutput,
-  presentTool,
+  presentTranscriptTool as presentTool,
   toolStatusText,
   toolOutputGapLabel,
   type PathArgsRow,

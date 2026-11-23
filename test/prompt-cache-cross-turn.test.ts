@@ -188,7 +188,8 @@ describe("cross-turn prompt cache prefix", () => {
 
     expect(messages.slice(0, previousRequest.length)).toEqual(previousRequest);
     expect(requestContextMessage).toContain('"taskIds":["t1","t2"]');
-    expect(requestContextMessage).toContain("mark done only after reading and verifying results");
+    expect(requestContextMessage).toContain("Mark each task done only after reading its results and verifying its own acceptance criteria.");
+    expect(requestContextMessage).toContain("Never mark an unfinished or unverified task done, even in a batch.");
     expect(messages[0]?.content).not.toContain("Batch ready changes");
     expect(requestContextMessage).toContain("Give the final work summary directly in chat");
     expect(requestContextMessage).toContain("Never create or add a task just to write or update that summary");

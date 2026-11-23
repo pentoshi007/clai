@@ -1,3 +1,5 @@
+import { isFileMutationTool } from "../../tools/file-diff.js";
+
 const LABELS: Readonly<Record<string, string>> = {
   "shell.exec": "Shell",
   "shell.jobs": "Jobs",
@@ -36,6 +38,10 @@ const LABELS: Readonly<Record<string, string>> = {
 
 export function toolUsageLabel(name: string, fallback = name): string {
   return Object.hasOwn(LABELS, name) ? LABELS[name]! : fallback;
+}
+
+export function transcriptToolLabel(name: string, fallback = name): string {
+  return isFileMutationTool(name) ? fallback : toolUsageLabel(name, fallback);
 }
 
 const labels = Object.values(LABELS).sort((left, right) => right.length - left.length);

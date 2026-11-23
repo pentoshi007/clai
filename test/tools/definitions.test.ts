@@ -51,6 +51,7 @@ describe("tool definitions", () => {
     const { required, properties } = task.parameters;
     expect(task.wireName).toBe("task_update");
     expect(task.mutates).toBe(true);
+    expect(task.description).toContain("verifying its own acceptance criteria");
     expect(getToolDefinitions({ askMode: true })).not.toContain(task);
     expect(required ?? []).toEqual([]);
     expect(properties.taskId).toHaveProperty("type", "string");

@@ -5,7 +5,7 @@ import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
 import { clipRow, type BlockContext } from "./block-context.js";
 import { appendDisclosure } from "./disclosure-lines.js";
-import { classicToolLabel } from "./tool-label.js";
+import { presentTranscriptTool } from "../../ui-core/rendering/tool-presenter.js";
 import { logicalOutputLines, outputBodyRows } from "./output-lines.js";
 import { buildToolLines, toolHeaderLines, toolGlyph, TOOL_STATUS_TOKEN } from "./tool-lines.js";
 
@@ -48,7 +48,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     const status = batchToolStatus(section);
     const token = section.status === "cancelled" ? "muted" : TOOL_STATUS_TOKEN[status];
     const tool = { ...item, name: section.name, status };
-    const name = ctx.ink.fg(token, classicToolLabel(tool));
+    const name = ctx.ink.fg(token, presentTranscriptTool(tool).name);
     const glyph = toolGlyph(ctx, status);
     const prefix = index === 0 ? `  ${ctx.glyphs.bodyBranch} ` : "    ";
     const exit = section.exitCode && section.exitCode !== 0 ? ` (exit ${section.exitCode})` : "";

@@ -6,7 +6,6 @@ import { buildToolBodyLines, toolGlyph, toolHeaderLines } from "../../../src/cla
 import { blockContextFor } from "../../../src/classic/feed/feed-blocks.js";
 import { createInkTheme, type ThemeToken } from "../../../src/classic/render/ink-theme.js";
 import { stripAnsi } from "../../../src/classic/render/measure.js";
-import { classicToolLabel } from "../../../src/classic/blocks/tool-label.js";
 import { transcriptItems, type ToolItem, type ToolStatus } from "../../../src/ui-core/state/transcript-types.js";
 import { feedView, scriptedTurn } from "../feed/fixture.js";
 
@@ -41,7 +40,7 @@ describe.each(["dark", "light"] as const)("classic tool colors in the %s theme",
       const tool = { ...item, status, argsDisplay: "echo COLOR_INPUT" };
       const header = toolHeaderLines(ctx, tool).join("\n");
       expect(header).toContain(toolGlyph(ctx, status));
-      expect(header).toContain(ctx.ink.style(classicToolLabel(tool), { fg: STATUS_COLORS[status], bold: true }));
+      expect(header).toContain(ctx.ink.style("Shell", { fg: STATUS_COLORS[status], bold: true }));
       expect(header).toContain(ctx.ink.fg("inputBorder", "echo COLOR_INPUT"));
       const output = buildToolBodyLines(ctx, tool).join("\n");
       expect(output).toContain(ctx.ink.fg("toolOutput", "COLOR_OUTPUT"));

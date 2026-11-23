@@ -240,7 +240,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "task.update",
-    "Update one foreground task with taskId/state/note, or batch ready changes atomically with updates instead. For a handoff, group verified completions and open the next ready task in one call. Never update Responder-owned tasks.",
+    "Update one foreground task with taskId/state/note, or batch ready changes atomically with updates. Mark each task done only after verifying its own acceptance criteria; never mark unfinished or unverified tasks done. Never update Responder-owned tasks.",
     {
       type: "object",
       properties: {

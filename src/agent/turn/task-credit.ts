@@ -30,13 +30,14 @@ const absorbIntoReadyTask = async (
   const ready = readyPlanTasks(plan)[0];
   if (!ready) return;
   const base = ledgerFromTaskEvidence(ready.id, ready.evidence);
-  const { ledger: absorbed } = absorbLooseWorkIntoLedger(
+  const absorbed = absorbLooseWorkIntoLedger(
     base,
+    ready.id,
     ready.title,
     [{ toolName: call.name, signals }],
-    plan.kind,
+    { planKind: plan.kind },
   );
-  if (absorbed === base) return;
+  if (!absorbed || absorbed === base) return;
   const task = plan.tasks.find((candidate) => candidate.id === ready.id);
   if (!task) return;
   task.evidence = taskEvidenceFromLedger(absorbed);

@@ -78,9 +78,11 @@ function projectTaskWork(
   if (updates.get(active.id)?.previous !== "pending" || work.looseWork.length === 0) {
     return { ...work, ledger };
   }
-  const credited = absorbLooseWorkIntoLedger(ledger, active.title, work.looseWork, plan.kind);
-  if (credited.ledger !== ledger) active.evidence = taskEvidenceFromLedger(credited.ledger);
-  return credited;
+  const unassigned: LooseWorkReceipt[] = [];
+  const credited = absorbLooseWorkIntoLedger(ledger, active.id, active.title, work.looseWork, { planKind: plan.kind, unassigned });
+  if (!credited || credited === ledger) return { ...work, ledger };
+  active.evidence = taskEvidenceFromLedger(credited);
+  return { ledger: credited, looseWork: unassigned };
 }
 
 function describeUpdates(updates: Iterable<ResolvedTaskUpdate>): string {
@@ -107,7 +109,7 @@ function nextTaskNote(plan: SessionPlan, turnEnd: boolean): string {
   const active = plan.tasks.find((task) => task.state === "in_progress" && !task.responderOwned);
   if (active) return `Continue [${active.id}]. Mark done only after verifying its outcome.`;
   const next = readyPlanTasks(plan)[0];
-  if (next) return `Next ready task: [${next.id}]. Open it with task.update before starting work.`;
+  if (next) return `NEXT: open the next ready task with task.update {taskId:${JSON.stringify(next.id)},state:"in_progress"} before starting work.`;
   return "No foreground task is ready. Check failed tasks and dependencies before continuing.";
 }
 
