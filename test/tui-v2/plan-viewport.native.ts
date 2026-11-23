@@ -225,12 +225,14 @@ try {
     }
   }
   const legacyTitle = "Responder · npm test -- --reporter=verbose";
+  const titledLegacy = "Responder · Run local CI checks";
   const withJobs: SessionPlan = {
     ...source, status: "in_progress", tasks: [
       { id: "t1", title: "Verify the change", state: "done" },
       { id: "t2", title: "Run checks", state: "in_progress", responderOwned: true, parentTaskId: "t1" },
       { id: "t3", title: legacyTitle, state: "pending", responderOwned: true, parentTaskId: "t1" },
       { id: "t4", title: "Deferred check", state: "skipped", responderOwned: true, parentTaskId: "t1" },
+      { id: "t5", title: titledLegacy, state: "failed", responderOwned: true, parentTaskId: "t1" },
     ],
   };
   await rerender({ ...view, plan: withJobs, width: 52, height: 32 });
@@ -239,8 +241,10 @@ try {
   check(jobRows.includes("⟳ ↳ Run checks"), "The running job keeps its glyph and short title");
   check(jobRows.includes("◌ ↳ Background job"), "An unnamed legacy job displays a neutral title");
   check(jobRows.includes("– ↳ Deferred check"), "A skipped job keeps its glyph and title");
+  check(jobRows.includes("↳ Run local CI checks"), "A legacy job with a real title keeps that title");
   check(!/RESPONDER ·|npm test/.test(jobRows), "No Responder badges or raw commands in the task pane");
   assert.equal(withJobs.tasks[2]?.title, legacyTitle);
+  assert.equal(withJobs.tasks[4]?.title, titledLegacy);
   assert.equal(JSON.stringify(source), before);
   assert.deepEqual([...clippedTitleEdges].sort(), ["bottom", "top"], "Native rendering must exercise partially visible titles at both viewport edges");
   console.log(JSON.stringify({ violations: [...violations] }, null, 2));

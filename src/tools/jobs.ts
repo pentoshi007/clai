@@ -42,6 +42,7 @@ export class JobManager {
   private livenessMisses = new Map<string, number>();
   private livenessCheckedAt = new Map<string, number>();
   private registryRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly forgottenJobIds = new Set<string>();
   private readonly registryPath: string;
   private readonly transientV2RegistryPath: string;
 
@@ -82,6 +83,11 @@ export class JobManager {
     }
   }
   private forgetJob(id: string): void {
+    this.forgottenJobIds.add(id);
+    if (this.forgottenJobIds.size > 512) {
+      const oldest = this.forgottenJobIds.values().next().value;
+      if (oldest !== undefined) this.forgottenJobIds.delete(oldest);
+    }
     const job = this.jobs.get(id);
     this.jobs.delete(id);
     for (const [notificationId, notification] of this.notifications) {
@@ -1937,11 +1943,41 @@ export class JobManager {
     this.registryRetryTimer = timer;
   }
 
+  private readRegistryFile(): PersistedRegistryV2 | undefined {
+    try {
+      if (!existsSync(this.registryPath)) return undefined;
+      const parsed = JSON.parse(readFileSync(this.registryPath, "utf8")) as PersistedRegistry;
+      return parsed.schemaVersion === 2 ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private mergeForeignRegistry(registry: PersistedRegistryV2): PersistedRegistryV2 {
+    const disk = this.readRegistryFile();
+    if (!disk) return registry;
+    const known = new Set(registry.jobs.map((job) => job.id));
+    const imported = disk.jobs.filter(
+      (job) => !known.has(job.id) && !this.forgottenJobIds.has(job.id) && this.isDurable(job),
+    );
+    if (imported.length === 0) return registry;
+    const foreign = new Set(imported.map((job) => job.id));
+    const settlements = mergeForeign(registry.settlements, disk.settlements, (entry) => entry.jobId, (entry) => foreign.has(entry.jobId));
+    const consumedResults = mergeForeign(registry.consumedResults, disk.consumedResults, (entry) => entry.jobId, (entry) => foreign.has(entry.jobId));
+    return {
+      schemaVersion: 2,
+      jobs: [...registry.jobs, ...imported],
+      notifications: mergeForeign(registry.notifications, disk.notifications, (entry) => entry.id, (entry) => foreign.has(entry.jobId)),
+      ...(settlements.length ? { settlements } : {}),
+      ...(consumedResults.length ? { consumedResults } : {}),
+    };
+  }
+
   private persistSync(): boolean {
     try {
       mkdirSync(this.jobsDir, { recursive: true, mode: 0o700 });
       const temp = `${this.registryPath}.${process.pid}.${randomUUID()}.tmp`;
-      writeFileSync(temp, `${JSON.stringify(this.registry(), null, 2)}\n`, { mode: 0o600 });
+      writeFileSync(temp, `${JSON.stringify(this.mergeForeignRegistry(this.registry()), null, 2)}\n`, { mode: 0o600 });
       renameSync(temp, this.registryPath);
       return true;
     } catch {
@@ -1951,6 +1987,22 @@ export class JobManager {
   private async persist(): Promise<void> {
     if (!this.persistSync()) throw new Error("Failed to persist the background-job registry.");
   }
+}
+
+function mergeForeign<T>(
+  ours: readonly T[] | undefined,
+  theirs: readonly T[] | undefined,
+  key: (entry: T) => string,
+  keep: (entry: T) => boolean,
+): T[] {
+  const merged = [...(ours ?? [])];
+  const seen = new Set(merged.map(key));
+  for (const entry of theirs ?? []) {
+    if (!keep(entry) || seen.has(key(entry))) continue;
+    seen.add(key(entry));
+    merged.push(entry);
+  }
+  return merged;
 }
 
 export const jobManager = new JobManager();

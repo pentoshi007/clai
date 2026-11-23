@@ -271,6 +271,28 @@ describe("durable background jobs", () => {
     ).toBe(true);
     await manager.stopJob(id, { graceMs: 200 });
   });
+
+  it("preserves jobs another process persisted after this one loaded the registry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-jobs-"));
+    dirs.push(dir);
+    const stale = new JobManager(dir);
+    managers.push(stale);
+    const other = new JobManager(dir);
+    managers.push(other);
+    const command = `${JSON.stringify(process.execPath)} -e "setTimeout(() => {}, 50)"`;
+    const otherJob = await other.startJob(command, { ownerSessionId: "session-other", name: "Other process job" });
+    const otherId = /id=([a-f0-9]+)/.exec(otherJob.output)?.[1]!;
+    const staleJob = await stale.startJob(command, { ownerSessionId: "session-stale", name: "Stale process job" });
+    const staleId = /id=([a-f0-9]+)/.exec(staleJob.output)?.[1]!;
+
+    const registry = JSON.parse(await readFile(join(dir, "registry-v1.json"), "utf8")) as { jobs: BackgroundJob[] };
+    expect(registry.jobs.map((job) => job.id).sort()).toEqual([otherId, staleId].sort());
+
+    const restarted = new JobManager(dir);
+    managers.push(restarted);
+    expect(restarted.getJob(otherId)).toMatchObject({ name: "Other process job", ownerSessionId: "session-other" });
+    expect(restarted.getJob(staleId)).toMatchObject({ name: "Stale process job", ownerSessionId: "session-stale" });
+  });
 });
 
 

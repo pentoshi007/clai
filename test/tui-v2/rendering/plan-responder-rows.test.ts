@@ -59,6 +59,13 @@ describe("responder rows in the plan pane (TUI-006)", () => {
     expect(cleanTaskTitle({ ...legacy, responderOwned: false })).toBe("Responder · npm test");
   });
 
+  it("shows the stored title of a legacy Responder row instead of a generic label", () => {
+    expect(cleanTaskTitle(task({ id: "c1", title: "Responder · Run local CI checks", responderOwned: true }))).toBe("Run local CI checks");
+    expect(cleanTaskTitle(task({ id: "c2", title: "Responder · Verify pull request CI", responderOwned: true }))).toBe("Verify pull request CI");
+    expect(cleanTaskTitle(task({ id: "c3", title: "Responder ·", responderOwned: true }))).toBe("Background job");
+    expect(cleanTaskTitle(task({ id: "c4", title: "Responder · npm test -- --reporter=verbose", responderOwned: true }))).toBe("Background job");
+  });
+
   it.each<{ state: TaskState; glyph: string }>([
     { state: "done", glyph: "✓" },
     { state: "failed", glyph: "✗" },

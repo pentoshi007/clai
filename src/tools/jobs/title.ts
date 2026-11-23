@@ -23,3 +23,11 @@ export function jobTitle(job: Pick<BackgroundJob, "name" | "commandDisplay"> | u
   if (!job) return DEFAULT_JOB_TITLE;
   return normalizeJobTitle(job.name, job.commandDisplay) ?? DEFAULT_JOB_TITLE;
 }
+
+const COMMAND_SYNTAX = /(?:^|\s)-{1,2}[A-Za-z]|&&|\|\||[|<>;`]|\$\(|\w=\S|^\.{0,2}\//;
+const COMMAND_LAUNCHER =
+  /^(?:npm|npx|pnpm|yarn|git|python3?|pip3?|cargo|docker|kubectl|helm|terraform|curl|wget|bash|zsh|sudo|rg|grep|sed|awk|jq|ssh|scp|rsync|brew|apt-get|apt|systemctl|launchctl|defaults|psql|mysql|sqlite3|ffmpeg|nmap|tsc|vitest|jest|pytest|eslint|prettier)(?:\s|$)/;
+
+export function looksLikeCommandLabel(label: string): boolean {
+  return COMMAND_SYNTAX.test(label) || COMMAND_LAUNCHER.test(label);
+}
