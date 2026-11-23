@@ -83,12 +83,14 @@ describe("OpenTUI App width budget", () => {
     expect(budget.splitPlanWidth + budget.planChatGap + budget.transcriptContentWidth).toBe(terminalWidth);
   });
 
-  it("preserves the chat floor at the overlay visibility boundary", () => {
+  it("overlays chat when a manual pane fits but there is no room to reserve columns for it", () => {
     const budget = (terminalWidth: number) => appWidthBudget({
       terminalWidth, planPresent: true, planPlacement: "overlay", requestedSplitPlanWidth: 0,
     });
-    expect(budget(57).showPlanOverlay).toBe(false);
-    expect(budget(58)).toMatchObject({ showPlanOverlay: true, overlayPlanWidth: 33, transcriptContentWidth: 24 });
+    expect(budget(47).showPlanOverlay).toBe(false);
+    expect(budget(48)).toMatchObject({ showPlanOverlay: true, overlayPlanWidth: 33, overlayReserveWidth: 0, transcriptContentWidth: 48 });
+    expect(budget(57)).toMatchObject({ showPlanOverlay: true, overlayPlanWidth: 33, overlayReserveWidth: 0, transcriptContentWidth: 57 });
+    expect(budget(58)).toMatchObject({ showPlanOverlay: true, overlayPlanWidth: 33, overlayReserveWidth: 33, transcriptContentWidth: 24 });
   });
 
   it("moves focus away from a plan hidden by a narrow resize", () => {

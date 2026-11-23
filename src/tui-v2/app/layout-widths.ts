@@ -6,6 +6,7 @@ import {
 } from "../../ui-core/layout/compute-layout.js";
 
 const PREFERRED_CHAT_WIDTH = 24;
+const MIN_OVERLAY_COLS = 48;
 const PLAN_CHAT_GAP = 1;
 const APP_HORIZONTAL_PADDING = 0;
 
@@ -43,7 +44,6 @@ export function appWidthBudget(input: AppWidthBudgetInput): AppWidthBudget {
   let splitPlanWidth = 0;
   let overlayPlanWidth = 0;
   let overlayReserveWidth = 0;
-  let showPlanOverlay = false;
 
   if (input.planPresent && input.planPlacement === "split") {
     const availableForPlan = Math.max(0, contentInnerWidth - preferredChatWidth);
@@ -55,19 +55,18 @@ export function appWidthBudget(input: AppWidthBudgetInput): AppWidthBudget {
   } else if (
     input.planPresent &&
     input.planPlacement === "overlay" &&
-    contentInnerWidth >= PLAN_MIN_WIDTH + PLAN_CHAT_GAP + PREFERRED_CHAT_WIDTH
+    contentInnerWidth >= MIN_OVERLAY_COLS
   ) {
-    planChatGap = PLAN_CHAT_GAP;
-    const desiredPlanWidth = Math.min(
+    overlayPlanWidth = Math.min(
       PLAN_MAX_WIDTH,
       Math.max(PLAN_MIN_WIDTH, Math.floor(terminalWidth * PLAN_OVERLAY_SHARE) - 1),
     );
-    overlayPlanWidth = Math.min(
-      desiredPlanWidth,
-      contentInnerWidth - PREFERRED_CHAT_WIDTH - planChatGap,
-    );
-    overlayReserveWidth = overlayPlanWidth;
-    showPlanOverlay = overlayPlanWidth >= PLAN_MIN_WIDTH;
+    const availableForPlan = contentInnerWidth - preferredChatWidth - PLAN_CHAT_GAP;
+    if (availableForPlan >= PLAN_MIN_WIDTH) {
+      overlayPlanWidth = Math.min(overlayPlanWidth, availableForPlan);
+      overlayReserveWidth = overlayPlanWidth;
+      planChatGap = PLAN_CHAT_GAP;
+    }
   }
 
   const chatContentWidth = Math.max(
@@ -86,7 +85,7 @@ export function appWidthBudget(input: AppWidthBudgetInput): AppWidthBudget {
     overlayReserveWidth,
     chatContentWidth,
     transcriptContentWidth,
-    showPlanOverlay,
+    showPlanOverlay: overlayPlanWidth > 0,
   };
 }
 

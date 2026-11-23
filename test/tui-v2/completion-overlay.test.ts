@@ -5,7 +5,7 @@ import { findBunExecutable } from "../../src/os/bun-runtime.js";
 
 const bun = findBunExecutable();
 
-it.skipIf(!bun)("floats the command menu without shortening the task pane", () => {
+it.skipIf(!bun)("keeps completion full width and opens Tasks only when requested or the split layout fits", () => {
   const result = spawnSync(bun!, ["run", fileURLToPath(new URL("./completion-overlay.native.ts", import.meta.url))], {
     encoding: "utf8", timeout: 45_000, maxBuffer: 4 * 1024 * 1024,
   });

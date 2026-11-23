@@ -76,9 +76,9 @@ export function App(): ReactNode {
   const services = useServices();
   const theme = useTheme();
   const [focusContext, setFocusContext] = useState(services.focus.activeContext());
-  const [planVisible, setPlanVisible] = useState(false);
-  const planVisibilityRef = useRef<"visible" | "hidden" | "auto">("auto");
+  const [planVisibility, setPlanVisibility] = useState<boolean | "auto">("auto");
   const plan = usePlan(services.plan);
+  const hasPlan = plan !== undefined;
   const planDisclosure = useTaskDisclosureBinding(plan);
   const planInteractionRef = useRef<PlanInteractionPort>(null);
   const overlay = useOverlayState(services.overlay);
@@ -101,14 +101,10 @@ export function App(): ReactNode {
   const escapeCancelArmedRef = useRef(false);
   const [escapeCancelArmed, setEscapeCancelArmed] = useState(false);
   const hasDraft = useHasDraft();
-  const seenPlanKey = useRef<string | undefined>(undefined);
   const [composerSeed, setComposerSeed] = useState<
     { token: number; text: string } | undefined
   >(undefined);
   const [contextLimitEditing, setContextLimitEditing] = useState(false);
-
-  const panePresence = usePanePresence(planVisible);
-  const planPresent = panePresence.mounted;
 
   useEffect(() => services.focus.onChange(setFocusContext), [services.focus]);
 
@@ -154,17 +150,8 @@ export function App(): ReactNode {
   }, [services]);
 
   useEffect(() => {
-    if (!plan) {
-      seenPlanKey.current = undefined;
-      planVisibilityRef.current = "auto";
-      setPlanVisible(false);
-      return;
-    }
-    const key = `${plan.sessionId}:${plan.updatedAt}`;
-    if (seenPlanKey.current === key) return;
-    seenPlanKey.current = key;
-    if (planVisibilityRef.current === "auto") setPlanVisible(true);
-  }, [plan]);
+    if (!hasPlan) setPlanVisibility("auto");
+  }, [hasPlan]);
 
   const terminalWidth = Number.isFinite(width)
     ? Math.max(0, Math.floor(width))
@@ -172,9 +159,11 @@ export function App(): ReactNode {
   const layout = computeLayout({
     columns: terminalWidth,
     rows: height,
-    planVisible: planPresent,
-    splitEnabled: layoutSupportsSplit(terminalWidth),
+    planVisible: hasPlan ? planVisibility : planVisibility === true,
+    splitEnabled: true,
   });
+  const panePresence = usePanePresence(layout.plan.placement !== "hidden");
+  const planPresent = panePresence.mounted;
 
   const queuedCount = useSessionField(services.session, (state) => state.queued.length);
   const queueRows = queuedCount > 0 ? 2 + Math.min(4, queuedCount) + (queuedCount > 4 ? 1 : 0) : 0;
@@ -212,9 +201,9 @@ export function App(): ReactNode {
     overlay.kind === "confirm" ||
     overlay.kind === "scope-editor" ||
     overlay.kind === "keys-editor";
-  const planRendered =
-    (layout.plan.placement === "split" && splitPlanW > 0) ||
-    (layout.plan.placement === "overlay" && widthBudget.showPlanOverlay);
+  const splitTasks = splitPlanW > 0;
+  const planPaneWidth = splitPlanW || widthBudget.overlayPlanWidth;
+  const planRendered = splitTasks || widthBudget.showPlanOverlay;
 
   useEffect(() => {
     const fallback = focusAfterPlanSuppression(focusContext, planRendered);
@@ -388,17 +377,33 @@ export function App(): ReactNode {
 
   const hideTasksPane = useCallback((): void => {
     if (services.overlay.isOpen()) return;
-    planVisibilityRef.current = "hidden";
-    setPlanVisible(false);
+    setPlanVisibility(false);
     services.focus.focusRegion("composer");
     notify(services, "Tasks hidden · ^H", { key: "tasks", durationMs: 1400 });
   }, [services]);
 
-  const planPaneWidth =
-    layout.plan.placement === "split"
-      ? splitPlanW
-      : widthBudget.overlayPlanWidth;
+  const overlayRestTop = Math.max(1, Math.floor(height * 0.08));
+  const overlayPaneHeight = Math.max(12, Math.floor(height * 0.72));
+  const overlayAnimTop = paneSlideTop(panePresence.progress, overlayRestTop, overlayPaneHeight);
   const planPanel = planRendered ? (
+    <box
+      id="tasks-pane"
+      title=" Tasks "
+      titleColor={theme.inputBorder}
+      border
+      borderStyle="rounded"
+      style={{
+        position: splitTasks ? "relative" : "absolute",
+        top: splitTasks ? 0 : overlayAnimTop,
+        right: 0,
+        width: planPaneWidth,
+        height: splitTasks ? "100%" : overlayPaneHeight,
+        flexShrink: 0,
+        borderColor: theme.inputBorder,
+        backgroundColor: theme.statusBackground,
+      }}
+      onMouseScroll={onPlanWheel}
+    >
       <PlanView
         theme={theme}
         plan={plan}
@@ -409,15 +414,8 @@ export function App(): ReactNode {
         disclosureBinding={planDisclosure}
         onHide={hideTasksPane}
       />
-    ) : null;
-
-  const overlayRestTop = Math.max(1, Math.floor(height * 0.08));
-  const overlayPaneHeight = Math.max(12, Math.floor(height * 0.72));
-  const overlayAnimTop = paneSlideTop(
-    panePresence.progress,
-    overlayRestTop,
-    overlayPaneHeight,
-  );
+    </box>
+  ) : null;
 
   const composerFocused =
     overlay.kind === "none" &&
@@ -600,30 +598,22 @@ export function App(): ReactNode {
   }
 
   const toggleTasksPane = useCallback((): void => {
-    setPlanVisible((visible) => {
-      const next = !visible;
-      planVisibilityRef.current = next ? "visible" : "hidden";
-      if (next && !services.plan.current()) {
-        void services.plan
-          .load(services.session.sessionId)
-          .then((loaded) => {
-            if (!loaded) {
-              notify(services, "No tasks for this session yet", {
-                key: "tasks",
-                level: "warn",
-              });
-            }
-          })
-          .catch(() => undefined);
-      }
-      notify(
-        services,
-        next ? "Tasks shown · ^H" : "Tasks hidden · ^H",
-        { key: "tasks", durationMs: 1400 },
-      );
-      return next;
-    });
-  }, [services]);
+    const next = !planPresent;
+    setPlanVisibility(next);
+    if (next && !services.plan.current()) {
+      void services.plan
+        .load(services.session.sessionId)
+        .then((loaded) => {
+          if (!loaded) notify(services, "No tasks for this session yet", { key: "tasks", level: "warn" });
+        })
+        .catch(() => undefined);
+    }
+    notify(
+      services,
+      next ? "Tasks shown · ^H" : "Tasks hidden · ^H",
+      { key: "tasks", durationMs: 1400 },
+    );
+  }, [planPresent, services]);
 
   const editComposerDraft = useCallback(
     (text: string): void => {
@@ -718,25 +708,7 @@ export function App(): ReactNode {
               blockingOverlay={blockingOverlay}
             />
           </box>
-          {layout.plan.placement === "split" && planRendered ? (
-            <box
-              id="tasks-pane"
-              title=" Tasks "
-              titleColor={theme.inputBorder}
-              border
-              borderStyle="rounded"
-              style={{
-                width: splitPlanW,
-                height: "100%",
-                flexShrink: 0,
-                borderColor: theme.inputBorder,
-                backgroundColor: theme.statusBackground,
-              }}
-              onMouseScroll={onPlanWheel}
-            >
-              {planPanel}
-            </box>
-          ) : null}
+          {planPanel}
         </box>
 
         <OverlayHost
@@ -755,7 +727,7 @@ export function App(): ReactNode {
           height={composerMaxTextRows}
           focused={composerFocused}
           maxSuggestions={completionRows}
-          menuFloating={layout.plan.placement === "split" && planRendered}
+          menuFloating={planRendered}
           running={sessionRunning}
           inputSuspended={contextLimitEditing}
           onEscapeCancel={requestEscapeCancel}
@@ -768,7 +740,7 @@ export function App(): ReactNode {
           theme={theme}
           activity={runningStatus}
           width={contentInnerWidth}
-          hasActivePlan={Boolean(plan)}
+          hasActivePlan={hasPlan}
           planVisible={planRendered}
           thinkingExpanded={thinkingExpanded}
           outputExpanded={outputExpanded}
@@ -789,29 +761,6 @@ export function App(): ReactNode {
         />
       </box>
 
-      {layout.plan.placement === "overlay" &&
-      widthBudget.showPlanOverlay ? (
-        <box
-          title=" Tasks "
-          titleColor={theme.inputBorder}
-          border
-          borderStyle="rounded"
-          style={{
-            position: "absolute",
-            top: overlayAnimTop,
-            right: horizontalPadding,
-            width: widthBudget.overlayPlanWidth,
-            height: overlayPaneHeight,
-            borderColor: theme.inputBorder,
-            backgroundColor: theme.statusBackground,
-            zIndex: 50,
-          }}
-          onMouseScroll={onPlanWheel}
-        >
-          {planPanel}
-        </box>
-      ) : null}
-      {}
       <OverlayHost
         services={services}
         theme={theme}
@@ -830,8 +779,4 @@ export function App(): ReactNode {
     </box>
     </TerminalDimensionsContext.Provider>
   );
-}
-
-function layoutSupportsSplit(columns: number): boolean {
-  return columns >= 120;
 }

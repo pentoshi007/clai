@@ -88,7 +88,10 @@ async function capture(name: string): Promise<void> {
 }
 
 try {
-  await settle();
+  await settle(() => setup.resize(64, 40));
+  assert.equal(setup.renderer.root.findDescendantById("plan-pane"), undefined);
+  await click("status-tasks-toggle");
+  await settle(() => services.toast.clear());
   for (const [width, paneWidth] of [[64, 33], [92, 33], [120, 38], [128, 40], [140, 44], [160, 48]] as const) {
     await settle(() => setup.resize(width, 40));
     const pane = setup.renderer.root.findDescendantById("plan-pane");
