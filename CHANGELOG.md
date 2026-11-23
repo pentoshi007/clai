@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.7.0 — 2026-11-23
+
+### Task pane and command menu
+
+- Float the slash-command menu above the composer as a full-width overlay, so opening `/` no longer shortens the task pane and the menu spans the whole terminal instead of the transcript column.
+- Label responder rows as `↳ Responder: <title>` and other nested rows as `↳ <title>` in both the OpenTUI and Classic task panes.
+
+### Tasks and jobs
+
+- Apply grouped task status updates in one atomic `task.update` call with `updates: [{ state, taskIds, note? }]`, rejecting partial batches.
+- Require concise titles for model-launched background and Responder jobs, and show those titles without redundant Responder badges.
+- Keep responder titles in the task pane and merge job registries written by other processes, so a second clai process can no longer drop jobs or notifications.
+- Use the same tool labels in OpenTUI and Classic (`Explored`, `Shell`, `Edited server.ts`).
+
+### Sessions
+
+- Opening a session from history no longer rewrites its record, so it stops jumping to the top of history; only new content — a prompt, compaction, a generated title or a model change — updates recency.
+- `clai -c` resumes the most recent session for the current directory and starts a fresh session when that directory has none, instead of opening a session from another directory.
+- Pin a session's origin directory, so resuming it from elsewhere no longer relocates it.
+
 ## v5.6.0 — 2026-11-22
 
 ### Kiro
