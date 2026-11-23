@@ -13,12 +13,12 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import {
   activeTaskId,
-  cleanTaskTitle,
   planStatusChip,
   planStatusColor,
   progressBar,
   progressView,
   taskPaneGlyph,
+  taskPaneTitle,
   taskRowColor,
   wrapPlanText,
   type PlanColorToken,
@@ -296,7 +296,7 @@ const TaskRow = memo(function TaskRow(props: {
   const bg = active || (task.state === "in_progress" && !task.responderOwned)
     ? theme.rowA
     : index % 2 === 0 ? theme.rowB : theme.statusBackground;
-  const title = `${task.parentTaskId ? "↳ " : ""}${cleanTaskTitle(task)}`;
+  const title = taskPaneTitle(task);
   const expandable = hasTaskDetails(task);
   const titleLines = wrapTaskDisclosureTitle(title, width, expandable);
   const titleAttributes = task.state === "in_progress" || active ? TextAttributes.BOLD : TextAttributes.NONE;

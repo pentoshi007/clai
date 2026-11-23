@@ -37,7 +37,7 @@ describe("plan rows", () => {
     const { rows } = render();
     const body = rows.join("\n");
     expect(body).toContain("✓ Read the route handler");
-    expect(body).toContain("⟳ Add limit/offset to the query layer");
+    expect(body).toContain("⟳ ↳ Responder: Add limit/offset to the query layer");
     expect(body).not.toContain("RESPONDER ·");
     expect(body).toContain("○ Add tests");
   });
@@ -50,7 +50,7 @@ describe("plan rows", () => {
     const legacy = plan([task({ id: "c1", title: "Responder · npm test -- --reporter=verbose", state, responderOwned: true })]);
     const frame = planView({ ink: colorInk, columns: 80, rows: 9, state: PLAN_INITIAL_STATE, focused: false, plan: legacy });
     const body = panelFrameRows(frame).rows.join("\n");
-    expect(body).toContain(`${colorInk.fg(color, glyph)} Background job`);
+    expect(body).toContain(`${colorInk.fg(color, glyph)} ↳ Responder: Background job`);
     expect(body).not.toMatch(/RESPONDER ·|npm test/);
     expect(planBodyRowsWanted(legacy, 80)).toBe(2);
   });
@@ -62,8 +62,8 @@ describe("plan rows", () => {
     ]);
     const frame = planView({ ink, columns: 80, rows: 9, state: PLAN_INITIAL_STATE, focused: false, plan: finished });
     const body = rowsOf(panelFrameRows(frame).rows).join("\n");
-    expect(body).toContain("✓ Background proof");
-    expect(body).toContain("Background check");
+    expect(body).toContain("✓ ↳ Responder: Background proof");
+    expect(body).toContain("↳ Responder: Background check");
     expect(body).not.toContain("RESPONDER ·");
     expect(body).not.toContain("✗");
     expect(planBodyRowsWanted(finished, 80)).toBe(3);

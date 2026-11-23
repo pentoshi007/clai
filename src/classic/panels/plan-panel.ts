@@ -1,11 +1,11 @@
 import type { PlanTask, SessionPlan } from "../../store/plan.js";
 import {
-  cleanTaskTitle,
   formatPlanPagerDocument,
   orderPlanTasksForDisplay,
   progressBar,
   progressView,
   taskPaneGlyph,
+  taskPaneTitle,
   taskStateColor,
   wrapPlanText,
 } from "../../ui-core/rendering/plan-view.js";
@@ -74,7 +74,7 @@ interface PlanRow {
 }
 
 function taskTitleLines(task: PlanTask, width: number): readonly string[] {
-  return wrapPlanText(cleanTaskTitle(task), Math.max(8, width - 2));
+  return wrapPlanText(taskPaneTitle(task), Math.max(8, width - 2));
 }
 
 export function planBodyRowsWanted(plan: SessionPlan, columns: number): number {

@@ -159,8 +159,8 @@ try {
   const selected = binding!.state.selectedId;
   const priorFrame = setup.captureCharFrame();
   const taskText = viewportText().replace(/\s+/g, " ");
-  check(taskText.includes("↳ Verify nested responder tasks and their complete titles"), "The completed Responder task title must stay visible");
-  check(taskText.includes("↳ Retain every expanded finding during wheel scrolling"), "The failed Responder task title must stay visible");
+  check(taskText.includes("↳ Responder: Verify nested responder tasks and their complete titles"), "The completed Responder task title must stay visible");
+  check(taskText.includes("↳ Responder: Retain every expanded finding during wheel scrolling"), "The failed Responder task title must stay visible");
   check(!taskText.includes("✗ ↳"), "Failed Responder rows must not show a failure glyph in the task pane");
   check(!/\[RESPONDER · (?:DELIVERED|FAILED)\]/.test(taskText), "Terminal Responder badges must not render in the task pane");
   const priorStyles = JSON.stringify(setup.captureSpans());
@@ -238,10 +238,10 @@ try {
   await rerender({ ...view, plan: withJobs, width: 52, height: 32 });
   await settle(() => scrollbox().scrollTo(0));
   const jobRows = viewportText().replace(/\s+/g, " ");
-  check(jobRows.includes("⟳ ↳ Run checks"), "The running job keeps its glyph and short title");
-  check(jobRows.includes("◌ ↳ Background job"), "An unnamed legacy job displays a neutral title");
-  check(jobRows.includes("– ↳ Deferred check"), "A skipped job keeps its glyph and title");
-  check(jobRows.includes("↳ Run local CI checks"), "A legacy job with a real title keeps that title");
+  check(jobRows.includes("⟳ ↳ Responder: Run checks"), "The running job keeps its glyph and short title");
+  check(jobRows.includes("◌ ↳ Responder: Background job"), "An unnamed legacy job displays a neutral title");
+  check(jobRows.includes("– ↳ Responder: Deferred check"), "A skipped job keeps its glyph and title");
+  check(jobRows.includes("↳ Responder: Run local CI checks"), "A legacy job with a real title keeps that title");
   check(!/RESPONDER ·|npm test/.test(jobRows), "No Responder badges or raw commands in the task pane");
   assert.equal(withJobs.tasks[2]?.title, legacyTitle);
   assert.equal(withJobs.tasks[4]?.title, titledLegacy);

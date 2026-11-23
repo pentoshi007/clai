@@ -4,6 +4,7 @@ import {
   taskGlyph,
   cleanTaskTitle,
   taskPaneGlyph,
+  taskPaneTitle,
   taskRowColor,
   TASK_GLYPH,
 } from "../../../src/ui-core/rendering/plan-view.js";
@@ -64,6 +65,13 @@ describe("responder rows in the plan pane (TUI-006)", () => {
     expect(cleanTaskTitle(task({ id: "c2", title: "Responder · Verify pull request CI", responderOwned: true }))).toBe("Verify pull request CI");
     expect(cleanTaskTitle(task({ id: "c3", title: "Responder ·", responderOwned: true }))).toBe("Background job");
     expect(cleanTaskTitle(task({ id: "c4", title: "Responder · npm test -- --reporter=verbose", responderOwned: true }))).toBe("Background job");
+  });
+
+  it("prefixes every Responder row with the arrow and the word", () => {
+    expect(taskPaneTitle(task({ id: "c1", title: "Run checks", responderOwned: true }))).toBe("↳ Responder: Run checks");
+    expect(taskPaneTitle(task({ id: "c2", title: "Run checks", responderOwned: true, parentTaskId: "t1" }))).toBe("↳ Responder: Run checks");
+    expect(taskPaneTitle(task({ id: "t1", title: "Run checks", parentTaskId: "t0" }))).toBe("↳ Run checks");
+    expect(taskPaneTitle(task({ id: "t2", title: "Run checks" }))).toBe("Run checks");
   });
 
   it.each<{ state: TaskState; glyph: string }>([

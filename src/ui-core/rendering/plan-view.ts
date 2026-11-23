@@ -237,6 +237,12 @@ export function cleanTaskTitle(task: PlanTask): string {
   return title || task.title.trim();
 }
 
+export function taskPaneTitle(task: PlanTask): string {
+  const title = cleanTaskTitle(task);
+  if (task.responderOwned) return `↳ Responder: ${title}`;
+  return task.parentTaskId ? `↳ ${title}` : title;
+}
+
 export function formatPlanPagerDocument(plan: SessionPlan): string {
   const { done, total } = planProgress(plan);
   const goal = plan.goal.trim() || "Untitled plan";
