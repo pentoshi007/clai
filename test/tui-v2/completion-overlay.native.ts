@@ -70,7 +70,7 @@ try {
     `the command menu must not shorten the task pane\n${frame}`,
   );
 
-  const menuRow = frame.split("\n").findIndex((line) => line.includes("commands ·"));
+  const menuRow = frame.split("\n").findIndex((line) => /commands · \d+/.test(line));
   const composer = borderedAncestor(findTextarea());
   assert.ok(
     menuRow >= 0 && menuRow < composer.y,

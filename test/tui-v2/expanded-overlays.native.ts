@@ -66,7 +66,7 @@ const pickerRowText = (row: number): string => setup.captureSpans().lines[row]!.
 const assertCompletionHeaderStyle = (): void => {
   const theme = themeFor(services.capabilities.themeHint);
   const span = setup.captureSpans().lines.flatMap((line) => line.spans)
-    .find((candidate) => candidate.text.includes("commands ·"));
+    .find((candidate) => /commands · \d+/.test(candidate.text));
   assert.ok(span);
   assert.ok(span.fg.equals(RGBA.fromHex(theme.white)));
   assert.ok(!span.bg.equals(RGBA.fromHex(theme.aquaLight)));
@@ -387,7 +387,7 @@ try {
   assertFocusedCompletionContrast();
   assert.match(slashMenu, /commands ·/);
   const slashRows = slashMenu.split("\n");
-  const menuTop = slashRows.findIndex((line) => line.includes("commands ·"));
+  const menuTop = slashRows.findIndex((line) => /commands · \d+/.test(line));
   const menuBottom = slashRows.findIndex((line, index) => index > menuTop && line.includes("╰"));
   assert.ok(menuTop > 1 && menuBottom > menuTop && menuBottom - menuTop < 20, slashMenu);
   if (process.env.CLAI_OVERLAY_EVIDENCE) await writeFile(process.env.CLAI_OVERLAY_EVIDENCE, evidence.join("\n\n"));
