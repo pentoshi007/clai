@@ -720,6 +720,7 @@ export function App(): ReactNode {
           </box>
           {layout.plan.placement === "split" && planRendered ? (
             <box
+              id="tasks-pane"
               title=" Tasks "
               titleColor={theme.inputBorder}
               border
@@ -754,6 +755,8 @@ export function App(): ReactNode {
           height={composerMaxTextRows}
           focused={composerFocused}
           maxSuggestions={completionRows}
+          menuFloating={layout.plan.placement === "split" && planRendered}
+          menuFloatingWidth={chatContentWidth}
           running={sessionRunning}
           inputSuspended={contextLimitEditing}
           onEscapeCancel={requestEscapeCancel}
