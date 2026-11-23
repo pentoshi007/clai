@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.7.1 — 2026-11-23
+
+### OpenTUI fixes
+
+- Keep the command and file completion menus full width and clickable above the Tasks pane, without shortening it.
+- Start with Tasks collapsed in small terminals. Open it automatically at 120 columns by 20 rows when a plan exists, while respecting manual Show and Hide choices across resizes.
+
 ## v5.7.0 — 2026-11-23
 
 ### Task pane and command menu
