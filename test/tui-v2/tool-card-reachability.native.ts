@@ -62,6 +62,9 @@ for (const [width, height] of [[180, 50], [180, 51], [140, 40], [140, 41], [92, 
 
   try {
     await settle();
+    if (width >= 58 && width < 120) {
+      await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
+    }
     await settle(() => transcriptScrollPort.scrollToBottom());
     assertBottom("started");
     for (const count of [1, 3, 18]) {
@@ -103,7 +106,9 @@ for (const [width, height] of [[180, 50], [180, 51], [140, 40], [140, 41], [92, 
     await settle(() => services.session.enqueue("A queued follow-up"));
     await settle(() => transcriptScrollPort.scrollBy(1_000));
     assertBottom("queued");
-    await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
+    if (setup.renderer.root.findDescendantById("tasks-pane")) {
+      await settle(() => setup.mockInput.pressKey("h", { ctrl: true }));
+    }
     await settle(() => transcriptScrollPort.scrollBy(1_000));
     assertBottom("tasks-hidden");
     await settle(() => setup.resize(width - 12, height - 3));

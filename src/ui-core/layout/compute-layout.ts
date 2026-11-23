@@ -12,7 +12,7 @@ export interface Rect {
 export interface LayoutInput {
   readonly columns: number;
   readonly rows: number;
-  readonly planVisible?: boolean | undefined;
+  readonly planVisible?: boolean | "auto" | undefined;
   readonly splitEnabled?: boolean | undefined;
 }
 
@@ -113,15 +113,15 @@ function computeVertical(rows: number): {
 function resolvePlan(
   columns: number,
   density: LayoutDensity,
-  planVisible: boolean,
+  planVisible: boolean | "auto",
   splitEnabled: boolean,
 ): { placement: PlanPlacement; planWidth: number; chatWidth: number } {
-  if (!planVisible) {
-    return { placement: "hidden", planWidth: 0, chatWidth: columns };
-  }
-  if (density !== "wide" || !splitEnabled) {
-    return { placement: "overlay", planWidth: 0, chatWidth: columns };
-  }
+  const unsplit = {
+    placement: planVisible === true ? "overlay" : "hidden",
+    planWidth: 0,
+    chatWidth: columns,
+  } as const;
+  if (!planVisible || density !== "wide" || !splitEnabled) return unsplit;
   const desired = clamp(
     Math.floor(columns * PLAN_SPLIT_SHARE) - 1,
     PLAN_MIN_WIDTH,
@@ -139,7 +139,7 @@ function resolvePlan(
       chatWidth: CHAT_MIN_WIDTH_SPLIT,
     };
   }
-  return { placement: "overlay", planWidth: 0, chatWidth: columns };
+  return unsplit;
 }
 
 export function computeLayout(input: LayoutInput): LayoutModel {
