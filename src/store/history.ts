@@ -383,7 +383,7 @@ export async function upsertSession(
     name: name ?? existing?.name ?? derivedName,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
-    cwd: location?.cwd ?? safeCwd(),
+    cwd: existing?.cwd ?? location?.cwd ?? safeCwd(),
     messages: scrubMessagesFor(id, messages),
     transcript: scrubTranscript(transcript),
     ...(changes ? { changes } : existing?.changes ? { changes: existing.changes } : {}),
