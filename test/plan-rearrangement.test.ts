@@ -106,12 +106,12 @@ describe("task.move handler", () => {
   });
 });
 
-describe("task.add report deferral", () => {
-  it("places discovered work before an unfinished report and reopens that report", async () => {
+describe("task.add report handling", () => {
+  it("places discovered work before an unfinished report file task", async () => {
     const sessionId = "report-defer-open";
     const { plan } = await seed(sessionId, [
-      "Enumerate application surface",
-      "Compile final report",
+      "Check the application settings",
+      "Write the assessment report to docs/assessment.md",
     ]);
     plan.tasks[0]!.state = "done";
     plan.tasks[1]!.state = "in_progress";
@@ -119,53 +119,66 @@ describe("task.add report deferral", () => {
 
     const result = await invoke(sessionId, {
       name: "task.add",
-      args: { title: "Test newly discovered admin endpoint" },
+      args: { title: "Verify the new settings shortcut" },
     });
 
     expect(result.ok).toBe(true);
     const live = await loadPlan(sessionId);
-    expect(live?.tasks.map((task) => task.title)).toEqual([
-      "Enumerate application surface",
-      "Test newly discovered admin endpoint",
-      "Compile final report",
-    ]);
-    const discovery = live?.tasks[1];
-    const report = live?.tasks[2];
-    expect(report).toMatchObject({ state: "pending" });
-    expect(report?.dependencies).toContain(discovery?.id);
+    expect(live?.tasks.map((task) => task.id)).toEqual(["t1", "t3", "t2"]);
+    expect(live?.tasks[2]).toMatchObject({
+      state: "pending",
+      dependencies: ["t1", "t3"],
+    });
     expect(result.modelNote).toMatch(/report.*deferred/i);
   });
 
-  it("adds a follow-up update task when the report was already completed", async () => {
-    const sessionId = "report-defer-done";
-    const { plan } = await seed(sessionId, [
-      "Enumerate application surface",
-      "Compile final report",
-    ]);
-    plan.tasks[0]!.state = "done";
-    plan.tasks[1]!.state = "done";
+  it.each(["build", "pentest"])("adds only the requested work across %s follow-ups", async (kind) => {
+    const sessionId = `report-defer-done-${kind}`;
+    const originalTitles = ["Check the application settings", "Compile final report"];
+    const { plan } = await seed(sessionId, originalTitles);
+    plan.kind = kind;
+    for (const task of plan.tasks) task.state = "done";
     plan.status = "completed";
     await savePlan(plan);
 
-    const result = await invoke(sessionId, {
-      name: "task.add",
-      args: { title: "Validate newly discovered API route" },
-    });
+    const followUps = ["Verify the new settings shortcut", "Fix the popover click handling"];
+    for (const [index, title] of followUps.entries()) {
+      const added = await invoke(sessionId, { name: "task.add", args: { title } });
+      expect(added.ok).toBe(true);
+      expect(added.plan?.status).toBe("in_progress");
+      expect((await loadPlan(sessionId))?.tasks.map((task) => task.title)).toEqual([
+        ...originalTitles,
+        ...followUps.slice(0, index + 1),
+      ]);
+      expect(added.plan?.tasks.slice(0, 2)).toEqual(plan.tasks);
+
+      const completed = await invoke(sessionId, {
+        name: "task.update",
+        args: { taskId: `t${index + 3}`, state: "done" },
+      });
+      expect(completed.plan?.status).toBe("completed");
+      expect(completed.modelNote).toContain("give your final summary");
+    }
+  });
+
+  it("tracks an explicit update to a completed report file", async () => {
+    const sessionId = "report-file-update";
+    const { plan } = await seed(sessionId, ["Write the report to docs/assessment.md"]);
+    plan.tasks[0]!.state = "done";
+    plan.status = "completed";
+    await savePlan(plan);
+
+    const args = {
+      title: "Update final report with the new settings findings",
+      acceptanceCriteria: "docs/assessment.md includes the verified keyboard behavior",
+      dependencies: ["t1"],
+    };
+    const result = await invoke(sessionId, { name: "task.add", args });
 
     expect(result.ok).toBe(true);
-    const live = await loadPlan(sessionId);
-    const discovery = live?.tasks.find((task) =>
-      task.title.includes("newly discovered API route"),
-    );
-    const followUp = live?.tasks.find((task) =>
-      task.title.startsWith("Update final report"),
-    );
-    expect(discovery).toBeTruthy();
-    expect(followUp).toMatchObject({
-      state: "pending",
-      dependencies: [discovery?.id],
-    });
-    expect(live?.status).toBe("in_progress");
-    expect(result.modelNote).toMatch(/update the completed report/i);
+    expect((await loadPlan(sessionId))?.tasks).toMatchObject([
+      { id: "t1", state: "done" },
+      { id: "t2", state: "pending", ...args },
+    ]);
   });
 });

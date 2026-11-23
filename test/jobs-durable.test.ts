@@ -242,10 +242,11 @@ describe("durable background jobs", () => {
     await manager.stopJob(id, { graceMs: 200 });
   });
 
-  it("keeps an alive persisted running job running when its identity is absent (never falsely lost)", async () => {
+  it("keeps an alive persisted running job and its title when process identity is absent", async () => {
     const { dir, manager } = await fixture();
     const started = await manager.startJob(
       `${JSON.stringify(process.execPath)} -e "setInterval(() => {}, 1000)"`,
+      { name: "Watch test fixture" },
     );
     const id = /id=([a-f0-9]+)/.exec(started.output)?.[1]!;
     await sleep(80);
@@ -261,7 +262,7 @@ describe("durable background jobs", () => {
 
     const restarted = new JobManager(dir);
     managers.push(restarted);
-    expect(restarted.getJob(id)?.status).toBe("running");
+    expect(restarted.getJob(id)).toMatchObject({ status: "running", name: "Watch test fixture" });
     // Repeated liveness re-checks (as the UI polls) keep it running, never
     // flipping a live job to a premature terminal "lost".
     expect(restarted.getJob(id)?.status).toBe("running");
@@ -269,6 +270,28 @@ describe("durable background jobs", () => {
       restarted.getRunningJobs().some((job) => job.id === id),
     ).toBe(true);
     await manager.stopJob(id, { graceMs: 200 });
+  });
+
+  it("preserves jobs another process persisted after this one loaded the registry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-jobs-"));
+    dirs.push(dir);
+    const stale = new JobManager(dir);
+    managers.push(stale);
+    const other = new JobManager(dir);
+    managers.push(other);
+    const command = `${JSON.stringify(process.execPath)} -e "setTimeout(() => {}, 50)"`;
+    const otherJob = await other.startJob(command, { ownerSessionId: "session-other", name: "Other process job" });
+    const otherId = /id=([a-f0-9]+)/.exec(otherJob.output)?.[1]!;
+    const staleJob = await stale.startJob(command, { ownerSessionId: "session-stale", name: "Stale process job" });
+    const staleId = /id=([a-f0-9]+)/.exec(staleJob.output)?.[1]!;
+
+    const registry = JSON.parse(await readFile(join(dir, "registry-v1.json"), "utf8")) as { jobs: BackgroundJob[] };
+    expect(registry.jobs.map((job) => job.id).sort()).toEqual([otherId, staleId].sort());
+
+    const restarted = new JobManager(dir);
+    managers.push(restarted);
+    expect(restarted.getJob(otherId)).toMatchObject({ name: "Other process job", ownerSessionId: "session-other" });
+    expect(restarted.getJob(staleId)).toMatchObject({ name: "Stale process job", ownerSessionId: "session-stale" });
   });
 });
 

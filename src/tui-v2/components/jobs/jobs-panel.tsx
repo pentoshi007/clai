@@ -8,7 +8,8 @@ import type {
   BackgroundJob,
   ResponderNotification,
 } from "../../../app/ports/jobs-port.js";
-import { formatJobElapsed, responderJobLabel } from "../../../tools/jobs.js";
+import { formatJobElapsed } from "../../../tools/jobs.js";
+import { jobTitle } from "../../../tools/jobs/title.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
@@ -243,7 +244,6 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
           const marker = focused ? "❯ " : "  ";
           const headline = `${marker}${phase.glyph} ${status.text}${notification ? ` · ${phase.label}` : ""}  ·  ${formatJobElapsed(job, now)}`;
           const meta = `    ${kindTag} · ${linkage}`;
-          const command = job.name ? `${job.name}: ${job.command}` : job.command;
           return (
             <box
               key={job.id}
@@ -266,7 +266,7 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
                 style={{ fg: theme.muted, height: 1, width: "100%" }}
               />
               <text
-                content={`    ${command}`}
+                content={`    ${jobTitle(job)}`}
                 wrapMode="word"
                 style={{
                   fg: focused ? theme.foreground : theme.muted,
@@ -479,7 +479,7 @@ export const ResponderPanel = memo(function ResponderPanel(props: ResponderPanel
                 }}
               />
               <text
-                content={`    ${responderJobLabel(job)}`}
+                content={`    ${jobTitle(job)}`}
                 wrapMode="word"
                 style={{ width: "100%", fg: theme.foreground }}
               />
@@ -488,7 +488,7 @@ export const ResponderPanel = memo(function ResponderPanel(props: ResponderPanel
         : null}
       {!collapsed && hidden > 0 ? (
         <text
-          content={`  +${hidden} more · press Ctrl+J for all ${projection.jobs.length} jobs (full command, artifacts, actions)`}
+          content={`  +${hidden} more · Ctrl+J for output and actions`}
           wrapMode="none"
           style={{ width: "100%", height: 1, fg: theme.muted }}
         />

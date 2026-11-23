@@ -55,7 +55,8 @@ for (const width of [120, 40]) {
           const frame = setup.captureCharFrame();
           const card = setup.renderer.root.findDescendantById(item.id);
           assert.ok(card && card.height <= 8, `Image card is not compact at ${width} columns\n${frame}`);
-          assert.match(frame, /image\.view/);
+          assert.match(frame, /\bViewed image\b/);
+          assert.doesNotMatch(frame, /\bimage\.view\b/);
           assert.ok(!frame.includes("PRIVATE_IMAGE_OUTPUT"), frame);
           assert.ok(!frame.includes("OUTPUT"), frame);
           assert.ok(!frame.includes("image-view-output.log"), frame);
@@ -71,8 +72,10 @@ for (const width of [120, 40]) {
             if (multiple) assert.match(frame, /image 2\/2: screenshots\/after\.png/, frame);
           }
           const lines = frame.split("\n");
-          const row = lines.findIndex((line) => line.includes(expanded ? "image.view" : "click to open pager"));
-          const column = lines[row]!.indexOf(expanded ? "image.view" : "click to open pager");
+          const target = expanded ? "Viewed image" : "click to open pager";
+          const row = lines.findIndex((line) => line.includes(target));
+          assert.ok(row >= 0, frame);
+          const column = lines[row]!.indexOf(target);
           await settle(() => setup.mockMouse.click(column + 1, row));
           const overlay = services.overlay.getState();
           assert.equal(overlay.kind, "pager", `Compact image card did not open a pager\n${frame}`);

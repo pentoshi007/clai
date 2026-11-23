@@ -207,6 +207,8 @@ export class SessionController implements Disposable {
   private generation: GenerationProgress | undefined;
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
+  private contentVersion = 0;
+  private persistedVersion = 0;
   private readonly persistence: SessionPersistenceQueue;
   private static readonly AUTOSAVE_MIN_MS = 15_000;
   private contextSnapshot: ContextSnapshotV1 | undefined;
@@ -235,6 +237,7 @@ export class SessionController implements Disposable {
       ready: () => this.canAbsorbLateWork(),
       absorb: deps.absorbPersistedTranscript,
       absorbed: () => {
+        this.contentVersion += 1;
         this.notifyState();
         void this.persistNow().catch(() => undefined);
       },
@@ -337,6 +340,7 @@ export class SessionController implements Disposable {
           ))),
       applyTitle: (title) => {
         this.sessionTitle = title;
+        this.contentVersion += 1;
         this.notifyState();
         void this.persistNow().catch(() => undefined);
       },
@@ -590,6 +594,7 @@ export class SessionController implements Disposable {
 
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
+    this.contentVersion += 1;
     this.generation = undefined;
     this.lastMainRequestSnapshot = undefined;
     this.setContextSnapshot(contextSnapshotForRoute(this.usageTarget, this.contextSnapshot));
@@ -607,6 +612,7 @@ export class SessionController implements Disposable {
 
   setModel(model: string | undefined): void {
     this.model = model;
+    this.contentVersion += 1;
     this.generation = undefined;
     this.lastMainRequestSnapshot = undefined;
     this.setContextSnapshot(contextSnapshotForRoute(this.usageTarget, this.contextSnapshot));
@@ -649,6 +655,7 @@ export class SessionController implements Disposable {
       transcript?: readonly ClassicTranscriptItem[] | undefined;
       changes?: readonly FileLineChanges[] | undefined;
       unsyncedItemIds?: readonly string[] | undefined;
+      alreadyPersisted?: boolean | undefined;
     } = {},
   ): void {
     this.beginLifecycleGeneration();
@@ -656,6 +663,8 @@ export class SessionController implements Disposable {
     const healed: ChatMessage[] = messages.map((m) => ({ ...m }));
     repairToolProtocol(healed);
     this.history = healed;
+    this.contentVersion = options.alreadyPersisted ? 0 : 1;
+    this.persistedVersion = 0;
     this.restoredPreviousTurn = options.previousTurn;
     this.prompts.detach();
     this.spool.clear();
@@ -877,6 +886,8 @@ export class SessionController implements Disposable {
     this.beginLifecycleGeneration();
     this.sequencer.rebind(this.sessionIdValue);
     this.history = [];
+    this.contentVersion = 0;
+    this.persistedVersion = 0;
     this.restoredPreviousTurn = undefined;
     if (options.mintNewId) this.prompts.detach();
     else this.prompts.clear();
@@ -910,6 +921,7 @@ export class SessionController implements Disposable {
     contextSnapshot?: ContextSnapshotV1 | ContextUsageSnapshot | undefined,
   ): void {
     this.history = [...messages];
+    this.contentVersion += 1;
     this.lastMainRequestSnapshot = undefined;
     this.lastContextCompactionId = undefined;
     const restored = restoredContextSnapshot(
@@ -994,6 +1006,7 @@ export class SessionController implements Disposable {
           commit: (result, reported) => {
             this.history = result.messages;
             if (result.summarized) {
+              this.contentVersion += 1;
               this.lastMainRequestSnapshot = undefined;
               this.noteContextCompacted(
                 reported.afterTokens,
@@ -1105,6 +1118,12 @@ export class SessionController implements Disposable {
       this.sessionTitle = name;
       this.namer.markManual();
     }
+    if (!name && this.contentVersion === this.persistedVersion) {
+      await this.promptHistoryValue.flush().catch(() => undefined);
+      this.settlePersistedResponderResults();
+      return;
+    }
+    const version = this.contentVersion;
 
     const contextSnapshot = this.resolveContextSnapshot();
     this.setContextSnapshot(contextSnapshot);
@@ -1134,6 +1153,7 @@ export class SessionController implements Disposable {
     });
     const [merge] = await Promise.all([saved, this.promptHistoryValue.flush().catch(() => undefined)]);
     if (generation !== this.lifecycleGeneration) return;
+    this.persistedVersion = version;
     this.settlePersistedResponderResults();
     this.lateWork.accept(merge);
   }
@@ -1308,6 +1328,7 @@ export class SessionController implements Disposable {
         onMessages: (messages) => {
           if (turnGeneration !== this.lifecycleGeneration) return;
           this.history = pathBackedMessages(messages);
+          this.contentVersion += 1;
           this.notifyState();
           this.scheduleAutosave();
         },

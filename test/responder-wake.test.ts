@@ -179,11 +179,14 @@ describe("runtime responder listening lease", () => {
     const leaseId = ctx.jobs.getResponderLeaseId("active");
     expect(ctx.responder.getState().mode).toBe("idle");
 
-    await startResponderJob(manager, "active", leaseId);
+    await manager.startJob(`${JSON.stringify(process.execPath)} -e "process.exit(0)"`, {
+      ownerSessionId: "active", name: "Run verification", responder: true,
+      wakeOnCompletion: true, responderLeaseId: leaseId,
+    });
     await waitFor(() => ctx.runTurn.mock.calls.length === 1);
     await waitFor(() => manager.getPendingNotifications("active").length === 0);
 
-    expect(ctx.notifyDelivery).toHaveBeenCalledTimes(1);
+    expect(ctx.notifyDelivery).toHaveBeenCalledExactlyOnceWith("Responder → model · Run verification result");
     expect(ctx.runTurn.mock.calls[0]?.[0]).toContain("Responder result arrived");
     ctx.unsubscribe();
   });
@@ -234,7 +237,10 @@ describe("runtime responder listening lease", () => {
     await waitFor(() => ctx.runTurn.mock.calls.length === 2);
     await waitFor(() => manager.getPendingNotifications("fifo").length === 0);
 
-    expect(ctx.notifyDelivery).toHaveBeenCalledTimes(2);
+    expect(ctx.notifyDelivery.mock.calls).toEqual([
+      ["Responder → model · Background job result"],
+      ["Responder → model · Background job result"],
+    ]);
     expect(ctx.runTurn.mock.calls[0]?.[0]).not.toBe(ctx.runTurn.mock.calls[1]?.[0]);
     ctx.unsubscribe();
   });

@@ -1,174 +1,119 @@
-import type { PlanToolResult } from "../handle-plan-tool.js";
-import { renderPlanForTerminal } from "../handle-plan-tool.js";
-import { appendPlanTask, applyForegroundSnapshot, applySessionPlanOperation, createPlan, deletePlan, isBareTaskIdTitle, isPlanSuccessful, isPlanTerminal, loadPlan, markTask, mutatePlan, normalizeTaskDependencies, readyPlanTasks, savePlan, validateSessionPlan } from "../../../store/plan.js";
-import type { SessionPlan, TaskState } from "../../../store/plan.js";
-import type { ToolCall } from "../../../types.js";
-import { renderPlanChecklist } from "../../../ui/plan-pane.js";
-import type { LoopGuard } from "../../loop-guard.js";
-import { getActiveProjectRoot } from "../../project-root.js";
-import type { SessionPolicy } from "../../session-policy.js";
-import { classifyTaskTitle } from "../../task-evidence.js";
-import { isLumpedSingleTask } from "../../tool-call-parser.js";
-import { detectPackageManager } from "../../workspace-orient.js";
 import chalk from "chalk";
-import { looksLikeRunOnlyGoal, nextTaskId, normalizePlanDetail, normalizePlanGoal, normalizePlanKind, normalizePlanTaskEntries, normalizeTaskTitle, resolvePlanTaskId, slugifyTaskId, titlesMatchForPlan } from "../normalization.js";
+import { appendPlanTask, isBareTaskIdTitle, mutatePlan, validateSessionPlan } from "../../../store/plan.js";
+import type { PlanTask, SessionPlan } from "../../../store/plan.js";
+import type { ToolCall } from "../../../types.js";
+import { classifyTaskTitle } from "../../evidence/task-classification.js";
+import type { SessionPolicy } from "../../session-policy.js";
+import { renderPlanForTerminal, type PlanToolResult } from "../handle-plan-tool.js";
+import { normalizeTaskTitle, resolvePlanTaskId, slugifyTaskId } from "../normalization.js";
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))];
+}
+
+function resolveTaskAddInput(
+  plan: SessionPlan,
+  title: string,
+  args: ToolCall["args"],
+): Omit<PlanTask, "id"> | string {
+  const parent = [args.parentTaskId, args.parentId].find((value) => typeof value === "string");
+  const parentTaskId = parent ? resolvePlanTaskId(plan, parent) : undefined;
+  if (parent && !parentTaskId) {
+    return `unknown parentTaskId "${parent}". Use a canonical id from ACTIVE PLAN.`;
+  }
+  const dependencies = stringArray(args.dependencies ?? args.dependsOn)
+    .map((dependency) => resolvePlanTaskId(plan, dependency) ?? dependency);
+  const unknownDependency = dependencies.find((id) => !plan.tasks.some((task) => task.id === id));
+  if (unknownDependency) {
+    return `unknown dependency "${unknownDependency}". Use canonical ids from ACTIVE PLAN.`;
+  }
+  const acceptance = [args.acceptanceCriteria, args.acceptance].find((value) => typeof value === "string");
+  return {
+    title,
+    state: "pending",
+    note: typeof args.note === "string" ? args.note : undefined,
+    acceptanceCriteria: acceptance?.trim(),
+    aliases: [slugifyTaskId(title)].filter(Boolean),
+    dependencies,
+    resourceLocks: stringArray(args.resourceLocks ?? args.resources),
+    parentTaskId,
+  };
+}
+
+function deferUnfinishedReport(plan: SessionPlan, task: PlanTask): string | undefined {
+  const isReport = (candidate: PlanTask): boolean =>
+    classifyTaskTitle(candidate.title, { planKind: plan.kind }) === "report";
+  if (isReport(task)) return;
+  const report = plan.tasks.find((candidate) =>
+    !candidate.responderOwned && candidate.state !== "done" && candidate.state !== "skipped" && isReport(candidate),
+  );
+  if (!report || task.dependencies?.includes(report.id)) return;
+
+  plan.tasks.splice(plan.tasks.indexOf(task), 1);
+  plan.tasks.splice(plan.tasks.indexOf(report), 0, task);
+  report.dependencies = [...new Set([...(report.dependencies ?? []), task.id])];
+  if (report.state === "in_progress") report.state = "pending";
+  const deferral = `deferred for newly discovered work ${task.id}`;
+  report.note = report.note ? `${report.note}; ${deferral}` : deferral;
+  return report.id;
+}
+
+function taskAddFailure(reason: string): PlanToolResult {
+  return {
+    handled: true,
+    ok: false,
+    display: chalk.red(`  ✗ task.add: ${reason}\n`),
+    modelNote: `task.add failed: ${reason}`,
+  };
+}
 
 export async function handleTaskAdd(
-  call: ToolCall,
+  { args }: ToolCall,
   session: SessionPolicy,
-  autoApprove: boolean,
+  _autoApprove: boolean,
   plan: SessionPlan,
 ): Promise<PlanToolResult> {
-  void autoApprove;
-    const title = normalizeTaskTitle(
-      call.args.title ?? call.args.task ?? call.args.name,
-    );
+  let rejection: string | undefined;
+  let added: { task: PlanTask; deferredReportId: string | undefined } | undefined;
+  const committed = await mutatePlan(plan.sessionId, (draft) => {
+    const title = normalizeTaskTitle(args.title ?? args.task ?? args.name);
     if (!title || isBareTaskIdTitle(title)) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red("  ✗ task.add needs a descriptive title\n"),
-        modelNote: "task.add failed: provide a descriptive title, not a bare task id.",
-      };
+      rejection = "provide a descriptive title, not a bare task id.";
+      return false;
     }
-    const parentRaw =
-      typeof call.args.parentTaskId === "string"
-        ? call.args.parentTaskId
-        : typeof call.args.parentId === "string"
-          ? call.args.parentId
-          : undefined;
-    const parentTaskId = parentRaw
-      ? resolvePlanTaskId(plan, parentRaw)
-      : undefined;
-    if (parentRaw && !parentTaskId) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(`  ✗ task.add: unknown parent "${parentRaw}"\n`),
-        modelNote: `task.add failed: unknown parentTaskId "${parentRaw}". Use a canonical id from ACTIVE PLAN.`,
-      };
+    const input = resolveTaskAddInput(draft, title, args);
+    if (typeof input === "string") {
+      rejection = input;
+      return false;
     }
-    const stringArray = (value: unknown): string[] =>
-      Array.isArray(value)
-        ? [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
-        : [];
-    const dependencies = stringArray(
-      call.args.dependencies ?? call.args.dependsOn,
-    ).map((dependency) => resolvePlanTaskId(plan, dependency) ?? dependency);
-    const unknownDependency = dependencies.find(
-      (dependency) => !plan.tasks.some((task) => task.id === dependency),
-    );
-    if (unknownDependency) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(`  ✗ task.add: unknown dependency "${unknownDependency}"\n`),
-        modelNote: `task.add failed: unknown dependency "${unknownDependency}". Use canonical ids from ACTIVE PLAN.`,
-      };
-    }
-    const tasksBeforeAdd = plan.tasks.map((candidate) => ({
-      ...candidate,
-      dependencies: [...(candidate.dependencies ?? [])],
-      resourceLocks: [...(candidate.resourceLocks ?? [])],
-    }));
-    const statusBeforeAdd = plan.status;
-    const versionBeforeAdd = plan.version;
-    const updatedAtBeforeAdd = plan.updatedAt;
-    const task = appendPlanTask(plan, {
-      title,
-      state: "pending",
-      note: typeof call.args.note === "string" ? call.args.note : undefined,
-      acceptanceCriteria:
-        typeof call.args.acceptanceCriteria === "string"
-          ? call.args.acceptanceCriteria.trim()
-          : typeof call.args.acceptance === "string"
-            ? call.args.acceptance.trim()
-            : undefined,
-      aliases: [slugifyTaskId(title)].filter(Boolean),
-      dependencies,
-      resourceLocks: stringArray(
-        call.args.resourceLocks ?? call.args.resources,
-      ),
-      parentTaskId,
-    });
-    let reportDeferral = "";
-    if (classifyTaskTitle(task.title, { planKind: plan.kind }) !== "report") {
-      const report = plan.tasks.find(
-        (candidate) =>
-          !candidate.responderOwned &&
-          classifyTaskTitle(candidate.title, { planKind: plan.kind }) === "report",
-      );
-      if (
-        report &&
-        report.id !== task.id &&
-        report.state !== "done" &&
-        report.state !== "skipped" &&
-        !task.dependencies?.includes(report.id)
-      ) {
-        const taskIndex = plan.tasks.findIndex((candidate) => candidate.id === task.id);
-        plan.tasks.splice(taskIndex, 1);
-        const reportIndex = plan.tasks.findIndex((candidate) => candidate.id === report.id);
-        plan.tasks.splice(reportIndex, 0, task);
-        report.dependencies = [...new Set([...(report.dependencies ?? []), task.id])];
-        if (report.state === "in_progress") report.state = "pending";
-        report.note = report.note
-          ? `${report.note}; deferred for newly discovered work ${task.id}`
-          : `deferred for newly discovered work ${task.id}`;
-        reportDeferral = ` Report [${report.id}] was deferred behind this new work.`;
-      } else if (report?.state === "done") {
-        const update = appendPlanTask(plan, {
-          title: `Update final report with findings from ${task.id}`,
-          state: "pending",
-          aliases: [],
-          dependencies: [task.id],
-          resourceLocks: [],
-          note: `final report update after newly discovered work ${task.id}`,
-        });
-        reportDeferral = ` Added [${update.id}] to update the completed report after this work.`;
-      }
-    }
-    if (
-      session.planApproved.value &&
-      (plan.status === "approved" || plan.status === "completed" || plan.status === "abandoned")
-    ) {
-      plan.status = "in_progress";
-    }
-    const validation = validateSessionPlan(plan);
+    const task = appendPlanTask(draft, input);
+    const deferredReportId = deferUnfinishedReport(draft, task);
+    if (session.planApproved.value && draft.status === "approved") draft.status = "in_progress";
+    const validation = validateSessionPlan(draft);
     if (!validation.ok) {
-      plan.tasks = tasksBeforeAdd;
-      plan.status = statusBeforeAdd;
-      plan.version = versionBeforeAdd;
-      plan.updatedAt = updatedAtBeforeAdd;
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(`  ✗ task.add: ${validation.reason}\n`),
-        modelNote: `task.add failed: ${validation.reason}.`,
-      };
+      rejection = `${validation.reason}.`;
+      return false;
     }
-    const committed = await mutatePlan(plan.sessionId, (draft) => {
-      applyForegroundSnapshot(draft, plan);
-      return true;
-    });
-    if (!committed.ok || !committed.plan) {
-      const reason = committed.reason ?? "persist-failed";
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(`  ✗ task.add: durable commit failed (${reason})\n`),
-        modelNote:
-          `task.add failed: the new task was not durably committed (${reason}). ` +
-          "Reload the active plan before retrying.",
-      };
-    }
-    const committedPlan = committed.plan;
-    return {
-      handled: true,
-      ok: true,
-      plan: committedPlan,
-      display: renderPlanForTerminal(committedPlan) + "\n",
-      modelNote:
-        `Added [${task.id}] "${task.title}"${parentTaskId ? ` under [${parentTaskId}]` : ""} without rewriting existing tasks.${reportDeferral} ` +
-        `Open it with task.update when it becomes ready. Preserve completed work and continue the current task unless this new task is the immediate evidence-driven next action.`,
-    };
+    added = { task, deferredReportId };
+    return true;
+  });
+  if (rejection) return taskAddFailure(rejection);
+  if (!committed.ok || !committed.plan || !added) {
+    return taskAddFailure(
+      `the new task was not durably committed (${committed.reason ?? "persist-failed"}). Reload the active plan before retrying.`,
+    );
+  }
+  const { task, deferredReportId } = added;
+  const parent = task.parentTaskId ? ` under [${task.parentTaskId}]` : "";
+  const deferral = deferredReportId ? ` Report [${deferredReportId}] was deferred behind this new work.` : "";
+  return {
+    handled: true,
+    ok: true,
+    plan: committed.plan,
+    display: renderPlanForTerminal(committed.plan) + "\n",
+    modelNote:
+      `Added [${task.id}] "${task.title}"${parent} without rewriting existing tasks.${deferral} ` +
+      "Open it with task.update when it becomes ready. Preserve completed work and continue the current task unless this new task is the immediate evidence-driven next action.",
+  };
 }

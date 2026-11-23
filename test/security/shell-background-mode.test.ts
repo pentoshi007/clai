@@ -46,6 +46,7 @@ describe("TOOL-002 shell.exec background mode", () => {
     await shellExec(
       {
         command: "find / -name definitely-not-here-xyz",
+        name: "Find missing file",
         responder: true,
       },
       {},
@@ -67,7 +68,7 @@ describe("TOOL-002 shell.exec background mode", () => {
       },
     });
 
-    await shellExec({ command: "echo finite", background: "always" }, {});
+    await shellExec({ command: "echo finite", name: "Print message", background: "always" }, {});
     expect(start.mock.calls[0]?.[1]).toMatchObject({
       responder: false,
       wakeOnCompletion: false,
@@ -75,7 +76,7 @@ describe("TOOL-002 shell.exec background mode", () => {
 
     start.mockClear();
     await shellExec(
-      { command: "echo finite", background: "always", responder: true },
+      { command: "echo finite", name: "Print message", background: "always", responder: true },
       {},
     );
     expect(start.mock.calls[0]?.[1]).toMatchObject({
@@ -106,7 +107,7 @@ describe("TOOL-002 shell.exec background mode", () => {
     expect(foreground.backgroundJob).toBeUndefined();
     expect(start).not.toHaveBeenCalled();
 
-    await shellExec({ command: "tcpdump -c 1", responder: true }, {});
+    await shellExec({ command: "tcpdump -c 1", name: "Capture one packet", responder: true }, {});
     expect(start.mock.calls[0]?.[1]).toMatchObject({
       responder: true,
       wakeOnCompletion: true,
@@ -135,7 +136,7 @@ describe("TOOL-002 shell.exec background mode", () => {
   it.each([false, true])("ignores foreground timeoutMs on explicit background, responder=%s", async (responder) => {
     const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setTimeout(() => console.log('finished'), 1500)")}`;
     const started = await shellExec(
-      { command, timeoutMs: 1000, background: "always", responder },
+      { command, name: "Delayed test output", timeoutMs: 1000, background: "always", responder },
       { sessionId: "background-timeout-regression" },
     );
     const id = started.backgroundJob?.id;
@@ -161,7 +162,7 @@ describe("TOOL-002 shell.exec background mode", () => {
       },
     });
     const result = await shellExec(
-      { command: "find / -name definitely-not-here-xyz", timeoutMs: 1234, responder: true },
+      { command: "find / -name definitely-not-here-xyz", name: "Find missing file", timeoutMs: 1234, responder: true },
       {},
     );
     expect(start.mock.calls[0]?.[1]).not.toHaveProperty("timeoutMs");

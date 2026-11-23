@@ -251,7 +251,7 @@ async function main(): Promise<void> {
     )
     .option(
       "-c, --continue",
-      "resume the most recent session for this directory; ignored when a prompt is supplied",
+      "resume the most recent session for this directory, starting fresh when it has none; ignored when a prompt is supplied",
     )
     .addOption(
       new Option(

@@ -220,7 +220,6 @@ export const runSingleTool = async (
 
   const metaOutcome = await runMetaTool(
     {
-      step: deps.step(),
       wake: {
         wakeTurn: deps.responderWakeTurn,
         notificationId: deps.responderWakeNotificationId,
@@ -235,13 +234,13 @@ export const runSingleTool = async (
       releaseClaim: (id) => deps.responderClaims.delete(id),
       queueResponderLedger: (notification) =>
         deps.deferredResponderLedgerNotifications.push(notification),
-      loadPlan: () => loadPlan(deps.session.sessionId),
       handlePlanTool: (planCall) =>
         handlePlanTool(planCall, deps.session, {
           loopGuard: deps.loopGuard,
           step: deps.step(),
           autoApprove: !deps.isPlanMode,
           turnEnd: routeDeclaresTurnEnd(deps.provider(), deps.model()),
+          taskWork: { ledger: deps.toolState.taskWorkLedger, looseWork: deps.sessionLooseWork },
         }),
       recordAttempt: (attemptedCall, ok) =>
         deps.loopGuard.recordAttempt(
@@ -269,15 +268,16 @@ export const runSingleTool = async (
         deps.toolState.pendingSessionStatePlan = plan;
       },
       clearPlanContext: () => {
+        deps.toolState.taskWorkLedger = null;
         removePlanContextMessage(deps.messages);
         deps.emit({ type: "plan-cleared", sessionId: deps.session.sessionId });
       },
-      getLedger: () => deps.toolState.taskWorkLedger,
-      setLedger: (ledger) => {
+      setTaskWork: ({ ledger, looseWork }) => {
         deps.toolState.taskWorkLedger = ledger;
+        if (looseWork !== deps.sessionLooseWork) {
+          deps.sessionLooseWork.splice(0, deps.sessionLooseWork.length, ...looseWork);
+        }
       },
-      looseWork: () => deps.sessionLooseWork,
-      persistTaskEvidence: deps.persistTaskEvidence,
     },
     call,
   );

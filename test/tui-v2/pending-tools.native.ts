@@ -52,7 +52,8 @@ for (const width of [40, 80, 120]) {
     const timer = await pendingTimer("call-1");
     const pending = setup.captureCharFrame();
     const itemId = tools()[0]!.id;
-    assert.match(pending, /shell.exec/);
+    assert.match(pending, /\bShell\b/);
+    assert.doesNotMatch(pending, /\bshell\.exec\b/);
     assert.match(pending, /pending/);
     assert.equal(pending.match(/receiving arguments (\.+)/)?.[1], ".");
     if (width === 80) {

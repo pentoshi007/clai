@@ -60,7 +60,15 @@ for (const [width, cardWidth] of [[120, 116], [80, 76], [40, 38], [120, 40]] as 
     try {
       await act(async () => { await setup.flush(); });
       const frame = setup.captureCharFrame();
-      assert.match(frame, /fs.read/);
+      const rows = frame.split("\n");
+      const readHeading = rows.find((row) => /\bExplored\b/.test(row));
+      assert.ok(readHeading, frame);
+      assert.doesNotMatch(readHeading, /\bfs\.read\b/);
+      if (mode === "batch") {
+        const batchHeading = rows.find((row) => /\bTools\b/.test(row));
+        assert.ok(batchHeading, frame);
+        assert.doesNotMatch(batchHeading, /\btool\.batch\b/);
+      }
       for (let index = 0; index < files.length; index += 1) assert.ok(frame.includes(`file-${index + 1}.ts`), frame);
       if (mode === "single") {
         assert.match(frame, /options: lines=1–8/);

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   activeTaskId,
   taskGlyph,
-  taskOwnerChip,
+  cleanTaskTitle,
   taskPaneGlyph,
+  taskPaneTitle,
   taskRowColor,
   TASK_GLYPH,
 } from "../../../src/ui-core/rendering/plan-view.js";
@@ -52,23 +53,32 @@ describe("responder rows in the plan pane (TUI-006)", () => {
     expect(taskGlyph(task({ id: "c2", state: "pending", responderOwned: true }))).toBe("◌");
   });
 
-  it("labels the responder phase and never labels foreground work", () => {
-    expect(taskOwnerChip(task({ id: "t1", state: "in_progress" }))).toBeUndefined();
-    expect(
-      taskOwnerChip(task({ id: "c1", state: "in_progress", responderOwned: true })),
-    ).toBe("RESPONDER · RUNNING");
-    expect(taskOwnerChip(task({ id: "c2", state: "pending", responderOwned: true }))).toBe(
-      "RESPONDER · QUEUED",
-    );
+  it("uses a safe label only for legacy Responder titles", () => {
+    const legacy = task({ id: "c1", title: "[c1]: Responder · npm test", responderOwned: true });
+    expect(cleanTaskTitle(legacy)).toBe("Background job");
+    expect(cleanTaskTitle(task({ id: "c2", title: "Run tests", responderOwned: true }))).toBe("Run tests");
+    expect(cleanTaskTitle({ ...legacy, responderOwned: false })).toBe("Responder · npm test");
+  });
+
+  it("shows the stored title of a legacy Responder row instead of a generic label", () => {
+    expect(cleanTaskTitle(task({ id: "c1", title: "Responder · Run local CI checks", responderOwned: true }))).toBe("Run local CI checks");
+    expect(cleanTaskTitle(task({ id: "c2", title: "Responder · Verify pull request CI", responderOwned: true }))).toBe("Verify pull request CI");
+    expect(cleanTaskTitle(task({ id: "c3", title: "Responder ·", responderOwned: true }))).toBe("Background job");
+    expect(cleanTaskTitle(task({ id: "c4", title: "Responder · npm test -- --reporter=verbose", responderOwned: true }))).toBe("Background job");
+  });
+
+  it("prefixes every Responder row with the arrow and the word", () => {
+    expect(taskPaneTitle(task({ id: "c1", title: "Run checks", responderOwned: true }))).toBe("↳ Responder: Run checks");
+    expect(taskPaneTitle(task({ id: "c2", title: "Run checks", responderOwned: true, parentTaskId: "t1" }))).toBe("↳ Responder: Run checks");
+    expect(taskPaneTitle(task({ id: "t1", title: "Run checks", parentTaskId: "t0" }))).toBe("↳ Run checks");
+    expect(taskPaneTitle(task({ id: "t2", title: "Run checks" }))).toBe("Run checks");
   });
 
   it.each<{ state: TaskState; glyph: string }>([
     { state: "done", glyph: "✓" },
     { state: "failed", glyph: "✗" },
-  ])("keeps the $state glyph without a Responder text badge", ({ state, glyph }) => {
-    const responderTask = task({ id: "c3", state, responderOwned: true });
-    expect(taskGlyph(responderTask)).toBe(glyph);
-    expect(taskOwnerChip(responderTask)).toBeUndefined();
+  ])("keeps the $state lifecycle glyph", ({ state, glyph }) => {
+    expect(taskGlyph(task({ id: "c3", state, responderOwned: true }))).toBe(glyph);
   });
 
   it("hides only the failed responder glyph in the task pane", () => {

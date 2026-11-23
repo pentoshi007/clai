@@ -11,6 +11,7 @@ import { restoredTerminalArgs } from "../../agent/parser/terminal-args.js";
 import { terminalOutputView } from "./terminal-output.js";
 import { wrapPagerLine } from "./pager-chrome.js";
 import { terminalWidth } from "./text-width.js";
+import { transcriptToolLabel } from "./tool-usage-label.js";
 
 const STATUS_GLYPH: Record<ToolStatus, string> = {
   queued: "○",
@@ -272,6 +273,12 @@ export function presentTool(item: ToolItem): ToolPresentation {
     detail: toolFailureDetail(item), pathLine,
     isFileDiff: item.name !== "fs.delete" && Boolean(item.fileChanges?.length),
   };
+}
+
+export function presentTranscriptTool(item: ToolItem): ToolPresentation {
+  const presented = presentTool(item);
+  const name = transcriptToolLabel(item.name, presented.name);
+  return name === presented.name ? presented : { ...presented, name };
 }
 
 export function writeManyFileLabel(change: {

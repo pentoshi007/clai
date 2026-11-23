@@ -4,13 +4,13 @@
 <rect y="20" width="973" height="10" fill="#1f2430"/>
 <circle cx="20" cy="15" r="6" fill="#ff5f57"/><circle cx="40" cy="15" r="6" fill="#febc2e"/><circle cx="60" cy="15" r="6" fill="#28c840"/>
 <text x="486.5" y="20" fill="#9aa4b2" font-size="13" text-anchor="middle" font-family="ui-sans-serif, -apple-system, Segoe UI, sans-serif">clai — ~/projects/api</text>
-<rect x="503.2" y="82" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="100" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="118" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="136" width="84" height="18" fill="#334155"/>
-<rect x="503.2" y="172" width="100.8" height="18" fill="#b45309"/>
-<rect x="620.8" y="172" width="58.8" height="18" fill="#334155"/>
-<rect x="679.6" y="172" width="109.2" height="18" fill="#9f1239"/>
+<rect x="494.8" y="82" width="84" height="18" fill="#334155"/>
+<rect x="494.8" y="100" width="84" height="18" fill="#334155"/>
+<rect x="494.8" y="118" width="84" height="18" fill="#334155"/>
+<rect x="494.8" y="136" width="84" height="18" fill="#334155"/>
+<rect x="494.8" y="172" width="100.8" height="18" fill="#0e7490"/>
+<rect x="612.4" y="172" width="58.8" height="18" fill="#334155"/>
+<rect x="671.2" y="172" width="109.2" height="18" fill="#9f1239"/>
 <rect x="16" y="298" width="940.8" height="18" fill="#11151c"/>
 <rect x="16" y="316" width="16.8" height="18" fill="#11151c"/>
 <rect x="32.8" y="316" width="42" height="18" fill="#b45309"/>
@@ -54,10 +54,10 @@
 <rect x="16" y="1126" width="940.8" height="18" fill="#11151c"/>
 <rect x="24.4" y="1144" width="50.4" height="18" fill="#0e7490"/>
 <path d="M37 64V59.2Q37 55 41.2 55H41.2" fill="none" stroke="#29b8db" stroke-width="1.2"/>
-<rect x="41.2" y="54.4" width="445.2" height="1.2" fill="#29b8db"/>
-<path d="M490 54.4h1.2V64.4h-1.2ZM486 54.4H491.2v1.2H486ZM490 54.4H495.2v1.2H490Z" fill="#29b8db"/>
-<rect x="494.8" y="54.4" width="453.6" height="1.2" fill="#29b8db"/>
-<path d="M952.6 64V59.2Q952.6 55 948.4 55H948.4" fill="none" stroke="#29b8db" stroke-width="1.2"/>
+<rect x="41.2" y="54.4" width="436.8" height="1.2" fill="#29b8db"/>
+<path d="M481.6 54.4h1.2V64.4h-1.2ZM477.6 54.4H482.8v1.2H477.6ZM481.6 54.4H486.8v1.2H481.6Z" fill="#29b8db"/>
+<rect x="486.4" y="54.4" width="445.2" height="1.2" fill="#29b8db"/>
+<path d="M935.8 64V59.2Q935.8 55 931.6 55H931.6" fill="none" stroke="#29b8db" stroke-width="1.2"/>
 <rect x="226" y="82" width="8.9" height="18.5" fill="#20e5dd"/>
 <rect x="234.4" y="82" width="8.9" height="18.5" fill="#24e7e7"/>
 <rect x="242.8" y="82" width="8.9" height="18.5" fill="#24e7e7"/>
@@ -157,14 +157,13 @@
 <rect x="368.8" y="172" width="8.9" height="18.5" fill="#8fefff"/>
 <rect x="377.2" y="172" width="8.9" height="18.5" fill="#8fefff"/>
 <path d="M37 208V212.8Q37 217 41.2 217H41.2" fill="none" stroke="#29b8db" stroke-width="1.2"/>
-<rect x="41.2" y="216.4" width="445.2" height="1.2" fill="#29b8db"/>
-<path d="M490 207.6h1.2V217.6h-1.2ZM486 216.4H491.2v1.2H486ZM490 216.4H495.2v1.2H490Z" fill="#29b8db"/>
-<rect x="494.8" y="216.4" width="453.6" height="1.2" fill="#29b8db"/>
-<path d="M952.6 208V212.8Q952.6 217 948.4 217H948.4" fill="none" stroke="#29b8db" stroke-width="1.2"/>
+<rect x="41.2" y="216.4" width="436.8" height="1.2" fill="#29b8db"/>
+<path d="M481.6 207.6h1.2V217.6h-1.2ZM477.6 216.4H482.8v1.2H477.6ZM481.6 216.4H486.8v1.2H481.6Z" fill="#29b8db"/>
+<rect x="486.4" y="216.4" width="445.2" height="1.2" fill="#29b8db"/>
+<path d="M935.8 208V212.8Q935.8 217 931.6 217H931.6" fill="none" stroke="#29b8db" stroke-width="1.2"/>
 <path d="M20.2 316V311.2Q20.2 307 24.4 307H24.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
 <rect x="24.4" y="306.4" width="924" height="1.2" fill="#f5b351"/>
 <path d="M952.6 316V311.2Q952.6 307 948.4 307H948.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
-<rect x="952" y="64" width="1.2" height="144" fill="#29b8db"/>
 <path d="M20.2 334V338.8Q20.2 343 24.4 343H24.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
 <rect x="24.4" y="342.4" width="924" height="1.2" fill="#f5b351"/>
 <path d="M952.6 334V338.8Q952.6 343 948.4 343H948.4" fill="none" stroke="#f5b351" stroke-width="1.2"/>
@@ -206,24 +205,25 @@
 <path d="M951.4 1125.6h2.4V1136.2h-2.4ZM948 1133.8H953.8v2.4H948Z" fill="#2eebff"/>
 <rect x="20.2" y="1144" width="4.7" height="18.5" fill="#0e7490"/>
 <g fill="none" stroke="#f5b351" stroke-width="1.3" stroke-linecap="round"><path d="M824.8 1149.6V1155.4"/><path d="M828.8 1151.1C828.8 1154 824.8 1153 824.8 1155.4"/><circle cx="824.8" cy="1148.1" r="1.5"/><circle cx="824.8" cy="1156.9" r="1.5"/><circle cx="828.8" cy="1149.6" r="1.5"/></g>
-<rect x="490" y="64" width="1.2" height="144" fill="#29b8db"/>
+<rect x="481.6" y="64" width="1.2" height="144" fill="#29b8db"/>
+<rect x="935.2" y="64" width="1.2" height="144" fill="#29b8db"/>
 <rect x="53.2" y="532" width="1.2" height="108" fill="#64748b"/>
 <rect x="36.4" y="748" width="1.2" height="18" fill="#7dd3fc"/>
 <rect x="19" y="1108" width="2.4" height="18" fill="#2eebff"/>
 <rect x="951.4" y="1108" width="2.4" height="18" fill="#2eebff"/>
 <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace" font-size="14">
-<text x="511.6 520 528.4 536.8 545.2 553.6 562" y="95" fill="#ffffff" font-weight="700">workdir</text>
-<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8" y="95" fill="#ffffff">~/projects/api</text>
-<text x="511.6 520 528.4 536.8 545.2" y="113" fill="#ffffff" font-weight="700">model</text>
-<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8 713.2 721.6 730" y="113" fill="#67e8f9">claude-sonnet-4-5</text>
-<text x="511.6 520 528.4 536.8 545.2 553.6 562 570.4" y="131" fill="#ffffff" font-weight="700">provider</text>
-<text x="595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8" y="131" fill="#4ade80">Anthropic</text>
-<text x="511.6 520 528.4 536.8 545.2 553.6 562" y="149" fill="#ffffff" font-weight="700">version</text>
-<text x="595.6 604 612.4 620.8 629.2" y="149" fill="#ffffff">5.1.4</text>
-<text x="511.6 520 528.4 536.8 545.2" y="185" fill="#ffffff" font-weight="700">AGENT</text>
-<text x="562 570.4 578.8 587.2" y="185" fill="#ffffff" font-weight="700">MODE</text>
-<text x="629.2 637.6 646 654.4 662.8" y="185" fill="#ffffff">PERMS</text>
-<text x="688 696.4 704.8 713.2 721.6 730 738.4 746.8 755.2 763.6 772" y="185" fill="#ffffff" font-weight="700">FULL-ACCESS</text>
+<text x="503.2 511.6 520 528.4 536.8 545.2 553.6" y="95" fill="#ffffff" font-weight="700">workdir</text>
+<text x="587.2 595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4" y="95" fill="#ffffff">~/projects/api</text>
+<text x="503.2 511.6 520 528.4 536.8" y="113" fill="#ffffff" font-weight="700">model</text>
+<text x="587.2 595.6 604 612.4 620.8 629.2 637.6 646 654.4 662.8 671.2 679.6 688 696.4 704.8 713.2 721.6" y="113" fill="#67e8f9">claude-sonnet-4-5</text>
+<text x="503.2 511.6 520 528.4 536.8 545.2 553.6 562" y="131" fill="#ffffff" font-weight="700">provider</text>
+<text x="587.2 595.6 604 612.4 620.8 629.2 637.6 646 654.4" y="131" fill="#4ade80">Anthropic</text>
+<text x="503.2 511.6 520 528.4 536.8 545.2 553.6" y="149" fill="#ffffff" font-weight="700">version</text>
+<text x="587.2 595.6 604 612.4 620.8" y="149" fill="#ffffff">5.6.0</text>
+<text x="503.2 511.6 520 528.4 536.8" y="185" fill="#ffffff" font-weight="700">AGENT</text>
+<text x="553.6 562 570.4 578.8" y="185" fill="#ffffff" font-weight="700">MODE</text>
+<text x="620.8 629.2 637.6 646 654.4" y="185" fill="#ffffff">PERMS</text>
+<text x="679.6 688 696.4 704.8 713.2 721.6 730 738.4 746.8 755.2 763.6" y="185" fill="#ffffff" font-weight="700">FULL-ACCESS</text>
 <text x="192.4 200.8" y="257" fill="#ffffff">AI</text>
 <text x="217.6 226 234.4 242.8 251.2 259.6" y="257" fill="#ffffff">coding</text>
 <text x="276.4" y="257" fill="#ffffff">&amp;</text>
@@ -241,7 +241,7 @@
 <text x="125.2 133.6 142 150.4 158.8 167.2 175.6" y="275" fill="#4ade80" font-weight="700">Welcome</text>
 <text x="192.4 200.8" y="275" fill="#4ade80" font-weight="700">to</text>
 <text x="217.6 226 234.4 242.8" y="275" fill="#4ade80" font-weight="700">clai</text>
-<text x="259.6 268 276.4 284.8 293.2 301.6 310" y="275" fill="#4ade80" font-weight="700">v5.1.4!</text>
+<text x="259.6 268 276.4 284.8 293.2 301.6 310" y="275" fill="#4ade80" font-weight="700">v5.6.0!</text>
 <text x="335.2 343.6 352 360.4 368.8" y="275" fill="#67e8f9">/help</text>
 <text x="385.6 394 402.4 410.8 419.2 427.6 436 444.4" y="275" fill="#94a3b8">commands</text>
 <text x="461.2" y="275" fill="#6e7c91">·</text>
@@ -264,8 +264,8 @@
 <text x="402.4 410.8 419.2" y="329" fill="#f8fafc">run</text>
 <text x="436 444.4 452.8" y="329" fill="#f8fafc">the</text>
 <text x="469.6 478 486.4 494.8 503.2" y="329" fill="#f8fafc">tests</text>
-<text x="32.8" y="401" fill="#4ade80" font-weight="700">✓</text>
-<text x="49.6 58 66.4 74.8 83.2 91.6 100" y="401" fill="#4ade80" font-weight="700">fs.read</text>
+<text x="32.8" y="401" fill="#4ade80">●</text>
+<text x="49.6 58 66.4 74.8 83.2 91.6 100 108.4" y="401" fill="#4ade80" font-weight="700">Explored</text>
 <text x="32.8 41.2 49.6 58 66.4" y="419" fill="#94a3b8">file:</text>
 <text x="83.2 91.6 100" y="419" fill="#2eebff">src</text>
 <text x="108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6 184" y="419" fill="#5cc8ff">/server.ts</text>
@@ -274,7 +274,7 @@
 <text x="100 108.4" y="437" fill="#67e8f9">to</text>
 <text x="125.2 133.6 142 150.4" y="437" fill="#67e8f9">open</text>
 <text x="167.2 175.6 184 192.4 200.8" y="437" fill="#67e8f9">pager</text>
-<text x="32.8" y="509" fill="#4ade80" font-weight="700">✓</text>
+<text x="32.8" y="509" fill="#4ade80">●</text>
 <text x="49.6 58 66.4 74.8 83.2 91.6" y="509" fill="#4ade80" font-weight="700">Edited</text>
 <text x="108.4 116.8 125.2 133.6 142 150.4 158.8 167.2 175.6" y="509" fill="#4ade80" font-weight="700">server.ts</text>
 <text x="805.6 814" y="509" fill="#4ade80" font-weight="700">+4</text>
@@ -331,10 +331,10 @@
 <text x="142" y="653" fill="#67e8f9">·</text>
 <text x="158.8 167.2 175.6 184" y="653" fill="#67e8f9">open</text>
 <text x="200.8 209.2 217.6 226" y="653" fill="#67e8f9">file</text>
-<text x="32.8" y="725" fill="#4ade80" font-weight="700">✓</text>
-<text x="49.6 58 66.4 74.8 83.2 91.6 100 108.4 116.8 125.2" y="725" fill="#4ade80" font-weight="700">shell.exec</text>
-<text x="142" y="725" fill="#94a3b8">·</text>
-<text x="158.8 167.2 175.6 184" y="725" fill="#94a3b8">2.1s</text>
+<text x="32.8" y="725" fill="#4ade80">●</text>
+<text x="49.6 58 66.4 74.8 83.2" y="725" fill="#4ade80" font-weight="700">Shell</text>
+<text x="100" y="725" fill="#94a3b8">·</text>
+<text x="116.8 125.2 133.6 142" y="725" fill="#94a3b8">2.1s</text>
 <text x="32.8 41.2 49.6 58 66.4 74.8 83.2 91.6" y="743" fill="#94a3b8">command:</text>
 <text x="108.4 116.8 125.2" y="743" fill="#2eebff">npm</text>
 <text x="142 150.4 158.8 167.2" y="743" fill="#2eebff">test</text>

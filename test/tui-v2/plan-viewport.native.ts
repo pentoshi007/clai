@@ -159,8 +159,8 @@ try {
   const selected = binding!.state.selectedId;
   const priorFrame = setup.captureCharFrame();
   const taskText = viewportText().replace(/\s+/g, " ");
-  check(taskText.includes("↳ Verify nested responder tasks and their complete titles"), "The completed Responder task title must stay visible");
-  check(taskText.includes("↳ Retain every expanded finding during wheel scrolling"), "The failed Responder task title must stay visible");
+  check(taskText.includes("↳ Responder: Verify nested responder tasks and their complete titles"), "The completed Responder task title must stay visible");
+  check(taskText.includes("↳ Responder: Retain every expanded finding during wheel scrolling"), "The failed Responder task title must stay visible");
   check(!taskText.includes("✗ ↳"), "Failed Responder rows must not show a failure glyph in the task pane");
   check(!/\[RESPONDER · (?:DELIVERED|FAILED)\]/.test(taskText), "Terminal Responder badges must not render in the task pane");
   const priorStyles = JSON.stringify(setup.captureSpans());
@@ -224,6 +224,27 @@ try {
       for (let index = 0; index < 10; index++) await wheel("down");
     }
   }
+  const legacyTitle = "Responder · npm test -- --reporter=verbose";
+  const titledLegacy = "Responder · Run local CI checks";
+  const withJobs: SessionPlan = {
+    ...source, status: "in_progress", tasks: [
+      { id: "t1", title: "Verify the change", state: "done" },
+      { id: "t2", title: "Run checks", state: "in_progress", responderOwned: true, parentTaskId: "t1" },
+      { id: "t3", title: legacyTitle, state: "pending", responderOwned: true, parentTaskId: "t1" },
+      { id: "t4", title: "Deferred check", state: "skipped", responderOwned: true, parentTaskId: "t1" },
+      { id: "t5", title: titledLegacy, state: "failed", responderOwned: true, parentTaskId: "t1" },
+    ],
+  };
+  await rerender({ ...view, plan: withJobs, width: 52, height: 32 });
+  await settle(() => scrollbox().scrollTo(0));
+  const jobRows = viewportText().replace(/\s+/g, " ");
+  check(jobRows.includes("⟳ ↳ Responder: Run checks"), "The running job keeps its glyph and short title");
+  check(jobRows.includes("◌ ↳ Responder: Background job"), "An unnamed legacy job displays a neutral title");
+  check(jobRows.includes("– ↳ Responder: Deferred check"), "A skipped job keeps its glyph and title");
+  check(jobRows.includes("↳ Responder: Run local CI checks"), "A legacy job with a real title keeps that title");
+  check(!/RESPONDER ·|npm test/.test(jobRows), "No Responder badges or raw commands in the task pane");
+  assert.equal(withJobs.tasks[2]?.title, legacyTitle);
+  assert.equal(withJobs.tasks[4]?.title, titledLegacy);
   assert.equal(JSON.stringify(source), before);
   assert.deepEqual([...clippedTitleEdges].sort(), ["bottom", "top"], "Native rendering must exercise partially visible titles at both viewport edges");
   console.log(JSON.stringify({ violations: [...violations] }, null, 2));

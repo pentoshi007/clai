@@ -1,4 +1,5 @@
 import { readArtifactTail } from "../../app/events/artifact-output.js";
+import { realpathSync } from "node:fs";
 import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import {
   getSession,
@@ -52,9 +53,16 @@ export function restoreArtifactOutputs(
   }
 }
 
-function sameDirectory(left: string, right: string): boolean {
-  if (left === right) return true;
-  return left.replace(/[\\/]+$/, "") === right.replace(/[\\/]+$/, "");
+function sameDirectory(left: string | undefined, right: string): boolean {
+  if (!left) return false;
+  const a = left.replace(/[\\/]+$/, "");
+  const b = right.replace(/[\\/]+$/, "");
+  if (a === b) return true;
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return false;
+  }
 }
 
 async function resolveLatest(scope: "global" | undefined): Promise<ResumeResolution> {
@@ -65,10 +73,12 @@ async function resolveLatest(scope: "global" | undefined): Promise<ResumeResolut
     return { record: undefined, error: "no saved sessions yet" };
   }
   const cwd = safeCwd();
-  const here = scope === "global" ? undefined : summaries.find((summary) => sameDirectory(summary.cwd, cwd));
-  const chosen = here ?? summaries[0];
+  const chosen =
+    scope === "global"
+      ? summaries[0]
+      : summaries.find((summary) => sameDirectory(summary.cwd, cwd));
   if (!chosen) {
-    return { record: undefined, error: "no saved sessions yet" };
+    return { record: undefined, error: undefined };
   }
   const record = await getSession(chosen.id);
   return record
@@ -161,6 +171,7 @@ export async function applySessionResume(
     ...(record.unsyncedItemIds?.length ? { unsyncedItemIds: record.unsyncedItemIds } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
+    alreadyPersisted: true,
     ...(record.workspaceFolder
       ? {
           workspaceFolder: record.workspaceFolder,

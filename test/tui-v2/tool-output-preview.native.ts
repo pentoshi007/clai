@@ -87,7 +87,9 @@ for (const width of [120, 80, 40]) {
         if (!testCase.body) assert.ok(!frame.includes("└─ "), frame);
         assert.equal(frame.includes("Ctrl+O"), Boolean(testCase.body) && (item.status !== "running" || !expanded), frame);
         if (testCase.name !== "tool.batch" && testCase.body) {
-          const headerRow = frameRows.findIndex(row => row.includes(item.name));
+          const title = item.name === "shell.exec" ? "Shell" : item.name;
+          const headerRow = frameRows.findIndex(row => row.includes(title));
+          assert.ok(headerRow >= 0, frame);
           const label = expanded ? "collapse" : "expand";
           const controlColumn = frameRows[headerRow]!.indexOf(label);
           assert.ok(controlColumn >= 0, frame);
@@ -98,7 +100,10 @@ for (const width of [120, 80, 40]) {
           assert.equal(toggles, 1, frame);
           assert.equal(services.overlay.getState().kind, "none", frame);
         }
-        if (testCase.name === "tool.batch") assert.ok(frame.includes("exit 2"), frame);
+        if (testCase.name === "tool.batch") {
+          assert.match(frame, /\bTools\b/);
+          assert.match(frame, /\bShell\b[^\n]*exit 2/);
+        }
         assert.equal(services.session.spool.tail(item.toolCallId), testCase.body);
         scenarios += 1;
       } finally {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { asToolCallId } from "../../../src/app/events/app-event.js";
 import { formatToolArgs } from "../../../src/agent/tool-call-parser.js";
+import { buildFileChange } from "../../../src/tools/file-diff.js";
 import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 import {
   cleanToolOutputLines,
@@ -8,6 +9,7 @@ import {
   presentImageArgs,
   presentOutput,
   presentTool,
+  presentTranscriptTool,
   toolStatusText,
 } from "../../../src/ui-core/rendering/tool-presenter.js";
 
@@ -31,6 +33,25 @@ function toolItem(overrides: Partial<ToolItem> = {}): ToolItem {
     ...overrides,
   };
 }
+
+describe("presentTranscriptTool", () => {
+  it.each([
+    ["shell.exec", {}, "Shell"],
+    ["fs.read", { pending: true }, "Explored"],
+    ["web.search", { status: "blocked" }, "Searched the web"],
+    ["provider.lookup", {}, "provider.lookup"],
+    ["fs.edit", { status: "running", argsDisplay: "src/app.ts" }, "Editing app.ts"],
+    ["fs.edit", { status: "failed", argsDisplay: "src/app.ts" }, "Edit failed · app.ts"],
+    ["fs.writeMany", {
+      status: "ok",
+      fileChanges: ["a.ts", "b.ts"].map((path) => buildFileChange({ path, kind: "create", before: "", after: "new" })),
+    }, "Wrote 2 files"],
+  ] as const)("presents the transcript label for %s (%j) without changing other details", (name, overrides, label) => {
+    const item = toolItem({ name, ...overrides });
+    expect(presentTranscriptTool(item)).toEqual({ ...presentTool(item), name: label });
+    expect(item.name).toBe(name);
+  });
+});
 
 describe("presentTool (CHAT-004)", () => {
   it("hides only the requested UI status words and preserves exit details and other labels", () => {

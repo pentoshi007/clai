@@ -8,13 +8,15 @@ const NOW = 300_000;
 const JOBS = [
   job({
     id: "j1",
+    name: "Check services",
+    command: "nmap -sV 10.0.0.1",
     commandDisplay: "nmap -sV 10.0.0.1",
     status: "exited",
     exitCode: 0,
     startedAt: new Date(0).toISOString(),
     endedAt: new Date(252_000).toISOString(),
   }),
-  job({ id: "j2", commandDisplay: "ffuf -u https://target/FUZZ", status: "running" }),
+  job({ id: "j2", name: "Check routes", commandDisplay: "ffuf -u https://target/FUZZ", status: "running", responder: true }),
   job({ id: "j3", commandDisplay: "nuclei -t cves/", status: "starting" }),
 ];
 
@@ -32,20 +34,21 @@ describe("jobs rows", () => {
     expect(frame.hints).toEqual(["▲▼", "⏎ live", "t tail", "k stop", "q close"]);
   });
 
-  it("shows status and elapsed from the shared formatter", () => {
+  it("shows titles, status and elapsed, never command text", () => {
     const { rows } = render();
-    expect(rows[1]).toContain("✓ nmap -sV 10.0.0.1");
+    expect(rows[1]).toContain("✓ Check services");
     expect(rows[1]).toContain("done · 4m12s");
-    expect(rows[2]).toContain("● ffuf");
+    expect(rows[2]).toContain("● Check routes");
     expect(rows[2]).toContain("running · 5m0s");
-    expect(rows[3]).toContain("○ nuclei");
+    expect(rows[3]).toContain("○ Background job");
     expect(rows[3]).toContain("queued");
+    expect(rows.join("\n")).not.toMatch(/nmap|ffuf|nuclei|npm test/);
   });
 
   it("falls back to ASCII glyphs when the terminal lacks Unicode", () => {
     const { rows } = render(JOBS_INITIAL_STATE, JOBS, asciiInk);
-    expect(rows[1]).toContain("v nmap");
-    expect(rows[2]).toContain("* ffuf");
+    expect(rows[1]).toContain("v Check services");
+    expect(rows[2]).toContain("* Check routes");
   });
 
   it("renders an empty state", () => {

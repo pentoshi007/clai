@@ -1,3 +1,4 @@
+import { jobTitle } from "../../tools/jobs/title.js";
 import type { PanelEffect } from "./panel-effect.js";
 import type {
   PanelControllerDeps,
@@ -113,7 +114,7 @@ export function openPanelJobTail(
   const job = jobs.get(jobId);
   if (!job) return;
   const source = createJobTailPagerSource({ jobs, jobId });
-  const title = jobTailTitle(job.commandDisplay, isLiveJobStatus(job.status));
+  const title = jobTailTitle(jobTitle(job), isLiveJobStatus(job.status));
   if (!deps.overlay.openPager(title, "", source)) {
     deps.onToast("could not open job output");
   }

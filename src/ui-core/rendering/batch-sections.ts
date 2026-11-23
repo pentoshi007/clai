@@ -2,6 +2,7 @@
 import { cleanToolOutputLines, presentOutput, type ToolOutputPreview } from "./tool-presenter.js";
 import { parseFsReadSections } from "../../tools/fs/read-sections.js";
 import { middleClipText, renderColumns } from "./text-width.js";
+import { transcriptToolLabel } from "./tool-usage-label.js";
 
 export type BatchSectionStatus = "ok" | "fail" | "cancelled" | "running";
 
@@ -105,6 +106,14 @@ function presentFsReadSection(body: string, columns?: number): {
   return { lines, hiddenAboveCount: Math.max(0, cleaned.length - lines.length) };
 }
 
+function presentBatchStatus(status: BatchSectionStatus, exitCode: number | undefined): Pick<BatchSectionPresentation, "glyph" | "statusLabel"> {
+  if (status === "running") return { glyph: "●", statusLabel: "running" };
+  const exit = exitCode === undefined ? "" : ` (exit ${exitCode})`;
+  if (status === "ok") return { glyph: "✓", statusLabel: `done${exit}` };
+  if (status === "cancelled") return { glyph: "⊘", statusLabel: `cancelled${exit}` };
+  return { glyph: "✗", statusLabel: `failed${exit}` };
+}
+
 export function presentBatchSection(
   section: BatchSection,
   expanded: boolean,
@@ -121,30 +130,9 @@ export function presentBatchSection(
     ? presentFsReadSection(bodyForPresent, columns)
     : presentOutput(bodyForPresent, undefined, expanded, "", preview);
   const hasBody = bodyForPresent.trim().length > 0;
-  let glyph = "✗";
-  let statusLabel = "failed";
-  if (status === "running") {
-    glyph = "●";
-    statusLabel = "running";
-  } else if (status === "ok") {
-    glyph = "✓";
-    statusLabel =
-      section.exitCode !== undefined
-        ? `done (exit ${section.exitCode})`
-        : "done";
-  } else if (status === "cancelled") {
-    glyph = "⊘";
-    statusLabel =
-      section.exitCode !== undefined
-        ? `cancelled (exit ${section.exitCode})`
-        : "cancelled";
-  } else if (section.exitCode !== undefined) {
-    statusLabel = `failed (exit ${section.exitCode})`;
-  }
   return {
-    glyph,
-    statusLabel,
-    name: section.name,
+    ...presentBatchStatus(status, section.exitCode),
+    name: transcriptToolLabel(section.name),
     lines: hasBody ? presented.lines : [],
     hiddenAboveCount: presented.hiddenAboveCount,
     hasBody,

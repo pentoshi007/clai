@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appendPlanTask, createPlan } from "../src/store/plan.js";
 import {
-  delegationTaskTitle,
-  isExplicitResponderDelegation,
   readDeclaredParentTaskId,
   resolveResponderParent,
 } from "../src/agent/responder-parent.js";
@@ -103,79 +101,5 @@ describe("responder parent ownership (TASK-005)", () => {
         activeForegroundTaskIds: [],
       }),
     ).toEqual({ ok: true, taskId: undefined, source: "none" });
-  });
-});
-
-
-describe("explicit responder delegation", () => {
-  it("applies explicit foreground precedence without reclassifying caller ownership", () => {
-    expect(
-      isExplicitResponderDelegation({
-        name: "shell.exec",
-        args: { command: "ffuf -u x", responder: true },
-      }),
-    ).toBe(true);
-    expect(
-      isExplicitResponderDelegation({
-        name: "shell.exec",
-        args: {
-          command: "ffuf -u x",
-          responder: true,
-          background: "never",
-        },
-      }),
-    ).toBe(false);
-    expect(
-      isExplicitResponderDelegation({
-        name: "shell.exec",
-        args: { command: "tcpdump -c 1", responder: true },
-      }),
-    ).toBe(true);
-    expect(
-      isExplicitResponderDelegation({
-        name: "shell.exec",
-        args: { command: "ls" },
-      }),
-    ).toBe(false);
-    expect(
-      isExplicitResponderDelegation({
-        name: "fs.read",
-        args: { path: "a", responder: true },
-      }),
-    ).toBe(false);
-  });
-
-  it("derives a bounded child title from the command or target", () => {
-    expect(
-      delegationTaskTitle({ name: "shell.exec", args: { command: "nmap -p- host" } }),
-    ).toBe("Responder · nmap -p- host");
-    expect(
-      delegationTaskTitle({ name: "shell.exec", args: { command: "nmap 10.0.0.1" } }),
-    ).toBe("Responder · nmap 10.0.0.1");
-    const long = delegationTaskTitle({
-      name: "shell.exec",
-      args: { command: "x".repeat(200) },
-    });
-    expect(long.length).toBe("Responder · ".length + 96);
-  });
-
-  it("titles the child with the job name shown in the Responder block instead of the raw command", () => {
-    expect(
-      delegationTaskTitle({
-        name: "shell.exec",
-        args: { command: "npm test -- --reporter verbose --run test/long-suite", name: "  full  test suite " },
-      }),
-    ).toBe("Responder · full test suite");
-    expect(
-      delegationTaskTitle({ name: "shell.exec", args: { command: "npm test", name: "   " } }),
-    ).toBe("Responder · npm test");
-  });
-
-  it("never puts raw secrets from the command into the child title", () => {
-    const title = delegationTaskTitle({
-      name: "shell.exec",
-      args: { command: "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456' https://api" },
-    });
-    expect(title).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456");
   });
 });

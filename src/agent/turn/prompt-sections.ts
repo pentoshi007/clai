@@ -1,6 +1,7 @@
 import type { Mode } from "../../types.js";
 import type { AgentPromptSection } from "../prompt-composer.js";
 import { SKILLS_CATALOG_PREFIX } from "../../skills/catalog.js";
+import { JOB_TITLE_LIMIT } from "../../tools/jobs/title.js";
 
 export interface PromptSectionInput {
   readonly systemSections: readonly string[];
@@ -59,7 +60,17 @@ const outcomeContract: AgentPromptSection = {
 const planProtocol: AgentPromptSection = {
   kind: "plan",
   content:
-    "PLAN PROTOCOL\nWhen a live plan exists, the most recent ACTIVE PLAN message in this request is the only authoritative plan state; older ACTIVE PLAN copies in the transcript are history. Never rely on plan details quoted in earlier turns when they disagree with the latest task list.",
+    "PLAN PROTOCOL\nWhen a live plan exists, the most recent ACTIVE PLAN message in this request is the only authoritative plan state; older ACTIVE PLAN copies in the transcript are history. Never rely on plan details quoted in earlier turns when they disagree with the latest task list.\n" +
+    "Give the final work summary directly in chat. Never create or add a task just to write or update that summary, including after follow-up prompts or job results. Only track report work when creating or changing a required report file or other deliverable artifact; name that artifact in the task.",
+  mandatory: true,
+};
+
+const executionProtocol: AgentPromptSection = {
+  kind: "context",
+  content:
+    "TASK UPDATES\nMark each task done only after reading its results and verifying its own acceptance criteria. Never mark an unfinished or unverified task done, even in a batch.\n" +
+    'Batch ready changes in one task.update, e.g. {"updates":[{"state":"done","taskIds":["t1","t2"]},{"state":"in_progress","taskIds":["t3"]}]}. Use ACTIVE PLAN ids, open only the next ready task, and never update Responder-owned tasks.\n' +
+    `SHELL JOB TITLES\nFor shell.exec background:"always" or responder:true, pass a descriptive "name" of 1–${JOB_TITLE_LIMIT} characters instead of copying the command. Foreground calls do not need a name.`,
   mandatory: true,
 };
 
@@ -86,5 +97,6 @@ export const buildPromptSections = (
   if (!has("outcome")) sections.push(outcomeContract);
   if (!has("plan")) sections.push(planProtocol);
   if (!has("scope")) sections.push(emptyScope);
+  if (input.mode !== "ask") sections.push(executionProtocol);
   return sections;
 };

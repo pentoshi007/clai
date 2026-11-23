@@ -43,22 +43,18 @@ export function absorbLooseWorkIntoLedger(
   taskId: string,
   taskTitle: string,
   loose: readonly LooseWorkReceipt[],
-  opts?: { planKind?: string | undefined },
+  opts?: { planKind?: string | undefined; unassigned?: LooseWorkReceipt[] },
 ): TaskWorkLedger | null {
-  if (!taskId || loose.length === 0) return ledger;
-  let led = ledger;
+  if (!taskId) return ledger;
+  let credited = ledger;
   for (const item of loose) {
-    if (
-      !toolFitsTaskClass(item.toolName, taskTitle, {
-        planKind: opts?.planKind,
-        signals: item.signals,
-      })
-    ) {
-      continue;
+    if (toolFitsTaskClass(item.toolName, taskTitle, { planKind: opts?.planKind, signals: item.signals })) {
+      credited = recordTaskWorkSuccess(credited, taskId, item.toolName, item.signals);
+    } else {
+      opts?.unassigned?.push(item);
     }
-    led = recordTaskWorkSuccess(led, taskId, item.toolName, item.signals);
   }
-  return led;
+  return credited;
 }
 
 export function recordTaskWorkSuccess(

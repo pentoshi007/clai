@@ -214,7 +214,7 @@ describe.skipIf(process.platform === "win32")("rtk installed outside PATH", () =
   it("keeps background execution on the verified binary instead of a PATH impostor", async () => {
     const sessionId = `rtk-offpath-${basename(fake.dir)}`;
     const started = await toolRegistry["shell.exec"]!(
-      { command: "git status", background: "always" },
+      { command: "git status", name: "Inspect working tree", background: "always" },
       { sessionId },
     );
     const id = started.backgroundJob?.id;
@@ -377,7 +377,7 @@ describe.skipIf(process.platform === "win32")("shell.exec with rtk compression",
   it("does not count a background command with an invalid working directory", async () => {
     const sessionId = `rtk-invalid-job-${basename(workdir)}`;
     const result = await toolRegistry["shell.exec"]!(
-      { command: "git status", cwd: join(workdir, "missing"), background: "always" },
+      { command: "git status", name: "Inspect working tree", cwd: join(workdir, "missing"), background: "always" },
       { sessionId },
     );
     expect(result.ok).toBe(false);
@@ -389,7 +389,7 @@ describe.skipIf(process.platform === "win32")("shell.exec with rtk compression",
   it.each([{ background: "always" }, { responder: true }])("does not launch or count an expired authorized job: %j", async (mode) => {
     const sessionId = `rtk-expired-${basename(workdir)}`;
     const result = await toolRegistry["shell.exec"]!(
-      { command: "git status", cwd: workdir, ...mode },
+      { command: "git status", name: "Inspect working tree", cwd: workdir, ...mode },
       { sessionId, engagementAuthorization: { target: "example.com", expiresAt: "2000-01-01T00:00:00.000Z" } },
     );
     expect(result.ok).toBe(false);
@@ -413,7 +413,7 @@ describe.skipIf(process.platform === "win32")("shell.exec with rtk compression",
   ])("compresses explicitly delegated commands and preserves their receipts: %j", async (mode) => {
     const sessionId = `rtk-job-${basename(workdir)}`;
     const started = await toolRegistry["shell.exec"]!(
-      { command: "git status", cwd: workdir, ...mode },
+      { command: "git status", name: "Inspect working tree", cwd: workdir, ...mode },
       { sessionId, taskId: "t4", delegationId: sessionId },
     );
     const id = started.backgroundJob?.id;
@@ -430,7 +430,7 @@ describe.skipIf(process.platform === "win32")("shell.exec with rtk compression",
     });
     expect(rtkExecutionCount(sessionId)).toBe(1);
     const duplicate = await toolRegistry["shell.exec"]!(
-      { command: "git status", cwd: workdir, ...mode },
+      { command: "git status", name: "Inspect working tree", cwd: workdir, ...mode },
       { sessionId, taskId: "t4", delegationId: sessionId },
     );
     expect(duplicate.backgroundJob?.id).toBe(id);

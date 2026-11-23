@@ -81,6 +81,7 @@ describe("shell.wait", () => {
     const started = await toolRegistry["shell.exec"]!(
       {
         command: "sleep 0.4; echo finished-work; exit 3",
+        name: "Run failing fixture",
         background: "always",
       },
       {},
@@ -97,7 +98,7 @@ describe("shell.wait", () => {
 
   it("reports success for a job that exits cleanly", async () => {
     const started = await toolRegistry["shell.exec"]!(
-      { command: "sleep 0.3; echo all-good", background: "always" },
+      { command: "sleep 0.3; echo all-good", name: "Run successful fixture", background: "always" },
       {},
     );
     const waited = await toolRegistry["shell.wait"]!(
@@ -112,7 +113,7 @@ describe("shell.wait", () => {
 
   it("reports a timeout without killing the job and tells the agent not to poll", async () => {
     const started = await toolRegistry["shell.exec"]!(
-      { command: "sleep 20", background: "always" },
+      { command: "sleep 20", name: "Wait for timeout fixture", background: "always" },
       {},
     );
     const id = started.backgroundJob?.id;

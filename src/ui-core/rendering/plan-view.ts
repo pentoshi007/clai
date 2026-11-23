@@ -6,6 +6,7 @@ import type {
   TaskState,
 } from "../../store/plan.js";
 import { foregroundActiveTask, planProgress } from "../../store/plan.js";
+import { DEFAULT_JOB_TITLE, LEGACY_RESPONDER_TITLE_PREFIX, looksLikeCommandLabel } from "../../tools/jobs/title.js";
 import { terminalWidth } from "./text-width.js";
 import { sanitizeDisplayText } from "./sanitize-display.js";
 
@@ -193,18 +194,6 @@ export function taskPaneGlyph(task: PlanTask): string {
   return task.responderOwned && task.state === "failed" ? "" : taskGlyph(task);
 }
 
-const RESPONDER_PHASE: Partial<Record<TaskState, string>> = {
-  pending: "QUEUED",
-  in_progress: "RUNNING",
-  skipped: "DROPPED",
-};
-
-export function taskOwnerChip(task: PlanTask): string | undefined {
-  if (!task.responderOwned) return undefined;
-  const phase = RESPONDER_PHASE[task.state];
-  return phase === undefined ? undefined : `RESPONDER · ${phase}`;
-}
-
 export function wrapPlanText(text: string, width: number): string[] {
   const clean = sanitizeDisplayText(text).replace(/\s+/g, " ").trim();
   if (!clean) return [""];
@@ -241,7 +230,17 @@ export function cleanTaskTitle(task: PlanTask): string {
     "i",
   );
   title = title.replace(re, "");
+  if (task.responderOwned && LEGACY_RESPONDER_TITLE_PREFIX.test(title)) {
+    const label = title.replace(LEGACY_RESPONDER_TITLE_PREFIX, "").trim();
+    return label && !looksLikeCommandLabel(label) ? label : DEFAULT_JOB_TITLE;
+  }
   return title || task.title.trim();
+}
+
+export function taskPaneTitle(task: PlanTask): string {
+  const title = cleanTaskTitle(task);
+  if (task.responderOwned) return `↳ Responder: ${title}`;
+  return task.parentTaskId ? `↳ ${title}` : title;
 }
 
 export function formatPlanPagerDocument(plan: SessionPlan): string {

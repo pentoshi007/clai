@@ -46,6 +46,29 @@ describe("tool definitions", () => {
     expect(toolRegistry["fs.write"]).toBeTypeOf("function");
   });
 
+  it("exposes grouped task updates without requiring legacy single fields", () => {
+    const task = TOOL_DEFINITIONS.find((d) => d.name === "task.update")!;
+    const { required, properties } = task.parameters;
+    expect(task.wireName).toBe("task_update");
+    expect(task.mutates).toBe(true);
+    expect(task.description).toContain("verifying its own acceptance criteria");
+    expect(getToolDefinitions({ askMode: true })).not.toContain(task);
+    expect(required ?? []).toEqual([]);
+    expect(properties.taskId).toHaveProperty("type", "string");
+    expect(properties.updates).toMatchObject({
+      type: "array",
+      minItems: 1,
+      items: {
+        required: ["state", "taskIds"],
+        properties: {
+          state: properties.state,
+          taskIds: { type: "array", minItems: 1, items: { type: "string" } },
+          note: { type: "string" },
+        },
+      },
+    });
+  });
+
   it("task.update includes failed; agent.handoff is defined", () => {
     const task = TOOL_DEFINITIONS.find((d) => d.name === "task.update")!;
     const state = task.parameters.properties.state as {

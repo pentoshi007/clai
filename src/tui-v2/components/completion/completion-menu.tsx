@@ -20,6 +20,7 @@ export interface CompletionMenuViewProps {
   readonly theme: Theme;
   readonly width: number;
   readonly maxRows?: number | undefined;
+  readonly floatingBottom?: number | undefined;
   readonly onHoverIndex?: ((index: number | undefined) => void) | undefined;
   readonly onActivateIndex?: ((index: number) => void) | undefined;
   readonly onScrollRows?: ((rows: number) => void) | undefined;
@@ -40,6 +41,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
     theme,
     width,
     maxRows = 10,
+    floatingBottom,
     onHoverIndex,
     onActivateIndex,
     onScrollRows,
@@ -55,6 +57,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
   const before = window.before;
   const after = window.after;
   const menuHeight = 4 + items.length + (before > 0 ? 1 : 0) + (after > 0 ? 1 : 0);
+  const floating = floatingBottom !== undefined;
   const contentWidth = Math.max(10, width - 2);
   const onMouseScroll = (event: MouseEvent): void => {
     if (!event.scroll) return;
@@ -66,8 +69,12 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
 
   return (
     <box
+      id="completion-menu"
       onMouseScroll={onMouseScroll}
       style={{
+        ...(floating
+          ? { position: "absolute" as const, bottom: floatingBottom, left: 0, zIndex: 40 }
+          : {}),
         flexDirection: "column",
         width: "100%",
         height: menuHeight,

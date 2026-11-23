@@ -76,7 +76,9 @@ describe("presentBatchSection / summary", () => {
     };
     const collapsed = presentBatchSection(section, false);
     expect(collapsed.glyph).toBe("✓");
-    expect(collapsed.name).toBe("shell.exec");
+    expect(collapsed.statusLabel).toBe("done (exit 0)");
+    expect(collapsed.name).toBe("Shell");
+    expect(section.name).toBe("shell.exec");
     expect(collapsed.lines[0]).toBe("line 1");
     expect(collapsed.lines.some((line) => line.startsWith("…"))).toBe(true);
     expect(collapsed.lines).toHaveLength(4);
@@ -143,6 +145,7 @@ describe("presentBatchSection / summary", () => {
       true,
     );
     expect(p.glyph).toBe("✗");
+    expect(p.name).toBe("Opened");
     expect(p.statusLabel).toBe("failed (exit 1)");
     expect(p.lines).toEqual(["nope"]);
   });

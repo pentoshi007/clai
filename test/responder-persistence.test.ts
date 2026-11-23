@@ -94,7 +94,7 @@ describe("responder persistence settlement", () => {
     });
     const history: ChatMessage[] = [{ role: "user", content: "work" }];
     upsertResponderResultLedger(history, notification!);
-    (session as unknown as { history: ChatMessage[] }).history = history;
+    session.restoreMessages(history);
 
     await expect(session.persistNow()).rejects.toThrow(
       "simulated session save failure",

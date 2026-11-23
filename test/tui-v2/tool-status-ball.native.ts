@@ -52,8 +52,11 @@ for (const width of [40, 80, 120]) {
   };
   const ball = () => {
     const lines = setup.captureSpans().lines;
-    const row = setup.captureCharFrame().split("\n").findIndex((line) => line.includes("shell.exec"));
-    assert.ok(row >= 0, setup.captureCharFrame());
+    const frame = setup.captureCharFrame();
+    const rows = frame.split("\n");
+    const row = rows.findIndex((line) => /\bShell\b/.test(line));
+    assert.ok(row >= 0, frame);
+    assert.doesNotMatch(rows[row]!, /\bshell\.exec\b/);
     const span = lines[row]!.spans.find((candidate) => candidate.text.includes("●"));
     assert.ok(span, `Row ${row} carries the ball: ${setup.captureCharFrame()}`);
     assert.equal(span.width, TOOL_BALL_WIDTH, "The ball occupies one cell");
