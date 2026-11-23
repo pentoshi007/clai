@@ -242,10 +242,11 @@ describe("durable background jobs", () => {
     await manager.stopJob(id, { graceMs: 200 });
   });
 
-  it("keeps an alive persisted running job running when its identity is absent (never falsely lost)", async () => {
+  it("keeps an alive persisted running job and its title when process identity is absent", async () => {
     const { dir, manager } = await fixture();
     const started = await manager.startJob(
       `${JSON.stringify(process.execPath)} -e "setInterval(() => {}, 1000)"`,
+      { name: "Watch test fixture" },
     );
     const id = /id=([a-f0-9]+)/.exec(started.output)?.[1]!;
     await sleep(80);
@@ -261,7 +262,7 @@ describe("durable background jobs", () => {
 
     const restarted = new JobManager(dir);
     managers.push(restarted);
-    expect(restarted.getJob(id)?.status).toBe("running");
+    expect(restarted.getJob(id)).toMatchObject({ status: "running", name: "Watch test fixture" });
     // Repeated liveness re-checks (as the UI polls) keep it running, never
     // flipping a live job to a premature terminal "lost".
     expect(restarted.getJob(id)?.status).toBe("running");

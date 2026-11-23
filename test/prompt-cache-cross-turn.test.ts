@@ -15,6 +15,8 @@ import {
 } from "../src/agent/session-state.js";
 import { buildTurnHistory } from "../src/agent/tool-call-parser.js";
 import { buildCompactionReplayMessages } from "../src/agent/compaction-executor.js";
+import { composeTurnMessages } from "../src/agent/turn/setup/turn-messages.js";
+import { renderAgentSystemPrompt } from "../src/prompts/index.js";
 import type { ChatMessage } from "../src/types.js";
 
 /**
@@ -154,6 +156,48 @@ describe("cross-turn prompt cache prefix", () => {
     refreshSuffix(followUp, 2, 0);
 
     expect(sharedPrefixLength(sent, followUp)).toBe(sent.length);
+  });
+
+  it.each([true, false])("adds batch task, summary, and job title guidance without rewriting cached history (native tools: %s)", (nativeTools) => {
+    const stableSystemContent = () => renderAgentSystemPrompt("plan.create, task.add", {
+      nativeTools,
+      stableEnvironment: true,
+    });
+    const previousRequest: ChatMessage[] = [
+      { role: "system", content: stableSystemContent() },
+      { role: "user", content: "Ship the fix" },
+      { role: "system", content: requestContext(1) },
+    ];
+    const history = buildTurnHistory(previousRequest, "Shipped the fix.");
+    const { messages, requestContextMessage } = composeTurnMessages({
+      prompt: "Also verify the keyboard shortcut",
+      displayPrompt: undefined,
+      images: undefined,
+      history,
+      mode: "agent",
+      systemSections: [],
+      selectedSkillNames: [],
+      nativeToolsActive: nativeTools,
+      inputTokenBudget: 100,
+      stableSystemContent,
+      instructionsBlock: undefined,
+      skillsBlock: undefined,
+      plan: undefined,
+      planApproved: false,
+    });
+
+    expect(messages.slice(0, previousRequest.length)).toEqual(previousRequest);
+    expect(requestContextMessage).toContain('"taskIds":["t1","t2"]');
+    expect(requestContextMessage).toContain("mark done only after reading and verifying results");
+    expect(messages[0]?.content).not.toContain("Batch ready changes");
+    expect(requestContextMessage).toContain("Give the final work summary directly in chat");
+    expect(requestContextMessage).toContain("Never create or add a task just to write or update that summary");
+    expect(requestContextMessage).toContain("required report file or other deliverable artifact");
+    expect(requestContextMessage).toContain('shell.exec background:"always" or responder:true');
+    expect(requestContextMessage).toContain('descriptive "name" of 1–48 characters');
+    expect(messages.at(-1)?.content).toBe(requestContextMessage);
+    expect(messages[0]?.content).not.toContain("Give the final work summary directly in chat");
+    expect(messages[0]?.content).not.toContain("SHELL JOB TITLES");
   });
 
   it("uses the prior request as the prefix of replay compaction", () => {

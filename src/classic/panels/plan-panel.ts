@@ -5,7 +5,6 @@ import {
   orderPlanTasksForDisplay,
   progressBar,
   progressView,
-  taskOwnerChip,
   taskPaneGlyph,
   taskStateColor,
   wrapPlanText,
@@ -72,7 +71,6 @@ export interface PlanViewInput {
 interface PlanRow {
   readonly text: string;
   readonly taskIndex: number;
-  readonly owner: boolean;
 }
 
 function taskTitleLines(task: PlanTask, width: number): readonly string[] {
@@ -84,7 +82,6 @@ export function planBodyRowsWanted(plan: SessionPlan, columns: number): number {
   let rows = 1;
   for (const task of planTasks(plan)) {
     rows += taskTitleLines(task, width).length;
-    if (taskOwnerChip(task)) rows += 1;
   }
   return rows;
 }
@@ -97,16 +94,8 @@ function taskRows(input: PlanViewInput, width: number): readonly PlanRow[] {
     const token = taskStateColor(task.state);
     taskTitleLines(task, width).forEach((line, offset) => {
       const head = offset === 0 ? ink.fg(token, glyph) : " ";
-      rows.push({ text: `${head} ${line}`, taskIndex: index, owner: false });
+      rows.push({ text: `${head} ${line}`, taskIndex: index });
     });
-    const owner = taskOwnerChip(task);
-    if (owner) {
-      rows.push({
-        text: `   ${ink.fg(token, adaptPresenterGlyphs(owner, ink.unicode))}`,
-        taskIndex: index,
-        owner: true,
-      });
-    }
   });
   return rows;
 }
@@ -127,10 +116,7 @@ export function planView(input: PlanViewInput): PanelFrameInput {
   const percent = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
 
   const rows = taskRows(input, width);
-  const cursorRow = Math.max(
-    0,
-    rows.findIndex((row) => row.taskIndex === state.cursor && !row.owner),
-  );
+  const cursorRow = Math.max(0, rows.findIndex((row) => row.taskIndex === state.cursor));
   const window = listWindow({
     count: rows.length,
     active: cursorRow,

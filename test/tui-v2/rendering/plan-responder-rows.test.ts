@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeTaskId,
   taskGlyph,
-  taskOwnerChip,
+  cleanTaskTitle,
   taskPaneGlyph,
   taskRowColor,
   TASK_GLYPH,
@@ -52,23 +52,18 @@ describe("responder rows in the plan pane (TUI-006)", () => {
     expect(taskGlyph(task({ id: "c2", state: "pending", responderOwned: true }))).toBe("◌");
   });
 
-  it("labels the responder phase and never labels foreground work", () => {
-    expect(taskOwnerChip(task({ id: "t1", state: "in_progress" }))).toBeUndefined();
-    expect(
-      taskOwnerChip(task({ id: "c1", state: "in_progress", responderOwned: true })),
-    ).toBe("RESPONDER · RUNNING");
-    expect(taskOwnerChip(task({ id: "c2", state: "pending", responderOwned: true }))).toBe(
-      "RESPONDER · QUEUED",
-    );
+  it("uses a safe label only for legacy Responder titles", () => {
+    const legacy = task({ id: "c1", title: "[c1]: Responder · npm test", responderOwned: true });
+    expect(cleanTaskTitle(legacy)).toBe("Background job");
+    expect(cleanTaskTitle(task({ id: "c2", title: "Run tests", responderOwned: true }))).toBe("Run tests");
+    expect(cleanTaskTitle({ ...legacy, responderOwned: false })).toBe("Responder · npm test");
   });
 
   it.each<{ state: TaskState; glyph: string }>([
     { state: "done", glyph: "✓" },
     { state: "failed", glyph: "✗" },
-  ])("keeps the $state glyph without a Responder text badge", ({ state, glyph }) => {
-    const responderTask = task({ id: "c3", state, responderOwned: true });
-    expect(taskGlyph(responderTask)).toBe(glyph);
-    expect(taskOwnerChip(responderTask)).toBeUndefined();
+  ])("keeps the $state lifecycle glyph", ({ state, glyph }) => {
+    expect(taskGlyph(task({ id: "c3", state, responderOwned: true }))).toBe(glyph);
   });
 
   it("hides only the failed responder glyph in the task pane", () => {

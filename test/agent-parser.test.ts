@@ -21,6 +21,13 @@ import {
   stripSentinelTokens,
 } from "../src/agent/runner.js";
 
+it("preserves grouped task updates in an explicit text tool call", () => {
+  const args = { updates: [{ state: "done", taskIds: ["t1", "t2"] }, { state: "in_progress", taskIds: ["t3"] }] };
+  const call = { name: "task.update", args };
+  expect(parseAllToolCalls(`\`\`\`tool\n${JSON.stringify(call)}\n\`\`\``, { strict: true })).toEqual([call]);
+  expect(recognizeBareToolJson(JSON.stringify(args))?.call).toBeUndefined();
+});
+
 describe("agent tool-call parser", () => {
   it("preprocesses JSON to escape control characters and strip trailing commas", () => {
     const rawInput = `{

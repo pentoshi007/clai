@@ -1,6 +1,7 @@
 import type { BackgroundJob } from "../../app/ports/jobs-port.js";
 import { isLiveJobStatus } from "../../ui-core/rendering/job-tail-source.js";
 import { formatJobElapsed } from "../../tools/jobs.js";
+import { jobTitle } from "../../tools/jobs/title.js";
 import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
 import { emptyRow, listRow } from "./list-rows.js";
 import { listWindow, windowCounter } from "./list-window.js";
@@ -120,7 +121,7 @@ export function jobsView(input: JobsViewInput): PanelFrameInput {
           ink,
           width,
           columns: input.columns,
-          label: `${ink.fg(presentation.token, presentation.glyph)} ${job.commandDisplay}`,
+          label: `${ink.fg(presentation.token, presentation.glyph)} ${jobTitle(job)}`,
           description: right,
           active: index === state.cursor,
         }),

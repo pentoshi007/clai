@@ -1,8 +1,5 @@
 import type { SessionPlan } from "../store/plan.js";
 import type { ToolCall } from "../types.js";
-import { resolveShellExecBackgroundPolicy } from "../tools/command-intent.js";
-import { responderTaskTitle } from "../tools/jobs/helpers.js";
-import { redactSecrets } from "../llm/provider.js";
 
 // the child task id is generated at launch and is not caller-supplied.
 
@@ -72,33 +69,4 @@ export function resolveResponderParent(input: {
     };
   }
   return { ok: true, taskId: target.id, source: "declared" };
-}
-
-
-export function isExplicitResponderDelegation(call: ToolCall): boolean {
-  if (
-    call.name !== "shell.exec" ||
-    call.args?.responder !== true ||
-    typeof call.args.command !== "string"
-  ) {
-    return false;
-  }
-  return resolveShellExecBackgroundPolicy({
-    command: call.args.command,
-    background: call.args.background,
-    responder: call.args.responder,
-  }).responder;
-}
-
-export function delegationTaskTitle(call: ToolCall): string {
-  const command =
-    typeof call.args?.command === "string"
-      ? call.args.command
-      : typeof call.args?.target === "string"
-        ? `${call.name} ${call.args.target}`
-        : call.name;
-  return responderTaskTitle({
-    name: typeof call.args?.name === "string" ? call.args.name : undefined,
-    commandDisplay: redactSecrets(command),
-  });
 }

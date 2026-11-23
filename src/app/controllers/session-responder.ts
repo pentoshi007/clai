@@ -5,6 +5,7 @@ import type {
 } from "../ports/jobs-port.js";
 import type { PersistencePort } from "../ports/persistence-port.js";
 import type { TurnOutcome } from "../../agent/turn-outcome.js";
+import { jobTitle } from "../../tools/jobs/title.js";
 
 interface ResponderTurnResult {
   readonly status: "completed" | "aborted" | "error";
@@ -214,7 +215,7 @@ export class SessionResponder {
         throw new Error(`failed to persist responder delivery attempt ${notification.id}`);
       }
       this.deps.notifyState();
-      this.deps.notifyDelivery?.(summarizeDelivery(notification));
+      this.deps.notifyDelivery?.(summarizeDelivery(notification, this.deps.jobs));
     });
     if (!isCurrent()) return;
 
@@ -298,14 +299,8 @@ function deliveryPrompt(
   ].join("\n");
 }
 
-function summarizeDelivery(notification: ResponderNotification): string {
-  const label = (notification.commandDisplay || notification.jobId)
-    .replace(/\s+/g, " ")
-    .trim();
-  const short = label.length > 64 ? `${label.slice(0, 63)}…` : label;
-  const outcome =
-    notification.status === "exited"
-      ? "result"
-      : `${notification.status} result`;
-  return `Responder → model · ${short} ${outcome}`;
+function summarizeDelivery(notification: ResponderNotification, jobs: JobsPort): string {
+  const title = jobTitle(jobs.get(notification.jobId));
+  const outcome = notification.status === "exited" ? "result" : `${notification.status} result`;
+  return `Responder → model · ${title} ${outcome}`;
 }

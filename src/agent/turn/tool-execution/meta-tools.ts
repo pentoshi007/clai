@@ -1,7 +1,8 @@
 import type { ToolCall, ToolResult } from "../../../types.js";
-import type { SessionPlan, TaskEvidence } from "../../../store/plan.js";
+import type { SessionPlan } from "../../../store/plan.js";
 import type { ResponderNotification } from "../../../tools/jobs.js";
-import type { LooseWorkReceipt, TaskWorkLedger } from "../../task-evidence.js";
+import type { TaskUpdateWork } from "../../plan/actions/task-update.js";
+import type { PlanToolResult } from "../../plan-tool.js";
 import type { SingleToolResult } from "../contracts.js";
 import { RUNNER_META_TOOL_NAMES } from "../../../tools/definitions.js";
 import {
@@ -14,20 +15,8 @@ import {
   parseResponderReadRequest,
   type ResponderReadWakeIdentity,
 } from "../responder-read-tool.js";
-import { applyTaskUpdateLedgerTransition } from "./plan-tool-ledger.js";
-
-export interface MetaToolPlanResult {
-  readonly handled: boolean;
-  readonly ok: boolean;
-  readonly reminder?: boolean | undefined;
-  readonly toast?: string | undefined;
-  readonly cleared?: boolean | undefined;
-  readonly modelNote: string;
-  readonly plan?: SessionPlan | undefined;
-}
 
 export interface MetaToolPorts {
-  readonly step: number;
   readonly wake: ResponderReadWakeIdentity;
   readonly pendingNotifications: () => readonly ResponderNotification[];
   readonly matchesWakeRevision: (notification: ResponderNotification) => boolean;
@@ -35,8 +24,7 @@ export interface MetaToolPorts {
   readonly markRead: (notificationId: string) => boolean;
   readonly releaseClaim: (notificationId: string) => void;
   readonly queueResponderLedger: (notification: ResponderNotification) => void;
-  readonly loadPlan: () => Promise<SessionPlan | undefined>;
-  readonly handlePlanTool: (call: ToolCall) => Promise<MetaToolPlanResult>;
+  readonly handlePlanTool: (call: ToolCall) => Promise<PlanToolResult>;
   readonly recordAttempt: (call: ToolCall, ok: boolean) => void;
   readonly showCall: (call: ToolCall) => void;
   readonly notify: (level: "info" | "warn", message: string) => void;
@@ -46,13 +34,7 @@ export interface MetaToolPorts {
   readonly adoptProjectRoot: (plan: SessionPlan) => void;
   readonly setPendingSessionStatePlan: (plan: SessionPlan | null) => void;
   readonly clearPlanContext: () => void;
-  readonly getLedger: () => TaskWorkLedger | null;
-  readonly setLedger: (ledger: TaskWorkLedger | null) => void;
-  readonly looseWork: () => readonly LooseWorkReceipt[];
-  readonly persistTaskEvidence: (
-    taskId: string,
-    evidence: TaskEvidence,
-  ) => Promise<SessionPlan>;
+  readonly setTaskWork: (work: TaskUpdateWork) => void;
 }
 
 export type MetaToolOutcome =
@@ -119,42 +101,14 @@ const handleResponderRead = (
   };
 };
 
-const rejectTaskUpdate = (
+const applyPlanResult = (
   ports: MetaToolPorts,
   call: ToolCall,
-  reason: string,
-): MetaToolOutcome => {
-  ports.notify("warn", reason);
-  ports.showCall(call);
-  const result: ToolResult = { ok: false, output: reason, exitCode: 1 };
-  ports.emitToolResult(result, reason);
-  ports.writeToolOutput("failed\n");
-  return {
-    kind: "handled",
-    result: { ok: false, call, result, contextOutput: reason },
-  };
-};
-
-const applyPlanResult = async (
-  ports: MetaToolPorts,
-  call: ToolCall,
-  planResult: MetaToolPlanResult,
-): Promise<SingleToolResult> => {
+  planResult: PlanToolResult,
+): SingleToolResult => {
   if (!planResult.reminder) ports.recordAttempt(call, planResult.ok);
-  let livePlan = planResult.plan;
-  if (planResult.ok && call.name === "task.update") {
-    livePlan =
-      (await applyTaskUpdateLedgerTransition(
-        {
-          getLedger: ports.getLedger,
-          setLedger: ports.setLedger,
-          looseWork: ports.looseWork,
-          persistTaskEvidence: ports.persistTaskEvidence,
-        },
-        call,
-        planResult.plan,
-      )) ?? livePlan;
-  }
+  const livePlan = planResult.plan;
+  if (planResult.ok && planResult.taskWork) ports.setTaskWork(planResult.taskWork);
   if (planResult.ok && livePlan) {
     ports.setPendingSessionStatePlan(livePlan);
   }
@@ -197,5 +151,5 @@ export const runMetaTool = async (
   }
   const planResult = await ports.handlePlanTool(call);
   if (!planResult.handled) return { kind: "not-meta" };
-  return { kind: "handled", result: await applyPlanResult(ports, call, planResult) };
+  return { kind: "handled", result: applyPlanResult(ports, call, planResult) };
 };

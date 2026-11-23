@@ -29,14 +29,14 @@ const absorbIntoReadyTask = async (
 ): Promise<SessionPlan | undefined> => {
   const ready = readyPlanTasks(plan)[0];
   if (!ready) return;
-  const absorbed = absorbLooseWorkIntoLedger(
-    ledgerFromTaskEvidence(ready.id, ready.evidence),
-    ready.id,
+  const base = ledgerFromTaskEvidence(ready.id, ready.evidence);
+  const { ledger: absorbed } = absorbLooseWorkIntoLedger(
+    base,
     ready.title,
     [{ toolName: call.name, signals }],
-    { planKind: plan.kind },
+    plan.kind,
   );
-  if (!absorbed || absorbed.successWorkCount === 0) return;
+  if (absorbed === base) return;
   const task = plan.tasks.find((candidate) => candidate.id === ready.id);
   if (!task) return;
   task.evidence = taskEvidenceFromLedger(absorbed);
@@ -73,34 +73,18 @@ export const creditSuccessfulWork = async (
     readonly plan: SessionPlan | undefined;
   },
 ): Promise<SessionPlan | undefined> => {
+  const { call, signals, creditId, plan } = input;
+  const ledger = recordTaskWorkSuccess(ports.getLedger(), creditId, call.name, signals);
+  ports.setLedger(ledger);
+  if (plan) {
+    const committed = creditId && ledger?.taskId === creditId
+      ? await persistCreditedTask(ports, plan, creditId)
+      : await absorbIntoReadyTask(ports, plan, call, signals);
+    if (committed) return committed;
+  }
   ports.bankLooseWork({
-    toolName: input.call.name,
-    ...(Object.keys(input.signals).length > 0 ? { signals: input.signals } : {}),
+    toolName: call.name,
+    ...(Object.keys(signals).length > 0 ? { signals } : {}),
   });
-  ports.setLedger(
-    recordTaskWorkSuccess(
-      ports.getLedger(),
-      input.creditId,
-      input.call.name,
-      input.signals,
-    ),
-  );
-  if (!input.plan) return undefined;
-  const ledger = ports.getLedger();
-  const creditedElsewhere =
-    !input.creditId || !ledger || ledger.taskId !== input.creditId;
-  let committed: SessionPlan | undefined;
-  if (creditedElsewhere) {
-    committed = await absorbIntoReadyTask(
-      ports,
-      input.plan,
-      input.call,
-      input.signals,
-    );
-  }
-  if (input.creditId) {
-    committed =
-      (await persistCreditedTask(ports, input.plan, input.creditId)) ?? committed;
-  }
-  return committed;
+  return undefined;
 };

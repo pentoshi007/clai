@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appendPlanTask, createPlan, type SessionPlan } from "../../src/store/plan.js";
 import { linkResponderJobToPlan } from "../../src/agent/turn/responder-job-linkage.js";
-import { delegationTaskTitle } from "../../src/agent/responder-parent.js";
 import type { BackgroundJob } from "../../src/tools/jobs.js";
 
 const command = "npm test -- --run --reporter verbose test/a.test.ts test/b.test.ts";
@@ -54,13 +53,18 @@ describe("Responder job plan linkage", () => {
   it("titles a new Responder subtask with the job name shown in the Responder block", async () => {
     const plan = await link(basePlan(), job({ name: "full test suite" }));
     const child = plan.tasks.find((task) => task.responderOwned);
-    expect(child?.title).toBe("Responder · full test suite");
+    expect(child?.title).toBe("full test suite");
   });
 
-  it("retitles a delegation record to the launched job label", async () => {
+  it("uses a neutral title for an unnamed legacy job", async () => {
+    const plan = await link(basePlan(), job());
+    expect(plan.tasks.find((task) => task.responderOwned)?.title).toBe("Background job");
+  });
+
+  it("retitles a legacy delegation record to the launched job label", async () => {
     const plan = basePlan();
     appendPlanTask(plan, {
-      title: delegationTaskTitle({ name: "shell.exec", args: { command } }),
+      title: `Responder · ${command}`,
       state: "in_progress",
       dependencies: [],
       resourceLocks: [],
@@ -70,7 +74,7 @@ describe("Responder job plan linkage", () => {
     const linked = await link(plan, job({ name: "full test suite", delegationId: "dg-1" }));
     const children = linked.tasks.filter((task) => task.responderOwned);
     expect(children).toHaveLength(1);
-    expect(children[0]?.title).toBe("Responder · full test suite");
+    expect(children[0]?.title).toBe("full test suite");
     expect(children[0]?.jobId).toBe("job-1");
   });
 });

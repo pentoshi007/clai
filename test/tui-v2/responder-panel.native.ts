@@ -52,13 +52,13 @@ async function check(phase: string, visible: boolean): Promise<void> {
   await settle(() => setup.resize(120, 30));
 }
 
-async function start(id: string, exitCode: number, responder: boolean): Promise<{ id: string; trigger: string }> {
+async function start(id: string, exitCode: number, responder: boolean, named = true): Promise<{ id: string; trigger: string }> {
   const trigger = join(directory, id);
   const script = `const fs = require('node:fs'); setInterval(() => { if (fs.existsSync(${JSON.stringify(trigger)})) process.exit(${exitCode}); }, 20); setTimeout(() => process.exit(99), 20000);`;
   let jobId = "";
   await settle(async () => {
     const result = await manager.startJob(`${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`, {
-      ownerSessionId, responder, wakeOnCompletion: responder, name: id,
+      ownerSessionId, responder, wakeOnCompletion: responder, name: named ? id : undefined,
     });
     assert.ok(result.ok, result.output);
     assert.ok(result.backgroundJob);
@@ -103,7 +103,9 @@ try {
   const rows = setup.captureCharFrame().split("\n");
   const header = rows.findIndex(row => row.includes("Responder:"));
   await settle(() => setup.mockMouse.click(rows[header]!.indexOf("Responder:") + 1, header));
-  assert.ok(setup.captureCharFrame().includes("completed-responder-fixture"));
+  const running = setup.captureCharFrame();
+  assert.ok(running.includes("completed-responder-fixture"), running);
+  assert.doesNotMatch(running, /setInterval|require\('node:fs'\)/);
   const firstNotification = await complete(first);
   assert.equal(firstNotification.deliveredAt, undefined);
   await check("ready beside running", true);
@@ -129,6 +131,9 @@ try {
   const history = await settle(() => services.overlay.openJobs());
   assert.ok(history.includes(first.id), history);
   assert.ok(history.includes(second.id), history);
+  assert.ok(history.includes("completed-responder-fixture"), history);
+  assert.ok(history.includes("ordinary-background-fixture"), history);
+  assert.doesNotMatch(history, /setInterval|require\('node:fs'\)|fixture:/);
   await settle(() => services.overlay.close());
   assert.equal(services.overlay.getState().kind, "none");
   for (const notification of [firstNotification, secondNotification]) {
@@ -140,6 +145,13 @@ try {
   }
   await check("read and acknowledged", false);
   assert.equal(jobs.running(ownerSessionId).some(job => job.id === ordinary.id), true);
+  await start("legacy-responder-fixture", 0, true, false);
+  const legacyFrame = await settle();
+  assert.match(legacyFrame, /Background job/);
+  assert.doesNotMatch(legacyFrame, /legacy-responder-fixture|setInterval/);
+  const legacyJobs = await settle(() => services.overlay.openJobs());
+  assert.match(legacyJobs, /Background job/);
+  assert.doesNotMatch(legacyJobs, /legacy-responder-fixture|setInterval/);
   const capturePath = process.env.CLAI_RESPONDER_PANEL_CAPTURE;
   if (capturePath) await writeFile(capturePath, JSON.stringify(captures));
   console.log(`Native responder panel passed: ${captures.length} running, pending, failed, mixed, delivered and read frames at 120/80/40 columns`);

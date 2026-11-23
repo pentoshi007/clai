@@ -2,17 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { ToolCall } from "../../../types.js";
 import type { SessionPlan } from "../../../store/plan.js";
 import { appendPlanTask, readyPlanTasks } from "../../../store/plan.js";
+import { resolveShellJobLaunch, SHELL_JOB_TITLE_REQUIRED } from "../../../tools/shell/job-launch.js";
 import {
   ledgerFromTaskEvidence,
   pickPendingTaskForToolCall,
   type TaskWorkLedger,
 } from "../../task-evidence.js";
-import {
-  delegationTaskTitle,
-  isExplicitResponderDelegation,
-  readDeclaredParentTaskId,
-  resolveResponderParent,
-} from "../../responder-parent.js";
+import { readDeclaredParentTaskId, resolveResponderParent } from "../../responder-parent.js";
 
 export interface ToolDispatchDelegation {
   id: string;
@@ -56,7 +52,7 @@ const inferDispatchedTaskId = (
 
 const createDelegationChild = async (
   ports: ToolDispatchPorts,
-  call: ToolCall,
+  title: string,
   parentTaskId: string | undefined,
 ): Promise<ToolDispatchDelegation | undefined> => {
   const delegation: ToolDispatchDelegation = {
@@ -67,7 +63,7 @@ const createDelegationChild = async (
       const parentExists =
         !!parentTaskId && draft.tasks.some((task) => task.id === parentTaskId);
       const child = appendPlanTask(draft, {
-        title: delegationTaskTitle(call),
+        title,
         state: "in_progress",
         note: `delegation=${delegation.id} awaiting launch`,
         dependencies: [],
@@ -113,6 +109,10 @@ export const resolveToolDispatch = async (
   call: ToolCall,
   plan: SessionPlan | undefined,
 ): Promise<ToolDispatchOutcome> => {
+  const launch = call.name === "shell.exec" ? resolveShellJobLaunch(call.args) : undefined;
+  if (launch?.kind === "invalid-title") {
+    return { kind: "reject", reason: `shell.exec failed: ${SHELL_JOB_TITLE_REQUIRED}` };
+  }
   let dispatchedTaskId = inferDispatchedTaskId(plan, call);
 
   const declaredParent = readDeclaredParentTaskId(call);
@@ -132,8 +132,8 @@ export const resolveToolDispatch = async (
   }
 
   const delegation =
-    isExplicitResponderDelegation(call) && plan
-      ? await createDelegationChild(ports, call, dispatchedTaskId)
+    launch?.kind === "background" && launch.responder && plan
+      ? await createDelegationChild(ports, launch.name, dispatchedTaskId)
       : undefined;
 
   if (dispatchedTaskId) {

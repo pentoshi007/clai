@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResult } from "../../types.js";
 import type { PlanTask, SessionPlan } from "../../store/plan.js";
-import { responderTaskTitle, type BackgroundJob } from "../../tools/jobs.js";
+import type { BackgroundJob } from "../../tools/jobs.js";
+import { jobTitle } from "../../tools/jobs/title.js";
 import { appendPlanTask, isPlanSuccessful, isPlanTerminal } from "../../store/plan.js";
 
 export interface ResponderLinkageJobPatch {
@@ -82,10 +83,11 @@ const applyResponderChild = (
   draft: SessionPlan,
   input: ChildMutationInput,
 ): PlanTask => {
+  const title = jobTitle(input.job);
   const child =
     findResponderChild(draft, input.job) ??
     appendPlanTask(draft, {
-      title: responderTaskTitle(input.job),
+      title,
       state: input.terminalState,
       note: input.note,
       dependencies: [],
@@ -102,7 +104,7 @@ const applyResponderChild = (
     child.state = input.terminalState;
     child.note = input.note;
   }
-  child.title = responderTaskTitle(input.job);
+  child.title = title;
   child.jobId = input.job.id;
   child.processId = input.job.pid;
   child.responderOwned = true;

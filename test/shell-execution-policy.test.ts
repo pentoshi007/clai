@@ -46,9 +46,21 @@ describe("model-owned shell execution", () => {
     }
   });
 
+  it.each([{ background: "always" }, { responder: true }])("rejects unusable background job titles before launch (%j)", async (mode) => {
+    const command = "echo finite";
+    for (const name of [undefined, "  ", 123, "x".repeat(49), "  echo  finite  "]) {
+      const result = await execute({ command, ...mode, name }, {});
+      expect(result).toMatchObject({ ok: false, exitCode: 1 });
+      expect(result.output).toContain('short "name"');
+    }
+    expect(mocks.startJob).not.toHaveBeenCalled();
+    expect(mocks.shellExec).not.toHaveBeenCalled();
+  });
+
   it.each(["echo finite", "npm run dev", "tcpdump -c 1"])("respects explicit Responder ownership without imposing a deadline for %s", async (command) => {
-    await execute({ command, responder: true, timeoutMs: 60_000 }, {});
+    await execute({ command, responder: true, name: "  Run  verification\nchecks  ", timeoutMs: 60_000 }, {});
     expect(mocks.startJob).toHaveBeenCalledWith(command, expect.objectContaining({
+      name: "Run verification checks",
       responder: true,
       wakeOnCompletion: true,
     }));
@@ -57,8 +69,9 @@ describe("model-owned shell execution", () => {
   });
 
   it("keeps explicit background jobs pollable without a deadline", async () => {
-    const result = await execute({ command: "echo finite", background: "always", timeoutMs: 60_000 }, {});
+    const result = await execute({ command: "echo finite", name: "Print status", background: "always", timeoutMs: 60_000 }, {});
     expect(mocks.startJob).toHaveBeenCalledWith("echo finite", expect.objectContaining({
+      name: "Print status",
       responder: false,
       wakeOnCompletion: false,
     }));
@@ -66,9 +79,11 @@ describe("model-owned shell execution", () => {
     expect(result.output).toMatch(/timeoutMs.*foreground|ignored.*background/i);
   });
 
-  it("explicit foreground takes precedence over responder", async () => {
-    const policy = resolveShellExecBackgroundPolicy({ command: "npm run dev", background: "never", responder: true });
-    expect(policy).toMatchObject({ wantsBackground: false, responder: false });
+  it("explicit foreground takes precedence over responder and needs no name", async () => {
+    const args = { command: "npm run dev", background: "never", responder: true };
+    expect(resolveShellExecBackgroundPolicy(args)).toMatchObject({ wantsBackground: false, responder: false });
+    expect((await execute(args, {})).output).toBe("foreground result");
+    expect(mocks.startJob).not.toHaveBeenCalled();
   });
 
   it.each(["npm install", "npm run build", "vitest run", "echo finite"])("uses one documented default budget for %s", async (command) => {

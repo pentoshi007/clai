@@ -9,7 +9,7 @@ import {
 } from "../src/store/plan.js";
 import {
   activeTaskId,
-  taskOwnerChip,
+  taskPaneGlyph,
   taskRowColor,
 } from "../src/ui-core/rendering/plan-view.js";
 
@@ -49,8 +49,7 @@ describe("foreground selectors", () => {
     const child = plan.tasks.find((task) => task.responderOwned)!;
     expect(activeTaskId(plan)).not.toBe(child.id);
     expect(taskRowColor(child)).toBe("activity");
-    expect(taskOwnerChip(child)).toBe("RESPONDER · RUNNING");
-    expect(taskOwnerChip(plan.tasks[0]!)).toBeUndefined();
+    expect(taskPaneGlyph(child)).toBe("⟳");
   });
 });
 

@@ -8,6 +8,7 @@ import { TOOL_DEFINITIONS_TERMINAL } from "./terminal.js";
 import { TOOL_DEFINITIONS_SUBAGENTS } from "./subagents.js";
 import { TOOL_DEFINITIONS_WEB_1 } from "./web-1.js";
 import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
+import { TASK_UPDATE_LIMIT, TASK_UPDATE_STATES } from "../task-update.js";
 import { TURN_END_REASONS, TURN_END_TOOL_NAME } from "../turn-end.js";
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -239,22 +240,38 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "task.update",
-    'Update a plan task state. taskId MUST be t1, t2, … from the ACTIVE PLAN context (not a free-form title slug). Use state:"pending" to defer an in-progress foreground task before opening a different one.',
+    "Update one foreground task with taskId/state/note, or batch ready changes atomically with updates instead. For a handoff, group verified completions and open the next ready task in one call. Never update Responder-owned tasks.",
     {
       type: "object",
       properties: {
         taskId: {
           type: "string",
-          description:
-            "Canonical id from plan context: t1, t2, t3, … (aliases accepted if listed)",
+          description: "Task id or listed alias from ACTIVE PLAN (single-task form)",
         },
-        state: {
-          type: "string",
-          enum: ["pending", "in_progress", "done", "failed", "skipped"],
-        },
+        state: { type: "string", enum: TASK_UPDATE_STATES },
         note: { type: "string" },
+        updates: {
+          type: "array",
+          description: `Groups of task ids sharing a state and optional note. At most ${TASK_UPDATE_LIMIT} distinct tasks total. Do not combine with single-task fields.`,
+          minItems: 1,
+          maxItems: TASK_UPDATE_LIMIT,
+          items: {
+            type: "object",
+            properties: {
+              state: { type: "string", enum: TASK_UPDATE_STATES },
+              taskIds: {
+                type: "array",
+                minItems: 1,
+                maxItems: TASK_UPDATE_LIMIT,
+                items: { type: "string" },
+              },
+              note: { type: "string" },
+            },
+            required: ["state", "taskIds"],
+            additionalProperties: false,
+          },
+        },
       },
-      required: ["taskId", "state"],
       additionalProperties: true,
     },
     { mutates: true },

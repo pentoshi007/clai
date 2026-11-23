@@ -33,25 +33,26 @@ describe("plan rows", () => {
     expect(rows[1]).toContain("33%");
   });
 
-  it("uses the shared task glyphs and owner chip row", () => {
+  it("uses the shared task glyphs without a second status row", () => {
     const { rows } = render();
     const body = rows.join("\n");
     expect(body).toContain("✓ Read the route handler");
     expect(body).toContain("⟳ Add limit/offset to the query layer");
-    expect(body).toContain("RESPONDER · RUNNING");
+    expect(body).not.toContain("RESPONDER ·");
     expect(body).toContain("○ Add tests");
   });
 
   it.each([
-    { state: "pending", color: "foreground", phase: "QUEUED" },
-    { state: "in_progress", color: "activity", phase: "RUNNING" },
-    { state: "skipped", color: "muted", phase: "DROPPED" },
-  ] as const)("colors the $state responder label like its task glyph", ({ state, color, phase }) => {
-    const frame = planView({
-      ink: colorInk, columns: 80, rows: 9, state: PLAN_INITIAL_STATE, focused: false,
-      plan: plan([task({ id: "c1", title: "Background proof", state, responderOwned: true })]),
-    });
-    expect(panelFrameRows(frame).rows.join("\n")).toContain(colorInk.fg(color, `RESPONDER · ${phase}`));
+    { state: "pending", color: "foreground", glyph: "◌" },
+    { state: "in_progress", color: "activity", glyph: "⟳" },
+    { state: "skipped", color: "muted", glyph: "–" },
+  ] as const)("shows a $state responder glyph with a safe title and no badge", ({ state, color, glyph }) => {
+    const legacy = plan([task({ id: "c1", title: "Responder · npm test -- --reporter=verbose", state, responderOwned: true })]);
+    const frame = planView({ ink: colorInk, columns: 80, rows: 9, state: PLAN_INITIAL_STATE, focused: false, plan: legacy });
+    const body = panelFrameRows(frame).rows.join("\n");
+    expect(body).toContain(`${colorInk.fg(color, glyph)} Background job`);
+    expect(body).not.toMatch(/RESPONDER ·|npm test/);
+    expect(planBodyRowsWanted(legacy, 80)).toBe(2);
   });
 
   it("shows completed and failed responder tasks without extra status text, rows, or failure glyph", () => {
@@ -84,7 +85,7 @@ describe("plan rows", () => {
     ]);
   });
 
-  it("counts progress, wrapped title and owner rows so every task fits", () => {
+  it("counts progress and wrapped title rows so every task fits", () => {
     const many = plan(
       Array.from({ length: 30 }, (_, index) =>
         task({ id: `t${index}`, title: `step ${index}`, state: "pending" }),
@@ -115,7 +116,7 @@ describe("plan rows", () => {
     const body = rowsOf(panelFrameRows(frame).rows).join("\n");
     expect(body).toContain("step 0");
     expect(body).toContain("step 29");
-    expect(planBodyRowsWanted(PLAN, 80)).toBe(6);
+    expect(planBodyRowsWanted(PLAN, 80)).toBe(5);
   });
 
   it("wraps long titles instead of ellipsizing them", () => {

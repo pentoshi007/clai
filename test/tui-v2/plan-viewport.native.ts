@@ -224,6 +224,23 @@ try {
       for (let index = 0; index < 10; index++) await wheel("down");
     }
   }
+  const legacyTitle = "Responder · npm test -- --reporter=verbose";
+  const withJobs: SessionPlan = {
+    ...source, status: "in_progress", tasks: [
+      { id: "t1", title: "Verify the change", state: "done" },
+      { id: "t2", title: "Run checks", state: "in_progress", responderOwned: true, parentTaskId: "t1" },
+      { id: "t3", title: legacyTitle, state: "pending", responderOwned: true, parentTaskId: "t1" },
+      { id: "t4", title: "Deferred check", state: "skipped", responderOwned: true, parentTaskId: "t1" },
+    ],
+  };
+  await rerender({ ...view, plan: withJobs, width: 52, height: 32 });
+  await settle(() => scrollbox().scrollTo(0));
+  const jobRows = viewportText().replace(/\s+/g, " ");
+  check(jobRows.includes("⟳ ↳ Run checks"), "The running job keeps its glyph and short title");
+  check(jobRows.includes("◌ ↳ Background job"), "An unnamed legacy job displays a neutral title");
+  check(jobRows.includes("– ↳ Deferred check"), "A skipped job keeps its glyph and title");
+  check(!/RESPONDER ·|npm test/.test(jobRows), "No Responder badges or raw commands in the task pane");
+  assert.equal(withJobs.tasks[2]?.title, legacyTitle);
   assert.equal(JSON.stringify(source), before);
   assert.deepEqual([...clippedTitleEdges].sort(), ["bottom", "top"], "Native rendering must exercise partially visible titles at both viewport edges");
   console.log(JSON.stringify({ violations: [...violations] }, null, 2));

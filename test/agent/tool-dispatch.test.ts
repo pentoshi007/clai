@@ -29,6 +29,7 @@ const plan = (tasks: PlanTask[], kind = "build"): SessionPlan =>
 const harness = (mutateOk = true) => {
   const events: string[] = [];
   let ledger: TaskWorkLedger | null = null;
+  let renderedPlan: SessionPlan | undefined;
   const ports: ToolDispatchPorts = {
     mutatePlan: async (mutator) => {
       const draft = plan([task({ id: "t1", state: "in_progress" })]);
@@ -36,7 +37,10 @@ const harness = (mutateOk = true) => {
       events.push(`mutate:${changed}`);
       return mutateOk ? { ok: true, plan: draft } : { ok: false };
     },
-    renderPlan: () => events.push("render"),
+    renderPlan: (plan) => {
+      renderedPlan = plan;
+      events.push("render");
+    },
     setPendingSessionStatePlan: () => events.push("pending"),
     notify: (level, message) => events.push(`${level}:${message}`),
     getLedger: () => ledger,
@@ -45,10 +49,14 @@ const harness = (mutateOk = true) => {
       events.push(`ledger:${next?.taskId ?? "none"}`);
     },
   };
-  return { ports, events, ledger: () => ledger };
+  return { ports, events, ledger: () => ledger, renderedPlan: () => renderedPlan };
 };
 
 const shellCall: ToolCall = { name: "shell.exec", args: { command: "nmap x" } };
+const responderCall: ToolCall = {
+  name: "shell.exec",
+  args: { command: "npm test -- --reporter=verbose", name: "  Run  test suite  ", responder: true },
+};
 
 describe("tool dispatch", () => {
   it("uses the open foreground task as the dispatch target", async () => {
@@ -99,12 +107,10 @@ describe("tool dispatch", () => {
     const h = harness();
     const outcome = await resolveToolDispatch(
       h.ports,
-      { name: "shell.exec", args: { command: "x", parentTaskId: "ghost", background: "always" } },
+      { name: "shell.exec", args: { command: "echo x", name: "Print message", parentTaskId: "ghost", background: "always" } },
       plan([task({ id: "t1", state: "in_progress" })]),
     );
-    expect(outcome.kind).toBe("reject");
-    if (outcome.kind !== "reject") throw new Error("expected reject");
-    expect(outcome.reason).toContain("shell.exec failed:");
+    expect(outcome).toMatchObject({ kind: "reject", reason: expect.stringContaining('parentTaskId "ghost"') });
   });
 
   it("keeps an existing ledger for the same dispatch target", async () => {
@@ -120,16 +126,43 @@ describe("tool dispatch", () => {
     expect(h.ledger()?.successWorkCount).toBe(2);
   });
 
-  it("creates a delegation child bound to the parent", async () => {
+  it.each([{ responder: true }, { background: "always" }])("rejects an unnamed job without plan side effects (%j)", async (mode) => {
     const h = harness();
     const outcome = await resolveToolDispatch(
       h.ports,
-      { name: "shell.exec", args: { command: "nmap -p- 10.0.0.1", responder: true } },
+      { name: "shell.exec", args: { command: "npm test", ...mode } },
+      plan([task({ id: "t1", state: "in_progress" })]),
+    );
+    expect(outcome).toMatchObject({ kind: "reject", reason: expect.stringContaining('short "name"') });
+    expect(h.events).toEqual([]);
+  });
+
+  it("does not delegate a foreground override", async () => {
+    const h = harness();
+    const outcome = await resolveToolDispatch(
+      h.ports,
+      { name: "shell.exec", args: { command: "npm test", responder: true, background: "never" } },
+      plan([task({ id: "t1", state: "in_progress" })]),
+    );
+    expect(outcome).toMatchObject({ kind: "dispatch", dispatchedTaskId: "t1", delegation: undefined });
+    expect(h.events).toEqual(["ledger:t1"]);
+  });
+
+  it("creates a named delegation child bound to the parent", async () => {
+    const h = harness();
+    const outcome = await resolveToolDispatch(
+      h.ports,
+      responderCall,
       plan([task({ id: "t1", state: "in_progress" })]),
     );
     if (outcome.kind !== "dispatch") throw new Error("expected dispatch");
     expect(outcome.delegation?.id).toMatch(/^dg-/);
     expect(outcome.delegation?.taskId).toBeDefined();
+    expect(h.renderedPlan()?.tasks.at(-1)).toMatchObject({
+      title: "Run test suite",
+      parentTaskId: "t1",
+      responderOwned: true,
+    });
     expect(h.events).toContain("render");
     expect(h.events).toContain("pending");
   });
@@ -138,7 +171,7 @@ describe("tool dispatch", () => {
     const h = harness(false);
     const outcome = await resolveToolDispatch(
       h.ports,
-      { name: "shell.exec", args: { command: "nmap -p- 10.0.0.1", responder: true } },
+      responderCall,
       plan([task({ id: "t1", state: "in_progress" })]),
     );
     if (outcome.kind !== "dispatch") throw new Error("expected dispatch");
@@ -152,7 +185,7 @@ describe("tool dispatch", () => {
     const h = harness();
     const outcome = await resolveToolDispatch(
       h.ports,
-      { name: "shell.exec", args: { command: "nmap -p- 10.0.0.1", responder: true } },
+      responderCall,
       undefined,
     );
     if (outcome.kind !== "dispatch") throw new Error("expected dispatch");

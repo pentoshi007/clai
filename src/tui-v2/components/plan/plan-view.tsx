@@ -20,7 +20,6 @@ import {
   progressView,
   taskPaneGlyph,
   taskRowColor,
-  taskOwnerChip,
   wrapPlanText,
   type PlanColorToken,
 } from "../../../ui-core/rendering/plan-view.js";
@@ -297,8 +296,7 @@ const TaskRow = memo(function TaskRow(props: {
   const bg = active || (task.state === "in_progress" && !task.responderOwned)
     ? theme.rowA
     : index % 2 === 0 ? theme.rowB : theme.statusBackground;
-  const ownerChip = taskOwnerChip(task);
-  const title = `${task.parentTaskId ? "↳ " : ""}${ownerChip ? `[${ownerChip}] ` : ""}${cleanTaskTitle(task)}`;
+  const title = `${task.parentTaskId ? "↳ " : ""}${cleanTaskTitle(task)}`;
   const expandable = hasTaskDetails(task);
   const titleLines = wrapTaskDisclosureTitle(title, width, expandable);
   const titleAttributes = task.state === "in_progress" || active ? TextAttributes.BOLD : TextAttributes.NONE;
