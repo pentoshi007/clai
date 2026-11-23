@@ -756,7 +756,6 @@ export function App(): ReactNode {
           focused={composerFocused}
           maxSuggestions={completionRows}
           menuFloating={layout.plan.placement === "split" && planRendered}
-          menuFloatingWidth={chatContentWidth}
           running={sessionRunning}
           inputSuspended={contextLimitEditing}
           onEscapeCancel={requestEscapeCancel}

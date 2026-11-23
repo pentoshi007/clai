@@ -78,10 +78,7 @@ try {
   );
   const menu = setup.renderer.root.findDescendantById("completion-menu");
   assert.ok(menu, "the floating menu is rendered");
-  assert.ok(
-    menu.x + menu.width <= pane.x,
-    `the menu must stay clear of the task pane: menu ends at ${menu.x + menu.width}, pane starts at ${pane.x}\n${frame}`,
-  );
+  assert.equal(menu.width, 120, `the menu must span the full terminal width\n${frame}`);
   assert.ok(
     composer.y + composer.height <= 30,
     `the composer stays inside the terminal\n${frame}`,

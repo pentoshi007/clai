@@ -81,7 +81,6 @@ export interface ComposerEditorProps {
   readonly height: number;
   readonly maxSuggestions?: number | undefined;
   readonly menuFloating?: boolean | undefined;
-  readonly menuFloatingWidth?: number | undefined;
   readonly running?: boolean | undefined;
   readonly inputSuspended?: boolean | undefined;
   readonly focused: boolean;
@@ -792,7 +791,6 @@ export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditor
         width={inputWidth}
         maxRows={props.maxSuggestions ?? 10}
         floatingBottom={props.menuFloating ? boxHeight : undefined}
-        floatingWidth={props.menuFloating ? props.menuFloatingWidth : undefined}
         onHoverIndex={hoverCompletion}
         onActivateIndex={activateCompletion}
         onScrollRows={scrollCompletion}
