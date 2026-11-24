@@ -1,5 +1,6 @@
 import chalk, { type ChalkInstance } from "chalk";
 import { terminalWidth } from "../text-width.js";
+import { stripAnsiSequences } from "../sanitize-display.js";
 import { backtickRunEnd, matchCodeSpan } from "./code-spans.js";
 import { splitMarkdownBreaks } from "./markup.js";
 import type { TableHeader } from "./table-syntax.js";
@@ -134,25 +135,38 @@ interface CellLine {
 }
 
 type WrapCellLine = (line: string, width: number) => string[];
-const EMPTY_CELL_LINE: CellLine = { rendered: "", width: 0 };
+export interface TablePiece extends CellLine {
+  readonly inset: number;
+  readonly before: string;
+}
+
+export interface TableColumn {
+  readonly width: number;
+  readonly pieces: readonly TablePiece[];
+}
+
+export interface TableGridRow {
+  readonly divider: string;
+  readonly columns: readonly TableColumn[];
+  readonly height: number;
+}
 
 function cellLine(rendered: string): CellLine {
   return { rendered, width: terminalWidth(rendered) };
 }
 
-function padCell(
-  rendered: string,
-  contentWidth: number,
-  columnWidth: number,
-  align: TableHeader["aligns"][number],
-): string {
-  const slack = Math.max(0, columnWidth - contentWidth);
-  if (align === "right") return " ".repeat(slack) + rendered;
-  if (align === "center") {
-    const left = Math.floor(slack / 2);
-    return " ".repeat(left) + rendered + " ".repeat(slack - left);
-  }
-  return rendered + " ".repeat(slack);
+function leftInset(slack: number, align: TableHeader["aligns"][number]): number {
+  if (align === "right") return slack;
+  return align === "center" ? Math.floor(slack / 2) : 0;
+}
+
+export function tableRowLines(row: TableGridRow): string[] {
+  return Array.from({ length: row.height }, (_, index) => row.divider + row.columns.map(column => {
+    const piece = column.pieces[index];
+    const left = piece?.inset ?? 0;
+    const right = Math.max(0, column.width - left - (piece?.width ?? 0));
+    return " ".repeat(left + 1) + (piece?.rendered ?? "") + " ".repeat(right + 1) + row.divider;
+  }).join(""));
 }
 
 function fitColumns(preferred: number[], budget: number): number[] | undefined {
@@ -216,13 +230,29 @@ function renderStackedRows(
   return out;
 }
 
-export function renderTableBlock(
-  header: TableHeader,
-  rows: readonly string[][],
-  availWidth: number,
-  paint: ChalkInstance,
-  wrap: WrapCellLine,
-): string[] {
+function wrapColumn(
+  lines: CellLine[], width: number, align: TableHeader["aligns"][number],
+  wrap: WrapCellLine, style: (text: string) => string,
+): TableColumn {
+  const pieces = lines.flatMap((line, lineIndex) => {
+    const source = stripAnsiSequences(line.rendered);
+    let end = 0;
+    return wrap(line.rendered, width).map((chunk, index) => {
+      const rendered = style(chunk.replace(/ +$/, ""));
+      const text = stripAnsiSequences(rendered);
+      const start = source.indexOf(text, end);
+      const before = index === 0 && lineIndex > 0 ? "\n" : source.slice(end, start);
+      end = start + text.length;
+      const size = terminalWidth(rendered);
+      return { rendered, width: size, inset: leftInset(Math.max(0, width - size), align), before };
+    });
+  });
+  return { width, pieces };
+}
+
+export function layoutTableBlock(
+  header: TableHeader, rows: readonly string[][], availWidth: number, paint: ChalkInstance, wrap: WrapCellLine,
+): (string | TableGridRow)[] {
   const columns = header.cells.length;
   const preferred = new Array<number>(columns).fill(1);
   const buildRow = (cells: readonly string[]): CellLine[][] => header.cells.map((_, column) => {
@@ -235,59 +265,31 @@ export function renderTableBlock(
   });
   const headerRow = buildRow(header.cells);
   const bodyRows = rows.map(buildRow);
-  const colWidths = fitColumns(preferred, availWidth - 3 * columns - 2);
-  if (!colWidths) return renderStackedRows(headerRow, bodyRows, availWidth, paint, wrap);
+  const widths = fitColumns(preferred, availWidth - 3 * columns - 2);
+  if (!widths) return renderStackedRows(headerRow, bodyRows, availWidth, paint, wrap);
 
-  const wrapCell = (cell: CellLine[], width: number): CellLine[] => {
-    const out: CellLine[] = [];
-    for (const line of cell) {
-      for (const piece of wrap(line.rendered, width)) {
-        const trimmed = piece.replace(/ +$/, "");
-        out.push(cellLine(trimmed));
-      }
-    }
-    return out;
+  const divider = paint.dim("│");
+  const gridRow = (row: CellLine[][], style: (text: string) => string): TableGridRow => {
+    const cells = row.map((cell, i) => wrapColumn(cell, widths[i]!, header.aligns[i]!, wrap, style));
+    return { divider, columns: cells, height: cells.reduce((max, cell) => Math.max(max, cell.pieces.length), 1) };
   };
-
-  const dim = paint.dim;
-  const renderRow = (row: CellLine[][], bold: boolean): string[] => {
-    const wrapped = row.map((cell, c) => wrapCell(cell, colWidths[c]!));
-    const height = wrapped.reduce((max, cell) => Math.max(max, cell.length), 1);
-    const lines: string[] = [];
-    for (let h = 0; h < height; h++) {
-      let s = dim("│");
-      for (let c = 0; c < columns; c++) {
-        const piece = wrapped[c]![h] ?? EMPTY_CELL_LINE;
-        const content =
-          bold && piece.rendered ? paint.bold(piece.rendered) : piece.rendered;
-        s +=
-          " " +
-          padCell(content, piece.width, colWidths[c]!, header.aligns[c]!) +
-          " " +
-          dim("│");
-      }
-      lines.push(s);
-    }
-    return lines;
-  };
-
-  const border = (left: string, mid: string, right: string): string => {
-    let s = left;
-    for (let c = 0; c < columns; c++) {
-      s += "─".repeat(colWidths[c]! + 2);
-      s += c < columns - 1 ? mid : right;
-    }
-    return dim(s);
-  };
-
-  const out: string[] = [border("┌", "┬", "┐")];
-  for (const line of renderRow(headerRow, true)) out.push(line);
-  if (bodyRows.length > 0) out.push(border("├", "┼", "┤"));
-  const spacer = dim("│") + colWidths.map((width) => " ".repeat(width + 2) + dim("│")).join("");
-  for (let i = 0; i < bodyRows.length; i++) {
+  const border = (left: string, mid: string, right: string): string =>
+    paint.dim(left + widths.map(width => "─".repeat(width + 2)).join(mid) + right);
+  const out: (string | TableGridRow)[] = [border("┌", "┬", "┐"), gridRow(headerRow, paint.bold)];
+  if (bodyRows.length) out.push(border("├", "┼", "┤"));
+  const spacer = divider + widths.map(width => " ".repeat(width + 2) + divider).join("");
+  for (const [i, row] of bodyRows.entries()) {
     if (i > 0) out.push(spacer);
-    for (const line of renderRow(bodyRows[i]!, false)) out.push(line);
+    out.push(gridRow(row, text => text));
   }
   out.push(border("└", "┴", "┘"));
   return out;
+}
+
+export function flatMarkdownPart(part: string | TableGridRow): string | string[] {
+  return typeof part === "string" ? part : tableRowLines(part);
+}
+
+export function renderTableBlock(...args: Parameters<typeof layoutTableBlock>): string[] {
+  return layoutTableBlock(...args).flatMap(flatMarkdownPart);
 }

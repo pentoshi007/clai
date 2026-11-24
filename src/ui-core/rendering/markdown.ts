@@ -13,7 +13,7 @@ import {
   type CodeBlockAppearance,
   type CodeFenceState,
 } from "./code-block.js";
-import { renderInlineMarkdown, renderTableBlock } from "./markdown/tables.js";
+import { flatMarkdownPart, layoutTableBlock, renderInlineMarkdown, renderTableBlock, type TableGridRow } from "./markdown/tables.js";
 import { matchTableHeader, parseTableRow, type TableHeader } from "./markdown/table-syntax.js";
 import { splitMarkdownBreaks } from "./markdown/markup.js";
 import { splitBoldLines } from "./markdown/bold-lines.js";
@@ -229,72 +229,58 @@ function wrapMarkdownLine(
   );
 }
 
-export function renderMarkdown(
-  text: string,
-  width?: number,
-  appearance?: MarkdownAppearance,
-): string {
-  if (!text) return text;
+function fencedBody(lines: string[], start: number, marker: string) {
+  let end = start;
+  while (end < lines.length && !isCodeFenceClose(lines[end]!, marker)) end++;
+  return { body: lines.slice(start, end), next: end + 1 };
+}
+
+function tableBody(lines: string[], start: number) {
+  const rows: string[][] = [];
+  let next = start;
+  for (; next < lines.length; next++) {
+    const row = parseTableRow(lines[next]!);
+    if (!row) break;
+    rows.push(row);
+  }
+  return { rows, next };
+}
+
+export function* markdownParts(text: string, width?: number, appearance?: MarkdownAppearance): Generator<string | TableGridRow> {
+  if (!text) return;
   const context = renderContext(appearance);
-  const lines = text.split(/\r?\n/);
-  const resultLines: string[] = [];
-
-  const hasWidth = typeof width === "number";
   const cols = width ?? (process.stdout.columns || 80);
-  const wrapWidth = hasWidth ? Math.max(12, cols - 2) : Math.max(40, cols - 6);
+  const wrapWidth = width === undefined ? Math.max(40, cols - 6) : Math.max(12, cols - 2);
   const diffState = appearance?.diffLines ? emptyDiffRowState() : undefined;
-  const diffTheme = diffState ? appearance?.theme ?? themeFor(detectThemeHint(process.env)) : undefined;
-
+  const diffTheme = diffState && (appearance?.theme ?? themeFor(detectThemeHint(process.env)));
+  const lines = text.split(/\r?\n/);
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i]!;
-
-    const diffRows = diffState && diffTheme ? diffMarkdownRows(line, wrapWidth, diffState, context.paint, diffTheme) : undefined;
-    if (diffRows) {
-      for (const row of diffRows) resultLines.push(`${OUTPUT_INDENT}${row}`);
-      i++;
+    const line = lines[i++]!;
+    const diffRows = diffState && diffTheme && diffMarkdownRows(line, wrapWidth, diffState, context.paint, diffTheme);
+    if (diffRows) { yield* diffRows; continue; }
+    const fence = matchCodeFenceOpen(line);
+    if (fence) {
+      const { body, next } = fencedBody(lines, i, fence.marker);
+      yield* renderCodeBlock(fence, body, wrapWidth, context);
+      i = next;
       continue;
     }
-
-    const fenceOpen = matchCodeFenceOpen(line);
-    if (fenceOpen) {
-      let j = i + 1;
-      const body: string[] = [];
-      while (j < lines.length && !isCodeFenceClose(lines[j]!, fenceOpen.marker)) {
-        body.push(lines[j]!);
-        j += 1;
-      }
-      for (const rendered of renderCodeBlock(fenceOpen, body, wrapWidth, context)) {
-        resultLines.push(`${OUTPUT_INDENT}${rendered}`);
-      }
-      i = j < lines.length ? j + 1 : j;
-      continue;
-    }
-
-    const separator = lines[i + 1];
-    const table = separator?.includes("-") ? matchTableHeader(parseTableRow(line), separator) : undefined;
-    if (table) {
-      const rows: string[][] = [];
-      let j = i + 2;
-      for (; j < lines.length; j += 1) {
-        const row = parseTableRow(lines[j]!);
-        if (!row) break;
-        rows.push(row);
-      }
-      for (const rendered of renderTableBlock(table, rows, wrapWidth, context.paint, wrapAnsiLine)) {
-        resultLines.push(`${OUTPUT_INDENT}${rendered}`);
-      }
-      i = j;
-      continue;
-    }
-
-    for (const rendered of wrapMarkdownLine(line, wrapWidth, context)) {
-      resultLines.push(`${OUTPUT_INDENT}${rendered}`);
-    }
-    i++;
+    const header = tableHeaderAt(line, lines[i]);
+    if (!header) { yield* wrapMarkdownLine(line, wrapWidth, context); continue; }
+    const { rows, next } = tableBody(lines, i + 1);
+    yield* layoutTableBlock(header, rows, wrapWidth, context.paint, wrapAnsiLine);
+    i = next;
   }
+}
 
-  return resultLines.join("\n");
+function tableHeaderAt(line: string, separator: string | undefined): TableHeader | undefined {
+  return separator?.includes("-") ? matchTableHeader(parseTableRow(line), separator) : undefined;
+}
+
+export function renderMarkdown(text: string, width?: number, appearance?: MarkdownAppearance): string {
+  const lines = Array.from(markdownParts(text, width, appearance)).flatMap(flatMarkdownPart);
+  return lines.map(line => OUTPUT_INDENT + line).join("\n");
 }
 
 export function createMarkdownStreamWriter(

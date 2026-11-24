@@ -1,4 +1,5 @@
 import { CliRenderer, type Renderable } from "@opentui/core";
+import { anchorTableSelection, tableSelectionFocus } from "../components/transcript/table-cell-selection.js";
 
 export interface CellPoint {
   readonly x: number;
@@ -36,14 +37,19 @@ export function patchOpenTuiSelection(): void {
   proto.startSelection = function (this: CliRenderer, renderable, x, y) {
     startSelection.call(this, renderable, x, y);
     const selection = this.getSelection();
-    if (selection) selectionPress.set(selection, { ...mousePosition(this) });
+    if (!selection) return;
+    selectionPress.set(selection, { ...mousePosition(this) });
+    anchorTableSelection(selection, renderable);
   };
 
   const updateSelection = proto.updateSelection;
   proto.updateSelection = function (current, x, y, options) {
-    const anchor = this.getSelection()?.anchor;
-    const focus = anchor ? inclusiveSelectionFocus(anchor, { x, y }) : { x, y };
-    updateSelection.call(this, current, focus.x, focus.y, options);
+    const selection = this.getSelection();
+    if (!selection) return;
+    const cell = tableSelectionFocus(selection, x, y);
+    if (cell === null) return this.clearSelection();
+    const focus = inclusiveSelectionFocus(selection.anchor, cell ?? { x, y });
+    updateSelection.call(this, cell?.node ?? current, focus.x, focus.y, options);
   };
 
   const finishSelection = proto.finishSelection;

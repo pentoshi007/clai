@@ -47,13 +47,13 @@ export function stableMarkdownSplit(
   return { stable: text.slice(0, boundary), tail: text.slice(boundary) };
 }
 
-export interface MarkdownStreamCache {
+export interface MarkdownStreamCache<T = AnsiLine> {
   readonly signature: string;
   readonly stableSource: string;
-  readonly stableLines: readonly AnsiLine[];
+  readonly stableLines: readonly T[];
 }
 
-export const EMPTY_MARKDOWN_STREAM_CACHE: MarkdownStreamCache = {
+export const EMPTY_MARKDOWN_STREAM_CACHE: MarkdownStreamCache<never> = {
   signature: "",
   stableSource: "",
   stableLines: [],
@@ -91,24 +91,30 @@ function signatureOf(options: RenderMarkdownLinesOptions): string {
   ]);
 }
 
-export interface StreamingMarkdownResult {
-  readonly lines: AnsiLine[];
-  readonly cache: MarkdownStreamCache;
+export interface StreamingMarkdownResult<T = AnsiLine> {
+  readonly lines: T[];
+  readonly cache: MarkdownStreamCache<T>;
 }
 
-export function renderStreamingMarkdown(input: {
+interface MarkdownStreamInput<T> {
   readonly text: string;
   readonly streaming: boolean;
   readonly options: RenderMarkdownLinesOptions;
-  readonly cache: MarkdownStreamCache;
-}): StreamingMarkdownResult {
+  readonly cache: MarkdownStreamCache<T>;
+}
+
+export function renderStreamingMarkdown(input: MarkdownStreamInput<AnsiLine>): StreamingMarkdownResult {
+  return renderMarkdownStream(input, text => renderMarkdownLines(text, input.options));
+}
+
+export function renderMarkdownStream<T>(input: MarkdownStreamInput<T>, render: (text: string) => T[]): StreamingMarkdownResult<T> {
   const { text, options } = input;
   if (!text) {
     return { lines: [], cache: EMPTY_MARKDOWN_STREAM_CACHE };
   }
   if (!input.streaming || options.diffLines) {
     return {
-      lines: renderMarkdownLines(text, options),
+      lines: render(text),
       cache: EMPTY_MARKDOWN_STREAM_CACHE,
     };
   }
@@ -124,10 +130,10 @@ export function renderStreamingMarkdown(input: {
   const previousLines = reusable ? input.cache.stableLines : [];
   const newSource = split.stable.slice(previousSource.length);
   const stableLines = newSource
-    ? [...previousLines, ...renderMarkdownLines(newSource, options).slice(0, -1)]
+    ? [...previousLines, ...render(newSource).slice(0, -1)]
     : previousLines;
 
-  const tailLines = split.tail ? renderMarkdownLines(split.tail, options) : [];
+  const tailLines = split.tail ? render(split.tail) : [];
   return {
     lines: [...stableLines, ...tailLines],
     cache: { signature, stableSource: split.stable, stableLines },

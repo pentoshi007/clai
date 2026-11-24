@@ -38,6 +38,8 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "rendering", "styled-markdown.ts"),
   join(tuiV2Root, "components", "transcript", "user-message.tsx"),
   join(tuiV2Root, "components", "transcript", "assistant-message.tsx"),
+  join(tuiV2Root, "components", "transcript", "response-body.tsx"),
+  join(tuiV2Root, "components", "transcript", "table-cell-selection.ts"),
   join(tuiV2Root, "components", "transcript", "styled-text-block.ts"),
   join(tuiV2Root, "components", "transcript", "tool-output-branch.ts"),
   join(tuiV2Root, "components", "transcript", "thinking-block.tsx"),

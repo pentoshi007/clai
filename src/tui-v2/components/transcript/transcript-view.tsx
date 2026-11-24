@@ -64,6 +64,7 @@ import {
   transcriptScrollPort,
 } from "./transcript-scroll-port.js";
 import { useNativeSelectionCopy } from "./use-native-selection-copy.js";
+import { isCellSelection, startPaddedCellSelection } from "./table-cell-selection.js";
 import { codeBlockAtPointer } from "./code-block-copy-click.js";
 import { copyCodeBlock } from "../../../ui-core/actions/copy-code-block.js";
 import { pointInRect, startSnappedSelection } from "./selection-snap.js";
@@ -217,7 +218,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
   const unmounted = useRef(false);
   const highlightColors = useMemo(() => searchHighlightColors(theme), [theme]);
 
-  useNativeSelectionCopy(services);
+  const handleCellSelectionKey = useNativeSelectionCopy(services);
   const renderer = useRenderer();
 
   const selection = useTranscriptSelection({
@@ -325,13 +326,22 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
     transcriptScrollPort.stopWheel();
     services.transcript.blurThinking();
     pointerGestureActive.current = true;
+    startTranscriptSelection(event);
+    services.focus.focusRegion("transcript");
+    setFollowing(false);
+  }
+
+  function startTranscriptSelection(event: MouseEvent): void {
+    const current = renderer.getSelection();
+    if ((isCellSelection(current) && current.isDragging) || startPaddedCellSelection(renderer, event)) {
+      services.selection.clear();
+      return;
+    }
     selection.onMouseDown(event);
     const sb = scrollRef.current;
     if (sb && pointInRect(sb.viewport, event.x, event.y)) {
       startSnappedSelection<Renderable>(renderer, event, [{ root: sb, viewport: sb.viewport }]);
     }
-    services.focus.focusRegion("transcript");
-    setFollowing(false);
   }
 
   function onTranscriptMouseDrag(event: MouseEvent): void {
@@ -991,7 +1001,7 @@ function TranscriptViewImpl(props: TranscriptViewProps): ReactNode {
       onTranscriptMouseDragEnd();
       return;
     }
-    if (selection.handleKey(key, chord)) return;
+    if (handleCellSelectionKey(key, chord) || selection.handleKey(key, chord)) return;
     if (services.focus.activeContext() === "transcript") {
       handleTranscriptNavigation(key, chord);
     }

@@ -8,20 +8,15 @@ import type { AssistantItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   EMPTY_MARKDOWN_STREAM_CACHE,
+  renderMarkdownStream,
   type MarkdownStreamCache,
 } from "../../../ui-core/rendering/streaming-markdown.js";
-import {
-  renderStyledMarkdownLines,
-  renderStyledStreamingMarkdown,
-  styledLinesWeight,
-  type StyledLine,
-} from "../../rendering/styled-markdown.js";
+import { ResponseBody, responseParts, responseWeight, type ResponsePart } from "./response-body.js";
 import { ObjectRenderCache, objectIdentity } from "../../../ui-core/rendering/object-render-cache.js";
-import { StyledTextBlock } from "./styled-text-block.js";
 
 const BODY_INDENT = 2;
 
-const FINISHED_LINES = new ObjectRenderCache<AssistantItem, StyledLine[]>(48 * 1024 * 1024);
+const FINISHED_LINES = new ObjectRenderCache<AssistantItem, ResponsePart[]>(48 * 1024 * 1024);
 
 export function AssistantMessage(props: {
   item: AssistantItem;
@@ -37,7 +32,7 @@ export function AssistantMessage(props: {
       BODY_INDENT,
   );
 
-  const cacheRef = useRef<MarkdownStreamCache>(EMPTY_MARKDOWN_STREAM_CACHE);
+  const cacheRef = useRef<MarkdownStreamCache<ResponsePart>>(EMPTY_MARKDOWN_STREAM_CACHE);
   const lines = useMemo(() => {
     const options = {
       width: wrapWidth,
@@ -47,22 +42,18 @@ export function AssistantMessage(props: {
       colorMode,
       copyLabel: true,
     };
+    const render = (text: string) => responseParts(text, options);
     if (!item.text) return [];
     if (!item.streaming) {
       cacheRef.current = EMPTY_MARKDOWN_STREAM_CACHE;
       return FINISHED_LINES.resolve(
         item,
         `${wrapWidth}|${colorMode}|${objectIdentity(theme)}`,
-        () => renderStyledMarkdownLines(item.text, options),
-        styledLinesWeight,
+        () => render(item.text),
+        responseWeight,
       );
     }
-    const rendered = renderStyledStreamingMarkdown({
-      text: item.text,
-      streaming: true,
-      options,
-      cache: cacheRef.current,
-    });
+    const rendered = renderMarkdownStream({ text: item.text, streaming: true, options, cache: cacheRef.current }, render);
     cacheRef.current = rendered.cache;
     return rendered.lines;
   }, [item, wrapWidth, theme, colorMode]);
@@ -85,7 +76,7 @@ export function AssistantMessage(props: {
       <text content=" " selectable />
       {lines.length > 0 ? (
         <box style={{ flexDirection: "column", paddingLeft: BODY_INDENT, width: "100%", marginBottom: 1 }}>
-          <StyledTextBlock lines={lines} background={theme.background} />
+          <ResponseBody parts={lines} foreground={theme.response} background={theme.background} />
         </box>
       ) : null}
     </box>
