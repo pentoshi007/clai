@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.7.2 — 2026-11-24
+
+### OpenTUI fixes
+
+- Scope mouse selection in response tables to the entry where the drag starts, so selecting wrapped cell text no longer picks up borders, neighboring columns, or other rows.
+- Copy a wrapped entry as continuous text without the table's padding or line breaks, and start the selection from the blank space inside a cell.
+
 ## v5.7.1 — 2026-11-23
 
 ### OpenTUI fixes
