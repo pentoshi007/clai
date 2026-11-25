@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { AgentEventAdapter } from "../../src/app/adapters/agent-event-adapter.js";
 import { asSessionId, asTurnId } from "../../src/app/events/app-event.js";
 import { createCountingIdFactory, EventSequencer } from "../../src/app/events/sequencer.js";
@@ -44,3 +46,31 @@ export function liveJob(path: string) {
 }
 
 export const numberedOutput = (count: number): string => Array.from({ length: count }, (_, index) => `stream line ${index + 1}`).join("\n");
+
+export function gatedJobOutput(dir: string) {
+  const emit = join(dir, "emit");
+  const finish = join(dir, "finish");
+  const script = `
+    const fs = require('node:fs');
+    process.stdout.write('STDOUT_READY\\n');
+    let emitted = false;
+    const gate = setInterval(() => {
+      if (!emitted && fs.existsSync(process.argv[1])) {
+        process.stderr.write('STDERR_READY\\n');
+        process.stdout.write('STDOUT_PROGRESS');
+        process.stderr.write('STDERR_PHASE_START\\rSTDERR_PROGRESS');
+        emitted = true;
+      }
+      if (!fs.existsSync(process.argv[2])) return;
+      clearInterval(gate);
+      process.stdout.write(' DONE\\n');
+      process.stderr.write(' DONE\\n');
+    }, 25);
+    setTimeout(() => process.exit(2), 15_000).unref();
+  `;
+  return {
+    spec: { command: process.execPath, argv: ["-e", script, emit, finish], display: "progress fixture" },
+    emit: () => writeFileSync(emit, ""),
+    finish: () => writeFileSync(finish, ""),
+  };
+}

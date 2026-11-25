@@ -39,6 +39,17 @@ export function redactKnownSecrets(text: string): string {
   return result;
 }
 
+export function hasIncompleteKnownSecretSuffix(text: string): boolean {
+  return ordered.some((secret) => {
+    const first = secret[0]!;
+    const minimum = Math.max(0, text.length - secret.length + 1);
+    for (let start = text.indexOf(first, minimum); start >= 0; start = text.indexOf(first, start + 1)) {
+      if (secret.startsWith(text.slice(start))) return true;
+    }
+    return false;
+  });
+}
+
 export function knownSecretsRevision(): number {
   return revision;
 }

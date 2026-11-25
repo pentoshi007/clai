@@ -51,7 +51,7 @@ export function preparePagerDisplay(
   options: PreparePagerDisplayOptions,
 ): { readonly mode: "markdown" | "plain"; readonly lines: readonly PagerDisplayLine[] } {
   const mode = options.mode ?? "auto";
-  const sanitized = sanitizeDisplayText(options.body ?? "");
+  const sanitized = sanitizeDisplayText((options.body ?? "").replace(/\r\n?/g, "\n"));
   const width = Math.max(24, options.width);
 
   if (mode === "plain") {

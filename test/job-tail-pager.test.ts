@@ -240,6 +240,76 @@ describe("job tail source", () => {
     } finally { source.dispose(); }
   });
 
+  it("omits the generated stdout prelude from pages and search, but not the full copy", async () => {
+    const commandDisplay = `printf 'αβ'\n${"λ".repeat(600)}`;
+    const prelude = `$ ${commandDisplay}\n\n`;
+    const target = job(workspace(), { commandDisplay });
+    const { port } = fakeJobsPort(target);
+    const source = createJobTailPagerSource({ jobs: port, jobId: target.id, pageBytes: 1024, hideCommandEcho: true })!;
+    const output = `first output\n${"x".repeat(1100)}\nlast output\n`;
+    try {
+      writeFileSync(target.stdoutArtifact, prelude);
+      expect(await source.readTail!()).toMatchObject({ body: "", offset: 0, nextOffset: 0, totalBytes: 0 });
+      appendFileSync(target.stdoutArtifact, output);
+      expect(await source.readPage(0)).toMatchObject({ body: output.slice(0, 1024), offset: 0, nextOffset: 1024 });
+      expect(await source.readTail!()).toMatchObject({ body: output.slice(-1024), offset: output.length - 1024, totalBytes: output.length });
+      expect(await source.search("αβ")).toBeUndefined();
+      expect((await source.search("last output"))?.body).toContain("last output");
+      expect((await source.search("first output", 0, true))?.body).toContain("first output");
+      expect(await source.readAll()).toBe(prelude + output);
+      appendFileSync(target.stdoutArtifact, prelude);
+      expect((await source.search("αβ"))?.body).toContain("$ printf 'αβ'");
+    } finally { source.dispose(); }
+  });
+
+  it("preserves command-like output in unprefixed logs, rotated chunks, and stderr", async () => {
+    const target = job(workspace());
+    const rotated = `${target.stdoutArtifact}.1`;
+    const lookalike = `$ ${target.commandDisplay}\n\n`;
+    writeFileSync(target.stdoutArtifact, `boot\n${lookalike}`);
+    writeFileSync(rotated, lookalike);
+    writeFileSync(target.stderrArtifact, lookalike);
+    const { port, setJob } = fakeJobsPort(target);
+    const options = { jobs: port, jobId: target.id, hideCommandEcho: true };
+    const stdout = createJobTailPagerSource(options)!;
+    const stderr = createJobTailPagerSource({ ...options, stream: "stderr" })!;
+    try {
+      expect((await stdout.readPage(0)).body).toBe(`boot\n${lookalike}`);
+      expect((await stdout.readPage(5)).body).toBe(lookalike);
+      expect((await stderr.readPage(0)).body).toBe(lookalike);
+      setJob({ ...target, artifacts: { ...target.artifacts, stdout: receipt(target.stdoutArtifact, [target.stdoutArtifact, rotated]) } });
+      expect((await stdout.readTail!()).body).toBe(lookalike);
+    } finally { stdout.dispose(); stderr.dispose(); }
+  });
+
+  it("follows both files as they appear and keeps existing combined offsets through rotation", async () => {
+    const target = job(workspace());
+    const { port, setJob, emit } = fakeJobsPort(target);
+    const source = createJobTailPagerSource({ jobs: port, jobId: target.id, stream: "combined", pageBytes: 1024, hideCommandEcho: true })!;
+    const first = `${"line on stderr\n".repeat(100)}early match\n`;
+    let observed = "";
+    const unwatch = source.watch!(() => {
+      void source.readTail!().then((page) => { observed = page.body; }).catch(() => undefined);
+    });
+    try {
+      expect((await source.readTail!()).body).toBe("");
+      writeFileSync(target.stderrArtifact, first);
+      await expect.poll(() => observed).toContain("early match");
+      const saved = (await source.search("early match"))!;
+      expect(saved.offset).toBeGreaterThan(0);
+      writeFileSync(target.stdoutArtifact, `$ ${target.commandDisplay}\n\n`);
+      appendFileSync(target.stdoutArtifact, "new stdout\n");
+      await expect.poll(() => observed).toContain("new stdout");
+      const rotated = `${target.stderrArtifact}.1`;
+      writeFileSync(rotated, "rotated stderr\n");
+      setJob({ ...target, artifacts: { ...target.artifacts, stderr: receipt(target.stderrArtifact, [target.stderrArtifact, rotated]) } });
+      emit();
+      await expect.poll(() => observed).toContain("rotated stderr");
+      expect(await source.readAll()).toBe(`${first}new stdout\nrotated stderr\n`);
+      expect((await source.readPage(saved.offset)).body.startsWith(saved.body)).toBe(true);
+    } finally { unwatch(); source.dispose(); }
+  });
+
   it("titles live and finished views differently", () => {
     expect(jobTailTitle("npm run dev", true)).toBe("npm run dev · live");
     expect(jobTailTitle("npm run dev", false)).toBe("npm run dev · output");

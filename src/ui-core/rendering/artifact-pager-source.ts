@@ -35,111 +35,151 @@ export interface ArtifactPagerSource {
   regions?(): PagerBodyRegions | undefined;
 }
 
+export interface ArtifactByteView {
+  readonly size: number;
+  read(start: number, length: number): Promise<Buffer>;
+}
+
+const EMPTY_VIEW: ArtifactByteView = { size: 0, read: async () => Buffer.alloc(0) };
+
+export async function readArtifactFile(path: string, allowMissing = false): Promise<ArtifactByteView> {
+  try {
+    const { size } = await stat(path);
+    return {
+      size,
+      async read(start, length) {
+        const bytes = Math.max(0, Math.min(length, size - start));
+        if (bytes === 0) return Buffer.alloc(0);
+        const handle = await open(path, "r");
+        try {
+          const buffer = Buffer.allocUnsafe(bytes);
+          const { bytesRead } = await handle.read(buffer, 0, bytes, start);
+          return buffer.subarray(0, bytesRead);
+        } finally {
+          await handle.close();
+        }
+      },
+    };
+  } catch (error) {
+    if (allowMissing && error instanceof Error && "code" in error && error.code === "ENOENT") return EMPTY_VIEW;
+    throw error;
+  }
+}
+
+export async function withoutArtifactPrefix(view: ArtifactByteView, prefix: Buffer, waitForPrefix = false): Promise<ArtifactByteView> {
+  const head = await view.read(0, prefix.length);
+  if (waitForPrefix && head.length < prefix.length && head.equals(prefix.subarray(0, head.length))) return EMPTY_VIEW;
+  if (!head.equals(prefix)) return view;
+  return {
+    size: view.size - prefix.length,
+    read: (start, length) => view.read(start + prefix.length, length),
+  };
+}
+
 export function createArtifactPagerSource(
   path: string,
   pageBytes = DEFAULT_ARTIFACT_PAGE_BYTES,
+  hiddenViewPrefix?: string,
 ): ArtifactPagerSource {
-  const boundedPageBytes = Math.max(1024, Math.min(MAX_PAGE_BYTES, Math.floor(pageBytes)));
+  const raw = () => readArtifactFile(path);
+  if (!hiddenViewPrefix) return createBytePagerSource(path, pageBytes, raw);
+  const prefix = Buffer.from(hiddenViewPrefix);
+  return createBytePagerSource(path, pageBytes, async () => withoutArtifactPrefix(await raw(), prefix), raw);
+}
+
+async function scanForward(view: ArtifactByteView, needle: Buffer, start: number): Promise<number> {
+  let offset = start;
+  let carry = Buffer.alloc(0);
+  while (offset < view.size) {
+    const bytes = await view.read(offset, SEARCH_CHUNK_BYTES);
+    if (bytes.length === 0) break;
+    const haystack = Buffer.concat([carry, bytes]);
+    const index = haystack.indexOf(needle);
+    if (index >= 0) return offset - carry.length + index;
+    carry = haystack.subarray(Math.max(0, haystack.length - needle.length + 1));
+    offset += bytes.length;
+  }
+  return -1;
+}
+
+async function scanBackward(view: ArtifactByteView, needle: Buffer, end: number): Promise<number> {
+  let offset = end;
+  let carry = Buffer.alloc(0);
+  while (offset > 0) {
+    const start = Math.max(0, offset - SEARCH_CHUNK_BYTES);
+    const bytes = await view.read(start, offset - start);
+    const haystack = Buffer.concat([bytes, carry]);
+    const index = haystack.lastIndexOf(needle);
+    if (index >= 0) return start + index;
+    carry = haystack.subarray(0, Math.min(needle.length - 1, haystack.length));
+    offset = start;
+  }
+  return -1;
+}
+
+export function createBytePagerSource(
+  path: string,
+  pageBytes: number,
+  readView: () => Promise<ArtifactByteView>,
+  readFullView = readView,
+): ArtifactPagerSource {
+  const bounded = Math.max(1024, Math.min(MAX_PAGE_BYTES, Math.floor(pageBytes)));
   let disposed = false;
   const assertOpen = (): void => {
     if (disposed) throw new Error("artifact pager source is disposed");
   };
-
-  const readRange = async (offset: number, bytes: number): Promise<{ buffer: Buffer; total: number }> => {
-    assertOpen();
-    const info = await stat(path);
-    const start = Math.max(0, Math.min(Math.floor(offset), info.size));
-    const length = Math.max(0, Math.min(bytes, info.size - start));
-    const handle = await open(path, "r");
-    const buffer = Buffer.alloc(length);
-    try {
-      if (length > 0) await handle.read(buffer, 0, length, start);
-    } finally {
-      await handle.close();
-    }
-    return { buffer, total: info.size };
-  };
-
-  const readPage = async (offset: number): Promise<ArtifactPage> => {
-    const requested = Math.max(0, Math.floor(offset));
-    const { buffer, total } = await readRange(requested, boundedPageBytes + 4);
+  const readPage = async (view: ArtifactByteView, offset: number): Promise<ArtifactPage> => {
+    const total = view.size;
+    const requested = Math.max(0, Math.min(Math.floor(offset), total));
+    const buffer = await view.read(requested, bounded + 4);
     let start = 0;
     while (start < Math.min(4, buffer.length) && (buffer[start]! & 0xc0) === 0x80) start += 1;
-    let end = Math.min(buffer.length, boundedPageBytes);
+    let end = Math.min(buffer.length, bounded);
     while (end < buffer.length && (buffer[end]! & 0xc0) === 0x80) end += 1;
-    const visible = buffer.subarray(start, end);
-    const pageCount = Math.max(1, Math.ceil(total / boundedPageBytes));
+    const pageCount = Math.max(1, Math.ceil(total / bounded));
     return {
-      body: visible.toString("utf8"),
+      body: buffer.toString("utf8", start, end),
       offset: requested,
-      nextOffset: Math.min(total, requested + boundedPageBytes),
+      nextOffset: Math.min(total, requested + bounded),
       totalBytes: total,
-      pageNumber: Math.min(pageCount, Math.floor(requested / boundedPageBytes) + 1),
+      pageNumber: Math.min(pageCount, Math.floor(requested / bounded) + 1),
       pageCount,
     };
   };
-
-  const readTail = async (): Promise<ArtifactPage> => {
-    assertOpen();
-    const info = await stat(path);
-    return readPage(Math.max(0, info.size - boundedPageBytes));
-  };
-
   return {
     path,
-    pageBytes: boundedPageBytes,
-    readPage,
-    readTail,
+    pageBytes: bounded,
+    async readPage(offset) {
+      assertOpen();
+      return readPage(await readView(), offset);
+    },
+    async readTail() {
+      assertOpen();
+      const view = await readView();
+      return readPage(view, Math.max(0, view.size - bounded));
+    },
     async search(query, fromOffset = 0, reverse = false) {
       assertOpen();
+      const view = await readView();
       const needle = Buffer.from(query, "utf8");
-      if (needle.length === 0) return readPage(fromOffset);
-      const info = await stat(path);
-      if (!reverse) {
-        let offset = Math.max(0, Math.min(fromOffset, info.size));
-        let carry = Buffer.alloc(0);
-        while (offset < info.size) {
-          const { buffer } = await readRange(offset, SEARCH_CHUNK_BYTES);
-          const haystack = Buffer.concat([carry, buffer]);
-          const index = haystack.indexOf(needle);
-          if (index >= 0) {
-            const absolute = offset - carry.length + index;
-            return readPage(Math.max(0, absolute - Math.floor(boundedPageBytes / 2)));
-          }
-          if (buffer.length === 0) break;
-          carry = haystack.subarray(Math.max(0, haystack.length - needle.length + 1));
-          offset += buffer.length;
-        }
-        return undefined;
-      }
-      let end = Math.max(0, Math.min(fromOffset || info.size, info.size));
-      let carry = Buffer.alloc(0);
-      while (end > 0) {
-        const start = Math.max(0, end - SEARCH_CHUNK_BYTES);
-        const { buffer } = await readRange(start, end - start);
-        const haystack = Buffer.concat([buffer, carry]);
-        const index = haystack.lastIndexOf(needle);
-        if (index >= 0) return readPage(Math.max(0, start + index - Math.floor(boundedPageBytes / 2)));
-        carry = haystack.subarray(0, Math.min(needle.length - 1, haystack.length));
-        end = start;
-      }
-      return undefined;
+      if (needle.length === 0) return readPage(view, fromOffset);
+      const start = Math.max(0, Math.min(fromOffset || (reverse ? view.size : 0), view.size));
+      const match = reverse ? await scanBackward(view, needle, start) : await scanForward(view, needle, start);
+      return match < 0 ? undefined : readPage(view, Math.max(0, match - Math.floor(bounded / 2)));
     },
     async readAll() {
       assertOpen();
-      const info = await stat(path);
-      if (info.size > MAX_FULL_ARTIFACT_EXPORT_BYTES) {
+      const view = await readFullView();
+      if (view.size > MAX_FULL_ARTIFACT_EXPORT_BYTES) {
         throw new Error(
-          `artifact is ${info.size.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Scroll through it in the UI or open ${path} directly.`,
+          `artifact is ${view.size.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Scroll through it in the UI or open ${path} directly.`,
         );
       }
-      const { buffer } = await readRange(0, info.size);
-      return buffer.toString("utf8");
+      return (await view.read(0, view.size)).toString("utf8");
     },
     dispose() { disposed = true; },
   };
 }
-
 export function createTextPagerSource(
   text: string,
   path = "memory://pager",

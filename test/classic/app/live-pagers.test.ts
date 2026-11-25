@@ -1,14 +1,16 @@
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createElement } from "react";
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createCurrentJobsPort } from "../../../src/app/adapters/current-jobs-adapter.js";
 import { ClassicApp } from "../../../src/classic/app/ClassicApp.js";
+import { JobManager } from "../../../src/tools/jobs.js";
 import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
 import { createArtifactPagerSource } from "../../../src/ui-core/rendering/artifact-pager-source.js";
 import { openToolOutputPager } from "../../../src/ui-core/rendering/open-tool-output.js";
-import { liveJob, liveTool, numberedOutput } from "../../fixtures/live-pagers.js";
+import { gatedJobOutput, liveJob, liveTool, numberedOutput } from "../../fixtures/live-pagers.js";
 import { createHarness } from "./harness.js";
 
 const dirs: string[] = [];
@@ -27,6 +29,42 @@ function mount(h: ReturnType<typeof createHarness>) {
 }
 
 describe("Classic live pagers", () => {
+  it("shows stdout, stderr, and unfinished progress before a real job exits", async () => {
+    const dir = dirname(artifact());
+    const output = gatedJobOutput(dir);
+    const manager = new JobManager(dir);
+    const h = createHarness({ jobs: createCurrentJobsPort(manager) });
+    const { view, frame } = mount(h);
+    try {
+      const started = await manager.startJob(output.spec, { cwd: dir, ownerSessionId: h.services.session.sessionId, name: "Progress fixture" });
+      expect(started).toMatchObject({ ok: true, backgroundJob: { status: "running" } });
+      const id = started.backgroundJob!.id;
+      h.services.overlay.openJobs();
+      await expect.poll(frame).toContain("Background jobs");
+      h.wiring.handleData("v");
+      await expect.poll(frame).toContain("STDOUT_READY");
+      expect(frame()).not.toContain("STDOUT_PROGRESS");
+      output.emit();
+      await expect.poll(() => ({ frame: frame(), status: manager.getJob(id)?.status }), { timeout: 3_000 }).toEqual({
+        frame: expect.stringMatching(/(?=.*STDERR_READY)(?=.*STDOUT_PROGRESS)(?=.*STDERR_PHASE_START (?:▎ )?STDERR_PROGRESS)/),
+        status: "running",
+      });
+      const target = manager.getJob(id)!;
+      expect(readFileSync(target.stdoutArtifact, "utf8")).toBe("$ progress fixture\n\nSTDOUT_READY\n");
+      expect(readFileSync(target.stderrArtifact, "utf8")).toBe("STDERR_READY\n");
+      output.finish();
+      await expect.poll(() => manager.getJob(id)?.status).toBe("exited");
+      await expect.poll(frame).toMatch(/(?=.*STDOUT_PROGRESS DONE)(?=.*STDERR_PROGRESS DONE)/);
+      expect(frame().match(/STDOUT_PROGRESS/g)).toHaveLength(1);
+      expect(frame().match(/STDERR_PROGRESS/g)).toHaveLength(1);
+      expect(readFileSync(target.stderrArtifact, "utf8")).toBe("STDERR_READY\nSTDERR_PHASE_START\rSTDERR_PROGRESS DONE\n");
+    } finally {
+      view.unmount();
+      h.dispose();
+      for (const job of manager.getRunningJobs()) await manager.stopJob(job.id, { graceMs: 300 });
+    }
+  });
+
   it("streams tool output, preserves a paused reader, resumes following, and settles on the final artifact", async () => {
     const h = createHarness({ rows: 24 });
     const tool = liveTool(h.services);

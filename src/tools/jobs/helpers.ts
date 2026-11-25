@@ -25,6 +25,10 @@ export function commandDisplay(command: string | BackgroundSpawnSpec): string {
   return command.display ?? [command.command, ...command.argv].map(displayArg).join(" ");
 }
 
+export function jobStdoutPrelude(command: string): string {
+  return `$ ${command}\n\n`;
+}
+
 export function launchFollowUp(id: string, responder: boolean): string {
   return responder
     ? "Responder owns completion tracking for this self-completing job. " +

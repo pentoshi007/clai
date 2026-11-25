@@ -117,6 +117,8 @@ export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNo
     const source = createJobTailPagerSource({
       jobs: services.ports.jobs,
       jobId: job.id,
+      stream: "combined",
+      hideCommandEcho: true,
     });
     if (!source) {
       setNote("This job has no output artifact to view.");

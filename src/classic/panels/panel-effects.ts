@@ -113,7 +113,7 @@ export function openPanelJobTail(
   if (!jobs) return;
   const job = jobs.get(jobId);
   if (!job) return;
-  const source = createJobTailPagerSource({ jobs, jobId });
+  const source = createJobTailPagerSource({ jobs, jobId, stream: "combined" });
   const title = jobTailTitle(jobTitle(job), isLiveJobStatus(job.status));
   if (!deps.overlay.openPager(title, "", source)) {
     deps.onToast("could not open job output");

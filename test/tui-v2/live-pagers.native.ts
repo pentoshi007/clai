@@ -12,17 +12,32 @@ import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-r
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { getProvider } from "../../src/llm/router.js";
+import { createCurrentJobsPort } from "../../src/app/adapters/current-jobs-adapter.js";
 import { asSessionId } from "../../src/app/events/app-event.js";
 import { EventSequencer } from "../../src/app/events/sequencer.js";
-import { liveJob, liveTool, numberedOutput } from "../fixtures/live-pagers.js";
+import type { JobsPort } from "../../src/app/ports/jobs-port.js";
+import { JobManager } from "../../src/tools/jobs.js";
+import { gatedJobOutput, liveJob, liveTool, numberedOutput } from "../fixtures/live-pagers.js";
 
 spyOn(getProvider("free"), "listModels").mockResolvedValue([]);
 const requests = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Live pager fixture must not access the network"));
 const dir = mkdtempSync(join(tmpdir(), "clai-native-live-pager-"));
 const path = join(dir, "output.log");
 const job = liveJob(path);
+const manager = new JobManager(join(dir, "jobs"));
+const managedJobs = createCurrentJobsPort(manager);
+const jobs: JobsPort = {
+  ...managedJobs,
+  get: (id) => managedJobs.get(id) ?? job.port.get(id),
+  recent: (limit, sessionId) => [...manager.getRecentJobs(limit, sessionId), ...job.port.recent!(limit, sessionId)],
+  subscribe(listener) {
+    const managed = managedJobs.subscribe(listener);
+    const fixture = job.port.subscribe(listener);
+    return () => { managed(); fixture(); };
+  },
+};
 const services = createCompositionRoot({
-  noHistory: true, provider: "free", model: "fixture-model", jobs: job.port,
+  noHistory: true, provider: "free", model: "fixture-model", jobs,
   updates: { async check() { return { state: "current", currentVersion: "0.0.0", updateAvailable: false }; } },
   persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
   capabilities: detectCapabilities({ env: { COLORTERM: "truecolor" }, stdoutIsTTY: true, stdinIsTTY: true, columns: 100, rows: 30 }),
@@ -81,15 +96,16 @@ try {
   assert.equal(services.overlay.getState().kind, "none");
 
   for (const key of ["t", "v", "enter"]) {
-    writeFileSync(path, numberedOutput(45));
+    writeFileSync(path, `$ npm test\n\n${numberedOutput(45)}`);
     job.update({ status: "running", exitCode: undefined });
     await settle(() => services.overlay.openJobs());
     await waitFor("Background jobs");
     await settle(() => key === "enter" ? setup.mockInput.pressEnter() : setup.mockInput.typeText(key));
     await waitFor("stream line 45");
     await settle(() => setup.mockInput.pressKey("\x1b[H"));
-    await waitFor("command: npm test");
+    frame = await waitFor("stream line 1");
     assertColor("command: npm test", "userBorder");
+    assert.equal(frame.match(/npm test/g)?.length, 1, frame);
     const border = setup.captureCharFrame().split("\n").find((line) => line.includes("╭") && line.includes("shell.exec"));
     assert.ok(border && !border.includes("npm test"), setup.captureCharFrame());
     await type("l");
@@ -113,6 +129,38 @@ try {
     await waitFor("Background jobs");
     await type("q");
   }
+
+  const output = gatedJobOutput(dir);
+  let managedJobId: string | undefined;
+  await settle(async () => {
+    const started = await manager.startJob(output.spec, { cwd: dir, ownerSessionId: services.session.sessionId, name: "Live fixture" });
+    assert.ok(started.ok, started.output);
+    managedJobId = started.backgroundJob?.id;
+    services.overlay.openJobs();
+  });
+  assert.ok(managedJobId);
+  await waitFor("Background jobs");
+  await type("v");
+  frame = await waitFor("STDOUT_READY");
+  assert.ok(!frame.includes("STDOUT_PROGRESS"), frame);
+  await settle(output.emit);
+  await waitFor("STDERR_PROGRESS");
+  frame = await waitFor("STDOUT_PROGRESS");
+  assert.ok(frame.includes("STDERR_READY"), frame);
+  assert.ok(frame.includes("STDERR_PHASE_START STDERR_PROGRESS"), frame);
+  assert.equal(manager.getJob(managedJobId)?.status, "running");
+  assertColor("command: progress fixture", "userBorder");
+  assert.equal(frame.match(/progress fixture/g)?.length, 1, frame);
+  await settle(output.finish);
+  await waitFor("finished");
+  await waitFor("STDERR_PROGRESS DONE");
+  frame = await waitFor("STDOUT_PROGRESS DONE");
+  assert.equal(frame.match(/STDERR_PROGRESS/g)?.length, 1, frame);
+  assertColor("command: progress fixture", "success");
+  await type("q");
+  await waitFor("Background jobs");
+  await type("q");
+
   const sequence = new EventSequencer(asSessionId(services.session.sessionId));
   await settle(() => {
     services.transcript.reset();
@@ -141,9 +189,13 @@ try {
   await type("q");
   if (compactPager.kind === "pager") assert.throws(() => compactPager.source!.readAll(), /closed/);
   assert.equal(requests.mock.calls.length, 0);
-  console.log("Native live pagers passed: tool-output click, compaction click/deltas/final summary, pause/follow, final artifact, t/v/enter job views, disk-only writes, and close");
+  console.log("Native live pagers passed: real job stdout/stderr progress, tool/compaction output, pause/follow, final artifacts, and job view keys");
 } finally {
-  await act(async () => { services.dispose(); setup.renderer.destroy(); });
+  await act(async () => {
+    for (const job of manager.getRunningJobs()) await manager.stopJob(job.id, { graceMs: 300 });
+    services.dispose();
+    setup.renderer.destroy();
+  });
   await setup.renderer.idle();
   assert.equal(job.listeners(), 0);
   rmSync(dir, { recursive: true, force: true });

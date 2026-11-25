@@ -22,6 +22,7 @@ export interface JobsPort {
   running(sessionId?: string): BackgroundJob[];
   recent?(limit?: number, sessionId?: string): BackgroundJob[];
   get(id: string): BackgroundJob | undefined;
+  outputPreview?(id: string): readonly string[];
   tail(id: string, bytes?: number): Promise<ToolResult>;
   stop(id: string): Promise<ToolResult>;
   start(command: string, options?: StartJobOptions): Promise<ToolResult>;

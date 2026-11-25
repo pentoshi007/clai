@@ -1,21 +1,35 @@
 import { watchFile, unwatchFile } from "node:fs";
-import type { JobsPort } from "../../app/ports/jobs-port.js";
+import type { BackgroundJob, JobsPort } from "../../app/ports/jobs-port.js";
+import { redactSecrets } from "../../llm/provider.js";
+import { jobStdoutPrelude } from "../../tools/jobs/helpers.js";
 import { pagerCommandTone } from "./pager-regions.js";
 import {
   createArtifactPagerSource,
+  createBytePagerSource,
   DEFAULT_ARTIFACT_PAGE_BYTES,
   type ArtifactPage,
   type ArtifactPagerSource,
 } from "./artifact-pager-source.js";
+import { createJobLogView, type JobLogFile } from "./job-log-view.js";
+
+type JobStream = "stdout" | "stderr";
 
 export interface JobTailSourceOptions {
   readonly jobs: JobsPort;
   readonly jobId: string;
-  readonly stream?: "stdout" | "stderr";
+  readonly stream?: JobStream | "combined";
   readonly pageBytes?: number;
+  readonly hideCommandEcho?: boolean;
 }
 
 const LIVE_STATUSES = new Set(["starting", "running", "stopping"]);
+
+function logPaths(job: BackgroundJob | undefined, kind: JobStream): readonly string[] {
+  const chunks = job?.artifacts?.[kind]?.chunks;
+  if (chunks?.length) return chunks;
+  const base = kind === "stdout" ? job?.stdoutArtifact : job?.stderrArtifact;
+  return base ? [base] : [];
+}
 
 export function createJobTailPagerSource(
   options: JobTailSourceOptions,
@@ -24,41 +38,48 @@ export function createJobTailPagerSource(
   const stream = options.stream ?? "stdout";
   const pageBytes = options.pageBytes ?? DEFAULT_ARTIFACT_PAGE_BYTES;
 
-  const currentPath = (): string | undefined => {
+  const paths = (): readonly string[] => {
     const job = jobs.get(jobId);
-    if (!job) return undefined;
-    const receipt = stream === "stderr" ? job.artifacts?.stderr : job.artifacts?.stdout;
-    const rotated = receipt?.chunks?.at(-1);
-    return rotated ?? (stream === "stderr" ? job.stderrArtifact : job.stdoutArtifact);
+    if (stream === "combined") return [...logPaths(job, "stdout"), ...logPaths(job, "stderr")];
+    return logPaths(job, stream).slice(-1);
   };
-
-  const initialPath = currentPath();
+  const initialPath = paths()[0];
   if (!initialPath) return undefined;
+
+  const initialJob = jobs.get(jobId);
+  const stdoutPath = initialJob?.stdoutArtifact;
+  const prelude = options.hideCommandEcho && initialJob?.commandDisplay
+    ? redactSecrets(jobStdoutPrelude(initialJob.commandDisplay))
+    : undefined;
+  const hiddenPrefix = prelude ? Buffer.from(prelude) : undefined;
+  const isGrowing = (): boolean => isLiveJobStatus(jobs.get(jobId)?.status ?? "lost");
+  const combinedFiles = (): JobLogFile[] => {
+    const growing = isGrowing();
+    return paths().map((path) => ({ path, hiddenPrefix: path === stdoutPath ? hiddenPrefix : undefined, waitForPrefix: growing }));
+  };
+  const combined = stream === "combined" ? createBytePagerSource(initialPath, pageBytes, createJobLogView(
+    combinedFiles,
+    () => jobs.outputPreview?.(jobId) ?? [],
+  )) : undefined;
 
   let disposed = false;
   const subscriptions = new Set<() => void>();
   const delegates = new Map<string, ArtifactPagerSource>();
-  const delegateFor = (path: string): ArtifactPagerSource => {
+  const active = (): ArtifactPagerSource => {
+    if (disposed) throw new Error("job tail source is disposed");
+    if (combined) return combined;
+    const path = paths()[0] ?? initialPath;
     const existing = delegates.get(path);
     if (existing) return existing;
-    const created = createArtifactPagerSource(path, pageBytes);
+    const prefix = stream === "stdout" && path === stdoutPath ? prelude : undefined;
+    const created = createArtifactPagerSource(path, pageBytes, prefix);
     delegates.set(path, created);
     return created;
   };
 
-  const active = (): ArtifactPagerSource => {
-    if (disposed) throw new Error("job tail source is disposed");
-    return delegateFor(currentPath() ?? initialPath);
-  };
-
-  const isGrowing = (): boolean => {
-    const job = jobs.get(jobId);
-    return job ? LIVE_STATUSES.has(job.status) : false;
-  };
-
   return {
     path: initialPath,
-    pageBytes,
+    pageBytes: combined?.pageBytes ?? pageBytes,
     commandTone: () => {
       const job = jobs.get(jobId);
       return pagerCommandTone(job?.status ?? "lost", job?.exitCode);
@@ -80,25 +101,24 @@ export function createJobTailPagerSource(
     isGrowing,
     watch(onChange) {
       if (disposed) return () => undefined;
-      let watchedPath: string | undefined;
+      let watched = new Set<string>();
       const changed = (): void => { if (!disposed) onChange(); };
-      const watchPath = (): void => {
-        const path = currentPath() ?? initialPath;
-        if (path === watchedPath) return;
-        if (watchedPath) unwatchFile(watchedPath, changed);
-        watchedPath = path;
-        watchFile(path, { persistent: false, interval: 200 }, changed);
+      const syncWatches = (): void => {
+        const next = new Set(paths());
+        for (const path of watched) if (!next.has(path)) unwatchFile(path, changed);
+        for (const path of next) if (!watched.has(path)) watchFile(path, { persistent: false, interval: 200 }, changed);
+        watched = next;
       };
-      watchPath();
+      syncWatches();
       const unsubscribe = jobs.subscribe((change) => {
         if (change.jobId !== jobId) return;
-        watchPath();
+        syncWatches();
         changed();
       });
       const cleanup = (): void => {
         unsubscribe();
-        if (watchedPath) unwatchFile(watchedPath, changed);
-        watchedPath = undefined;
+        for (const path of watched) unwatchFile(path, changed);
+        watched.clear();
         subscriptions.delete(cleanup);
       };
       subscriptions.add(cleanup);
@@ -109,6 +129,7 @@ export function createJobTailPagerSource(
       disposed = true;
       for (const cleanup of subscriptions) cleanup();
       subscriptions.clear();
+      combined?.dispose();
       for (const delegate of delegates.values()) delegate.dispose();
       delegates.clear();
     },

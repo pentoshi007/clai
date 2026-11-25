@@ -1,4 +1,5 @@
 import { redactSecrets } from "../../llm/provider.js";
+import { hasIncompleteKnownSecretSuffix } from "../../security/known-secrets.js";
 import type { JobArtifactReceipt } from "../jobs.js";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -18,6 +19,7 @@ export class RotatingRedactedWriter {
   private hash = createHash("sha256");
   private readonly decoder = new StringDecoder("utf8");
   private pending = "";
+  private lineWasSplit = false;
   private closePromise: Promise<void> | undefined;
   private writeError: Error | undefined;
   private closed = false;
@@ -37,6 +39,7 @@ export class RotatingRedactedWriter {
     if (lastNewline >= 0) {
       writable = this.writeRedacted(this.pending.slice(0, lastNewline + 1));
       this.pending = this.pending.slice(lastNewline + 1);
+      this.lineWasSplit = false;
     }
     if (this.pending.length <= RotatingRedactedWriter.REDACTION_OVERLAP_CHARS) {
       return writable;
@@ -44,7 +47,14 @@ export class RotatingRedactedWriter {
     const flushLength = this.pending.length - RotatingRedactedWriter.REDACTION_OVERLAP_CHARS;
     writable = this.writeRedacted(this.pending.slice(0, flushLength)) && writable;
     this.pending = this.pending.slice(flushLength);
+    this.lineWasSplit = true;
     return writable;
+  }
+
+  preview(): string {
+    if (!this.pending || this.closed || this.lineWasSplit || this.acceptedBytes >= MAX_STREAM_BYTES) return "";
+    if (hasIncompleteKnownSecretSuffix(this.pending)) return "";
+    return redactSecrets(this.pending).replace(/(w[ks]-)[A-Za-z0-9_-]+$/, "$1••••••");
   }
 
   waitForDrain(): Promise<void> {
