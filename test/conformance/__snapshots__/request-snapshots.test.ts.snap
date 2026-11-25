@@ -2528,10 +2528,10 @@ exports[`serialized request snapshots > codex / images 1`] = `
 {
   "body": {
     "client_metadata": {
-      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
-      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
+      "x-codex-installation-id": "<generated>",
+      "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2600,10 +2600,10 @@ exports[`serialized request snapshots > codex / minimal 1`] = `
 {
   "body": {
     "client_metadata": {
-      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
-      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
+      "x-codex-installation-id": "<generated>",
+      "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2667,10 +2667,10 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
 {
   "body": {
     "client_metadata": {
-      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
-      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
+      "x-codex-installation-id": "<generated>",
+      "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2713,6 +2713,9 @@ exports[`serialized request snapshots > codex / reasoning-control 1`] = `
     },
     "store": false,
     "stream": true,
+    "stream_options": {
+      "reasoning_summary_delivery": "sequential_cutoff",
+    },
     "tool_choice": "auto",
     "tools": [],
   },
@@ -2737,10 +2740,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
 {
   "body": {
     "client_metadata": {
-      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
-      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
+      "x-codex-installation-id": "<generated>",
+      "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2794,6 +2797,9 @@ exports[`serialized request snapshots > codex / tool-loop-replay 1`] = `
     },
     "store": false,
     "stream": true,
+    "stream_options": {
+      "reasoning_summary_delivery": "sequential_cutoff",
+    },
     "tool_choice": "auto",
     "tools": [
       {
@@ -2857,10 +2863,10 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
 {
   "body": {
     "client_metadata": {
-      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
-      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
+      "x-codex-installation-id": "<generated>",
+      "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",
@@ -2914,6 +2920,9 @@ exports[`serialized request snapshots > codex / tool-loop-replay-unsigned 1`] = 
     },
     "store": false,
     "stream": true,
+    "stream_options": {
+      "reasoning_summary_delivery": "sequential_cutoff",
+    },
     "tool_choice": "auto",
     "tools": [
       {
@@ -2977,10 +2986,10 @@ exports[`serialized request snapshots > codex / tools 1`] = `
 {
   "body": {
     "client_metadata": {
-      "installation_id": "<generated>",
       "session_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
       "thread_id": "clai-9f6e9ab0134832cabc7ae37bad96168e19658dbb",
-      "window_id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
+      "x-codex-installation-id": "<generated>",
+      "x-codex-window-id": "531171cb-ac62-4a1f-abef-ea57248fe1f4",
     },
     "include": [
       "reasoning.encrypted_content",

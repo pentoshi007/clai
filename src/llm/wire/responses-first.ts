@@ -87,6 +87,7 @@ function genericResponsesConfig(
     artifactDialect: "openai-compatible",
     terminalPolicy: RESPONSES_STREAM_TERMINAL,
     omitSampling: extras === "bare",
+    functionCallItemIds: providerId === "tokenrouter",
     buildHeaders(auth: ProviderAuth, accept: ResponsesAccept) {
       return {
         "content-type": "application/json",

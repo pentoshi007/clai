@@ -31,6 +31,7 @@ export interface ResponsesDialectConfig {
   readonly maxTokensField?: "max_tokens" | "omit" | undefined;
   readonly omitParallelToolCalls?: boolean | undefined;
   readonly toolStrict?: boolean | undefined;
+  readonly functionCallItemIds?: boolean | undefined;
   readonly instructionsField?: "instructions" | "leading-instructions" | "input" | undefined;
   readonly systemRole?: "developer" | "system" | undefined;
   buildHeaders(

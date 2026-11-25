@@ -7,7 +7,7 @@ import {
 } from "./provider.js";
 import { ProviderError } from "./http.js";
 import { withCodexCredential } from "./codex-credential.js";
-import { listCodexModels } from "./codex-models.js";
+import { codexModelRoute, listCodexModels } from "./codex-models.js";
 import { codexConfigFor } from "./codex-config.js";
 import {
   CODEX_API_BASE_URL,
@@ -79,16 +79,18 @@ async function runCodexRequest(
   onToken: (token: string) => void,
 ): Promise<CompletionResult> {
   return withCodexCredential(auth, async (credential) => {
-    const model = await resolveCodexModel(
+    const selected = await resolveCodexModel(
       { apiKey: encodeCodexKey(credential) },
       request.model,
     );
-    return responsesStream(
-      codexConfigFor(credential),
+    const { model, serviceTier } = codexModelRoute(credential, selected);
+    const result = await responsesStream(
+      codexConfigFor(credential, serviceTier),
       { ...request, provider: "codex", model },
       { apiKey: credential.accessToken },
       onToken,
       model,
     );
+    return selected === model ? result : { ...result, model: selected };
   });
 }

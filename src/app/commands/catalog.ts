@@ -1,3 +1,4 @@
+import { codexFallbackModels } from "../../llm/codex-models.js";
 import { nvidiaFallbackModels } from "../../llm/nvidia.js";
 import { SARVAM_MODELS } from "../../llm/sarvam-models.js";
 
@@ -443,15 +444,7 @@ export const knownModels: Record<string, string[]> = {
     "mimo-v2.5-tts-voiceclone",
     "mimo-v2.5-tts-voicedesign",
   ],
-  codex: [
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.3-codex-spark",
-  ],
+  codex: [...codexFallbackModels],
   copilot: [
     "gpt-4o",
     "gpt-4o-mini",

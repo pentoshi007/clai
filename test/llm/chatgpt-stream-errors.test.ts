@@ -64,6 +64,38 @@ describe("ChatGPT stream failures", () => {
     await expect(codexProvider.stream!(request, auth, () => {})).rejects.toMatchObject({ status: 500, body: expect.stringContaining('"code":"server_error"'), message: expect.stringContaining(requestId) });
   });
 
+  it.each([
+    { frame: { type: "error", code: "server_is_overloaded", message: "Overloaded", headers: { "Retry-After": ["3"] } }, status: 503, delay: 3 },
+    { frame: { type: "response.failed", response: { error: { code: "rate_limit_exceeded", message: "Try again in 400ms" } } }, status: 429, delay: 0.4 },
+  ])("uses the retry advice in Responses errors ($status)", async ({ frame, status, delay }) => {
+    installTransport(() => sse(frame));
+    await expect(codexProvider.stream!(request, auth, () => {})).rejects.toMatchObject({ status, retryAfterSeconds: delay });
+  });
+
+  it.each([
+    ["api_key", "API key"], ["project", "Project"], ["organization", "Organization"],
+  ])("reports the %s spend limit without retrying", async (scope, label) => {
+    const { bodies } = installTransport(() => sse({ type: "error", error: { code: `${scope}_spend_limit_exceeded`, message: "Budget exhausted" } }));
+    await expect(streamWithProvider(request, () => {}, { allowProviderFallback: false })).rejects.toMatchObject({
+      status: 429,
+      retryable: false,
+      message: expect.stringContaining(`${label} spend limit exceeded`),
+    });
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("reports an HTTP Responses spend limit without retrying", async () => {
+    const { bodies } = installTransport(() => Response.json({ error: {
+      code: "project_spend_limit_exceeded", message: "Budget exhausted",
+    } }, { status: 429 }));
+    await expect(streamWithProvider(request, () => {}, { allowProviderFallback: false })).rejects.toMatchObject({
+      status: 429,
+      retryable: false,
+      message: expect.stringContaining("Project spend limit exceeded"),
+    });
+    expect(bodies).toHaveLength(1);
+  });
+
   it.each(["stream", "complete"] as const)("retries transient %s failures without changing effort, history or session identity", async (mode) => {
     const { bodies, headers } = installTransport((attempt) => attempt < 3 ? sse(frames.error) : sse(completed));
     const onToken = vi.fn();

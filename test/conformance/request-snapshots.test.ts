@@ -11,7 +11,7 @@ import {
   REQUEST_CASES,
 } from "./request-cases.js";
 
-const VOLATILE_BODY_KEYS = new Set(["installation_id"]);
+const VOLATILE_BODY_KEYS = new Set(["x-codex-installation-id"]);
 
 const ENVIRONMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Today's date: [^\n]+/g, "Today's date: <date>"],

@@ -53,6 +53,10 @@ export function finalizeCodexBody(
     delete body.tools;
     body.parallel_tool_calls = false;
   }
+  const reasoning = body.reasoning as { summary?: string } | undefined;
+  if (body.stream === true && reasoning?.summary) {
+    body.stream_options = { reasoning_summary_delivery: "sequential_cutoff" };
+  }
   const ordered: Record<string, unknown> = {};
   for (const key of [
     "model", "stream", "service_tier", "instructions", "input", "tools",

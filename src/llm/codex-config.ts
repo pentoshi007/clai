@@ -12,10 +12,9 @@ import { nearestAcceptedEffort } from "./reasoning-controls.js";
 import { finalizeCodexBody } from "./codex-request.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
 import { currentSessionAffinity } from "./session-affinity.js";
-import type { ReasoningEffort } from "../types.js";
 import type { ResponsesBodyExtrasContext, ResponsesDialectConfig } from "./responses-config.js";
 
-export function codexConfigFor(credential: CodexCredential): ResponsesDialectConfig {
+export function codexConfigFor(credential: CodexCredential, serviceTier?: string): ResponsesDialectConfig {
   return {
     baseUrl: CODEX_API_BASE_URL,
     providerId: "codex",
@@ -51,15 +50,10 @@ export function codexConfigFor(credential: CodexCredential): ResponsesDialectCon
       let effort = metadata?.defaultEffort;
       if (reasoning) {
         effort = reasoning.enabled
-          ? (efforts.length
-              ? nearestAcceptedEffort(
-                  reasoning.effort as ReasoningEffort,
-                  efforts,
-                ) ?? reasoning.effort
-              : reasoning.effort)
-          : efforts.includes("none") ? "none" : efforts[0];
+          ? nearestAcceptedEffort(reasoning.effort, efforts) ?? reasoning.effort
+          : nearestAcceptedEffort("none", efforts);
       }
-      const summary = reasoning?.enabled
+      const summary = reasoning?.enabled && effort !== "none"
         ? metadata?.defaultSummary && metadata.defaultSummary !== "none" ? metadata.defaultSummary : "auto"
         : undefined;
       return {
@@ -73,15 +67,17 @@ export function codexConfigFor(credential: CodexCredential): ResponsesDialectCon
       const cacheKey = codexPromptCacheKey(context);
       const threadId = currentSessionAffinity() ?? cacheKey;
       return {
+        ...(serviceTier ? { service_tier: serviceTier } : {}),
         tools: [],
         tool_choice: "auto",
-        parallel_tool_calls: context.parallelToolCalls !== false && !metadata?.responsesLite,
+        parallel_tool_calls: context.parallelToolCalls !== false
+          && metadata?.supportsParallelToolCalls !== false && !metadata?.responsesLite,
         reasoning: {},
         client_metadata: {
-          installation_id: codexInstallationId(),
+          "x-codex-installation-id": codexInstallationId(),
           session_id: threadId,
           thread_id: threadId,
-          window_id: codexWindowId(cacheKey),
+          "x-codex-window-id": codexWindowId(cacheKey),
         },
         ...(metadata?.supportsVerbosity && metadata.defaultVerbosity
           ? { text: { verbosity: metadata.defaultVerbosity } }

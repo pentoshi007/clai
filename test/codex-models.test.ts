@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codexProvider, resetCodexModelCache } from "../src/llm/codex.js";
 import { encodeCodexKey } from "../src/llm/codex-auth.js";
+import { displayReasoningEfforts, modelCatalogFacts } from "../src/llm/capabilities.js";
 
 const ACCOUNT_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -67,6 +68,38 @@ describe("Codex provider", () => {
     const result = await codexProvider.listModels!({ apiKey: testKey() });
     expect(result.length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists Fast variants beside eligible models with the same capabilities", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ models: [
+      { slug: "older-fast-capable", priority: 4, additional_speed_tiers: ["fast"] },
+      { slug: "hidden", visibility: "hide", service_tiers: [{ id: "priority" }] },
+      { slug: "regular", priority: 3, service_tiers: [{ id: "ultrafast" }] },
+      {
+        slug: "new-model",
+        priority: 1,
+        service_tiers: [{ id: "priority", name: "Fast" }],
+        default_service_tier: "priority",
+        supported_reasoning_levels: [{ effort: "low" }, { effort: "xhigh" }],
+        default_reasoning_level: "low",
+        context_window: 200_000,
+        input_modalities: ["text", "image"],
+      },
+      { slug: "new-model-2", priority: 2, service_tiers: [{ id: "priority" }] },
+      { slug: "new-model-2-fast", priority: 5 },
+    ] })));
+
+    expect(await codexProvider.listModels!({ apiKey: testKey() })).toEqual([
+      "new-model", "new-model-fast", "new-model-2", "regular",
+      "older-fast-capable", "older-fast-capable-fast", "new-model-2-fast",
+    ]);
+    expect(modelCatalogFacts("codex", "new-model-fast")).toEqual({
+      ...modelCatalogFacts("codex", "new-model"),
+      id: "new-model-fast",
+      canonicalModel: "new-model",
+    });
+    expect(displayReasoningEfforts("codex", "new-model-fast")).toEqual(["low", "xhigh"]);
+    expect(modelCatalogFacts("codex", "new-model-2-fast")?.canonicalModel).toBeUndefined();
   });
 
   it("ping verifies the credential via /models", async () => {

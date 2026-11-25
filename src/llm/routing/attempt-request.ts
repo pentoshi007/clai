@@ -13,6 +13,7 @@ import {
   effectiveThinkingEffort,
   markModelUnavailable,
   modelAcceptsImages,
+  modelCatalogFacts,
   modelSupportsVision,
   visionSubstitutionOrigin,
 } from "../capabilities.js";
@@ -140,18 +141,19 @@ export function retireRejectedReasoningReplay(
   model: string,
   replayedSources?: ReadonlySet<string>,
 ): void {
+  const replayModel = provider === "codex" ? modelCatalogFacts(provider, model)?.canonicalModel ?? model : model;
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
     if (!message.reasoningArtifacts?.length && !message.reasoningBlock && !message.responsesReplay &&
         !message.toolCalls?.some((call) => call.thoughtSignature)) continue;
     const replay = message.responsesReplay;
-    const matchingReplay = replay?.provider === provider && replay.model === model;
+    const matchingReplay = replay?.provider === provider && replay.model === replayModel;
     const artifacts = message.reasoningArtifacts;
     const retained = artifacts?.filter((artifact) =>
       !(artifact.provenance.provider === provider &&
         (replayedSources
           ? replayedSources.has(reasoningReplaySourceKey(artifact.provenance))
-          : !artifact.provenance.model || artifact.provenance.model === model)),
+          : !artifact.provenance.model || artifact.provenance.model === replayModel)),
     );
     const changedArtifacts = retained?.length !== artifacts?.length;
     const legacy = !artifacts?.length && (!replay || matchingReplay);

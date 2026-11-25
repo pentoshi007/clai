@@ -10,11 +10,19 @@ import {
   type CodexCredential,
 } from "./codex-auth.js";
 import { credentialFor, withCodexCredential } from "./codex-credential.js";
-import { catalogEntriesFromPayload } from "./catalog-facts.js";
-import { ingestModelCatalogEntries, readJson } from "./http.js";
+import { catalogEffortList, catalogEntriesFromPayload } from "./catalog-facts.js";
+import { registerModelCatalog } from "./capabilities.js";
+import { ProviderError, readJson } from "./http.js";
 import { isModelListFresh, MODEL_LIST_TTL_MS, onModelListInvalidated } from "./model-list-cache.js";
+import { parseModelCatalogEntries } from "./wire/model-catalog.js";
 
-export const codexFallbackModels: readonly string[] = [
+const FAST_TIER = "priority";
+const FAST_SUFFIX = "-fast";
+
+const shippedFastModels = [
+  "gpt-6.2-sol",
+  "gpt-6.2-astra",
+  "gpt-6.1-terra",
   "gpt-6.1-sol",
   "gpt-6-astra",
   "gpt-6-sol",
@@ -23,6 +31,10 @@ export const codexFallbackModels: readonly string[] = [
   "gpt-5.6-terra",
   "gpt-5.6-luna",
   "gpt-5.5",
+];
+
+export const codexFallbackModels: readonly string[] = [
+  ...shippedFastModels.flatMap((model) => [model, model + FAST_SUFFIX]),
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.3-codex-spark",
@@ -37,12 +49,15 @@ export interface CodexModelMetadata {
   readonly supportsSummary: boolean;
   readonly supportsVerbosity: boolean;
   readonly defaultVerbosity?: string | undefined;
+  readonly supportsParallelToolCalls: boolean;
   readonly responsesLite: boolean;
 }
 
+type CatalogEntry = Record<string, unknown> & { readonly id: string };
+
 interface CatalogCache {
   readonly fetchedAt: number;
-  readonly entries: readonly Record<string, unknown>[];
+  readonly entries: readonly CatalogEntry[];
   readonly etag?: string | undefined;
 }
 
@@ -66,14 +81,12 @@ function catalogKey(credential: CodexCredential): string {
     .digest("hex");
 }
 
-function stringField(
-  entry: Record<string, unknown>,
-  name: string,
-): string | undefined {
-  return typeof entry[name] === "string" ? entry[name] as string : undefined;
+function stringField(entry: CatalogEntry, name: string): string | undefined {
+  const value = entry[name];
+  return typeof value === "string" ? value : undefined;
 }
 
-function normalizeEntries(payload: unknown): Record<string, unknown>[] {
+function normalizeEntries(payload: unknown): CatalogEntry[] {
   return catalogEntriesFromPayload(payload).flatMap((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return [];
     const entry = value as Record<string, unknown>;
@@ -98,30 +111,74 @@ function normalizeEntries(payload: unknown): Record<string, unknown>[] {
   });
 }
 
+function supportsFast(entry: CatalogEntry): boolean | undefined {
+  if (Array.isArray(entry.service_tiers)) {
+    return entry.service_tiers.some((tier) => tier?.id === FAST_TIER);
+  }
+  if (Array.isArray(entry.additional_speed_tiers)) {
+    return entry.additional_speed_tiers.includes("fast");
+  }
+  return undefined;
+}
+
+function catalogPriority(entry: CatalogEntry): number {
+  return typeof entry.priority === "number" && Number.isFinite(entry.priority)
+    ? entry.priority
+    : Number.MAX_SAFE_INTEGER;
+}
+
 function activateCatalog(cache: CatalogCache): string[] {
-  ingestModelCatalogEntries("codex", cache.entries);
-  return cache.entries
+  const models = new Map(parseModelCatalogEntries(cache.entries).map((model) => [model.id, model]));
+  const listed = new Set<string>();
+  const visible = cache.entries
     .filter((entry) => entry.visibility === undefined || entry.visibility === "list")
-    .map((entry) => String(entry.id))
-    .filter((id, index, ids) => ids.indexOf(id) === index)
-    .sort();
+    .sort((left, right) => catalogPriority(left) - catalogPriority(right) || left.id.localeCompare(right.id));
+  for (const entry of visible) {
+    listed.add(entry.id);
+    const alias = entry.id + FAST_SUFFIX;
+    const base = models.get(entry.id);
+    if (!base?.facts || models.has(alias) || !supportsFast(entry)) continue;
+    models.set(alias, { ...base, id: alias, facts: { ...base.facts, id: alias, canonicalModel: entry.id } });
+    listed.add(alias);
+  }
+  registerModelCatalog("codex", [...models.values()]);
+  return [...listed];
+}
+
+function codexCatalogEntry(credential: CodexCredential, model: string): CatalogEntry | undefined {
+  return catalogs.get(catalogKey(credential))?.entries.find((entry) => entry.id === model);
+}
+
+export function codexModelRoute(
+  credential: CodexCredential,
+  selected: string,
+): { model: string; serviceTier?: string } {
+  if (selected.length <= FAST_SUFFIX.length || !selected.endsWith(FAST_SUFFIX) || codexCatalogEntry(credential, selected)) {
+    return { model: selected };
+  }
+  const model = selected.slice(0, -FAST_SUFFIX.length);
+  const entry = codexCatalogEntry(credential, model);
+  if (entry && supportsFast(entry) === false) {
+    throw new ProviderError(`ChatGPT Fast mode is unavailable for ${model}.`, 400);
+  }
+  return { model, serviceTier: FAST_TIER };
 }
 
 export function codexModelMetadata(
   credential: CodexCredential,
   model: string,
 ): CodexModelMetadata | undefined {
-  const entry = catalogs.get(catalogKey(credential))?.entries.find((entry) => entry.id === model);
+  const entry = codexCatalogEntry(credential, model);
   if (!entry) return undefined;
   const levels = Array.isArray(entry.supported_reasoning_levels)
     ? entry.supported_reasoning_levels : [];
-  const supportedEfforts = levels.flatMap((level) => {
+  const supportedEfforts = catalogEffortList(levels.flatMap((level) => {
     if (typeof level === "string") return [level];
     if (level && typeof level === "object" && typeof level.effort === "string") {
       return [level.effort as string];
     }
     return [];
-  });
+  })) ?? [];
   return {
     id: model,
     visibility: stringField(entry, "visibility"),
@@ -131,6 +188,7 @@ export function codexModelMetadata(
     supportsSummary: entry.supports_reasoning_summary_parameter !== false,
     supportsVerbosity: entry.support_verbosity === true,
     defaultVerbosity: stringField(entry, "default_verbosity"),
+    supportsParallelToolCalls: entry.supports_parallel_tool_calls !== false,
     responsesLite: entry.use_responses_lite === true,
   };
 }

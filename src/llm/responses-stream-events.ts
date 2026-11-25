@@ -271,7 +271,7 @@ function dispatchTerminalEvent(
       return true;
     }
     const resp = (parsed.response ?? parsed) as Record<string, unknown>;
-    throw responsesError(ctx.config.displayName, resp.error ?? { message: type }, payload);
+    throw responsesError(ctx.config.displayName, resp.error ?? { message: type }, payload, parsed.headers ?? resp.headers);
   }
   return false;
 }
@@ -281,8 +281,8 @@ export function dispatchStreamEvent(
   parsed: Record<string, unknown>,
   payload: string,
 ): void {
-  if (parsed.error) {
-    throw responsesError(ctx.config.displayName, parsed.error, payload);
+  if (parsed.error || parsed.type === "error") {
+    throw responsesError(ctx.config.displayName, parsed.error ?? parsed, payload, parsed.headers);
   }
   const type = parsed.type as string | undefined;
   if (dispatchLifecycleEvent(ctx, type, parsed)) return;

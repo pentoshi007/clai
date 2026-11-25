@@ -10,7 +10,7 @@ import type {
   ToolChoice,
   ToolDefinition,
 } from "../types.js";
-import { isTextOnlyModel, mapToolChoiceToOpenAi, toWireName } from "./tool-protocol.js";
+import { isTextOnlyModel, toWireName } from "./tool-protocol.js";
 import { wireToolArguments } from "./tool-wire/argument-repair.js";
 import {
   reasoningArtifactItems,
@@ -191,6 +191,7 @@ function appendAssistantToolTurn(
   input: Array<Record<string, unknown>>,
   message: ChatMessage,
   replayArtifacts: readonly ReplayArtifactEntry[],
+  functionCallItemIds: boolean,
 ): void {
   const leadingArtifacts = replayArtifacts.filter(
     (artifact) => artifact.toolCallIndex === undefined,
@@ -209,6 +210,7 @@ function appendAssistantToolTurn(
     appendReplayItems(input, artifactsByTool.get(toolCallIndex) ?? []);
     input.push({
       type: "function_call",
+      ...(functionCallItemIds ? { id: functionCallItemId(tc.id) } : {}),
       call_id: tc.id,
       name: toWireName(tc.name),
       arguments: wireToolArguments(tc.rawArguments, tc.args),
@@ -216,14 +218,19 @@ function appendAssistantToolTurn(
   }
 }
 
+function functionCallItemId(callId: string): string {
+  return `fc_${createHash("sha256").update(callId).digest("hex").slice(0, 32)}`;
+}
+
 function appendAssistantInput(
   input: Array<Record<string, unknown>>,
   message: ChatMessage,
   replay: ResponsesReplayOptions,
+  functionCallItemIds: boolean,
 ): void {
   const replayArtifacts = responsesReplayArtifacts(message, replay);
   if (message.toolCalls && message.toolCalls.length > 0) {
-    appendAssistantToolTurn(input, message, replayArtifacts);
+    appendAssistantToolTurn(input, message, replayArtifacts, functionCallItemIds);
     return;
   }
   appendReplayItems(input, replayArtifacts);
@@ -276,7 +283,7 @@ function toResponsesInput(
           content: portableToolCallContent(message, toWireName),
         });
       } else {
-        appendAssistantInput(input, message, replay);
+        appendAssistantInput(input, message, replay, config?.functionCallItemIds === true);
       }
     } else if (message.role === "tool") {
       if (portable) {
@@ -416,7 +423,10 @@ export function buildResponsesBody(
   if (options.stream) body.stream = true;
   applyResponsesTools(body, tools, options.parallelToolCalls, config.omitParallelToolCalls);
   if (tools && options.toolChoice !== undefined) {
-    body.tool_choice = mapToolChoiceToOpenAi(options.toolChoice);
+    body.tool_choice = typeof options.toolChoice === "string" ? options.toolChoice : {
+      type: "function",
+      name: toWireName(options.toolChoice.name),
+    };
   }
   return JSON.stringify(config.finalizeBody?.(body, context) ?? body);
 }

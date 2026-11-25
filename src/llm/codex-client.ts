@@ -1,7 +1,8 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
+import { gte, valid } from "semver";
 
-const COMPATIBLE_CLIENT_VERSION = "0.159.3";
+const COMPATIBLE_CLIENT_VERSION = "0.172.0";
 
 export function installedCodexVersion(): string {
   for (const directory of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
@@ -17,7 +18,7 @@ export function installedCodexVersion(): string {
             const metadata = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
             if (metadata.name !== "@openai/codex" || typeof metadata.version !== "string") continue;
             const version = metadata.version.match(/^\d+\.\d+\.\d+/)?.[0];
-            if (version) return version;
+            if (version && valid(version) && gte(version, COMPATIBLE_CLIENT_VERSION)) return version;
           } catch {}
         }
       } catch {}

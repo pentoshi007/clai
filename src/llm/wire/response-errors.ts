@@ -1,7 +1,7 @@
 import { ProviderError } from "../http.js";
 import { readWithAbort } from "./abort-race.js";
 
-function parseRetryAfterHeader(value: string | null): number | undefined {
+export function parseRetryAfterHeader(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number.parseFloat(value);
   if (Number.isFinite(seconds) && seconds >= 0) return seconds;
@@ -13,13 +13,12 @@ function parseRetryAfterHeader(value: string | null): number | undefined {
   return undefined;
 }
 
-function parseRetryHintFromBody(text: string): number | undefined {
-  const match = text.match(/try again in\s+([0-9.]+)\s*s/i);
-  if (match) {
-    const seconds = Number.parseFloat(match[1]!);
-    if (Number.isFinite(seconds) && seconds >= 0) return seconds;
-  }
-  return undefined;
+export function parseRetryHintFromBody(text: string): number | undefined {
+  const match = text.match(/try again in\s+(\d+(?:\.\d+)?)\s*(ms|s|seconds?)\b/i);
+  if (!match) return undefined;
+  const delay = Number(match[1]);
+  if (!Number.isFinite(delay)) return undefined;
+  return match[2]?.toLowerCase() === "ms" ? delay / 1_000 : delay;
 }
 
 const RESET_METADATA_KEYS: readonly string[] = [

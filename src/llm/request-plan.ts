@@ -288,8 +288,8 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
   const wire = providerWireApi(input.provider, input.model);
   const target = createReasoningArtifactReplayTarget({
     provider: input.provider,
-    model: input.provider === "mistral"
-      ? modelCatalogFacts("mistral", input.model)?.canonicalModel ?? input.model
+    model: input.provider === "mistral" || input.provider === "codex"
+      ? modelCatalogFacts(input.provider, input.model)?.canonicalModel ?? input.model
       : input.model,
     dialect: input.provider === "mistral" ? "mistral-chat" : REPLAY_DIALECT_BY_WIRE[wire],
     ...(input.endpoint ? { endpoint: input.endpoint } : {}),

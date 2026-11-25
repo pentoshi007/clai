@@ -338,8 +338,8 @@ describe("Codex request parity", () => {
     expect(headers[0]?.get("originator")).toBe("codex_cli_rs");
     expect(headers[0]?.get("x-codex-window-id")).toBe(codexWindowId("session-1"));
     const metadata = (bodies[0]?.client_metadata ?? {}) as Record<string, string>;
-    expect(metadata.installation_id).toMatch(/^[0-9a-fA-F-]{36}$/);
-    expect(metadata.window_id).toBe(codexWindowId("session-1"));
+    expect(metadata["x-codex-installation-id"]).toMatch(/^[0-9a-fA-F-]{36}$/);
+    expect(metadata["x-codex-window-id"]).toBe(codexWindowId("session-1"));
     expect(headers[0]?.get("x-openai-internal-codex-responses-lite")).toBeNull();
     expect(result.usage?.cachedPromptTokens).toBe(1536);
     const messages: ChatMessage[] = [...request.messages];

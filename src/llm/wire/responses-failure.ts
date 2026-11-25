@@ -18,6 +18,7 @@ const ENDPOINT_REJECTION_PATTERN =
   /not found|unknown (?:path|url|endpoint)|no route|does not exist|invalid url|unrecognized request url|unsupported (?:endpoint|path|api)|no such endpoint/i;
 
 const GENERIC_REJECTION_PATTERN = /bad_request|response\.failed|the model rejected/i;
+const JSON_PARSE_REJECTION_PATTERN = /"code"\s*:\s*"json_parse_error"/i;
 
 const REASONING_FIELD_PATTERN =
   /reasoning|thinking|effort|enable_thinking|chat_template|include|store|prompt_cache/i;
@@ -38,6 +39,7 @@ export function isGenericModelRejection(
   text: string,
 ): boolean {
   if (status !== undefined && status !== 400 && status !== 422) return false;
+  if (JSON_PARSE_REJECTION_PATTERN.test(text)) return true;
   if (!GENERIC_REJECTION_PATTERN.test(text)) return false;
   return !REASONING_FIELD_PATTERN.test(text);
 }

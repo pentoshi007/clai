@@ -7,6 +7,7 @@ import { tryCompleteOnce } from "../../src/llm/routing/attempt-complete.js";
 import { tryStreamOnce } from "../../src/llm/routing/attempt-stream.js";
 import { resolveBuiltInProfile } from "../../src/llm/provider-profiles.js";
 import { completeWithProvider, streamWithProvider } from "../../src/llm/router.js";
+import { withSessionAffinity } from "../../src/llm/session-affinity.js";
 
 vi.mock("../../src/store/keys.js", async (importActual) => ({
   ...await importActual<typeof import("../../src/store/keys.js")>(),
@@ -51,6 +52,7 @@ beforeEach(async () => {
     slug: model, supported_reasoning_levels: supported.map((effort) => ({ effort })),
     default_reasoning_level: "low", default_reasoning_summary: "none",
     supports_reasoning_summary_parameter: true,
+    service_tiers: [{ id: "priority" }],
   };
   bodies = [];
   response = undefined;
@@ -79,6 +81,34 @@ describe.each(modes)("ChatGPT %s effort on the HTTP wire", (mode) => {
     expect(result.text).toBe("Done.");
     expect(bodies).toHaveLength(1);
     expect(bodies[0]?.reasoning).toEqual({ effort: "high", summary: "auto" });
+  });
+
+  it("keeps Fast mode on the selected route with the same model, effort and cache identity", async () => {
+    catalog.use_responses_lite = true;
+    catalog.default_service_tier = "priority";
+    resetCodexModelCache();
+    const fastModel = `${model}-fast`;
+    const options = { maxRetries: 0, allowProviderFallback: false, adoptFallback: false };
+    const run = (input: CompletionRequest) => mode === "complete"
+      ? completeWithProvider(input, options)
+      : streamWithProvider(input, () => {}, options);
+    const input = { ...request("max"), messages: [{ role: "system" as const, content: "Stable instructions" }, ...request().messages] };
+
+    await withSessionAffinity("codex-fast-cache-fixture", async () => {
+      expect((await run(input)).model).toBe(model);
+      expect((await run({ ...input, model: fastModel })).model).toBe(fastModel);
+    });
+
+    expect(bodies).toHaveLength(2);
+    const { service_tier, ...fastBody } = bodies[1]!;
+    expect(service_tier).toBe("priority");
+    expect(fastBody).toEqual(bodies[0]);
+    expect(fastBody).toMatchObject({
+      model,
+      reasoning: { effort: "max", summary: "auto", context: "all_turns" },
+      stream_options: { reasoning_summary_delivery: "sequential_cutoff" },
+      prompt_cache_key: "codex-fast-cache-fixture",
+    });
   });
 
   it("keeps high through a public-router server retry", async () => {
@@ -189,6 +219,25 @@ describe.each(modes)("ChatGPT %s effort on the HTTP wire", (mode) => {
       { effort: "high", summary: "auto" }, { effort: "high", summary: "auto" },
     ]);
   });
+});
+
+it("replays the original Responses items across a Standard to Fast model switch", async () => {
+  const reply = { ...output[0], id: "msg_upstream" };
+  const encrypted = { type: "reasoning", id: "rs_upstream", encrypted_content: "encrypted-reasoning" };
+  response = () => json({ status: "completed", output: [encrypted, reply] });
+  await withSessionAffinity("codex-fast-replay-fixture", async () => {
+    const initial = request();
+    const result = await codexProvider.complete(initial, auth);
+    await codexProvider.complete({ ...initial, model: `${model}-fast`, messages: [
+      ...initial.messages,
+      { role: "assistant", content: result.text, responsesReplay: result.responsesReplay, reasoningArtifacts: result.reasoningArtifacts },
+      { role: "user", content: "Continue" },
+    ] }, auth);
+  });
+  expect(bodies[1]?.input).toEqual([...(bodies[0]?.input as unknown[]), encrypted, reply, {
+    type: "message", role: "user", content: [{ type: "input_text", text: "Continue" }],
+  }]);
+  expect(bodies[1]?.prompt_cache_key).toBe(bodies[0]?.prompt_cache_key);
 });
 
 it("declares the same nested reasoning dialect used on the Codex wire", () => {
