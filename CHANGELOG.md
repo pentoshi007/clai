@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.7.3 — 2026-11-25
+
+### Output pagers
+
+- Scroll long tool and subagent output continuously in OpenTUI and Classic while keeping the rendered view bounded.
+- Copy complete disk-backed output, or report the clipboard size limit instead of silently copying only the tail.
+
+### Plans and tasks
+
+- Add related follow-up tasks in one call. Update an existing plan's title and scope without losing completed work or reopening approval.
+
 ## v5.7.2 — 2026-11-24
 
 ### OpenTUI fixes
