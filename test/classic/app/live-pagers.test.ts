@@ -102,11 +102,17 @@ it("reads a disk artifact in both directions with the wheel alone", async () => 
   const { view, frame } = mount(h);
   const scrollToLine = async (direction: 1 | -1, line: number): Promise<void> => {
     const target = new RegExp(`\\bstream line ${line}\\b`);
-    await expect.poll(() => {
-      const visible = frame();
-      if (!target.test(visible)) panels.handleWheel(direction, 12);
-      return visible;
-    }, { interval: 20, timeout: 2_000 }).toMatch(target);
+    const body = () => panels.getSnapshot().pagerBody;
+    const maxShifts = 2 * Math.ceil(Buffer.byteLength(text) / source.pageBytes);
+    for (let shifts = 0; !target.test(body()); shifts++) {
+      expect(shifts).toBeLessThan(maxShifts);
+      const before = body();
+      panels.handleWheel(direction, lastLine);
+      panels.handleWheel(direction);
+      await expect.poll(body).not.toBe(before);
+    }
+    panels.handleWheel(direction, lastLine);
+    await expect.poll(frame).toMatch(target);
   };
   try {
     h.services.overlay.openPager("Output", "", source, undefined, "plain");
