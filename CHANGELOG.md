@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.7.4 — 2026-11-25
+
+### Live job pagers
+
+- Stream stdout and stderr in Classic and OpenTUI while jobs run, including progress written without a newline.
+- Show the status-colored command once in OpenTUI without changing the saved job logs.
+
+### Providers
+
+- Improve Codex model routing and compatibility with the Responses API.
+
 ## v5.7.3 — 2026-11-25
 
 ### Output pagers
