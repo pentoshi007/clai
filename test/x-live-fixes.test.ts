@@ -135,7 +135,7 @@ describe("X3 plan taskId aliases", () => {
     expect(upd.plan?.tasks[0]!.state).toBe("in_progress");
   });
 
-  it("starts a fresh checklist after a completed plan", async () => {
+  it("updates a completed plan without replacing its checklist", async () => {
     const session = createSessionPolicy("x3-terminal-replan");
     session.planApproved.value = true;
     const prior = createPlan({
@@ -152,23 +152,28 @@ describe("X3 plan taskId aliases", () => {
 
     const result = await handlePlanTool(
       {
-        name: fromWireName("plan_create")!,
+        name: fromWireName("plan_update")!,
         args: {
-          goal: "Apply UI fixes",
-          kind: "frontend",
+          goal: "Finish project and polish layout",
           tasks: ["Fix layout overflow", "Build and verify"],
         },
       },
       session,
-      { loopGuard: new LoopGuard(), step: 1, autoApprove: true },
+      { loopGuard: new LoopGuard(), step: 1 },
     );
 
-    expect(result.ok).toBe(true);
-    expect(result.plan?.tasks.map((task) => task.title)).toEqual([
-      "Fix layout overflow",
-      "Build and verify",
+    expect(result.ok, result.modelNote).toBe(true);
+    expect(result.plan).toMatchObject({
+      goal: "Finish project and polish layout",
+      createdAt: prior.createdAt,
+      status: "in_progress",
+    });
+    expect(session.planApproved.value).toBe(true);
+    expect(result.plan?.tasks.slice(0, 2)).toEqual(prior.tasks);
+    expect(result.plan?.tasks.slice(2)).toMatchObject([
+      { id: "t3", title: "Fix layout overflow", state: "pending" },
+      { id: "t4", title: "Build and verify", state: "pending" },
     ]);
-    expect(result.plan?.tasks.map((task) => task.id)).toEqual(["t1", "t2"]);
   });
 
   it("slugifyTaskId normalizes titles", () => {

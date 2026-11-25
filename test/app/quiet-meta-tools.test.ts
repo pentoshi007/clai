@@ -14,11 +14,11 @@ describe("quiet meta tools", () => {
     expect(isQuietMetaTool("shell.exec")).toBe(false);
   });
 
-  it("hides plan.create on success, surfaces its failures/blocked", () => {
-    expect(shouldHideQuietMetaToolInChat("plan.create", "ok")).toBe(true);
-    expect(shouldHideQuietMetaToolInChat("plan.create", "running")).toBe(true);
-    expect(shouldHideQuietMetaToolInChat("plan.create", "failed")).toBe(false);
-    expect(shouldHideQuietMetaToolInChat("plan.create", "blocked")).toBe(false);
+  it.each(["plan.create", "plan.update"])("hides %s on success, surfaces its failures/blocked", (name) => {
+    expect(shouldHideQuietMetaToolInChat(name, "ok")).toBe(true);
+    expect(shouldHideQuietMetaToolInChat(name, "running")).toBe(true);
+    expect(shouldHideQuietMetaToolInChat(name, "failed")).toBe(false);
+    expect(shouldHideQuietMetaToolInChat(name, "blocked")).toBe(false);
     expect(shouldHideQuietMetaToolInChat("shell.exec", "ok")).toBe(false);
   });
 

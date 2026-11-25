@@ -47,6 +47,7 @@ const compactExecutionContract = `# EXECUTION CONTRACT
 - Reuse evidence; batch only independent work. Resolve decision-changing unknowns with bounded searches/reads. A truncated result is not empty: continue from its cursor instead of rerunning.
 - Preserve installed versions/conventions; check current authoritative docs when unsure; do not upgrade unrelated dependencies.
 - Commands are never automatically backgrounded. shell.exec default/auto is foreground; background:"always" or responder:true delegates, background:"never" wins. timeoutMs: foreground-only milliseconds (1000–1800000; default 60000), ignored for background and Responder jobs. Always delegate finite work expected to exceed 4–5 minutes to Responder with shell.exec responder:true; shorter finite work: foreground/shell.wait. Interactive sessions use terminal tools. Servers/watchers: named background:"always" jobs, never Responder; shell.tail + readiness probe, shell.stop cleanup. Analyze Responder delivery, job.read, never poll. Batch missing CLI path/version checks before OS installs.
+- For follow-ups to an approved or completed plan, use one plan.update with a short goal covering old and new scope and tasks containing only the new work. If title/detail still fit, use one task.add with a tasks array instead. Batch all known tasks, not one call per task. Use plan.create only for a new plan or a full draft revision.
 - Debug with reproduction + falsifiable hypothesis; verify original failure and regressions; do not weaken checks. If attempts add no evidence, change approach.
 - Track material security surfaces/trust boundaries as tested, untested or blocked. Distinguish suspicions from reproduced findings; use negative controls. Report evidence, impact, remediation and gaps. No finite assessment proves all vulnerabilities were found.
 - Reconcile all requested scope before stopping. Separate confirmed results, assumptions, failed checks and unfinished work. Budgets/missing access are limits to disclose, not evidence of completion. When nothing you can still do remains for the latest user message (done, answered, need user input, blocked, or told to stop), write your final message and call turn.end {"reason":...} in that same response; a final message without turn.end costs an extra request.
@@ -399,7 +400,10 @@ export function renderRequestEnvironmentContext(options?: {
       (t) => t.state === "done" || t.state === "skipped",
     ).length;
     lines.push(
-      `Plan status: ACTIVE PLAN EXISTS (goal: "${p.goal}", tasks: ${p.tasks.length} total [${finished} finished], status: ${p.status}). An active plan is already present in this session; do NOT call plan.create to create a new plan — use task.add to append new tasks.`,
+      `Plan status: ACTIVE PLAN EXISTS (goal: "${p.goal}", tasks: ${p.tasks.length} total [${finished} finished], status: ${p.status}).`,
+      p.status === "draft"
+        ? "Revise a draft with one complete plan.create; do not execute until approved."
+        : "Keep the same plan. Use one plan.update for a short title covering old and new scope plus all new tasks, or one task.add with a tasks array if title/detail still fit.",
     );
   } else {
     lines.push("Plan status: NO PLAN EXISTS (no active plan in session).");
@@ -569,7 +573,7 @@ function detailedAgentModeDirective(): string {
     "- Order work by real dependency and risk. Pair each task with its completion evidence; avoid vague activity tasks and avoid encoding one guessed tool sequence as the plan.",
     "- Cycle: task.update(in_progress) → do and inspect the real work → task.update(done) only when the outcome holds → open the next task immediately.",
     "- Never mark done on hope or because a command launched. A task can require several hypotheses or methods before its outcome is satisfied.",
-    "- When evidence discovers required work, use task.add and place it by dependency/impact. If it should preempt the current task, deliberately return the current task to pending before opening the higher-priority task; preserve completed evidence. Record out-of-scope or non-material discoveries instead of silently expanding work.",
+    "- Batch new work in one task.add with a tasks array. If a follow-up broadens the existing or completed plan, use one plan.update to append the new tasks and give the plan a short title covering both scopes. Preserve completed evidence. If the new work should preempt the current task, return that task to pending before opening the higher-priority task.",
     "- Treat an active plan as a living outcome map, not an inflexible script. Adapt the method and sequencing when evidence demands it without erasing completed history.",
     "",
     "Quality bar across domains:",

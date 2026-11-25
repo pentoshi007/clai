@@ -1,4 +1,4 @@
-
+import { RUNNER_META_TOOL_NAMES } from "../../tools/definitions.js";
 
 export type TaskClass =
   | "explore"
@@ -25,14 +25,7 @@ export interface TaskWorkSignals {
 }
 
 export function isMetaPlanTool(name: string): boolean {
-  return (
-    name === "plan.create" ||
-    name === "task.move" ||
-    name === "job.read" ||
-    name === "task.update" ||
-    name === "turn.end" ||
-    name === "agent.handoff"
-  );
+  return RUNNER_META_TOOL_NAMES.has(name) || name === "agent.handoff";
 }
 
 export function isEvidenceWorkTool(name: string): boolean {

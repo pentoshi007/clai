@@ -13,6 +13,7 @@ export {
 export const PLAN_TOOL_NAMES = new Set([
   "plan.clear",
   "plan.create",
+  "plan.update",
   "task.add",
   "task.move",
   "task.update",

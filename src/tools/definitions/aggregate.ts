@@ -11,6 +11,27 @@ import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 import { TASK_UPDATE_LIMIT, TASK_UPDATE_STATES } from "../task-update.js";
 import { TURN_END_REASONS, TURN_END_TOOL_NAME } from "../turn-end.js";
 
+const newTaskProperties = {
+  title: { type: "string" },
+  parentTaskId: { type: "string", description: "Parent ID or alias" },
+  dependencies: { type: "array", items: { type: "string" }, description: "Prerequisite IDs or aliases" },
+  resourceLocks: { type: "array", items: { type: "string" } },
+  note: { type: "string" },
+  acceptanceCriteria: { type: "string", description: "Evidence required for completion" },
+};
+
+const taskBatch = {
+  type: "array",
+  minItems: 1,
+  description: "New tasks in dependency order. Refer to existing or earlier tasks by ID or lowercase_underscore alias.",
+  items: {
+    oneOf: [
+      { type: "string" },
+      { type: "object", properties: newTaskProperties, required: ["title"], additionalProperties: false },
+    ],
+  },
+};
+
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_FILES,
   ...TOOL_DEFINITIONS_SHELL,
@@ -87,14 +108,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "plan.create",
-    "Create the initial durable plan or revise a draft awaiting approval. If a plan is already approved/in progress, use task.add; runtime preserves it and treats proposed new tasks as append-only.",
+    "Start a plan or revise an unapproved draft. For follow-ups use plan.update or batched task.add.",
     {
       type: "object",
       properties: {
         goal: {
           type: "string",
-          description:
-            "Short plan title (max ~8 words, one line). Not a full sentence or restatement of the user's request — put context/approach in `detail` instead.",
+          description: "One short title (about eight words); put context in detail.",
           maxLength: 80,
         },
         detail: { type: "string" },
@@ -132,8 +152,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
         kind: {
           type: "string",
-          description:
-            'REQUIRED category for this plan — you decide it from the actual work, never leave it generic and never default to "general". Use one concise lowercase word (rarely two) naming the primary activity. Pick the most specific fitting label; invent a better one when none below fits. Building/coding: build, frontend, ui, webapp, api, backend, feature, refactor, bugfix, fix, debugging, testing, perf, devops, infra, deployment, migration, docs, config. Data/research: data, research, analysis. Security: security, pentest, reconnaissance, recon, osint, exploit, audit, hardening, forensics. Choose "general" ONLY when the work truly spans many categories with no dominant one.',
+          description: "Specific lowercase category for the primary work (e.g. feature, bugfix, testing, docs, analysis, audit). Use general only when no category dominates.",
         },
       },
       required: ["goal", "tasks", "kind"],
@@ -143,32 +162,28 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "task.add",
-    "Append one newly discovered task or child task to the active plan without rewriting existing tasks or reopening completed work.",
+    "Batch new tasks in one call. For one task, title and its fields also work; don't mix forms. Use plan.update if title/detail changes.",
+    {
+      type: "object",
+      properties: { ...newTaskProperties, tasks: taskBatch },
+      additionalProperties: false,
+    },
+    { mutates: true },
+  ),
+  def(
+    "plan.update",
+    "Update title/detail and/or batch new tasks in one call, even after completion. Existing tasks, approval, and omitted fields stay unchanged.",
     {
       type: "object",
       properties: {
-        title: { type: "string" },
-        parentTaskId: {
+        goal: {
           type: "string",
-          description: "Optional canonical parent id from ACTIVE PLAN",
+          maxLength: 80,
+          description: "Short title covering old and new scope (about eight words), not a list.",
         },
-        dependencies: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional canonical task ids that must finish first",
-        },
-        resourceLocks: {
-          type: "array",
-          items: { type: "string" },
-        },
-        note: { type: "string" },
-        acceptanceCriteria: {
-          type: "string",
-          description:
-            "Observable evidence required before this task is done; describe the outcome rather than prescribing a tool.",
-        },
+        detail: { type: "string", description: "Keep constraints still in force." },
+        tasks: taskBatch,
       },
-      required: ["title"],
       additionalProperties: false,
     },
     { mutates: true },

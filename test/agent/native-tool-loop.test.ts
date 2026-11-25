@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatImage, CompletionRequest, CompletionResult } from "../../src/types.js";
+import { createSessionPolicy } from "../../src/agent/session-policy.js";
+import { createPlan, loadPlan, savePlan, type SessionPlan } from "../../src/store/plan.js";
 import {
   accumulateOpenAiToolCallDelta,
   clearTextOnlyModels,
@@ -82,6 +84,45 @@ describe("native tool loop integration", () => {
     clearTextOnlyModels();
     process.chdir(prevCwd);
     await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("refreshes a completed plan in one native tool round", async () => {
+    const plan = createPlan({ sessionId: "native-plan-follow-up", goal: "Polish editor layout", detail: "Keep keyboard behavior stable", taskTitles: ["Fix editor spacing"] });
+    plan.tasks[0]!.state = "done";
+    plan.status = "completed";
+    await savePlan(plan);
+
+    const provider = "meta";
+    const model = "muse-spark-1.2";
+    const goal = "Editor layout and keyboard shortcuts";
+    const draft = { goal, tasks: ["Design shortcuts", { title: "Verify keyboard shortcuts", dependencies: ["design_shortcuts"] }] };
+    streamMock.mockImplementationOnce(async (request: CompletionRequest) => {
+      expect(request.tools?.find(tool => tool.name === "plan.update")?.parameters.properties).toHaveProperty("tasks");
+      expect(request.messages.some(message => message.content.includes("goal: Polish editor layout, status: completed"))).toBe(true);
+      return { text: "", provider, model, toolCalls: [{ id: "call_update_plan", name: "plan.update", args: draft }], finishReason: "tool_calls" };
+    }).mockImplementationOnce(async (request: CompletionRequest, onToken: (text: string) => void) => {
+      const context = request.messages.filter(message => message.content.startsWith("ACTIVE PLAN for this session")).at(-1)?.content;
+      expect(context).toContain(`goal: ${goal}, status: in_progress`);
+      expect(context).toContain("[t1] (done) Fix editor spacing");
+      expect(context).toContain("[t2] (pending) Design shortcuts");
+      expect(context).toContain("[t3] (pending) Verify keyboard shortcuts");
+      const text = "Updated the plan. No implementation was started.";
+      onToken(text);
+      return { text, provider, model, toolCalls: [turnEnd("call_end", "stop_requested")], finishReason: "tool_calls" };
+    });
+
+    const updates: SessionPlan[] = [];
+    const { runAgentLoop } = await import("../../src/agent/runner.js");
+    const result = await runAgentLoop("Add shortcut design and verification to the existing plan. Stop after saving the plan; don't start the new tasks yet.", {
+      provider, model, toolCalling: "native", maxSteps: 4, session: createSessionPolicy(plan.sessionId),
+      onEvent: event => { if (event.type === "plan-update") updates.push(event.plan); },
+    });
+    expect(result).toContain("Updated the plan");
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(updates.filter(update => update.goal === goal)).toHaveLength(1);
+    expect(await loadPlan(plan.sessionId)).toMatchObject({ goal, version: 2, tasks: [
+      { id: "t1", state: "done" }, { id: "t2", state: "pending" }, { id: "t3", state: "pending", dependencies: ["t2"] },
+    ] });
   });
 
   it("writes a file from native toolCalls without fence text", async () => {

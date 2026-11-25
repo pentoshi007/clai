@@ -8,7 +8,7 @@ import { looksLikeRunOnlyGoal, normalizePlanTaskEntries, resolvePlanTaskId, slug
 import { handlePlanCreate } from "./actions/plan-create.js";
 import { handlePlanClear } from "./actions/plan-clear.js";
 import { handleTaskMove } from "./actions/task-move.js";
-import { handleTaskAdd } from "./actions/task-add.js";
+import { handlePlanEdit } from "./actions/task-add.js";
 import { handleTaskUpdate, type TaskUpdateWork } from "./actions/task-update.js";
 export { looksLikeRunOnlyGoal, normalizePlanTaskEntries, resolvePlanTaskId, slugifyTaskId, titlesMatchForPlan };
 export type { NormalizedPlanTask } from "./normalization.js";
@@ -58,20 +58,17 @@ export async function handlePlanTool(
     return handleTaskUpdate(call, session.sessionId, Boolean(ctx.turnEnd), ctx.taskWork);
   }
 
+  if (call.name === "plan.update" || call.name === "task.add") {
+    return handlePlanEdit(call, session);
+  }
+
+  if (call.name !== "task.move") return { handled: false, ok: false, display: "", modelNote: "" };
   const plan = await loadPlan(session.sessionId);
-  if (!plan) {
-    return {
-      handled: true,
-      ok: false,
-      display: chalk.red(`  ✗ ${call.name}: no active plan — call plan.create first\n`),
-      modelNote: `${call.name} failed: there is no active plan. Call plan.create first.`,
-    };
-  }
-  if (call.name === "task.move") {
-    return handleTaskMove(call, session, autoApprove, plan);
-  }
-  if (call.name === "task.add") {
-    return handleTaskAdd(call, session, autoApprove, plan);
-  }
-  return { handled: false, ok: false, display: "", modelNote: "" };
+  if (plan) return handleTaskMove(call, session, autoApprove, plan);
+  return {
+    handled: true,
+    ok: false,
+    display: chalk.red("  ✗ task.move: no active plan — call plan.create first\n"),
+    modelNote: "task.move failed: there is no active plan. Call plan.create first.",
+  };
 }

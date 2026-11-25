@@ -94,6 +94,7 @@ const IMMEDIATE_SEQUENCE_SUPPRESSION_TOOLS = new Set([
   "fs.delete",
   "shell.stop",
   "plan.create",
+  "plan.update",
   "task.add",
   "task.move",
   "job.read",
@@ -107,6 +108,7 @@ const IMMEDIATE_SEQUENCE_SUPPRESSION_TOOLS = new Set([
 
 const UNSAFE_IMMEDIATE_RETRY_TOOLS = new Set([
   "fs.append",
+  "plan.update",
   "task.add",
   "agent.handoff",
   "terminal.start",

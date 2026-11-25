@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   renderAskSystemPrompt,
   renderAgentSystemPrompt,
+  renderCompactAgentSystemPrompt,
   agentModeDirective,
   planModeDirective,
   _ASK_TEMPLATE,
@@ -12,6 +13,7 @@ import {
   renderRequestEnvironmentContext,
   renderPentestMethodologyContext,
 } from "../src/prompts/index.js";
+import { createPlan } from "../src/store/plan.js";
 
 describe("prompt rendering", () => {
   it("ask prompt contains ask-mode, no-system-changes instruction", () => {
@@ -195,20 +197,25 @@ describe("prompt rendering", () => {
   });
 
   it("renderRequestEnvironmentContext includes ACTIVE PLAN EXISTS details when plan is passed", () => {
-    const mockPlan: any = {
-      id: "p1",
-      goal: "Build web app",
-      status: "in_progress",
-      tasks: [
-        { id: "t1", state: "done", title: "scaffold" },
-        { id: "t2", state: "pending", title: "implement" },
-      ],
-    };
-    const envStr = renderRequestEnvironmentContext({ plan: mockPlan });
+    const plan = createPlan({ sessionId: "p1", goal: "Build web app", detail: "", taskTitles: ["Scaffold", "Implement"] });
+    plan.tasks[0]!.state = "done";
+    const envStr = renderRequestEnvironmentContext({ plan: { ...plan, status: "in_progress" } });
     expect(envStr).toContain("Plan status: ACTIVE PLAN EXISTS");
     expect(envStr).toContain('goal: "Build web app"');
     expect(envStr).toContain("tasks: 2 total [1 finished]");
-    expect(envStr).toContain("use task.add to append new tasks");
+    expect(envStr).toContain("one plan.update for a short title covering old and new scope plus all new tasks");
+    expect(envStr).toContain("one task.add with a tasks array");
+    expect(renderRequestEnvironmentContext({ plan })).toContain("Revise a draft with one complete plan.create");
+  });
+
+  it.each([false, true])("guides one plan edit across prompt variants (native=%s)", (nativeTools) => {
+    const tools = "plan.create, plan.update, task.add";
+    for (const render of [renderAgentSystemPrompt, renderCompactAgentSystemPrompt]) {
+      const prompt = render(tools, { nativeTools });
+      expect(prompt).toMatch(/one plan\.update[^\n]*old and new scope/);
+      expect(prompt).toMatch(/one task\.add[^\n]*(new tasks|tasks array)/);
+      expect(prompt).not.toContain("task.add once per genuinely new task");
+    }
   });
 });
 

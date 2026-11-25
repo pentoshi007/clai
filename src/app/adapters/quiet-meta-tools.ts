@@ -2,6 +2,7 @@ import { TURN_END_TOOL_NAME } from "../../tools/turn-end.js";
 
 export const QUIET_META_TOOL_NAMES = new Set([
   "plan.create",
+  "plan.update",
   "task.add",
   "task.move",
   "job.read",
