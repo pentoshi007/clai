@@ -297,7 +297,7 @@ export async function openToolOutputPager(
         if (resolved.source) {
           resolved.source.dispose();
           parts.push(
-            `${change.kind} · ${change.path}\n+${change.stats.added} −${change.stats.removed} lines\nOpen this file's diff card for the complete paged content.`,
+            `${change.kind} · ${change.path}\n+${change.stats.added} −${change.stats.removed} lines\nOpen this file's diff card for the complete content.`,
           );
         } else {
           parts.push(resolved.body);
@@ -419,7 +419,7 @@ export async function openToolOutputPager(
       note =
         `\n\n── full output saved at ──\n${item.artifactPath}` +
         (artifactSource
-          ? "\n(paged from disk — PageDown / ^U·^D for more)"
+          ? "\n(scroll to read the full output)"
           : "\n(full body)");
     }
 

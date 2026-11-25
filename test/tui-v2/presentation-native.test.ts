@@ -21,6 +21,7 @@ const cases = [
   ["scroll-window-race", "Native scroll-window race passed"],
   ["wheel-latency", "Native wheel latency passed"],
   ["tool-input-pager", "Native tool input pager passed"],
+  ["artifact-continuous", "Native continuous artifact passed"],
   ["pager-colors", "Native pager colors passed"],
   ["prompt-layout", "Native prompt layout passed"],
   ["footer-layout", "Native footer layout passed"],

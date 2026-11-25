@@ -1,11 +1,13 @@
-interface Entry<V> {
+interface Entry<K extends object, V> {
   readonly signature: string;
   readonly value: V;
+  readonly key: WeakRef<K>;
   readonly weight: number;
 }
 
 export class ObjectRenderCache<K extends object, V> {
-  private readonly entries = new Map<K, Entry<V>>();
+  private entries = new WeakMap<K, Entry<K, V>>();
+  private readonly recency = new Map<WeakRef<K>, number>();
   private retainedWeight = 0;
 
   constructor(private readonly maxWeight: number) {
@@ -19,15 +21,16 @@ export class ObjectRenderCache<K extends object, V> {
   }
 
   clear(): void {
-    this.entries.clear();
+    this.entries = new WeakMap();
+    this.recency.clear();
     this.retainedWeight = 0;
   }
 
   get(key: K, signature: string): V | undefined {
     const entry = this.entries.get(key);
     if (!entry || entry.signature !== signature) return undefined;
-    this.entries.delete(key);
-    this.entries.set(key, entry);
+    this.recency.delete(entry.key);
+    this.recency.set(entry.key, entry.weight);
     return entry.value;
   }
 
@@ -36,11 +39,15 @@ export class ObjectRenderCache<K extends object, V> {
     const size = Math.max(0, Math.ceil(weight)) + 128;
     if (size > this.maxWeight) return value;
     while (this.retainedWeight + size > this.maxWeight) {
-      const oldest = this.entries.keys().next();
-      if (oldest.done) break;
-      this.remove(oldest.value);
+      const [ref, cost] = this.recency.entries().next().value!;
+      const oldest = ref.deref();
+      if (oldest) this.entries.delete(oldest);
+      this.recency.delete(ref);
+      this.retainedWeight -= cost;
     }
-    this.entries.set(key, { signature, value, weight: size });
+    const ref = new WeakRef(key);
+    this.entries.set(key, { signature, value, weight: size, key: ref });
+    this.recency.set(ref, size);
     this.retainedWeight += size;
     return value;
   }
@@ -56,6 +63,7 @@ export class ObjectRenderCache<K extends object, V> {
     const entry = this.entries.get(key);
     if (!entry) return;
     this.entries.delete(key);
+    this.recency.delete(entry.key);
     this.retainedWeight -= entry.weight;
   }
 }

@@ -70,7 +70,7 @@ export function createArtifactPagerSource(
     const visible = buffer.subarray(start, end);
     const pageCount = Math.max(1, Math.ceil(total / boundedPageBytes));
     return {
-      body: new TextDecoder("utf-8", { fatal: false }).decode(visible),
+      body: visible.toString("utf8"),
       offset: requested,
       nextOffset: Math.min(total, requested + boundedPageBytes),
       totalBytes: total,
@@ -130,7 +130,7 @@ export function createArtifactPagerSource(
       const info = await stat(path);
       if (info.size > MAX_FULL_ARTIFACT_EXPORT_BYTES) {
         throw new Error(
-          `artifact is ${info.size.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Page it in the UI or open ${path} directly.`,
+          `artifact is ${info.size.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Scroll through it in the UI or open ${path} directly.`,
         );
       }
       const { buffer } = await readRange(0, info.size);
@@ -194,7 +194,7 @@ export function createTextPagerSource(
       assertOpen();
       if (data.length > MAX_FULL_ARTIFACT_EXPORT_BYTES) {
         throw new Error(
-          `artifact is ${data.length.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Page it in the UI instead.`,
+          `artifact is ${data.length.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Scroll through it in the UI instead.`,
         );
       }
       return data.toString("utf8");

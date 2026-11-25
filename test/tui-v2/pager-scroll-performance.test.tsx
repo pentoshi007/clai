@@ -164,9 +164,10 @@ describe("OpenTUI pager scroll performance", () => {
       expect(watch).toHaveBeenCalledTimes(2);
       body = "updated while scrolled";
       emit();
-      await vi.waitFor(() => expect(hookHarness.stateValues()).toContain(body));
+      await vi.waitFor(() => expect(hookHarness.stateValues()).toContainEqual(expect.objectContaining({ body })));
       expect(tail).toHaveBeenCalledOnce();
-      expect(hookHarness.stateValues()[8]).toBe(false);
+      render();
+      expect(watch).toHaveBeenCalledTimes(2);
     } finally {
       hookHarness.reset();
       source.dispose();
@@ -193,7 +194,9 @@ describe("OpenTUI pager scroll performance", () => {
     const initialWrapCalls = wrapPagerLineCalls.mock.calls.length;
     expect(initialWrapCalls).toBeGreaterThanOrEqual(rowCount);
 
-    expect(hookHarness.replaceState("top", "50%")).toBe(true);
+    const previous = hookHarness.stateValues().find(value => value && typeof value === "object" && "hint" in value);
+    expect(previous).toMatchObject({ top: 0, hint: "top" });
+    expect(hookHarness.replaceState(previous, { top: 300, height: 26, hint: "50%" })).toBe(true);
     hookHarness.beginRender();
     Pager(props);
 

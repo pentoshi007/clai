@@ -9,7 +9,7 @@ import { sanitizeDisplayText } from "./sanitize-display.js";
 import { MAX_FS_READ_FILES } from "../../tools/fs/read-input.js";
 import { restoredTerminalArgs } from "../../agent/parser/terminal-args.js";
 import { terminalOutputView } from "./terminal-output.js";
-import { wrapPagerLine } from "./pager-chrome.js";
+import { firstPagerRow, wrapPagerLine } from "./pager-chrome.js";
 import { terminalWidth } from "./text-width.js";
 import { transcriptToolLabel } from "./tool-usage-label.js";
 
@@ -107,7 +107,7 @@ function layoutArgsRows(logical: readonly string[], carried: number, width: numb
       break;
     }
     if (terminalWidth(line) > budget) {
-      line = wrapPagerLine(line, budget, { preserveWhitespace: true })[0]!.trimEnd();
+      line = firstPagerRow(line, budget).trimEnd();
       clipped = true;
     }
     budget -= terminalWidth(line);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   centerChromeRow,
+  firstPagerRow,
   padChromeRow,
   PAGER_HELP_FULL,
   PAGER_HELP_MED,
@@ -66,6 +67,13 @@ describe("centerChromeRow", () => {
 });
 
 describe("lossless pager wrapping", () => {
+  it.each(["  long_ascii ".repeat(30_000), "  字e\u0301 🧑‍💻 ".repeat(500)])("keeps long output intact and previews the same first row", (line) => {
+    const rows = wrapPagerLine(line, 79, { preserveWhitespace: true });
+    expect(rows.join("")).toBe(line);
+    expect(firstPagerRow(line, 79)).toBe(rows[0]);
+    expect(rows.every(row => renderColumns(row) <= 79)).toBe(true);
+  });
+
   it.each([1, 3, 8, 24, 80])("preserves complete commands and quoted whitespace at %i columns", (width) => {
     const command = `  printf '%s' '  value    with  spaces  ' | rg --glob '*.ts' ${"nested/path/".repeat(12)}  `;
     const rows = wrapPagerLine(command, width, { preserveWhitespace: true });

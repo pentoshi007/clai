@@ -70,6 +70,7 @@ const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "components", "modal", "keys-modal.tsx"),
   join(tuiV2Root, "components", "pager", "pager.tsx"),
   join(tuiV2Root, "components", "pager", "pager-line.tsx"),
+  ...["pager-document.ts", "pager-find.ts", "pager-viewport.ts"].map(name => join(tuiV2Root, "components", "pager", name)),
   join(tuiV2Root, "components", "jobs", "jobs-panel.tsx"),
   join(tuiV2Root, "components", "jobs", "subagents-panel.tsx"),
   join(tuiV2Root, "components", "goal", "goal-panel.tsx"),

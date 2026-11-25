@@ -6,6 +6,7 @@ import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClassicApp } from "../../../src/classic/app/ClassicApp.js";
 import { ServicesProvider } from "../../../src/ui-core/react/providers.js";
+import { createArtifactPagerSource } from "../../../src/ui-core/rendering/artifact-pager-source.js";
 import { openToolOutputPager } from "../../../src/ui-core/rendering/open-tool-output.js";
 import { liveJob, liveTool, numberedOutput } from "../../fixtures/live-pagers.js";
 import { createHarness } from "./harness.js";
@@ -88,4 +89,33 @@ describe("Classic live pagers", () => {
       h.wiring.handleData("q");
     } finally { view.unmount(); h.dispose(); expect(job.listeners()).toBe(0); }
   });
+});
+
+it("reads a disk artifact in both directions with the wheel alone", async () => {
+  const h = createHarness({ rows: 24 });
+  const panels = h.wiring.panels;
+  const path = artifact();
+  const lastLine = 240;
+  const text = numberedOutput(lastLine);
+  writeFileSync(path, text);
+  const source = createArtifactPagerSource(path, 1024);
+  const { view, frame } = mount(h);
+  const scrollToLine = async (direction: 1 | -1, line: number): Promise<void> => {
+    const target = new RegExp(`\\bstream line ${line}\\b`);
+    await expect.poll(() => {
+      const visible = frame();
+      if (!target.test(visible)) panels.handleWheel(direction, 12);
+      return visible;
+    }, { interval: 20, timeout: 2_000 }).toMatch(target);
+  };
+  try {
+    h.services.overlay.openPager("Output", "", source, undefined, "plain");
+    await expect.poll(frame).toMatch(/\bstream line 1\b/);
+    expect(panels.getSnapshot().pagerBody).not.toContain(`stream line ${lastLine}`);
+    await scrollToLine(1, lastLine);
+    expect(panels.getSnapshot().pagerPageOffset).toBeGreaterThan(0);
+    await scrollToLine(-1, 1);
+    expect(panels.getSnapshot().pagerPageOffset).toBe(0);
+    expect(await source.readAll()).toBe(text);
+  } finally { view.unmount(); h.dispose(); }
 });

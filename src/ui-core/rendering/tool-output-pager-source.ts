@@ -63,7 +63,8 @@ export function createToolOutputPagerSource(
     try {
       return await operation(active());
     } catch (error) {
-      if (disposed || !(current()?.artifactPath ?? initial.artifactPath)) throw error;
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (disposed || (code !== "ENOENT" && code !== "ENOTDIR")) throw error;
       return operation(spooled());
     }
   };

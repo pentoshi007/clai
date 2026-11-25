@@ -17,16 +17,13 @@ function columns(text: string): number {
   return renderColumns(text);
 }
 
-function graphemes(text: string): string[] {
-  return Array.from(GRAPHEME_SEGMENTER.segment(text), ({ segment }) => segment);
-}
 
 function clipToColumns(text: string, maxCols: number): string {
   if (maxCols <= 0) return "";
   if (columns(text) <= maxCols) return text;
   let out = "";
   let used = 0;
-  for (const cluster of graphemes(text)) {
+  for (const { segment: cluster } of GRAPHEME_SEGMENTER.segment(text)) {
     const width = Math.max(0, columns(cluster));
     if (used + width > maxCols) break;
     out += cluster;
@@ -76,45 +73,61 @@ export function centerChromeRow(text: string, width: number): string {
   return `${" ".repeat(left)}${fitted}${" ".repeat(space - left)}`;
 }
 
+function wrapBoundary(lastSpace: number, length: number, width: number): number {
+  const afterSpace = lastSpace + 1;
+  return afterSpace >= Math.max(1, Math.floor(width * 0.35)) ? afterSpace : length;
+}
+
+function* asciiRows(line: string, width: number, preserve: boolean): Generator<string> {
+  let start = 0;
+  while (start + width < line.length) {
+    const piece = line.slice(start, start + width);
+    const cut = wrapBoundary(piece.lastIndexOf(" "), width, width);
+    const row = piece.slice(0, cut);
+    yield preserve ? row : row.trimEnd();
+    start += cut;
+    if (!preserve) while (line[start] === " ") start++;
+  }
+  if (start < line.length) yield line.slice(start);
+}
+
+function* unicodeRows(line: string, width: number, preserve: boolean): Generator<string> {
+  let cells: string[] = [];
+  let used = 0;
+  let skipSpaces = false;
+  for (const { segment } of GRAPHEME_SEGMENTER.segment(line)) {
+    const size = columns(segment);
+    while (cells.length && used + size > width) {
+      const cut = wrapBoundary(cells.lastIndexOf(" "), cells.length, width);
+      const row = cells.slice(0, cut).join("");
+      yield preserve ? row : row.trimEnd();
+      cells = cells.slice(cut);
+      used = cells.reduce((sum, cell) => sum + columns(cell), 0);
+      skipSpaces = !preserve && cells.length === 0;
+    }
+    if (skipSpaces && segment === " ") continue;
+    skipSpaces = false;
+    cells.push(segment);
+    used += size;
+  }
+  if (cells.length) yield cells.join("");
+}
+
+function pagerRows(line: string, width: number, preserve: boolean): Generator<string> {
+  const max = Math.max(1, Math.floor(width));
+  return /^[\x20-\x7e]*$/.test(line) ? asciiRows(line, max, preserve) : unicodeRows(line, max, preserve);
+}
+
+export function firstPagerRow(line: string, width: number): string {
+  return pagerRows(line, width, true).next().value ?? " ";
+}
+
 export function wrapPagerLine(
   line: string,
   width: number,
   options: { preserveWhitespace?: boolean } = {},
 ): string[] {
-  const max = Math.max(1, width);
   if (!line) return [" "];
-  if (columns(line) <= max) return [line];
-
-  const cells = graphemes(line).map((ch) => ({
-    ch,
-    w: Math.max(0, columns(ch)),
-  }));
-  const minBreak = Math.floor(max * 0.35);
-  const out: string[] = [];
-  let start = 0;
-
-  while (start < cells.length) {
-    let used = 0;
-    let end = start;
-    let space = -1;
-    while (end < cells.length && used + cells[end]!.w <= max) {
-      used += cells[end]!.w;
-      end += 1;
-      if (cells[end - 1]!.ch === " ") space = end;
-    }
-    if (end >= cells.length) {
-      out.push(cells.slice(start).map((c) => c.ch).join(""));
-      break;
-    }
-    const cut =
-      space > start && space - start >= minBreak ? space : Math.max(end, start + 1);
-    const chunk = cells.slice(start, cut).map((c) => c.ch).join("");
-    out.push(options.preserveWhitespace ? chunk : chunk.replace(/\s+$/, ""));
-    start = cut;
-    if (!options.preserveWhitespace) {
-      while (start < cells.length && cells[start]!.ch === " ") start += 1;
-    }
-  }
-
-  return out.length > 0 ? out : [" "];
+  if (line.length <= width && columns(line) <= width) return [line];
+  return Array.from(pagerRows(line, width, options.preserveWhitespace ?? false));
 }

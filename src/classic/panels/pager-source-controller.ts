@@ -1,4 +1,5 @@
 import type { ArtifactPage } from "../../ui-core/rendering/artifact-pager-source.js";
+import { canExtend, refreshReadingWindow, shiftReadingWindow, type ReadingWindow, type ScrollDirection } from "../../ui-core/rendering/pager-reading-window.js";
 import { findPagerMatches } from "../../ui-core/state/pager-search.js";
 import type { OverlayState } from "../../ui-core/controllers/overlay-controller.js";
 import type { PanelControllerDeps, PanelSnapshot } from "./panel-types.js";
@@ -17,8 +18,8 @@ type PagerSourceControllerDeps = Pick<
 export class PagerSourceController {
   private unwatch: (() => void) | undefined;
   private pull: (() => void) | undefined;
-  private offset = 0;
-  private page: ArtifactPage | undefined;
+  private shifting = false;
+  private page: ReadingWindow | undefined;
   private generation = 0;
 
   constructor(private readonly deps: PagerSourceControllerDeps) {}
@@ -35,7 +36,7 @@ export class PagerSourceController {
   }
 
   activate(state: Extract<OverlayState, { kind: "pager" }>): void {
-    this.offset = 0;
+    this.shifting = false;
     this.page = undefined;
     if (state.source?.watch) {
       this.watch(state);
@@ -61,23 +62,38 @@ export class PagerSourceController {
       }).catch((error) => this.deps.onToast(error instanceof Error ? error.message : "could not read full prompt history"));
       return true;
     }
-    const atTop = pager.caret === 0;
-    const atBottom = pager.caret >= view.lines.length - 1;
-    let offset: number | undefined;
-    let bottom = false;
-    if (["home", "g", "ctrl+u"].includes(chord) && page.offset > 0) offset = 0;
-    else if (["end", "shift+g", "ctrl+d"].includes(chord) && page.nextOffset < page.totalBytes) {
-      offset = Math.max(0, page.totalBytes - source.pageBytes);
-      bottom = true;
-    } else if (["up", "k", "pageup"].includes(chord) && atTop && page.offset > 0) {
-      offset = Math.max(0, page.offset - source.pageBytes);
-      bottom = true;
-    } else if (["down", "j", "pagedown", "space"].includes(chord) && atBottom && page.nextOffset < page.totalBytes) {
-      offset = page.nextOffset;
+    if (["home", "g", "ctrl+u"].includes(chord) && page.offset > 0) {
+      this.load(state, 0);
+      return true;
     }
-    if (offset === undefined) return false;
-    void this.load(state, offset, bottom);
-    return true;
+    if (["end", "shift+g", "ctrl+d"].includes(chord) && canExtend(page, 1)) {
+      this.load(state, Math.max(0, page.totalBytes - source.pageBytes), true);
+      return true;
+    }
+    if (["up", "k", "pageup"].includes(chord)) this.prefetch(-1, state, view);
+    if (["down", "j", "pagedown", "space"].includes(chord)) this.prefetch(1, state, view);
+    return false;
+  }
+
+  prefetch(direction: ScrollDirection, state: Extract<OverlayState, { kind: "pager" }>, view: PagerViewModel): void {
+    const { source } = state;
+    const page = this.page;
+    if (!source || !page || this.shifting || !canExtend(page, direction)) return;
+    const { caret } = this.deps.snapshot().pager;
+    const remaining = direction < 0 ? caret : view.lines.length - caret;
+    if (remaining > this.deps.rows() * 2) return;
+    this.shifting = true;
+    const generation = ++this.generation;
+    void shiftReadingWindow(source, page, direction).then(result => {
+      if (generation !== this.generation) return;
+      const next = result.window;
+      const delta = result.changedAtTop ? this.deps.pagerView(next.body, state).lines.length - view.lines.length : 0;
+      const snapshot = this.deps.snapshot();
+      this.page = next;
+      this.deps.publish({ ...snapshot, pagerBody: next.body, pagerPageOffset: next.offset, pager: {
+        ...snapshot.pager, top: Math.max(0, snapshot.pager.top + delta), caret: Math.max(0, snapshot.pager.caret + delta), follow: false,
+      } });
+    }).catch(() => this.deps.onToast("could not read more output")).finally(() => { this.shifting = false; });
   }
 
   searchOnKey(
@@ -129,7 +145,6 @@ export class PagerSourceController {
     const view = this.deps.pagerView(page.body, state);
     const caret = bottom ? Math.max(0, view.lines.length - 1) : 0;
     this.page = page;
-    this.offset = page.offset;
     const snapshot = this.deps.snapshot();
     this.deps.publish({
       ...snapshot,
@@ -190,7 +205,7 @@ export class PagerSourceController {
       const generation = ++this.generation;
       const pageRead = follow && source.readTail
         ? source.readTail()
-        : source.readPage(this.offset);
+        : refreshReadingWindow(source, this.page);
       void pageRead.then((page) => {
         if (!active || generation !== this.generation || this.deps.overlay.getState() !== state) return;
         const snapshot = this.deps.snapshot();
@@ -201,7 +216,6 @@ export class PagerSourceController {
         const lines = this.deps.pagerView(page.body, state).lines;
         const maxCaret = Math.max(0, lines.length - 1);
         const maxTop = Math.max(0, lines.length - this.deps.rows());
-        this.offset = page.offset;
         this.page = page;
         this.deps.publish({
           ...snapshot,

@@ -2,58 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
+import { StyledText, TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
-import { LayoutEvents, StyledText, TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
-import type { ArtifactPage, ArtifactPagerSource } from "../../../ui-core/rendering/artifact-pager-source.js";
-import {
-  findPagerMatches,
-  nearestPagerMatch,
-  nextPagerMatch,
-  prevPagerMatch,
-  type PagerMatch,
-} from "../../../ui-core/state/pager-search.js";
-import { hasSearchQuery, matchCounterLabel } from "../../../ui-core/state/text-search.js";
-import { contentTopOfRenderable } from "../transcript/transcript-anchor.js";
-import { registerPagerEscape } from "./pager-escape-port.js";
-import {
-  fitOneLine,
-  padChromeRow,
-  PAGER_HELP_FULL,
-  PAGER_HELP_MED,
-  PAGER_HELP_MIN,
-  PAGER_HELP_SHORT,
-} from "../../../ui-core/rendering/pager-chrome.js";
-import {
-  preparePagerDisplay,
-  type PagerMarkdownMode,
-} from "../../rendering/pager-markdown.js";
+import type { ArtifactPagerSource } from "../../../ui-core/rendering/artifact-pager-source.js";
+import { fitOneLine, padChromeRow, PAGER_HELP_FULL, PAGER_HELP_MED, PAGER_HELP_MIN, PAGER_HELP_SHORT } from "../../../ui-core/rendering/pager-chrome.js";
+import { preparePagerDisplay, type PagerMarkdownMode } from "../../rendering/pager-markdown.js";
 import { subagentAnsiPaint } from "../../rendering/subagent-ansi.js";
 import { subagentBodySpans } from "../../../ui-core/rendering/subagent-presentation.js";
-import {
-  extractFsReadFileBody,
-  stripPagerLineGutters,
-} from "../../../ui-core/rendering/pager-source.js";
+import { extractFsReadFileBody, stripPagerLineGutters } from "../../../ui-core/rendering/pager-source.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import { pagerCommandColor, pagerRegionsForPage, type PagerBodyRegions } from "../../../ui-core/rendering/pager-regions.js";
-import {
-  PagerLine,
-  bodyOnlyForCopy,
-  parseDiffLine,
-} from "./pager-line.js";
-import {
-  buildPagerRows,
-  groupPagerMatches,
-  NO_MATCHES,
-  pagerRowForMatch,
-  pagerRowId,
-  pagerRowSearch,
-  pagerRowWindow,
-  slicePagerSpans,
-} from "./pager-rows.js";
+import { PagerLine, bodyOnlyForCopy, parseDiffLine } from "./pager-line.js";
+import { buildPagerRows, pagerRowId, pagerRowSearch, pagerRowWindow, slicePagerSpans, type PagerRow } from "./pager-rows.js";
+import { usePagerDocument, type PagerDocument } from "./pager-document.js";
+import { usePagerViewport } from "./pager-viewport.js";
+import { usePagerFind } from "./pager-find.js";
 
 export interface PagerProps {
   readonly services: AppServices;
@@ -66,866 +33,231 @@ export interface PagerProps {
   readonly regions?: PagerBodyRegions | undefined;
 }
 
-type PagerViewMode = "formatted" | "raw";
-
-const HIDDEN_SCROLLBARS = {
-  visible: false,
-  showArrows: false,
-} as const;
-const PAGER_RESIZE_EVENTS = ["resize", LayoutEvents.RESIZED] as const;
-
-const PAGER_FOOTER_FULL =
-  "f:format  ·  r:raw  ·  c:copy  ·  drag:select";
-const PAGER_FOOTER_SHORT = "f:format  ·  r:raw  ·  c:copy";
-
 export { bodyOnlyForCopy } from "./pager-line.js";
+type ViewMode = "formatted" | "raw";
+const HIDDEN_SCROLLBARS = { visible: false, showArrows: false } as const;
 
-export function Pager(props: PagerProps): ReactNode {
-  const {
-    services,
-    theme,
-    title,
-    body,
-    source,
-    highlightPath,
-    markdown = "auto",
-    regions,
-  } = props;
-  const colorMode = services.capabilities.colorMode;
-  const continuous = source?.layout === "continuous";
-  const isSubagent = source?.path.startsWith("memory://subagent/") ?? false;
-  const subagentPaint = useMemo(
-    () => (isSubagent ? subagentAnsiPaint(theme, colorMode) : undefined),
-    [isSubagent, theme, colorMode],
-  );
-  const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const [displayBody, setDisplayBody] = useState(body);
-  const [artifactPage, setArtifactPage] = useState<ArtifactPage | undefined>(undefined);
-  const [pageBusy, setPageBusy] = useState(false);
-  const [viewMode, setViewMode] = useState<PagerViewMode>(() =>
-    markdown === "force" ? "formatted" : "raw",
-  );
-  const size = overlaySize(termWidth, termHeight);
+function useGeometry() {
+  const term = useTerminalDimensionsContext();
+  const size = overlaySize(term.width, term.height);
   const border = size.width >= 5 && size.height >= 3;
   const innerH = Math.max(1, size.height - (border ? 2 : 0));
   const padding = size.width >= 8 ? 1 : 0;
-  const contentCols = Math.max(1, size.width - (border ? 2 : 0) - padding * 2);
-  const chromeCols = contentCols;
+  const cols = Math.max(1, size.width - (border ? 2 : 0) - padding * 2);
+  return { size, border, padding, innerH, cols, height: Math.max(1, innerH - Number(innerH >= 3) - Number(innerH >= 2)) };
+}
 
+function formatBody(body: string): string {
+  const stripped = stripPagerLineGutters(body);
+  if (/^\d+:\s?|^#\s*fs\.read\b/m.test(body)) return extractFsReadFileBody(body) || stripped;
+  return stripped;
+}
+
+function usePagerLayout(props: PagerProps, doc: PagerDocument, cols: number, mode: ViewMode) {
+  const { theme, services, source, highlightPath, regions } = props;
+  const raw = mode === "raw";
+  const isSubagent = source?.path.startsWith("memory://subagent/") ?? false;
+  const colorMode = services.capabilities.colorMode;
   const display = useMemo(() => {
-    const pagerBody = continuous ? displayBody.replace(/\t/g, "    ") : displayBody;
-    if (viewMode === "formatted") {
-      let clean = pagerBody;
-      if (!isSubagent && !source?.diffLines) {
-        const stripped = stripPagerLineGutters(pagerBody);
-        clean = /^\d+:\s?/m.test(pagerBody) || /^#\s*fs\.read\b/m.test(pagerBody)
-          ? extractFsReadFileBody(pagerBody) || stripped
-          : stripped;
-      }
-      return preparePagerDisplay({
-        body: clean,
-        width: contentCols,
-        mode: "force",
-        defaultFg: theme.foreground,
-        theme,
-        colorMode,
-        quotePrefix: source?.quotePrefix,
-        literalQuotes: source?.literalQuotes,
-        lineChangeColors: source?.lineChangeColors,
-        diffLines: source?.diffLines,
-        subagentPaint: isSubagent ? subagentPaint : undefined,
-      });
-    }
-    return preparePagerDisplay({
-      body: pagerBody,
-      width: contentCols,
-      mode: "plain",
-      defaultFg: theme.foreground,
-      theme,
-      colorMode,
-    });
-  }, [displayBody, contentCols, viewMode, theme, colorMode, isSubagent, subagentPaint, continuous, source?.quotePrefix, source?.literalQuotes, source?.lineChangeColors, source?.diffLines]);
+    const body = doc.body.replace(/\t/g, "    ");
+    const clean = !raw && !isSubagent && !source?.diffLines ? formatBody(body) : body;
+    return preparePagerDisplay({ body: clean, width: cols, mode: raw ? "plain" : "force", defaultFg: theme.foreground,
+      theme, colorMode, quotePrefix: source?.quotePrefix, literalQuotes: source?.literalQuotes,
+      lineChangeColors: source?.lineChangeColors, diffLines: source?.diffLines,
+      subagentPaint: isSubagent ? subagentAnsiPaint(theme, colorMode) : undefined });
+  }, [doc.body, cols, raw, isSubagent, theme, source, colorMode]);
+  const lines = useMemo(() => display.lines.map(line => line.plain), [display]);
+  const useDiffGutters = raw && Boolean(highlightPath) && cols >= 16;
+  const searchLines = useMemo(() => useDiffGutters ? lines.map(line => parseDiffLine(line)?.code ?? line) : lines, [lines, useDiffGutters]);
+  const subagentSpans = useMemo(() => isSubagent && display.mode === "plain" ? subagentBodySpans(lines) : undefined, [isSubagent, display, lines]);
+  const tone = source?.commandTone?.() ?? regions?.inputTone;
+  const rows = useMemo(() => buildPagerRows({ display, lines, contentCols: cols, useDiffGutters, isSubagent,
+    highlightPath: raw ? highlightPath ?? "" : "", wrapRows: true,
+    regions: raw ? pagerRegionsForPage(source?.regions ? source.regions() : regions, doc.page?.offset) : undefined,
+  }), [display, lines, cols, useDiffGutters, isSubagent, highlightPath, raw, source, regions, doc.page?.offset, tone]);
+  return { rows, display, lines, searchLines, subagentSpans, isSubagent, tone, path: raw && highlightPath ? highlightPath : props.title };
+}
 
-  const lines = useMemo(
-    () => display.lines.map((l) => l.plain),
-    [display.lines],
-  );
-  const subagentSpans = useMemo(
-    () => (isSubagent && display.mode === "plain" ? subagentBodySpans(lines) : undefined),
-    [isSubagent, display.mode, lines],
-  );
-  const pathForHighlight =
-    viewMode === "raw" && highlightPath ? highlightPath : title;
-  const useDiffGutters =
-    viewMode === "raw" && Boolean(highlightPath) && display.mode === "plain" && contentCols >= 16;
-  const searchLines = useMemo(() => {
-    if (display.mode === "markdown" || !useDiffGutters) return lines;
-    return lines.map((line) => {
-      const p = parseDiffLine(line);
-      return p ? p.code : line;
-    });
-  }, [lines, display.mode, useDiffGutters]);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [matchIndex, setMatchIndex] = useState(-1);
-  const [scrollHint, setScrollHint] = useState("top");
-  const canFollow = typeof source?.watch === "function";
-  const startFollowing = canFollow && (source?.isGrowing?.() ?? true);
-  const [following, setFollowing] = useState(startFollowing);
-  const matches = useMemo(
-    () => findPagerMatches(searchLines, query),
-    [searchLines, query],
-  );
-  const [pagerError, setPagerError] = useState<string | undefined>(undefined);
-  const [statusFlash, setStatusFlash] = useState<string | undefined>(undefined);
-  const [viewport, setViewport] = useState({
-    top: 0,
-    height: Math.max(1, innerH - Number(innerH >= 3) - Number(innerH >= 2)),
-  });
-  const hasQuery = hasSearchQuery(query);
-  const rowHighlightPath = viewMode === "raw" && highlightPath ? highlightPath : "";
-  const commandTone = source?.commandTone?.() ?? regions?.inputTone;
-  const commandText = source?.commandText?.();
-  const rowRegions = useMemo(() => {
-    const currentRegions = source?.regions ? source.regions() : regions;
-    return viewMode === "raw" ? pagerRegionsForPage(currentRegions, artifactPage?.offset) : undefined;
-  }, [viewMode, regions, source, artifactPage, commandTone]);
-  const rowModels = useMemo(
-    () => buildPagerRows({
-      display, lines, contentCols, useDiffGutters, isSubagent,
-      highlightPath: rowHighlightPath, wrapRows: continuous, regions: rowRegions,
-    }),
-    [display, lines, contentCols, useDiffGutters, isSubagent, rowHighlightPath, continuous, rowRegions],
-  );
-  const rowWindow = continuous
-    ? pagerRowWindow(rowModels.length, viewport.top, viewport.height)
-    : { start: 0, end: rowModels.length };
-
-  useEffect(() => {
-    setFollowing(canFollow && (source?.isGrowing?.() ?? true));
-    if (!source) {
-      setDisplayBody(body);
-      setArtifactPage(undefined);
-      return;
-    }
-    if (canFollow) return;
-    let active = true;
-    setPageBusy(true);
-    void source.readPage(0).then((page) => {
-      if (!active) return;
-      setArtifactPage(page);
-      setDisplayBody(page.body || "(no output yet)");
-    }).catch((error) => {
-      if (active) setPagerError(error instanceof Error ? error.message : String(error));
-    }).finally(() => { if (active) setPageBusy(false); });
-    return () => { active = false; };
-  }, [body, source, canFollow]);
-
-  const artifactOffset = useRef(0);
-  const pendingPageMatch = useRef<"first" | "last" | undefined>(undefined);
-  const pendingPageScroll = useRef<"top" | "bottom" | undefined>(undefined);
-  artifactOffset.current = artifactPage?.offset ?? 0;
-
-  function applyPendingPageScroll(): void {
-    const scroll = pendingPageScroll.current;
-    const box = scrollRef.current;
-    if (!scroll || !box) return;
-    box.scrollTo(scroll === "bottom" ? Math.max(0, box.scrollHeight - box.viewport.height) : 0);
-    refreshScrollHint();
+function usePagerView(props: PagerProps) {
+  const geometry = useGeometry();
+  const scroll = useRef<ScrollBoxRenderable>(null);
+  const doc = usePagerDocument(props.source, props.body, scroll);
+  const [mode, setMode] = useState<ViewMode>(props.markdown === "force" ? "formatted" : "raw");
+  const layout = usePagerLayout(props, doc, geometry.cols, mode);
+  const viewport = usePagerViewport(scroll, doc, geometry.height, layout.rows.length);
+  const [status, setStatus] = useState<string>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  function flash(text: string): void {
+    clearTimeout(timer.current);
+    setStatus(text);
+    doc.clearError();
+    timer.current = setTimeout(() => setStatus(undefined), 1800);
   }
-
-  useEffect(() => { applyPendingPageScroll(); }, [display]);
-
-  useEffect(() => {
-    if (!source?.watch) return;
-    let active = true;
-    let reading = false;
-    let pending = false;
-    const box = scrollRef.current;
-    if (box && following) box.scrollTo(Math.max(0, box.scrollHeight - box.viewport.height));
-    const pull = (): void => {
-      if (!active) return;
-      if (reading) {
-        pending = true;
-        return;
-      }
-      reading = true;
-      const page = following && source.readTail
-        ? source.readTail()
-        : source.readPage(artifactOffset.current);
-      void page
-        .then((page) => {
-          if (!active) return;
-          setArtifactPage(page);
-          setDisplayBody(page.body || "(no output yet)");
-        })
-        .catch((error) => {
-          if (active) setPagerError(error instanceof Error ? error.message : String(error));
-        })
-        .finally(() => {
-          reading = false;
-          if (pending) {
-            pending = false;
-            pull();
-          }
-        });
-    };
-    const unwatch = source.watch(pull);
-    pull();
-    return () => {
-      active = false;
-      unwatch();
-    };
-  }, [source, following]);
-
-  async function loadArtifactPage(
-    offset: number,
-    scroll: "top" | "bottom" = "top",
-  ): Promise<void> {
-    if (!source || pageBusy) return;
-    setFollowing(false);
-    setPageBusy(true);
-    try {
-      const page = await source.readPage(offset);
-      pendingPageScroll.current = scroll;
-      setArtifactPage(page);
-      setDisplayBody(page.body || "(no output)");
-      setMatchIndex(-1);
-    } catch (error) {
-      setPagerError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setPageBusy(false);
-    }
-  }
-
-  async function fullBody(): Promise<string> {
-    return source ? source.readAll() : body;
-  }
-
-  function flash(message: string, ms = 1800): void {
-    setStatusFlash(message);
-    setPagerError(undefined);
-    setTimeout(() => setStatusFlash((cur) => (cur === message ? undefined : cur)), ms);
-  }
-
-  useEffect(() => {
-    const sb = scrollRef.current;
-    if (!sb) return;
-    let active = true;
-    let scheduled = false;
-    sb.verticalScrollBar.visible = false;
-    sb.horizontalScrollBar.visible = false;
-    const onResize = (): void => {
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(() => {
-        scheduled = false;
-        if (!active) return;
-        applyPendingPageScroll();
-        pendingPageScroll.current = undefined;
-        refreshScrollHint();
-      });
-    };
-    sb.verticalScrollBar.on("change", refreshScrollHint);
-    for (const event of PAGER_RESIZE_EVENTS) {
-      sb.content.on(event, onResize);
-      sb.viewport.on(event, onResize);
-    }
-    onResize();
-    return () => {
-      active = false;
-      sb.verticalScrollBar.off("change", refreshScrollHint);
-      for (const event of PAGER_RESIZE_EVENTS) {
-        sb.content.off(event, onResize);
-        sb.viewport.off(event, onResize);
-      }
-    };
-  }, [continuous]);
-
-  useEffect(() => {
-    if (!hasQuery || matches.length === 0) {
-      setMatchIndex(-1);
-      return;
-    }
-    setMatchIndex((cur) => (cur >= matches.length ? -1 : cur));
-  }, [hasQuery, matches]);
-
-  function refreshScrollHint(): void {
-    const sb = scrollRef.current;
-    if (!sb) return;
-    if (continuous) {
-      const top = Math.max(0, sb.scrollTop);
-      const height = Math.max(1, sb.viewport.height);
-      setViewport((current) => current.top === top && current.height === height ? current : { top, height });
-    }
-    const max = Math.max(0, sb.scrollHeight - sb.viewport.height);
-    if (max <= 0) {
-      setScrollHint("all");
-      return;
-    }
-    const ratio = sb.scrollTop / max;
-    if (ratio <= 0.02) setScrollHint("top");
-    else if (ratio >= 0.98) setScrollHint("bottom");
-    else setScrollHint(`${Math.round(ratio * 100)}%`);
-  }
-
-  function scrollByRows(delta: number): void {
-    const sb = scrollRef.current;
-    if (!sb) return;
-    const max = Math.max(0, sb.scrollHeight - sb.viewport.height);
-    const next = Math.max(0, Math.min(max, sb.scrollTop + delta));
-    if (following && delta < 0 && next < max) setFollowing(false);
-    sb.scrollTo(next);
-    refreshScrollHint();
-  }
-
-  function topVisibleLine(): number {
-    const sb = scrollRef.current;
-    if (!sb) return 0;
-    if (continuous) return rowModels[Math.max(0, Math.min(rowModels.length - 1, Math.floor(sb.scrollTop)))]?.index ?? 0;
-    for (const row of rowModels) {
-      const top = contentTopOfRenderable(sb, sb.content.findDescendantById(pagerRowId(row)));
-      if (top !== undefined && top >= sb.scrollTop) return row.index;
-    }
-    return 0;
-  }
-
-  function revealPagerRow(rowIndex: number): void {
-    const sb = scrollRef.current;
-    const row = rowModels[rowIndex];
-    if (!sb || !row) return;
-    const height = Math.max(1, sb.viewport.height);
-    const top = continuous ? rowIndex : contentTopOfRenderable(sb, sb.content.findDescendantById(pagerRowId(row)));
-    if (top === undefined) {
-      sb.scrollChildIntoView(pagerRowId(row));
-    } else if (top < sb.scrollTop || top >= sb.scrollTop + height) {
-      sb.scrollTo(Math.max(0, Math.min(Math.max(0, sb.scrollHeight - height), top - Math.floor(height / 3))));
-    }
-    refreshScrollHint();
-  }
-
-  function jumpToMatch(index: number, matchList: readonly PagerMatch[] = matches): void {
-    if (index < 0 || matchList.length === 0) {
-      setMatchIndex(-1);
-      return;
-    }
-    setMatchIndex(index);
-    const match = matchList[index];
-    if (!match) return;
-    setFollowing(false);
-    queueMicrotask(() => revealPagerRow(pagerRowForMatch(rowModels, match)));
-  }
-
-  function changeQuery(value: string): void {
-    const previous = matches[matchIndex];
-    setQuery(value);
-    const found = findPagerMatches(searchLines, value);
-    const index = previous
-      ? nearestPagerMatch(found, previous.line, previous.column)
-      : nearestPagerMatch(found, topVisibleLine());
-    if (index < 0) {
-      setMatchIndex(-1);
-      return;
-    }
-    jumpToMatch(index, found);
-  }
-
-  function stepMatch(delta: 1 | -1): void {
-    if (source && !continuous && hasQuery && !searchOpen) {
-      const atEdge = matches.length === 0 || matchIndex < 0
-        || (delta > 0 ? matchIndex >= matches.length - 1 : matchIndex <= 0);
-      if (atEdge) {
-        void moveArtifactSearch(delta < 0);
-        return;
-      }
-    }
-    if (matches.length === 0) {
-      if (hasQuery) flash("no matches");
-      return;
-    }
-    const index = matchIndex < 0
-      ? nearestPagerMatch(matches, topVisibleLine())
-      : delta > 0
-        ? nextPagerMatch(matches, matchIndex)
-        : prevPagerMatch(matches, matchIndex);
-    if (matchIndex >= 0 && matches.length > 1 && (delta > 0 ? index < matchIndex : index > matchIndex)) {
-      flash(delta > 0 ? "search wrapped to the first match" : "search wrapped to the last match", 1400);
-    }
-    jumpToMatch(index);
-  }
-
-  async function submitSearch(): Promise<void> {
-    if (source && !continuous && hasQuery && matches.length === 0) {
-      setFollowing(false);
-      setPageBusy(true);
-      try {
-        const page = await source.search(query.trim(), artifactPage?.offset ?? 0);
-        if (page) {
-          setArtifactPage(page);
-          setDisplayBody(page.body);
-          setMatchIndex(-1);
-          pendingPageMatch.current = "first";
-          setSearchOpen(false);
-          queueMicrotask(() => scrollRef.current?.scrollTo(0));
-        } else {
-          setStatusFlash("no further matches");
-        }
-      } finally {
-        setPageBusy(false);
-      }
-      return;
-    }
-    if (!hasQuery) {
-      clearSearch();
-      return;
-    }
-    const found = findPagerMatches(searchLines, query);
-    if (found.length === 0) {
-      flash("no matches");
-      return;
-    }
-    if (matchIndex < 0 || matchIndex >= found.length) jumpToMatch(nearestPagerMatch(found, topVisibleLine()), found);
-    setSearchOpen(false);
-  }
-
-  async function moveArtifactSearch(reverse: boolean): Promise<void> {
-    if (!source || !query.trim() || pageBusy) return;
-    setPageBusy(true);
-    try {
-      const from = reverse ? artifactPage?.offset ?? 0 : artifactPage?.nextOffset ?? 0;
-      const page = await source.search(query.trim(), from, reverse);
-      if (!page) {
-        setStatusFlash(reverse ? "no previous matches" : "no further matches");
-        return;
-      }
-      setArtifactPage(page);
-      setDisplayBody(page.body);
-      setMatchIndex(-1);
-      pendingPageMatch.current = reverse ? "last" : "first";
-      queueMicrotask(() => scrollRef.current?.scrollTo(0));
-    } finally {
-      setPageBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    const pending = pendingPageMatch.current;
-    if (!pending || matches.length === 0) return;
-    pendingPageMatch.current = undefined;
-    jumpToMatch(pending === "first" ? 0 : matches.length - 1);
-  }, [matches]);
-
-  function clearSearch(): void {
-    setSearchOpen(false);
-    setQuery("");
-    setMatchIndex(-1);
-  }
-
-  const escapeSearch = useRef<() => boolean>(() => false);
-  escapeSearch.current = () => {
-    if (!searchOpen && !hasQuery) return false;
-    clearSearch();
-    return true;
+  const find = usePagerFind(layout.searchLines, layout.rows, doc, viewport, flash);
+  const changeMode = (next: ViewMode): void => {
+    setMode(next);
+    find.select(-1);
+    flash(next === "formatted" ? "view: formatted (markdown)" : "view: raw");
+    queueMicrotask(() => scroll.current?.scrollTo(0));
   };
-  useEffect(() => registerPagerEscape(() => escapeSearch.current()), []);
+  return { ...props, geometry, layout, doc, viewport, scroll, find, mode, changeMode, status, flash };
+}
+type View = ReturnType<typeof usePagerView>;
 
-  useKeyboard((key) => {
+function scrollAction(action: string, v: View): boolean {
+  const height = v.viewport.height;
+  const half = Math.max(1, Math.floor(height / 2));
+  switch (action) {
+    case "pager.line-up": v.viewport.move(-1); break;
+    case "pager.line-down": v.viewport.move(1); break;
+    case "pager.page-up": v.viewport.move(-height); break;
+    case "pager.page-down": v.viewport.move(height); break;
+    case "pager.half-page-up": v.viewport.move(-half); break;
+    case "pager.half-page-down": v.viewport.move(half); break;
+    case "pager.top": v.doc.jump("top"); break;
+    case "pager.bottom": v.doc.jump("bottom"); break;
+    default: return false;
+  }
+  return true;
+}
+
+async function copyBody(v: View): Promise<void> {
+  try {
+    const body = v.source ? await v.source.readAll() : v.body;
+    await v.services.ports.clipboard.writeText(bodyOnlyForCopy(body));
+    v.flash("copied all");
+    v.services.toast.success("Copied pager body", { key: "clipboard", durationMs: 1500 });
+  } catch {
+    v.flash("copy failed");
+    v.services.toast.error("Copy failed", { key: "clipboard" });
+  }
+}
+
+function toggleFollow(v: View): void {
+  if (!v.doc.canFollow) { v.flash("this view has no live source"); return; }
+  v.flash(v.doc.following ? "follow paused" : "following live output");
+  v.doc.toggleFollow();
+}
+
+function usePagerKeys(v: View): void {
+  useKeyboard(key => {
     if (key.defaultPrevented || key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
-    pendingPageScroll.current = undefined;
-
-    if (searchOpen) {
-      const searchChord = services.router.resolve(chord, "pager") === "pager.search";
-      if (chord === "escape") clearSearch();
-      else if (searchChord || chord === "up") stepMatch(-1);
-      else if (chord === "down") stepMatch(1);
+    const action = v.services.router.resolve(chord, "pager");
+    if (v.find.open) {
+      if (chord === "escape") v.find.clear();
+      else if (action === "pager.search" || chord === "up") v.find.step(-1);
+      else if (chord === "down") v.find.step(1);
       else return;
-      key.preventDefault();
-      return;
-    }
-
-    const action = services.router.resolve(chord, "pager");
-    if (!action) {
-      if (chord === "escape" && hasQuery) {
-        key.preventDefault();
-        clearSearch();
-      }
-      return;
-    }
+    } else if (action) {
+      if (!scrollAction(action, v)) viewAction(action, v);
+    } else if (chord === "escape" && v.find.active) v.find.clear();
+    else return;
     key.preventDefault();
-    const sb = scrollRef.current;
-    switch (action) {
-      case "pager.line-up":
-        scrollByRows(-1);
-        break;
-      case "pager.line-down":
-        scrollByRows(1);
-        break;
-      case "pager.page-up":
-        if (source && artifactPage && (sb?.scrollTop ?? 0) <= 0 && artifactPage.offset > 0) {
-          void loadArtifactPage(Math.max(0, artifactPage.offset - source.pageBytes));
-        } else {
-          scrollByRows(-(sb?.viewport.height ?? 10));
-        }
-        break;
-      case "pager.page-down": {
-        const atBottom = !sb || sb.scrollTop >= Math.max(0, sb.scrollHeight - sb.viewport.height);
-        if (source && artifactPage && atBottom && artifactPage.nextOffset < artifactPage.totalBytes) {
-          void loadArtifactPage(artifactPage.nextOffset);
-        } else {
-          scrollByRows(sb?.viewport.height ?? 10);
-        }
-        break;
-      }
-      case "pager.half-page-up":
-        scrollByRows(-Math.max(1, Math.floor((sb?.viewport.height ?? 10) / 2)));
-        break;
-      case "pager.half-page-down":
-        scrollByRows(Math.max(1, Math.floor((sb?.viewport.height ?? 10) / 2)));
-        break;
-      case "pager.top":
-        setFollowing(false);
-        if (source && artifactPage?.offset) {
-          void loadArtifactPage(0, "top");
-        } else {
-          sb?.scrollTo(0);
-        }
-        refreshScrollHint();
-        break;
-      case "pager.bottom":
-        if (source && artifactPage && artifactPage.nextOffset < artifactPage.totalBytes) {
-          void loadArtifactPage(
-            Math.max(0, artifactPage.totalBytes - source.pageBytes),
-            "bottom",
-          );
-        } else {
-          const max = sb
-            ? Math.max(0, sb.scrollHeight - (sb.viewport?.height ?? 0))
-            : 0;
-          sb?.scrollTo(max);
-        }
-        refreshScrollHint();
-        break;
-      case "pager.search":
-        setSearchOpen(true);
-        break;
-      case "pager.next-match":
-        stepMatch(1);
-        break;
-      case "pager.prev-match":
-        stepMatch(-1);
-        break;
-      case "pager.copy":
-        void fullBody()
-          .then((full) => services.ports.clipboard.writeText(bodyOnlyForCopy(full)))
-          .then(
-            () => {
-              flash("copied all");
-              services.toast.success("Copied pager body", {
-                key: "clipboard",
-                durationMs: 1500,
-              });
-            },
-            () => {
-              flash("copy failed");
-              services.toast.error("Copy failed", { key: "clipboard" });
-            },
-          );
-        break;
-      case "pager.format":
-        setViewMode("formatted");
-        setMatchIndex(-1);
-        flash("view: formatted (markdown)");
-        queueMicrotask(() => scrollRef.current?.scrollTo(0));
-        break;
-      case "pager.raw":
-        setViewMode("raw");
-        setMatchIndex(-1);
-        flash("view: raw");
-        queueMicrotask(() => scrollRef.current?.scrollTo(0));
-        break;
-      case "pager.toggle-follow":
-        if (!canFollow) {
-          flash("this view has no live source");
-          break;
-        }
-        setFollowing((current) => {
-          const next = !current;
-          flash(next ? "following live output" : "follow paused");
-          return next;
-        });
-        break;
-      case "pager.close":
-        if (hasQuery) {
-          clearSearch();
-        } else {
-          services.overlay.close();
-        }
-        break;
-      default:
-        break;
-    }
   });
+}
 
-  const scrollLabel =
-    scrollHint === "all"
-      ? "all"
-      : scrollHint === "top"
-        ? "top"
-        : scrollHint === "bottom"
-          ? "bottom"
-          : scrollHint;
+function viewAction(action: string, v: View): void {
+  switch (action) {
+    case "pager.search": v.find.edit(true); break;
+    case "pager.next-match": v.find.step(1); break;
+    case "pager.prev-match": v.find.step(-1); break;
+    case "pager.copy": void copyBody(v); break;
+    case "pager.format": v.changeMode("formatted"); break;
+    case "pager.raw": v.changeMode("raw"); break;
+    case "pager.toggle-follow": toggleFollow(v); break;
+    case "pager.close": if (v.find.active) v.find.clear(); else v.services.overlay.close(); break;
+  }
+}
 
-  const matchStatus = matchCounterLabel(query, matches.length, matchIndex);
+function scrollPosition(v: View): string {
+  const page = v.doc.page;
+  if (!page || page.offset === 0 && page.nextOffset === page.totalBytes) return v.viewport.hint;
+  const fraction = v.viewport.top / Math.max(1, v.layout.rows.length - v.viewport.height);
+  const byte = page.offset + fraction * (page.nextOffset - page.offset);
+  return `${Math.round(100 * Math.min(1, byte / page.totalBytes))}%`;
+}
 
-  const lineCountRight = artifactPage && !continuous
-    ? `${lines.length} lines · page ${artifactPage.pageNumber}/${artifactPage.pageCount}${pageBusy ? " · loading" : ""}`
-    : `${lines.length} lines · ${scrollLabel}`;
+function footerHint(v: View): string {
+  if (v.doc.error) return `pager error: ${v.doc.error}`;
+  if (v.status) return v.status;
+  if (v.find.active) return "n/N:next  ·  esc:clear-find  ·  q:close";
+  const width = Math.max(12, Math.floor(v.geometry.cols * 0.78));
+  if (v.doc.canFollow) {
+    const live = v.doc.following ? "● following" : "❙❙ paused (running)";
+    const state = v.source?.isGrowing?.() ? live : "finished";
+    return fitOneLine([`l:${v.doc.following ? "pause" : "follow"}  ·  ${state}  ·  c:copy`, `l:follow  ·  ${state}`, state], width);
+  }
+  const label = v.mode === "formatted" ? "fmt" : "raw";
+  return fitOneLine([`f:format  ·  r:raw  ·  view:${label}  ·  c:copy`, `f:fmt  ·  r:raw  ·  ${label}`, "f:format  ·  r:raw  ·  c:copy"], width);
+}
 
-  const metaLeft = hasQuery
-    ? fitOneLine(
-        [
-          `find:${query.trim()} ${matchStatus}`,
-          `find:${matchStatus}`,
-          matchStatus || "find",
-        ],
-        Math.max(8, Math.floor(chromeCols * 0.65)),
-      )
-    : fitOneLine(
-        [
-          PAGER_HELP_FULL,
-          PAGER_HELP_MED,
-          PAGER_HELP_SHORT,
-          PAGER_HELP_MIN,
-          "^r:search · q:close",
-        ],
-        Math.max(8, Math.floor(chromeCols * 0.65)),
-      );
+function PagerHeader({ v }: { v: View }): ReactNode {
+  const { cols } = v.geometry;
+  const { theme, find } = v;
+  if (find.open) {
+    const status = find.active ? find.label || "no matches" : "type to search";
+    const hint = fitOneLine([`${status} · ↑↓ prev/next · enter done · esc clear`, status], Math.max(8, Math.floor(cols * 0.35)));
+    return <box style={{ flexDirection: "row", width: "100%", height: 1, minWidth: 0 }}>
+      <text selectable={false} content=" ^R " style={{ fg: theme.background, bg: theme.cyan, attributes: TextAttributes.BOLD, height: 1 }} />
+      <text selectable={false} content=" " style={{ height: 1 }} />
+      <input focused value={find.query} onInput={find.change} onSubmit={find.submit} textColor={theme.foreground} backgroundColor={theme.rowB} style={{ flexGrow: 1, minWidth: 0 }} />
+      <text selectable={false} content={hint} style={{ fg: theme.muted, flexShrink: 0, height: 1 }} />
+    </box>;
+  }
+  const hints = find.active ? [`find:${find.query.trim()} ${find.label}`, `find:${find.label}`, "find"] : [PAGER_HELP_FULL, PAGER_HELP_MED, PAGER_HELP_SHORT, PAGER_HELP_MIN, "^r:search · q:close"];
+  const left = fitOneLine(hints, Math.max(8, Math.floor(cols * 0.65)));
+  const page = v.doc.page;
+  const partial = page && (page.offset > 0 || page.nextOffset < page.totalBytes);
+  const pos = scrollPosition(v);
+  const right = partial ? pos : `${v.layout.lines.length} lines · ${pos}`;
+  return <text selectable={false} content={padChromeRow(left, right, cols)} style={{ fg: theme.muted, height: 1, width: "100%" }} />;
+}
 
-  const metaLine = padChromeRow(metaLeft, lineCountRight, chromeCols);
+function renderRow(v: View, row: PagerRow): ReactNode {
+  const { layout, find, theme } = v;
+  const offset = row.textOffset ?? 0;
+  const search = pagerRowSearch(find.grouped.get(row.index), offset, row.textLength ?? row.line.length);
+  const markdown = row.kind === "markdown";
+  const styled = markdown ? layout.display.lines[row.index]?.styled : undefined;
+  const spans = layout.subagentSpans?.[row.index];
+  return <box key={row.key} style={{ height: 1, flexShrink: 0, width: "100%" }}>
+    <PagerLine id={pagerRowId(row)} line={row.line} index={row.index} theme={theme} matches={search.matches} activeMatchIndex={search.active}
+      hasQuery={find.active} highlightPath={markdown ? "" : layout.path} spans={row.spans}
+      styled={styled && new StyledText(slicePagerSpans(styled.chunks, offset, row.line.length))} markdownMode={markdown}
+      diffGutters={row.kind === "plain" || row.kind === "subagent" ? false : undefined} subagent={layout.isSubagent}
+      subagentSpans={spans && slicePagerSpans(spans, offset, row.line.length)} tone={row.tone} />
+  </box>;
+}
 
-  const viewLabel = viewMode === "formatted" ? "fmt" : "raw";
-  const growing = source?.isGrowing?.() ?? false;
-  const followLabel = growing
-    ? following ? "● following" : "❙❙ paused (running)"
-    : "finished";
-  const footerLeft = pagerError
-    ? `pager error: ${pagerError}`
-    : statusFlash
-      ? statusFlash
-      : hasQuery
-        ? "n/N:next  ·  esc:clear-find  ·  q:close"
-        : canFollow
-          ? fitOneLine(
-              [
-                `l:${following ? "pause" : "follow"}  ·  ${followLabel}  ·  c:copy`,
-                `l:follow  ·  ${followLabel}`,
-                followLabel,
-              ],
-              Math.max(12, Math.floor(chromeCols * 0.78)),
-            )
-          : fitOneLine(
-            [
-              `f:format  ·  r:raw  ·  view:${viewLabel}  ·  c:copy`,
-              `f:fmt  ·  r:raw  ·  ${viewLabel}`,
-              PAGER_FOOTER_SHORT,
-              PAGER_FOOTER_FULL,
-            ],
-            Math.max(12, Math.floor(chromeCols * 0.78)),
-          );
-  const footerLine = padChromeRow(footerLeft, scrollLabel, chromeCols);
+function PagerContent({ v }: { v: View }): ReactNode {
+  const { layout, viewport, geometry, theme } = v;
+  const { start, end } = pagerRowWindow(layout.rows.length, viewport.top, viewport.height);
+  const command = v.source?.commandText?.();
+  const rows = useMemo(() => layout.rows.slice(start, end).map(row => renderRow(v, row)),
+    [layout.rows, start, end, layout.display, layout.path, layout.subagentSpans, v.find.grouped, theme]);
+  return <scrollbox ref={v.scroll} viewportCulling scrollY scrollX={false} stickyScroll={v.doc.following} stickyStart="bottom"
+    scrollbarOptions={HIDDEN_SCROLLBARS} verticalScrollbarOptions={HIDDEN_SCROLLBARS} horizontalScrollbarOptions={HIDDEN_SCROLLBARS}
+    style={{ flexGrow: 1, flexShrink: 1, width: "100%", minHeight: 1, backgroundColor: theme.background, paddingLeft: geometry.padding, paddingRight: geometry.padding }}
+    onMouseScroll={event => viewport.wheel(event.scroll?.direction)}>
+    {command ? <text id="pager-command" selectable wrapMode="word" content={`command: ${sanitizeDisplayText(command)}\n`}
+      style={{ width: "100%", flexShrink: 0, fg: theme[pagerCommandColor(layout.tone ?? "running")], bg: theme.background }} /> : null}
+    <box key="before" style={{ height: start, flexShrink: 0 }} />{rows}<box key="after" style={{ height: layout.rows.length - end, flexShrink: 0 }} />
+  </scrollbox>;
+}
 
-  const filterHint = fitOneLine(
-    [
-      matches.length > 0
-        ? `${matchStatus}  ·  ↑↓ prev/next  ·  enter done  ·  esc clear`
-        : hasQuery
-          ? "no matches  ·  esc clear"
-          : "type to search  ·  esc close",
-      matches.length > 0 ? `${matchStatus} · ↑↓ · enter · esc` : "esc",
-      matches.length > 0 ? matchStatus : "esc",
-    ],
-    Math.max(8, Math.floor(chromeCols * 0.4)),
-  );
-
-  const lineSearch = useMemo(() => groupPagerMatches(matches, matchIndex), [matches, matchIndex]);
-
-  const bodyRows = useMemo(
-    () =>
-      rowModels.slice(rowWindow.start, rowWindow.end).map((row) => {
-        const offset = row.textOffset ?? 0;
-        const search = pagerRowSearch(lineSearch.get(row.index), offset, row.textLength ?? row.line.length);
-        const styled = row.kind === "markdown" ? display.lines[row.index]?.styled : undefined;
-        const spans = row.kind === "markdown" || row.kind === "subagent" ? subagentSpans?.[row.index] : undefined;
-        const line = (
-          <PagerLine
-            key={row.key}
-            id={pagerRowId(row)}
-            line={row.line}
-            index={row.index}
-            theme={theme}
-            matches={search?.matches ?? NO_MATCHES}
-            activeMatchIndex={search?.active ?? -1}
-            hasQuery={hasQuery}
-            highlightPath={row.kind === "markdown" ? "" : pathForHighlight}
-            spans={row.spans}
-            styled={continuous && styled ? new StyledText(slicePagerSpans(styled.chunks, offset, row.line.length)) : styled}
-            markdownMode={row.kind === "markdown" ? true : undefined}
-            diffGutters={row.kind === "plain" || row.kind === "subagent" ? false : undefined}
-            subagent={row.kind === "diff" ? undefined : row.kind === "subagent" || isSubagent}
-            subagentSpans={continuous && spans ? slicePagerSpans(spans, offset, row.line.length) : spans}
-            tone={row.tone}
-          />
-        );
-        return continuous ? <box key={row.key} style={{ height: 1, flexShrink: 0, width: "100%" }}>{line}</box> : line;
-      }),
-    [rowModels, rowWindow.start, rowWindow.end, lineSearch, theme, hasQuery, pathForHighlight, display.lines, isSubagent, subagentSpans, continuous],
-  );
-
-  const borderTitle = ` ${fitOneLine([sanitizeDisplayText(title)], Math.max(1, size.width - 4))} `;
-
-  return (
-    <box
-      border={border}
-      borderStyle="rounded"
-      title={borderTitle}
-      titleAlignment="left"
-      titleColor={theme.cyan}
-      style={{
-        flexDirection: "column",
-        width: size.width,
-        height: size.height,
-        borderColor: theme.border,
-        backgroundColor: theme.statusBackground,
-        paddingLeft: 0,
-        paddingRight: 0,
-        paddingTop: 0,
-        paddingBottom: 0,
-      }}
-    >
-      {innerH >= 3 ? <box
-        style={{
-          flexDirection: "row",
-          width: "100%",
-          height: 1,
-          flexShrink: 0,
-          backgroundColor: theme.rowB,
-          paddingLeft: padding,
-          paddingRight: padding,
-        }}
-      >
-        {searchOpen ? (
-          <box
-            style={{
-              flexDirection: "row",
-              flexGrow: 1,
-              flexShrink: 1,
-              width: "100%",
-              height: 1,
-              minWidth: 0,
-            }}
-          >
-            <text
-              selectable={false}
-              content=" ^R "
-              style={{
-                fg: theme.background,
-                bg: theme.cyan,
-                attributes: TextAttributes.BOLD,
-                height: 1,
-              }}
-            />
-            <text selectable={false} content=" " style={{ height: 1 }} />
-            <input
-              focused
-              value={query}
-              onInput={changeQuery}
-              onSubmit={submitSearch}
-              textColor={theme.foreground}
-              backgroundColor={theme.rowB}
-              style={{ flexGrow: 1, minWidth: 0 }}
-            />
-            <text
-              selectable={false}
-              content={fitOneLine([` ${filterHint}`], Math.max(8, Math.floor(chromeCols * 0.35)))}
-              style={{ fg: theme.muted, flexShrink: 0, height: 1 }}
-            />
-          </box>
-        ) : (
-          <text
-            selectable={false}
-            content={metaLine}
-            style={{ fg: theme.muted, height: 1, width: "100%" }}
-          />
-        )}
-      </box> : null}
-
-      <scrollbox
-        ref={scrollRef}
-        viewportCulling
-        scrollY
-        scrollX={false}
-        stickyScroll={following}
-        stickyStart="bottom"
-        scrollbarOptions={HIDDEN_SCROLLBARS}
-        verticalScrollbarOptions={HIDDEN_SCROLLBARS}
-        horizontalScrollbarOptions={HIDDEN_SCROLLBARS}
-        style={{
-          flexGrow: 1,
-          flexShrink: 1,
-          width: "100%",
-          minHeight: 1,
-          backgroundColor: theme.background,
-          marginTop: 0,
-          marginBottom: 0,
-          paddingLeft: padding,
-          paddingRight: padding,
-          paddingTop: 0,
-        }}
-        onMouseScroll={(event) => {
-          if (following && event.scroll?.direction === "up") setFollowing(false);
-          refreshScrollHint();
-        }}
-      >
-        {commandText ? <text
-          id="pager-command"
-          selectable
-          wrapMode="word"
-          content={`command: ${sanitizeDisplayText(commandText)}\n`}
-          style={{
-            width: "100%",
-            flexShrink: 0,
-            fg: theme[pagerCommandColor(commandTone ?? "running")],
-            bg: theme.background,
-          }}
-        /> : null}
-        {continuous ? <box key="before" style={{ height: rowWindow.start, flexShrink: 0 }} /> : null}
-        {bodyRows}
-        {continuous ? <box key="after" style={{ height: rowModels.length - rowWindow.end, flexShrink: 0 }} /> : null}
-      </scrollbox>
-
-      {innerH >= 2 ? <box
-        style={{
-          flexDirection: "row",
-          width: "100%",
-          height: 1,
-          flexShrink: 0,
-          backgroundColor: theme.rowB,
-          paddingLeft: padding,
-          paddingRight: padding,
-        }}
-      >
-        <text
-          selectable={false}
-          content={footerLine}
-          style={{
-            fg: pagerError ? theme.mode : theme.muted,
-            height: 1,
-            width: "100%",
-          }}
-        />
-      </box> : null}
-    </box>
-  );
+export function Pager(props: PagerProps): ReactNode {
+  const v = usePagerView(props);
+  usePagerKeys(v);
+  const { theme, geometry } = v;
+  const bar = { width: "100%", height: 1, flexShrink: 0, backgroundColor: theme.rowB, paddingLeft: geometry.padding, paddingRight: geometry.padding } as const;
+  const title = ` ${fitOneLine([sanitizeDisplayText(v.title)], Math.max(1, geometry.size.width - 4))} `;
+  return <box border={geometry.border} borderStyle="rounded" title={title} titleAlignment="left" titleColor={theme.cyan}
+    style={{ flexDirection: "column", ...geometry.size, borderColor: theme.border, backgroundColor: theme.statusBackground }}>
+    {geometry.innerH >= 3 ? <box style={bar}><PagerHeader v={v} /></box> : null}
+    <PagerContent v={v} />
+    {geometry.innerH >= 2 ? <box style={bar}><text selectable={false} content={padChromeRow(footerHint(v), scrollPosition(v), geometry.cols)}
+      style={{ fg: v.doc.error ? theme.mode : theme.muted, height: 1, width: "100%" }} /></box> : null}
+  </box>;
 }

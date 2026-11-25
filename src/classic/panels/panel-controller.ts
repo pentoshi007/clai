@@ -275,6 +275,10 @@ export class PanelController {
     return false;
   }
   handleWheel(direction: 1 | -1, steps = 3): boolean {
+    const { overlay, pagerBody } = this.snapshot;
+    if (overlay.kind === "pager" && overlay.source) {
+      this.pagerSource.prefetch(direction, overlay, this.pagerView(pagerBody, overlay));
+    }
     const moved = panelWheelMove(
       this.snapshot,
       {

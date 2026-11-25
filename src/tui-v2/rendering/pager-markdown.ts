@@ -42,7 +42,7 @@ function lazyStyledLine(ansi: AnsiLine, defaultFg: string | undefined): PagerDis
 }
 
 function plainLines(body: string): PagerDisplayLine[] {
-  const raw = body.replace(/\n+$/, "");
+  const raw = body.endsWith("\n") ? body.slice(0, -1) : body;
   if (!raw) return [{ plain: " " }];
   return raw.split("\n").map((line) => ({ plain: line.length === 0 ? " " : line }));
 }

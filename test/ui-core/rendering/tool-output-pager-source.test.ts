@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -58,6 +58,24 @@ describe("live tool-output source", () => {
       expect(source.commandTone?.()).toBe("success");
       expect(source.regions?.()).toBeUndefined();
       expect(await source.readAll()).toBe("final output\n");
+    } finally { source.dispose(); h.dispose(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it("scrolls a large final artifact without passing off the spool tail as a full copy", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-tool-pager-copy-"));
+    const path = join(dir, "output.log");
+    const h = createHarness();
+    const tool = liveTool(h.services);
+    const source = createToolOutputPagerSource(h.services, tool.item(), text => text);
+    try {
+      tool.output("partial stream");
+      await writeFile(path, "begin");
+      await truncate(path, 17 * 1024 * 1024);
+      await appendFile(path, "end");
+      tool.finish(path);
+      expect((await source.readPage(0)).body.startsWith("begin")).toBe(true);
+      expect((await source.readTail!()).body.endsWith("end")).toBe(true);
+      await expect(source.readAll()).rejects.toThrow("full copy/export is limited");
     } finally { source.dispose(); h.dispose(); await rm(dir, { recursive: true, force: true }); }
   });
 
