@@ -912,6 +912,21 @@ describe("reasoning signature adjacency (T620)", () => {
     expect(validateToolProtocol(messages)).toEqual([]);
   });
 
+  it("keeps turn images on the original user message only, never on recovery nudges", () => {
+    const image = { mediaType: "image/png", dataBase64: "AAAA" };
+    const messages: ChatMessage[] = [{ role: "user", content: "inspect this", images: [image] }];
+    const writer = createTurnHistoryWriter({
+      messages,
+      sanitizeAssistantText: (t) => t,
+      visibleCommitted: () => false,
+      writeAssistantMessage: () => {},
+    });
+    messages.push(writer.recoveryUserMessage("Continue the task."));
+    writer.upsertActionCycleRecovery("Pick a different action.");
+    expect(messages.filter((message) => message.images?.length)).toEqual([messages[0]]);
+    expect(messages.slice(1).every((message) => message.internal)).toBe(true);
+  });
+
   it("preserves reasoning artifacts when pushing assistant history with tool calls", () => {
     const messages: ChatMessage[] = [];
     const writer = createTurnHistoryWriter({

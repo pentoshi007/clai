@@ -17,6 +17,8 @@ import {
   upsertPlanContextMessage,
 } from "../plan-tool.js";
 import { buildTurnSessionStateSnapshot } from "./session-state-projection.js";
+import { createPlanContextTracker } from "../plan/context-delta.js";
+import { getReliabilityPolicy } from "../reliability-policy.js";
 
 export type PlanMutator = (
   mutator: (draft: SessionPlan) => boolean | void,
@@ -85,9 +87,20 @@ export interface SessionStateRefreshPorts {
   };
 }
 
-export const createSessionStateRefresher =
-  (ports: SessionStateRefreshPorts) =>
-  (plan?: SessionPlan | null | undefined): void => {
+export const createSessionStateRefresher = (
+  ports: SessionStateRefreshPorts,
+): ((plan?: SessionPlan | null | undefined) => void) => {
+  const planContext = getReliabilityPolicy().planDeltas
+    ? createPlanContextTracker()
+    : undefined;
+  const emitPlanContext = (live: SessionPlan): void => {
+    if (planContext) {
+      planContext.emit(ports.messages, live, ports.planApproved());
+      return;
+    }
+    upsertPlanContextMessage(ports.messages, planContextMessage(live, ports.planApproved()));
+  };
+  return (plan?: SessionPlan | null | undefined): void => {
     ports.refreshInjectedBlocks();
     if (ports.suppressed()) return;
     const runningJobs = ports.runningJobs();
@@ -108,18 +121,14 @@ export const createSessionStateRefresher =
       packageManager,
       runningJobs: runningJobs as never,
       ...flags,
+      planInContext: planContext !== undefined,
     });
     upsertRequestContextMessage(ports.messages, ports.requestContextMessage);
-    if (live) {
-      upsertPlanContextMessage(
-        ports.messages,
-        planContextMessage(live, ports.planApproved()),
-      );
-    } else {
-      removePlanContextMessage(ports.messages);
-    }
+    if (live) emitPlanContext(live);
+    else removePlanContextMessage(ports.messages);
     upsertSessionStateMessage(
       ports.messages,
       buildSessionStateBlock(snapshot),
     );
   };
+};

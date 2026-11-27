@@ -360,6 +360,7 @@ export async function runAgentTurn(
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
+      subagents: session.subagents?.enabled ?? false,
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
       compactPromptModes: session.compactPromptModes ??= new Map(),
@@ -449,8 +450,9 @@ export async function runAgentTurn(
         destinationHint,
         workIntent,
         isPlanMode,
-        executionRulesInSystem: buildStableSystemContent(nativeToolsActive).includes(
-          "Professional execution method — applies to every domain",
+        executionRulesInSystem: toolRouting.stableSystemIncludesExecutionRules(
+          loop.provider,
+          loop.model,
         ),
         buildLikeTurn,
         informationalQuery,
@@ -536,7 +538,6 @@ export async function runAgentTurn(
       pushAssistantHistory,
     } = createTurnHistoryWriter({
       messages,
-      images: options.images,
       sanitizeAssistantText,
       visibleCommitted: () => outputState.visibleCommitted,
       writeAssistantMessage,

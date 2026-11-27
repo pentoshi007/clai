@@ -13,10 +13,12 @@ import {
 } from "../../prompts/index.js";
 import { getReliabilityPolicy } from "../reliability-policy.js";
 import { routeDeclaresTurnEnd, TURN_END_TOOL_NAME } from "../../tools/turn-end.js";
+import { SUBAGENT_TOOL_NAMES } from "../../tools/definitions/subagents.js";
 
 export interface ToolRoutingInput {
   readonly mode: Mode;
   readonly mcpPresent: boolean;
+  readonly subagents: boolean;
   readonly toolCalling: ToolCallingMode | undefined;
   readonly useCompactSystemPrompt: () => boolean;
   readonly compactPromptModes?: Map<string, boolean>;
@@ -39,13 +41,21 @@ export interface ToolRouting {
     provider: ProviderId,
     model: string,
   ) => string;
+  readonly stableSystemIncludesExecutionRules: (
+    provider: ProviderId,
+    model: string,
+  ) => boolean;
 }
+
+const subagentToolNames: ReadonlySet<string> = new Set(SUBAGENT_TOOL_NAMES);
 
 const nameAllowed = (
   name: string,
   provider: ProviderId,
   model: string,
+  subagents: boolean,
 ): boolean => {
+  if (subagentToolNames.has(name)) return subagents;
   if (name === "image.view") return modelSupportsVision(provider, model);
   if (name === TURN_END_TOOL_NAME) return routeDeclaresTurnEnd(provider, model);
   return true;
@@ -63,7 +73,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
       ...availableToolNames(),
       ...RUNNER_META_TOOL_NAMES,
       ...(input.mcpPresent ? mcpAgentToolNames(input.mode === "ask") : []),
-    ].filter((name) => nameAllowed(name, provider, model));
+    ].filter((name) => nameAllowed(name, provider, model, input.subagents));
 
   const resolveNativeTools = (
     provider: ProviderId,
@@ -85,16 +95,20 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     return base.filter((definition) => allow.has(definition.name));
   };
 
+  const compactPromptFor = (provider: ProviderId, model: string): boolean => {
+    const route = JSON.stringify([provider, model]);
+    const compact = compactPromptModes.get(route) ?? input.useCompactSystemPrompt();
+    compactPromptModes.set(route, compact);
+    return compact;
+  };
+
   const buildStableSystemContent = (
     native: boolean,
     provider: ProviderId,
     model: string,
   ): string => {
     const reliability = getReliabilityPolicy();
-    const route = JSON.stringify([provider, model]);
-    const compact = compactPromptModes.get(route) ?? input.useCompactSystemPrompt();
-    compactPromptModes.set(route, compact);
-    const render = compact
+    const render = compactPromptFor(provider, model)
       ? renderCompactAgentSystemPrompt
       : renderAgentSystemPrompt;
     return render(routeToolNames(provider, model).join(", "), {
@@ -102,6 +116,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
       stableEnvironment: true,
       imageView: modelSupportsVision(provider, model),
       turnEnd: routeDeclaresTurnEnd(provider, model),
+      subagents: input.subagents,
       ...(native ? { slimNative: reliability.slimNativePrompt } : {}),
     });
   };
@@ -111,5 +126,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     resolveNativeTools,
     selectToolDefs,
     buildStableSystemContent,
+    stableSystemIncludesExecutionRules: (provider, model) =>
+      !compactPromptFor(provider, model),
   };
 };

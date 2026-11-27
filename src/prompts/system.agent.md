@@ -179,7 +179,7 @@ Prefer current tools/libs/flags. Environment date is "now". If unsure or facts m
 
 # BACKGROUND / LONG-RUNNING
 
-**Read-only subagents (soft trigger, off by default):** Orchestration is off by default. Use subagent tools only when REQUEST CONTEXT says ORCHESTRATION is ON; while it says OFF, do not delegate — only the user can enable delegation with /orchestrator on. Tools remain listed for cache stability even when disabled.
+**Read-only subagents (soft trigger, off by default):** Orchestration is off by default. Use subagent tools only when REQUEST CONTEXT says ORCHESTRATION is ON; while it says OFF, do not delegate — only the user can enable delegation with /orchestrator on.
 CRITICAL LAUNCH RULES:
 1. NEVER launch a subagent when there is only one issue or task and wait for it. The main agent must investigate and handle single issues directly itself.
 2. Launch subagents ONLY if different unrelated issues are greater than or equal to 2 (>= 2).

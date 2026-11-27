@@ -36,6 +36,21 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
   return lines.join("\n");
 }
 
+export function planNextDirective(plan: SessionPlan): string | undefined {
+  if (plan.status === "completed") return undefined;
+  const open = plan.tasks.filter(task => !task.responderOwned);
+  const inProgress = open.find(task => task.state === "in_progress");
+  if (inProgress) {
+    return `RESUME TASK ${inProgress.id} (${inProgress.title}) — it was started but interrupted. Retry what was in progress; do NOT restart completed work from scratch.`;
+  }
+  const failed = open.find(task => task.state === "failed");
+  if (failed) {
+    return `RETRY FAILED TASK ${failed.id} (${failed.title}) — reopen it (task.update in_progress), fix the root cause, then re-verify before marking done.`;
+  }
+  const firstPending = readyPlanTasks(plan)[0];
+  return firstPending ? `START WITH TASK ${firstPending.id} (${firstPending.title}).` : undefined;
+}
+
 function approvedPlanGuidance(plan: SessionPlan): string[] {
   const lines = [
     "Capture unrelated or newly required discoveries with task.add in one tasks array; do not silently broaden scope. " +
@@ -43,20 +58,12 @@ function approvedPlanGuidance(plan: SessionPlan): string[] {
   ];
   if (plan.status === "completed") return lines;
   const open = plan.tasks.filter(task => !task.responderOwned);
-  const inProgress = open.find(task => task.state === "in_progress");
-  const failed = open.find(task => task.state === "failed");
-  const firstPending = readyPlanTasks(plan)[0];
+  const next = planNextDirective(plan);
   lines.push(
     "The user APPROVED this plan. Execute it NOW. Tasks are checkpoints — you still own the user's requested boundary. Their states are authoritative for tracked work, but a completed phase is not completion of an explicitly requested whole roadmap/program.",
   );
-  if (inProgress) {
-    lines.push(`RESUME TASK ${inProgress.id} (${inProgress.title}) — it was started but interrupted. Retry what was in progress; do NOT restart completed work from scratch.`);
-  } else if (failed) {
-    lines.push(`RETRY FAILED TASK ${failed.id} (${failed.title}) — reopen it (task.update in_progress), fix the root cause, then re-verify before marking done.`);
-  } else if (firstPending) {
-    lines.push(`START WITH TASK ${firstPending.id} (${firstPending.title}).`);
-  }
-  if (inProgress || failed || open.some(task => task.state === "pending")) {
+  if (next) lines.push(next);
+  if (open.some(task => task.state === "in_progress" || task.state === "failed" || task.state === "pending")) {
     lines.push(
       "FIRST THIS TURN — reconcile with this task list before doing anything else. It persists across abort and compaction and overrides older task states or completion wording. " +
         "Read the current task's artifacts and its dependencies' evidence rather than rediscovering settled work. Keep one foreground task in_progress. " +

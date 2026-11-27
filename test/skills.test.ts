@@ -161,6 +161,28 @@ describe("prompt blocks", () => {
     expect(block).toContain("skill.load");
   });
 
+  it("renders identical bytes for different prompts when every skill fits the budget", () => {
+    const skills = [
+      meta({ name: "pdf-forms", description: "Fills PDF forms and extracts tables." }),
+      meta({ name: "aaa-sheets", description: "Formats spreadsheets." }),
+    ];
+    const forPdf = renderSkillCatalog({ skills, prompt: "fill this pdf form", pinned: ["pdf-forms"] });
+    const forSheets = renderSkillCatalog({ skills, prompt: "format my spreadsheet" });
+    expect(forPdf).toBe(forSheets);
+    const lines = forPdf!.split("\n").filter((line) => line.startsWith("- "));
+    expect(lines.map((line) => line.split(" ")[1])).toEqual(["aaa-sheets", "pdf-forms"]);
+  });
+
+  it("ranks by prompt relevance when the budget forces omissions", () => {
+    const skills = Array.from({ length: 12 }, (_, index) =>
+      meta({ name: `aaa-filler-${index}`, description: "Formats spreadsheets with many careful steps." }),
+    ).concat(meta({ name: "zzz-pdf-forms", description: "Fills PDF forms and extracts tables." }));
+    const block = renderSkillCatalog({ skills, prompt: "fill this pdf form", maxTokens: 120 })!;
+    const lines = block.split("\n").filter((line) => line.startsWith("- "));
+    expect(lines[0]).toContain("zzz-pdf-forms");
+    expect(block).toMatch(/more skills not listed/);
+  });
+
   it("returns nothing when no skills exist", () => {
     expect(renderSkillCatalog({ skills: [], prompt: "anything" })).toBeUndefined();
     expect(renderActiveSkills([])).toBeUndefined();

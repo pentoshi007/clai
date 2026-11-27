@@ -69,7 +69,8 @@ export function createJobLogView(files: () => readonly JobLogFile[], preview: ()
   const seen = new Map<string, number>();
   let spans: LogSpan[] = [];
   let size = 0;
-  let reading: Promise<ArtifactByteView> | undefined;
+  let previous: Promise<unknown> = Promise.resolve();
+  let queued: Promise<ArtifactByteView> | undefined;
 
   function observe(path: string, view: ArtifactByteView): void {
     const start = seen.get(path) ?? 0;
@@ -96,5 +97,14 @@ export function createJobLogView(files: () => readonly JobLogFile[], preview: ()
     return withPreview(spans, size, preview());
   }
 
-  return () => reading ??= snapshot().finally(() => { reading = undefined; });
+  return () => {
+    if (queued) return queued;
+    const next = previous.then(() => {
+      queued = undefined;
+      return snapshot();
+    });
+    queued = next;
+    previous = next.catch(() => undefined);
+    return next;
+  };
 }

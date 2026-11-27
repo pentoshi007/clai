@@ -100,11 +100,41 @@ describe("continue-orient", () => {
     expect(text).toMatch(/CONTINUE \/ RECOVER MID-WORK/);
     expect(text).toMatch(/in_progress|Content discovery/i);
     expect(text).toMatch(/\[abc\]/);
-    expect(text).toMatch(/shell\.jobs/);
+    expect(text).not.toMatch(/shell\.jobs/);
+    expect(text).toMatch(/shell\.tail the job ids listed above/);
     expect(text).toMatch(/do not mark tasks done/i);
     expect(text).toMatch(/higher-level roadmap/i);
     expect(text).toMatch(/append omitted work with task\.add/i);
     expect(text).toMatch(/shell\.start/);
+  });
+
+  it("omits job harvesting steps when no jobs are known", () => {
+    for (const withPlan of [plan, undefined]) {
+      const text = buildContinueOrientation({
+        prompt: "continue",
+        plan: withPlan,
+        history: [{ role: "user", content: "start" }],
+        runningJobs: [],
+        recentJobs: [],
+        previousTurn: { status: "cancelled", reason: "user cancel" },
+      });
+      expect(text).toMatch(/CONTINUE \/ RECOVER MID-WORK/);
+      expect(text).not.toMatch(/shell\.(jobs|tail)/);
+      expect(text).toMatch(/^1\) /m);
+    }
+  });
+
+  it("lists recently exited jobs inline instead of asking for shell.jobs", () => {
+    const text = buildContinueOrientation({
+      prompt: "continue",
+      history: [{ role: "user", content: "start" }],
+      runningJobs: [],
+      recentJobs: [job({ id: "done1", status: "exited", command: "npm test" })],
+      previousTurn: { status: "cancelled", reason: "user cancel" },
+    });
+    expect(text).toMatch(/\[done1\] exited/);
+    expect(text).not.toMatch(/shell\.jobs/);
+    expect(text).toMatch(/1\) shell\.tail the job ids listed above/);
   });
 
   it("extracts recent tool hints newest-last order", () => {

@@ -108,6 +108,7 @@ export interface ClaiConfig {
   freeTierFailThreshold?: number;
   toolResultDedup?: boolean;
   slimNativePrompt?: boolean;
+  planDeltas?: boolean;
   contextLimitTokens?: Record<string, number>;
   customProviders?: CustomProviderDef[];
 }
@@ -146,6 +147,7 @@ const defaults: ClaiConfig = {
   freeTierFailThreshold: 2,
   toolResultDedup: true,
   slimNativePrompt: true,
+  planDeltas: true,
   learnedVisionCapabilities: {},
   learnedRouteCapabilities: {},
   contextLimitTokens: {},

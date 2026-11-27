@@ -26,7 +26,7 @@ describe("token overhead contracts", () => {
 
   it("keeps default native instruction and tool overhead below 23k estimated tokens", () => {
     const route = createToolRouting({
-      mode: "agent", mcpPresent: false,
+      mode: "agent", mcpPresent: false, subagents: false,
       toolCalling: "native", useCompactSystemPrompt: () => false,
     });
     const system = route.buildStableSystemContent(true, "nvidia", "openai/gpt-oss-20b");
@@ -118,7 +118,7 @@ describe("token overhead contracts", () => {
   it("keeps the instructions and schema fingerprint through budget changes and appended recovery/delivery", () => {
     let compact = false;
     const route = createToolRouting({
-      mode: "agent", mcpPresent: true,
+      mode: "agent", mcpPresent: true, subagents: false,
       toolCalling: "native", useCompactSystemPrompt: () => compact,
     });
     const messages: ChatMessage[] = [

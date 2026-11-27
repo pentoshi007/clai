@@ -35,7 +35,7 @@ describe("compatible cache prefix during internal updates", () => {
       { role: "user", content: "original request" },
     ];
     const writer = createTurnHistoryWriter({
-      messages, images: undefined, sanitizeAssistantText: (s) => s,
+      messages, sanitizeAssistantText: (s) => s,
       visibleCommitted: () => false, writeAssistantMessage: () => {},
     });
     const wire = (input: ChatMessage[]) => JSON.parse(buildChatBody({ providerId: providerId as ProviderId, model: "claude-opus-4-6", messages: input, stream: true })).messages as unknown[];
