@@ -1,4 +1,7 @@
+import { DEFAULT_COLORS_RESET, defaultColorsSequence } from "../../os/screen-sequences.js";
 import { installTerminalRescue, type RescueProcess } from "../../os/terminal-rescue.js";
+import type { TerminalCapabilityReport } from "../../ui-core/bootstrap/capabilities.js";
+import { themeFor } from "../../ui-core/rendering/theme.js";
 
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
@@ -29,7 +32,21 @@ export interface TerminalInput {
   off(event: "data", listener: (chunk: string | Buffer) => void): unknown;
 }
 
+export interface TerminalColors {
+  readonly foreground: string;
+  readonly background: string;
+}
+
+export function themeTerminalColors(
+  capabilities: Pick<TerminalCapabilityReport, "colorMode" | "noColor" | "themeHint">,
+): TerminalColors | undefined {
+  if (capabilities.noColor || capabilities.colorMode === "none" || capabilities.colorMode === "16") return undefined;
+  const theme = themeFor(capabilities.themeHint);
+  return { foreground: theme.foreground, background: theme.background };
+}
+
 export interface TerminalSessionOptions {
+  readonly colors?: TerminalColors | undefined;
   readonly stdout?: TerminalOutput | undefined;
   readonly stdin?: TerminalInput | undefined;
   readonly mouse?: boolean | undefined;
@@ -55,6 +72,7 @@ export class TerminalSession {
   private readonly stdin: TerminalInput;
   private readonly mouse: boolean;
   private readonly mode: TerminalSessionMode;
+  private readonly colors: TerminalColors | undefined;
   private enteredValue = false;
   private inputAttachedValue = false;
   private listener: ((chunk: string | Buffer) => void) | undefined;
@@ -70,6 +88,7 @@ export class TerminalSession {
     this.stdin = options.stdin ?? process.stdin;
     this.mouse = mouseRequested(options);
     this.mode = mode;
+    this.colors = options.colors;
     this.rescueProcess = options.proc;
   }
 
@@ -97,6 +116,7 @@ export class TerminalSession {
       this.emit(CLEAR_SCREEN_ONLY);
       this.emit(CURSOR_HOME);
     }
+    if (this.colors) this.emit(defaultColorsSequence(this.colors.foreground, this.colors.background));
     this.emit(BRACKETED_PASTE_ON);
     this.emit(CURSOR_HIDE);
     if (this.mouse) this.emit(MOUSE_ON);
@@ -114,6 +134,7 @@ export class TerminalSession {
     if (this.mouse) this.emit(MOUSE_OFF);
     this.emit(CURSOR_SHOW);
     this.emit(BRACKETED_PASTE_OFF);
+    if (this.colors) this.emit(DEFAULT_COLORS_RESET);
     if (this.mode.alternateScreen) this.emit(ALT_SCREEN_OFF);
     this.rescueDisarm?.();
     this.rescueDisarm = undefined;

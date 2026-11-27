@@ -3,7 +3,7 @@ import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { ClassicApp } from "../app/ClassicApp.js";
 import { createClassicAppWiring } from "../app/app-wiring.js";
-import { createTerminalSession } from "./terminal-session.js";
+import { createTerminalSession, themeTerminalColors } from "./terminal-session.js";
 import { createClassicRenderer } from "./renderer-handle.js";
 import { CLASSIC_INK_OPTIONS } from "./start-classic.js";
 import type { RuntimeViewTerminal } from "../../session-runtime/view-terminal.js";
@@ -13,7 +13,9 @@ export async function mountClassicRuntimeView(
   terminal: RuntimeViewTerminal,
   env: Readonly<Record<string, string>>,
 ): Promise<{ repaint(): boolean; dispose(): Promise<void> }> {
-  const session = createTerminalSession({ stdin: terminal.stdin, stdout: terminal.stdout, proc: terminal, env });
+  const session = createTerminalSession({
+    stdin: terminal.stdin, stdout: terminal.stdout, proc: terminal, env, colors: themeTerminalColors(services.capabilities),
+  });
   const wiring = createClassicAppWiring({ services, mouse: session.mouseEnabled, resizeSource: terminal.stdout });
   let instance: Instance | undefined;
   const control = {
