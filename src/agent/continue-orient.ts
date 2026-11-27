@@ -201,23 +201,21 @@ export function buildContinueOrientation(input: ContinueOrientInput): string {
   }
 
   const running = input.runningJobs ?? [];
-  const recent = input.recentJobs ?? [];
+  const recent = running.length ? [] : (input.recentJobs ?? [])
+    .filter((j) =>
+      /ffuf|nmap|nuclei|gobuster|ferox|masscan|hydra|sqlmap|cargo|npm|vite|next|pytest|jest|docker|make|build/i.test(
+        j.commandDisplay || j.command,
+      ),
+    )
+    .slice(0, 6);
   if (running.length) {
     lines.push("Live background jobs (check before starting the same work again):");
     for (const j of running.slice(0, 8)) lines.push(`  ${jobLine(j)}`);
   } else if (recent.length) {
-    const interesting = recent
-      .filter((j) =>
-        /ffuf|nmap|nuclei|gobuster|ferox|masscan|hydra|sqlmap|cargo|npm|vite|next|pytest|jest|docker|make|build/i.test(
-          j.commandDisplay || j.command,
-        ),
-      )
-      .slice(0, 6);
-    if (interesting.length) {
-      lines.push("Recent jobs (may have finished while offline — tail before re-running):");
-      for (const j of interesting) lines.push(`  ${jobLine(j)}`);
-    }
+    lines.push("Recent jobs (may have finished while offline — tail before re-running):");
+    for (const j of recent) lines.push(`  ${jobLine(j)}`);
   }
+  const jobsListed = running.length > 0 || recent.length > 0;
 
   const tools = extractRecentToolHints(input.history, 6);
   if (tools.length) {
@@ -229,24 +227,27 @@ export function buildContinueOrientation(input: ContinueOrientInput): string {
     }
   }
 
-  const orderSteps: string[] = ["Suggested order (adapt to evidence):"];
-  if (plan) {
-    orderSteps.push(
-      "1) Re-read the ACTIVE PLAN task states above first — they are the current source of truth for tracked task status, not proof that a higher-level roadmap is exhausted. If the user explicitly requested the entire roadmap/program or all phases, reconcile against the referenced roadmap/phase/index files before treating the last tracked task as completion and append omitted work with task.add.",
-      "2) Open the in_progress / failed task and read only its own artifacts plus the earlier-task outputs you need to confirm what is already done — before scanning unrelated files.",
-      "3) If long jobs were running, shell.jobs then shell.tail the relevant ids (or read saved artifacts) to harvest results before redoing that work.",
-      "4) Resume the task with real tools; mark it done only with fresh proof, then open the next pending task.",
-      "Do not skip ahead, do not finalize while tasks remain, and avoid busy-wait loops (sleep/poll with no progress).",
-    );
-  } else {
-    orderSteps.push(
-      "1) shell.jobs — see what is still running or just finished.",
-      "2) shell.tail on relevant job ids (or read saved artifacts) — harvest results before new work.",
-      "3) Resume the interrupted work with real tools; confirm each outcome from actual results, not assumptions.",
-      "Avoid busy-wait loops (sleep/poll with no progress). Prefer background long jobs + other useful work, then tail.",
-    );
-  }
-  lines.push(...orderSteps);
+  const harvestStep = jobsListed
+    ? ["shell.tail the job ids listed above whose output you still need (or read saved artifacts) — harvest results before redoing that work."]
+    : [];
+  const steps = plan
+    ? [
+        "Re-read the ACTIVE PLAN task states above first — they are the current source of truth for tracked task status, not proof that a higher-level roadmap is exhausted. If the user explicitly requested the entire roadmap/program or all phases, reconcile against the referenced roadmap/phase/index files before treating the last tracked task as completion and append omitted work with task.add.",
+        "Open the in_progress / failed task and read only its own artifacts plus the earlier-task outputs you need to confirm what is already done — before scanning unrelated files.",
+        ...harvestStep,
+        "Resume the task with real tools; mark it done only with fresh proof, then open the next pending task.",
+      ]
+    : [
+        ...harvestStep,
+        "Resume the interrupted work with real tools; confirm each outcome from actual results, not assumptions.",
+      ];
+  lines.push(
+    "Suggested order (adapt to evidence):",
+    ...steps.map((step, index) => `${index + 1}) ${step}`),
+    plan
+      ? "Do not skip ahead, do not finalize while tasks remain, and avoid busy-wait loops (sleep/poll with no progress)."
+      : "Avoid busy-wait loops (sleep/poll with no progress). Prefer background long jobs + other useful work, then tail.",
+  );
 
   return lines.join("\n");
 }
