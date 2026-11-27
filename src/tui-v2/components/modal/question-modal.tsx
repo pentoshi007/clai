@@ -15,6 +15,7 @@ import {
   type QuestionFlowOutcome,
   type QuestionFlowState,
 } from "../../../ui-core/question/question-flow.js";
+import { questionOptionLines } from "../../../ui-core/question/option-layout.js";
 import { wrapConfirmationText } from "../../../ui-core/rendering/confirmation-preview.js";
 import { fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
@@ -85,17 +86,23 @@ export function QuestionModal(props: QuestionModalProps): ReactNode {
   const selected = state.selected[state.index] ?? [];
   const customIndex = customRowIndex(question);
   const savedCustom = state.custom[state.index] ?? "";
+  const lineWidth = Math.max(1, contentWidth - 2);
   const rows = [
     ...question.options.map((option, index) => {
       const box = question.multiSelect ? (selected.includes(index) ? "[x] " : "[ ] ") : "";
       const tick = !question.multiSelect && selected.includes(index) ? " ✓" : "";
-      const description = option.description ? ` — ${option.description}` : "";
-      return { index, label: `${index + 1}. ${box}${option.label}${tick}`, description };
+      return {
+        index,
+        lines: questionOptionLines({ prefix: `${index + 1}. ${box}`, label: `${option.label}${tick}`, description: option.description, width: lineWidth }),
+      };
     }),
     {
       index: customIndex,
-      label: `${customIndex + 1}. ${state.editing ? `${state.draft}▏` : savedCustom || "Type your own answer…"}`,
-      description: "",
+      lines: questionOptionLines({
+        prefix: `${customIndex + 1}. `,
+        label: state.editing ? `${state.draft}▏` : savedCustom || "Type your own answer…",
+        width: lineWidth,
+      }),
     },
   ];
 
@@ -136,24 +143,32 @@ export function QuestionModal(props: QuestionModalProps): ReactNode {
         return (
           <box
             key={`row-${row.index}`}
-            style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, overflow: "hidden" }}
+            style={{ flexDirection: "column", width: "100%", flexShrink: 0, overflow: "hidden" }}
             onMouseDown={() => {
               const moved = { ...stateRef.current, cursor: row.index };
               apply(questionFlowKey(request, moved, "enter") ?? { kind: "continue", state: moved });
             }}
           >
-            <text content={active ? "› " : "  "} wrapMode="none" style={{ fg: theme.accent, height: 1, flexShrink: 0, attributes: TextAttributes.BOLD }} />
-            <text
-              content={row.label}
-              wrapMode="none"
-              style={{
-                fg: active ? theme.accent : muted ? theme.muted : theme.foreground,
-                attributes: active ? TextAttributes.BOLD : TextAttributes.NONE,
-                height: 1,
-                flexShrink: 0,
-              }}
-            />
-            <text content={row.description} wrapMode="none" style={{ fg: theme.muted, height: 1 }} />
+            {row.lines.map((line, lineIndex) => (
+              <box key={`line-${lineIndex}`} style={{ flexDirection: "row", width: "100%", height: 1, flexShrink: 0, overflow: "hidden" }}>
+                <text
+                  content={active && lineIndex === 0 ? "› " : "  "}
+                  wrapMode="none"
+                  style={{ fg: theme.accent, height: 1, flexShrink: 0, attributes: TextAttributes.BOLD }}
+                />
+                <text
+                  content={line.label}
+                  wrapMode="none"
+                  style={{
+                    fg: active ? theme.accent : muted ? theme.muted : theme.foreground,
+                    attributes: active ? TextAttributes.BOLD : TextAttributes.NONE,
+                    height: 1,
+                    flexShrink: 0,
+                  }}
+                />
+                <text content={line.description} wrapMode="none" style={{ fg: theme.muted, height: 1 }} />
+              </box>
+            ))}
           </box>
         );
       })}

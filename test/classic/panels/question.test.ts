@@ -34,12 +34,27 @@ describe("question panel", () => {
     expect(questionRowsWanted({ columns: 90, request, state })).toBe(7);
   });
 
-  it("shows the active option's description below the list on narrow terminals", () => {
+  it("wraps an option that does not fit and moves its description below it", () => {
     const state = questionFlowInitialState(request);
     const rows = rowsOf(panelFrameRows(questionView({ ink, columns: 50, rows: 12, request, state })).rows);
     expect(rows.filter((row) => row.includes("Reuses the identity provider"))).toHaveLength(1);
     expect(rows.some((row) => row.includes("1. OAuth (Recommended)") && row.includes("Reuses"))).toBe(false);
+    expect(rows.some((row) => row.includes("2. Magic link — No passwords"))).toBe(true);
     expect(questionRowsWanted({ columns: 50, request, state })).toBe(8);
+  });
+
+  it("shows every word of long options instead of truncating them", () => {
+    const label = "Keep sessions in Postgres with a nightly cleanup job and per-tenant retention windows";
+    const long: QuestionRequest = {
+      questions: [{ question: "Session storage?", options: [{ label, description: "Reuses the existing database cluster and backups" }, { label: "Redis" }], multiSelect: false }],
+    };
+    const state = questionFlowInitialState(long);
+    const wanted = questionRowsWanted({ columns: 60, request: long, state });
+    const rows = rowsOf(panelFrameRows(questionView({ ink, columns: 60, rows: wanted + 2, request: long, state })).rows);
+    const text = rows.join(" ").replace(/[│╭╮╰╯─❯]/g, " ").replace(/\s+/g, " ");
+    expect(text).toContain(label);
+    expect(text).toContain("Reuses the existing database cluster and backups");
+    expect(text.replace("Type your own answer…", "")).not.toContain("…");
   });
 
   it("answers through the panel controller and keeps escape inside the typed answer", async () => {

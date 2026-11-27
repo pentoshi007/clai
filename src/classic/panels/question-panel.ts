@@ -5,10 +5,12 @@ import {
   questionFlowKey,
   type QuestionFlowState,
 } from "../../ui-core/question/question-flow.js";
-import type { InkTheme } from "../render/ink-theme.js";
+import { questionOptionLines, type QuestionOptionLine } from "../../ui-core/question/option-layout.js";
+import { sealStyle } from "../render/ansi-text.js";
+import { ASCII_GLYPHS, type Glyphs } from "../render/glyphs.js";
+import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
 import { layoutWidth } from "../render/measure.js";
 import { wrapWithPrefixes } from "../render/wrap.js";
-import { listRow, showsDescription } from "./list-rows.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, unhandled, type PanelKeyResult } from "./panel-effect.js";
 
@@ -45,31 +47,55 @@ function visibleTail(text: string, width: number): string {
   return chars.join("");
 }
 
-function optionLabel(ink: InkTheme, question: UserQuestion, state: QuestionPanelState, option: number): string {
-  const chosen = state.selected[state.index]?.includes(option) ?? false;
-  const box = question.multiSelect ? (chosen ? "[x] " : "[ ] ") : "";
-  const tick = !question.multiSelect && chosen ? ` ${ink.glyphs.taskDone}` : "";
-  return `${option + 1}. ${box}${question.options[option]!.label}${tick}`;
+interface OptionBlock {
+  readonly lines: readonly QuestionOptionLine[];
+  readonly active: boolean;
+  readonly labelToken: ThemeToken;
 }
 
-function customLabel(ink: InkTheme, question: UserQuestion, state: QuestionPanelState, width: number): string {
-  const prefix = `${customRowIndex(question) + 1}. `;
-  if (state.editing) {
-    const room = Math.max(1, width - layoutWidth(prefix) - 4);
-    return `${prefix}${visibleTail(state.draft, room)}${ink.glyphs.caret}`;
-  }
+const MARKER_WIDTH = 2;
+
+function optionBlocks(glyphs: Glyphs, request: QuestionRequest, state: QuestionPanelState, columns: number): OptionBlock[] {
+  const question = currentQuestion(request, state);
+  const width = Math.max(1, panelBodyWidth(columns) - MARKER_WIDTH);
+  const chosen = state.selected[state.index] ?? [];
+  const options = question.options.map((option, index) => {
+    const box = question.multiSelect ? (chosen.includes(index) ? "[x] " : "[ ] ") : "";
+    const tick = !question.multiSelect && chosen.includes(index) ? ` ${glyphs.taskDone}` : "";
+    return {
+      lines: questionOptionLines({ prefix: `${index + 1}. ${box}`, label: `${option.label}${tick}`, description: option.description, width }),
+      active: !state.editing && state.cursor === index,
+      labelToken: "foreground" as const,
+    };
+  });
+  const customIndex = customRowIndex(question);
   const saved = state.custom[state.index] ?? "";
-  return `${prefix}${saved || `Type your own answer${ink.glyphs.ellipsis}`}`;
+  const prefix = `${customIndex + 1}. `;
+  const customLabel = state.editing
+    ? `${visibleTail(state.draft, Math.max(1, width - layoutWidth(prefix) - 1))}${glyphs.caret}`
+    : saved || `Type your own answer${glyphs.ellipsis}`;
+  return [
+    ...options,
+    {
+      lines: questionOptionLines({ prefix, label: customLabel, width }),
+      active: state.cursor === customIndex,
+      labelToken: state.editing || saved ? "foreground" : "muted",
+    },
+  ];
+}
+
+function blockRows(ink: InkTheme, block: OptionBlock, width: number): string[] {
+  return block.lines.map((line, index) => {
+    const marker = block.active && index === 0 ? `${ink.glyphs.promptMark} ` : "  ";
+    if (block.active) return ink.selectedRow(`${marker}${line.label}${line.description}`, width);
+    return sealStyle(
+      `${ink.style(marker, { fg: "inputBorder" })}${ink.style(line.label, { fg: block.labelToken })}${ink.fg("muted", line.description)}`,
+    );
+  });
 }
 
 function promptLines(question: UserQuestion, width: number): string[] {
   return wrapWithPrefixes(question.question, { width });
-}
-
-function detailLines(question: UserQuestion, state: QuestionPanelState, columns: number): string[] {
-  const description = question.options[state.cursor]?.description;
-  if (!description || showsDescription(columns)) return [];
-  return wrapWithPrefixes(description, { width: panelBodyWidth(columns), firstPrefix: "   " });
 }
 
 function questionBody(input: QuestionViewInput): string[] {
@@ -77,27 +103,8 @@ function questionBody(input: QuestionViewInput): string[] {
   const question = currentQuestion(input.request, state);
   const width = panelBodyWidth(input.columns);
   const prompt = promptLines(question, width).map((line) => ink.style(line, { bold: true }));
-  const options = question.options.map((option, index) =>
-    listRow({
-      ink,
-      width,
-      columns: input.columns,
-      label: optionLabel(ink, question, state, index),
-      description: option.description,
-      active: !state.editing && state.cursor === index,
-    }),
-  );
-  const customActive = state.cursor === customRowIndex(question);
-  const custom = listRow({
-    ink,
-    width,
-    columns: input.columns,
-    label: customLabel(ink, question, state, width),
-    active: customActive,
-    labelToken: state.editing || state.custom[state.index] ? "foreground" : "muted",
-  });
-  const detail = detailLines(question, state, input.columns).map((line) => ink.fg("muted", line));
-  return [...prompt, "", ...options, custom, ...detail];
+  const options = optionBlocks(ink.glyphs, input.request, state, input.columns).flatMap((block) => blockRows(ink, block, width));
+  return [...prompt, "", ...options];
 }
 
 function questionHints(input: QuestionViewInput): string[] {
@@ -124,8 +131,8 @@ export interface QuestionRowsInput {
 export function questionRowsWanted(input: QuestionRowsInput): number {
   const question = currentQuestion(input.request, input.state);
   const prompt = promptLines(question, panelBodyWidth(input.columns)).length;
-  const detail = detailLines(question, input.state, input.columns).length;
-  return prompt + 1 + question.options.length + 1 + detail + 2;
+  const options = optionBlocks(ASCII_GLYPHS, input.request, input.state, input.columns).reduce((total, block) => total + block.lines.length, 0);
+  return prompt + 1 + options + 2;
 }
 
 export function questionView(input: QuestionViewInput): PanelFrameInput {
