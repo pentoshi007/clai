@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import stringWidth from "string-width";
 import { describe, expect, it } from "vitest";
 import { displayWorkdir, renderIntroHeaderLines } from "../src/ui-core/rendering/intro-header.js";
@@ -30,6 +31,22 @@ describe("intro header layout", () => {
       }
     },
   );
+
+  it("colors every card element with exact theme colors instead of the terminal palette", () => {
+    const previous = chalk.level;
+    chalk.level = 3;
+    try {
+      const lines = renderIntroHeaderLines({ ...options, width: 120 });
+      const joined = lines.join("\n");
+      expect(joined).not.toMatch(/\x1b\[(?:[0-9;]*;)?(?:3[0-7]|9[0-7])m/);
+      const workdir = lines.find((line) => stripAnsi(line).includes("~/project"))!;
+      expect(workdir).toMatch(/\x1b\[38;2;[0-9;]+m~\/project/);
+      const tagline = lines.find((line) => stripAnsi(line).includes("AI coding & security agent"))!;
+      expect(tagline).toContain("\x1b[38;2;");
+    } finally {
+      chalk.level = previous;
+    }
+  });
 
   it("uses a true half split and includes configured variant data when wide", () => {
     const lines = renderIntroHeaderLines({ ...options, width: 120 }).map(stripAnsi);
