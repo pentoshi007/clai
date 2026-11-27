@@ -18,6 +18,7 @@ export interface SessionStateProjectionInput {
   readonly serverProbedOk: boolean;
   readonly lastProbeFailed: boolean;
   readonly pentestSession: boolean;
+  readonly planInContext: boolean;
 }
 
 const MAX_JOB_BITS = 4;
@@ -35,6 +36,16 @@ const jobSummary = (runningJobs: readonly BackgroundJob[]): string | undefined =
     ? `${runningJobs.length} running: ${bits.join("; ")}`
     : undefined;
 };
+
+const withoutPlanFields = ({
+  goal: _goal,
+  planStatus: _planStatus,
+  planKind: _planKind,
+  openTask: _openTask,
+  pendingTasks: _pendingTasks,
+  doneTasks: _doneTasks,
+  ...rest
+}: SessionStateSnapshot): SessionStateSnapshot => rest;
 
 export const buildTurnSessionStateSnapshot = (
   input: SessionStateProjectionInput,
@@ -68,5 +79,5 @@ export const buildTurnSessionStateSnapshot = (
       : undefined,
   };
   snapshot.nextHint = inferNextHint(snapshot);
-  return snapshot;
+  return plan && input.planInContext ? withoutPlanFields(snapshot) : snapshot;
 };

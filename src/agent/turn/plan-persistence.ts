@@ -121,6 +121,7 @@ export const createSessionStateRefresher = (
       packageManager,
       runningJobs: runningJobs as never,
       ...flags,
+      planInContext: planContext !== undefined,
     });
     upsertRequestContextMessage(ports.messages, ports.requestContextMessage);
     if (live) emitPlanContext(live);

@@ -43,6 +43,7 @@ const base = {
   lastProbeFailed: false,
   lastOkTool: undefined,
   pentestSession: false,
+  planInContext: false,
 };
 
 describe("session state projection", () => {
@@ -70,6 +71,29 @@ describe("session state projection", () => {
     expect(snapshot.openTask).toBe("[t2] task t2");
     expect(snapshot.pendingTasks).toEqual(["[t3] task t3"]);
     expect(snapshot.doneTasks).toEqual(["t5", "t6"]);
+  });
+
+  it("leaves plan fields to the plan block when it is in context, keeping live facts and hints", () => {
+    const snapshot = buildTurnSessionStateSnapshot({
+      ...base,
+      planInContext: true,
+      serverStarted: true,
+      plan: plan([task("t1", "done"), task("t2", "in_progress"), task("t3", "pending")]),
+    });
+
+    expect(snapshot.goal).toBeUndefined();
+    expect(snapshot.planStatus).toBeUndefined();
+    expect(snapshot.openTask).toBeUndefined();
+    expect(snapshot.pendingTasks).toBeUndefined();
+    expect(snapshot.doneTasks).toBeUndefined();
+    expect(snapshot.projectRoot).toBe("/workspace");
+    expect(snapshot.serverStarted).toBe(true);
+    expect(snapshot.nextHint).toMatch(/Confirm ready/);
+  });
+
+  it("keeps the prompt goal when no plan exists even if plan context is enabled", () => {
+    const snapshot = buildTurnSessionStateSnapshot({ ...base, planInContext: true, plan: undefined });
+    expect(snapshot.goal).toHaveLength(160);
   });
 
   it("summarizes at most four running jobs and prefers the display command", () => {
