@@ -58,6 +58,19 @@ function catalogLine(skill: SkillMeta): string {
   return `- ${skill.name} [${scope}]: ${skill.description}`;
 }
 
+function catalogFits(
+  skills: readonly SkillMeta[],
+  headerTokens: number,
+  budget: number,
+): boolean {
+  if (skills.length <= CATALOG_MIN_ENTRIES) return true;
+  const lineTokens = skills.reduce(
+    (total, skill) => total + estimateTextTokens(catalogLine(skill)) + 1,
+    0,
+  );
+  return headerTokens + lineTokens <= budget;
+}
+
 export function renderSkillCatalog(input: {
   readonly skills: readonly SkillMeta[];
   readonly prompt: string;
@@ -67,7 +80,6 @@ export function renderSkillCatalog(input: {
 }): string | undefined {
   if (input.skills.length === 0) return undefined;
   const pinned = input.pinned ?? [];
-  const ranked = rankSkills(input.prompt, input.skills, pinned);
   const budget = input.maxTokens ?? CATALOG_TOKEN_BUDGET;
   const header = [
     SKILLS_CATALOG_PREFIX,
@@ -78,10 +90,13 @@ export function renderSkillCatalog(input: {
       : "",
   ].filter(Boolean).join("\n");
 
+  const ordered = catalogFits(input.skills, estimateTextTokens(header), budget)
+    ? [...input.skills].sort((a, b) => a.name.localeCompare(b.name))
+    : rankSkills(input.prompt, input.skills, pinned);
   const lines: string[] = [];
   let used = estimateTextTokens(header);
   let omitted = 0;
-  for (const skill of ranked) {
+  for (const skill of ordered) {
     const line = catalogLine(skill);
     const cost = estimateTextTokens(line) + 1;
     const forced = pinned.includes(skill.name) || lines.length < CATALOG_MIN_ENTRIES;
