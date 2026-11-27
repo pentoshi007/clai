@@ -1,5 +1,40 @@
 # Changelog
 
+## v5.8.0 — 2026-11-27
+
+### Decision questions
+
+- Add the `user.ask` tool: the agent asks up to three decision questions per call, each with two to four options plus a typed answer. Both UIs share one picker with number keys or arrows to choose, space to toggle multi-select, a free-text row, back and next across questions, and esc to skip.
+- Allow two question calls per turn in plan mode and one in other modes; skipping spends the turn's remaining budget. Sessions without an interactive user get a clear unavailable result.
+
+### Plans and tasks
+
+- Plan tasks carry concrete steps naming the files, symbols or assets to change and the check that proves them. `plan.create`, `plan.update` and `task.add` accept them, notes on `plan.create` tasks are persisted instead of dropped, and ACTIVE PLAN lists the steps of open tasks.
+- Reject a thin plan-mode draft once per turn with the exact gaps — a vague detail, or tasks without steps or acceptance criteria — and accept the next attempt as written.
+- Extend the plan-mode directive with a frame/investigate/design/review/submit sequence, task sizing and step rules, an example task, and CONVENTIONS TO FOLLOW and USER DECISIONS sections.
+- Allow read-only shell in plan mode, including `2>/dev/null`, file-descriptor duplication and scratch paths, while blocking real file writes and `tee` targets. Blocked calls now explain that read-only commands still work.
+
+### Token efficiency
+
+- Append short ACTIVE PLAN UPDATE deltas on task transitions instead of full plan copies, cutting plan text by about 84% over a 10-task run. Structural changes, compaction and more than 12 accumulated updates still fall back to a full snapshot.
+- Drop plan fields from SESSION STATE while the plan block is live, so it changes only when live facts do.
+- Send subagent tool schemas and delegation policy only while orchestration is on, saving about 2.4k estimated tokens per request on the default route.
+- Stop copying the turn's images onto recovery nudges, and skip the `shell.jobs` orientation step when no jobs exist.
+- Render a prompt-independent skills catalog when every skill fits, so repeated turns produce byte-identical text and history dedupe drops it.
+
+### Terminal and UI fixes
+
+- Paint the theme foreground and background with OSC 10/11 while Classic owns the screen and restore them on leave and in every reset path, so a tinted terminal profile no longer recolors the UI.
+- Color the intro card with exact theme colors so Classic and OpenTUI match.
+- Wrap long question options under their number instead of truncating them.
+- Flush the child channel before exit so the Classic exit summary reaches the host.
+- Queue job log reads instead of sharing a stale in-flight read.
+
+### Tests
+
+- Prove agent-mode requests and compaction reuse the cached prefix.
+- Prove the full plan and task list survive compaction in both modes.
+
 ## v5.7.4 — 2026-11-25
 
 ### Live job pagers
