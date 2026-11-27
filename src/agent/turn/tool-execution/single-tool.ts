@@ -39,6 +39,8 @@ import { evaluateEngagementGate } from "../../turn/tool-execution/engagement-gat
 import { runToolGates } from "../../turn/tool-execution/gates.js";
 import { LOOP_RESET_OUTPUT, evaluateLoopGuardBlock, evaluateToolGuards, readRetryReason } from "../../turn/tool-execution/guards.js";
 import { runMetaTool } from "../../turn/tool-execution/meta-tools.js";
+import { askUserQuestions } from "./user-questions.js";
+import { userAskCallLimit } from "../../../tools/user-ask.js";
 import { creditToolWork, frameToolResult, reportToolFailure } from "../../turn/tool-execution/result-framing.js";
 import { buildEngagementRunOptions, createEphemeralToolJob } from "../../turn/tool-execution/run-setup.js";
 import { superviseToolExecution } from "../../turn/tool-execution/supervision.js";
@@ -234,14 +236,31 @@ export const runSingleTool = async (
       releaseClaim: (id) => deps.responderClaims.delete(id),
       queueResponderLedger: (notification) =>
         deps.deferredResponderLedgerNotifications.push(notification),
-      handlePlanTool: (planCall) =>
-        handlePlanTool(planCall, deps.session, {
+      handlePlanTool: async (planCall) => {
+        const planResult = await handlePlanTool(planCall, deps.session, {
           loopGuard: deps.loopGuard,
           step: deps.step(),
           autoApprove: !deps.isPlanMode,
           turnEnd: routeDeclaresTurnEnd(deps.provider(), deps.model()),
           taskWork: { ledger: deps.toolState.taskWorkLedger, looseWork: deps.sessionLooseWork },
-        }),
+          qualityGate: !deps.toolState.planDraftRejected,
+        });
+        if (planResult.qualityRejected) deps.toolState.planDraftRejected = true;
+        return planResult;
+      },
+      askUser: (questionCall) =>
+        askUserQuestions(
+          {
+            ask: deps.options.askUser,
+            acquirePrompt: () => deps.promptMutex.acquire(),
+            limit: userAskCallLimit(deps.isPlanMode),
+            used: () => deps.toolState.userAskCalls,
+            setUsed: (count) => {
+              deps.toolState.userAskCalls = count;
+            },
+          },
+          questionCall,
+        ),
       recordAttempt: (attemptedCall, ok) =>
         deps.loopGuard.recordAttempt(
           deps.step(),

@@ -36,18 +36,19 @@ export interface PlanToolResult {
   reminder?: boolean | undefined;
   toast?: string | undefined;
   taskWork?: TaskUpdateWork | undefined;
+  qualityRejected?: boolean | undefined;
 }
 
 export async function handlePlanTool(
   call: ToolCall,
   session: SessionPolicy,
-  ctx: { loopGuard: LoopGuard; step: number; autoApprove?: boolean; turnEnd?: boolean; taskWork?: TaskUpdateWork },
+  ctx: { loopGuard: LoopGuard; step: number; autoApprove?: boolean; turnEnd?: boolean; taskWork?: TaskUpdateWork; qualityGate?: boolean },
 ): Promise<PlanToolResult> {
   const autoApprove = Boolean(ctx.autoApprove);
   void ctx.loopGuard;
   void ctx.step;
   if (call.name === "plan.create") {
-    return handlePlanCreate(call, session, autoApprove);
+    return handlePlanCreate(call, session, { autoApprove, qualityGate: ctx.qualityGate });
   }
 
   if (call.name === "plan.clear") {

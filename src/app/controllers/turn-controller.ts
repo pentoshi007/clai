@@ -12,6 +12,7 @@ import { AgentEventAdapter } from "../adapters/agent-event-adapter.js";
 import type { AgentPort, RunTurnRequest } from "../ports/agent-port.js";
 import type { ConfirmationPort } from "../ports/confirm-port.js";
 import type { SecretPort } from "../ports/secret-port.js";
+import type { QuestionPort } from "../ports/question-port.js";
 import type { Disposable } from "./disposable.js";
 
 export type TurnResult =
@@ -27,6 +28,7 @@ export type TurnResult =
 export interface TurnRunOptions {
   readonly confirm?: ConfirmationPort | undefined;
   readonly requestSecret?: SecretPort["request"] | undefined;
+  readonly askUser?: QuestionPort["ask"] | undefined;
   readonly session?: SessionPolicy | undefined;
   readonly onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   readonly onSuccessfulRequest?:
@@ -195,6 +197,7 @@ export class TurnController implements Disposable {
         signal: ac.signal,
         confirm: options.confirm,
         requestSecret: options.requestSecret,
+        askUser: options.askUser,
         session: options.session,
       });
       coalescer.flush();

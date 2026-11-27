@@ -34,6 +34,7 @@ export interface PlanTask {
   state: TaskState;
   note?: string | undefined;
   acceptanceCriteria?: string | undefined;
+  steps?: string[] | undefined;
   evidence?: TaskEvidence | undefined;
   aliases?: string[] | undefined;
   dependencies?: string[] | undefined;

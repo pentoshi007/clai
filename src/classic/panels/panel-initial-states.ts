@@ -5,6 +5,7 @@ import type { PickerPanelState } from "./picker-panel.js";
 import { PROMPT_ACTIONS_INITIAL_STATE } from "./prompt-actions-panel.js";
 import { PLAN_INITIAL_STATE } from "./plan-panel.js";
 import type { ScopePanelState } from "./scope-panel.js";
+import { questionFlowInitialState } from "../../ui-core/question/question-flow.js";
 
 export const EMPTY_PICKER: PickerPanelState = { query: "", cursor: 0, top: 0 };
 
@@ -35,6 +36,7 @@ export const EMPTY_SNAPSHOT_BASE = {
   jobs: JOBS_INITIAL_STATE,
   scope: EMPTY_SCOPE,
   keys: EMPTY_KEYS,
+  question: questionFlowInitialState({ questions: [] }),
   promptActions: PROMPT_ACTIONS_INITIAL_STATE,
   plan: PLAN_INITIAL_STATE,
 };

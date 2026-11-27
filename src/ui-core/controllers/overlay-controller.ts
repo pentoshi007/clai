@@ -4,6 +4,7 @@ import type { PickerOption } from "../rendering/picker-filter.js";
 import type { ArtifactPagerSource } from "../rendering/artifact-pager-source.js";
 import type { PagerBodyRegions } from "../rendering/pager-regions.js";
 import type { OperationReview } from "../../app/operation-review.js";
+import type { QuestionAnswer, QuestionRequest } from "../../app/ports/question-port.js";
 
 export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch" | "mcp-oauth" | "install";
 
@@ -105,6 +106,11 @@ export type OverlayState =
       readonly planResolve?: ((result: PlanConfirmResult) => void) | undefined;
     }
   | { readonly kind: "secret"; readonly request: SecretRequestView; readonly resolve: (value: string | undefined) => void }
+  | {
+      readonly kind: "question";
+      readonly request: QuestionRequest;
+      readonly resolve: (answers: readonly QuestionAnswer[] | undefined) => void;
+    }
   | {
       readonly kind: "text-editor";
       readonly request: TextEditorRequest;
@@ -288,6 +294,21 @@ export class OverlayController {
     });
   }
 
+  openQuestions(request: QuestionRequest): Promise<readonly QuestionAnswer[] | undefined> {
+    return new Promise((resolve) => {
+      const opened = this.open({ kind: "question", request, resolve }, "modal");
+      if (!opened) resolve(undefined);
+    });
+  }
+
+  answerQuestions(answers: readonly QuestionAnswer[] | undefined): void {
+    if (this.state.kind !== "question") return;
+    const { resolve } = this.state;
+    this.state = { ...this.state, resolve: () => undefined };
+    this.forceClose();
+    resolve(answers);
+  }
+
   openTextEditor(request: TextEditorRequest): Promise<string | undefined> {
     return new Promise((resolve) => {
       const opened = this.open({ kind: "text-editor", request, resolve }, "modal");
@@ -388,6 +409,10 @@ export class OverlayController {
       this.answerScope(undefined);
       return true;
     }
+    if (this.state.kind === "question") {
+      this.answerQuestions(undefined);
+      return true;
+    }
     if (this.state.kind === "keys-editor") {
       this.answerKeys(undefined);
       return true;
@@ -442,6 +467,7 @@ export class OverlayController {
     else if (this.state.kind === "text-editor") this.state.resolve(undefined);
     else if (this.state.kind === "scope-editor") this.state.resolve(undefined);
     else if (this.state.kind === "keys-editor") this.state.resolve(undefined);
+    else if (this.state.kind === "question") this.state.resolve(undefined);
     this.suspended = undefined;
     this.forceClose();
     this.listeners.clear();
@@ -532,7 +558,10 @@ export class OverlayController {
 
   private forceClose(): void {
     if (this.state.kind === "pager") this.state.source?.dispose();
-    const pending = this.state.kind === "text-editor" ? this.state.resolve : undefined;
+    const pending =
+      this.state.kind === "text-editor" || this.state.kind === "question"
+        ? this.state.resolve
+        : undefined;
     this.state = NONE;
     this.closeFocus?.();
     this.closeFocus = undefined;

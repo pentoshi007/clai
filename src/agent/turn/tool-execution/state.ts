@@ -13,6 +13,8 @@ export interface ToolExecutionState {
   governorState: GovernorState;
   governorReflects: number;
   lastGovernorReason: string | undefined;
+  planDraftRejected: boolean;
+  userAskCalls: number;
 }
 
 export const createToolExecutionState = (
@@ -29,4 +31,6 @@ export const createToolExecutionState = (
   governorState,
   governorReflects: 0,
   lastGovernorReason: undefined,
+  planDraftRejected: false,
+  userAskCalls: 0,
 });

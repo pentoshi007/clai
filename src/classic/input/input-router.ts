@@ -87,6 +87,10 @@ export class InputRouter {
         return;
       }
       if (chord === "escape") {
+        if (this.deps.onOverlayEscape?.()) {
+          this.deps.ladder.disarmEscape();
+          return;
+        }
         this.deps.ladder.escape(this.deps.dismissBlockingPrompt());
         return;
       }

@@ -10,6 +10,7 @@ import type { AgentEvent } from "../../agent/events.js";
 import type { SessionPolicy } from "../../agent/session-policy.js";
 import type { ConfirmationPort } from "./confirm-port.js";
 import type { SecretPort } from "./secret-port.js";
+import type { QuestionPort } from "./question-port.js";
 import type { TurnOutcome } from "../../agent/turn-outcome.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 
@@ -46,6 +47,7 @@ export interface RunTurnHandlers {
   readonly signal?: AbortSignal | undefined;
   readonly confirm?: ConfirmationPort | undefined;
   readonly requestSecret?: SecretPort["request"] | undefined;
+  readonly askUser?: QuestionPort["ask"] | undefined;
   readonly session?: SessionPolicy | undefined;
 }
 

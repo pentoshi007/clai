@@ -1,5 +1,7 @@
 import { readyPlanTasks } from "../../store/plan.js";
-import type { PlanTask, SessionPlan } from "../../store/plan.js";
+import type { PlanTask, SessionPlan, TaskState } from "../../store/plan.js";
+
+const STEP_STATES: ReadonlySet<TaskState> = new Set(["pending", "in_progress", "failed"]);
 
 function listHint(label: string, values: string[] | undefined): string {
   return values?.length ? ` [${label}: ${values.join(", ")}]` : "";
@@ -16,10 +18,15 @@ function taskLine(task: PlanTask, index: number): string {
     listHint("aliases", aliases) + listHint("depends", task.dependencies) + listHint("locks", task.resourceLocks) + done;
 }
 
+function taskBlock(task: PlanTask, index: number): string[] {
+  const steps = STEP_STATES.has(task.state) ? (task.steps ?? []) : [];
+  return [taskLine(task, index), ...steps.map((step) => `     - ${step}`)];
+}
+
 export function planContextMessage(plan: SessionPlan, approved: boolean): string {
   const lines = [`ACTIVE PLAN for this session (goal: ${plan.goal}, status: ${plan.status}):`];
   if (plan.detail.trim()) lines.push(plan.detail.trim());
-  lines.push("Tasks:", ...plan.tasks.map(taskLine));
+  lines.push("Tasks:", ...plan.tasks.flatMap(taskBlock));
   lines.push(
     "task.update taskId MUST be t1, t2, … from this list (or a listed alias). Use task.move with position/beforeTaskId/afterTaskId to rearrange work without changing ids or evidence. Responder-owned job tasks advance automatically; never task.update them. After analyzing a delivered Responder result, job.read its job or notification before finalizing.",
   );

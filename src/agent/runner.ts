@@ -1,4 +1,5 @@
 import type { McpRuntime, McpTurnLease } from "../mcp/runtime.js";
+import type { QuestionPort } from "../app/ports/question-port.js";
 import { hasMcpMentionSyntax } from "../mcp/mentions.js";
 import { reaMentionContext } from "../rea/runtime.js";
 import { hasReaMention } from "../rea/workflow.js";
@@ -220,6 +221,7 @@ export interface AgentRunOptions {
         prompt: string;
       }) => Promise<string | undefined>)
     | undefined;
+  askUser?: QuestionPort["ask"] | undefined;
   session?: SessionPolicy | undefined;
   mode?: Mode | undefined;
   displayPrompt?: string | null | undefined;

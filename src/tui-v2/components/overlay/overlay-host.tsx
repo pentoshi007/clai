@@ -12,6 +12,7 @@ import { createSecretDraft, SecretModal, type SecretDraft } from "../modal/secre
 import { ScopeModal } from "../modal/scope-modal.js";
 import { KeysModal } from "../modal/keys-modal.js";
 import { TextEditorModal } from "../modal/text-editor-modal.js";
+import { QuestionModal } from "../modal/question-modal.js";
 import { Pager } from "../pager/pager.js";
 import { JobsPanel } from "../jobs/jobs-panel.js";
 
@@ -28,7 +29,8 @@ function isDockedKind(kind: string): boolean {
     kind === "confirm" ||
     kind === "secret" ||
     kind === "scope-editor" ||
-    kind === "keys-editor"
+    kind === "keys-editor" ||
+    kind === "question"
   );
 }
 
@@ -93,6 +95,16 @@ function OverlayHostImpl(props: OverlayHostProps): ReactNode {
             services={services}
             theme={theme}
             request={state.request}
+            docked
+          />
+        ) : null}
+        {state.kind === "question" ? (
+          <QuestionModal
+            key={state.request.questions.map((question) => question.question).join("\n")}
+            services={services}
+            theme={theme}
+            request={state.request}
+            width={width}
             docked
           />
         ) : null}

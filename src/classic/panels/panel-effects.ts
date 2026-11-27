@@ -67,6 +67,9 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
     case "keys":
       overlay.answerKeys(effect.answer);
       return;
+    case "questions":
+      overlay.answerQuestions(effect.answers);
+      return;
     case "copy":
       void deps.clipboard.writeText(effect.text);
       deps.onToast("copied");
