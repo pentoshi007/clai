@@ -8,6 +8,7 @@ import { readToolEvidenceSignals } from "../tool-evidence-signals.js";
 import { resetToolRetryCounters } from "../turn-counters.js";
 import { TURN_END_TOOL_NAME } from "../../../tools/turn-end.js";
 import { RUNNER_META_TOOL_NAMES } from "../../../tools/definitions.js";
+import { USER_ASK_TOOL_NAME } from "../../../tools/user-ask.js";
 
 export interface RecordedToolResult {
   readonly call: ToolCall;
@@ -108,7 +109,11 @@ export const createRoundRecorder =
     }
     if (res.call.name === TURN_END_TOOL_NAME) {
       round.turnEndDeclared ||= res.ok;
-    } else if (!res.ok || !RUNNER_META_TOOL_NAMES.has(res.call.name)) {
+    } else if (
+      !res.ok ||
+      !RUNNER_META_TOOL_NAMES.has(res.call.name) ||
+      res.call.name === USER_ASK_TOOL_NAME
+    ) {
       round.outcomesNeedReview = true;
     }
     if (!res.suppressedRepeat) counters.productiveSteps += 1;

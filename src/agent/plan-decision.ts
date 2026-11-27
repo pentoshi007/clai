@@ -15,7 +15,7 @@ export function buildPlanRevisionPrompt(
     "Omit obsolete tasks entirely (e.g. drop Prisma/JWT/API when the user wants frontend-only). " +
     "Reuse a prior task title only when that step still has the same intent (so ids can stay stable); otherwise use a clear new title. " +
     "Pick one coherent interpretation of the feedback and apply it — do not monologue long chains of alternatives. " +
-    "If a foundational choice is truly ambiguous, ask ONE short clarifying question instead of plan.create. " +
+    "If a foundational choice is truly ambiguous, ask it with one user.ask call before plan.create. " +
     "Do not implement yet. After plan.create, STOP for accept / suggest / discard. " +
     `User feedback:\n${text}`
   );

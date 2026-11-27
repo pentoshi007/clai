@@ -51,6 +51,7 @@ export function createCurrentAgentPort(
         signal: handlers.signal,
         confirm: handlers.confirm,
         requestSecret: handlers.requestSecret,
+        askUser: handlers.askUser,
         session: handlers.session,
         mode: request.mode,
         displayPrompt: request.displayPrompt,

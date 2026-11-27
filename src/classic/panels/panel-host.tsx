@@ -10,6 +10,7 @@ import { pagerCommandColor } from "../../ui-core/rendering/pager-regions.js";
 import type { PanelController, PanelSnapshot } from "./panel-controller.js";
 import { PickerPanel } from "./PickerPanel.js";
 import { PromptActionsPanel } from "./PromptActionsPanel.js";
+import { QuestionPanel } from "./QuestionPanel.js";
 import { ScopePanel } from "./ScopePanel.js";
 import { SecretPanel } from "./SecretPanel.js";
 import { TextEditorPanel } from "./TextEditorPanel.js";
@@ -81,6 +82,8 @@ export function PanelHost(props: PanelHostProps): ReactNode {
       );
     case "scope-editor":
       return <ScopePanel {...shared} state={snapshot.scope} />;
+    case "question":
+      return <QuestionPanel {...shared} request={overlay.request} state={snapshot.question} />;
     case "keys-editor":
       return <KeysPanel {...shared} request={overlay.request} state={snapshot.keys} />;
     case "prompt-actions":

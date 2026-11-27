@@ -18,6 +18,7 @@ import type { TurnState, TurnStateSnapshot } from "../../turn-state.js";
 import type { EngagementPolicyEngine } from "../../../safety/engagement-policy.js";
 import type { McpRuntime } from "../../../mcp/runtime.js";
 import type { ConfirmPort } from "../../confirm-port.js";
+import type { QuestionPort } from "../../../app/ports/question-port.js";
 import type { PromptMutex } from "../tool-call-preparation.js";
 import type { ResponderClaimLedger } from "../responder-claims.js";
 import type { ToolExecutionState } from "./state.js";
@@ -28,6 +29,7 @@ export type TurnWriters = ReturnType<typeof createTurnEventEmitter>;
 
 export interface SingleToolOptions {
   readonly mode?: Mode | undefined;
+  readonly askUser?: QuestionPort["ask"] | undefined;
   readonly autoConfirm?: boolean | undefined;
   readonly requestSecret?:
     | ((request: {

@@ -200,7 +200,8 @@ export function App(): ReactNode {
     overlay.kind === "secret" ||
     overlay.kind === "confirm" ||
     overlay.kind === "scope-editor" ||
-    overlay.kind === "keys-editor";
+    overlay.kind === "keys-editor" ||
+    overlay.kind === "question";
   const splitTasks = splitPlanW > 0;
   const planPaneWidth = splitPlanW || widthBudget.overlayPlanWidth;
   const planRendered = splitTasks || widthBudget.showPlanOverlay;
@@ -222,8 +223,13 @@ export function App(): ReactNode {
       return;
     }
 
-    if (overlay.kind === "secret" || overlay.kind === "confirm" || overlay.kind === "scope-editor") {
-      if (chord === "escape" || chord === "ctrl+c") {
+    if (
+      overlay.kind === "secret" ||
+      overlay.kind === "confirm" ||
+      overlay.kind === "scope-editor" ||
+      overlay.kind === "question"
+    ) {
+      if (chord === "ctrl+c" || (chord === "escape" && overlay.kind !== "question")) {
         key.preventDefault();
         const dismissed = services.overlay.cancelBlockingPrompt();
         if (chord === "ctrl+c") {

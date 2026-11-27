@@ -16,7 +16,7 @@ const sha256 = (value: string): string => createHash("sha256").update(value).dig
 describe("token overhead contracts", () => {
   it("locks the retained tool catalog, arguments, flags and validation constraints", () => {
     expect(sha256(JSON.stringify(getToolDefinitions())))
-      .toBe("aed6929f474a9026433770184e0d5a781d421ddf8e0daf5a8194937b5339e916");
+      .toBe("71d246ce322c530f170aa02fb0ca3503b114643d2b81b99d6543ac9e2b030e87");
   });
 
   it("keeps the complete catalog when compact mode is requested", () => {
@@ -66,7 +66,7 @@ describe("token overhead contracts", () => {
   });
 
   it("preserves full plan-mode and compaction requirements with current inspection guidance", () => {
-    expect(sha256(planModeDirective())).toBe("48e3737699582c3fa7ee6d4960eebf0fd7d9b9682fc38e136a00cffb751ec311");
+    expect(sha256(planModeDirective())).toBe("8f3bc1f166c7dfa2b8f04859c3cdf68c4d9f1f472958219daf02acfbfd6b00ed");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("Follow the format in the user message exactly");
     expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("1ceb421a40a1024a3eac51e8453740791403cd639064057ed97dc87a34c707cc");
     expect(sha256(buildCompactionUserPrompt({

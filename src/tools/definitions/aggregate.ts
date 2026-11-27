@@ -10,6 +10,13 @@ import { TOOL_DEFINITIONS_WEB_1 } from "./web-1.js";
 import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 import { TASK_UPDATE_LIMIT, TASK_UPDATE_STATES } from "../task-update.js";
 import { TURN_END_REASONS, TURN_END_TOOL_NAME } from "../turn-end.js";
+import {
+  USER_ASK_HEADER_MAX_CHARS,
+  USER_ASK_MAX_OPTIONS,
+  USER_ASK_MAX_QUESTIONS,
+  USER_ASK_MIN_OPTIONS,
+  USER_ASK_TOOL_NAME,
+} from "../user-ask.js";
 
 const taskSteps = {
   type: "array",
@@ -107,6 +114,51 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
     { mutates: true },
+  ),
+  def(
+    USER_ASK_TOOL_NAME,
+    "Ask the user up to three decision questions and wait for the answers. Use it only for decisions that the request, the code, and sensible defaults cannot settle and that would materially change scope, design, or risk; decide everything else yourself. Investigate first so the options are grounded, put every open decision into one call, and list the option you recommend first with \"(Recommended)\" in its label. The user can always type a different answer.",
+    {
+      type: "object",
+      properties: {
+        questions: {
+          type: "array",
+          minItems: 1,
+          maxItems: USER_ASK_MAX_QUESTIONS,
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string", description: "One clear question" },
+              header: {
+                type: "string",
+                maxLength: USER_ASK_HEADER_MAX_CHARS,
+                description: "Short label such as Auth, Storage, or Scope",
+              },
+              options: {
+                type: "array",
+                minItems: USER_ASK_MIN_OPTIONS,
+                maxItems: USER_ASK_MAX_OPTIONS,
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string", description: "One to five words" },
+                    description: { type: "string", description: "One-line trade-off" },
+                  },
+                  required: ["label"],
+                  additionalProperties: false,
+                },
+              },
+              multiSelect: { type: "boolean", description: "Allow choosing several options" },
+            },
+            required: ["question", "options"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["questions"],
+      additionalProperties: false,
+    },
+    { askMode: true },
   ),
   def(
     "plan.clear",

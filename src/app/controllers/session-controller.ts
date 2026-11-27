@@ -75,6 +75,7 @@ import { mergeCancelAllResult } from "./cancel-all-result.js";
 import { withSessionAffinity } from "../../llm/session-affinity.js";
 import type { ConfirmationPort } from "../ports/confirm-port.js";
 import type { SecretPort } from "../ports/secret-port.js";
+import type { QuestionPort } from "../ports/question-port.js";
 import { TurnController, type TurnResult } from "./turn-controller.js";
 import { SessionLoopRecovery } from "./session-loop-recovery.js";
 import { CompositeDisposable, type Disposable } from "./disposable.js";
@@ -156,6 +157,7 @@ export interface SessionControllerDeps {
   readonly mode?: Mode | undefined;
   readonly confirm?: ConfirmationPort | undefined;
   readonly requestSecret?: SecretPort["request"] | undefined;
+  readonly askUser?: QuestionPort["ask"] | undefined;
   readonly idFactory?: IdFactory | undefined;
   readonly clock?: Clock | undefined;
   readonly mintTurnId?: (() => TurnId) | undefined;
@@ -1324,6 +1326,7 @@ export class SessionController implements Disposable {
         },
         confirm: this.deps.confirm,
         requestSecret: this.deps.requestSecret,
+        askUser: this.deps.askUser,
         session: this.policy,
         onMessages: (messages) => {
           if (turnGeneration !== this.lifecycleGeneration) return;
