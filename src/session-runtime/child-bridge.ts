@@ -19,6 +19,23 @@ import {
 } from "./types.js";
 import { runtimeViewFrame } from "./terminal-options.js";
 
+const SOCKET_FLUSH_TIMEOUT_MS = 1_000;
+
+function closeAfterFlush(socket: Socket): Promise<void> {
+  if (socket.destroyed) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve();
+    };
+    const timer = setTimeout(finish, SOCKET_FLUSH_TIMEOUT_MS);
+    timer.unref?.();
+    socket.on("error", finish);
+    socket.end(finish);
+  });
+}
+
 function isAck(value: unknown): value is RuntimeAckFrame {
   if (!value || typeof value !== "object") return false;
   const frame = value as Partial<RuntimeAckFrame>;
@@ -167,8 +184,8 @@ export class RuntimeChildBridge {
     });
   }
 
-  dispose(exitCode = 0): void {
-    if (this.disposed) return;
+  dispose(exitCode = 0): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     this.send({ type: "exiting", exitCode });
     this.disposed = true;
     this.repaint = undefined;
@@ -176,10 +193,11 @@ export class RuntimeChildBridge {
     this.pendingRepaints.clear();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.channel?.dispose();
-    this.socket?.destroy();
+    const socket = this.socket;
     this.channel = undefined;
     this.socket = undefined;
     this.lastSentStatusKey = undefined;
+    return socket ? closeAfterFlush(socket) : Promise.resolve();
   }
 
   private async open(): Promise<boolean> {

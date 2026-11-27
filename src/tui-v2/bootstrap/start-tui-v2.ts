@@ -125,7 +125,7 @@ export async function startTuiV2(
   const runtimeBridge = createRuntimeChildBridge(true);
   runtimeBridge?.setRepaintHandler(requestRepaint);
   if (runtimeBridge) await runtimeBridge.connect();
-  let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
+  let disposeRuntimeBridge = (): Promise<void> | undefined => runtimeBridge?.dispose();
   const [reportedThemeMode, seeded, pendingResume] = await Promise.all([
     renderer.waitForThemeMode(300).catch(() => null),
     seedSessionModel(options.sessionId, {

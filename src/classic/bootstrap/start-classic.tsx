@@ -29,7 +29,7 @@ import { createClassicAppWiring, type ClassicAppWiring } from "../app/app-wiring
 import { CLASSIC_MAX_FPS } from "../app/paint-pacing.js";
 import { createOsc52Renderer } from "./osc52-renderer.js";
 import { createClassicRenderer } from "./renderer-handle.js";
-import { createTerminalSession } from "./terminal-session.js";
+import { createTerminalSession, themeTerminalColors } from "./terminal-session.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
@@ -61,13 +61,13 @@ export async function startClassic(
   const startedAt = Date.now();
   const capabilities = readCapabilitiesFromProcess();
   if (capabilities.isTTY) await writeTerminalAndWait("Loading session…\n");
-  const session = createTerminalSession();
+  const session = createTerminalSession({ colors: themeTerminalColors(capabilities) });
   const servicesRef: { current: AppServices | undefined } = { current: undefined };
   const wiringRef: { current: ClassicAppWiring | undefined } = { current: undefined };
   const lifecycleRef: { current: RendererLifecycle | undefined } = { current: undefined };
   const runtimeBridge = createRuntimeChildBridge(true);
   if (runtimeBridge) await runtimeBridge.connect();
-  let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
+  let disposeRuntimeBridge = (): Promise<void> | undefined => runtimeBridge?.dispose();
   let instance: Instance | undefined;
 
   const control = {

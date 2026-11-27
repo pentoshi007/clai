@@ -32,6 +32,41 @@ describe("runtime child bridge", () => {
     await Promise.allSettled(cleanup.splice(0).map((dispose) => dispose()));
   });
 
+  it("delivers queued view output and the exiting frame before dispose resolves", async () => {
+    await ensureRuntimeDirectories();
+    const path = runtimeSocketPath(`bridge-flush-${Date.now()}`);
+    if (process.platform !== "win32" && isRuntimeSocketPath(path)) await rm(path, { force: true });
+    let viewBytes = 0;
+    let exiting: number | undefined;
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      void (async () => {
+        const first = await readFirstFrame(socket);
+        sendFrame(socket, { version: RUNTIME_PROTOCOL_VERSION, type: "ack", sessionId: "bridge-session" });
+        new JsonFrameChannel(socket, (value) => {
+          const frame = value as RuntimeChildFrame;
+          if (frame.type === "view-output") viewBytes += Buffer.from(frame.data, "base64").byteLength;
+          if (frame.type === "exiting") exiting = frame.exitCode;
+        }, () => socket.destroy(), first.rest);
+      })().catch(() => socket.destroy());
+    });
+    await listen(server, path);
+    cleanup.push(async () => {
+      for (const socket of sockets) socket.destroy();
+      await close(server);
+      if (process.platform !== "win32" && isRuntimeSocketPath(path)) await rm(path, { force: true });
+    });
+
+    const bridge = new RuntimeChildBridge(path, "a".repeat(64), false, true);
+    expect(await bridge.connect()).toBe(true);
+    const summary = new Uint8Array(1024 * 1024).fill(0x61);
+    expect(bridge.writeView("client-1", summary)).toBe(true);
+    await bridge.dispose(0);
+    await vi.waitFor(() => expect(exiting).toBe(0));
+    expect(viewBytes).toBe(summary.byteLength);
+  });
+
   it("deduplicates status while connected and resends the latest status once after reconnect", async () => {
     await ensureRuntimeDirectories();
     const path = runtimeSocketPath(`bridge-${Date.now()}`);

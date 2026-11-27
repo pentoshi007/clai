@@ -49,7 +49,7 @@ export async function startIndependentRuntime(options: IndependentRuntimeOptions
     if ((level === "error" || level === "warn") && !isSuppressedConsoleMessage(message)) services.session.notice("warn", message.split("\n")[0]!.slice(0, 200));
   } });
   bridge.setViewHandler((frame) => manager.receive(frame));
-  let unbind = (): void => bridge.dispose();
+  let unbind = (): Promise<void> => bridge.dispose();
   lifecycle = new RendererLifecycle({
     handle: { start() {}, suspend: () => manager.dispose(), destroy() { services.dispose(); } },
     disposers: [

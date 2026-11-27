@@ -31,7 +31,7 @@ export function bindRuntimeChildBridge(
   services: AppServices,
   requestExit: () => void,
   requestRepaint?: (() => boolean) | undefined,
-): () => void {
+): () => Promise<void> {
   bridge.setShutdownHandler(requestExit);
   bridge.setRepaintHandler(requestRepaint);
   const report = (): void => {
@@ -49,6 +49,6 @@ export function bindRuntimeChildBridge(
   return () => {
     unsubscribe();
     bridge.setRepaintHandler(undefined);
-    bridge.dispose();
+    return bridge.dispose();
   };
 }
