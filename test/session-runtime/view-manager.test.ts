@@ -32,7 +32,7 @@ function fixture(agent?: AgentPort) {
   });
   const shared = createCompositionRoot({
     agent: agent ?? { runTurn: run }, provider: "ollama", model: "fixture",
-    confirm: manager.confirm, requestSecret: manager.requestSecret,
+    confirm: manager.confirm, requestSecret: manager.requestSecret, askUser: manager.askUser,
     persistence: { async saveSession() {}, async loadPlan() { return undefined; }, async savePlan() {}, async deletePlan() {} },
   });
   manager.bind(shared);
@@ -168,6 +168,26 @@ describe("independent attachment views", () => {
     await vi.waitFor(() => expect(desktop!.services.overlay.getState().kind).toBe("confirm"));
     expect(phone!.services.overlay.isOpen()).toBe(false);
     desktop!.services.overlay.answerConfirm(true);
+    await turn;
+  });
+
+  it("shows agent questions on the attached terminal that submitted the turn", async () => {
+    const request = { questions: [{ question: "Which store?", options: [{ label: "Postgres" }, { label: "Redis" }], multiSelect: false }] };
+    const agent: AgentPort = { async runTurn(_request, handlers) {
+      const answers = await handlers.askUser!(request);
+      expect(answers).toEqual([{ selected: ["Redis"] }]);
+      return createTurnOutcome({ status: "succeeded", answer: "answered", steps: 0, remainingCriteria: [] });
+    } };
+    const f = fixture(agent);
+    f.attach("desktop");
+    f.attach("phone");
+    await vi.waitFor(() => expect(f.mounted).toHaveLength(2));
+    const [desktop, phone] = f.mounted;
+    const turn = desktop!.services.session.submit("ask me");
+    await vi.waitFor(() => expect(desktop!.services.overlay.getState().kind).toBe("question"));
+    expect(phone!.services.overlay.isOpen()).toBe(false);
+    expect(f.shared.overlay.isOpen()).toBe(false);
+    desktop!.services.overlay.answerQuestions([{ selected: ["Redis"] }]);
     await turn;
   });
 

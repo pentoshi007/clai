@@ -1,4 +1,5 @@
 import { TURN_END_TOOL_NAME } from "../../tools/turn-end.js";
+import { USER_ASK_TOOL_NAME } from "../../tools/user-ask.js";
 
 export const QUIET_META_TOOL_NAMES = new Set([
   "plan.create",
@@ -8,6 +9,7 @@ export const QUIET_META_TOOL_NAMES = new Set([
   "job.read",
   "task.update",
   TURN_END_TOOL_NAME,
+  USER_ASK_TOOL_NAME,
 ]);
 
 const ALWAYS_HIDDEN_META_TOOL_NAMES: ReadonlySet<string> = new Set([

@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AppServices } from "../ui-core/bootstrap/composition-root.js";
 import type { ConfirmationPort } from "../app/ports/confirm-port.js";
+import type { QuestionPort } from "../app/ports/question-port.js";
 import type { SecretPort } from "../app/ports/secret-port.js";
 import { evaluateTui } from "../ui-core/bootstrap/can-use-tui.js";
 import { isBunRuntime, isOpenTuiFfiError } from "../os/bun-runtime.js";
@@ -63,6 +64,7 @@ export class RuntimeViewManager {
     confirmAgentSwitch: (info) => this.ask((view) => view.ports.confirm!.confirmAgentSwitch!(info), false),
   };
   readonly requestSecret: SecretPort["request"] = (request) => this.ask((view) => view.ports.requestSecret!(request), undefined);
+  readonly askUser: QuestionPort["ask"] = (request) => this.ask((view) => view.ports.askUser!(request), undefined);
 
   constructor(private readonly bridge: Pick<RuntimeChildBridge, "writeView" | "closeView" | "minimise" | "switchSession">, private readonly mount: RuntimeViewMount = mountView) {}
 

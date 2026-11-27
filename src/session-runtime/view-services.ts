@@ -8,7 +8,7 @@ import { SelectionController } from "../ui-core/controllers/selection-controller
 import { ToastController, type ToastItem } from "../ui-core/controllers/toast-controller.js";
 import { InterruptibleController } from "../ui-core/controllers/interruptible-controller.js";
 import { detectCapabilities } from "../ui-core/bootstrap/capabilities.js";
-import { createOverlayConfirmPort, createOverlaySecretPort } from "../ui-core/bootstrap/overlay-ports.js";
+import { createOverlayConfirmPort, createOverlayQuestionPort, createOverlaySecretPort } from "../ui-core/bootstrap/overlay-ports.js";
 import { createTerminalClipboardPort } from "../ui-core/ports/clipboard-osc52.js";
 import { createOsc52Renderer } from "../classic/bootstrap/osc52-renderer.js";
 import { attachCommandHandlers } from "../ui-core/commands/command-handlers.js";
@@ -72,7 +72,7 @@ export function createRuntimeViewServices(options: RuntimeViewServicesOptions): 
     ...shared, session, focus, overlay, toast, interruptible, selection,
     router: new ActionRouter(), commands: buildDefaultCommandRegistry(),
     transcript: transcript.transcript,
-    ports: { ...shared.ports, clipboard, confirm: createOverlayConfirmPort(overlay), requestSecret: createOverlaySecretPort(overlay) },
+    ports: { ...shared.ports, clipboard, confirm: createOverlayConfirmPort(overlay), requestSecret: createOverlaySecretPort(overlay), askUser: createOverlayQuestionPort(overlay) },
     cancel: new CancelCoordinator({ session, sessionId: () => session.sessionId, jobs: shared.ports.jobs, interruptible }),
     requestMinimise: options.minimise, requestSessionSwitch: options.switchSession,
     requestRedraw: options.repaint, hasOtherViews: options.hasOtherViews, capabilities,
