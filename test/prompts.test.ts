@@ -189,6 +189,9 @@ describe("prompt rendering", () => {
     expect(d).toMatch(/Pentest\/VAPT\/red-team roadmap coverage/i);
     expect(d).toMatch(/attack-surface ledger/i);
     expect(d).toMatch(/residual\/untested/i);
+    expect(d).toMatch(/Every task is an object with title, steps, and acceptanceCriteria/);
+    expect(d).toMatch(/Review questions before plan\.create/);
+    expect(d).toMatch(/CONVENTIONS TO FOLLOW/);
   });
 
   it("renderRequestEnvironmentContext includes NO PLAN EXISTS when plan is omitted", () => {

@@ -27,6 +27,7 @@ const taskStructure = (task: PlanTask): unknown[] => [
   task.dependencies,
   task.resourceLocks,
   task.acceptanceCriteria,
+  task.steps,
 ];
 
 const planStructureKey = (plan: SessionPlan, approved: boolean): string =>

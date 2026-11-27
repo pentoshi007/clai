@@ -9,7 +9,7 @@ export function buildPlanRevisionPrompt(
     "This is still a DRAFT awaiting accept — rewrite decisively. " +
     "The revised plan must remain self-contained after approval and context compaction: preserve verified evidence, exact files or target assets, contracts or trust boundaries, assumptions, non-goals, branch decisions, risks, and verification evidence in the detail. " +
     "Emit ONE plan.create with the COMPLETE intended goal, durable detail, and ordered tasks (full checklist, not a partial delta). " +
-    "Every task must be a distinct outcome with affected surface, dependencies, and observable acceptanceCriteria; include error, rollback, integration, regression, runtime or impact proof as applicable. " +
+    "Every task must be a distinct outcome with affected surface, dependencies, concrete steps, and observable acceptanceCriteria; include error, rollback, integration, regression, runtime or impact proof as applicable. " +
     "For pentest work retain scope, authorization/ROE, attack-surface ledger, identities, hypotheses, safe PoC/impact validation, cleanup, reporting, and residual untested coverage. " +
     "For software work retain repository paths, contracts/data flow, implementation boundaries, migrations, edge states, tests, and runtime/deployment proof. " +
     "Omit obsolete tasks entirely (e.g. drop Prisma/JWT/API when the user wants frontend-only). " +

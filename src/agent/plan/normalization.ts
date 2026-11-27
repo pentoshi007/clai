@@ -101,7 +101,21 @@ export interface NormalizedPlanTask {
   dependencies: string[];
   dependenciesSpecified: boolean;
   resourceLocks: string[];
+  steps: string[];
   acceptanceCriteria?: string | undefined;
+  note?: string | undefined;
+}
+
+export function normalizeTaskSteps(value: unknown): string[] {
+  const items =
+    typeof value === "string"
+      ? value.split(/\r?\n/)
+      : Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string")
+        : [];
+  return items
+    .map((item) => item.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean);
 }
 
 export function normalizePlanTaskEntries(
@@ -120,6 +134,7 @@ export function normalizePlanTaskEntries(
         dependencies: [] as string[],
         dependenciesSpecified: false,
         resourceLocks: [] as string[],
+        steps: [] as string[],
       }));
   }
   if (!Array.isArray(raw)) return [];
@@ -165,6 +180,7 @@ export function normalizePlanTaskEntries(
                 .filter(Boolean)
                 .join("; ")
             : "";
+      const note = typeof object.note === "string" ? object.note.trim() : "";
       return {
         title,
         aliases: [...new Set(aliases)],
@@ -173,7 +189,9 @@ export function normalizePlanTaskEntries(
           Object.prototype.hasOwnProperty.call(object, "dependencies") ||
           Object.prototype.hasOwnProperty.call(object, "dependsOn"),
         resourceLocks: stringArray(object.resourceLocks ?? object.resources),
+        steps: normalizeTaskSteps(object.steps ?? object.approach ?? object.implementation),
         ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
+        ...(note ? { note } : {}),
       };
     })
     .filter((x): x is NormalizedPlanTask => Boolean(x));
