@@ -343,7 +343,7 @@ describe("Codex request parity", () => {
     expect(headers[0]?.get("x-openai-internal-codex-responses-lite")).toBeNull();
     expect(result.usage?.cachedPromptTokens).toBe(1536);
     const messages: ChatMessage[] = [...request.messages];
-    createTurnHistoryWriter({ messages, images: undefined, sanitizeAssistantText: (text) => text, visibleCommitted: () => true, writeAssistantMessage: () => {} }).pushAssistantHistory(result.text, result);
+    createTurnHistoryWriter({ messages, sanitizeAssistantText: (text) => text, visibleCommitted: () => true, writeAssistantMessage: () => {} }).pushAssistantHistory(result.text, result);
     messages.push({ role: "user", content: "Next turn" }, { role: "system", content: "REQUEST CONTEXT\nChanged context" });
     await withSessionAffinity("session-1", () => codexProvider.complete({ ...request, messages, thinking: { enabled: true, effort: "max" } }, auth));
     expect(bodies[1]?.instructions).toBe(bodies[0]?.instructions);
@@ -378,7 +378,7 @@ describe("Codex request parity", () => {
     const result = await codexProvider.stream!({ model, messages: [{ role: "user", content: "Answer" }] }, auth, () => {});
     expect(result.reasoningArtifacts?.[0]?.replay).toEqual({ scope: "all-history", persistence: "all-turns" });
     const history: ChatMessage[] = [];
-    createTurnHistoryWriter({ messages: history, images: undefined, sanitizeAssistantText: (text) => text, visibleCommitted: () => true, writeAssistantMessage: () => {} }).pushAssistantHistory(result.text, result);
+    createTurnHistoryWriter({ messages: history, sanitizeAssistantText: (text) => text, visibleCommitted: () => true, writeAssistantMessage: () => {} }).pushAssistantHistory(result.text, result);
     expect(history[0]?.reasoningArtifacts?.[0]?.raw).toEqual(output[0]);
     expect(history[0]?.responsesReplay?.items).toEqual(output);
   });

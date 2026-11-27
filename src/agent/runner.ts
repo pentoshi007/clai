@@ -538,7 +538,6 @@ export async function runAgentTurn(
       pushAssistantHistory,
     } = createTurnHistoryWriter({
       messages,
-      images: options.images,
       sanitizeAssistantText,
       visibleCommitted: () => outputState.visibleCommitted,
       writeAssistantMessage,

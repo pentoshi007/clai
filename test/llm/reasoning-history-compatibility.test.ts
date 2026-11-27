@@ -61,7 +61,6 @@ function response(stream: boolean): Response {
 function historyWriter(messages: ChatMessage[]) {
   return createTurnHistoryWriter({
     messages,
-    images: undefined,
     sanitizeAssistantText: (text) => text,
     visibleCommitted: () => true,
     writeAssistantMessage: () => undefined,

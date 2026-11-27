@@ -1,4 +1,4 @@
-import type { ChatImage, ChatMessage, CompletionResult } from "../../types.js";
+import type { ChatMessage, CompletionResult } from "../../types.js";
 import {
   stripSentinelTokens,
   textBeforeToolCall,
@@ -14,7 +14,6 @@ export const ACTION_CYCLE_RECOVERY_PREFIX = "[ACTION CYCLE RECOVERY] ";
 
 export interface TurnHistoryPorts {
   readonly messages: ChatMessage[];
-  readonly images: readonly ChatImage[] | undefined;
   readonly sanitizeAssistantText: (text: string) => string;
   readonly visibleCommitted: () => boolean;
   readonly writeAssistantMessage: (text: string) => void;
@@ -45,16 +44,11 @@ export const recoveryProseFrom = (content: string): string | undefined => {
   return text;
 };
 
-const buildRecoveryUserMessage = (
-  ports: TurnHistoryPorts,
-  content: string,
-): ChatMessage => {
-  const message: ChatMessage = { role: "user", content, internal: true };
-  if (ports.images && ports.images.length > 0) {
-    message.images = [...ports.images];
-  }
-  return message;
-};
+const buildRecoveryUserMessage = (content: string): ChatMessage => ({
+  role: "user",
+  content,
+  internal: true,
+});
 
 const appendActionCycleRecovery = (
   ports: TurnHistoryPorts,
@@ -72,7 +66,7 @@ const appendActionCycleRecovery = (
       break;
     }
   }
-  ports.messages.push(buildRecoveryUserMessage(ports, prefix + content));
+  ports.messages.push(buildRecoveryUserMessage(prefix + content));
 };
 
 const isToolCallContent = (text: string): boolean =>
@@ -126,7 +120,7 @@ const appendAssistantHistory = (
 export const createTurnHistoryWriter = (
   ports: TurnHistoryPorts,
 ): TurnHistoryWriter => ({
-  recoveryUserMessage: (content) => buildRecoveryUserMessage(ports, content),
+  recoveryUserMessage: buildRecoveryUserMessage,
   upsertActionCycleRecovery: (content) =>
     appendActionCycleRecovery(ports, content),
   recoveryProse: recoveryProseFrom,
