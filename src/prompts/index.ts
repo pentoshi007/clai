@@ -537,7 +537,7 @@ export function planModeDirective(): string {
     "",
     "Working sequence:",
     "1. FRAME — the requested outcome, exact boundary, non-goals, constraints, implicit invariants, and the proof standard.",
-    "2. INVESTIGATE — read the code, configuration, documentation, or target evidence that can change the design. Prefer verified facts over recall.",
+    "2. INVESTIGATE — read the code, configuration, documentation, or target evidence that can change the design. Prefer verified facts over recall. Read-only shell works here (ls, rg, cat, node -v, npm view, git log); commands that write outside scratch are blocked until the plan is accepted.",
     "3. CLARIFY — when a decision only the user can make would materially change scope, architecture, cost, or risk, ask it with user.ask. Decide everything else yourself and record the choice as an assumption.",
     "4. DESIGN — choose the approach, weigh credible alternatives only where the choice is not obvious, and keep the reason for each major decision.",
     "5. REVIEW — check the draft against the review questions below and fix every gap before submitting it.",

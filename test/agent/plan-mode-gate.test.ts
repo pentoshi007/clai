@@ -3,6 +3,7 @@ import type { ToolCall } from "../../src/types.js";
 import {
   decidePlanModeGate,
   PLAN_MODE_BLOCK_SUFFIX,
+  PLAN_MODE_SHELL_BLOCK_REASON,
 } from "../../src/agent/turn/plan-mode-gate.js";
 
 const gate = (call: ToolCall, overrides: Record<string, unknown> = {}) =>
@@ -34,6 +35,17 @@ describe("plan mode gate", () => {
     expect(decision).toMatchObject({
       reason: `plan mode — fs.write ${PLAN_MODE_BLOCK_SUFFIX}`,
     });
+  });
+
+  it("allows read-only shell and explains blocked shell writes", () => {
+    expect(gate({ name: "shell.exec", args: { command: "node -v; npm view vite version 2>/dev/null" } })).toEqual({
+      blocked: false,
+    });
+    expect(gate({ name: "shell.exec", args: { command: "echo x > src/a.ts" } })).toEqual({
+      blocked: true,
+      reason: PLAN_MODE_SHELL_BLOCK_REASON,
+    });
+    expect(PLAN_MODE_SHELL_BLOCK_REASON).toContain("Read-only shell commands stay available");
   });
 
   it("allows a scratch-only write", () => {

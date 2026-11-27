@@ -55,6 +55,26 @@ export function isPlanModeAllowedTool(name: string): boolean {
   return true;
 }
 
+const QUOTED_TEXT = /'[^']*'|"(?:\\.|[^"\\])*"/g;
+const HARMLESS_REDIRECT = /(?:\d*|&)>>?\s*\/dev\/null\b|\d*>&\s*-?\d+\b|\d*>&-/g;
+const OUTPUT_REDIRECT = /(?:\d*|&)>>?[&|]?\s*([^\s;|&()<>]+)/g;
+const TEE_ARGS = /\btee\b((?:\s+[^\s;|&()<>]+)*)/g;
+const SCRATCH_TARGET =
+  /^(?:\/dev\/null$|\/dev\/std(?:out|err)$|\/(?:private\/)?tmp\/|\/var\/folders\/|\$\{?TMP(?:DIR)?\}?\/|\S*\.clai\/outputs\/)/;
+
+function shellWriteTargets(command: string): string[] {
+  const bare = command.replace(QUOTED_TEXT, '""').replace(HARMLESS_REDIRECT, " ");
+  const redirects = [...bare.matchAll(OUTPUT_REDIRECT)].map((match) => match[1]!);
+  const teed = [...bare.matchAll(TEE_ARGS)].flatMap((match) =>
+    (match[1] ?? "").trim().split(/\s+/).filter((arg) => arg && !arg.startsWith("-")),
+  );
+  return [...redirects, ...teed];
+}
+
+function writesOutsideScratch(command: string): boolean {
+  return shellWriteTargets(command).some((target) => !SCRATCH_TARGET.test(target));
+}
+
 export function isPlanModeAllowedShellCommand(command: string): boolean {
   const c = command.trim();
   if (!c) return false;
@@ -65,14 +85,7 @@ export function isPlanModeAllowedShellCommand(command: string): boolean {
   ) {
     return false;
   }
-  if (
-    /\b(fs\.write|tee\s+>|>>\s*\/|cat\s*>\s*|printf\s+.*>\s*)/i.test(c) &&
-    !/\b(tee\s+\/tmp|tee\s+\$\{?TMP|>>\s*\/tmp|\/var\/folders)\b/i.test(c)
-  ) {
-    if (!/\b(\/tmp|TMPDIR|scratch|\.clai\/outputs)\b/i.test(c)) {
-      return false;
-    }
-  }
+  if (/\bfs\.write/i.test(c) || writesOutsideScratch(c)) return false;
   if (
     /\b(msfconsole|msfvenom|metasploit|exploit\/|use\s+exploit|revshell|reverse\s+shell|nc\s+-[el].*\d|ncat\s+-[el]|bash\s+-i\s+>&\s*\/dev\/tcp)\b/i.test(
       c,

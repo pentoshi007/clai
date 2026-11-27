@@ -46,6 +46,27 @@ describe("plan mode gather-only policy", () => {
     expect(isPlanModeAllowedShellCommand("dig +short example.com ANY")).toBe(true);
   });
 
+  it("allows read-only inspection that discards errors or prints with printf", () => {
+    const toolchainCheck = [
+      'echo "--- target"; ls -d ~/Desktop/titter 2>/dev/null || echo "titter: absent"',
+      'node -v; npm -v; command -v pnpm || true',
+      'for p in vite react; do printf "%s " "$p"; npm view "$p" version 2>/dev/null || echo "?"; done',
+      "ls /Applications 2>/dev/null | grep -iE 'chrome|firefox' || echo none",
+    ].join("\n");
+    expect(isPlanModeAllowedShellCommand(toolchainCheck)).toBe(true);
+    expect(isPlanModeAllowedShellCommand("npm test 2>&1 | tail -20")).toBe(true);
+    expect(isPlanModeAllowedShellCommand("git log --oneline > /tmp/log.txt")).toBe(true);
+    expect(isPlanModeAllowedShellCommand('rg -n "a > b" src')).toBe(true);
+  });
+
+  it("blocks shell writes into the project or home folders", () => {
+    expect(isPlanModeAllowedShellCommand("echo hi > src/app.ts")).toBe(false);
+    expect(isPlanModeAllowedShellCommand("printf 'x' >> README.md")).toBe(false);
+    expect(isPlanModeAllowedShellCommand("cat <<EOF > package.json")).toBe(false);
+    expect(isPlanModeAllowedShellCommand("npm view react version | tee notes.txt")).toBe(false);
+    expect(isPlanModeAllowedShellCommand("ls &> listing.txt")).toBe(false);
+  });
+
   it("blocks scaffold and clear exploit shells", () => {
     expect(
       isPlanModeAllowedShellCommand(
