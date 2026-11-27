@@ -450,8 +450,9 @@ export async function runAgentTurn(
         destinationHint,
         workIntent,
         isPlanMode,
-        executionRulesInSystem: buildStableSystemContent(nativeToolsActive).includes(
-          "Professional execution method — applies to every domain",
+        executionRulesInSystem: toolRouting.stableSystemIncludesExecutionRules(
+          loop.provider,
+          loop.model,
         ),
         buildLikeTurn,
         informationalQuery,

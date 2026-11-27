@@ -41,6 +41,10 @@ export interface ToolRouting {
     provider: ProviderId,
     model: string,
   ) => string;
+  readonly stableSystemIncludesExecutionRules: (
+    provider: ProviderId,
+    model: string,
+  ) => boolean;
 }
 
 const subagentToolNames: ReadonlySet<string> = new Set(SUBAGENT_TOOL_NAMES);
@@ -91,16 +95,20 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     return base.filter((definition) => allow.has(definition.name));
   };
 
+  const compactPromptFor = (provider: ProviderId, model: string): boolean => {
+    const route = JSON.stringify([provider, model]);
+    const compact = compactPromptModes.get(route) ?? input.useCompactSystemPrompt();
+    compactPromptModes.set(route, compact);
+    return compact;
+  };
+
   const buildStableSystemContent = (
     native: boolean,
     provider: ProviderId,
     model: string,
   ): string => {
     const reliability = getReliabilityPolicy();
-    const route = JSON.stringify([provider, model]);
-    const compact = compactPromptModes.get(route) ?? input.useCompactSystemPrompt();
-    compactPromptModes.set(route, compact);
-    const render = compact
+    const render = compactPromptFor(provider, model)
       ? renderCompactAgentSystemPrompt
       : renderAgentSystemPrompt;
     return render(routeToolNames(provider, model).join(", "), {
@@ -118,5 +126,7 @@ export const createToolRouting = (input: ToolRoutingInput): ToolRouting => {
     resolveNativeTools,
     selectToolDefs,
     buildStableSystemContent,
+    stableSystemIncludesExecutionRules: (provider, model) =>
+      !compactPromptFor(provider, model),
   };
 };

@@ -138,4 +138,19 @@ describe("tool routing", () => {
       expect(names?.some((name) => name.startsWith("subagent."))).toBe(false);
     }
   });
+
+  it.each([
+    { native: true, compact: false },
+    { native: true, compact: true },
+    { native: false, compact: false },
+    { native: false, compact: true },
+  ])("reports whether the stable prompt carries the execution rules (%o)", ({ native, compact }) => {
+    const route = routing({
+      toolCalling: native ? "native" : "text",
+      useCompactSystemPrompt: () => compact,
+    });
+    const system = route.buildStableSystemContent(native, "nvidia", "test-model");
+    expect(route.stableSystemIncludesExecutionRules("nvidia", "test-model")).toBe(!compact);
+    expect(system.includes("Professional execution method — applies to every domain")).toBe(!compact);
+  });
 });
