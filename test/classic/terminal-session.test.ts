@@ -12,7 +12,10 @@ import {
   MOUSE_OFF,
   MOUSE_ON,
   createTerminalSession,
+  themeTerminalColors,
 } from "../../src/classic/bootstrap/terminal-session.js";
+import { DEFAULT_COLORS_RESET, TERMINAL_MODE_RESET } from "../../src/os/screen-sequences.js";
+import { themeFor } from "../../src/ui-core/rendering/theme.js";
 import {
   createOsc52Renderer,
   osc52Sequence,
@@ -54,6 +57,29 @@ describe("terminal session", () => {
     session.leave();
     expect(f.writes).toContain(ALT_SCREEN_ON);
     expect(f.writes).toContain(ALT_SCREEN_OFF);
+  });
+
+  it("paints the theme colors while active and restores the terminal's own colors on leave", () => {
+    const f = fakes();
+    const colors = themeTerminalColors({ colorMode: "truecolor", noColor: false, themeHint: "dark" });
+    const dark = themeFor("dark");
+    expect(colors).toEqual({ foreground: dark.foreground, background: dark.background });
+    const session = createTerminalSession({ ...f, mouse: false, colors });
+    session.enter();
+    expect(f.writes).toContain(`\u001b]10;${dark.foreground}\u0007\u001b]11;${dark.background}\u0007`);
+    session.leave();
+    expect(f.writes.at(-2)).toBe(DEFAULT_COLORS_RESET);
+    expect(TERMINAL_MODE_RESET).toContain(DEFAULT_COLORS_RESET);
+  });
+
+  it("leaves terminal colors alone without rich color support", () => {
+    expect(themeTerminalColors({ colorMode: "16", noColor: false, themeHint: "dark" })).toBeUndefined();
+    expect(themeTerminalColors({ colorMode: "truecolor", noColor: true, themeHint: "dark" })).toBeUndefined();
+    const f = fakes();
+    const session = createTerminalSession({ ...f, mouse: false });
+    session.enter();
+    session.leave();
+    expect(f.writes.some((write) => write.includes("\u001b]1"))).toBe(false);
   });
 
   it("emits the documented enter sequences", () => {

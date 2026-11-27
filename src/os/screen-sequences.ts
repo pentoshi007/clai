@@ -10,8 +10,14 @@ const INPUT_MODES_OFF = "\u001b[?2004l\u001b[?9001l\u001b[?1l\u001b>";
 const RENDERING_DEFAULTS =
   "\u001b[?7h\u001b[?69l\u001b[m\u001b(B\u001b[4l\u001b[?25h";
 
+export const DEFAULT_COLORS_RESET = "\u001b]110\u0007\u001b]111\u0007";
+
+export function defaultColorsSequence(foreground: string, background: string): string {
+  return `\u001b]10;${foreground}\u0007\u001b]11;${background}\u0007`;
+}
+
 export const TERMINAL_MODE_RESET =
-  SYNCHRONIZED_UPDATE_OFF + MOUSE_REPORTING_OFF + INPUT_MODES_OFF + RENDERING_DEFAULTS;
+  SYNCHRONIZED_UPDATE_OFF + MOUSE_REPORTING_OFF + INPUT_MODES_OFF + RENDERING_DEFAULTS + DEFAULT_COLORS_RESET;
 
 export const ABANDONED_TERMINAL_RESET = TERMINAL_MODE_RESET + LEAVE_ALT_SCREEN;
 
