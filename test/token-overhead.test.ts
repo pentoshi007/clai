@@ -66,7 +66,7 @@ describe("token overhead contracts", () => {
   });
 
   it("preserves full plan-mode and compaction requirements with current inspection guidance", () => {
-    expect(sha256(planModeDirective())).toBe("8f3bc1f166c7dfa2b8f04859c3cdf68c4d9f1f472958219daf02acfbfd6b00ed");
+    expect(sha256(planModeDirective())).toBe("2f699837f4bf8aa8a52ad20b0b62d53103257c5ae8c3503ea4a412fcf625f45e");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("Follow the format in the user message exactly");
     expect(sha256(COMPACTION_SYSTEM_PROMPT)).toBe("1ceb421a40a1024a3eac51e8453740791403cd639064057ed97dc87a34c707cc");
     expect(sha256(buildCompactionUserPrompt({
