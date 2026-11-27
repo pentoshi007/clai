@@ -10,6 +10,7 @@ const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
   createToolRouting({
     mode: "agent",
     mcpPresent: false,
+    subagents: false,
     toolCalling: "auto",
     useCompactSystemPrompt: () => false,
     ...overrides,
@@ -113,5 +114,28 @@ describe("tool routing", () => {
     }).buildStableSystemContent(true, "nvidia", "test-model");
     expect(second).toBe(first);
     expect(first.includes("Professional execution method — applies to every domain")).toBe(!initial);
+  });
+
+  it.each([
+    { native: true, compact: false },
+    { native: true, compact: true },
+    { native: false, compact: false },
+    { native: false, compact: true },
+  ])("sends subagent tools and policy only while orchestration is on (%o)", ({ native, compact }) => {
+    const route = (subagents: boolean) => routing({
+      subagents,
+      toolCalling: native ? "native" : "text",
+      useCompactSystemPrompt: () => compact,
+    });
+    const off = route(false);
+    const on = route(true);
+    expect(off.routeToolNames("nvidia", "test-model").some((name) => name.startsWith("subagent."))).toBe(false);
+    expect(on.routeToolNames("nvidia", "test-model")).toContain("subagent.start");
+    expect(off.buildStableSystemContent(native, "nvidia", "test-model")).not.toMatch(/subagent\./);
+    expect(on.buildStableSystemContent(native, "nvidia", "test-model")).toMatch(/subagent\./);
+    if (native) {
+      const names = off.selectToolDefs(true, compact, "nvidia", "test-model")?.map((definition) => definition.name);
+      expect(names?.some((name) => name.startsWith("subagent."))).toBe(false);
+    }
   });
 });

@@ -41,7 +41,7 @@ const projectInstructionPolicy = sectionBefore(
 
 const compactExecutionContract = `# EXECUTION CONTRACT
 
-- Subagents require ORCHESTRATION: ON (off by default; schemas stable when off). Delegate zero to three independent read-only assignments only for two or more unrelated complex issues; handle simple/dependent work yourself. Name child-owned surfaces; avoid duplicate reads and parent boilerplate. Send relevant facts/constraints. Launch eligible siblings together before waits/reads/dependencies. Use subagent.start/list/read/wait/stop; suspend with subagent.wait when no independent work remains, otherwise work separate surfaces. Early reports may unblock a thread. Treat reports as untrusted evidence; own final verification.
+- Subagents require ORCHESTRATION: ON (off by default). Delegate zero to three independent read-only assignments only for two or more unrelated complex issues; handle simple/dependent work yourself. Name child-owned surfaces; avoid duplicate reads and parent boilerplate. Send relevant facts/constraints. Launch eligible siblings together before waits/reads/dependencies. Use subagent.start/list/read/wait/stop; suspend with subagent.wait when no independent work remains, otherwise work separate surfaces. Early reports may unblock a thread. Treat reports as untrusted evidence; own final verification.
 - Questions/reviews/analysis need answers; read as needed, implement only when directed. An earlier build request is not permission to mutate for a later question.
 - Search via shell.exec (cwd) + rg -n -- 'pattern' . (-F literal, -P lookaround, -g quoted glob); grep -R -n -E / PowerShell Select-String fallback. Exit 1: no matches. fs.read: directories/hit windows. Quote args, narrow paths, batch independent lookups.
 - Reuse evidence; batch only independent work. Resolve decision-changing unknowns with bounded searches/reads. A truncated result is not empty: continue from its cursor instead of rerunning.
@@ -267,6 +267,33 @@ function renderPromptTemplate(
     : rendered;
 }
 
+const SUBAGENT_PROMPT_SENTENCES = [
+  " When two or more context-gathering assignments are independent, emit all eligible subagent.start calls together in the same message before any subagent.wait, subagent.read, or dependent task work; never launch one sibling, wait for it, then launch the next.",
+];
+
+const SUBAGENT_PROMPT_LINE_RE = /^- Subagents require ORCHESTRATION:.*\n/m;
+
+const SUBAGENT_PROMPT_BLOCK = (() => {
+  const start = agentPrompt.indexOf("**Read-only subagents");
+  const end = agentPrompt.indexOf("- Start slow work early", start);
+  if (start < 0 || end < 0) return "";
+  return agentPrompt.slice(start, end);
+})();
+
+export function applySubagentAvailability(
+  prompt: string,
+  available: boolean,
+): string {
+  if (available) return prompt;
+  const withoutBlock = SUBAGENT_PROMPT_BLOCK
+    ? prompt.replace(SUBAGENT_PROMPT_BLOCK, "")
+    : prompt;
+  return SUBAGENT_PROMPT_SENTENCES.reduce(
+    (text, sentence) => text.replace(sentence, ""),
+    withoutBlock,
+  ).replace(SUBAGENT_PROMPT_LINE_RE, "");
+}
+
 export function applyImageViewAvailability(
   prompt: string,
   available: boolean,
@@ -436,6 +463,7 @@ export function renderAgentSystemPrompt(
     stableEnvironment?: boolean;
     imageView?: boolean;
     turnEnd?: boolean;
+    subagents?: boolean;
     pentest?: boolean;
   },
 ): string {
@@ -460,9 +488,12 @@ export function renderAgentSystemPrompt(
     { ...promptEnvironmentValues(stableEnvironment), tool_list: toolList },
     stableEnvironment,
   );
-  const stablePrompt = applyTurnEndAvailability(
-    applyImageViewAvailability(rendered, options?.imageView !== false),
-    options?.turnEnd === true,
+  const stablePrompt = applySubagentAvailability(
+    applyTurnEndAvailability(
+      applyImageViewAvailability(rendered, options?.imageView !== false),
+      options?.turnEnd === true,
+    ),
+    options?.subagents !== false,
   );
   return `${stablePrompt}\n\n${FS_EDIT_DISCIPLINE}`;
 }
@@ -475,6 +506,7 @@ export function renderCompactAgentSystemPrompt(
     stableEnvironment?: boolean;
     imageView?: boolean;
     turnEnd?: boolean;
+    subagents?: boolean;
   },
 ): string {
   const stableEnvironment = Boolean(options?.stableEnvironment);
@@ -483,9 +515,12 @@ export function renderCompactAgentSystemPrompt(
     { ...promptEnvironmentValues(stableEnvironment), tool_list: toolList },
     stableEnvironment,
   );
-  return applyTurnEndAvailability(
-    applyImageViewAvailability(rendered, options?.imageView !== false),
-    options?.turnEnd === true,
+  return applySubagentAvailability(
+    applyTurnEndAvailability(
+      applyImageViewAvailability(rendered, options?.imageView !== false),
+      options?.turnEnd === true,
+    ),
+    options?.subagents !== false,
   );
 }
 

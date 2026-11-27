@@ -23,6 +23,7 @@ export function createCurrentAgentPort(
       const routing = createToolRouting({
         mode,
         mcpPresent: Boolean(options.mcp),
+        subagents: session.subagents?.enabled ?? false,
         toolCalling: config.toolCalling,
         useCompactSystemPrompt: () => useCompactSystemPrompt,
         compactPromptModes: new Map(session.compactPromptModes),

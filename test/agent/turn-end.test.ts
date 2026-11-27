@@ -103,6 +103,7 @@ describe("turn.end registration", () => {
         const routing = createToolRouting({
           mode: "agent",
           mcpPresent: false,
+          subagents: false,
           toolCalling,
           useCompactSystemPrompt: () => compact,
         });

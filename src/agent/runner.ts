@@ -360,6 +360,7 @@ export async function runAgentTurn(
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
+      subagents: session.subagents?.enabled ?? false,
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,
       compactPromptModes: session.compactPromptModes ??= new Map(),
