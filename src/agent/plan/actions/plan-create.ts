@@ -32,8 +32,22 @@ import {
   titlesMatchForPlan,
   type NormalizedPlanTask,
 } from "../normalization.js";
+import { planDraftGaps } from "../quality.js";
 
 type Proposal = { goal: string; detail: string; kind: string; entries: NormalizedPlanTask[] };
+
+export interface PlanCreateOptions {
+  readonly autoApprove: boolean;
+  readonly qualityGate?: boolean | undefined;
+}
+
+function entryDetails(entry: NormalizedPlanTask): Pick<PlanTask, "acceptanceCriteria" | "steps" | "note"> {
+  return {
+    ...(entry.acceptanceCriteria ? { acceptanceCriteria: entry.acceptanceCriteria } : {}),
+    ...(entry.steps.length > 0 ? { steps: entry.steps } : {}),
+    ...(entry.note ? { note: entry.note } : {}),
+  };
+}
 
 function readProposal(args: ToolCall["args"]): Proposal | string {
   const goal = normalizePlanGoal(args);
@@ -62,8 +76,8 @@ function appendProposal(draft: SessionPlan, entries: NormalizedPlanTask[]): Plan
       if (!id) return `unknown dependency "${reference}".`;
       dependencies.push(id);
     }
-    const { title, aliases, resourceLocks, acceptanceCriteria } = entry;
-    const task = appendPlanTask(draft, { title, aliases, resourceLocks, acceptanceCriteria, state: "pending", dependencies: [...new Set(dependencies)] });
+    const { title, aliases, resourceLocks } = entry;
+    const task = appendPlanTask(draft, { title, aliases, resourceLocks, ...entryDetails(entry), state: "pending", dependencies: [...new Set(dependencies)] });
     added.push(task);
     previousId = task.id;
   }
@@ -118,6 +132,8 @@ function setDraftTaskDetails(plan: SessionPlan, entries: NormalizedPlanTask[]): 
     task.aliases = input.aliases;
     task.resourceLocks = input.resourceLocks;
     task.acceptanceCriteria = input.acceptanceCriteria ?? task.acceptanceCriteria;
+    task.steps = input.steps.length > 0 ? input.steps : task.steps;
+    task.note = input.note ?? task.note;
   }
   const positional = new Map(plan.tasks.map((task, index) => [`t${index + 1}`, task.id]));
   for (const [i, task] of plan.tasks.entries()) {
@@ -174,7 +190,19 @@ function describeCreatedPlan(plan: SessionPlan, autoApprove: boolean): PlanToolR
   };
 }
 
-export async function handlePlanCreate(call: ToolCall, session: SessionPolicy, autoApprove: boolean): Promise<PlanToolResult> {
+function rejectThinDraft(proposal: Proposal): PlanToolResult | undefined {
+  const gaps = planDraftGaps(proposal);
+  if (gaps.length === 0) return undefined;
+  return {
+    ...createFailure(
+      `the draft is not ready for review: ${gaps.join("; ")}. Fill these gaps from the evidence you already have and call plan.create again with the complete plan.`,
+    ),
+    qualityRejected: true,
+  };
+}
+
+export async function handlePlanCreate(call: ToolCall, session: SessionPolicy, options: PlanCreateOptions): Promise<PlanToolResult> {
+  const { autoApprove } = options;
   const proposal = readProposal(call.args);
   if (typeof proposal === "string") return createFailure(proposal);
   const previous = await loadPlan(session.sessionId);
@@ -184,6 +212,8 @@ export async function handlePlanCreate(call: ToolCall, session: SessionPolicy, a
     }
     return extendExistingPlan(session, proposal.entries);
   }
+  const rejected = options.qualityGate && !autoApprove ? rejectThinDraft(proposal) : undefined;
+  if (rejected) return rejected;
   const draft = buildDraft(session.sessionId, proposal, previous, autoApprove);
   const validation = validateSessionPlan(draft);
   if (!validation.ok) return createFailure(`${validation.reason}. Use declared task ids or aliases and remove dependency cycles.`);

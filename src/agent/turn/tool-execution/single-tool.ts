@@ -234,14 +234,18 @@ export const runSingleTool = async (
       releaseClaim: (id) => deps.responderClaims.delete(id),
       queueResponderLedger: (notification) =>
         deps.deferredResponderLedgerNotifications.push(notification),
-      handlePlanTool: (planCall) =>
-        handlePlanTool(planCall, deps.session, {
+      handlePlanTool: async (planCall) => {
+        const planResult = await handlePlanTool(planCall, deps.session, {
           loopGuard: deps.loopGuard,
           step: deps.step(),
           autoApprove: !deps.isPlanMode,
           turnEnd: routeDeclaresTurnEnd(deps.provider(), deps.model()),
           taskWork: { ledger: deps.toolState.taskWorkLedger, looseWork: deps.sessionLooseWork },
-        }),
+          qualityGate: !deps.toolState.planDraftRejected,
+        });
+        if (planResult.qualityRejected) deps.toolState.planDraftRejected = true;
+        return planResult;
+      },
       recordAttempt: (attemptedCall, ok) =>
         deps.loopGuard.recordAttempt(
           deps.step(),

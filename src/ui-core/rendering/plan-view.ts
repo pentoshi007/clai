@@ -243,6 +243,17 @@ export function taskPaneTitle(task: PlanTask): string {
   return task.parentTaskId ? `↳ ${title}` : title;
 }
 
+function taskDetailBlock(task: PlanTask, index: number): string[] {
+  const steps = (task.steps ?? []).map((step, position) => `${position + 1}. ${step}`);
+  const acceptance = task.acceptanceCriteria?.trim();
+  if (steps.length === 0 && !acceptance) return [];
+  return [
+    `### ${index + 1}. ${cleanTaskTitle(task)}`,
+    ...(steps.length > 0 ? ["", ...steps] : []),
+    ...(acceptance ? ["", `**Done when:** ${acceptance}`] : []),
+  ];
+}
+
 export function formatPlanPagerDocument(plan: SessionPlan): string {
   const { done, total } = planProgress(plan);
   const goal = plan.goal.trim() || "Untitled plan";
@@ -298,6 +309,12 @@ export function formatPlanPagerDocument(plan: SessionPlan): string {
         `| ${i + 1} | ${glyph} ${state} | ${title}${note} | \`${task.id}\` |`,
       );
     });
+  }
+
+  const detailBlocks = plan.tasks.map(taskDetailBlock).filter((block) => block.length > 0);
+  if (detailBlocks.length > 0) {
+    lines.push("", "## Task details");
+    for (const block of detailBlocks) lines.push("", ...block);
   }
 
   lines.push("");

@@ -11,11 +11,19 @@ import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 import { TASK_UPDATE_LIMIT, TASK_UPDATE_STATES } from "../task-update.js";
 import { TURN_END_REASONS, TURN_END_TOOL_NAME } from "../turn-end.js";
 
+const taskSteps = {
+  type: "array",
+  items: { type: "string" },
+  description:
+    "Concrete implementation steps: the files, symbols or assets, the exact change or test, edge cases, and the check that proves it",
+};
+
 const newTaskProperties = {
   title: { type: "string" },
   parentTaskId: { type: "string", description: "Parent ID or alias" },
   dependencies: { type: "array", items: { type: "string" }, description: "Prerequisite IDs or aliases" },
   resourceLocks: { type: "array", items: { type: "string" } },
+  steps: taskSteps,
   note: { type: "string" },
   acceptanceCriteria: { type: "string", description: "Evidence required for completion" },
 };
@@ -108,7 +116,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "plan.create",
-    "Start a plan or revise an unapproved draft. For follow-ups use plan.update or batched task.add.",
+    "Start a plan or revise an unapproved draft. For follow-ups use plan.update or batched task.add. In plan mode every task needs steps and acceptanceCriteria, and detail carries the durable brief.",
     {
       type: "object",
       properties: {
@@ -117,7 +125,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           description: "One short title (about eight words); put context in detail.",
           maxLength: 80,
         },
-        detail: { type: "string" },
+        detail: {
+          type: "string",
+          description: "Durable brief that survives compaction: scope, evidence, affected surfaces, decisions, risks, and validation.",
+        },
         tasks: {
           type: "array",
           items: {
@@ -129,6 +140,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
                   title: { type: "string" },
                   task: { type: "string" },
                   name: { type: "string" },
+                  steps: taskSteps,
                   acceptanceCriteria: {
                     type: "string",
                     description:
