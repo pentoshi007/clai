@@ -54,6 +54,21 @@ describe("plan context tracker", () => {
     expect(blocks[2]).toBe(planContextMessage(plan(["in_progress", "pending"], { status: "approved" }), true));
   });
 
+  it("re-snapshots when task steps change", () => {
+    const messages: ChatMessage[] = [];
+    const tracker = createPlanContextTracker();
+    const first = plan(["in_progress", "pending"]);
+    const second = plan(["in_progress", "pending"]);
+    second.tasks[1]!.steps = ["Add the retry wrapper"];
+    tracker.emit(messages, first, true);
+    tracker.emit(messages, second, true);
+
+    expect(planBlocks(messages)).toEqual([
+      planContextMessage(first, true),
+      planContextMessage(second, true),
+    ]);
+  });
+
   it("re-snapshots when another writer replaced the latest plan block", () => {
     const messages: ChatMessage[] = [];
     const tracker = createPlanContextTracker();

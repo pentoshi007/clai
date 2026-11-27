@@ -2,6 +2,7 @@ import type {
   KeysEditorAnswer,
   PlanConfirmResult,
 } from "../../ui-core/controllers/overlay-controller.js";
+import type { QuestionAnswer } from "../../app/ports/question-port.js";
 
 export type PanelEffect =
   | { readonly kind: "close" }
@@ -17,6 +18,7 @@ export type PanelEffect =
   | { readonly kind: "text-editor"; readonly value: string | undefined }
   | { readonly kind: "scope"; readonly targets: string[] | undefined }
   | { readonly kind: "keys"; readonly answer: KeysEditorAnswer | undefined }
+  | { readonly kind: "questions"; readonly answers: readonly QuestionAnswer[] | undefined }
   | { readonly kind: "copy"; readonly text: string }
   | { readonly kind: "resend" }
   | { readonly kind: "edit-prompt"; readonly text: string }

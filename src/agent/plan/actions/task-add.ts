@@ -5,7 +5,7 @@ import type { ToolCall } from "../../../types.js";
 import { classifyTaskTitle } from "../../evidence/task-classification.js";
 import type { SessionPolicy } from "../../session-policy.js";
 import { renderPlanForTerminal, type PlanToolResult } from "../handle-plan-tool.js";
-import { normalizeTaskTitle, resolvePlanTaskId, slugifyTaskId } from "../normalization.js";
+import { normalizeTaskSteps, normalizeTaskTitle, resolvePlanTaskId, slugifyTaskId } from "../normalization.js";
 
 type TaskArgs = ToolCall["args"];
 type PlanEdit = { tasks: TaskArgs[]; goal?: string | undefined; detail?: string | undefined };
@@ -47,12 +47,14 @@ function resolveTaskAddInput(plan: SessionPlan, args: TaskArgs): Omit<PlanTask, 
   const acceptance = args.acceptanceCriteria ?? args.acceptance;
   const { note } = args;
   if (!optionalText(acceptance) || !optionalText(note)) return "acceptanceCriteria and note must be strings.";
+  const steps = normalizeTaskSteps(args.steps);
   return {
     ...references,
     title,
     state: "pending",
     note,
     acceptanceCriteria: acceptance?.trim(),
+    ...(steps.length > 0 ? { steps } : {}),
     aliases: [slugifyTaskId(title)].filter(Boolean),
     resourceLocks,
   };

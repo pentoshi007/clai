@@ -10,6 +10,8 @@ import {
   TURN_END_REASONS,
   TURN_END_TOOL_NAME,
 } from "../../../tools/turn-end.js";
+import { USER_ASK_TOOL_NAME } from "../../../tools/user-ask.js";
+import type { UserQuestionResult } from "./user-questions.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -25,6 +27,7 @@ export interface MetaToolPorts {
   readonly releaseClaim: (notificationId: string) => void;
   readonly queueResponderLedger: (notification: ResponderNotification) => void;
   readonly handlePlanTool: (call: ToolCall) => Promise<PlanToolResult>;
+  readonly askUser: (call: ToolCall) => Promise<UserQuestionResult>;
   readonly recordAttempt: (call: ToolCall, ok: boolean) => void;
   readonly showCall: (call: ToolCall) => void;
   readonly notify: (level: "info" | "warn", message: string) => void;
@@ -61,6 +64,19 @@ const handleTurnEnd = (
     kind: "handled",
     result: { ok, call, result, contextOutput: output },
   };
+};
+
+const handleUserAsk = async (
+  ports: MetaToolPorts,
+  call: ToolCall,
+): Promise<MetaToolOutcome> => {
+  ports.showCall(call);
+  const { ok, output } = await ports.askUser(call);
+  const result: ToolResult = ok ? { ok, output } : { ok, output, exitCode: 1 };
+  ports.recordAttempt(call, ok);
+  ports.emitToolResult(result, output);
+  ports.writeToolOutput(ok ? "ok\n" : "failed\n");
+  return { kind: "handled", result: { ok, call, result, contextOutput: output } };
 };
 
 const handleResponderRead = (
@@ -148,6 +164,9 @@ export const runMetaTool = async (
   }
   if (call.name === "job.read") {
     return handleResponderRead(ports, call);
+  }
+  if (call.name === USER_ASK_TOOL_NAME) {
+    return handleUserAsk(ports, call);
   }
   const planResult = await ports.handlePlanTool(call);
   if (!planResult.handled) return { kind: "not-meta" };

@@ -10,12 +10,27 @@ import { TOOL_DEFINITIONS_WEB_1 } from "./web-1.js";
 import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 import { TASK_UPDATE_LIMIT, TASK_UPDATE_STATES } from "../task-update.js";
 import { TURN_END_REASONS, TURN_END_TOOL_NAME } from "../turn-end.js";
+import {
+  USER_ASK_HEADER_MAX_CHARS,
+  USER_ASK_MAX_OPTIONS,
+  USER_ASK_MAX_QUESTIONS,
+  USER_ASK_MIN_OPTIONS,
+  USER_ASK_TOOL_NAME,
+} from "../user-ask.js";
+
+const taskSteps = {
+  type: "array",
+  items: { type: "string" },
+  description:
+    "Concrete implementation steps: the files, symbols or assets, the exact change or test, edge cases, and the check that proves it",
+};
 
 const newTaskProperties = {
   title: { type: "string" },
   parentTaskId: { type: "string", description: "Parent ID or alias" },
   dependencies: { type: "array", items: { type: "string" }, description: "Prerequisite IDs or aliases" },
   resourceLocks: { type: "array", items: { type: "string" } },
+  steps: taskSteps,
   note: { type: "string" },
   acceptanceCriteria: { type: "string", description: "Evidence required for completion" },
 };
@@ -101,6 +116,51 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     { mutates: true },
   ),
   def(
+    USER_ASK_TOOL_NAME,
+    "Ask the user up to three decision questions and wait for the answers. Use it only for decisions that the request, the code, and sensible defaults cannot settle and that would materially change scope, design, or risk; decide everything else yourself. Investigate first so the options are grounded, put every open decision into one call, and list the option you recommend first with \"(Recommended)\" in its label. The user can always type a different answer.",
+    {
+      type: "object",
+      properties: {
+        questions: {
+          type: "array",
+          minItems: 1,
+          maxItems: USER_ASK_MAX_QUESTIONS,
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string", description: "One clear question" },
+              header: {
+                type: "string",
+                maxLength: USER_ASK_HEADER_MAX_CHARS,
+                description: "Short label such as Auth, Storage, or Scope",
+              },
+              options: {
+                type: "array",
+                minItems: USER_ASK_MIN_OPTIONS,
+                maxItems: USER_ASK_MAX_OPTIONS,
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string", description: "One to five words" },
+                    description: { type: "string", description: "One-line trade-off" },
+                  },
+                  required: ["label"],
+                  additionalProperties: false,
+                },
+              },
+              multiSelect: { type: "boolean", description: "Allow choosing several options" },
+            },
+            required: ["question", "options"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["questions"],
+      additionalProperties: false,
+    },
+    { askMode: true },
+  ),
+  def(
     "plan.clear",
     "Discard the active plan and all its tasks. Use when the plan should no longer be executed, needs full replacement instead of revision, or the work it tracked is being undone. After clearing, no plan exists until the next plan.create.",
     emptyObject,
@@ -108,7 +168,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "plan.create",
-    "Start a plan or revise an unapproved draft. For follow-ups use plan.update or batched task.add.",
+    "Start a plan or revise an unapproved draft. For follow-ups use plan.update or batched task.add. In plan mode every task needs steps and acceptanceCriteria, and detail carries the durable brief.",
     {
       type: "object",
       properties: {
@@ -117,7 +177,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           description: "One short title (about eight words); put context in detail.",
           maxLength: 80,
         },
-        detail: { type: "string" },
+        detail: {
+          type: "string",
+          description: "Durable brief that survives compaction: scope, evidence, affected surfaces, decisions, risks, and validation.",
+        },
         tasks: {
           type: "array",
           items: {
@@ -129,6 +192,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
                   title: { type: "string" },
                   task: { type: "string" },
                   name: { type: "string" },
+                  steps: taskSteps,
                   acceptanceCriteria: {
                     type: "string",
                     description:
