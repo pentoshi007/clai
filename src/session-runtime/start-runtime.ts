@@ -36,7 +36,7 @@ export async function startIndependentRuntime(options: IndependentRuntimeOptions
   });
   const services = createCompositionRoot({
     ...seeded, mode: options.mode, noHistory: options.noHistory, sessionId: options.sessionId,
-    confirm: manager.confirm, requestSecret: manager.requestSecret,
+    confirm: manager.confirm, requestSecret: manager.requestSecret, askUser: manager.askUser,
     interactiveOverlay: () => manager.current()?.overlay,
     requestOAuthConsent: (info) => manager.ask((view) => view.overlay.openConfirm({
       kind: "mcp-oauth",

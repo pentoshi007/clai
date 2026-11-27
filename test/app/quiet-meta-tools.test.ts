@@ -14,7 +14,7 @@ describe("quiet meta tools", () => {
     expect(isQuietMetaTool("shell.exec")).toBe(false);
   });
 
-  it.each(["plan.create", "plan.update"])("hides %s on success, surfaces its failures/blocked", (name) => {
+  it.each(["plan.create", "plan.update", "user.ask"])("hides %s on success, surfaces its failures/blocked", (name) => {
     expect(shouldHideQuietMetaToolInChat(name, "ok")).toBe(true);
     expect(shouldHideQuietMetaToolInChat(name, "running")).toBe(true);
     expect(shouldHideQuietMetaToolInChat(name, "failed")).toBe(false);
