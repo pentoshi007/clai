@@ -11,6 +11,7 @@ import type { PagerMarkdownMode, PagerPanelState } from "./pager-panel.js";
 import type { PickerPanelState } from "./picker-panel.js";
 import type { PlanPanelState } from "./plan-panel.js";
 import type { PromptActionsPanelState } from "./prompt-actions-panel.js";
+import type { QuestionPanelState } from "./question-panel.js";
 import type { ScopePanelState } from "./scope-panel.js";
 import type { SecretPanelState } from "./secret-panel.js";
 import type { TextEditorPanelState } from "./text-editor-panel.js";
@@ -31,6 +32,7 @@ export interface PanelSnapshot {
   readonly textEditor: TextEditorPanelState;
   readonly scope: ScopePanelState;
   readonly keys: KeysPanelState;
+  readonly question: QuestionPanelState;
   readonly promptActions: PromptActionsPanelState;
   readonly plan: PlanPanelState;
 }

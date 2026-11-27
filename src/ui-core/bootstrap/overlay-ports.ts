@@ -7,6 +7,7 @@ import { resolveFsToolPath } from "../../tools/fs.js";
 import type { ToolCall } from "../../types.js";
 import type { ConfirmationPort, ToolConfirmationContext } from "../../app/ports/confirm-port.js";
 import type { SecretPort } from "../../app/ports/secret-port.js";
+import type { QuestionPort } from "../../app/ports/question-port.js";
 import type { OverlayController } from "../controllers/overlay-controller.js";
 import {
   PENTEST_PROMPT_TEXT,
@@ -105,6 +106,10 @@ export function createOverlayConfirmPort(overlay: OverlayController): Confirmati
       });
     },
   };
+}
+
+export function createOverlayQuestionPort(overlay: OverlayController): QuestionPort["ask"] {
+  return (request) => overlay.openQuestions(request);
 }
 
 export function createOverlaySecretPort(overlay: OverlayController): SecretPort["request"] {

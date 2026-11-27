@@ -28,6 +28,8 @@ import type {
 } from "./panel-types.js";
 import { panelWheelMove } from "./panel-wheel.js";
 import { scopeInitialState, scopeKey } from "./scope-panel.js";
+import { questionKey, questionRowsWanted } from "./question-panel.js";
+import { questionFlowInitialState, questionFlowPaste } from "../../ui-core/question/question-flow.js";
 import { secretInitialState, secretKey, secretPaste } from "./secret-panel.js";
 import {
   textEditorInitialState,
@@ -100,6 +102,15 @@ export class PanelController {
         return confirmRowsWanted(snapshot.overlay.request, columns);
       case "secret":
         return OVERLAY_MIN_ROWS;
+      case "question":
+        return Math.min(
+          generous,
+          questionRowsWanted({
+            columns,
+            request: snapshot.overlay.request,
+            state: snapshot.question,
+          }),
+        );
       case "prompt-actions":
         return Math.min(
           generous,
@@ -113,6 +124,13 @@ export class PanelController {
   handlePaste(text: string): boolean {
     if (this.snapshot.overlay.kind === "secret") {
       this.publish({ ...this.snapshot, secret: secretPaste(this.snapshot.secret, text) });
+      return true;
+    }
+    if (this.snapshot.overlay.kind === "question") {
+      this.publish({
+        ...this.snapshot,
+        question: questionFlowPaste(this.snapshot.overlay.request, this.snapshot.question, text),
+      });
       return true;
     }
     if (this.snapshot.overlay.kind === "text-editor") {
@@ -129,7 +147,8 @@ export class PanelController {
   }
 
   handleEscape(): boolean {
-    const { overlay, pager } = this.snapshot;
+    const { overlay, pager, question } = this.snapshot;
+    if (overlay.kind === "question") return question.editing && this.handleKey("escape");
     if (overlay.kind !== "pager" || (!pager.finding && pager.query === "")) return false;
     return this.handleKey("escape");
   }
@@ -239,6 +258,13 @@ export class PanelController {
         const result = scopeKey({ state: snapshot.scope, chord, text, rows });
         if (!result.handled) return false;
         this.publish({ ...snapshot, scope: result.state });
+        this.apply(result.effects);
+        return true;
+      }
+      case "question": {
+        const result = questionKey({ request: snapshot.overlay.request, state: snapshot.question, chord, text });
+        if (!result.handled) return false;
+        this.publish({ ...snapshot, question: result.state });
         this.apply(result.effects);
         return true;
       }
@@ -364,6 +390,9 @@ export class PanelController {
         return;
       case "scope-editor":
         this.publish({ ...base, scope: scopeInitialState(state.request) });
+        return;
+      case "question":
+        this.publish({ ...base, question: questionFlowInitialState(state.request) });
         return;
       case "keys-editor":
         this.publish({ ...base, keys: keysInitialState(state.request) });

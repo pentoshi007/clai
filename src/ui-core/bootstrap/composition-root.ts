@@ -9,6 +9,7 @@ import type { UpdatesPort } from "../../app/ports/updates-port.js";
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
 import type { ConfirmationPort } from "../../app/ports/confirm-port.js";
 import type { SecretPort } from "../../app/ports/secret-port.js";
+import type { QuestionPort } from "../../app/ports/question-port.js";
 import { createCurrentAgentPort } from "../../app/adapters/current-agent-adapter.js";
 import { createCurrentPersistencePort } from "../../app/adapters/current-store-adapter.js";
 import { createCurrentJobsPort } from "../../app/adapters/current-jobs-adapter.js";
@@ -37,7 +38,11 @@ import { TranscriptStore } from "../state/transcript-store.js";
 import { serializeForHistory } from "../state/transcript-hydrate.js";
 import { absorbPersistedTranscript } from "./session-merge.js";
 import { PlanController } from "../../app/controllers/plan-controller.js";
-import { createOverlayConfirmPort, createOverlaySecretPort } from "./overlay-ports.js";
+import {
+  createOverlayConfirmPort,
+  createOverlayQuestionPort,
+  createOverlaySecretPort,
+} from "./overlay-ports.js";
 import {
   detectCapabilities,
   readCapabilitiesFromProcess,
@@ -60,6 +65,7 @@ export interface AppPorts {
   readonly clipboard: ClipboardPort;
   readonly confirm: ConfirmationPort | undefined;
   readonly requestSecret: SecretPort["request"] | undefined;
+  readonly askUser: QuestionPort["ask"] | undefined;
 }
 
 export interface CompositionOptions {
@@ -74,6 +80,7 @@ export interface CompositionOptions {
   readonly clipboard?: ClipboardPort | undefined;
   readonly confirm?: ConfirmationPort | undefined;
   readonly requestSecret?: SecretPort["request"] | undefined;
+  readonly askUser?: QuestionPort["ask"] | undefined;
   readonly emit?: ((event: AnyAppEvent) => void) | undefined;
   readonly captureEvents?: boolean | undefined;
   readonly capabilities?: TerminalCapabilityReport | undefined;
@@ -314,6 +321,7 @@ export function createCompositionRoot(
     clipboard: options.clipboard ?? createSystemClipboardPort(),
     confirm: options.confirm ?? createOverlayConfirmPort(overlay),
     requestSecret: options.requestSecret ?? createOverlaySecretPort(overlay),
+    askUser: options.askUser ?? createOverlayQuestionPort(overlay),
   };
   const selection = new SelectionController(ports.clipboard, {
     copyOnRelease: options.copyOnRelease ?? false,
@@ -327,6 +335,7 @@ export function createCompositionRoot(
     emit,
     confirm: ports.confirm,
     requestSecret: ports.requestSecret,
+    askUser: ports.askUser,
     provider: options.provider,
     model: options.model,
     mode: options.mode,
