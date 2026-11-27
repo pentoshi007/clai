@@ -21,6 +21,7 @@ export interface ReliabilityPolicy {
   readonly freeTierFailThreshold: number;
   readonly toolResultDedup: boolean;
   readonly slimNativePrompt: boolean;
+  readonly planDeltas: boolean;
 }
 
 function boolEnv(name: string): boolean | undefined {
@@ -59,6 +60,7 @@ export function getReliabilityPolicy(): ReliabilityPolicy {
       boolEnv("CLAI_TOOL_RESULT_DEDUP") ?? cfg.toolResultDedup ?? true,
     slimNativePrompt:
       boolEnv("CLAI_SLIM_NATIVE_PROMPT") ?? cfg.slimNativePrompt ?? true,
+    planDeltas: boolEnv("CLAI_PLAN_DELTAS") ?? cfg.planDeltas ?? true,
   };
 }
 

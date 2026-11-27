@@ -60,7 +60,7 @@ const outcomeContract: AgentPromptSection = {
 const planProtocol: AgentPromptSection = {
   kind: "plan",
   content:
-    "PLAN PROTOCOL\nWhen a live plan exists, the most recent ACTIVE PLAN message in this request is the only authoritative plan state; older ACTIVE PLAN copies in the transcript are history. Never rely on plan details quoted in earlier turns when they disagree with the latest task list.\n" +
+    "PLAN PROTOCOL\nWhen a live plan exists, the most recent ACTIVE PLAN message in this request, together with any ACTIVE PLAN UPDATE messages after it, is the only authoritative plan state; older ACTIVE PLAN copies in the transcript are history. Never rely on plan details quoted in earlier turns when they disagree with the latest task list.\n" +
     "Give the final work summary directly in chat. Never create or add a task just to write or update that summary, including after follow-up prompts or job results. Only track report work when creating or changing a required report file or other deliverable artifact; name that artifact in the task.",
   mandatory: true,
 };
