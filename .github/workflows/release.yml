@@ -122,11 +122,28 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
+      - name: Extract the changelog section for this tag
+        id: changelog
+        run: |
+          set -euo pipefail
+          if node scripts/changelog-section.mjs "${GITHUB_REF_NAME#v}" > release-notes.md && [ -s release-notes.md ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Changelog::No CHANGELOG.md section for ${GITHUB_REF_NAME}; falling back to generated release notes."
+          fi
       - uses: softprops/action-gh-release@v3
+        if: steps.changelog.outputs.found == 'true'
+        with:
+          files: release/*
+          body_path: release-notes.md
+      - uses: softprops/action-gh-release@v3
+        if: steps.changelog.outputs.found != 'true'
         with:
           files: release/*
           generate_release_notes: true
