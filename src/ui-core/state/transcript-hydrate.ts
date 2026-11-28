@@ -192,7 +192,12 @@ function serializeTranscriptItem(
 }
 
 const ARTIFACT_TOOL_OUTPUT_TAIL_CHARS = 4_000;
-const serializedItems = new WeakMap<AnyTranscriptItem, ClassicTranscriptItem>();
+interface SerializedItem {
+  readonly output: string;
+  readonly item: ClassicTranscriptItem;
+}
+
+const serializedItems = new WeakMap<AnyTranscriptItem, SerializedItem>();
 
 function persistedToolOutput(item: AnyTranscriptItem, output: string): string {
   if (item.kind !== "tool") return output;
@@ -230,11 +235,15 @@ export function serializeForHistory(
   const out: ClassicTranscriptItem[] = [];
   for (const item of flattenTranscriptHistory(items)) {
     if (item.kind === "tool" && "pending" in item && item.pending) continue;
-    const reusable = item.kind !== "tool";
-    const serialized = (reusable ? serializedItems.get(item) : undefined)
-      ?? serializeTranscriptItem(item, resolveToolOutput);
+    const output = persistedToolOutput(item, resolveToolOutput(item));
+    const cached = serializedItems.get(item);
+    if (cached && cached.output === output) {
+      out.push(cached.item);
+      continue;
+    }
+    const serialized = serializeTranscriptItem(item, () => output);
     if (!serialized) continue;
-    if (reusable) serializedItems.set(item, serialized);
+    serializedItems.set(item, { output, item: serialized });
     out.push(serialized);
   }
   return out;

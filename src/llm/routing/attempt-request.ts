@@ -36,13 +36,14 @@ import { isModelNotFoundError, shouldContinueEffortLadder, shouldContinueEffortP
 import { forgetMainEffort, resolvedMainEffort, withMainEffortProbe } from "../main-effort-discovery.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 import { legacyReasoningBlockFromArtifacts } from "../reasoning-artifacts.js";
+import { clonePlain } from "../plain-clone.js";
 
 export function successfulRequestSnapshot(
   provider: ProviderId,
   model: string,
   request: CompletionRequest,
 ): SuccessfulRequestSnapshot {
-  return structuredClone({
+  return clonePlain({
     provider,
     model,
     messages: request.messages,

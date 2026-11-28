@@ -775,3 +775,27 @@ describe("thinking and compaction timer persistence", () => {
     expect(serialized).toEqual(classic);
   });
 });
+
+describe("serializeForHistory reuse", () => {
+  const classic: ClassicItem[] = [
+    { kind: "user", id: "u1", text: "run it", done: true },
+    { kind: "tool", id: "t1", name: "shell.exec", argsDisplay: "seq 3", output: "", status: "ok", exitCode: 0, done: true },
+    { kind: "assistant", id: "a1", text: "done", streaming: false, done: true },
+  ];
+
+  it("returns the same serialized tool item while its output is unchanged and rebuilds it when the output grows", () => {
+    const { state } = hydrateFromClassicTranscript(classic);
+    let output = "1\n2\n";
+    const first = serializeForHistory(state, () => output);
+    const second = serializeForHistory(state, () => output);
+    expect(second).toEqual(first);
+    expect(second.map((item, index) => item === first[index])).toEqual([true, true, true]);
+
+    output = "1\n2\n3\n";
+    const third = serializeForHistory(state, () => output);
+    expect(third[1]).not.toBe(first[1]);
+    expect(third[1]).toMatchObject({ kind: "tool", output: "1\n2\n3\n" });
+    expect(third[0]).toBe(first[0]);
+    expect(third[2]).toBe(first[2]);
+  });
+});

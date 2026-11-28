@@ -27,8 +27,9 @@ export interface PlannedFrame {
 }
 
 interface EncodedList {
-  readonly json: readonly string[];
   readonly digests: readonly string[];
+  readonly chars: number;
+  json(from?: number): string[];
 }
 
 interface ArrayPatch<T> {
@@ -54,30 +55,42 @@ interface DeltaFrame {
 
 export type SessionFrame = BaseFrame | DeltaFrame;
 
-interface EncodedElement {
-  readonly json: string;
+interface ElementStamp {
   readonly digest: string;
+  readonly chars: number;
 }
 
-const encodedElements = new WeakMap<object, EncodedElement>();
+const elementStamps = new WeakMap<object, ElementStamp>();
 
 export function digestJson(json: string): string {
   return hash("sha1", json, "base64");
 }
 
-function encodeElement(value: unknown): EncodedElement {
-  const cacheable = typeof value === "object" && value !== null;
-  const cached = cacheable ? encodedElements.get(value) : undefined;
-  if (cached) return cached;
-  const json = JSON.stringify(value) ?? "null";
-  const encoded = { json, digest: digestJson(json) };
-  if (cacheable) encodedElements.set(value, encoded);
-  return encoded;
+function elementJson(value: unknown): string {
+  return JSON.stringify(value) ?? "null";
 }
 
 function encodeList(values: readonly unknown[]): EncodedList {
-  const encoded = values.map(encodeElement);
-  return { json: encoded.map((element) => element.json), digests: encoded.map((element) => element.digest) };
+  const fresh = new Map<number, string>();
+  const digests: string[] = [];
+  let chars = 0;
+  for (const [index, value] of values.entries()) {
+    const cacheable = typeof value === "object" && value !== null;
+    let stamp = cacheable ? elementStamps.get(value) : undefined;
+    if (!stamp) {
+      const json = elementJson(value);
+      stamp = { digest: digestJson(json), chars: json.length };
+      if (cacheable) elementStamps.set(value, stamp);
+      fresh.set(index, json);
+    }
+    digests.push(stamp.digest);
+    chars += stamp.chars;
+  }
+  return {
+    digests,
+    chars,
+    json: (from = 0) => values.slice(from).map((value, offset) => fresh.get(from + offset) ?? elementJson(value)),
+  };
 }
 
 function jsonArray(json: readonly string[]): string {
@@ -115,7 +128,7 @@ function buildBase(
 ): PlannedFrame {
   const head = recordHead(record);
   const summary = historySummary(record);
-  const line = `${frameHeader("base", seq, summary)},"record":${recordJson(head, messages.json, transcript?.json)}}\n`;
+  const line = `${frameHeader("base", seq, summary)},"record":${recordJson(head, messages.json(), transcript?.json())}}\n`;
   const bytes = Buffer.byteLength(line);
   return {
     kind: "base",
@@ -152,15 +165,14 @@ export function planSessionFrame(
   const messageKeep = commonPrefix(previous.messageDigests, messages.digests);
   const transcriptKeep = transcript ? commonPrefix(previous.transcriptDigests ?? [], transcript.digests) : 0;
   const transcriptPatch = transcript
-    ? `{"keep":${transcriptKeep},"append":${jsonArray(transcript.json.slice(transcriptKeep))}}`
+    ? `{"keep":${transcriptKeep},"append":${jsonArray(transcript.json(transcriptKeep))}}`
     : `{"absent":true}`;
   const line =
     `${frameHeader("delta", seq, summary)},"head":${JSON.stringify(head)},` +
-    `"messages":{"keep":${messageKeep},"append":${jsonArray(messages.json.slice(messageKeep))}},` +
+    `"messages":{"keep":${messageKeep},"append":${jsonArray(messages.json(messageKeep))}},` +
     `"transcript":${transcriptPatch}}\n`;
   const bytes = Buffer.byteLength(line);
-  const baseEstimate = messages.json.reduce((total, json) => total + json.length, 0) +
-    (transcript?.json.reduce((total, json) => total + json.length, 0) ?? 0);
+  const baseEstimate = messages.chars + (transcript?.chars ?? 0);
   if (bytes > baseEstimate * DELTA_BASE_RATIO && bytes > 4096) return buildBase(seq, record, messages, transcript);
   return {
     kind: "delta",

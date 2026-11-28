@@ -7,7 +7,7 @@ describe("target-specific release bundles", () => {
     const keep = targetNativePackages(target);
     const args = targetBuildArguments(target, "/output");
     for (const name of nativePackages) expect(args.includes(name)).toBe(!keep.includes(name));
-    expect(args).toContain("--minify");
+    expect(args).toContain("--production");
     expect(args).toContain("--splitting");
     expect(args).toContain(target);
     if (target.includes("linux")) {
@@ -23,9 +23,11 @@ describe("target-specific release bundles", () => {
     }
   });
 
-  it("does not force React production builds, which stall the compiled OpenTUI renderer", () => {
+  it("bundles React and JSX in production mode through --production, never a bare NODE_ENV define", () => {
     for (const target of releaseTargets) {
-      expect(targetBuildArguments(target, "/output").some((arg) => arg.includes("NODE_ENV"))).toBe(false);
+      const args = targetBuildArguments(target, "/output");
+      expect(args).toContain("--production");
+      expect(args.some((arg) => arg.includes("NODE_ENV"))).toBe(false);
     }
   });
 

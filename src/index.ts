@@ -18,6 +18,7 @@ import {
 import { assertProvider } from "./llm/provider.js";
 import { parsePermissionMode, permissionModeLabel } from "./safety/permission-mode.js";
 import { canUseTui } from "./ui-core/bootstrap/can-use-tui.js";
+import { loadProductionReact } from "./ui-core/bootstrap/production-react.js";
 import {
   isBunRuntime,
   isOpenTuiFfiError,
@@ -94,6 +95,7 @@ async function startInteractive(
   });
   if (durable) return;
 
+  loadProductionReact();
   const ui = resolveUiChoice(options);
   const childSessionId = runtimeChildSessionId();
   const interactiveOptions = {

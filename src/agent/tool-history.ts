@@ -11,6 +11,7 @@ import {
   reasoningArtifactsForPersistence,
 } from "../llm/reasoning-artifacts.js";
 import { syntheticToolCallId } from "../llm/tool-protocol.js";
+import { clonePlain } from "../llm/plain-clone.js";
 import {
   SLIM_ARG_ABSOLUTE_MAX_CHARS,
   stripSupersededElidedArgs,
@@ -159,19 +160,11 @@ function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
   return repairs;
 }
 
-function copyToolArgs(args: Record<string, unknown>): Record<string, unknown> {
-  try {
-    return structuredClone(args);
-  } catch {
-    return { ...args };
-  }
-}
-
 export function slimNativeToolCallsForHistory(
   toolCalls: readonly NativeToolCall[],
 ): NativeToolCall[] {
   return toolCalls.map((tc) => {
-    const args = copyToolArgs(stripSupersededElidedArgs(tc.args ?? {}));
+    const args = clonePlain(stripSupersededElidedArgs(tc.args ?? {}));
     const { rawArguments: _rawArguments, ...durable } = tc;
     return {
       ...durable,
@@ -573,13 +566,7 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
 export function projectToolHistory(
   messages: readonly ChatMessage[],
 ): { messages: ChatMessage[]; changed: boolean; repairs: number } {
-  const copy = messages.map((message) => {
-    try {
-      return structuredClone(message);
-    } catch {
-      return { ...message };
-    }
-  });
+  const copy = messages.map(clonePlain);
   const repairs = repairToolProtocol(copy);
   return {
     messages: repairs > 0 ? copy : [...messages],
