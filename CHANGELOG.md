@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.8.1 — 2026-11-28
+
+### Memory
+
+- Stop unbounded RAM growth in long sessions: release binaries bundled React's development build, whose reconciler wrote a `performance.measure` entry into the unbounded global performance timeline on every render, so long sessions grew to several GB.
+- Preload the production React builds for `dist` and npm runs before the UI starts, restoring the previous `NODE_ENV` afterwards.
+- Replace `structuredClone` of request and history snapshots with `clonePlain`, which copies structure but shares strings instead of duplicating them.
+- Keep only digests and lengths in the session frame encoder instead of whole serialized messages, and reuse serialized tool transcript items while their persisted output is unchanged.
+- Persisted history and request payloads are byte-for-byte unchanged.
+
+### Builds
+
+- Build release binaries with `bun --production`, so the JSX transform and the React runtime are both production. A bare `NODE_ENV` define left `jsxDEV` calls in the bundle.
+
+### Tests
+
+- Cover `clonePlain` deep-copy semantics, byte-identical serialization, own `__proto__` keys, and shared non-plain values.
+- Prove compiled entry points load the production React builds while TypeScript sources keep the development builds their JSX transform expects.
+- Cover tool transcript reuse while persisted output is unchanged.
+
 ## v5.8.0 — 2026-11-27
 
 ### Decision questions
